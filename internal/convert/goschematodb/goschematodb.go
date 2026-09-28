@@ -259,6 +259,8 @@ func toDBIndexes(
 			Parts:          toDBIndexParts(index.Parts, index.Operator),
 			IsUnique:       index.Unique,
 			Condition:      index.Condition,
+			Comment:        index.Comment,
+			Invisible:      index.Invisible,
 			NullsDistinct:  index.NullsDistinct,
 			Method:         indexAccessMethod(index.Type, dialect),
 			IncludeColumns: append([]string(nil), index.IncludeColumns...),

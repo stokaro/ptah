@@ -1976,6 +1976,11 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	// declaration holds validated.
 	result = validateConstraints(result, diff)
 
+	// 10.9. An index the declaration shows or hides from the optimizer. No
+	// engine of this family has such an index, so the renderer refuses the
+	// statement by the capability rather than leave the change unplanned.
+	result = changeIndexVisibility(result, diff)
+
 	// 11. Remove indexes (safe operations)
 	result = p.removeIndexes(result, diff, released.IndexSet())
 

@@ -1017,6 +1017,19 @@ const (
 	// true, and the same `ADD CONSTRAINT` without the clause takes
 	// AccessExclusiveLock. A foreign key behaves the same way.
 	AddConstraintNotValid Capability = "add_constraint_not_valid"
+	// InvisibleIndexes marks support for an index the optimizer does not use
+	// while the server keeps maintaining it: MySQL's INVISIBLE and MariaDB's
+	// IGNORED. Measured 2026-09-28:
+	//
+	//	MySQL 8.4.11, 9.7.2, 26.7.0   INVISIBLE; STATISTICS.IS_VISIBLE is NO
+	//	MariaDB 11.8.9                IGNORED; STATISTICS.IGNORED is YES
+	//
+	// `ALTER TABLE t ALTER INDEX k VISIBLE | INVISIBLE`, and MariaDB's
+	// `IGNORED | NOT IGNORED`, change it in place, and both engines refuse it
+	// on a primary key (ERROR 3522, ERROR 4174). A render for a target without
+	// it refuses the index rather than build one the optimizer uses, which
+	// would change the query plans its author held back (stokaro/ptah#3853).
+	InvisibleIndexes Capability = "invisible_indexes"
 )
 
 // spec documents a registry entry and its implication edges.
@@ -1284,6 +1297,9 @@ var registry = map[Capability]spec{
 	AddConstraintNotValid: {
 		doc: "NOT VALID on an added constraint and VALIDATE CONSTRAINT to complete it (PostgreSQL family)",
 	},
+	InvisibleIndexes: {
+		doc: "an index the optimizer does not use: INVISIBLE on MySQL 8.0+, IGNORED on MariaDB 10.6+",
+	},
 }
 
 // mutexGroups lists capability groups in which AT MOST ONE member may be
@@ -1520,6 +1536,7 @@ func MySQL84() Capabilities {
 		ForeignKeyDeleteColumnList:      false,
 		AlterTableAlgorithmLock:         true,
 		AddConstraintNotValid:           false,
+		InvisibleIndexes:                true,
 	}
 }
 
@@ -1561,7 +1578,10 @@ func MySQLLegacy() Capabilities {
 		With(DropCheckClause, false).
 		// information_schema.VIEW_TABLE_USAGE arrived in 8.0.13, which is
 		// inside this arm's range rather than above it -- hence [MySQL8013].
-		With(CatalogViewDependencies, false)
+		With(CatalogViewDependencies, false).
+		// MySQL 5.7 has no invisible index. MySQL 8.0 does, from its first
+		// GA release, and [MySQL8013] restores it for the arm above.
+		With(InvisibleIndexes, false)
 }
 
 // MySQL8013 is the preset for MySQL 8.0.13 through 8.0.15: [MySQLLegacy] plus
@@ -1572,7 +1592,7 @@ func MySQLLegacy() Capabilities {
 // arrives before the constraint behavior does and neither arm can carry both
 // (stokaro/ptah#916 item 3).
 func MySQL8013() Capabilities {
-	return MySQLLegacy().With(CatalogViewDependencies, true)
+	return MySQLLegacy().With(CatalogViewDependencies, true).With(InvisibleIndexes, true)
 }
 
 // MariaDB1011 is the preset for the current MariaDB LTS line (10.6+ /
@@ -1683,6 +1703,7 @@ func MariaDB1011() Capabilities {
 		ForeignKeyDeleteColumnList:      false,
 		AlterTableAlgorithmLock:         true,
 		AddConstraintNotValid:           false,
+		InvisibleIndexes:                true,
 	}
 }
 
@@ -1693,6 +1714,8 @@ func MariaDB1011() Capabilities {
 // a modern preset is never over-promised to an old server.
 func MariaDBLegacy() Capabilities {
 	return MariaDB1011().
+		// IGNORED arrived in MariaDB 10.6.
+		With(InvisibleIndexes, false).
 		With(DropConstraintGeneric, false).
 		With(DropConstraintIfExists, false).
 		With(DropIndexIfExists, false).
@@ -1791,6 +1814,7 @@ func Postgres16() Capabilities {
 		ForeignKeyDeleteColumnList:      true,
 		AlterTableAlgorithmLock:         false,
 		AddConstraintNotValid:           true,
+		InvisibleIndexes:                false,
 	}
 }
 
@@ -2029,6 +2053,7 @@ func ClickHouse24() Capabilities {
 		ForeignKeyDeleteColumnList:      false,
 		AlterTableAlgorithmLock:         false,
 		AddConstraintNotValid:           false,
+		InvisibleIndexes:                false,
 	}
 }
 
@@ -2148,6 +2173,7 @@ func SQLite3() Capabilities {
 		ForeignKeyDeleteColumnList: false,
 		AlterTableAlgorithmLock:    false,
 		AddConstraintNotValid:      false,
+		InvisibleIndexes:           false,
 	}
 }
 
@@ -2350,6 +2376,7 @@ func SQLServer2022() Capabilities {
 		ForeignKeyDeleteColumnList: false,
 		AlterTableAlgorithmLock:    false,
 		AddConstraintNotValid:      false,
+		InvisibleIndexes:           false,
 	}
 }
 
@@ -2980,6 +3007,7 @@ func Oracle23() Capabilities {
 		ForeignKeyDeleteColumnList: false,
 		AlterTableAlgorithmLock:    false,
 		AddConstraintNotValid:      false,
+		InvisibleIndexes:           false,
 	}
 }
 

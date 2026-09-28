@@ -64,6 +64,12 @@ func TriggerDiagnosticPath(table, name string) string {
 	return fmt.Sprintf("triggers[%q][%q]", table, name)
 }
 
+// IndexDiagnosticPath returns an unambiguous diagnostic identity for an index,
+// whose schema identity is the pair of its table and its name.
+func IndexDiagnosticPath(table, name string) string {
+	return fmt.Sprintf("indexes[%q][%q]", table, name)
+}
+
 // Result is the rendered HCL plus loss diagnostics.
 type Result struct {
 	Data        []byte
@@ -1135,6 +1141,16 @@ func (r *renderer) renderIndex(index schemamodel.Index) {
 	r.stringAttr(2, "comment", index.Comment)
 	r.stringAttr(2, "ops", index.Operator)
 	r.boolPtrAttr(2, "nulls_distinct", index.NullsDistinct)
+	// The pinned community binary v1.3.0 has no attribute for an index the
+	// optimizer does not use: its `schema inspect` writes an INVISIBLE index
+	// as a visible one and says nothing. The index is written, and the loss
+	// is reported, because applying the document back makes it visible and
+	// changes the query plans its author held back (stokaro/ptah#3853).
+	if index.Invisible {
+		r.warn(IndexDiagnosticPath(cmp.Or(index.TableName, index.StructName), index.Name),
+			"the index is hidden from the optimizer, which HCL schema output cannot represent; "+
+				"applying this HCL makes the index visible")
+	}
 	// Granularity is always non-negative (the parser rejects negatives) and 0 is
 	// the implicit dialect default, so emit only a positive value; the parser
 	// defaults an absent attribute back to 0, keeping the render/parse pair

@@ -199,22 +199,22 @@ reader takes them:
   there is the one `KEY k USING HASH (a)` asks for, and the later clause wins.
 
 The [PostgreSQL](../../databases/postgresql/#constraint-enforcement-and-the-match-type)
-and [MySQL](../../databases/mysql/) pages say where `NOT ENFORCED` and a MATCH
-type are kept. `NOT VALID` after `ALTER TABLE ... ADD` is
+and [MySQL](../../databases/mysql/) pages say where `NOT ENFORCED`, a MATCH
+type and an index's `COMMENT`, `INVISIBLE` and `IGNORED` are kept. `NOT VALID`
+after `ALTER TABLE ... ADD` is
 [kept too](../../databases/postgresql/#unvalidated-constraints). Clauses that
 declare something the model has no field for are refused by name
 ([stokaro/ptah#3853](https://github.com/stokaro/ptah/issues/3853)): the index
-options `COMMENT`, `INVISIBLE`, `IGNORED`, `KEY_BLOCK_SIZE`, `ENGINE_ATTRIBUTE`
-and `SECONDARY_ENGINE_ATTRIBUTE`. `USING HASH` after a primary key is refused
-too. So is a clause a dialect's server refuses, such as `ENFORCED` after a
-`UNIQUE`:
+options `KEY_BLOCK_SIZE`, `ENGINE_ATTRIBUTE` and `SECONDARY_ENGINE_ATTRIBUTE`.
+`USING HASH` after a primary key is refused too. So is a clause a dialect's
+server refuses, such as `ENFORCED` after a `UNIQUE`:
 
 ```sql
-CREATE TABLE t (a int, KEY k (a) COMMENT 'lookup');
+CREATE TABLE t (a int, KEY k (a) KEY_BLOCK_SIZE = 8);
 ```
 
 ```text
-COMMENT at position 33: an index comment is not kept on MySQL and MariaDB: Ptah writes none and reads none back (stokaro/ptah#3853); declare the key without it
+KEY_BLOCK_SIZE at position 33: the key block size of an index is not modeled (stokaro/ptah#3853); declare the key without it
 ```
 
 ## Change a table after creating it

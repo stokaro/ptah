@@ -115,6 +115,21 @@ SQL:
   a second one, `x_2`. A column that keeps its `UNIQUE` while its type,
   nullability or default changes is written without the clause and keeps its
   one key, as Atlas CE writes it.
+- An index's `COMMENT` is kept in `STATISTICS.INDEX_COMMENT` on both engines.
+  No statement changes it in place, so a changed comment rebuilds the index,
+  and Ptah writes the rebuild as one statement: `ALTER TABLE t DROP INDEX k,
+  ADD INDEX k (...) COMMENT '...'`. MySQL 8.4.11 refuses a `DROP INDEX` alone on
+  an index a foreign key needs (`ERROR 1553`) and takes the pair. Atlas CE
+  v1.3.0 writes the drop and the add as two statements.
+- An index the optimizer does not use is `INVISIBLE` on MySQL and `IGNORED` on
+  MariaDB, and each engine answers `ERROR 1064` to the other's word. Ptah reads
+  it from `STATISTICS.IS_VISIBLE` or `STATISTICS.IGNORED`, writes it in the
+  target's word, and changes it in place with `ALTER TABLE t ALTER INDEX k
+  INVISIBLE` or `IGNORED`. Neither engine hides a primary key (`ERROR 3522`,
+  `ERROR 4174`), and the reader refuses one. A target without such an index,
+  PostgreSQL among them, refuses an invisible index rather than build it
+  visible. Atlas HCL has no attribute for it, so `schema inspect --format hcl`
+  writes the index and reports on stderr that the document makes it visible.
 - Two constraints on one table may share a name, and both engines accept
   `CONSTRAINT same UNIQUE (a)` beside `CONSTRAINT same FOREIGN KEY (a)`. Ptah
   identifies a named constraint by its type as well as its table and name, so

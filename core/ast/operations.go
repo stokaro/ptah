@@ -615,6 +615,49 @@ func (op *RenameIndexOperation) Accept(visitor Visitor) error { return visitor.V
 // alterOperation implements the marker method for type safety.
 func (op *RenameIndexOperation) alterOperation() {}
 
+// AlterIndexVisibilityOperation shows or hides an index from the optimizer in
+// place, as MySQL spells it, `ALTER TABLE t ALTER INDEX k VISIBLE | INVISIBLE`,
+// and MariaDB, `ALTER TABLE t ALTER INDEX k NOT IGNORED | IGNORED`. The server
+// keeps maintaining a hidden index; only the optimizer stops using it. The
+// MySQL-family renderers write it; the other renderers refuse it, because
+// their engines have no such index.
+type AlterIndexVisibilityOperation struct {
+	// IndexName is the index to show or hide.
+	IndexName string
+	// Invisible hides the index; false shows it.
+	Invisible bool
+}
+
+// Accept hands the visitor this operation. The rendering is the ALTER TABLE
+// renderer's, which reads the operation out of the statement that carries it.
+func (op *AlterIndexVisibilityOperation) Accept(visitor Visitor) error { return visitor.VisitNode(op) }
+
+// alterOperation implements the marker method for type safety.
+func (op *AlterIndexVisibilityOperation) alterOperation() {}
+
+// ReplaceIndexOperation drops an index and adds it again under the same name
+// in one statement: `ALTER TABLE t DROP INDEX k, ADD INDEX k (...)`. It is how
+// the MySQL family changes what it cannot change in place, such as an index
+// comment. One statement leaves no moment without the index, and MySQL 8.4.11
+// refuses a DROP INDEX alone on an index a foreign key needs (ERROR 1553)
+// while it takes the pair. The MySQL-family renderers write it; the other
+// renderers refuse it.
+type ReplaceIndexOperation struct {
+	// Index is the index as it is added. Its name is the one dropped.
+	Index *IndexNode
+	// DropsUniqueConstraint reports that the index dropped is the one a
+	// UNIQUE constraint enforces, as [DropIndexNode.EnforcesUniqueConstraint]
+	// does: a safety check reads it to see a rebuild that loses uniqueness.
+	DropsUniqueConstraint bool
+}
+
+// Accept hands the visitor this operation. The rendering is the ALTER TABLE
+// renderer's, which reads the operation out of the statement that carries it.
+func (op *ReplaceIndexOperation) Accept(visitor Visitor) error { return visitor.VisitNode(op) }
+
+// alterOperation implements the marker method for type safety.
+func (op *ReplaceIndexOperation) alterOperation() {}
+
 // Accept implements the Node interface for SetCommentOperation.
 //
 // The actual rendering is handled by the dialect's VisitAlterTable method;

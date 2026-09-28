@@ -336,6 +336,12 @@ func reverseSchemaDiffWithSchemaForDialect(
 	// holds may not be one of them (stokaro/ptah#2315).
 	reversed.SetIndexAdditions(priorIndexChanges(prior, indexAdditions, semantics))
 	reversed.SetIndexRemovals(diff.IndexAdditions())
+	// A visibility change carries the state it asks for, and the other state
+	// is the only one there is, so the rollback asks for that one.
+	for _, change := range diff.IndexVisibilityChanged {
+		change.Invisible = !change.Invisible
+		reversed.IndexVisibilityChanged = append(reversed.IndexVisibilityChanged, change)
+	}
 	for _, restored := range constraintRestorations {
 		reversed.ConstraintsAdded = append(reversed.ConstraintsAdded, restored)
 	}

@@ -1099,17 +1099,34 @@ func (p *Planner) addNewIndexes(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
 ) ([]ast.Node, error) {
-	replacements := indexscope.NewConflictSetWithSemantics(
-		diff.EffectiveIdentifierSemantics(p.targetDialect()),
-		diff.IndexRemovals(),
-	)
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+	replacements := indexscope.NewConflictSetWithSemantics(semantics, diff.IndexRemovals())
 	guardedDrops := p.capabilities().Has(capability.DropIndexIfExists)
 	constraintBacked := diff.ConstraintBackedIndexRemovalSet()
 	// The declaration travels WITH the addition (stokaro/ptah#2315).
 	for _, change := range diff.IndexesAdded {
 		ref := difftypes.IndexRef{Name: change.Index.Name, TableName: change.TableName}
-		index := change.Index
-		for removal := range replacements.Matches(ref) {
+		indexNode := modelast.FromIndex(change.Index)
+		indexNode.Table = ref.TableName
+		indexNode.IfNotExists = false
+		removals := slices.Collect(replacements.Matches(ref))
+		// An index rebuilt under its own name is dropped and added in one
+		// statement: `ALTER TABLE t DROP INDEX k, ADD INDEX k (...)`. MySQL
+		// 8.4.11 refuses a DROP INDEX alone on an index a foreign key needs
+		// (ERROR 1553) and takes the pair, and the pair leaves no moment
+		// without the index. The pinned community binary v1.3.0 writes the
+		// two as separate statements and fails there (stokaro/ptah#3853).
+		if p.replacesIndexInOneStatement(removals, ref, semantics) {
+			_, ownedByConstraint := constraintBacked[removals[0]]
+			result = append(result, &ast.AlterTableNode{
+				Name: ref.TableName,
+				Operations: []ast.AlterOperation{&ast.ReplaceIndexOperation{
+					Index: indexNode, DropsUniqueConstraint: ownedByConstraint,
+				}},
+			})
+			continue
+		}
+		for _, removal := range removals {
 			dropIndexNode := ast.NewDropIndex(removal.Name).SetTable(removal.TableName)
 			if guardedDrops {
 				dropIndexNode.SetIfExists()
@@ -1119,12 +1136,39 @@ func (p *Planner) addNewIndexes(
 			}
 			result = append(result, dropIndexNode)
 		}
-		indexNode := modelast.FromIndex(index)
-		indexNode.Table = ref.TableName
-		indexNode.IfNotExists = false
 		result = append(result, indexNode)
 	}
 	return result, nil
+}
+
+// replacesIndexInOneStatement reports whether the addition of ref rebuilds one
+// removed index under its own name on the MySQL family, which takes the pair
+// in one ALTER TABLE. SQL Server, which this planner serves too, drops and
+// creates an index with statements of their own.
+func (p *Planner) replacesIndexInOneStatement(
+	removals []difftypes.IndexRef, ref difftypes.IndexRef, semantics identifier.Semantics,
+) bool {
+	switch platform.NormalizeDialect(p.targetDialect()) {
+	case platform.MySQL, platform.MariaDB:
+	default:
+		return false
+	}
+	return len(removals) == 1 && semantics.IndexIdentityKey(removals[0].Name) == semantics.IndexIdentityKey(ref.Name)
+}
+
+// changeIndexVisibility shows or hides from the optimizer each index whose
+// visibility the comparison found changed, in place; see
+// [difftypes.SchemaDiff.IndexVisibilityChanged].
+func changeIndexVisibility(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	for _, change := range diff.IndexVisibilityChanged {
+		result = append(result, &ast.AlterTableNode{
+			Name: change.TableName,
+			Operations: []ast.AlterOperation{&ast.AlterIndexVisibilityOperation{
+				IndexName: change.Name, Invisible: change.Invisible,
+			}},
+		})
+	}
+	return result
 }
 
 func (p *Planner) removeIndexes(
@@ -1396,6 +1440,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err != nil {
 		return nil, err
 	}
+	result = changeIndexVisibility(result, diff)
 
 	// 5.5. Add new constraints (must be done after tables and columns exist).
 	// fkPlan.dropped suppresses the drop half of any FK modification whose

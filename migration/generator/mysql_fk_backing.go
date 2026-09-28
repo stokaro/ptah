@@ -252,9 +252,30 @@ func (s *mysqlForeignKeyIndexSimulation) applyAlterTable(node *ast.AlterTableNod
 			if err := s.dropConstraint(table, typed); err != nil {
 				return err
 			}
+		case *ast.ReplaceIndexOperation:
+			if err := s.replaceIndex(table, typed.Index); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+// replaceIndex applies `DROP INDEX k, ADD INDEX k (...)`, one statement: the
+// server checks the foreign keys against the table the statement leaves, so
+// the dropped index needs no cover while the added one takes its place.
+func (s *mysqlForeignKeyIndexSimulation) replaceIndex(table string, index *ast.IndexNode) error {
+	if index == nil {
+		return nil
+	}
+	added := *index
+	added.Table = table
+	ref := difftypes.IndexRef{Name: added.Name, TableName: table}
+	s.indexes = slices.DeleteFunc(s.indexes, func(candidate mysqlIndexCandidate) bool {
+		return s.sameIndexIdentity(candidate.ref, ref)
+	})
+	s.addIndex(mysqlIndexCandidateFromNode(&added))
+	return s.validateForeignKeyCoverage()
 }
 
 func (s *mysqlForeignKeyIndexSimulation) addConstraint(

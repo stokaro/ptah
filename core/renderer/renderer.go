@@ -479,6 +479,9 @@ func prepareIndexNode(dialect string, caps capability.Capabilities, node *ast.In
 	if err := nullsdistinct.Validate(dialect, caps, node.NullsDistinct); err != nil {
 		return nil, err
 	}
+	if err := refuseInvisibleIndexNode(dialect, caps, node); err != nil {
+		return nil, err
+	}
 	return node, nil
 }
 
@@ -663,12 +666,77 @@ func prepareAlterOperation(
 			return nil, err
 		}
 		return operation, nil
+	case *ast.AddIndexOperation, *ast.ReplaceIndexOperation, *ast.AlterIndexVisibilityOperation:
+		// One arm for the three, for the reason the arm above gives.
+		if err := validateIndexOperation(dialect, caps, operation); err != nil {
+			return nil, err
+		}
+		return operation, nil
 	default:
 		if isNilInterface(operation) {
 			return nil, invalidASTForeignKeyError(dialect, "alter-table operation is nil")
 		}
 		return operation, nil
 	}
+}
+
+// validateIndexOperation refuses an index operation that asks for an
+// invisible index on a target without one.
+func validateIndexOperation(dialect string, caps capability.Capabilities, operation ast.AlterOperation) error {
+	switch typed := operation.(type) {
+	case *ast.AddIndexOperation:
+		return refuseInvisibleIndexNode(dialect, caps, typed.Index)
+	case *ast.ReplaceIndexOperation:
+		return refuseInvisibleIndexNode(dialect, caps, typed.Index)
+	case *ast.AlterIndexVisibilityOperation:
+		return refuseInvisibleIndex(dialect, caps, typed.IndexName)
+	}
+	return nil
+}
+
+// refuseInvisibleIndexNode refuses index when the optimizer is not to use it
+// and the target has no such index. A nil or visible index passes.
+func refuseInvisibleIndexNode(dialect string, caps capability.Capabilities, index *ast.IndexNode) error {
+	if index == nil || !index.Invisible {
+		return nil
+	}
+	return refuseInvisibleIndex(dialect, caps, index.Name)
+}
+
+// refuseInvisibleIndex refuses the index name, which the optimizer is not to
+// use, on a target without such an index. Built visible, it would change the
+// query plans its author held back from it (stokaro/ptah#3853).
+func refuseInvisibleIndex(dialect string, caps capability.Capabilities, name string) error {
+	if caps.Has(capability.InvisibleIndexes) {
+		return nil
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: "invisible indexes",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("index %q is invisible, which requires target capability %s, unavailable on this %s target",
+			name, capability.InvisibleIndexes, normalized),
+	}
+}
+
+// validateDeclaredInvisibleIndexes runs the invisible-index refusal over a
+// whole declaration, before the first statement is rendered, for the reason
+// validateDeclaredNullsDistinct gives.
+func validateDeclaredInvisibleIndexes(
+	dialect string,
+	caps capability.Capabilities,
+	database *schemamodel.Database,
+) error {
+	for _, index := range database.Indexes {
+		if !index.Invisible {
+			continue
+		}
+		if err := refuseInvisibleIndex(dialect, caps, index.Name); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // validateColumnOperation refuses a DROP COLUMN guard the target cannot
@@ -1420,6 +1488,9 @@ func validateDatabaseDeclarations(
 		return err
 	}
 	if err := validateDeclaredConstraintIncludes(dialect, database); err != nil {
+		return err
+	}
+	if err := validateDeclaredInvisibleIndexes(dialect, caps, database); err != nil {
 		return err
 	}
 	if err := validateDeclaredNullsDistinct(dialect, caps, database); err != nil {

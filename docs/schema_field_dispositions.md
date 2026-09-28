@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-390 fields are reachable from the desired schema, and each one carries
+391 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 329 | reaches rendered SQL on at least one target |
+| `ddl` | 330 | reaches rendered SQL on at least one target |
 | `comparison` | 7 | read when two schemas are compared, and written into no statement |
 | `planning` | 7 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -295,6 +295,7 @@ None.
 | `schemamodel.Index.Fields` | `ddl` | — |
 | `schemamodel.Index.Granularity` | `ddl` | — |
 | `schemamodel.Index.IncludeColumns` | `ddl` | — |
+| `schemamodel.Index.Invisible` | `ddl` | — |
 | `schemamodel.Index.Name` | `ddl` | — |
 | `schemamodel.Index.NullsDistinct` | `ddl` | — |
 | `schemamodel.Index.Operator` | `ddl` | — |

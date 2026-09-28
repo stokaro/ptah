@@ -630,8 +630,26 @@ func classifyAlterOperation(op ast.AlterOperation) (Severity, string) {
 		return Warning, "ADD INDEX can affect write workload during build"
 	case *ast.ModifyTTLOperation:
 		return Warning, "MODIFY TTL can delete or move existing rows"
+	case *ast.ReplaceIndexOperation:
+		return classifyReplaceIndex(o)
+	case *ast.AlterIndexVisibilityOperation:
+		return Warning, "ALTER INDEX changes which index the optimizer can use, and so query plans"
 	default:
 		return Safe, "does not remove data or tighten constraints"
+	}
+}
+
+// classifyReplaceIndex judges an index dropped and added again in one
+// statement, as a DROP INDEX and the CREATE INDEX after it are judged.
+func classifyReplaceIndex(op *ast.ReplaceIndexOperation) (Severity, string) {
+	unique := op.Index != nil && op.Index.Unique
+	switch {
+	case op.DropsUniqueConstraint && !unique:
+		return Destructive, "the index rebuild removes the uniqueness a UNIQUE constraint enforces"
+	case unique:
+		return Warning, "rebuilding a UNIQUE index can fail on existing duplicate values"
+	default:
+		return Warning, "rebuilding an index can affect query plans and constraints"
 	}
 }
 
