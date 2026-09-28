@@ -1,6 +1,7 @@
 package schematests_test
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -198,4 +199,60 @@ func TestCompatSchemaDiffOfTwoDatabasesLeavesTheDevDatabaseAlone(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(fixture.keptRows(c), qt.Equals, 1)
+}
+
+// schemaApplyNewTargetSources are the --to sources schema apply rehearses on
+// the dev database, for a target file that does not exist yet.
+var schemaApplyNewTargetSources = []struct {
+	name    string
+	to      string
+	wantErr string
+}{
+	{name: "a SQL file", to: "file://{dir}/s.sql", wantErr: devSnapshotRefusal},
+	{name: "an HCL file", to: "file://{dir}/s.hcl", wantErr: devHCLRefusal},
+}
+
+// TestCompatSchemaApplyRefusesADirtyDevDatabaseWithoutCreatingTheTarget runs
+// schema apply at a SQLite target file that does not exist yet, with the dev
+// database holding keep_me. Opening a SQLite URL creates its file, and the
+// pinned binary v1.3.0 refuses before it touches a file target, so no target
+// file appears. Without the check ahead of the connection, the refusal leaves
+// an empty target file behind (stokaro/ptah#3955).
+func TestCompatSchemaApplyRefusesADirtyDevDatabaseWithoutCreatingTheTarget(t *testing.T) {
+	for _, test := range schemaApplyNewTargetSources {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fixture := newDevCleanFixture(c, "CREATE TABLE keep_me (id INTEGER PRIMARY KEY); INSERT INTO keep_me VALUES (1);")
+			target := filepath.Join(fixture.dir, "new-target.db")
+
+			out, err := atlastest.RunCompatOutput(fixture.args([]string{
+				"schema", "apply", "-u", "sqlite://" + target, "--to", test.to, "--dev-url", "{dev}", "--auto-approve",
+			})...)
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr, qt.Commentf("%s", out))
+			c.Assert(fixture.keptRows(c), qt.Equals, 1)
+			_, statErr := os.Stat(target)
+			c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
+		})
+	}
+}
+
+// TestCompatSchemaApplyCreatesANewTargetWithACleanDevDatabase is the control:
+// with a clean dev database the same runs create the target file and apply
+// the table to it.
+func TestCompatSchemaApplyCreatesANewTargetWithACleanDevDatabase(t *testing.T) {
+	for _, test := range schemaApplyNewTargetSources {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fixture := newDevCleanFixture(c, "SELECT 1")
+			target := filepath.Join(fixture.dir, "new-target.db")
+
+			out, err := atlastest.RunCompatOutput(fixture.args([]string{
+				"schema", "apply", "-u", "sqlite://" + target, "--to", test.to, "--dev-url", "{dev}", "--auto-approve",
+			})...)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+			c.Assert(atlastest.SqliteTableCount(c, target, "t2"), qt.Equals, 1)
+		})
+	}
 }

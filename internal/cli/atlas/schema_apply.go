@@ -553,6 +553,16 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	if err := ensureAtlasSchemaApplyDevURL(opts, projectEnv); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	// A SQLite --url names a file, and opening it creates the file. The pinned
+	// community binary v1.3.0 checks the dev database before it touches a file
+	// target: a dev database that holds a table is refused and no target file
+	// appears, even when the target's directory does not exist. A server target
+	// is contacted first there, and in checkAtlasApplyTarget (stokaro/ptah#3955).
+	if atlasurl.NamesAFile(opts.url) {
+		if err := refuseUncleanAtlasApplyDev(cmd, opts, projectEnv); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+	}
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
 	defer cancel()
 	conn, err := dbschema.ConnectToServer(connectCtx, opts.url)
@@ -560,21 +570,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		return cmdutil.Fail(cmd, fmt.Errorf("connect to --url: %w", err))
 	}
 	defer dbschema.CloseAndWarn(conn)
-	if err := atlasschema.RefuseServerDevDatabase(conn.Info(), opts.devURL); err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
-	if opts.policy.IsStrictCE() {
-		if err := atlasschema.PreflightApplyTarget(
-			cmd.Context(),
-			conn,
-			opts.schemas,
-			opts.policy.ValidateInspectedSchema,
-			atlasLiveSchemaObjectValidator(opts.policy),
-		); err != nil {
-			return cmdutil.Fail(cmd, displayAtlasSchemaApplyError(err, opts.toURLs))
-		}
-	}
-	if err := refuseUncleanAtlasApplyDev(cmd, opts, projectEnv); err != nil {
+	if err := checkAtlasApplyTarget(cmd, conn, opts, projectEnv); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 
@@ -1350,6 +1346,38 @@ func validateAtlasSchemaApplyOptions(
 // Native `ptah schema apply` never consults this: it has no parity contract and
 // still plans a file desired state against the target without a dev database.
 const applyWithoutDevURLEnvVar = "PTAH_ATLAS_APPLY_WITHOUT_DEV_URL"
+
+// checkAtlasApplyTarget holds the refusals schema apply reports once it has
+// contacted the target and before it takes the apply lock: a dev database on
+// the target's server, a target the strict CE policy cannot read, and a dev
+// database that is not clean when the target is a server. A file target's dev
+// database is checked before the connection, because opening the file
+// creates it.
+func checkAtlasApplyTarget(
+	cmd *cobra.Command,
+	conn *dbschema.DatabaseConnection,
+	opts atlasSchemaApplyOptions,
+	projectEnv atlassource.ProjectEnv,
+) error {
+	if err := atlasschema.RefuseServerDevDatabase(conn.Info(), opts.devURL); err != nil {
+		return err
+	}
+	if opts.policy.IsStrictCE() {
+		if err := atlasschema.PreflightApplyTarget(
+			cmd.Context(),
+			conn,
+			opts.schemas,
+			opts.policy.ValidateInspectedSchema,
+			atlasLiveSchemaObjectValidator(opts.policy),
+		); err != nil {
+			return displayAtlasSchemaApplyError(err, opts.toURLs)
+		}
+	}
+	if atlasurl.NamesAFile(opts.url) {
+		return nil
+	}
+	return refuseUncleanAtlasApplyDev(cmd, opts, projectEnv)
+}
 
 // ensureAtlasSchemaApplyDevURL requires --dev-url when the desired state is
 // neither a live database nor a declarative schema file.
