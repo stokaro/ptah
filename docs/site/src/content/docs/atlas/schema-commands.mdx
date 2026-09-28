@@ -1285,6 +1285,11 @@ source is not a database: `sql/migrate: connected database is not clean: found
 table "t" in connected schema`, preceded by `sql/migrate: taking database
 snapshot:` for SQL and migration directories.
 
+For a SQLite `--url`, `schema apply` checks the dev database before it opens
+the target, because opening a SQLite file creates it: a refused run leaves no
+target file behind. A server `--url` is contacted first, and an unreachable
+one is reported before the dev database. Both orders are the pinned binary's.
+
 A view, a function, a sequence or anything else the reset drops is refused the
 same way, `found view "v" in connected schema` on PostgreSQL and `found view "v"
 in schema "dev"` on MySQL, where the pinned binary accepts it; see
