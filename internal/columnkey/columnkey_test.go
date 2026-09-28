@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
 	"ptah.run/internal/columnkey"
 )
 
@@ -127,6 +128,60 @@ func TestShares(t *testing.T) {
 			c := qt.New(t)
 
 			c.Assert(columnkey.Shares(test.dialect, test.kind), qt.Equals, test.want)
+		})
+	}
+}
+
+// takenDatabase holds table c beside table d, each with a key, a CHECK on c,
+// and a relation of another schema.
+var takenDatabase = &schemamodel.Database{
+	Tables: []schemamodel.Table{
+		{StructName: "C", Name: "c"},
+		{StructName: "D", Name: "d"},
+		{StructName: "E", Name: "e", Schema: "other"},
+	},
+	Indexes: []schemamodel.Index{
+		{Name: "c_idx", StructName: "C", Fields: []string{"y"}},
+		{Name: "d_idx", StructName: "D", Fields: []string{"y"}},
+	},
+	Constraints: []schemamodel.Constraint{
+		{Name: "c_uq", StructName: "C", Type: "UNIQUE", Columns: []string{"z"}},
+		{Name: "c_ck", StructName: "C", Type: "CHECK", CheckExpression: "z > 0"},
+		{Name: "d_uq", StructName: "D", Type: "UNIQUE", Columns: []string{"z"}},
+	},
+}
+
+// Taken counts the names the key of a column of c cannot take. On MySQL and
+// MariaDB those are c's own index names: its indexes, its UNIQUE constraints
+// and PRIMARY. On PostgreSQL they are the constraints and relations of c's
+// schema, whichever table holds them.
+func TestTaken(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		held    string
+		want    bool
+	}{
+		{name: "MySQL, an index of the table", dialect: platform.MySQL, held: "c_idx", want: true},
+		{name: "MySQL, in another case", dialect: platform.MySQL, held: "C_IDX", want: true},
+		{name: "MySQL, a UNIQUE of the table", dialect: platform.MySQL, held: "c_uq", want: true},
+		{name: "MySQL, the primary key", dialect: platform.MySQL, held: "PRIMARY", want: true},
+		{name: "MySQL, a CHECK of the table", dialect: platform.MySQL, held: "c_ck", want: false},
+		{name: "MySQL, an index of another table", dialect: platform.MySQL, held: "d_idx", want: false},
+		{name: "MariaDB, a UNIQUE of the table", dialect: platform.MariaDB, held: "c_uq", want: true},
+		{name: "PostgreSQL, a CHECK of the table", dialect: platform.Postgres, held: "c_ck", want: true},
+		{name: "PostgreSQL, an index of another table", dialect: platform.Postgres, held: "d_idx", want: true},
+		{name: "PostgreSQL, another table", dialect: platform.Postgres, held: "d", want: true},
+		{name: "PostgreSQL, a table of another schema", dialect: platform.Postgres, held: "e", want: false},
+		{name: "PostgreSQL, a name nothing holds", dialect: platform.Postgres, held: "c_x_key", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			taken := columnkey.Taken(test.dialect, []*schemamodel.Database{takenDatabase}, takenDatabase.Tables[0])
+
+			c.Assert(taken(test.held), qt.Equals, test.want)
 		})
 	}
 }

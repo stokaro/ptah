@@ -20,9 +20,12 @@
 package columnkey
 
 import (
+	"slices"
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/constraintowner"
 	"ptah.run/internal/mysqlname"
 	"ptah.run/internal/pgname"
 )
@@ -65,6 +68,54 @@ func Name(dialect, table, column string, taken func(string) bool) (string, bool)
 		return pgname.Constraint(table, []string{column}, "key", taken), true
 	default:
 		return "", false
+	}
+}
+
+// Taken reports whether a name the databases hold keeps the own UNIQUE of a
+// column of table from the name the server tries first; it is the taken
+// argument of [Name]. The schema comparison reads it from the desired state,
+// and the SQL reader from the schema it has read so far, so the two resolve a
+// column's key to one name.
+//
+// On MySQL and MariaDB that is an index name of the table: an index, a UNIQUE
+// constraint, or the primary key's reserved PRIMARY. On PostgreSQL it is a
+// relation or a constraint anywhere in the table's schema; see
+// [pgname.ConstraintNames] and [pgname.RelationNames]. A column's own UNIQUE
+// holds a name in both, and none is counted here: the column whose name is
+// asked for would count its own, and another column's is `<column>` or
+// `<table>_<column>_key` of a different column.
+func Taken(dialect string, databases []*schemamodel.Database, table schemamodel.Table) func(string) bool {
+	if platform.NormalizeDialect(dialect) == platform.Postgres {
+		constraints := pgname.ConstraintNames(databases, table.Schema)
+		relations := pgname.RelationNames(databases, table.Schema)
+		return func(name string) bool { return constraints.Taken(name) || relations.Taken(name) }
+	}
+	var tables []schemamodel.Table
+	for _, database := range databases {
+		if database != nil {
+			tables = append(tables, database.Tables...)
+		}
+	}
+	names := []string{"PRIMARY"}
+	for _, database := range databases {
+		if database == nil {
+			continue
+		}
+		owners := schemamodel.ResolveIndexTableNames(database.Indexes, tables)
+		for position, index := range database.Indexes {
+			if owners[position] == table.QualifiedName() {
+				names = append(names, index.Name)
+			}
+		}
+		for _, constraint := range database.Constraints {
+			if strings.EqualFold(constraint.Type, "UNIQUE") &&
+				constraintowner.TableName(constraint, tables) == table.QualifiedName() {
+				names = append(names, constraint.Name)
+			}
+		}
+	}
+	return func(name string) bool {
+		return slices.ContainsFunc(names, func(held string) bool { return Same(dialect, held, name) })
 	}
 }
 

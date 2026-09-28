@@ -1288,6 +1288,9 @@ func (r *Renderer) visitAlterTableWithEnums(node *ast.AlterTableNode, enums map[
 			// migration apply time rather than at SQL generation time.
 			r.writeAlterStatementf(node, "ALTER TABLE %s RENAME COLUMN %s TO %s",
 				escapeQualifiedIdentifier(node.Name), escapeIdentifier(op.OldName), escapeIdentifier(op.NewName))
+		case *ast.RenameIndexOperation:
+			r.writeAlterStatementf(node, "ALTER TABLE %s RENAME INDEX %s TO %s",
+				escapeQualifiedIdentifier(node.Name), escapeIdentifier(op.From), escapeIdentifier(op.To))
 		case *ast.RenameTableOperation:
 			r.writeAlterStatementf(node, "ALTER TABLE %s RENAME TO %s",
 				escapeQualifiedIdentifier(node.Name), escapeQualifiedIdentifier(op.NewName))

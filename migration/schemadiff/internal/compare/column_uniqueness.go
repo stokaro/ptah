@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/columnkey"
+	"ptah.run/internal/constraintowner"
 	"ptah.run/internal/objectidentity"
 	"ptah.run/internal/tableref"
 )
@@ -218,7 +219,7 @@ func collectGeneratedUniqueConstraintColumns(
 	semantics identifier.Semantics,
 ) {
 	for _, constraint := range desired.Constraints {
-		table, ok := generatedConstraintTable(constraint, desired.Tables)
+		table, ok := constraintowner.Table(constraint, desired.Tables)
 		if !strings.EqualFold(constraint.Type, "UNIQUE") ||
 			!ok ||
 			len(constraint.Columns) != 1 {
@@ -231,42 +232,6 @@ func collectGeneratedUniqueConstraintColumns(
 			semantics,
 		)] = struct{}{}
 	}
-}
-
-func generatedConstraintTableName(
-	constraint schemamodel.Constraint,
-	tables []schemamodel.Table,
-) string {
-	table, ok := generatedConstraintTable(constraint, tables)
-	if !ok {
-		return strings.TrimSpace(constraint.Table)
-	}
-	return table.QualifiedName()
-}
-
-func generatedConstraintTable(
-	constraint schemamodel.Constraint,
-	tables []schemamodel.Table,
-) (schemamodel.Table, bool) {
-	tableName := strings.TrimSpace(constraint.Table)
-	var owner schemamodel.Table
-	found := false
-	for _, table := range tables {
-		if constraint.StructName != "" && table.StructName != constraint.StructName {
-			continue
-		}
-		if tableName != "" &&
-			table.Name != tableName &&
-			table.QualifiedName() != tableName {
-			continue
-		}
-		if found {
-			return schemamodel.Table{}, false
-		}
-		owner = table
-		found = true
-	}
-	return owner, found
 }
 
 func newColumnIdentityForTable(

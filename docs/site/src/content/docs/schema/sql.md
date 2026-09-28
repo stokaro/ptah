@@ -217,9 +217,9 @@ COMMENT at position 33: an index comment is not kept on MySQL and MariaDB: Ptah 
 
 ## Change a table after creating it
 
-A schema file is read as the script it is. An `ALTER TABLE` after the
-`CREATE TABLE`, in the same file, in a later file of a schema directory or in
-an imported file, changes the table the way the server would:
+A schema file is read as a script. An `ALTER TABLE` after the `CREATE TABLE`,
+in the same file, a later file of a schema directory or an imported file,
+changes the table the way the server would:
 
 ```sql
 CREATE TABLE items (id integer NOT NULL, qty integer, note text, legacy text);
@@ -237,10 +237,11 @@ These operations are read:
   `DROP NOT NULL` and `[SET DATA] TYPE`, with an optional `USING`;
 - `DROP [COLUMN] [IF EXISTS]` and `RENAME [COLUMN] ... TO`;
 - `DROP CONSTRAINT [IF EXISTS]` and `RENAME CONSTRAINT`, by the name the
-  declaration gave the constraint;
+  declaration gave the constraint or, for a column's own `UNIQUE`, the name
+  the server gives it;
 - the MySQL family's `MODIFY [COLUMN]`, `DROP PRIMARY KEY`, `DROP FOREIGN KEY`,
-  `DROP CHECK` and `DROP INDEX`, and SQL Server's `ALTER COLUMN` with a new
-  definition.
+  `DROP CHECK`, `DROP INDEX` and `RENAME INDEX`, and SQL Server's
+  `ALTER COLUMN` with a new definition.
 
 Anything else is refused by name rather than read as nothing: an `ALTER COLUMN`
 action other than those above, `RENAME TO`, `CASCADE`, and an operation on a
@@ -249,13 +250,12 @@ refuse:
 
 - a second primary key;
 - `DROP NOT NULL` or `DROP COLUMN` on a primary key column;
-- a column or constraint the table does not have.
+- a missing column or constraint, or a name already held.
 
 Dropping or renaming a column that an index, a constraint, an expression or
-another table's foreign key still names is refused too, and the message names
-that object. PostgreSQL drops or follows such an object with the column, while
-the schema file keeps its text, which would then name a column that is no
-longer there. Drop the object first, or declare the column under its final
+another table's foreign key still names is refused too, naming that object.
+PostgreSQL drops or follows the object with the column, but the schema file
+keeps its text. Drop the object first, or declare the column under its final
 name.
 
 ## Comments

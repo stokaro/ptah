@@ -93,6 +93,16 @@ func TestParse_AlterTableOperations_HappyPath(t *testing.T) {
 			name: "RENAME CONSTRAINT", dialect: "postgres", sql: "ALTER TABLE t RENAME CONSTRAINT x TO y;",
 			want: []ast.AlterOperation{&ast.RenameConstraintOperation{From: "x", To: "y"}},
 		},
+		{
+			name: "RENAME INDEX", dialect: "mysql", sql: "ALTER TABLE t RENAME INDEX b TO other;",
+			want: []ast.AlterOperation{&ast.RenameIndexOperation{From: "b", To: "other"}},
+		},
+		{
+			// The names keep their quotes, as every name here does; the reader
+			// reads them.
+			name: "RENAME KEY", dialect: "mariadb", sql: "ALTER TABLE t RENAME KEY `b` TO `other`;",
+			want: []ast.AlterOperation{&ast.RenameIndexOperation{From: "`b`", To: "`other`"}},
+		},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
@@ -214,6 +224,18 @@ func TestParse_AlterTableOperations_FailurePath(t *testing.T) {
 			name: "DROP FOREIGN without KEY", dialect: "mysql",
 			sql:     "ALTER TABLE t DROP FOREIGN t_fk;",
 			wantErr: `expected KEY after DROP FOREIGN: .*`,
+		},
+		{
+			// PostgreSQL renames an index with ALTER INDEX; ALTER TABLE has no
+			// RENAME INDEX, and the words read as a column rename.
+			name: "RENAME INDEX under PostgreSQL", dialect: "postgres",
+			sql:     "ALTER TABLE t RENAME INDEX b TO other;",
+			wantErr: `expected TO after old column name: .*`,
+		},
+		{
+			name: "RENAME INDEX without TO", dialect: "mysql",
+			sql:     "ALTER TABLE t RENAME INDEX b other;",
+			wantErr: `expected TO after the index name: .*`,
 		},
 		{
 			name: "IF without EXISTS", dialect: "postgres",
