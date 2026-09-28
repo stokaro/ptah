@@ -27,8 +27,9 @@ import (
 // Without the refusal the guard is read, and it changes the desired schema of
 // a file the server refuses to run: against a MySQL database, `ptah-compat
 // schema apply` plans `c` without `ix`, where Atlas CE v1.3.0 refuses the file
-// with the server's ERROR 1064 (stokaro/ptah#3877). MariaDB has no DROP CHECK
-// spelling with a guard or without one (stokaro/ptah#3894).
+// with the server's ERROR 1064 (stokaro/ptah#3877). MariaDB refuses DROP CHECK
+// IF EXISTS because it has no DROP CHECK spelling at all, which
+// refuseDropCheck answers before the guard is read.
 //
 // The index and constraint guards are the ones the renderer writes, and it
 // decides whether to write each by the capability keys DropIndexIfExists and
@@ -58,8 +59,5 @@ func (p *Parser) takesAlterGuard(key capability.Capability) bool {
 	if key == "" {
 		return p.dialect == platform.MariaDB
 	}
-	if p.capabilities.Established(key) {
-		return p.capabilities.Has(key)
-	}
-	return capability.ForDialect(p.dialect).Has(key)
+	return p.targetHas(key)
 }

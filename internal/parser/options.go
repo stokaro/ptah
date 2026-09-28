@@ -52,3 +52,13 @@ func (p *Parser) Dialect() string {
 func (p *Parser) Capabilities() capability.Capabilities {
 	return p.capabilities.Clone()
 }
+
+// targetHas answers whether the parser's target has key: from the capability
+// set where that set answers the key, and from the dialect's default where it
+// does not. A set that answers no key leaves every decision to the dialect.
+func (p *Parser) targetHas(key capability.Capability) bool {
+	if p.capabilities.Established(key) {
+		return p.capabilities.Has(key)
+	}
+	return capability.ForDialect(p.dialect).Has(key)
+}

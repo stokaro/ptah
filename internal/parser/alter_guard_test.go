@@ -159,3 +159,90 @@ func TestParse_MariaDBAddColumnGuard_HappyPath(t *testing.T) {
 	c.Assert(add.IfNotExists, qt.IsTrue)
 	c.Assert(add.Column.Name, qt.Equals, "y")
 }
+
+// TestParse_DropCheck_FailurePath refuses ALTER TABLE ... DROP CHECK on a
+// target without the spelling. Measured on MariaDB 11.8.9 and 12.3.3, DROP
+// CHECK answers ERROR 1064 (42000) with a guard and without one. Without the
+// refusal the clause is read, and a MariaDB schema file the server refuses to
+// run drops the check (stokaro/ptah#3894). A MySQL line older than the
+// spelling is refused the same way, by the key the renderer asks.
+func TestParse_DropCheck_FailurePath(t *testing.T) {
+	rows := []struct {
+		name    string
+		dialect string
+		caps    capability.Capabilities
+		clause  string
+		wantErr string
+	}{
+		{
+			name: "MariaDB", dialect: platform.MariaDB, clause: "DROP CHECK ck",
+			wantErr: `DROP CHECK at position 19 in ALTER TABLE: mariadb has no DROP CHECK, and answers ` +
+				`ERROR 1064 \(42000\) to one; drop the check with DROP CONSTRAINT`,
+		},
+		{
+			name: "MariaDB with a guard", dialect: platform.MariaDB, clause: "DROP CHECK IF EXISTS ck",
+			wantErr: `DROP CHECK at position 19 in ALTER TABLE: mariadb has no DROP CHECK, .*`,
+		},
+		{
+			name: "a MySQL line older than the spelling", dialect: platform.MySQL,
+			caps: capability.MySQL8013(), clause: "DROP CHECK ck",
+			wantErr: `DROP CHECK at position 19 in ALTER TABLE: mysql has no DROP CHECK, .*`,
+		},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := parser.NewParser("ALTER TABLE c "+row.clause+";",
+				parser.WithDialect(row.dialect), parser.WithCapabilities(row.caps)).Parse()
+
+			c.Assert(err, qt.ErrorMatches, row.wantErr)
+			c.Assert(statements, qt.IsNil)
+		})
+	}
+}
+
+// TestParse_DropCheck_HappyPath reads DROP CHECK where the target has it: MySQL
+// 8.0.16 and later, a dialect-neutral document, and a MariaDB set that answers
+// true for the key. MariaDB drops a check with DROP CONSTRAINT, which it reads.
+func TestParse_DropCheck_HappyPath(t *testing.T) {
+	rows := []struct {
+		name    string
+		dialect string
+		caps    capability.Capabilities
+		clause  string
+		want    []ast.AlterOperation
+	}{
+		{
+			name: "MySQL", dialect: platform.MySQL, clause: "DROP CHECK ck",
+			want: []ast.AlterOperation{&ast.DropConstraintOperation{ConstraintName: "ck", Check: true}},
+		},
+		{
+			name: "a dialect-neutral document", dialect: "", clause: "DROP CHECK ck",
+			want: []ast.AlterOperation{&ast.DropConstraintOperation{ConstraintName: "ck", Check: true}},
+		},
+		{
+			name: "a MariaDB set answering true for the spelling", dialect: platform.MariaDB,
+			caps: capability.MariaDB1011().With(capability.DropCheckClause, true), clause: "DROP CHECK ck",
+			want: []ast.AlterOperation{&ast.DropConstraintOperation{ConstraintName: "ck", Check: true}},
+		},
+		{
+			name: "MariaDB DROP CONSTRAINT", dialect: platform.MariaDB, clause: "DROP CONSTRAINT ck",
+			want: []ast.AlterOperation{&ast.DropConstraintOperation{ConstraintName: "ck"}},
+		},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := parser.NewParser("ALTER TABLE c "+row.clause+";",
+				parser.WithDialect(row.dialect), parser.WithCapabilities(row.caps)).Parse()
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements.Statements, qt.HasLen, 1)
+			alter, ok := statements.Statements[0].(*ast.AlterTableNode)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(alter.Operations, qt.DeepEquals, row.want)
+		})
+	}
+}

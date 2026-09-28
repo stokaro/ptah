@@ -6377,6 +6377,9 @@ func (p *Parser) parseDropOperation() (ast.AlterOperation, error) {
 		}
 		return p.parseDropNamedConstraint(&ast.DropConstraintOperation{ForeignKey: true}, "DROP FOREIGN KEY")
 	case p.current.MatchIdentifierValue("CHECK"):
+		if err := p.refuseDropCheck(p.current.Start); err != nil {
+			return nil, err
+		}
 		p.advance()
 		return p.parseDropNamedConstraint(&ast.DropConstraintOperation{Check: true}, "DROP CHECK")
 	case p.current.MatchIdentifierValue("INDEX"), p.current.MatchIdentifierValue("KEY"):
