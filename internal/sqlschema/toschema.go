@@ -712,7 +712,6 @@ func toDatabase(
 func appendStatement(
 	database *schemamodel.Database, document *Document, stmt ast.Node, sourcePlatform string,
 ) error {
-	base := document.base
 	if appendRoutine(database, stmt, sourcePlatform) {
 		return nil
 	}
@@ -725,6 +724,9 @@ func appendStatement(
 	if appendNamespace(database, stmt, sourcePlatform) {
 		return nil
 	}
+	if handled, err := changeDeclared(database, document, stmt, sourcePlatform); handled {
+		return err
+	}
 	switch node := stmt.(type) {
 	case *ast.EnumNode:
 		database.Enums = append(database.Enums, ToEnum(node, sourcePlatform))
@@ -732,8 +734,6 @@ func appendStatement(
 		return appendCreateTable(database, document, node, sourcePlatform)
 	case *ast.IndexNode:
 		database.Indexes = append(database.Indexes, ToIndex(node, sourcePlatform))
-	case *ast.AlterTableNode:
-		return appendAlterTable(database, document, node, sourcePlatform)
 	case *ast.CreateTypeNode:
 		appendCreateType(database, node, sourcePlatform)
 	case *ast.ExtensionNode:
@@ -752,14 +752,11 @@ func appendStatement(
 		database.Roles = append(database.Roles, toRole(node, sourcePlatform))
 	case *ast.CreatePolicyNode:
 		database.RLSPolicies = append(database.RLSPolicies, toRLSPolicy(node, sourcePlatform))
-	case *ast.CommentNode:
-		return applyComment(database, base, node, sourcePlatform)
-	case *ast.DropTableNode, *ast.DropIndexNode, *ast.PostgresDoBlockNode, *ast.RawSQLNode:
+	case *ast.PostgresDoBlockNode, *ast.RawSQLNode:
 		// Deliberately not modeled, and each for the same reason: a
-		// schemamodel.Database is what a schema SHOULD contain, and none of
-		// these names an object it would contain. A DROP names an object by its
-		// absence, which the desired schema expresses by not declaring it; a
-		// DO block and a raw statement do work rather than declare a thing.
+		// schemamodel.Database is what a schema SHOULD contain, and neither
+		// names an object it would contain. A DO block and a raw statement do
+		// work rather than declare a thing.
 		//
 		// Written out rather than left to fall through, so that the default
 		// below means "nobody decided" and not "somebody decided not to".
@@ -769,6 +766,26 @@ func appendStatement(
 			"%w: %s", ErrUnmodeledStatement, describeUnmodeledStatement(stmt))
 	}
 	return nil
+}
+
+// changeDeclared applies a statement that changes or removes an object an
+// earlier statement declared, rather than declaring one: ALTER TABLE, COMMENT
+// ON, DROP TABLE and DROP INDEX. handled is false for any other statement.
+func changeDeclared(
+	database *schemamodel.Database, document *Document, stmt ast.Node, sourcePlatform string,
+) (handled bool, err error) {
+	switch node := stmt.(type) {
+	case *ast.AlterTableNode:
+		return true, appendAlterTable(database, document, node, sourcePlatform)
+	case *ast.CommentNode:
+		return true, applyComment(database, document.base, node, sourcePlatform)
+	case *ast.DropTableNode:
+		return true, applyDropTable(database, document.base, document, node, sourcePlatform)
+	case *ast.DropIndexNode:
+		return true, applyDropIndex(database, document.base, document, node, sourcePlatform)
+	default:
+		return false, nil
+	}
 }
 
 // ErrUnmodeledStatement is the class of every statement this package parsed and
