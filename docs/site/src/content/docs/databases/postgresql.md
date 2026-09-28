@@ -179,13 +179,14 @@ CockroachDB and YugabyteDB keep `MATCH FULL` too, and neither takes
 answers with `MATCH PARTIAL not yet implemented`, and the renderer refuses
 `NOT ENFORCED` for PostgreSQL before 18.
 
-A command that connects plans for the server it connects to. `schema render`
-and `schema diff` plan for PostgreSQL 17 unless `--server-version 18` names the
-target, and `schema diff` does so even when it compares on a PostgreSQL 18
-connection ([stokaro/ptah#3910](https://github.com/stokaro/ptah/issues/3910)):
+A command that connects plans for the server it connects to. `schema diff`
+plans for the database it reads, or for the dev server it compares two files
+on; a `docker://postgres/18` dev URL names that server in its tag. `schema
+render`, which connects to nothing, plans for PostgreSQL 17 unless
+`--server-version 18` names the target:
 
 ```bash
-ptah schema diff --from "$DATABASE_URL" --to file://schema.sql --server-version 18
+ptah schema render --dialect postgres --server-version 18 --root-dir ./models
 ```
 
 ## Unnamed constraints in a SQL file
