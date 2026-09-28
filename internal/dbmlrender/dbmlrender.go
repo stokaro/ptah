@@ -15,17 +15,20 @@
 //
 // # What DBML cannot say
 //
-// DBML describes tables, columns, enums, indexes and references. A Ptah schema
-// can hold views, functions, triggers, sequences, domains, policies and more,
-// and none of them has a DBML spelling. Those are not dropped quietly:
-// [Result.Omitted] names every family that had members and no representation,
-// so a caller can report the loss rather than discover it later
-// (stokaro/ptah#2065 asks for exactly that, and a format that reported nothing
-// would make a DBML export look like a complete description of the database).
+// DBML describes tables, columns, enums, indexes, checks and references,
+// composite primary and foreign keys included. A Ptah schema can hold views,
+// functions, triggers, sequences, domains, policies and more, and none of them
+// has a DBML spelling; neither has an EXCLUDE constraint, nor a key's
+// DEFERRABLE or MATCH FULL. Those are not dropped quietly: [Result.Omitted]
+// names every one that had members and no representation, so a caller can
+// report the loss rather than discover it later (stokaro/ptah#2065 asks for
+// exactly that, and a format that reported nothing would make a DBML export look
+// like a complete description of the database).
 package dbmlrender
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"ptah.run/core/schemamodel"
@@ -44,9 +47,23 @@ type Result struct {
 	// DBML is the document: LF endings, one trailing newline, empty when the
 	// schema has nothing DBML can express.
 	DBML string
-	// Omitted names each object family that had members and no DBML spelling,
-	// sorted, as "views (2)".
+	// Omitted names what the schema holds and DBML cannot write, sorted, each
+	// as "what (count)": an object family with no DBML spelling, such as
+	// "views (2)", or a property of a key the export does write, such as
+	// "DEFERRABLE on keys (1)".
 	Omitted []string
+}
+
+// Warnings are the lines a command writes to its diagnostics stream, one per
+// entry in Omitted, so every command that writes DBML says the same thing about
+// what it left out. A command writes them before the document, not after: a
+// caller reading the output has the document by then.
+func (r Result) Warnings() []string {
+	warnings := make([]string, 0, len(r.Omitted))
+	for _, omitted := range r.Omitted {
+		warnings = append(warnings, fmt.Sprintf("warning: DBML cannot express %s; the export leaves them out", omitted))
+	}
+	return warnings
 }
 
 // Render writes the schema as DBML.
@@ -58,7 +75,9 @@ func Render(db *schemamodel.Database, opts Options) (Result, error) {
 	if metadata := b.selectedExportMetadata(); len(metadata) > 0 {
 		return Result{}, exportMetadataError(metadata)
 	}
-	return Result{DBML: b.render(), Omitted: omittedFamilies(db)}, nil
+	omitted := append(omittedFamilies(db), b.omittedKeys()...)
+	sort.Strings(omitted)
+	return Result{DBML: b.render(), Omitted: omitted}, nil
 }
 
 func exportMetadataError(metadata []schemamodel.ExportMetadata) error {

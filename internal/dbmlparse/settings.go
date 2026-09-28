@@ -162,6 +162,16 @@ func applyColumnSettings(field *schemamodel.Field, settings []setting, schema st
 			applyDefault(field, entry)
 		case "note":
 			field.Comment = entry.value
+		case "check":
+			if entry.kind != tokenExpr {
+				return fmt.Errorf("a column check on %q is an expression in backticks", field.Name)
+			}
+			// The model holds one check per column; a second would replace the
+			// first without a word.
+			if field.Check != "" {
+				return fmt.Errorf("column %q declares more than one check; write the others in the table's Checks block", field.Name)
+			}
+			field.Check = entry.value
 		case "ref":
 			if err := applyInlineRef(field, entry, schema); err != nil {
 				return err

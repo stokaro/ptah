@@ -8,7 +8,10 @@ import (
 )
 
 // indexes reads the `Indexes { ... }` block inside a table.
-func (p *parser) indexes(structName string) error {
+//
+// An entry with `pk` is the table's primary key rather than an index: DBML
+// writes a composite key only this way. A table gets one.
+func (p *parser) indexes(table *schemamodel.Table) error {
 	if err := p.advance(); err != nil {
 		return err
 	}
@@ -19,74 +22,97 @@ func (p *parser) indexes(structName string) error {
 		if p.tok.kind == tokenEOF {
 			return p.errorf("unterminated Indexes block")
 		}
-		index, err := p.index(structName)
+		index, primary, err := p.index(table.StructName)
 		if err != nil {
 			return err
 		}
-		p.db.Indexes = append(p.db.Indexes, index)
+		if !primary {
+			p.db.Indexes = append(p.db.Indexes, index)
+			continue
+		}
+		if len(table.PrimaryKey) > 0 {
+			return p.errorf("table %q declares a second primary key in Indexes", table.Name)
+		}
+		table.PrimaryKey = index.Fields
+		table.PrimaryKeyName = index.Name
 	}
 	return p.advance()
 }
 
 // index reads one entry: a single column, or a parenthesized list, plus
-// settings.
-func (p *parser) index(structName string) (schemamodel.Index, error) {
-	index := schemamodel.Index{StructName: structName}
+// settings. primary reports an entry marked `pk`, whose columns and name are
+// the table's primary key.
+func (p *parser) index(structName string) (index schemamodel.Index, primary bool, err error) {
+	index = schemamodel.Index{StructName: structName}
 	switch {
 	case p.isPunct("("):
 		if err := p.advance(); err != nil {
-			return index, err
+			return index, false, err
 		}
-		for !p.isPunct(")") {
-			if p.tok.kind == tokenEOF {
-				return index, p.errorf("unterminated index column list")
-			}
-			column, err := p.name()
-			if err != nil {
-				return index, err
-			}
-			index.Fields = append(index.Fields, column)
-			if p.isPunct(",") {
-				if err := p.advance(); err != nil {
-					return index, err
-				}
-			}
+		columns, err := p.columnListBody()
+		if err != nil {
+			return index, false, err
 		}
-		if err := p.advance(); err != nil {
-			return index, err
-		}
+		index.Fields = columns
 	default:
 		column, err := p.name()
 		if err != nil {
-			return index, err
+			return index, false, err
 		}
 		index.Fields = []string{column}
 	}
 
 	if !p.isPunct("[") {
-		return index, nil
+		return index, false, nil
 	}
 	settings, err := p.settings()
 	if err != nil {
-		return index, err
+		return index, false, err
 	}
-	if err := applyIndexSettings(&index, settings); err != nil {
-		return index, p.wrapAt(err)
+	primary, err = applyIndexSettings(&index, settings)
+	if err != nil {
+		return index, false, p.wrapAt(err)
 	}
-	return index, nil
+	return index, primary, nil
 }
 
-// applyIndexSettings maps an index's bracketed list.
-func applyIndexSettings(index *schemamodel.Index, settings []setting) error {
+// columnListBody reads the columns of a parenthesized list whose opening
+// parenthesis was just consumed, through the closing one.
+func (p *parser) columnListBody() ([]string, error) {
+	columns := make([]string, 0, 2)
+	for !p.isPunct(")") {
+		if p.tok.kind == tokenEOF {
+			return nil, p.errorf("unterminated column list")
+		}
+		column, err := p.name()
+		if err != nil {
+			return nil, err
+		}
+		columns = append(columns, column)
+		if p.isPunct(",") {
+			if err := p.advance(); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if len(columns) == 0 {
+		return nil, p.errorf("a column list names no column")
+	}
+	return columns, p.advance()
+}
+
+// applyIndexSettings maps an index's bracketed list, and reports an entry
+// marked `pk`.
+//
+// A primary-key entry takes a name and nothing else: `unique` says what `pk`
+// already does, and `type` and `note` describe an index the key is not.
+func applyIndexSettings(index *schemamodel.Index, settings []setting) (primary bool, err error) {
 	for _, entry := range settings {
 		switch entry.key {
 		case "unique":
 			index.Unique = true
 		case "pk", "primary key":
-			// A primary-key index is the table's primary key rather than an
-			// index of its own, and the columns already carry `pk`. Recording
-			// it twice would make the table declare two.
-			return fmt.Errorf("declare a primary key on its columns rather than in Indexes")
+			primary = true
 		case "name":
 			index.Name = entry.value
 		case "type":
@@ -94,10 +120,13 @@ func applyIndexSettings(index *schemamodel.Index, settings []setting) error {
 		case "note":
 			index.Comment = entry.value
 		default:
-			return fmt.Errorf("unsupported index setting %q", entry.key)
+			return false, fmt.Errorf("unsupported index setting %q", entry.key)
 		}
 	}
-	return nil
+	if primary && (index.Unique || index.Type != "" || index.Comment != "") {
+		return false, fmt.Errorf("a primary key entry in Indexes takes only a name")
+	}
+	return primary, nil
 }
 
 // ref reads a top-level `Ref name: a.b > c.d [settings]`.
@@ -141,9 +170,10 @@ func (p *parser) refBlock(name string) error {
 	return p.advance()
 }
 
-// refBody reads one `a.b > c.d [settings]` relationship.
+// refBody reads one `a.b > c.d [settings]` relationship. Either side may name
+// several columns, as `a.(x, y)`, for a composite key.
 func (p *parser) refBody(name string) error {
-	leftTable, leftColumn, err := p.refEndpoint()
+	leftTable, leftColumns, err := p.refEndpoint()
 	if err != nil {
 		return err
 	}
@@ -151,7 +181,7 @@ func (p *parser) refBody(name string) error {
 	if err != nil {
 		return err
 	}
-	rightTable, rightColumn, err := p.refEndpoint()
+	rightTable, rightColumns, err := p.refEndpoint()
 	if err != nil {
 		return err
 	}
@@ -171,38 +201,50 @@ func (p *parser) refBody(name string) error {
 		return p.errorf(
 			"a many-to-many relationship has no foreign key; declare the join table and two references to it")
 	}
+	if len(leftColumns) != len(rightColumns) {
+		return p.errorf("a reference pairs %d columns with %d", len(leftColumns), len(rightColumns))
+	}
 
 	// `<` points from the one side to the many side, so the foreign key lives
 	// on the right-hand table. `>` and `-` put it on the left.
 	if operator == "<" {
 		leftTable, rightTable = rightTable, leftTable
-		leftColumn, rightColumn = rightColumn, leftColumn
+		leftColumns, rightColumns = rightColumns, leftColumns
 	}
-	return p.recordReference(name, leftTable, leftColumn, rightTable, rightColumn, settings)
+	return p.recordReference(name, leftTable, leftColumns, rightTable, rightColumns, settings)
 }
 
-// refEndpoint reads `table.column` or `schema.table.column`.
-func (p *parser) refEndpoint() (table, column string, err error) {
+// refEndpoint reads `table.column`, `schema.table.column`, or either with a
+// parenthesized column list in place of the column.
+func (p *parser) refEndpoint() (table string, columns []string, err error) {
 	parts := make([]string, 0, 3)
 	for {
 		part, err := p.name()
 		if err != nil {
-			return "", "", err
+			return "", nil, err
 		}
 		parts = append(parts, part)
 		if !p.isPunct(".") {
 			break
 		}
 		if err := p.advance(); err != nil {
-			return "", "", err
+			return "", nil, err
+		}
+		if p.isPunct("(") {
+			if err := p.advance(); err != nil {
+				return "", nil, err
+			}
+			columns, err := p.columnListBody()
+			if err != nil {
+				return "", nil, err
+			}
+			return strings.Join(parts, "."), columns, nil
 		}
 	}
 	if len(parts) < 2 {
-		return "", "", p.errorf("a reference endpoint needs a table and a column")
+		return "", nil, p.errorf("a reference endpoint needs a table and a column")
 	}
-	column = parts[len(parts)-1]
-	table = strings.Join(parts[:len(parts)-1], ".")
-	return table, column, nil
+	return strings.Join(parts[:len(parts)-1], "."), []string{parts[len(parts)-1]}, nil
 }
 
 // refOperator reads the relationship operator.
@@ -230,28 +272,57 @@ func (p *parser) refOperator() (string, error) {
 	}
 }
 
-// recordReference attaches the foreign key to the column that carries it.
+// recordReference records one foreign key.
+//
+// A key over one column is carried by that column, which is how every other
+// source declares one. A composite key, and a second key over a column that
+// already carries one, is a FOREIGN KEY constraint of the table: a column holds
+// one key, and writing the second over it would drop the first.
 func (p *parser) recordReference(
-	name, fromTable, fromColumn, toTable, toColumn string,
+	name, fromTable string, fromColumns []string, toTable string, toColumns []string,
 	settings []setting,
 ) error {
-	structName := fromTable
-	found := false
-	for i := range p.db.Fields {
-		field := &p.db.Fields[i]
-		if field.StructName != structName || field.Name != fromColumn {
-			continue
+	for _, column := range fromColumns {
+		if p.field(fromTable, column) == nil {
+			return p.errorf("reference names %s.%s, which no table declares", fromTable, column)
 		}
-		field.Foreign = toTable + "(" + toColumn + ")"
-		field.ForeignKeyName = name
-		if err := applyRefSettings(field, settings); err != nil {
-			return p.wrapAt(err)
-		}
-		found = true
-		break
 	}
-	if !found {
-		return p.errorf("reference names %s.%s, which no table declares", fromTable, fromColumn)
+	if len(fromColumns) == 1 {
+		field := p.field(fromTable, fromColumns[0])
+		if field.Foreign == "" {
+			field.Foreign = toTable + "(" + toColumns[0] + ")"
+			field.ForeignKeyName = name
+			if err := applyRefSettings(field, settings); err != nil {
+				return p.wrapAt(err)
+			}
+			return nil
+		}
+	}
+	key := schemamodel.Field{ForeignKeyName: name}
+	if err := applyRefSettings(&key, settings); err != nil {
+		return p.wrapAt(err)
+	}
+	p.db.Constraints = append(p.db.Constraints, schemamodel.Constraint{
+		StructName:     fromTable,
+		Name:           key.ForeignKeyName,
+		Type:           "FOREIGN KEY",
+		Table:          fromTable,
+		Columns:        fromColumns,
+		ForeignTable:   toTable,
+		ForeignColumn:  toColumns[0],
+		ForeignColumns: toColumns,
+		OnDelete:       key.OnDelete,
+		OnUpdate:       key.OnUpdate,
+	})
+	return nil
+}
+
+// field is the declared column of a table, or nil.
+func (p *parser) field(structName, column string) *schemamodel.Field {
+	for i := range p.db.Fields {
+		if p.db.Fields[i].StructName == structName && p.db.Fields[i].Name == column {
+			return &p.db.Fields[i]
+		}
 	}
 	return nil
 }
