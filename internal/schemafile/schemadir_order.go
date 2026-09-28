@@ -23,7 +23,7 @@ import (
 // worse, on `schema apply`, which really wrote it. The declaration ledger below
 // is what makes the second file measurable against the first.
 //
-// The ledger is not the engine, and two behaviors follow from that:
+// The ledger is not the engine, so what it replays of the script is stated here:
 //
 //   - A guard is honored rather than executed. `CREATE TABLE IF NOT EXISTS`
 //     twice is exit 0 on that binary, measured, so a guarded redeclaration is
@@ -33,6 +33,9 @@ import (
 //   - An ALTER is not replayed. A file that alters what an earlier file created
 //     declares nothing, so it neither refuses nor contributes -- the same as
 //     before this file existed.
+//   - CREATE TABLE and DROP TABLE are replayed in the order the file runs them,
+//     so a file may drop a table an earlier file created and create it again
+//     (see [dirDeclarations.admit]).
 
 // Object kinds, spelled the way the refusal names them.
 const (
@@ -255,10 +258,40 @@ func newDirDeclarations() *dirDeclarations {
 // admit records one file's declarations, refusing an object an earlier file
 // already declared unless this file declares it under a guard.
 //
+// tables are the file's CREATE TABLE and DROP TABLE statements in order, nil
+// for a file that is not a script. They are replayed on the ledger before the
+// file's objects are admitted, because a SQL file runs in order: `DROP TABLE a;
+// CREATE TABLE a (...)` after a file that created a is exit 0 on the pinned
+// binary, measured on PostgreSQL 18.6 (stokaro/ptah#3914). Without the replay
+// the file's final state holds a table a, and the ledger refuses it as a second
+// declaration. A table the replay decided is not admitted again from the final
+// state. `CREATE TABLE a; DROP TABLE a;` still refuses on the CREATE, as the
+// engine does, and a file that only drops a takes a out of the ledger.
+//
 // file is the entry name rather than the path, because that is what the pinned
 // binary names in the same refusal.
-func (d *dirDeclarations) admit(file string, objects []declaredObject, guarded map[guardKey]struct{}) error {
+func (d *dirDeclarations) admit(
+	file string,
+	objects []declaredObject,
+	guarded map[guardKey]struct{},
+	tables []tableStatement,
+) error {
+	replayed := make(map[objectKey]struct{}, len(tables))
+	for _, table := range tables {
+		replayed[table.key] = struct{}{}
+		if table.drop {
+			d.forgetTable(table.key)
+			continue
+		}
+		if _, seen := d.declared[table.key]; seen && !table.guarded {
+			return fmt.Errorf("read state from %q: %s %q already exists", file, kindTable, table.display)
+		}
+		d.declared[table.key] = struct{}{}
+	}
 	for _, object := range objects {
+		if _, decided := replayed[object.key]; decided {
+			continue
+		}
 		if _, seen := d.declared[object.key]; !seen {
 			d.declared[object.key] = struct{}{}
 			continue
@@ -269,4 +302,60 @@ func (d *dirDeclarations) admit(file string, objects []declaredObject, guarded m
 		return fmt.Errorf("read state from %q: %s %q already exists", file, object.key.kind, object.display)
 	}
 	return nil
+}
+
+// forgetTable takes a dropped table out of the ledger, with the indexes,
+// triggers and policies keyed under it: the engine drops those with the table,
+// so a later CREATE of the same name may declare them again.
+func (d *dirDeclarations) forgetTable(table objectKey) {
+	delete(d.declared, table)
+	for key := range d.declared {
+		switch key.kind {
+		case kindIndex, kindTrigger, kindPolicy:
+			// The rest must be one name, so dropping a table app leaves the
+			// indexes of a table app.users alone.
+			if name, owned := strings.CutPrefix(key.name, table.name+"."); owned && !strings.Contains(name, ".") {
+				delete(d.declared, key)
+			}
+		}
+	}
+}
+
+// tableStatement is one CREATE TABLE or DROP TABLE of a SQL file, keyed as
+// [declaredObjects] keys the table.
+type tableStatement struct {
+	key     objectKey
+	display string
+	drop    bool
+	guarded bool
+}
+
+// tableStatements lists a SQL file's CREATE TABLE and DROP TABLE statements in
+// the order the file runs them; see [dirDeclarations.admit].
+func tableStatements(statements *ast.StatementList) []tableStatement {
+	if statements == nil {
+		return nil
+	}
+	var tables []tableStatement
+	for _, statement := range statements.Statements {
+		switch node := statement.(type) {
+		case *ast.CreateTableNode:
+			created := newDeclaredObject(kindTable, node.Name)
+			tables = append(tables, tableStatement{key: created.key, display: created.display, guarded: node.IfNotExists})
+		case *ast.DropTableNode:
+			for _, name := range droppedTableNames(node) {
+				dropped := newDeclaredObject(kindTable, name)
+				tables = append(tables, tableStatement{key: dropped.key, display: dropped.display, drop: true})
+			}
+		}
+	}
+	return tables
+}
+
+// droppedTableNames answers every table a DROP TABLE names.
+func droppedTableNames(node *ast.DropTableNode) []string {
+	if len(node.Names) > 0 {
+		return node.Names
+	}
+	return []string{node.Name}
 }

@@ -237,7 +237,8 @@ func LoadPath(path string, opts Options) (*schemamodel.Database, error) {
 }
 
 // loadSchemaDirEntry reads one entry of a schema directory, together with the
-// identities that entry declares under a guard (see [guardedObjects]).
+// statements of a SQL entry, which the declaration ledger replays (see
+// [guardedObjects] and [tableStatements]). Another format has none.
 //
 // It exists so a directory source cannot recurse: an entry that turns out to be
 // a directory refuses here instead of being read as another schema directory.
@@ -245,7 +246,7 @@ func LoadPath(path string, opts Options) (*schemamodel.Database, error) {
 // it reports as a symlink rather than as a directory.
 func loadSchemaDirEntry(
 	path string, opts Options, earlier *sqlschema.Document,
-) (*schemamodel.Database, map[guardKey]struct{}, error) {
+) (*schemamodel.Database, *ast.StatementList, error) {
 	resolved, isDir, err := statSchemaPath(path)
 	if err != nil {
 		return nil, nil, err
@@ -262,7 +263,7 @@ func loadSchemaDirEntry(
 		// applies the format limits itself. A directory entry that skipped
 		// them would be the one route where the round trip is still
 		// destructive.
-		return withFormatLimits(db, resolved), guardedObjects(statements), nil
+		return withFormatLimits(db, resolved), statements, nil
 	}
 	db, err := loadSchemaFile(resolved, opts)
 	if err != nil {
@@ -524,11 +525,11 @@ func loadSchemaDir(dir string, opts Options) (*schemamodel.Database, error) {
 	document := sqlschema.NewDocument(merged)
 	ledger := newDirDeclarations()
 	for _, name := range names {
-		db, guarded, err := loadSchemaDirEntry(filepath.Join(dir, name), opts, document)
+		db, statements, err := loadSchemaDirEntry(filepath.Join(dir, name), opts, document)
 		if err != nil {
 			return nil, err
 		}
-		if err := ledger.admit(name, declaredObjects(db, format), guarded); err != nil {
+		if err := ledger.admit(name, declaredObjects(db, format), guardedObjects(statements), tableStatements(statements)); err != nil {
 			return nil, err
 		}
 		appendDatabase(merged, db)
