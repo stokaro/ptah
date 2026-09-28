@@ -19,19 +19,20 @@ type otlpRequest struct {
 }
 
 // otlpReceiver stands in for an OpenTelemetry collector listening for OTLP over
-// HTTP. It answers every request with 200 and keeps it, so a test can read what
-// an exporter sent.
+// HTTP. It answers every request with one status and keeps the request, so a
+// test can read what an exporter sent.
 type otlpReceiver struct {
 	server *httptest.Server
+	status int
 	mu     sync.Mutex
 	taken  []otlpRequest
 }
 
-// newOTLPReceiver starts a receiver on a loopback port and closes it when the
-// test ends.
-func newOTLPReceiver(c *qt.C) *otlpReceiver {
+// newOTLPReceiver starts a receiver on a loopback port that answers every
+// request with status, and closes it when the test ends.
+func newOTLPReceiver(c *qt.C, status int) *otlpReceiver {
 	c.Helper()
-	receiver := &otlpReceiver{}
+	receiver := &otlpReceiver{status: status}
 	receiver.server = httptest.NewServer(http.HandlerFunc(receiver.serve))
 	c.Cleanup(receiver.server.Close)
 	return receiver
@@ -49,7 +50,7 @@ func (r *otlpReceiver) serve(w http.ResponseWriter, req *http.Request) {
 	})
 	r.mu.Unlock()
 	w.Header().Set("Content-Type", "application/x-protobuf")
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(r.status)
 }
 
 // requests closes the receiver and returns what it took. Closing first waits

@@ -5,7 +5,10 @@ package cliobs
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
+	"slices"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -31,10 +34,20 @@ import (
 // dashboards must survive a future rename untouched.
 const instrumentationName = "ptah.run"
 
+// tracesEndpointVariables are the variables that say where traces go. Either
+// one set on its own asks for tracing: the OpenTelemetry specification lets the
+// traces-only variable stand alone, and the exporter reads both, the traces-only
+// one taking precedence.
+var tracesEndpointVariables = []string{
+	"OTEL_EXPORTER_OTLP_ENDPOINT",
+	"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+}
+
 func startOTel(ctx context.Context, opts Options) (migrator.Observer, func(context.Context) error, error) {
-	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") == "" {
+	if !slices.ContainsFunc(tracesEndpointVariables, endpointSet) {
 		return nil, nil, nil
 	}
+	otel.SetErrorHandler(warnHandler{})
 	exporter, err := otlptracehttp.New(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("initialize OTLP trace exporter: %w", err)
@@ -56,6 +69,32 @@ func startOTel(ctx context.Context, opts Options) (migrator.Observer, func(conte
 		defer otel.SetTracerProvider(previousProvider)
 		return provider.Shutdown(ctx)
 	}, nil
+}
+
+// endpointSet reports whether an endpoint variable holds a value. A value of
+// only spaces is unset, because the exporter trims a value and ignores an empty
+// one: counting it as set would start an exporter that sends to its default,
+// localhost:4318, which nobody asked for.
+func endpointSet(name string) bool {
+	return strings.TrimSpace(os.Getenv(name)) != ""
+}
+
+// warnHandler logs the errors the OpenTelemetry SDK reports -- a refused
+// connection, a batch the receiver rejects -- at warn. Each one is a trace the
+// run produced and the backend will not have. The SDK's own handler calls
+// log.Print, which the command's slog default turns into an info record, so
+// --log-level warn hid every such loss.
+//
+// It logs through slog.Default() at the time of the call, which during a
+// command is the command's logger: the tracer provider flushes before Start's
+// shutdown restores the previous default. It holds no state, so leaving it
+// installed after the command is correct for the next one. It cannot be
+// uninstalled anyway: the SDK hands its default handler to the first handler
+// set, permanently.
+type warnHandler struct{}
+
+func (warnHandler) Handle(err error) {
+	slog.Warn("OpenTelemetry tracing failed", "error", err)
 }
 
 type otelObserver struct {

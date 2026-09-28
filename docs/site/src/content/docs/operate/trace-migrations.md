@@ -10,6 +10,7 @@ goal: "Build a ptah that exports migration spans over OTLP/HTTP and find each ru
 sourceOfTruth:
   - "internal/cli/cliobs/otel_observability.go"
   - "internal/cli/cliobs/otel_observability_test.go"
+  - "internal/cli/cliobs/otel_export_failure_test.go"
   - "migration/migrator/migrator.go"
   - "migration/migrator/advisory_lock.go"
 generated: false
@@ -84,8 +85,12 @@ ptah migrations up --db-url "sqlite://app.db" --migrations-dir ./migrations
 them during the run and sends them when the command ends, so a run appears in
 the backend after the command exits.
 
-Without `OTEL_EXPORTER_OTLP_ENDPOINT`, `ptah` exports nothing, even when it was
-built with the tag.
+If your receiver takes traces at another path, set
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` to the full URL instead. `ptah` uses that
+URL as written, and either variable on its own starts the export.
+
+Without either variable, `ptah` exports nothing, even when it was built with
+the tag. A variable that is empty or holds only spaces counts as unset.
 
 ## Find the run in the backend
 
@@ -138,8 +143,8 @@ Each `OTEL_EXPORTER_OTLP_*` variable below also has a traces-only form, such as
 
 | Variable | Effect |
 | --- | --- |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Required. The receiver's base URL. `http://` sends in plain text and `https://` uses TLS. |
-| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | The full URL for traces, used as written. It takes effect only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set too. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | The receiver's base URL; spans go to its `/v1/traces` path. `http://` sends in plain text and `https://` uses TLS. |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | The full URL for traces, used as written. It starts the export on its own, and it wins when both endpoint variables are set. |
 | `OTEL_EXPORTER_OTLP_HEADERS` | Headers for every export request, as comma-separated `key=value` pairs, for example an authorization token. |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf`, the default, or `http/json`. |
 | `OTEL_EXPORTER_OTLP_COMPRESSION` | `gzip`, or `none`, the default. |
@@ -155,9 +160,10 @@ same with or without a receiver.
 
 - **The binary was built without the tag.** `go version -m` shows no
   `-tags=observability`. Rebuild it as shown above.
-- **The receiver refuses the connection.** `ptah` logs a `traces export:`
-  record at the `info` level on the run log. `--log-level warn` hides it, so
-  run once at the default level to see it.
+- **The receiver refuses the connection or rejects the spans.** `ptah` logs
+  `OpenTelemetry tracing failed` at the `warn` level, with the exporter's error:
+  the refused connection, or the HTTP status the receiver answered with. The
+  record stays visible at `--log-level warn`.
 - **The receiver does not answer.** `ptah` waits up to five seconds after the
   run for the export to finish. Then it logs `failed to shut down
   observability` at the `warn` level, and the spans are lost.

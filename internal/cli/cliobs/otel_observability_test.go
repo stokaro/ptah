@@ -30,8 +30,9 @@ import (
 // OTEL_RESOURCE_ATTRIBUTES to show that other resource attributes are kept.
 func TestStartExportsMigrationSpansOverOTLPHTTP(t *testing.T) {
 	c := qt.New(t)
-	receiver := newOTLPReceiver(c)
+	receiver := newOTLPReceiver(c, http.StatusOK)
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", receiver.server.URL)
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
 	t.Setenv("OTEL_SERVICE_NAME", "not-ptah")
 	t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment=cliobs-test")
 
