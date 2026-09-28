@@ -283,6 +283,12 @@ func mariadbRenderedKinds() []mariadbCensusRow {
 func mariadbRefusedKinds() []mariadbCensusRow {
 	return []mariadbCensusRow{
 		{
+			kind: "AlterIndexNode",
+			node: &ast.AlterIndexNode{Name: "ix", NewName: "other"},
+			want: "unsupported feature: mariadb: ALTER INDEX ix RENAME TO other is PostgreSQL's statement, " +
+				"and this renderer does not write it",
+		},
+		{
 			kind: "AlterMaterializedViewRefreshNode",
 			node: ast.NewAlterMaterializedViewRefresh("mv1", &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"}),
 			want: "unsupported feature: mariadb: ALTER MATERIALIZED VIEW REFRESH mv1: materialized views are not " +

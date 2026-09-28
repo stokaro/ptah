@@ -45,23 +45,19 @@ func applyDropIndex(database, base *schemamodel.Database, document *Document, no
 		databases = append(databases, base)
 	}
 	schema, name := normalizeSQLTableIdentifier(sourcePlatform, node.Name)
-	for _, owner := range databases {
-		for i, index := range owner.Indexes {
-			table := indexTable(databases, index, sourcePlatform)
-			if index.Name != name || table == nil || !sameSchema(sourcePlatform, schema, table.Schema) {
-				continue
-			}
-			owner.Indexes = slices.Delete(owner.Indexes, i, i+1)
-			return nil
-		}
-	}
-	if constraint := constraintIndexNamed(databases, sourcePlatform, schema, name); constraint != "" {
-		return fmt.Errorf("DROP INDEX %s: the index enforces %s; drop the constraint instead", node.Name, constraint)
-	}
-	if node.IfExists {
+	index, found := findNamedIndex(databases, document, schema, name, sourcePlatform)
+	switch {
+	case found && index.backsConstraint():
+		return fmt.Errorf("DROP INDEX %s: the index enforces %s; drop the constraint instead",
+			node.Name, index.describe(name))
+	case found:
+		index.drop()
 		return nil
+	case node.IfExists:
+		return nil
+	default:
+		return fmt.Errorf("DROP INDEX %s names an index this schema does not declare", node.Name)
 	}
-	return fmt.Errorf("DROP INDEX %s names an index this schema does not declare", node.Name)
 }
 
 // dropIndexOfTable is [applyDropIndex] for a statement that names the table.
@@ -90,26 +86,19 @@ func dropIndexOfTable(database *schemamodel.Database, document *Document, node *
 		return nil
 	}
 	name := normalizeSQLIdentifier(sourcePlatform, node.Name)
-	for _, owner := range target.databases {
-		for i, index := range owner.Indexes {
-			if target.ownsIndex(index) && index.Name == name {
-				owner.Indexes = slices.Delete(owner.Indexes, i, i+1)
-				return nil
-			}
-		}
-	}
-	for _, owner := range target.databases {
-		for _, constraint := range owner.Constraints {
-			if constraint.StructName == target.structName && constraint.Name == name && isIndexBacked(constraint) {
-				return fmt.Errorf("DROP INDEX %s ON %s: the index enforces %s constraint %s; drop the constraint instead",
-					node.Name, node.Table, strings.ToLower(constraint.Type), constraint.Name)
-			}
-		}
-	}
-	if node.IfExists {
+	index, found := target.namedIndex(name)
+	switch {
+	case found && index.backsConstraint():
+		return fmt.Errorf("DROP INDEX %s ON %s: the index enforces %s; drop the constraint instead",
+			node.Name, node.Table, index.describe(name))
+	case found:
+		index.drop()
 		return nil
+	case node.IfExists:
+		return nil
+	default:
+		return fmt.Errorf("DROP INDEX %s ON %s names an index this schema does not declare", node.Name, node.Table)
 	}
-	return fmt.Errorf("DROP INDEX %s ON %s names an index this schema does not declare", node.Name, node.Table)
 }
 
 // isMySQLFamily reports whether a source reads DROP INDEX as MySQL and
@@ -134,19 +123,6 @@ func isIndexBacked(constraint schemamodel.Constraint) bool {
 	}
 }
 
-// indexTable answers the table an index belongs to, or nil.
-func indexTable(databases []*schemamodel.Database, index schemamodel.Index, sourcePlatform string) *schemamodel.Table {
-	for _, written := range []string{index.TableName, index.StructName} {
-		if written == "" {
-			continue
-		}
-		if table := resolveTable(databases, normalizeSQLTableReference("", written), sourcePlatform); table != nil {
-			return table
-		}
-	}
-	return nil
-}
-
 // sameSchema reports whether a schema a DROP INDEX writes, empty when the name
 // is bare, is the schema of a table. A bare name and a table declared without
 // a schema are both in the default one, which PostgreSQL calls public and
@@ -168,47 +144,6 @@ func sameSchema(sourcePlatform, written, actual string) bool {
 		}
 	}
 	return isDefault(written) && isDefault(actual)
-}
-
-// constraintIndexNamed names the constraint whose index is called name in the
-// schema, or returns "": a UNIQUE, a primary key or an EXCLUDE, named by its
-// declaration or derived as PostgreSQL derives it, a column's own UNIQUE
-// included; see [pgname.ColumnKey].
-func constraintIndexNamed(databases []*schemamodel.Database, sourcePlatform, schema, name string) string {
-	for _, holder := range databases {
-		for _, table := range holder.Tables {
-			if !sameSchema(sourcePlatform, schema, table.Schema) {
-				continue
-			}
-			if constraint := tableConstraintIndexNamed(databases, table, sourcePlatform, name); constraint != "" {
-				return constraint
-			}
-		}
-	}
-	return ""
-}
-
-// tableConstraintIndexNamed is [constraintIndexNamed] for the constraints of
-// one table.
-func tableConstraintIndexNamed(databases []*schemamodel.Database, table schemamodel.Table, sourcePlatform, name string) string {
-	postgres := platform.IsPostgresFamily(sourcePlatform)
-	for _, database := range databases {
-		for _, constraint := range database.Constraints {
-			if constraint.StructName == table.StructName && constraint.Name == name && isIndexBacked(constraint) {
-				return fmt.Sprintf("%s constraint %s", strings.ToLower(constraint.Type), constraint.Name)
-			}
-		}
-		if postgres && slices.ContainsFunc(database.Fields, func(field schemamodel.Field) bool {
-			return field.StructName == table.StructName && field.Unique &&
-				strings.TrimSpace(field.UniqueExpr) == "" && pgname.ColumnKey(table.Name, field.Name) == name
-		}) {
-			return "unique constraint " + name
-		}
-	}
-	if hasPrimaryKey(databases, table) && primaryKeyIndexName(table, sourcePlatform) == name {
-		return "primary key constraint " + name
-	}
-	return ""
 }
 
 // primaryKeyIndexName answers the name of the index behind the primary key of

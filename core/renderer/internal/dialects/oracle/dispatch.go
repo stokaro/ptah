@@ -46,6 +46,8 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderIndex(n)
 	case *ast.DropIndexNode:
 		return r.renderDropIndex(n)
+	case *ast.AlterIndexNode:
+		return r.renderAlterIndex(n)
 	case *ast.CommentNode:
 		return r.renderComment(n)
 	case *ast.ObjectCommentNode:
@@ -254,4 +256,12 @@ func (r *Renderer) nodeNeedsParent(node ast.Node) error {
 func (r *Renderer) unknownNode(node ast.Node) error {
 	return fmt.Errorf("%w: %s: %T has no handler in this renderer",
 		ptaherr.ErrUnsupportedFeature, DialectName, node)
+}
+
+// renderAlterIndex refuses PostgreSQL's ALTER INDEX ... RENAME TO. The node
+// comes only from parsed PostgreSQL, and Oracle's statement of the same
+// spelling is not measured here.
+func (r *Renderer) renderAlterIndex(node *ast.AlterIndexNode) error {
+	return fmt.Errorf("%w: %s: ALTER INDEX %s RENAME TO %s is PostgreSQL's statement, and this renderer does not write it",
+		ptaherr.ErrUnsupportedFeature, DialectName, node.Name, node.NewName)
 }

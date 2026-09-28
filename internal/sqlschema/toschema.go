@@ -772,14 +772,17 @@ func appendStatement(
 }
 
 // changeDeclared applies a statement that changes or removes an object an
-// earlier statement declared, rather than declaring one: ALTER TABLE, COMMENT
-// ON, DROP TABLE and DROP INDEX. handled is false for any other statement.
+// earlier statement declared, rather than declaring one: ALTER TABLE, ALTER
+// INDEX, COMMENT ON, DROP TABLE and DROP INDEX. handled is false for any other
+// statement.
 func changeDeclared(
 	database *schemamodel.Database, document *Document, stmt ast.Node, sourcePlatform string,
 ) (handled bool, err error) {
 	switch node := stmt.(type) {
 	case *ast.AlterTableNode:
 		return true, appendAlterTable(database, document, node, sourcePlatform)
+	case *ast.AlterIndexNode:
+		return true, applyAlterIndex(database, document, node, sourcePlatform)
 	case *ast.CommentNode:
 		return true, applyComment(database, document.base, node, sourcePlatform)
 	case *ast.DropTableNode:

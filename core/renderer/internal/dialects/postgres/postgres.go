@@ -82,6 +82,23 @@ func (r *Renderer) renderDropIndex(node *ast.DropIndexNode) error {
 	return nil
 }
 
+// renderAlterIndex writes ALTER INDEX ... RENAME TO. Ptah plans no index
+// rename, so the node comes from parsed SQL, and only PostgreSQL's reading of
+// the statement is measured: the other engines this renderer serves refuse it.
+func (r *Renderer) renderAlterIndex(node *ast.AlterIndexNode) error {
+	if r.dialect != platform.Postgres {
+		return fmt.Errorf("%w: %s: ALTER INDEX %s RENAME TO %s is written for PostgreSQL only",
+			ptaherr.ErrUnsupportedFeature, r.dialect, node.Name, node.NewName)
+	}
+	guard := ""
+	if node.IfExists {
+		guard = "IF EXISTS "
+	}
+	r.w.WriteLinef("ALTER INDEX %s%s RENAME TO %s;",
+		guard, r.escapeQualifiedIdentifier(node.Name), r.escapeIdentifier(node.NewName))
+	return nil
+}
+
 // qualifiedIndexTarget spells an index the way a statement that names the index
 // itself -- DROP INDEX, COMMENT ON INDEX -- has to spell it.
 //
@@ -458,6 +475,8 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderIndex(n)
 	case *ast.DropIndexNode:
 		return r.renderDropIndex(n)
+	case *ast.AlterIndexNode:
+		return r.renderAlterIndex(n)
 	case *ast.CommentNode:
 		return r.renderComment(n)
 	case *ast.ObjectCommentNode:
