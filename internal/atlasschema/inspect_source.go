@@ -260,8 +260,7 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (InspectResul
 	if set.Kind == atlassource.KindDatabase {
 		// The database is the source, so a MySQL-family URL naming none is
 		// the whole server, as the pinned community binary v1.3.0 reads it
-		// (stokaro/ptah#3789). A dev database is not: it is reset, and a
-		// server nobody named as disposable is never reset.
+		// (stokaro/ptah#3789).
 		conn, err := connectInspectSource(ctx, set.Sources[0].Raw, opts.ConnectTimeout, dbschema.ConnectToServer)
 		if err != nil {
 			return InspectResult{}, fmt.Errorf("connect to --url: %w", err)
@@ -400,7 +399,13 @@ func inspectOnDev(
 	defer releaseDev()
 	devURL = strings.TrimSpace(resolved)
 
-	devConn, err := connectInspectSource(ctx, devURL, opts.ConnectTimeout, dbschema.ConnectToDatabase)
+	// A MySQL-family dev URL naming no database is a whole dev server, as the
+	// pinned community binary v1.3.0 takes one here: measured on MySQL 8.4.11
+	// and MariaDB 11.8.9, it creates the databases a schema file or directory
+	// declares, reads them back, and leaves the dev server empty
+	// (stokaro/ptah#3885). The claim below refuses a dev server that holds a
+	// user database, so the reset drops only what this run created.
+	devConn, err := connectInspectSource(ctx, devURL, opts.ConnectTimeout, dbschema.ConnectToServer)
 	if err != nil {
 		return InspectResult{}, fmt.Errorf("connect to --dev-url: %w", err)
 	}
