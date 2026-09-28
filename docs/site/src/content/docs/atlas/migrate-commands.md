@@ -499,9 +499,9 @@ database, plus the database that holds the revision table, which Atlas creates
 before it looks. One other database, even an empty one, reads
 `found multiple schemas: 2`, and two read `3`. The bookkeeping database alone,
 holding a table besides the revision table, reads `found multiple tables: 2`.
-`migrate status`, `migrate apply` and `migrate set` read such a URL;
-`migrate down` refuses it, and so does every verb given one as its dev database
-([stokaro/ptah#3789](https://github.com/stokaro/ptah/issues/3789)).
+`migrate status`, `migrate apply` and `migrate set` read such a URL, and
+`migrate down` refuses it. As a dev database it is a dev server; see
+[A whole dev server](#a-whole-dev-server).
 
 The revision table lands in the schema Atlas uses, `atlas_schema_revisions`,
 whenever the URL names a PostgreSQL-family database and neither
@@ -1119,6 +1119,34 @@ role and a privilege on a schema or database, which a server URL refuses; see
 `PTAH_DEV_SERVER_DISPOSABLE=1` gives a server started some other way, such as
 a CI service container, the same treatment; see
 [a server declared disposable](../../concepts/database-urls-and-dev-databases/#a-server-declared-disposable).
+
+### A whole dev server
+
+A `--dev-url` that names no MySQL or MariaDB database is a whole dev server.
+`migrate diff`, `migrate lint` and `migrate validate` replay the directory on
+it as Atlas does, with every name qualified by its database, and leave it
+empty. The replay may create, change and drop databases and write in any of
+them. A user, a role, a privilege or a stored body outlives the cleanup, which
+drops databases, and is refused, as it is on a dev database.
+
+The server must hold no user database, and the refusal names the first one in
+byte order, in Atlas's words for each verb:
+`connected database is not clean: found schema "app"`. The cleanup drops the
+foreign keys from one database into another before the databases. Atlas drops
+the databases alone and stops when a referenced one comes first, with error
+3730 on MySQL and 1451 on MariaDB, leaving the dev server holding the rest.
+
+Ptah refuses two pairs before the replay that Atlas runs:
+
+- a dev server that is the server `--to` reads, which Atlas replays onto when
+  it holds no database. The servers are compared by UUID on MySQL and by host
+  name, port and data directory on MariaDB, so another account or another
+  spelling of the address is the same server;
+- a `--to` naming one database beside a dev server, refused with
+  `cannot diff a schema "app" with a database connection`.
+
+`schema diff`, `schema apply` and `schema inspect` do not take a dev server
+yet ([stokaro/ptah#3885](https://github.com/stokaro/ptah/issues/3885)).
 
 ### The publication boundary
 

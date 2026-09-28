@@ -114,7 +114,7 @@ func Refuse(ctx context.Context, devURL string, check Check) error {
 	}
 	connectCtx, cancel := dbcli.ConnectContext(ctx, dbcli.DefaultConnectTimeout)
 	defer cancel()
-	conn, err := dbschema.ConnectToDatabase(connectCtx, strings.TrimSpace(devURL))
+	conn, err := dbschema.ConnectToServer(connectCtx, strings.TrimSpace(devURL))
 	if err != nil {
 		return nil //nolint:nilerr // the verb reports the connection failure itself
 	}

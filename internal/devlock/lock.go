@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -37,6 +38,13 @@ type Lock struct {
 // database realm. Network endpoints are intentionally excluded from the
 // identity: aliases and replicated members cannot be proven independent before
 // cleanup, so equal live database/catalog names fail closed across hosts.
+//
+// A connection to a whole MySQL or MariaDB server holds every database on it,
+// so when either side is one, the two are compared by the server they reached;
+// see mysqlServerIdentity. The verbs that take a dev server refuse a dev server
+// beside one database, and a dev database beside a server, before they get
+// here, so this comparison is what keeps a mixed pair from reading as distinct
+// on a path that does not.
 func SameRealm(
 	ctx context.Context,
 	left, right *dbschema.DatabaseConnection,
@@ -48,6 +56,19 @@ func SameRealm(
 	rightDialect := platform.NormalizeDialect(right.Info().Dialect)
 	if leftDialect != rightDialect {
 		return false, nil
+	}
+	// A whole MySQL-family server holds every database on it, so a server and
+	// any database on the same server are one realm: compare the servers.
+	if isMySQLFamily(leftDialect) && (left.Info().WholeServer || right.Info().WholeServer) {
+		leftServer, err := mysqlServerIdentity(ctx, left, leftDialect)
+		if err != nil {
+			return false, err
+		}
+		rightServer, err := mysqlServerIdentity(ctx, right, rightDialect)
+		if err != nil {
+			return false, err
+		}
+		return leftServer == rightServer, nil
 	}
 	leftIdentity, err := realmIdentity(ctx, left, leftDialect)
 	if err != nil {
@@ -151,6 +172,9 @@ func realmIdentity(
 	case platform.SQLServer:
 		return selectedDatabase(ctx, conn, dialect, "SELECT DB_NAME()")
 	case platform.MySQL, platform.MariaDB:
+		if conn.Info().WholeServer {
+			return mysqlServerIdentity(ctx, conn, dialect)
+		}
 		return selectedDatabase(ctx, conn, dialect, "SELECT DATABASE()")
 	case platform.ClickHouse:
 		return selectedDatabase(ctx, conn, dialect, "SELECT currentDatabase()")
@@ -159,6 +183,39 @@ func realmIdentity(
 	default:
 		return "", fmt.Errorf("unsupported dev database lock dialect %q", dialect)
 	}
+}
+
+// mysqlServerIdentity names the server a MySQL-family connection reached,
+// whichever database it selected: the server's UUID on MySQL, and on MariaDB,
+// which has none, its host name, port and data directory. A connection to a
+// whole server has no database to name its realm by, and a server reached
+// through another spelling of its address, or through a socket, answers the
+// same identity (stokaro/ptah#3789).
+//
+// The identity is a digest, `@` and 32 hexadecimal digits, because it names
+// the realm's advisory lock and the server refuses a lock name over 64
+// characters; a data directory can be any length. A database name cannot
+// start with `@` unquoted, and a digest collision would only make two servers
+// share a lock.
+func mysqlServerIdentity(ctx context.Context, conn *dbschema.DatabaseConnection, dialect string) (string, error) {
+	query := "SELECT @@server_uuid"
+	if dialect == platform.MariaDB {
+		query = "SELECT CONCAT_WS(':', @@hostname, @@port, @@datadir)"
+	}
+	var identity sql.NullString
+	if err := conn.QueryRowContext(ctx, query).Scan(&identity); err != nil {
+		return "", fmt.Errorf("resolve %s dev server identity: %w", dialect, err)
+	}
+	if !identity.Valid || strings.TrimSpace(identity.String) == "" {
+		return "", fmt.Errorf("%s dev server reported no identity", dialect)
+	}
+	digest := sha256.Sum256([]byte(dialect + "\x00" + identity.String))
+	return "@" + hex.EncodeToString(digest[:16]), nil
+}
+
+// isMySQLFamily reports whether dialect is MySQL or MariaDB.
+func isMySQLFamily(dialect string) bool {
+	return dialect == platform.MySQL || dialect == platform.MariaDB
 }
 
 func selectedDatabase(

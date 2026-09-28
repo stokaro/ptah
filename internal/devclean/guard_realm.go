@@ -195,6 +195,27 @@ func mysqlServerWideOperation(tokens []lexer.Token) string {
 	return ""
 }
 
+// mysqlDatabaseOperation reports a CREATE, ALTER or DROP of a DATABASE or
+// SCHEMA, the whole of what [ReplayRealmServerDatabases] lifts beyond the
+// database realm.
+func mysqlDatabaseOperation(tokens []lexer.Token) bool {
+	switch normalizedIdentifier(tokenAt(tokens, 0)) {
+	case "CREATE", "ALTER", "DROP":
+	default:
+		return false
+	}
+	kindIndex := statementObjectKindIndex(tokens)
+	if kindIndex == mutationTargetNotFound {
+		return false
+	}
+	switch normalizedIdentifier(tokens[kindIndex]) {
+	case "DATABASE", "SCHEMA":
+		return true
+	default:
+		return false
+	}
+}
+
 func tokenAt(tokens []lexer.Token, index int) lexer.Token {
 	if index < 0 || index >= len(tokens) {
 		return lexer.Token{}

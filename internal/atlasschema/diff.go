@@ -118,6 +118,9 @@ type DiffOptions struct {
 // applied, which is the one the statements were generated from. Returning the
 // comparison from before it would describe a change the statements do not make.
 func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, *difftypes.SchemaDiff, error) {
+	if err := RefuseDevServer(opts.DevURL); err != nil {
+		return atlasreport.SchemaDiff{}, nil, err
+	}
 	prepared, err := prepareDiffSources(opts)
 	if err != nil {
 		return atlasreport.SchemaDiff{}, nil, err

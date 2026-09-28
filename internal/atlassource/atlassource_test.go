@@ -538,6 +538,33 @@ func TestSetEnsureDevIsolation_SkipsADockerDevURL(t *testing.T) {
 		`--to database must differ from --dev-url because the dev database is reset during planning`)
 }
 
+// TestSetEnsureDevIsolation_LeavesAWholeServerToTheLiveComparison does not
+// compare URLs when either side names no MySQL-family database: such a URL is
+// a whole server, which "may" be any database, so the comparison would refuse
+// every pair. The pair is compared live, by server identity, through
+// DevProtected (stokaro/ptah#3789).
+func TestSetEnsureDevIsolation_LeavesAWholeServerToTheLiveComparison(t *testing.T) {
+	tests := []struct {
+		name    string
+		desired string
+		dev     string
+	}{
+		{name: "a server beside a dev server", desired: "mysql://localhost:3306/", dev: "mysql://localhost:3307/"},
+		{name: "a database beside a dev server", desired: "mariadb://localhost:3306/app", dev: "mariadb://localhost:3306"},
+		{name: "a server beside a dev database", desired: "mysql://localhost:3306", dev: "mysql://localhost:3306/dev"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			set, err := atlassource.ClassifySet("--to", []string{test.desired}, atlassource.ProjectEnv{})
+			c.Assert(err, qt.IsNil)
+
+			c.Assert(set.EnsureDevIsolation(test.dev), qt.IsNil)
+			c.Assert(set.DevProtected(), qt.HasLen, 1)
+		})
+	}
+}
+
 func TestSetEnsureDevIsolation_IgnoresLocalFiles(t *testing.T) {
 	c := qt.New(t)
 	path := filepath.Join(t.TempDir(), "schema.sql")

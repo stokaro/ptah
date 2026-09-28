@@ -202,3 +202,30 @@ func MySQLUserDatabasesPredicate(column string) string {
 	}
 	return "LOWER(" + column + ") NOT IN (" + strings.Join(quoted, ", ") + ")"
 }
+
+// MySQLUserDatabasesQuery lists the user databases of a whole MySQL or
+// MariaDB server, one SCHEMA_NAME per row in name order. It is the list a
+// cleanup of the server drops, and both cleanups read it here so that they
+// cannot disagree about which databases are the user's.
+func MySQLUserDatabasesQuery() string {
+	return `
+		SELECT SCHEMA_NAME
+		FROM information_schema.SCHEMATA
+		WHERE ` + MySQLUserDatabasesPredicate("SCHEMA_NAME") + `
+		ORDER BY SCHEMA_NAME`
+}
+
+// MySQLCrossDatabaseForeignKeysQuery lists the foreign keys of a user
+// database that reference a table of another database, one TABLE_SCHEMA,
+// TABLE_NAME and CONSTRAINT_NAME per row. A cleanup of a whole server drops
+// them before the databases: dropping a database a key of another one
+// references fails with error 3730.
+func MySQLCrossDatabaseForeignKeysQuery() string {
+	return `
+		SELECT DISTINCT TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME
+		FROM information_schema.KEY_COLUMN_USAGE
+		WHERE REFERENCED_TABLE_SCHEMA IS NOT NULL
+		  AND REFERENCED_TABLE_SCHEMA <> TABLE_SCHEMA
+		  AND ` + MySQLUserDatabasesPredicate("TABLE_SCHEMA") + `
+		ORDER BY TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME`
+}
