@@ -323,7 +323,9 @@ and `EXCLUDE`.
 | `EXCLUDE` | `using`, `elements` |
 
 Top-level constraints also require `table`. `condition` is supported for
-`EXCLUDE` constraints.
+`EXCLUDE` constraints. `using` is an `EXCLUDE` constraint's index method, or a
+`PRIMARY KEY`'s on MySQL and MariaDB (`BTREE` or `HASH`); on the other types it
+is refused.
 
 ## Default Privileges
 
