@@ -21,8 +21,8 @@ const alterGuardTable = "CREATE TABLE p (id int PRIMARY KEY);\n" +
 	"CONSTRAINT fk FOREIGN KEY (x) REFERENCES p (id), CONSTRAINT ck CHECK (z > 0));\n"
 
 // alterGuardClauses are the ALTER TABLE clauses carrying an existence guard.
-// MariaDB has no DROP CHECK spelling at all, which stokaro/ptah#3894 owns, so
-// that clause is in the MySQL list only.
+// MariaDB has no DROP CHECK spelling at all, so that clause is in the MySQL
+// list only, and TestSchemaApplyRefusesAMariaDBDropCheckE2E has MariaDB's.
 var alterGuardClauses = []string{
 	"DROP INDEX IF EXISTS ix",
 	"DROP KEY IF EXISTS ix",
@@ -92,4 +92,33 @@ func TestSchemaApplyTakesAMariaDBAlterGuardE2E(t *testing.T) {
 			c.Assert(run.ptahErr, qt.IsNil, qt.Commentf("%s", run.out))
 		})
 	}
+}
+
+// TestSchemaApplyRefusesAMariaDBDropCheckE2E runs a schema file ending in DROP
+// CHECK on MariaDB, which has no such spelling and answers ERROR 1064 with a
+// guard and without one, and plans it: Ptah refuses the file too. Without the
+// refusal the clause is read, and the plan leaves out the check
+// (stokaro/ptah#3894).
+func TestSchemaApplyRefusesAMariaDBDropCheckE2E(t *testing.T) {
+	for _, clause := range []string{"DROP CHECK ck", "DROP CHECK IF EXISTS ck"} {
+		t.Run(clause, func(t *testing.T) {
+			c := qt.New(t)
+
+			run := runAlterGuard(c, dbtarget.MariaDBAdmin, clause)
+
+			c.Assert(run.serverErr, qt.ErrorMatches, `Error 1064 \(42000\): You have an error in your SQL syntax.*`)
+			c.Assert(run.ptahErr, qt.ErrorMatches, `(?s).*DROP CHECK at position \d+ in ALTER TABLE: mariadb has no DROP CHECK.*`)
+		})
+	}
+}
+
+// TestSchemaApplyTakesAMySQLDropCheckE2E is the control: MySQL runs DROP CHECK,
+// and Ptah plans the file.
+func TestSchemaApplyTakesAMySQLDropCheckE2E(t *testing.T) {
+	c := qt.New(t)
+
+	run := runAlterGuard(c, dbtarget.MySQLAdmin, "DROP CHECK ck")
+
+	c.Assert(run.serverErr, qt.IsNil)
+	c.Assert(run.ptahErr, qt.IsNil, qt.Commentf("%s", run.out))
 }

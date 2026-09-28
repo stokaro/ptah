@@ -339,7 +339,8 @@ SQL:
   `IF EXISTS` or `IF NOT EXISTS` is refused, because MySQL refuses the guard on
   every operation. MariaDB takes it on `DROP INDEX`, `DROP KEY`,
   `DROP FOREIGN KEY`, `DROP CONSTRAINT`, `DROP COLUMN` and `ADD COLUMN`, and
-  Ptah reads it there.
+  Ptah reads it there. MariaDB has no `DROP CHECK` at all, so under
+  `--dialect mariadb` a schema file drops a check with `DROP CONSTRAINT`.
 - A column carrying both a primary key and a `UNIQUE` is written back the way
   it was read, because the two spellings do not mean the same thing.
   `a INT UNIQUE, PRIMARY KEY (a)` builds the primary key and a secondary unique
