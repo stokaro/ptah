@@ -1166,7 +1166,10 @@ func (r *Renderer) renderTableOptions(options map[string]string) string {
 func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, error) {
 	switch constraint.Type {
 	case ast.PrimaryKeyConstraint:
-		return fmt.Sprintf("  PRIMARY KEY (%s)", renderMySQLConstraintColumns(constraint)), nil
+		// The method follows the parts, the place MariaDB 11.8.9 prints it back
+		// in SHOW CREATE TABLE.
+		return fmt.Sprintf("  PRIMARY KEY (%s)%s", renderMySQLConstraintColumns(constraint),
+			primaryKeyMethodClause(constraint.UsingMethod)), nil
 	case ast.UniqueConstraint:
 		if constraint.Name != "" {
 			return fmt.Sprintf("  CONSTRAINT %s UNIQUE (%s)", escapeIdentifier(constraint.Name), renderMySQLConstraintColumns(constraint)), nil
@@ -1944,3 +1947,12 @@ func (r *Renderer) renderObjectComment(node *ast.ObjectCommentNode) error {
 // notEnforcedClauses is the clause that follows a CHECK, keyed by whether it is
 // NOT ENFORCED: kept by the server and not checked.
 var notEnforcedClauses = map[bool]string{true: " NOT ENFORCED", false: ""}
+
+// primaryKeyMethodClause spells a primary key's access method after its parts,
+// empty for none. HASH is the one method carried; see [mysqlindex.Method].
+func primaryKeyMethodClause(method string) string {
+	if mysqlindex.Method(method) == "" {
+		return ""
+	}
+	return " USING HASH"
+}

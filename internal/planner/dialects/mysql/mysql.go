@@ -1967,9 +1967,11 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 			result = p.appendScopedDrop(result, info, state.droppedForModify, state.semantics)
 		}
 		// The deferral rides with the key: Oracle, which this planner also
-		// serves, defers a key (stokaro/ptah#3824).
+		// serves, defers a key (stokaro/ptah#3824). So does the access method,
+		// which MariaDB keeps (stokaro/ptah#3853).
 		primaryKey := ast.NewPrimaryKeyConstraint(add.Columns...)
 		primaryKey.Deferrable, primaryKey.Initially = add.Deferrable, add.Initially
+		primaryKey.UsingMethod = add.UsingMethod
 		result = append(result, &ast.AlterTableNode{
 			Name:       add.TableName,
 			Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: primaryKey}},

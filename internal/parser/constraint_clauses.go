@@ -363,6 +363,10 @@ type keyOptions struct {
 	comment    string
 	hasComment bool
 	invisible  bool
+	// primaryKeyMethod is the `USING HASH` after a primary key's parts, which
+	// the table element carries onto its constraint; see
+	// [Parser.readTableElementOptions].
+	primaryKeyMethod string
 }
 
 // carriesIndexOptions reports whether the element asked for something only an
@@ -451,13 +455,9 @@ func (p *Parser) readKeyMethod(kind, prefix string, start int) error {
 		p.indexAccessMethod = method
 		return nil
 	}
-	if method != "" {
-		return fmt.Errorf(
-			"USING %s after a PRIMARY KEY at position %d: the access method of a primary key is not modeled (%s); "+
-				"MariaDB 11.8 builds it, and MySQL 8.4 builds BTREE on InnoDB",
-			method, start, unmodeledClauses,
-		)
-	}
+	// MariaDB 11.8.9 keeps it, INDEX_TYPE HASH, and MySQL 8.4.11 builds BTREE on
+	// InnoDB; see [mysqlindex.MethodSatisfiedBy] for how each is compared.
+	p.keyOptions.primaryKeyMethod = method
 	return nil
 }
 

@@ -29,6 +29,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/privilegefold"
 )
 
@@ -296,6 +297,7 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Tabl
 			tableSchema.PrimaryKeyInclude = normalizeSQLIdentifiers(sourcePlatform, constraint.IncludeColumns)
 			tableSchema.PrimaryKeyDeferrable = constraint.Deferrable
 			tableSchema.PrimaryKeyInitially = constraint.Initially
+			tableSchema.PrimaryKeyMethod = mysqlindex.Method(constraint.UsingMethod)
 			break // Only one primary key constraint per table
 		}
 	}
@@ -1366,6 +1368,7 @@ func applyAlterTablePrimaryKey(target alterTarget, constraint *ast.ConstraintNod
 	target.table.PrimaryKeyInclude = normalizeSQLIdentifiers(sourcePlatform, constraint.IncludeColumns)
 	target.table.PrimaryKeyDeferrable = constraint.Deferrable
 	target.table.PrimaryKeyInitially = constraint.Initially
+	target.table.PrimaryKeyMethod = mysqlindex.Method(constraint.UsingMethod)
 	for _, database := range target.databases {
 		markPrimaryFields(database.Fields, target.structName, target.table.PrimaryKey)
 	}

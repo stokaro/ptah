@@ -761,6 +761,12 @@ type Table struct {
 	// PrimaryKeyInclude carries PostgreSQL INCLUDE columns for table-level
 	// primary keys.
 	PrimaryKeyInclude []string
+	// PrimaryKeyMethod is the access method a MySQL-family primary key asks
+	// for, `USING HASH` after its parts: "HASH", or empty for the engine's
+	// default. MariaDB keeps it and reports INDEX_TYPE HASH; MySQL builds BTREE
+	// on InnoDB. The key renders as a table constraint, because the column
+	// spelling has no place for the clause.
+	PrimaryKeyMethod string
 	// PrimaryKeyDeferrable marks a primary key whose uniqueness check may be
 	// postponed to the end of a transaction, as
 	// [Constraint.Deferrable] does for another constraint. A deferrable key

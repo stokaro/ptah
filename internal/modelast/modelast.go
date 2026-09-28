@@ -813,6 +813,10 @@ func tableNeedsPrimaryKeyConstraint(table schemamodel.Table, fields []schemamode
 	if table.PrimaryKeyDeferrable && (len(table.PrimaryKey) > 0 || len(table.PrimaryKeyParts) > 0) {
 		return true
 	}
+	// So is an access method: `PRIMARY KEY USING HASH` has no column spelling.
+	if table.PrimaryKeyMethod != "" && (len(table.PrimaryKey) > 0 || len(table.PrimaryKeyParts) > 0) {
+		return true
+	}
 	// UNIQUE on the same column is a reason of the same kind. The column
 	// spelling has one slot for a key and the source declared two, and folding
 	// them is not a formatting choice: measured on MariaDB 11.8,
@@ -865,6 +869,7 @@ func newPrimaryKeyConstraint(table schemamodel.Table) *ast.ConstraintNode {
 		constraint.IncludeColumns = table.PrimaryKeyInclude
 		constraint.Deferrable = table.PrimaryKeyDeferrable
 		constraint.Initially = table.PrimaryKeyInitially
+		constraint.UsingMethod = table.PrimaryKeyMethod
 		return constraint
 	}
 	columns := make([]string, 0, len(table.PrimaryKeyParts))
@@ -885,6 +890,7 @@ func newPrimaryKeyConstraint(table schemamodel.Table) *ast.ConstraintNode {
 		IncludeColumns: table.PrimaryKeyInclude,
 		Deferrable:     table.PrimaryKeyDeferrable,
 		Initially:      table.PrimaryKeyInitially,
+		UsingMethod:    table.PrimaryKeyMethod,
 	}
 }
 
@@ -925,6 +931,9 @@ func fromConstraintByType(constraint schemamodel.Constraint) *ast.ConstraintNode
 		node.Name = constraint.Name
 		node.IncludeColumns = append([]string(nil), constraint.IncludeColumns...)
 		node.Deferrable, node.Initially = constraint.Deferrable, constraint.Initially
+		// The access method, for the same reason: a MariaDB key rebuilt for its
+		// method went back as BTREE without it (stokaro/ptah#3853).
+		node.UsingMethod = constraint.UsingMethod
 		return node
 	case "UNIQUE":
 		node := ast.NewUniqueConstraint(constraint.Name, constraint.Columns...)

@@ -168,6 +168,9 @@ func countTableKeys(counts map[string]int, table schemamodel.Table) {
 	if len(table.PrimaryKeyInclude) > 0 {
 		counts["INCLUDE columns on keys"]++
 	}
+	if table.PrimaryKeyMethod != "" {
+		counts["USING HASH on primary keys"]++
+	}
 	for _, part := range table.PrimaryKeyParts {
 		if strings.TrimSpace(part.Prefix) != "" || part.Desc {
 			counts["prefix lengths and DESC on primary key columns"]++

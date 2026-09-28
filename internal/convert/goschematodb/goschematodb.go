@@ -362,6 +362,7 @@ func toDBConstraints(
 			ColumnName:  first(table.PrimaryKey),
 			Deferrable:  table.PrimaryKeyDeferrable,
 			Initially:   table.PrimaryKeyInitially,
+			UsingMethod: optionalStringPtr(table.PrimaryKeyMethod),
 		})
 	}
 	for _, constraint := range constraints {

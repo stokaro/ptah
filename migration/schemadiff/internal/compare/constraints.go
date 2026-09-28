@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/constraintowner"
 	"ptah.run/internal/exprkey"
+	"ptah.run/internal/mysqlindex"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -365,7 +366,7 @@ func constraintDefinitionsChanged(
 	case "UNIQUE":
 		return uniqueConstraintChanged(genConstraint, dbConstraint, semantics)
 	case "PRIMARY KEY":
-		return primaryKeyConstraintChanged(genConstraint, dbConstraint, semantics)
+		return primaryKeyConstraintChanged(genConstraint, dbConstraint, dialect, semantics)
 	case "FOREIGN KEY":
 		return foreignKeyConstraintChanged(genConstraint, dbConstraint, dialect, semantics)
 	default:
@@ -377,15 +378,18 @@ func constraintDefinitionsChanged(
 // primaryKeyConstraintChanged compares primary keys. The columns compare as
 // the dialect resolves names: Oracle reports an unquoted `id` as ID, and
 // compared as text, a key read back from Oracle 23 was dropped and added on
-// every plan.
+// every plan. The access method compares as any MySQL-family index's does,
+// where the server keeps it; see [mysqlindex.MethodSatisfiedBy].
 func primaryKeyConstraintChanged(
 	genConstraint schemamodel.Constraint,
 	dbConstraint catalog.Constraint,
+	dialect string,
 	semantics identifier.Semantics,
 ) bool {
 	return !sameColumnNames(semantics, genConstraint.Columns, dbConstraint.ColumnNamesOrDefault()) ||
 		!stringSetsEqual(genConstraint.IncludeColumns, dbConstraint.IncludeColumns) ||
-		deferralChanged(genConstraint, dbConstraint)
+		deferralChanged(genConstraint, dbConstraint) ||
+		!mysqlindex.MethodSatisfiedBy(dialect, genConstraint.UsingMethod, getStringValue(dbConstraint.UsingMethod))
 }
 
 // excludeConstraintChanged compares EXCLUDE constraint definitions.

@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/pgindexstorage"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlitekey"
@@ -935,7 +936,16 @@ func (r *renderer) renderPrimaryKey(table schemamodel.Table, fields []schemamode
 	if len(table.PrimaryKeyInclude) > 0 {
 		r.rawAttr(2, "include", columnRefs(table.PrimaryKeyInclude))
 	}
+	renderPrimaryKeyMethod(r, table.PrimaryKeyMethod)
 	r.line("  }")
+}
+
+// renderPrimaryKeyMethod writes a primary key's access method as the pinned
+// community binary v1.3.0 does, `type = HASH` (stokaro/ptah#3853).
+func renderPrimaryKeyMethod(r *renderer, method string) {
+	if mysqlindex.Method(method) != "" {
+		r.rawAttr(2, "type", "HASH")
+	}
 }
 
 func (r *renderer) renderPartition(partition *schemamodel.PartitionSpec) {

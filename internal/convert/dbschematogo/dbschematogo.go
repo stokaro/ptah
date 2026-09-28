@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/catalogfield"
 	"ptah.run/internal/indexbacking"
+	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/uniquename"
 )
 
@@ -154,9 +155,10 @@ func convertTablesAndFields(
 			// carry it: convertConstraint refuses a PRIMARY KEY outright so the
 			// key renders once, and the column flag has no slot for it.
 			PrimaryKeyInclude: primaryKey.include,
-			// So does the deferral, for the same reason.
+			// So do the deferral and the access method, for the same reason.
 			PrimaryKeyDeferrable: primaryKey.deferrable,
 			PrimaryKeyInitially:  primaryKey.initially,
+			PrimaryKeyMethod:     primaryKey.method,
 			Strict:               dbTable.Strict,
 			WithoutRowID:         dbTable.WithoutRowID,
 			Unlogged:             dbTable.Unlogged,
@@ -700,6 +702,16 @@ type tablePrimaryKey struct {
 	include    []string
 	deferrable bool
 	initially  string
+	method     string
+}
+
+// primaryKeyMethod is the access method a PRIMARY KEY the catalog reports asks
+// for; see [mysqlindex.Method].
+func primaryKeyMethod(constraint catalog.Constraint) string {
+	if constraint.UsingMethod == nil {
+		return ""
+	}
+	return mysqlindex.Method(*constraint.UsingMethod)
 }
 
 func primaryKeyColumnSets(primaryKeysByTable map[string]tablePrimaryKey) map[string]map[string]bool {
@@ -727,7 +739,7 @@ func primaryKeyColumnSets(primaryKeysByTable map[string]tablePrimaryKey) map[str
 // `PRIMARY KEY (a, b) INCLUDE (payload)`, and the column-count test alone
 // dropped the first of them before it reached this map at all
 // (stokaro/ptah#2199). A deferral is the same kind of payload
-// (stokaro/ptah#3824).
+// (stokaro/ptah#3824), and so is an access method (stokaro/ptah#3853).
 func primaryKeysByTable(dbSchema *catalog.Database) map[string]tablePrimaryKey {
 	result := make(map[string]tablePrimaryKey)
 	for _, constraint := range dbSchema.Constraints {
@@ -738,7 +750,8 @@ func primaryKeysByTable(dbSchema *catalog.Database) map[string]tablePrimaryKey {
 		if len(columns) == 0 {
 			continue
 		}
-		if len(columns) == 1 && len(constraint.IncludeColumns) == 0 && !constraint.Deferrable {
+		method := primaryKeyMethod(constraint)
+		if len(columns) == 1 && len(constraint.IncludeColumns) == 0 && !constraint.Deferrable && method == "" {
 			continue
 		}
 		result[constraint.QualifiedTableName()] = tablePrimaryKey{
@@ -746,6 +759,7 @@ func primaryKeysByTable(dbSchema *catalog.Database) map[string]tablePrimaryKey {
 			include:    slices.Clone(constraint.IncludeColumns),
 			deferrable: constraint.Deferrable,
 			initially:  constraint.Initially,
+			method:     method,
 		}
 	}
 	return result
