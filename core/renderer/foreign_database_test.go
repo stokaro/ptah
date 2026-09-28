@@ -12,10 +12,11 @@ import (
 	"ptah.run/core/schemamodel"
 )
 
-// A MySQL or MariaDB foreign key may reference a table in another database,
-// and a description of one database cannot hold that table. The renderer
-// writes such a key as declared and leaves the referenced table to the server,
-// where it refuses a reference it cannot resolve (stokaro/ptah#3891).
+// A foreign key may reference a table in another schema, which on MySQL and
+// MariaDB is another database, and a description of one schema cannot hold
+// that table. The renderer writes such a key as declared and leaves the
+// referenced table to the server, where it refuses a reference it cannot
+// resolve (stokaro/ptah#3891, stokaro/ptah#3906).
 
 // ordersIntoAnotherDatabase describes the database shop: orders, whose key
 // references target. declaredOn says where the key is declared: "constraint"
@@ -97,16 +98,44 @@ func TestGetOrderedCreateStatements_KeyIntoAnotherMySQLDatabase_HappyPath(t *tes
 	}
 }
 
-// TestGetOrderedCreateStatements_KeyIntoAnotherMySQLDatabase_FailurePath keeps
-// the refusal for a reference the description should have held.
+// TestGetOrderedCreateStatements_KeyIntoAnotherPostgresSchema_HappyPath renders
+// a key into a table of `crm` from a description of `public`, however the key
+// is declared, on the PostgreSQL engines measured.
+func TestGetOrderedCreateStatements_KeyIntoAnotherPostgresSchema_HappyPath(t *testing.T) {
+	tests := []struct {
+		name       string
+		dialect    string
+		declaredOn string
+	}{
+		{name: "postgres, a table constraint", dialect: platform.Postgres, declaredOn: "constraint"},
+		{name: "postgres, a field", dialect: platform.Postgres, declaredOn: "field"},
+		{name: "cockroachdb, a table constraint", dialect: platform.CockroachDB, declaredOn: "constraint"},
+		{name: "cockroachdb, a field", dialect: platform.CockroachDB, declaredOn: "field"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := renderer.GetOrderedCreateStatements(
+				ordersIntoAnotherDatabase("crm.customers", test.declaredOn), test.dialect)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(strings.Join(statements, "\n"), qt.Contains,
+				`CONSTRAINT "orders_customer" FOREIGN KEY ("customer_id") REFERENCES "crm"."customers"("id")`)
+		})
+	}
+}
+
+// TestGetOrderedCreateStatements_KeyIntoAnotherSchema_FailurePath keeps the
+// refusal for a reference the description should have held.
 //
-// An unqualified name means a table of the described database, also where
-// every table the description holds names that database. A qualified one
-// naming a database the description holds a table of means a table of that
-// database, and it is not there either. PostgreSQL is the control that the
-// acceptance belongs to the family where a database is the schema: nothing
-// here decides what a reference into an undescribed PostgreSQL schema means.
-func TestGetOrderedCreateStatements_KeyIntoAnotherMySQLDatabase_FailurePath(t *testing.T) {
+// An unqualified name means a table of the described schema, also where every
+// table the description holds names that schema. A qualified one naming a
+// schema the description holds a table of means a table of that schema, and it
+// is not there either. On PostgreSQL an unqualified table is in `public`, so
+// `public.customers` is a table of the description. YugabyteDB is the control
+// that the acceptance belongs to the engines measured with it.
+func TestGetOrderedCreateStatements_KeyIntoAnotherSchema_FailurePath(t *testing.T) {
 	tests := []struct {
 		name     string
 		dialect  string
@@ -146,8 +175,21 @@ func TestGetOrderedCreateStatements_KeyIntoAnotherMySQLDatabase_FailurePath(t *t
 			want:     `constraint "orders_customer" references unknown table "crm.customers"`,
 		},
 		{
-			name:     "postgres, a table of an undescribed schema",
+			name:     "postgres, a missing table of public beside an unqualified table",
 			dialect:  platform.Postgres,
+			database: ordersIntoAnotherDatabase("public.customers", "constraint"),
+			want:     `constraint "orders_customer" references unknown table "public.customers"`,
+		},
+		{
+			name:    "cockroachdb, a missing table of a described schema, declared on the field",
+			dialect: platform.CockroachDB,
+			database: ordersIntoAnotherDatabase("crm.customers", "field",
+				schemamodel.Table{StructName: "Accounts", Name: "accounts", Schema: "crm"}),
+			want: `field "customer_id" references unknown table "crm.customers"`,
+		},
+		{
+			name:     "yugabytedb, a table of an undescribed schema",
+			dialect:  platform.YugabyteDB,
 			database: ordersIntoAnotherDatabase("crm.customers", "constraint"),
 			want:     `constraint "orders_customer" references unknown table "crm.customers"`,
 		},
