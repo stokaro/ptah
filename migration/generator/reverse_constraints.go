@@ -46,6 +46,7 @@ import (
 func reverseIndexRemovals(
 	diff *difftypes.SchemaDiff,
 	dbSchema *catalog.Database,
+	prior *schemamodel.Database,
 ) (additions []difftypes.IndexRef, restored []difftypes.ConstraintAdditionInfo) {
 	removals := diff.IndexRemovals()
 	constraintBacked := diff.ConstraintBackedIndexRemovalSet()
@@ -55,6 +56,10 @@ func reverseIndexRemovals(
 	uniqueConstraints := introspectedUniqueConstraintsByHost(dbSchema)
 	for _, ref := range removals {
 		if _, ownedByConstraint := constraintBacked[ref]; !ownedByConstraint {
+			additions = append(additions, ref)
+			continue
+		}
+		if len(difftypes.IndexAdditionsFor(prior, ref)) > 0 {
 			additions = append(additions, ref)
 			continue
 		}
@@ -151,14 +156,16 @@ func reverseConstraintAdditions(
 		case "PRIMARY KEY":
 			if columns := dbConstraint.ColumnNamesOrDefault(); len(columns) > 0 {
 				infos = append(infos, difftypes.ConstraintAdditionInfo{
-					Name:       removed.Name,
-					TableName:  removed.TableName,
-					Identity:   constraintscope.Identity(semantics, removed.TableName, removed.Name),
-					Type:       "PRIMARY KEY",
-					Columns:    append([]string(nil), columns...),
-					Deferrable: dbConstraint.Deferrable,
-					Initially:  dbConstraint.Initially,
-					Comment:    dbConstraint.Comment,
+					Name:         removed.Name,
+					TableName:    removed.TableName,
+					Identity:     constraintscope.Identity(semantics, removed.TableName, removed.Name),
+					Type:         "PRIMARY KEY",
+					KeyBlockSize: dbConstraint.KeyBlockSize,
+					UsingMethod:  derefString(dbConstraint.UsingMethod),
+					Columns:      append([]string(nil), columns...),
+					Deferrable:   dbConstraint.Deferrable,
+					Initially:    dbConstraint.Initially,
+					Comment:      dbConstraint.Comment,
 				})
 			}
 		case "CHECK":

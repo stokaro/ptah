@@ -111,6 +111,7 @@ func toDBTables(
 			Schema:       table.Schema,
 			Type:         "TABLE",
 			Comment:      table.Comment,
+			RowFormat:    table.Overrides[platform.NormalizeDialect(dialect)]["row_format"],
 			Columns:      toDBColumns(table, fieldsByStruct[table.StructName], dialect),
 			RLSEnabled:   rlsEnabled,
 			RLSForced:    rlsEnabled && enablement.Forced,
@@ -261,6 +262,7 @@ func toDBIndexes(
 			Condition:      index.Condition,
 			Comment:        index.Comment,
 			Invisible:      index.Invisible,
+			KeyBlockSize:   index.KeyBlockSize,
 			NullsDistinct:  index.NullsDistinct,
 			Method:         indexAccessMethod(index.Type, dialect),
 			IncludeColumns: append([]string(nil), index.IncludeColumns...),
@@ -354,15 +356,17 @@ func toDBConstraints(
 			continue
 		}
 		appendConstraint(catalog.Constraint{
-			Name:        tablePrimaryKeyName(table),
-			TableName:   table.Name,
-			Schema:      table.Schema,
-			Type:        "PRIMARY KEY",
-			ColumnNames: append([]string(nil), table.PrimaryKey...),
-			ColumnName:  first(table.PrimaryKey),
-			Deferrable:  table.PrimaryKeyDeferrable,
-			Initially:   table.PrimaryKeyInitially,
-			UsingMethod: optionalStringPtr(table.PrimaryKeyMethod),
+			Name:         tablePrimaryKeyName(table),
+			TableName:    table.Name,
+			Schema:       table.Schema,
+			Type:         "PRIMARY KEY",
+			ColumnNames:  append([]string(nil), table.PrimaryKey...),
+			ColumnName:   first(table.PrimaryKey),
+			Deferrable:   table.PrimaryKeyDeferrable,
+			Initially:    table.PrimaryKeyInitially,
+			UsingMethod:  optionalStringPtr(table.PrimaryKeyMethod),
+			Comment:      table.PrimaryKeyComment,
+			KeyBlockSize: table.PrimaryKeyBlockSize,
 		})
 	}
 	for _, constraint := range constraints {
@@ -378,6 +382,7 @@ func toDBConstraints(
 			NullsDistinct:  constraint.NullsDistinct,
 			IncludeColumns: append([]string(nil), constraint.IncludeColumns...),
 			UsingMethod:    optionalStringPtr(constraint.UsingMethod),
+			KeyBlockSize:   constraint.KeyBlockSize,
 			ExcludeElements: optionalStringPtr(
 				constraint.ExcludeElements,
 			),
@@ -440,6 +445,7 @@ func unnamedConstraintDefinition(constraint catalog.Constraint) string {
 		strings.Join(constraint.ColumnNamesOrDefault(), "\x01"),
 		deref(constraint.CheckClause),
 		deref(constraint.UsingMethod),
+		strconv.FormatUint(constraint.KeyBlockSize, 10),
 		deref(constraint.ExcludeElements),
 		deref(constraint.WhereCondition),
 		constraint.QualifiedForeignTableName(),

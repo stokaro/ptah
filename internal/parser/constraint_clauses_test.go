@@ -304,12 +304,6 @@ func TestParse_UnmodeledClause_FailurePath(t *testing.T) {
 			wantErr: `.*MATCH at position 57: the sqlserver dialect takes no MATCH clause`,
 		},
 		{
-			name:    "a primary key comment",
-			dialect: platform.MariaDB,
-			sql:     "CREATE TABLE c (a int, PRIMARY KEY (a) COMMENT 'pk');",
-			wantErr: `COMMENT at position 39: a primary key's comment is not modeled \(stokaro/ptah#3853\); .*`,
-		},
-		{
 			name:    "an invisible primary key",
 			dialect: platform.MySQL,
 			sql:     "CREATE TABLE c (a int, PRIMARY KEY (a) INVISIBLE);",
@@ -340,12 +334,6 @@ func TestParse_UnmodeledClause_FailurePath(t *testing.T) {
 			wantErr: `NOT IGNORED at position 33: it is MariaDB's clause, and MySQL 8.4 answers ERROR 1064`,
 		},
 		{
-			name:    "a key block size",
-			dialect: platform.MySQL,
-			sql:     "CREATE TABLE c (a int, KEY k (a) KEY_BLOCK_SIZE = 8);",
-			wantErr: `KEY_BLOCK_SIZE at position 33: the key block size of an index is not modeled.*`,
-		},
-		{
 			name:    "an engine attribute",
 			dialect: platform.MySQL,
 			sql:     "CREATE TABLE c (a int, KEY k (a) ENGINE_ATTRIBUTE = '{}');",
@@ -354,8 +342,8 @@ func TestParse_UnmodeledClause_FailurePath(t *testing.T) {
 		{
 			name:    "an option after other options",
 			dialect: platform.MySQL,
-			sql:     "CREATE TABLE c (a int, KEY k (a) VISIBLE USING BTREE COMMENT 'x' KEY_BLOCK_SIZE = 8);",
-			wantErr: `KEY_BLOCK_SIZE at position 65: .*`,
+			sql:     "CREATE TABLE c (a int, KEY k (a) VISIBLE USING BTREE COMMENT 'x' ENGINE_ATTRIBUTE = '{}');",
+			wantErr: `ENGINE_ATTRIBUTE at position 65: .*`,
 		},
 		{
 			name:    "an index option after a foreign key's columns",

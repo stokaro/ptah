@@ -65,7 +65,12 @@ func requestInPlaceAlgorithm(nodes []ast.Node) []ast.Node {
 		if !ok {
 			continue
 		}
-		alter.Algorithm = "INPLACE"
+		// A required COPY must survive the online request. LOCK=NONE then
+		// makes the server refuse the blocking operation, rather than report
+		// success while INPLACE leaves an index block-size hint unchanged.
+		if alter.Algorithm == "" {
+			alter.Algorithm = "INPLACE"
+		}
 		alter.Lock = "NONE"
 	}
 	return nodes

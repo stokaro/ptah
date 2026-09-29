@@ -5117,11 +5117,12 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 			// SPATIAL and FULLTEXT take no USING clause -- so one field holds
 			// whichever the element asked for. mysqlindex reads both questions
 			// out of it.
-			Type:      cmp.Or(indexMethod, p.indexAccessMethod),
-			Parser:    parserName,
-			Unique:    uniqueIndex,
-			Comment:   p.keyOptions.comment,
-			Invisible: p.keyOptions.invisible,
+			Type:         cmp.Or(indexMethod, p.indexAccessMethod),
+			Parser:       parserName,
+			Unique:       uniqueIndex,
+			Comment:      p.keyOptions.comment,
+			Invisible:    p.keyOptions.invisible,
+			KeyBlockSize: p.keyOptions.keyBlockSize,
 		}, nil
 	}
 
@@ -6994,6 +6995,7 @@ func (p *Parser) parseCreateIndexAfterKeyword(indexType string) (*ast.IndexNode,
 	index.IfNotExists = ifNotExists
 	index.Comment = p.keyOptions.comment
 	index.Invisible = p.keyOptions.invisible
+	index.KeyBlockSize = p.keyOptions.keyBlockSize
 	return index, nil
 }
 

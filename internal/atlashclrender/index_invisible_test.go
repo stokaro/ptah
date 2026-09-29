@@ -23,7 +23,7 @@ func TestRender_IndexInvisible(t *testing.T) {
 		},
 		Indexes: []schemamodel.Index{{
 			StructName: "Order", Name: "k_total", TableName: "orders", Fields: []string{"total"},
-			Comment: "lookup", Invisible: true,
+			Comment: "lookup", Invisible: true, KeyBlockSize: 8,
 		}},
 	}
 
@@ -33,6 +33,10 @@ func TestRender_IndexInvisible(t *testing.T) {
 	c.Assert(string(result.Data), qt.Contains, `index "k_total"`)
 	c.Assert(string(result.Data), qt.Contains, `comment = "lookup"`)
 	c.Assert(result.Diagnostics, qt.DeepEquals, []atlashclrender.Diagnostic{{
+		Severity: atlashclrender.SeverityWarning,
+		Path:     `indexes["orders"]["k_total"]`,
+		Message:  "the index KEY_BLOCK_SIZE hint cannot be represented in HCL schema output; applying this HCL removes the hint",
+	}, {
 		Severity: atlashclrender.SeverityWarning,
 		Path:     `indexes["orders"]["k_total"]`,
 		Message:  "the index is hidden from the optimizer, which HCL schema output cannot represent; applying this HCL makes the index visible",

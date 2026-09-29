@@ -426,6 +426,9 @@ type Index struct {
 	// keeps maintaining it: MySQL's INVISIBLE and MariaDB's IGNORED. A target
 	// without an invisible index refuses one rather than build it visible.
 	Invisible bool
+	// KeyBlockSize is the MySQL-family index KEY_BLOCK_SIZE hint. Zero uses
+	// the engine default. MySQL retains it only on compressed tables.
+	KeyBlockSize uint64
 	// NullsDistinct carries PostgreSQL UNIQUE INDEX NULLS [NOT] DISTINCT
 	// state. Nil means the clause was not specified.
 	NullsDistinct *bool
@@ -519,10 +522,12 @@ type Index struct {
 //   - PRIMARY KEY: Composite primary key constraints
 //   - FOREIGN KEY: Table-level foreign key constraints
 type Constraint struct {
-	StructName string // Name of the Go struct this constraint belongs to
-	Name       string // Constraint name (e.g., "no_overlapping_bookings")
-	Type       string // Constraint type: EXCLUDE, CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY
-	Table      string // Table name (if different from struct name)
+	// KeyBlockSize is a MySQL-family primary key block-size hint; zero uses the engine default.
+	KeyBlockSize uint64
+	StructName   string // Name of the Go struct this constraint belongs to
+	Name         string // Constraint name (e.g., "no_overlapping_bookings")
+	Type         string // Constraint type: EXCLUDE, CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY
+	Table        string // Table name (if different from struct name)
 
 	// EXCLUDE constraint specific fields
 	UsingMethod     string // Index method for EXCLUDE constraints (e.g., "gist", "btree")
@@ -767,6 +772,10 @@ type Table struct {
 	// on InnoDB. The key renders as a table constraint, because the column
 	// spelling has no place for the clause.
 	PrimaryKeyMethod string
+	// PrimaryKeyBlockSize is the MySQL-family primary key block-size hint. Zero uses the engine default.
+	PrimaryKeyBlockSize uint64
+	// PrimaryKeyComment is the MySQL-family primary index comment.
+	PrimaryKeyComment string
 	// PrimaryKeyDeferrable marks a primary key whose uniqueness check may be
 	// postponed to the end of a transaction, as
 	// [Constraint.Deferrable] does for another constraint. A deferrable key

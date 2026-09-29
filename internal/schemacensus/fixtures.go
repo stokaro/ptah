@@ -60,6 +60,8 @@ func Fixtures() []Fixture {
 		{Name: "table-pk-include", Schema: tablePrimaryKeyIncludeFixture()},
 		{Name: "table-pk-deferrable", Schema: tablePrimaryKeyDeferrableFixture()},
 		{Name: "table-pk-method", Schema: tablePrimaryKeyMethodFixture()},
+		{Name: "table-pk-options", Schema: primaryKeyOptionsFixture()},
+		{Name: "constraint-pk-options", Schema: primaryKeyConstraintOptionsFixture()},
 		{Name: "table-pk-parts", Schema: tablePrimaryKeyPartsFixture()},
 		{Name: "table-partition", Schema: tablePartitionFixture()},
 		{Name: "table-mysql", Schema: tableMySQLFixture()},
@@ -89,6 +91,7 @@ func Fixtures() []Fixture {
 		{Name: "index-clickhouse", Schema: indexClickHouseFixture()},
 		{Name: "index-fulltext", Schema: indexFullTextFixture()},
 		{Name: "index-invisible", Schema: indexInvisibleFixture()},
+		{Name: "index-key-block-size", Schema: indexKeyBlockSizeFixture()},
 		{Name: "enum", Schema: enumFixture()},
 		{Name: "domain", Schema: domainFixture()},
 		{Name: "composite", Schema: compositeFixture()},
@@ -1539,5 +1542,25 @@ func coverageFixture() schemamodel.Database {
 			Kind: coverage.Sequence, Name: "other",
 			Provenance: coverage.Observed, Reason: coverage.NotInspected,
 		})
+	return db
+}
+
+// indexKeyBlockSizeFixture isolates the MySQL-family index block-size hint.
+func indexKeyBlockSizeFixture() schemamodel.Database {
+	db := indexedTable()
+	db.Indexes = []schemamodel.Index{{StructName: "T", Name: "idx_t_s", TableName: "t", Fields: []string{"s"}, KeyBlockSize: 8}}
+	return db
+}
+
+func primaryKeyOptionsFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Tables[0].PrimaryKey = []string{"id"}
+	db.Tables[0].PrimaryKeyComment, db.Tables[0].PrimaryKeyBlockSize = "lookup", 8
+	return db
+}
+
+func primaryKeyConstraintOptionsFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Constraints = []schemamodel.Constraint{{StructName: "T", Table: "t", Name: "PRIMARY", Type: "PRIMARY KEY", Columns: []string{"id"}, Comment: "lookup", KeyBlockSize: 8}}
 	return db
 }

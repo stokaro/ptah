@@ -1,6 +1,7 @@
 package dbschematogo_test
 
 import (
+	"fmt"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -147,5 +148,31 @@ func TestConvert_ColumnUniqueIsClearedByTheOwningIndex(t *testing.T) {
 	for _, field := range converted.Fields {
 		c.Assert(field.Unique, qt.IsFalse,
 			qt.Commentf("field %q keeps an inline UNIQUE beside the index that owns the object", field.Name))
+	}
+}
+
+// A MySQL unique index must keep options that its constraint row cannot carry,
+// including when its name is the column's own name.
+func TestConvert_MySQLUniqueIndexOptions(t *testing.T) {
+	for _, index := range []catalog.Index{
+		{Name: "email", TableName: "a", Columns: []string{"email"}, IsUnique: true, KeyBlockSize: 8},
+		{Name: "email", TableName: "a", Columns: []string{"email"}, IsUnique: true, Comment: "lookup"},
+		{Name: "email", TableName: "a", Columns: []string{"email"}, IsUnique: true, Invisible: true},
+	} {
+		t.Run(fmt.Sprintf("%+v", index), func(t *testing.T) {
+			c := qt.New(t)
+			constraint := bareUniqueConstraint()
+			constraint.Name = "email"
+			schema := coveringUniqueSchema([]catalog.Constraint{constraint})
+			schema.Indexes = []catalog.Index{index}
+			schema.Tables[0].Columns[1].IsUnique = true
+			converted := dbschematogo.ConvertDBSchemaToGoSchema(schema, "mysql")
+			c.Assert(converted.Indexes, qt.HasLen, 1)
+			c.Assert(converted.Constraints, qt.HasLen, 0)
+			c.Assert(converted.Indexes[0].KeyBlockSize, qt.Equals, index.KeyBlockSize)
+			c.Assert(converted.Indexes[0].Comment, qt.Equals, index.Comment)
+			c.Assert(converted.Indexes[0].Invisible, qt.Equals, index.Invisible)
+			c.Assert(converted.Fields[1].Unique, qt.IsFalse)
+		})
 	}
 }

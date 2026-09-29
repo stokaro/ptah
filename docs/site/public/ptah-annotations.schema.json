@@ -158,6 +158,10 @@
               "description": "Comma-separated PostgreSQL INCLUDE columns for covering UNIQUE constraints.",
               "type": "string"
             },
+            "key_block_size": {
+              "description": "MySQL-family primary index block-size hint.",
+              "type": "string"
+            },
             "name": {
               "description": "Constraint name.",
               "type": "string"
@@ -974,6 +978,10 @@
               "type": "string",
               "x-ptah-bare-boolean": true
             },
+            "key_block_size": {
+              "description": "MySQL and MariaDB index block-size hint; zero uses the engine default.",
+              "type": "string"
+            },
             "name": {
               "description": "Index name.",
               "type": "string"
@@ -1700,6 +1708,14 @@
             },
             "primary_key": {
               "description": "Comma-separated primary key columns.",
+              "type": "string"
+            },
+            "primary_key_block_size": {
+              "description": "MySQL-family primary index block-size hint.",
+              "type": "string"
+            },
+            "primary_key_comment": {
+              "description": "MySQL-family primary index comment.",
               "type": "string"
             },
             "proto_name": {

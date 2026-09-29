@@ -772,6 +772,8 @@ type ConstraintColumn struct {
 // from column definitions. This is different from column-level constraints
 // which are defined as part of the column specification.
 type ConstraintNode struct {
+	// KeyBlockSize is a MySQL-family primary key block-size hint; zero omits it.
+	KeyBlockSize uint64
 	// Type specifies the constraint type (PRIMARY KEY, UNIQUE, etc.)
 	Type ConstraintType
 	// Name is the constraint name (optional for some constraint types)
@@ -899,6 +901,8 @@ type IndexNode struct {
 	// Invisible asks for an index the optimizer does not use; see
 	// [ptah.run/core/schemamodel.Index.Invisible].
 	Invisible bool
+	// KeyBlockSize is the MySQL-family index block-size hint; zero omits it.
+	KeyBlockSize uint64
 	// IfNotExists indicates whether to use IF NOT EXISTS clause for idempotent migrations
 	IfNotExists bool
 

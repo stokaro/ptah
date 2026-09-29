@@ -1119,7 +1119,8 @@ func (p *Planner) addNewIndexes(
 		if p.replacesIndexInOneStatement(removals, ref, semantics) {
 			_, ownedByConstraint := constraintBacked[removals[0]]
 			result = append(result, &ast.AlterTableNode{
-				Name: ref.TableName,
+				Name:      ref.TableName,
+				Algorithm: indexReplacementAlgorithm(change),
 				Operations: []ast.AlterOperation{&ast.ReplaceIndexOperation{
 					Index: indexNode, DropsUniqueConstraint: ownedByConstraint,
 				}},
@@ -1963,19 +1964,22 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 		if add.Type != "PRIMARY KEY" || add.TableName == "" || len(add.Columns) == 0 {
 			continue
 		}
-		if info, modified := state.removalByTableName[add.Identity]; modified {
-			result = p.appendScopedDrop(result, info, state.droppedForModify, state.semantics)
-		}
 		// The deferral rides with the key: Oracle, which this planner also
 		// serves, defers a key (stokaro/ptah#3824). So does the access method,
 		// which MariaDB keeps (stokaro/ptah#3853).
 		primaryKey := ast.NewPrimaryKeyConstraint(add.Columns...)
 		primaryKey.Deferrable, primaryKey.Initially = add.Deferrable, add.Initially
 		primaryKey.UsingMethod = add.UsingMethod
-		result = append(result, &ast.AlterTableNode{
+		primaryKey.KeyBlockSize = add.KeyBlockSize
+		primaryKey.Comment = add.Comment
+		alter := &ast.AlterTableNode{
 			Name:       add.TableName,
 			Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: primaryKey}},
-		})
+		}
+		if info, modified := state.removalByTableName[add.Identity]; modified {
+			result = p.dropReplacedPrimaryKey(result, alter, info, state)
+		}
+		result = append(result, alter)
 		state.handled[state.semantics.IndexIdentityKey(add.Name)] = struct{}{}
 	}
 	return result
@@ -2457,4 +2461,31 @@ func constraintRecordDescribes(add difftypes.ConstraintAdditionInfo) bool {
 	default:
 		return false
 	}
+}
+
+// indexReplacementAlgorithm forces MySQL to rewrite the stored block-size
+// hint. INPLACE reuses the old index definition for an otherwise equal key.
+func indexReplacementAlgorithm(change difftypes.IndexChange) string {
+	if change.RequiresTableCopy {
+		return "COPY"
+	}
+	return ""
+}
+
+// dropReplacedPrimaryKey keeps a MySQL-family key present throughout its
+// replacement. A separate DROP fails when AUTO_INCREMENT or an incoming
+// foreign key needs the primary index, even if the next statement restores it.
+func (p *Planner) dropReplacedPrimaryKey(result []ast.Node, alter *ast.AlterTableNode, info difftypes.ConstraintRemovalInfo, state constraintPlanState) []ast.Node {
+	if p.targetDialect() != platform.MySQL && p.targetDialect() != platform.MariaDB {
+		return p.appendScopedDrop(result, info, state.droppedForModify, state.semantics)
+	}
+	if _, done := state.droppedForModify[info.Identity]; done {
+		return result
+	}
+	state.droppedForModify[info.Identity] = struct{}{}
+	alter.Operations = append([]ast.AlterOperation{&ast.DropConstraintOperation{
+		ConstraintName: info.Name, PrimaryKey: true,
+		IfExists: p.capabilities().Has(capability.DropConstraintIfExists),
+	}}, alter.Operations...)
+	return result
 }

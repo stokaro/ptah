@@ -366,6 +366,10 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 		granularity = n
 	}
 
+	keyBlockSize, err := s.unsignedAttribute(kv, comment, structName, "index", "key_block_size")
+	if err != nil {
+		return err
+	}
 	s.schemaIndexes = append(s.schemaIndexes, schemamodel.Index{
 		StructName:     structName,
 		Name:           kv["name"],
@@ -373,6 +377,7 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 		Unique:         kv["unique"] == "true",
 		Comment:        kv["comment"],
 		Invisible:      kv["invisible"] == "true",
+		KeyBlockSize:   keyBlockSize,
 		Type:           kv["type"],                                  // PG: GIN/GIST/BTREE/HASH; CH: minmax/set(N)/bloom_filter/...
 		Condition:      firstNonEmpty(kv["where"], kv["condition"]), // PG/SQLite partial and SQL Server filtered indexes: WHERE clause
 		Operator:       kv["ops"],                                   // PG only: operator class (gin_trgm_ops, etc.)
@@ -401,7 +406,13 @@ func (s *schemaParseState) parseConstraintComment(comment *ast.Comment, structNa
 	); err != nil {
 		return err
 	}
-	s.schemaConstraints = append(s.schemaConstraints, parseConstraintComment(comment, structName))
+	size, err := s.unsignedAttribute(kv, comment, structName, "constraint", "key_block_size")
+	if err != nil {
+		return err
+	}
+	constraint := parseConstraintComment(comment, structName)
+	constraint.KeyBlockSize = size
+	s.schemaConstraints = append(s.schemaConstraints, constraint)
 	return nil
 }
 
@@ -592,20 +603,26 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 	); err != nil {
 		return err
 	}
+	size, err := s.unsignedAttribute(kv, comment, structName, "table", "primary_key_block_size")
+	if err != nil {
+		return err
+	}
 	s.tableDirectives = append(s.tableDirectives, schemamodel.Table{
-		StructName: structName,
-		Name:       tableName,
-		APIName:    kv["api_name"],
-		APINames:   targetNames(kv),
-		Schema:     schemaName,
-		Engine:     kv["engine"],
-		Comment:    kv["comment"],
-		PrimaryKey: splitCSVAttribute(kv["primary_key"]),
-		Checks:     splitCSVAttribute(kv["checks"]),
-		DependsOn:  splitDependsOn(kv["depends_on"]),
-		CustomSQL:  kv["custom"],
-		RowTTL:     rowTTL,
-		Overrides:  parseutils.ParsePlatformSpecific(kv),
+		StructName:          structName,
+		Name:                tableName,
+		APIName:             kv["api_name"],
+		APINames:            targetNames(kv),
+		Schema:              schemaName,
+		Engine:              kv["engine"],
+		Comment:             kv["comment"],
+		PrimaryKey:          splitCSVAttribute(kv["primary_key"]),
+		PrimaryKeyComment:   kv["primary_key_comment"],
+		PrimaryKeyBlockSize: size,
+		Checks:              splitCSVAttribute(kv["checks"]),
+		DependsOn:           splitDependsOn(kv["depends_on"]),
+		CustomSQL:           kv["custom"],
+		RowTTL:              rowTTL,
+		Overrides:           parseutils.ParsePlatformSpecific(kv),
 	})
 	return nil
 }
@@ -2392,4 +2409,21 @@ func splitRoutineSettings(value string) []string {
 		return nil
 	}
 	return strings.Split(value, ";")
+}
+
+// unsignedAttribute refuses a malformed hint before it can become the default.
+func (s *schemaParseState) unsignedAttribute(kv map[string]string, comment *ast.Comment, structName, kind, attribute string) (uint64, error) {
+	value, present := kv[attribute]
+	if !present {
+		return 0, nil
+	}
+	size, err := strconv.ParseUint(value, 10, 64)
+	if err != nil {
+		return 0, &ptaherr.ParseError{
+			File: s.filename, Line: s.annotationContext(comment, "//ptah:schema:"+kind, structName).line,
+			Directive: "ptah:schema:" + kind, Attribute: attribute, Err: ptaherr.ErrInvalidAttributeValue,
+			Message: fmt.Sprintf("invalid %s %q on //ptah:schema:%s at %s (must be a non-negative integer)", attribute, value, kind, structName),
+		}
+	}
+	return size, nil
 }

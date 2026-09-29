@@ -856,8 +856,8 @@ func declaredColumn(desired *schemamodel.Database, tableName, columnName string)
 // not describe. It describes this one completely.
 //
 // The PostgreSQL planner already emitted the pair from the record
-// (stokaro/ptah#2199); this is the same shape, and the SQL is byte-identical to
-// what the withdrawn route produced.
+// (stokaro/ptah#2199). MySQL keeps the pair in one statement so a dependent
+// AUTO_INCREMENT column or foreign key never loses its supporting index.
 func TestPlanner_ModifiedPrimaryKeyIsDroppedThenReadded(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
@@ -875,13 +875,6 @@ func TestPlanner_ModifiedPrimaryKeyIsDroppedThenReadded(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
-	drop := strings.Index(sql, "ALTER TABLE `users` DROP PRIMARY KEY;")
-	add := strings.Index(sql, "ALTER TABLE `users` ADD PRIMARY KEY (`id`, `tenant`);")
-	c.Assert(drop >= 0, qt.IsTrue)
-	c.Assert(add >= 0, qt.IsTrue)
-	// The order is the property: MySQL 9.7.1 answers
-	// `ERROR 1068 (42000): Multiple primary key defined` to an ADD that
-	// precedes the DROP of the key it replaces.
-	c.Assert(drop < add, qt.IsTrue)
+	c.Assert(sql, qt.Contains, "ALTER TABLE `users` DROP PRIMARY KEY, ADD PRIMARY KEY (`id`, `tenant`);")
 	c.Assert(strings.Count(sql, "DROP PRIMARY KEY"), qt.Equals, 1)
 }

@@ -634,6 +634,9 @@ func (r *Renderer) indexDefinition(node *ast.IndexNode, placement string) []stri
 	// The comment and the visibility follow, as MySQL 8.4.11 and MariaDB 11.8.9
 	// print them in SHOW CREATE TABLE; both keep the comment in
 	// STATISTICS.INDEX_COMMENT (stokaro/ptah#3853).
+	if node.KeyBlockSize != 0 {
+		parts = append(parts, fmt.Sprintf("KEY_BLOCK_SIZE=%d", node.KeyBlockSize))
+	}
 	if node.Comment != "" {
 		parts = append(parts, "COMMENT", r.escapeValue(node.Comment))
 	}
@@ -1169,7 +1172,7 @@ func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, err
 		// The method follows the parts, the place MariaDB 11.8.9 prints it back
 		// in SHOW CREATE TABLE.
 		return fmt.Sprintf("  PRIMARY KEY (%s)%s", renderMySQLConstraintColumns(constraint),
-			primaryKeyMethodClause(constraint.UsingMethod)), nil
+			primaryKeyMethodClause(constraint.UsingMethod)+r.primaryKeyOptions(constraint)), nil
 	case ast.UniqueConstraint:
 		if constraint.Name != "" {
 			return fmt.Sprintf("  CONSTRAINT %s UNIQUE (%s)", escapeIdentifier(constraint.Name), renderMySQLConstraintColumns(constraint)), nil
@@ -1279,7 +1282,13 @@ func (r *Renderer) renderColumnWithEnums(column *ast.ColumnNode, enumValues []st
 // VisitAlterTableWithEnums renders MariaDB-specific ALTER TABLE statements with enum support
 func (r *Renderer) visitAlterTableWithEnums(node *ast.AlterTableNode, enums map[string][]string) error {
 	r.w.WriteLine("-- ALTER statements: --")
+	if handled, err := r.writePrimaryKeyReplacement(node); handled {
+		return err
+	}
+	return r.writeAlterTableOperations(node, enums)
+}
 
+func (r *Renderer) writeAlterTableOperations(node *ast.AlterTableNode, enums map[string][]string) error {
 	for _, operation := range node.Operations {
 		switch op := operation.(type) {
 		case *ast.AddColumnOperation:
@@ -1955,4 +1964,39 @@ func primaryKeyMethodClause(method string) string {
 		return ""
 	}
 	return " USING HASH"
+}
+
+func (r *Renderer) primaryKeyOptions(constraint *ast.ConstraintNode) string {
+	var options string
+	if constraint.KeyBlockSize != 0 {
+		options += fmt.Sprintf(" KEY_BLOCK_SIZE=%d", constraint.KeyBlockSize)
+	}
+	if constraint.Comment != "" {
+		options += " COMMENT " + r.escapeValue(constraint.Comment)
+	}
+	return options
+}
+
+// writePrimaryKeyReplacement keeps the key present throughout a paired drop
+// and add. Splitting these operations makes AUTO_INCREMENT and incoming
+// foreign keys reject the first statement before the replacement can run.
+func (r *Renderer) writePrimaryKeyReplacement(node *ast.AlterTableNode) (bool, error) {
+	if len(node.Operations) != 2 {
+		return false, nil
+	}
+	drop, ok := node.Operations[0].(*ast.DropConstraintOperation)
+	if !ok || !drop.PrimaryKey {
+		return false, nil
+	}
+	add, ok := node.Operations[1].(*ast.AddConstraintOperation)
+	if !ok || add.Constraint == nil || add.Constraint.Type != ast.PrimaryKeyConstraint {
+		return false, nil
+	}
+	definition, err := r.renderConstraint(add.Constraint)
+	if err != nil {
+		return true, err
+	}
+	r.writeAlterStatementf(node, "%s, ADD %s", r.dropConstraintSQL(node.Name, drop), strings.TrimSpace(definition))
+	r.w.WriteLine("")
+	return true, nil
 }

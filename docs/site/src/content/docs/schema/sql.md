@@ -200,22 +200,14 @@ reader takes them:
   and the later clause wins.
 
 The [PostgreSQL](../../databases/postgresql/#constraint-enforcement-and-the-match-type)
-and [MySQL](../../databases/mysql/) pages say where `NOT ENFORCED`, a MATCH
-type and an index's `COMMENT`, `INVISIBLE` and `IGNORED` are kept. `NOT VALID`
-after `ALTER TABLE ... ADD` is
-[kept too](../../databases/postgresql/#unvalidated-constraints). Clauses that
-declare something the model has no field for are refused by name
-([stokaro/ptah#3853](https://github.com/stokaro/ptah/issues/3853)): the index
-options `KEY_BLOCK_SIZE`, `ENGINE_ATTRIBUTE` and `SECONDARY_ENGINE_ATTRIBUTE`.
-So is a clause a dialect's server refuses, such as `ENFORCED` after a `UNIQUE`:
+and [MySQL](../../databases/mysql/) pages cover `NOT ENFORCED`, MATCH types,
+index `COMMENT`, `INVISIBLE`, `IGNORED` and `KEY_BLOCK_SIZE [=] n`. Primary
+keys keep `COMMENT` and `KEY_BLOCK_SIZE` too. `NOT VALID` after
+`ALTER TABLE ... ADD` is [preserved](../../databases/postgresql/#unvalidated-constraints).
 
-```sql
-CREATE TABLE t (a int, KEY k (a) KEY_BLOCK_SIZE = 8);
-```
-
-```text
-KEY_BLOCK_SIZE at position 33: the key block size of an index is not modeled (stokaro/ptah#3853); declare the key without it
-```
+The index options `ENGINE_ATTRIBUTE` and `SECONDARY_ENGINE_ATTRIBUTE` have no
+model fields and are refused by name. The reader also refuses a clause the
+dialect's server rejects, such as `ENFORCED` after a `UNIQUE`.
 
 ## Change a table after creating it
 

@@ -936,6 +936,9 @@ func (r *renderer) renderPrimaryKey(table schemamodel.Table, fields []schemamode
 	if len(table.PrimaryKeyInclude) > 0 {
 		r.rawAttr(2, "include", columnRefs(table.PrimaryKeyInclude))
 	}
+	if table.PrimaryKeyBlockSize != 0 || table.PrimaryKeyComment != "" {
+		r.warn("tables["+strconv.Quote(table.Name)+"].primary_key", "the primary key COMMENT and KEY_BLOCK_SIZE options cannot be represented in HCL schema output")
+	}
 	renderPrimaryKeyMethod(r, table.PrimaryKeyMethod)
 	r.line("  }")
 }
@@ -1029,6 +1032,9 @@ func (r *renderer) renderAtlasConstraint(constraint schemamodel.Constraint) bool
 }
 
 func (r *renderer) renderPtahConstraint(constraint schemamodel.Constraint) {
+	if constraint.KeyBlockSize != 0 {
+		r.warn("constraints["+strconv.Quote(constraint.Name)+"]", "the primary key KEY_BLOCK_SIZE option cannot be represented in HCL schema output")
+	}
 	r.linef(`  constraint %s {`, quote(constraint.Name))
 	r.stringAttr(2, "type", constraint.Type)
 	r.stringAttr(2, "using", constraint.UsingMethod)
@@ -1156,6 +1162,10 @@ func (r *renderer) renderIndex(index schemamodel.Index) {
 	// as a visible one and says nothing. The index is written, and the loss
 	// is reported, because applying the document back makes it visible and
 	// changes the query plans its author held back (stokaro/ptah#3853).
+	if index.KeyBlockSize != 0 {
+		r.warn(IndexDiagnosticPath(cmp.Or(index.TableName, index.StructName), index.Name),
+			"the index KEY_BLOCK_SIZE hint cannot be represented in HCL schema output; applying this HCL removes the hint")
+	}
 	if index.Invisible {
 		r.warn(IndexDiagnosticPath(cmp.Or(index.TableName, index.StructName), index.Name),
 			"the index is hidden from the optimizer, which HCL schema output cannot represent; "+

@@ -181,6 +181,8 @@ Maps a Go struct to a database table.
 | `engine` | No | MySQL/MariaDB table engine shortcut; see the note below the table. |
 | `name` | No | Table name. |
 | `primary_key` | No | Comma-separated primary key columns. |
+| `primary_key_block_size` | No | MySQL-family primary index block-size hint. Zero uses the engine default. |
+| `primary_key_comment` | No | MySQL-family primary index comment. |
 | `schema` | No | Database schema name. |
 | `ttl_delete_batch_size` | No | CockroachDB row-level TTL: rows deleted per batch; at least 1. |
 | `ttl_delete_rate_limit` | No | CockroachDB row-level TTL: rows deleted per second; at least 1. |
@@ -276,6 +278,7 @@ Declares an index for a table.
 | `condition` | No | Partial index condition. |
 | `fields` | No | Comma-separated Go field or column names. |
 | `granularity` | No | ClickHouse data-skipping index granularity. |
+| `key_block_size` | No | MySQL-family index block-size hint. Zero uses the engine default. See [MySQL and MariaDB](../../databases/mysql/) for retention and range limits. |
 | `include` | No | Comma-separated INCLUDE columns for PostgreSQL, YugabyteDB, CockroachDB, or the Spanner PostgreSQL dialect. Order is preserved. |
 | `invisible` | No | Hides the index from the optimizer: `INVISIBLE` on MySQL, `IGNORED` on MariaDB, `NOT VISIBLE` on CockroachDB. `true`/`false`; bare form allowed. A target whose capability set does not carry `invisible_indexes` refuses it at render time rather than building a visible index. |
 | `name` | No | Index name. |
@@ -318,6 +321,7 @@ Declares a table constraint.
 | `foreign_columns` | No | Comma-separated referenced columns for composite FOREIGN KEY constraints. |
 | `foreign_table` | No | Referenced table for FOREIGN KEY constraints. |
 | `include` | No | Comma-separated INCLUDE columns for a covering UNIQUE or PRIMARY KEY constraint. Order is preserved. |
+| `key_block_size` | No | Block-size hint for a MySQL-family `PRIMARY KEY`. Declare a unique index to give a `UNIQUE` key this option. |
 | `name` | No | Constraint name. |
 | `nulls_distinct` | No | Controls NULLS DISTINCT behavior. `true`/`false`. The clause is PostgreSQL's; a target whose capability set does not carry `unique_nulls_distinct_clause` refuses it at render time rather than dropping it, in either spelling. |
 | `on_delete` | No | Foreign key ON DELETE action. |

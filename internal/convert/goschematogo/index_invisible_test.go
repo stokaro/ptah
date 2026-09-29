@@ -23,7 +23,7 @@ func TestRender_IndexInvisible(t *testing.T) {
 		},
 		Indexes: []schemamodel.Index{{
 			StructName: "Order", Name: "k_total", TableName: "orders", Fields: []string{"total"},
-			Comment: "lookup", Invisible: true,
+			Comment: "lookup", Invisible: true, KeyBlockSize: 8,
 		}},
 	}
 
@@ -36,5 +36,6 @@ func TestRender_IndexInvisible(t *testing.T) {
 	c.Assert(string(files[0].Data), qt.Contains, `invisible="true"`)
 	c.Assert(reparsed.Indexes, qt.HasLen, 1)
 	c.Assert(reparsed.Indexes[0].Invisible, qt.IsTrue)
+	c.Assert(reparsed.Indexes[0].KeyBlockSize, qt.Equals, uint64(8))
 	c.Assert(reparsed.Indexes[0].Comment, qt.Equals, "lookup")
 }

@@ -508,6 +508,8 @@ func tableAnnotation(table schemamodel.Table) string {
 		attr{name: "engine", value: table.Engine, set: table.Engine != ""},
 		attr{name: "charset", value: table.Charset, set: table.Charset != ""},
 		attr{name: "collate", value: table.Collate, set: table.Collate != ""},
+		attr{name: "primary_key_comment", value: table.PrimaryKeyComment, set: table.PrimaryKeyComment != ""},
+		attr{name: "primary_key_block_size", value: strconv.FormatUint(table.PrimaryKeyBlockSize, 10), set: table.PrimaryKeyBlockSize != 0},
 		attr{name: "primary_key", value: strings.Join(table.PrimaryKey, ","), set: len(table.PrimaryKey) > 0},
 		attr{name: "comment", value: table.Comment, set: table.Comment != ""},
 	)
@@ -553,6 +555,7 @@ func indexAttrs(index schemamodel.Index) []attr {
 		{name: "granularity", value: strconv.Itoa(index.Granularity), set: index.Granularity > 0},
 		{name: "comment", value: index.Comment, set: index.Comment != ""},
 		{name: "invisible", value: strconv.FormatBool(index.Invisible), set: index.Invisible},
+		{name: "key_block_size", value: strconv.FormatUint(index.KeyBlockSize, 10), set: index.KeyBlockSize != 0},
 	}
 }
 
@@ -563,6 +566,7 @@ func constraintAnnotation(constraint schemamodel.Constraint) string {
 		attr{name: "table", value: constraint.Table, set: constraint.Table != ""},
 		attr{name: "columns", value: strings.Join(constraint.Columns, ","), set: len(constraint.Columns) > 0},
 		attr{name: "include", value: strings.Join(constraint.IncludeColumns, ","), set: len(constraint.IncludeColumns) > 0},
+		attr{name: "key_block_size", value: strconv.FormatUint(constraint.KeyBlockSize, 10), set: constraint.KeyBlockSize != 0},
 		attr{name: "using", value: constraint.UsingMethod, set: constraint.UsingMethod != ""},
 		attr{name: "elements", value: constraint.ExcludeElements, set: constraint.ExcludeElements != ""},
 		attr{name: "condition", value: constraint.WhereCondition, set: constraint.WhereCondition != ""},

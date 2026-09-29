@@ -72,8 +72,12 @@ func (p *Parser) readTableElementOptions(constraint *ast.ConstraintNode, kind, p
 	if err := p.readKeyOptions(kind, prefix); err != nil {
 		return err
 	}
-	if kind == primaryKeyElement && p.keyOptions.primaryKeyMethod != "" {
-		constraint.UsingMethod = p.keyOptions.primaryKeyMethod
+	if kind == primaryKeyElement {
+		if p.keyOptions.primaryKeyMethod != "" {
+			constraint.UsingMethod = p.keyOptions.primaryKeyMethod
+		}
+		constraint.Comment = p.keyOptions.comment
+		constraint.KeyBlockSize = p.keyOptions.keyBlockSize
 	}
 	if p.dialect != platform.CockroachDB || kind != indexElement {
 		return nil
