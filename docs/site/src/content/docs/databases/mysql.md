@@ -118,12 +118,27 @@ SQL:
   a second one, `x_2`. A column that keeps its `UNIQUE` while its type,
   nullability or default changes is written without the clause and keeps its
   one key, as Atlas CE writes it.
-- An index's `COMMENT` is kept in `STATISTICS.INDEX_COMMENT` on both engines.
-  No statement changes it in place, so a changed comment rebuilds the index,
-  and Ptah writes the rebuild as one statement: `ALTER TABLE t DROP INDEX k,
+- An index's `COMMENT`, including a primary key's, is kept in `STATISTICS.INDEX_COMMENT` on both engines.
+  A changed secondary-index comment rebuilds the index in one statement: `ALTER TABLE t DROP INDEX k,
   ADD INDEX k (...) COMMENT '...'`. MySQL 8.4.11 refuses a `DROP INDEX` alone on
   an index a foreign key needs (`ERROR 1553`) and takes the pair. Atlas CE
-  v1.3.0 writes the drop and the add as two statements.
+  v1.3.0 writes the drop and the add as two statements. Primary-key replacements
+  also use one `ALTER TABLE` so `AUTO_INCREMENT` and incoming foreign keys
+  keep their supporting index.
+- `KEY_BLOCK_SIZE [=] n` on a secondary, unique or primary index is retained
+  by MariaDB. MySQL retains it only on a table with `ROW_FORMAT=COMPRESSED`.
+  Ptah reads the hint from `SHOW CREATE TABLE` and compares it where the
+  server keeps it. `ptah db read` preserves compression so replay retains the
+  hint. Zero selects the engine default. Values above 65,535 on MariaDB or
+  4,294,967,295 on MySQL are refused because the servers truncate them.
+  Changing or removing a stored secondary-index hint on MySQL requires
+  `ALGORITHM=COPY`: an in-place drop and add keeps the old hint. This can copy
+  the whole table. With `online_alter`, `LOCK=NONE` makes the server refuse
+  that blocking operation. Other dialects refuse the hint.
+- Go index annotations use `key_block_size="8"`. A table annotation can use
+  `primary_key="id" primary_key_block_size="8" primary_key_comment="lookup"`;
+  a `PRIMARY KEY` constraint annotation uses `key_block_size` and `comment`.
+  Atlas HCL output reports the block-size hint it cannot represent.
 - An index the optimizer does not use is `INVISIBLE` on MySQL and `IGNORED` on
   MariaDB, and each engine answers `ERROR 1064` to the other's word. Ptah reads
   it from `STATISTICS.IS_VISIBLE` or `STATISTICS.IGNORED`, writes it in the

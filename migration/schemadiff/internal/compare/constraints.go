@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/constraintowner"
@@ -117,7 +118,8 @@ func ConstraintsWithSemantics(
 	// Find modified constraints (constraints that exist in both but have different definitions)
 	for constraintKey, genConstraint := range genConstraints {
 		if dbConstraint, exists := dbConstraints[constraintKey]; exists {
-			if constraintDefinitionsChanged(genConstraint, dbConstraint, dialect, semantics, opts) {
+			if constraintDefinitionsChanged(genConstraint, dbConstraint, dialect, semantics, opts,
+				indexTableRowFormat(database.Tables, catalog.Index{TableName: dbConstraint.TableName, Schema: dbConstraint.Schema}, semantics)) {
 				// For now, treat modified constraints as removed + added
 				// In the future, we could add a ConstraintsModified field to SchemaDiff
 				diff.ConstraintsRemoved = appendConstraintRemoval(diff.ConstraintsRemoved, dbConstraint, semantics)
@@ -318,6 +320,7 @@ func appendConstraintAddition(
 		Comment:         genConstraint.Comment,
 		CheckExpression: genConstraint.CheckExpression,
 		UsingMethod:     genConstraint.UsingMethod,
+		KeyBlockSize:    genConstraint.KeyBlockSize,
 		ExcludeElements: genConstraint.ExcludeElements,
 		WhereCondition:  genConstraint.WhereCondition,
 		ForeignTable:    genConstraint.ForeignTable,
@@ -351,6 +354,7 @@ func constraintDefinitionsChanged(
 	dialect string,
 	semantics identifier.Semantics,
 	opts *config.CompareOptions,
+	rowFormat string,
 ) bool {
 	// Basic constraint type comparison
 	if genConstraint.Type != dbConstraint.Type {
@@ -366,7 +370,7 @@ func constraintDefinitionsChanged(
 	case "UNIQUE":
 		return uniqueConstraintChanged(genConstraint, dbConstraint, semantics)
 	case "PRIMARY KEY":
-		return primaryKeyConstraintChanged(genConstraint, dbConstraint, dialect, semantics)
+		return primaryKeyConstraintChanged(genConstraint, dbConstraint, dialect, semantics, rowFormat)
 	case "FOREIGN KEY":
 		return foreignKeyConstraintChanged(genConstraint, dbConstraint, dialect, semantics)
 	default:
@@ -385,7 +389,14 @@ func primaryKeyConstraintChanged(
 	dbConstraint catalog.Constraint,
 	dialect string,
 	semantics identifier.Semantics,
+	rowFormat string,
 ) bool {
+	if platform.NormalizeDialect(dialect) == platform.MySQL || platform.NormalizeDialect(dialect) == platform.MariaDB {
+		if genConstraint.Comment != dbConstraint.Comment ||
+			(mysqlindex.KeepsBlockSize(dialect, rowFormat) && genConstraint.KeyBlockSize != dbConstraint.KeyBlockSize) {
+			return true
+		}
+	}
 	return !sameColumnNames(semantics, genConstraint.Columns, dbConstraint.ColumnNamesOrDefault()) ||
 		!stringSetsEqual(genConstraint.IncludeColumns, dbConstraint.IncludeColumns) ||
 		deferralChanged(genConstraint, dbConstraint) ||

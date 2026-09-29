@@ -293,6 +293,9 @@ func (r *Reader) readDatabase(ctx context.Context, dbName string, foreignSchema 
 		return nil, fmt.Errorf("failed to read indexes: %w", err)
 	}
 	schema.Indexes = indexes
+	if err := r.readIndexBlockSizes(ctx, dbName, schema); err != nil {
+		return nil, fmt.Errorf("failed to read index block sizes: %w", err)
+	}
 
 	// Read constraints
 	constraints, err := r.readConstraints(ctx, dbName, foreignSchema)
@@ -339,6 +342,7 @@ func (r *Reader) readDatabase(ctx context.Context, dbName string, foreignSchema 
 	enhanceTablesWithPrimaryKeys(schema.Tables, schema.Constraints)
 	reconcileColumnUniqueness(schema)
 	carryPrimaryKeyMethod(schema)
+	carryPrimaryKeyOptions(schema)
 
 	return schema, nil
 }
@@ -373,7 +377,7 @@ func (r *Reader) readTables(ctx context.Context, dbName string) ([]catalog.Table
 	}
 
 	query := `
-		SELECT TABLE_NAME, TABLE_TYPE, COALESCE(TABLE_COMMENT, ''), COALESCE(TABLE_COLLATION, '')
+		SELECT TABLE_NAME, TABLE_TYPE, COALESCE(TABLE_COMMENT, ''), COALESCE(TABLE_COLLATION, ''), COALESCE(ROW_FORMAT, '')
 		FROM information_schema.TABLES
 		WHERE TABLE_SCHEMA = ?
 		AND TABLE_TYPE = 'BASE TABLE'
@@ -389,7 +393,7 @@ func (r *Reader) readTables(ctx context.Context, dbName string) ([]catalog.Table
 	var tables []catalog.Table
 	for rows.Next() {
 		var table catalog.Table
-		if err := rows.Scan(&table.Name, &table.Type, &table.Comment, &table.Collate); err != nil {
+		if err := rows.Scan(&table.Name, &table.Type, &table.Comment, &table.Collate, &table.RowFormat); err != nil {
 			return nil, err
 		}
 		table.Charset = charsetOfCollation(table.Collate)

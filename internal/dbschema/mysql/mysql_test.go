@@ -170,7 +170,7 @@ func TestMySQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 		if i == 0 {
 			comment = "customer accounts"
 		}
-		tableRows = append(tableRows, []driver.Value{tableName, "BASE TABLE", comment, "utf8mb4_0900_ai_ci"})
+		tableRows = append(tableRows, []driver.Value{tableName, "BASE TABLE", comment, "utf8mb4_0900_ai_ci", "Dynamic"})
 		columnRows = append(columnRows,
 			[]driver.Value{tableName, "id", "int", "int", "NO", nil, nil, int64(10), int64(0), int64(1), nil, nil, "auto_increment", nil, ""},
 			[]driver.Value{tableName, "email", "varchar", "varchar(255)", "NO", nil, int64(255), nil, nil, int64(2), "utf8mb4", "utf8mb4_0900_ai_ci", "", nil, "login address"},
@@ -184,7 +184,7 @@ func TestMySQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 			return columnQueryResult(query, columnRows)
 		case strings.Contains(query, "FROM information_schema.TABLES"):
 			return dbtest.QueryResult{
-				Columns: []string{"TABLE_NAME", "TABLE_TYPE", "TABLE_COMMENT", "TABLE_COLLATION"},
+				Columns: []string{"TABLE_NAME", "TABLE_TYPE", "TABLE_COMMENT", "TABLE_COLLATION", "ROW_FORMAT"},
 				Rows:    tableRows,
 			}, nil
 		default:

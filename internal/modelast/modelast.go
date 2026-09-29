@@ -814,7 +814,8 @@ func tableNeedsPrimaryKeyConstraint(table schemamodel.Table, fields []schemamode
 		return true
 	}
 	// So is an access method: `PRIMARY KEY USING HASH` has no column spelling.
-	if table.PrimaryKeyMethod != "" && (len(table.PrimaryKey) > 0 || len(table.PrimaryKeyParts) > 0) {
+	if (table.PrimaryKeyMethod != "" || table.PrimaryKeyComment != "" || table.PrimaryKeyBlockSize != 0) &&
+		(len(table.PrimaryKey) > 0 || len(table.PrimaryKeyParts) > 0) {
 		return true
 	}
 	// UNIQUE on the same column is a reason of the same kind. The column
@@ -870,6 +871,8 @@ func newPrimaryKeyConstraint(table schemamodel.Table) *ast.ConstraintNode {
 		constraint.Deferrable = table.PrimaryKeyDeferrable
 		constraint.Initially = table.PrimaryKeyInitially
 		constraint.UsingMethod = table.PrimaryKeyMethod
+		constraint.Comment = table.PrimaryKeyComment
+		constraint.KeyBlockSize = table.PrimaryKeyBlockSize
 		return constraint
 	}
 	columns := make([]string, 0, len(table.PrimaryKeyParts))
@@ -891,6 +894,8 @@ func newPrimaryKeyConstraint(table schemamodel.Table) *ast.ConstraintNode {
 		Deferrable:     table.PrimaryKeyDeferrable,
 		Initially:      table.PrimaryKeyInitially,
 		UsingMethod:    table.PrimaryKeyMethod,
+		Comment:        table.PrimaryKeyComment,
+		KeyBlockSize:   table.PrimaryKeyBlockSize,
 	}
 }
 
@@ -906,6 +911,7 @@ func FromConstraint(constraint schemamodel.Constraint) *ast.ConstraintNode {
 		return nil
 	}
 	node.Comment = constraint.Comment
+	node.KeyBlockSize = constraint.KeyBlockSize
 	// Only a CHECK or a foreign key can stay unvalidated, and the renderer
 	// writes the clause only where a constraint is added to a table.
 	node.NotValid = constraint.NotValid && (node.Type == ast.CheckConstraint || node.Type == ast.ForeignKeyConstraint)
@@ -1209,6 +1215,7 @@ func indexNodeOn(index schemamodel.Index, tableName string) *ast.IndexNode {
 		indexNode.Comment = index.Comment
 	}
 	indexNode.Invisible = index.Invisible
+	indexNode.KeyBlockSize = index.KeyBlockSize
 
 	// Set dialect-specific features. Type covers both PG (GIN/GIST/BTREE/HASH)
 	// and CH (minmax/set/bloom_filter/...) — the renderer interprets it.

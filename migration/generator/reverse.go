@@ -330,11 +330,11 @@ func reverseSchemaDiffWithSchemaForDialect(
 	// index-removal restorations are appended purely for readability: those are
 	// UNIQUE constraints, which the rule deliberately never drops.
 	dropReverseConstraintsRestoredByTableCreation(reversed, diff.ConstraintsRemoved, dbSchema, dialect)
-	indexAdditions, constraintRestorations := reverseIndexRemovals(diff, dbSchema)
+	indexAdditions, constraintRestorations := reverseIndexRemovals(diff, dbSchema, prior)
 	// The definitions come from the PRE-CHANGE database: this direction
 	// re-creates the indexes the change dropped, and an index the declaration
 	// holds may not be one of them (stokaro/ptah#2315).
-	reversed.SetIndexAdditions(priorIndexChanges(prior, indexAdditions, semantics))
+	reversed.SetIndexAdditions(priorIndexChanges(prior, indexAdditions, semantics, diff.IndexesAdded))
 	reversed.SetIndexRemovals(diff.IndexAdditions())
 	// A visibility change carries the state it asks for, and the other state
 	// is the only one there is, so the rollback asks for that one.
@@ -535,9 +535,15 @@ func priorIndexChanges(
 	prior *schemamodel.Database,
 	refs []difftypes.IndexRef,
 	semantics identifier.Semantics,
+	forward difftypes.IndexChanges,
 ) difftypes.IndexChanges {
 	if len(refs) == 0 {
 		return nil
+	}
+	required := make(map[difftypes.IndexRef]bool)
+	for _, change := range forward {
+		key := indexscope.IdentityKeyWithSemantics(semantics, difftypes.IndexRef{Name: change.Index.Name, TableName: change.TableName})
+		required[key] = change.RequiresTableCopy
 	}
 	declared := make(map[difftypes.IndexRef]difftypes.IndexChange, len(refs))
 	for _, declaration := range difftypes.IndexDeclarationsOf(prior) {
@@ -550,7 +556,10 @@ func priorIndexChanges(
 	changes := make(difftypes.IndexChanges, 0, len(refs))
 	for _, ref := range refs {
 		if declaration, ok := declared[indexscope.IdentityKeyWithSemantics(semantics, ref)]; ok {
-			changes = append(changes, declaration)
+			changes = append(changes, difftypes.IndexChange{
+				Index: declaration.Index, TableName: declaration.TableName,
+				RequiresTableCopy: required[indexscope.IdentityKeyWithSemantics(semantics, ref)],
+			})
 			continue
 		}
 		changes = append(changes, difftypes.IndexChange{

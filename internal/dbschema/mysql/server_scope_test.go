@@ -62,8 +62,8 @@ func serverDatabases(args []driver.NamedValue) dbtest.QueryResult {
 // serverTablesIn answers the table listing of the database its argument names.
 func serverTablesIn(args []driver.NamedValue) dbtest.QueryResult {
 	return dbtest.QueryResult{
-		Columns: []string{"TABLE_NAME", "TABLE_TYPE", "TABLE_COMMENT", "TABLE_COLLATION"},
-		Rows:    [][]driver.Value{{serverTables[args[0].Value.(string)], "BASE TABLE", "", "utf8mb4_0900_ai_ci"}},
+		Columns: []string{"TABLE_NAME", "TABLE_TYPE", "TABLE_COMMENT", "TABLE_COLLATION", "ROW_FORMAT"},
+		Rows:    [][]driver.Value{{serverTables[args[0].Value.(string)], "BASE TABLE", "", "utf8mb4_0900_ai_ci", "Dynamic"}},
 	}
 }
 

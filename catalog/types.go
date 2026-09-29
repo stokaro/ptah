@@ -218,12 +218,15 @@ type Schema struct {
 // PostgreSQL rejects CREATE INDEX CONCURRENTLY and DROP INDEX CONCURRENTLY on
 // a partitioned relation with SQLSTATE 0A000.
 type Table struct {
-	Name            string   `json:"name"`
-	Schema          string   `json:"schema,omitempty"`
-	Type            string   `json:"type"` // TABLE, VIEW, etc.
-	Comment         string   `json:"comment"`
-	Charset         string   `json:"charset,omitempty"` // MySQL/MariaDB default character set for columns declared without one
-	Collate         string   `json:"collate,omitempty"` // MySQL/MariaDB default collation
+	Name    string `json:"name"`
+	Schema  string `json:"schema,omitempty"`
+	Type    string `json:"type"` // TABLE, VIEW, etc.
+	Comment string `json:"comment"`
+	Charset string `json:"charset,omitempty"` // MySQL/MariaDB default character set for columns declared without one
+	Collate string `json:"collate,omitempty"` // MySQL/MariaDB default collation
+	// RowFormat is the MySQL-family TABLES.ROW_FORMAT, which decides whether
+	// MySQL retains an index KEY_BLOCK_SIZE hint.
+	RowFormat       string   `json:"row_format,omitempty"`
 	Columns         []Column `json:"columns"`
 	EstimatedRows   int64    `json:"estimated_rows,omitempty"`    // Best-effort planner estimate from database statistics
 	RowStatsUnknown bool     `json:"row_stats_unknown,omitempty"` // The database reports no usable row statistics; EstimatedRows is not a row count
@@ -775,6 +778,9 @@ type Index struct {
 	// STATISTICS.IS_VISIBLE NO on MySQL, STATISTICS.IGNORED YES on MariaDB,
 	// and a definition ending in NOT VISIBLE on CockroachDB.
 	Invisible bool `json:"invisible,omitempty"`
+	// KeyBlockSize is the index hint reported by SHOW CREATE TABLE. Zero
+	// means the server reports no explicit hint.
+	KeyBlockSize uint64 `json:"key_block_size,omitempty"`
 	// NullsDistinct carries PostgreSQL UNIQUE INDEX NULLS [NOT] DISTINCT
 	// state. Nil means the clause was not present in the definition.
 	NullsDistinct *bool `json:"nulls_distinct,omitempty"`
@@ -894,6 +900,8 @@ func (i Index) QualifiedTableName() string {
 // every fixture that happens to use that spelling and silently misses the
 // other.
 type Constraint struct {
+	// KeyBlockSize is the primary index block-size hint reported by SHOW CREATE TABLE.
+	KeyBlockSize   uint64   `json:"key_block_size,omitempty"`
 	Name           string   `json:"name"`
 	TableName      string   `json:"table_name"`
 	Schema         string   `json:"schema,omitempty"`

@@ -1691,6 +1691,7 @@ func constraintIdentity(scope string, constraint Constraint) string {
 		strings.Join(constraint.IncludeColumns, "\x01"),
 		nullsDistinct,
 		constraint.UsingMethod,
+		strconv.FormatUint(constraint.KeyBlockSize, 10),
 		constraint.ExcludeElements,
 		constraint.WhereCondition,
 		constraint.CheckExpression,

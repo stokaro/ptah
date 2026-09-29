@@ -2,16 +2,14 @@ package parser
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/mysqlindex"
 )
-
-// unmodeledClauses is the issue that records the clauses the reader refuses
-// because the model has no field for what they declare.
-const unmodeledClauses = "stokaro/ptah#3853"
 
 // enforcement is what `ENFORCED` and `NOT ENFORCED` said about one
 // constraint: whether either was written, and whether the last one written was
@@ -343,8 +341,10 @@ func (p *Parser) readKeyOptions(kind, prefix string) error {
 		switch {
 		case keyword == "USING" && !p.nextIsWord("INDEX"):
 			err = p.readKeyMethod(kind, prefix, start)
+		case keyword == "KEY_BLOCK_SIZE":
+			err = p.readKeyBlockSize(start)
 		case keyword == "COMMENT":
-			err = p.readKeyComment(kind, start)
+			err = p.readKeyComment()
 		case p.atVisibilityWord(keyword):
 			err = p.readKeyVisibility(kind, keyword, start)
 		default:
@@ -360,9 +360,11 @@ func (p *Parser) readKeyOptions(kind, prefix string) error {
 // They belong to the element being read, which resets them before it reads its
 // parts.
 type keyOptions struct {
-	comment    string
-	hasComment bool
-	invisible  bool
+	keyBlockSize    uint64
+	hasKeyBlockSize bool
+	comment         string
+	hasComment      bool
+	invisible       bool
 	// primaryKeyMethod is the `USING HASH` after a primary key's parts, which
 	// the table element carries onto its constraint; see
 	// [Parser.readTableElementOptions].
@@ -372,17 +374,12 @@ type keyOptions struct {
 // carriesIndexOptions reports whether the element asked for something only an
 // index can hold.
 func (o keyOptions) carriesIndexOptions() bool {
-	return o.hasComment || o.invisible
+	return o.hasComment || o.invisible || o.hasKeyBlockSize
 }
 
 // readKeyComment reads `COMMENT 'text'` after a key's parts, which MySQL 8.4.11
-// and MariaDB 11.8.9 keep in STATISTICS.INDEX_COMMENT. A primary key's comment
-// is not modeled.
-func (p *Parser) readKeyComment(kind string, start int) error {
-	if kind == primaryKeyElement {
-		return fmt.Errorf("COMMENT at position %d: a primary key's comment is not modeled (%s); "+
-			"declare the key without it", start, unmodeledClauses)
-	}
+// and MariaDB 11.8.9 keep in STATISTICS.INDEX_COMMENT.
+func (p *Parser) readKeyComment() error {
 	p.advance()
 	text, err := p.stringConstant("index comment")
 	if err != nil {
@@ -463,17 +460,34 @@ func (p *Parser) readKeyMethod(kind, prefix string, start int) error {
 
 // refuseKeyOption refuses an index option the model has no field for, by
 // name, and answers nil for a word that is not one. Measured on MySQL 8.4 and
-// MariaDB 11.8, each is stored with the index: a key block size and an engine
-// attribute.
+// MariaDB 11.8, an engine attribute is stored with the index.
 func refuseKeyOption(keyword string, start int) error {
 	var what string
 	switch keyword {
-	case "KEY_BLOCK_SIZE":
-		what = "the key block size of an index is not modeled"
 	case "ENGINE_ATTRIBUTE", "SECONDARY_ENGINE_ATTRIBUTE":
 		what = "an engine attribute of an index is not modeled"
 	default:
 		return nil
 	}
-	return fmt.Errorf("%s at position %d: %s (%s); declare the key without it", keyword, start, what, unmodeledClauses)
+	return fmt.Errorf("%s at position %d: %s; declare the key without it", keyword, start, what)
+}
+
+// readKeyBlockSize reads the optional equals sign and the unsigned index hint.
+func (p *Parser) readKeyBlockSize(start int) error {
+	p.advance()
+	p.skipWhitespace()
+	if p.current.MatchOperatorValue("=") {
+		p.advance()
+		p.skipWhitespace()
+	}
+	size, err := strconv.ParseUint(p.current.Value, 10, 64)
+	if err != nil {
+		return fmt.Errorf("KEY_BLOCK_SIZE at position %d: expected a non-negative integer", start)
+	}
+	if err := mysqlindex.ValidateBlockSize(p.dialect, size); err != nil {
+		return err
+	}
+	p.keyOptions.keyBlockSize, p.keyOptions.hasKeyBlockSize = size, true
+	p.advance()
+	return nil
 }

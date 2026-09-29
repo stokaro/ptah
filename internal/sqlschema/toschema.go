@@ -298,6 +298,8 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Tabl
 			tableSchema.PrimaryKeyDeferrable = constraint.Deferrable
 			tableSchema.PrimaryKeyInitially = constraint.Initially
 			tableSchema.PrimaryKeyMethod = mysqlindex.Method(constraint.UsingMethod)
+			tableSchema.PrimaryKeyComment = constraint.Comment
+			tableSchema.PrimaryKeyBlockSize = constraint.KeyBlockSize
 			break // Only one primary key constraint per table
 		}
 	}
@@ -419,13 +421,14 @@ func ToIndex(index *ast.IndexNode, sourcePlatform string) schemamodel.Index {
 	// element text the suffix is part of.
 	parts := indexParts(index, sourcePlatform)
 	return schemamodel.Index{
-		Name:       normalizeSQLIdentifier(sourcePlatform, index.Name),
-		StructName: tableName,
-		Fields:     indexFieldNames(index, parts, sourcePlatform),
-		Parts:      parts,
-		Unique:     index.Unique,
-		Comment:    index.Comment,
-		Invisible:  index.Invisible,
+		Name:         normalizeSQLIdentifier(sourcePlatform, index.Name),
+		StructName:   tableName,
+		Fields:       indexFieldNames(index, parts, sourcePlatform),
+		Parts:        parts,
+		Unique:       index.Unique,
+		Comment:      index.Comment,
+		Invisible:    index.Invisible,
+		KeyBlockSize: index.KeyBlockSize,
 		// PostgreSQL-specific features
 		Type: index.Type,
 		// ClickHouse's data-skipping granularity. Dropping it here let the
@@ -1369,6 +1372,8 @@ func applyAlterTablePrimaryKey(target alterTarget, constraint *ast.ConstraintNod
 	target.table.PrimaryKeyDeferrable = constraint.Deferrable
 	target.table.PrimaryKeyInitially = constraint.Initially
 	target.table.PrimaryKeyMethod = mysqlindex.Method(constraint.UsingMethod)
+	target.table.PrimaryKeyComment = constraint.Comment
+	target.table.PrimaryKeyBlockSize = constraint.KeyBlockSize
 	for _, database := range target.databases {
 		markPrimaryFields(database.Fields, target.structName, target.table.PrimaryKey)
 	}

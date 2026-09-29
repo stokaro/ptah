@@ -480,6 +480,9 @@ func prepareIndexNode(dialect string, caps capability.Capabilities, node *ast.In
 	if err := nullsdistinct.Validate(dialect, caps, node.NullsDistinct); err != nil {
 		return nil, err
 	}
+	if err := validateIndexBlockSize(dialect, node.Name, node.KeyBlockSize); err != nil {
+		return nil, err
+	}
 	if err := refuseInvisibleIndexNode(dialect, caps, node); err != nil {
 		return nil, err
 	}
@@ -686,9 +689,11 @@ func prepareAlterOperation(
 func validateIndexOperation(dialect string, caps capability.Capabilities, operation ast.AlterOperation) error {
 	switch typed := operation.(type) {
 	case *ast.AddIndexOperation:
-		return refuseInvisibleIndexNode(dialect, caps, typed.Index)
+		_, err := prepareIndexNode(dialect, caps, typed.Index)
+		return err
 	case *ast.ReplaceIndexOperation:
-		return refuseInvisibleIndexNode(dialect, caps, typed.Index)
+		_, err := prepareIndexNode(dialect, caps, typed.Index)
+		return err
 	case *ast.AlterIndexVisibilityOperation:
 		return refuseInvisibleIndex(dialect, caps, typed.IndexName)
 	}
@@ -721,15 +726,18 @@ func refuseInvisibleIndex(dialect string, caps capability.Capabilities, name str
 	}
 }
 
-// validateDeclaredInvisibleIndexes runs the invisible-index refusal over a
+// validateDeclaredIndexOptions checks index visibility and block-size hints over a
 // whole declaration, before the first statement is rendered, for the reason
 // validateDeclaredNullsDistinct gives.
-func validateDeclaredInvisibleIndexes(
+func validateDeclaredIndexOptions(
 	dialect string,
 	caps capability.Capabilities,
 	database *schemamodel.Database,
 ) error {
 	for _, index := range database.Indexes {
+		if err := validateIndexBlockSize(dialect, index.Name, index.KeyBlockSize); err != nil {
+			return err
+		}
 		if !index.Invisible {
 			continue
 		}
@@ -974,6 +982,9 @@ func prepareConstraintNode(
 		node.Name,
 		node.IncludeColumns,
 	); err != nil {
+		return nil, err
+	}
+	if err := validateConstraintBlockSize(dialect, node.Type.String(), node.Name, node.KeyBlockSize); err != nil {
 		return nil, err
 	}
 	if err := validateConstraintKeyParts(dialect, node); err != nil {
@@ -1491,7 +1502,7 @@ func validateDatabaseDeclarations(
 	if err := validateDeclaredConstraintIncludes(dialect, database); err != nil {
 		return err
 	}
-	if err := validateDeclaredInvisibleIndexes(dialect, caps, database); err != nil {
+	if err := validateDeclaredIndexOptions(dialect, caps, database); err != nil {
 		return err
 	}
 	if err := validateDeclaredNullsDistinct(dialect, caps, database); err != nil {
@@ -1500,7 +1511,7 @@ func validateDatabaseDeclarations(
 	if err := validateDeclaredKeyDeferral(dialect, caps, database); err != nil {
 		return err
 	}
-	if err := validateDeclaredPrimaryKeyMethod(dialect, database); err != nil {
+	if err := validateDeclaredPrimaryKeyOptions(dialect, database); err != nil {
 		return err
 	}
 	if err := validateDeclaredConstraintMethods(dialect, database); err != nil {
@@ -1512,22 +1523,29 @@ func validateDatabaseDeclarations(
 	return validateDeclaredIndexIncludes(dialect, caps, database.Indexes)
 }
 
-// validateDeclaredPrimaryKeyMethod refuses a primary key access method the
-// target cannot write, whether the table carries the key or a PRIMARY KEY
-// constraint does. Only the MySQL family has a clause for it, and there the
-// clause takes BTREE or HASH. Built without the method, the key would silently
-// become the engine's default.
-func validateDeclaredPrimaryKeyMethod(dialect string, database *schemamodel.Database) error {
+// validateDeclaredPrimaryKeyOptions refuses options the target cannot write,
+// whether a table or a PRIMARY KEY constraint carries them. The MySQL family
+// keeps access methods and index hints that other dialects cannot express.
+func validateDeclaredPrimaryKeyOptions(dialect string, database *schemamodel.Database) error {
 	for _, table := range database.Tables {
+		if err := validatePrimaryKeyOptions(dialect, table.QualifiedName(), table.PrimaryKeyComment, table.PrimaryKeyBlockSize); err != nil {
+			return err
+		}
 		if err := primaryKeyMethodError(dialect, table.QualifiedName(), table.PrimaryKeyMethod); err != nil {
 			return err
 		}
 	}
 	for _, constraint := range database.Constraints {
+		if constraint.KeyBlockSize != 0 && !strings.EqualFold(strings.TrimSpace(constraint.Type), ast.PrimaryKeyConstraint.String()) {
+			return fmt.Errorf("%w: KEY_BLOCK_SIZE on %s constraint %q is not supported; declare a unique index for a UNIQUE key", ptaherr.ErrUnsupportedFeature, constraint.Type, constraint.Name)
+		}
 		if !strings.EqualFold(strings.TrimSpace(constraint.Type), ast.PrimaryKeyConstraint.String()) {
 			continue
 		}
 		owner := constraintOwnerName(database.Tables, constraint)
+		if err := validateIndexBlockSize(dialect, owner, constraint.KeyBlockSize); err != nil {
+			return err
+		}
 		if err := primaryKeyMethodError(dialect, owner, constraint.UsingMethod); err != nil {
 			return err
 		}
@@ -1540,7 +1558,7 @@ func validateDeclaredPrimaryKeyMethod(dialect string, database *schemamodel.Data
 // constraint, and only an EXCLUDE constraint and a primary key take a method;
 // on the other kinds the constraint was built without it and nothing said so
 // (stokaro/ptah#3958). A primary key's method is
-// [validateDeclaredPrimaryKeyMethod]'s.
+// [validateDeclaredPrimaryKeyOptions]'s.
 func validateDeclaredConstraintMethods(dialect string, database *schemamodel.Database) error {
 	for _, constraint := range database.Constraints {
 		kind := strings.ToUpper(strings.TrimSpace(constraint.Type))

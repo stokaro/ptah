@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/catalogfield"
@@ -41,13 +42,13 @@ func ConvertDBSchemaToGoSchema(dbSchema *catalog.Database, dialect string) *sche
 	// the introspected (pre-change) database as the target, so the old action
 	// must survive the round-trip into goschema.
 	columnKeys := indexForeignKeysByColumn(dbSchema)
-	tablePrimaryKeys := primaryKeysByTable(dbSchema)
+	tablePrimaryKeys := primaryKeysByTable(dbSchema, dialect)
 	tablePKColumns := primaryKeyColumnSets(tablePrimaryKeys)
 	tableStructNames := convertTablesAndFields(database, dbSchema, columnKeys.byColumn, tablePrimaryKeys, tablePKColumns)
 
 	// One decision, consulted by both pools below. A unique constraint and its
 	// backing index describe one object, so exactly one of them may be emitted.
-	indexDescribed := indexDescribedUniques(dbSchema)
+	indexDescribed := indexDescribedUniques(dbSchema, dialect)
 	database.Indexes = convertIndexes(dbSchema, tableStructNames, indexDescribed, dialect)
 	database.Constraints = convertConstraints(dbSchema, tableStructNames, indexDescribed, columnKeys.besideColumn)
 	clearColumnUniqueForNamedConstraints(database, dbSchema, tableStructNames)
@@ -159,6 +160,8 @@ func convertTablesAndFields(
 			PrimaryKeyDeferrable: primaryKey.deferrable,
 			PrimaryKeyInitially:  primaryKey.initially,
 			PrimaryKeyMethod:     primaryKey.method,
+			PrimaryKeyComment:    primaryKey.comment,
+			PrimaryKeyBlockSize:  primaryKey.blockSize,
 			Strict:               dbTable.Strict,
 			WithoutRowID:         dbTable.WithoutRowID,
 			Unlogged:             dbTable.Unlogged,
@@ -172,7 +175,7 @@ func convertTablesAndFields(
 			// other (stokaro/ptah#1027).
 			RowTTL:            dbTable.RowTTL.Clone(),
 			RowDeletionPolicy: dbTable.RowDeletionPolicy.Clone(),
-			Overrides:         clickHouseTableOverrides(dbTable),
+			Overrides:         tableStorageOverrides(dbTable),
 		}
 		database.Tables = append(database.Tables, table)
 
@@ -293,6 +296,7 @@ func convertIndexes(
 			Condition:     dbIndex.Condition,
 			Comment:       dbIndex.Comment,
 			Invisible:     dbIndex.Invisible,
+			KeyBlockSize:  dbIndex.KeyBlockSize,
 			NullsDistinct: cloneBoolPtr(dbIndex.NullsDistinct),
 			Type:          indexType(dbIndex),
 			Granularity:   dbIndex.Granularity,
@@ -703,6 +707,8 @@ type tablePrimaryKey struct {
 	deferrable bool
 	initially  string
 	method     string
+	comment    string
+	blockSize  uint64
 }
 
 // primaryKeyMethod is the access method a PRIMARY KEY the catalog reports asks
@@ -740,7 +746,7 @@ func primaryKeyColumnSets(primaryKeysByTable map[string]tablePrimaryKey) map[str
 // dropped the first of them before it reached this map at all
 // (stokaro/ptah#2199). A deferral is the same kind of payload
 // (stokaro/ptah#3824), and so is an access method (stokaro/ptah#3853).
-func primaryKeysByTable(dbSchema *catalog.Database) map[string]tablePrimaryKey {
+func primaryKeysByTable(dbSchema *catalog.Database, dialect string) map[string]tablePrimaryKey {
 	result := make(map[string]tablePrimaryKey)
 	for _, constraint := range dbSchema.Constraints {
 		if !strings.EqualFold(constraint.Type, "PRIMARY KEY") {
@@ -751,7 +757,11 @@ func primaryKeysByTable(dbSchema *catalog.Database) map[string]tablePrimaryKey {
 			continue
 		}
 		method := primaryKeyMethod(constraint)
-		if len(columns) == 1 && len(constraint.IncludeColumns) == 0 && !constraint.Deferrable && method == "" {
+		comment := ""
+		if dialect == platform.MySQL || dialect == platform.MariaDB {
+			comment = constraint.Comment
+		}
+		if len(columns) == 1 && len(constraint.IncludeColumns) == 0 && !constraint.Deferrable && method == "" && comment == "" && constraint.KeyBlockSize == 0 {
 			continue
 		}
 		result[constraint.QualifiedTableName()] = tablePrimaryKey{
@@ -760,6 +770,8 @@ func primaryKeysByTable(dbSchema *catalog.Database) map[string]tablePrimaryKey {
 			deferrable: constraint.Deferrable,
 			initially:  constraint.Initially,
 			method:     method,
+			comment:    comment,
+			blockSize:  constraint.KeyBlockSize,
 		}
 	}
 	return result
@@ -952,6 +964,7 @@ func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[str
 		Type:            constraintType,
 		Table:           dbConstraint.QualifiedTableName(),
 		UsingMethod:     derefString(dbConstraint.UsingMethod),
+		KeyBlockSize:    dbConstraint.KeyBlockSize,
 		ExcludeElements: derefString(dbConstraint.ExcludeElements),
 		WhereCondition:  derefString(dbConstraint.WhereCondition),
 		CheckExpression: derefString(dbConstraint.CheckClause),
@@ -1012,17 +1025,13 @@ func constraintBackedIndexesByTable(
 // stokaro/ptah#1245 established for the comparator, applied to the description
 // path (stokaro/ptah#2589).
 //
-// The discriminator is a payload the constraint view does not carry. CockroachDB
-// reports a bare covering unique index in pg_constraint as well as in pg_index,
-// and its pg_get_constraintdef prints no INCLUDE, so describing that object by
-// its constraint loses the payload silently. PostgreSQL does not report such an
-// index in pg_constraint at all, and MySQL and MariaDB have no payload to lose,
-// so on those servers this set is empty and nothing moves -- which is what keeps
-// the fix from reaching a server that never had the defect.
-func indexDescribedUniques(dbSchema *catalog.Database) map[tableMemberKey]struct{} {
+// INCLUDE payload, visibility, and MySQL-family index options cannot be kept
+// by the UNIQUE constraint representation. Describe such an object as an
+// index so a DB read and rollback preserve the complete definition.
+func indexDescribedUniques(dbSchema *catalog.Database, dialect string) map[tableMemberKey]struct{} {
 	covering := make(map[tableMemberKey]struct{})
 	for _, index := range dbSchema.Indexes {
-		if !index.IsUnique || index.IsPrimary || len(index.IncludeColumns) == 0 {
+		if !index.IsUnique || index.IsPrimary || !uniqueNeedsIndexDescription(index, dialect) {
 			continue
 		}
 		covering[tableMemberKey{table: index.QualifiedTableName(), member: index.Name}] = struct{}{}
@@ -1440,4 +1449,29 @@ func clickHouseTableOverrides(dbTable catalog.Table) map[string]map[string]strin
 // nullsNotDistinct reports whether a UNIQUE treats NULLs as equal.
 func nullsNotDistinct(constraint catalog.Constraint) bool {
 	return constraint.NullsDistinct != nil && !*constraint.NullsDistinct
+}
+
+// tableStorageOverrides preserves compression needed to replay MySQL index hints.
+func tableStorageOverrides(table catalog.Table) map[string]map[string]string {
+	overrides := clickHouseTableOverrides(table)
+	if !strings.EqualFold(table.RowFormat, "Compressed") {
+		return overrides
+	}
+	if overrides == nil {
+		overrides = make(map[string]map[string]string)
+	}
+	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+		overrides[dialect] = map[string]string{"row_format": "COMPRESSED"}
+	}
+	return overrides
+}
+
+func uniqueNeedsIndexDescription(index catalog.Index, dialect string) bool {
+	if len(index.IncludeColumns) > 0 || index.Invisible {
+		return true
+	}
+	if dialect == platform.MySQL || dialect == platform.MariaDB {
+		return index.KeyBlockSize != 0 || index.Comment != "" || mysqlindex.Method(index.Method) != ""
+	}
+	return false
 }

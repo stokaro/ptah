@@ -771,6 +771,8 @@ func (t alterTarget) clearPrimaryKey() {
 	t.table.PrimaryKeyParts, t.table.PrimaryKeyInclude = nil, nil
 	t.table.PrimaryKeyDeferrable, t.table.PrimaryKeyInitially = false, ""
 	t.table.PrimaryKeyMethod = ""
+	t.table.PrimaryKeyComment = ""
+	t.table.PrimaryKeyBlockSize = 0
 	for _, database := range t.databases {
 		for i := range database.Fields {
 			if database.Fields[i].StructName == t.structName {
