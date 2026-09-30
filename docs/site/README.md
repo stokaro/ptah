@@ -286,7 +286,7 @@ a figure and caption, a plain-link full-size fallback, a "what to notice"
 description, download/source actions, and an optional reproduction command.
 The home-page usage is the executable contract for the component.
 
-`GraphicPreview.astro`, rendered once by `Footer.astro`, keeps inspection inside
+`GraphicPreview.astro`, rendered once by `SiteTitle.astro`, keeps inspection inside
 the article. Its client module, `src/lib/graphic-preview.mjs`, enhances full-size
 and image links while keeping their original destinations available without
 JavaScript. Image previews support Fit image and Fit width controls, original-size
@@ -294,7 +294,7 @@ inspection, zoom controls, scrolling, dragging, and touch pinching. Closing the
 dialog restores the reading position and focus. Theme-specific SVGs keep the
 displayed theme. Generated HTML reports open in an embedded view with the same
 close control. Download and source actions keep their file destinations.
-The release UI overlay copies the viewer and its client module with the footer.
+The release UI overlay copies the viewer and its client module with the header.
 
 `check-visual-snapshots.mjs` also runs `check-graphic-preview.mjs` against the
 built pages and a tall SVG fixture in light and dark themes at mobile and
