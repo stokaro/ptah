@@ -447,9 +447,15 @@ jobs:
     # Running the gate on a Windows runner is what reads them, and it reads
     # them the same way the Ubuntu job does rather than through a flag that
     # would have to be kept in step with it.
-    name: ptah-go-lint-windows
+    name: ${{ matrix.cache == 'default' && 'ptah-go-lint-windows' || format('ptah-go-lint-windows (cache {0})', matrix.cache) }}
     needs: scope
     if: github.event_name != 'pull_request' || needs.scope.outputs.code == 'true'
+    # Compare restore and lint time on this experiment branch. Other runs keep
+    # the existing cache policy and check name.
+    strategy:
+      fail-fast: false
+      matrix:
+        cache: ${{ fromJSON(github.head_ref == 'ci/windows-lint-cache-comparison' && '["restored","empty"]' || '["default"]') }}
     runs-on: windows-latest
     # The whole job must cover the root and nested modules in both contours.
     # Each lint invocation has its own timeout below.
@@ -478,7 +484,7 @@ jobs:
 
       # Repeated cache extraction can exhaust the Windows job budget. Export
       # the action's cache directory so later invocations reuse it while
-      # skipping another restoration. The first lint step restores it once.
+      # skipping another restoration. The first lint step controls restoration.
       - name: Share lint analysis cache
         shell: pwsh
         run: |
@@ -501,6 +507,8 @@ jobs:
         with:
           args: --timeout=30m
           version: v2.14.0
+          skip-cache: ${{ matrix.cache == 'empty' }}
+          skip-save-cache: ${{ matrix.cache != 'default' }}
 
       # Both build-tag contours here too, for the reason the Ubuntu job gives:
       # a tagged file is outside the default build. This run reads the tagged
