@@ -152,7 +152,7 @@ export function archiveBannerProblems(siteDir) {
 export function archiveBannerSelftest() {
   const assert = (condition, message) => { if (!condition) throw new Error(message); };
   const site = mkdtempSync(join(tmpdir(), 'ptah-archive-banners-'));
-  const article = '<!doctype html><html><head><title>Docs</title><link rel="canonical" href="https://docs.ptah.run/v0.2.0/"></head><body><main data-pagefind-body><h1>Original content</h1></main></body></html>';
+  const article = `<!doctype html><html><head><title>Docs</title><link rel="canonical" href="${Origin}/v0.2.0/"></head><body><main data-pagefind-body><h1>Original content</h1></main></body></html>`;
   const versions = ['edge', LATEST, ...Array.from({ length: 12 }, (_, index) => `v0.${index + 1}.0`)];
   const put = (version, path, html) => {
     const file = join(site, version, path);
