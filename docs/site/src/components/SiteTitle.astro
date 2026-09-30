@@ -17,6 +17,7 @@
  */
 import logo from '../assets/logo.svg';
 import VersionPicker from './VersionPicker.astro';
+import GraphicPreview from './GraphicPreview.astro';
 
 const { siteTitleHref } = Astro.locals.starlightRoute;
 ---
@@ -29,6 +30,9 @@ const { siteTitleHref } = Astro.locals.starlightRoute;
   <a class="ptah-brand__docs" href={siteTitleHref}>Docs</a>
   <VersionPicker />
 </div>
+
+{/* Released configurations register SiteTitle even when they use Starlight's footer. */}
+<GraphicPreview />
 
 <style>
   /* The brand cell of the concept: mark 20px, "Ptah" 600 14.5px, "Docs" 400
