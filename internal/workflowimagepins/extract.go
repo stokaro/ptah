@@ -19,7 +19,7 @@ var (
 		"--privileged", "--read-only", "--rm", "--tty",
 	}
 	valueDockerRunOptions = []string{
-		"-e", "-p", "-u", "-v", "-w", "--add-host", "--env",
+		"-e", "-p", "-u", "-v", "-w", "--add-host", "--entrypoint", "--env",
 		"--env-file", "--hostname", "--label", "--name", "--network",
 		"--platform", "--publish", "--user", "--volume", "--workdir",
 	}

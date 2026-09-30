@@ -12,6 +12,8 @@ sourceOfTruth:
   - docs/site/public/install.sh
   - docs/site/public/install.ps1
   - .github/workflows/release.yml
+  - Dockerfile
+  - .goreleaser.yaml
   - Makefile
 generated: false
 searchAliases:
@@ -249,6 +251,27 @@ cosign verify-blob \
 Then run the SHA-256 comparison for the archive. Signature verification and
 archive checksum verification answer different questions; use both when the
 release provenance is part of your trust decision.
+
+## Container image
+
+The image contains `ptah`, `ptah-compat`, and `ptah-ls` in `/usr/local/bin`
+for Linux amd64 and arm64. Its default entry point is `ptah`; select another
+binary with `--entrypoint`:
+
+```bash
+docker run --rm ghcr.io/stokaro/ptah:0.11.2 version
+docker run --rm --entrypoint ptah-compat ghcr.io/stokaro/ptah:0.11.2 version
+docker run --rm --entrypoint ptah-ls ghcr.io/stokaro/ptah:0.11.2 --version
+```
+
+`docker.io/stokaro/ptah:0.11.2` mirrors the same image. To include Ptah Compat
+in an existing migration image, copy its binary in a multi-stage build:
+
+```dockerfile
+FROM stokaro/ptah:0.11.2 AS ptah-bin
+FROM postgres:15-alpine
+COPY --from=ptah-bin /usr/local/bin/ptah-compat /usr/local/bin/ptah-compat
+```
 
 ## Shell completion and editor support
 
