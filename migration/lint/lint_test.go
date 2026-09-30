@@ -945,6 +945,18 @@ CREATE TABLE users_{{ $ }} (id INT);
 	c.Assert(findings[0].File, qt.Equals, "1.sql")
 }
 
+func TestLintFS_PromptPlaceholdersDoNotSelectTemplateRendering(t *testing.T) {
+	c := qt.New(t)
+	fsys := fixture(map[string]string{
+		"001_prompt.sql":   "UPDATE prompts SET body = '{{DATE}}; {{ ... }}' WHERE id = 1;\nDROP TABLE old_prompts;\n",
+		"002_template.sql": `{{ if eq .Env "" }}DROP TABLE old_settings;{{ end }}`,
+	})
+
+	findings, err := lint.LintFS(fsys, lint.Options{})
+	c.Assert(err, qt.IsNil)
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101", "BC103", "DS101"})
+}
+
 func TestLintFS_CaseVariantSQLFilesGetNamingWarning(t *testing.T) {
 	c := qt.New(t)
 

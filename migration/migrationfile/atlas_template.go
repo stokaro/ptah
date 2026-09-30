@@ -10,7 +10,8 @@ import (
 	"text/template"
 )
 
-var atlasTemplateActionRe = regexp.MustCompile(`{{-?\s*(define|template|if|else|end|range|with|block|\$|\.)\b?`)
+// A dot action cannot start with an ellipsis: prompts can contain literal {{ ... }}.
+var atlasTemplateActionRe = regexp.MustCompile(`{{-?\s*(define|template|if|else|end|range|with|block|\$|\.(?:[^.]|$))\b?`)
 
 // AtlasTemplateData is the default data object used for Atlas SQL templates.
 type AtlasTemplateData struct {
@@ -28,6 +29,8 @@ func LooksAtlasTemplateSQL(sql string) bool {
 // referenced by its path with the .sql extension stripped, so
 // {{ template "shared/users" . }} names shared/users.sql. A root file that
 // uses no template action at all is returned unchanged with rendered=false.
+// Literal placeholders such as {{DATE}} and {{ ... }} do not select template
+// rendering. Dot actions such as {{ .Env }} still render inside SQL strings.
 //
 // A nil data argument renders with a zero [AtlasTemplateData]. A key that
 // map-typed data does not carry renders as the map's zero element value rather
