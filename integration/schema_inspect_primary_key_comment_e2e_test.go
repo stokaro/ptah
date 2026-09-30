@@ -4,6 +4,7 @@ package integration_test
 
 import (
 	"fmt"
+	"regexp"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -15,6 +16,7 @@ import (
 // the stored key or clearing its comment. A replay into an empty database
 // must also preserve the key and its block-size hint.
 func TestSchemaInspectPreservesPrimaryKeyCommentE2E(t *testing.T) {
+	keyClauses := regexp.MustCompile(`(?m)^  (?:PRIMARY KEY|KEY) .*$`)
 	for _, engine := range mysqlCommentEngines {
 		for _, surface := range []struct {
 			name   string
@@ -63,8 +65,14 @@ func TestSchemaInspectPreservesPrimaryKeyCommentE2E(t *testing.T) {
 					replayed := clirun.Run(c, clirun.Ptah, opts, "schema", "apply", "--db-url", copyURL, "--schema-file", file, "--auto-approve")
 					c.Assert(replayed.ExitCode, qt.Equals, 0, qt.Commentf("%s", replayed.Stderr))
 					c.Assert(primaryKeyIndexComment(c, scratch, copyName), qt.Equals, before)
-					c.Assert(blockSizeDDL(c, mySQLDSNForDatabase(c, scratch.adminDSN, copyName)), qt.Equals,
-						blockSizeDDL(c, mySQLDSNForDatabase(c, scratch.adminDSN, name)),
+					replayedCompare := clirun.Run(c, clirun.Ptah, opts, "schema", "compare", "--db-url", copyURL, "--schema-file", file, "--exit-code")
+					c.Assert(replayedCompare.ExitCode, qt.Equals, 0, qt.Commentf("%s\n%s", replayedCompare.Stdout, replayedCompare.Stderr))
+					// MySQL can spell an inherited column collation explicitly on
+					// replay. Compare the key clauses without that unrelated text.
+					wantKeys := keyClauses.FindAllString(blockSizeDDL(c, mySQLDSNForDatabase(c, scratch.adminDSN, name)), -1)
+					c.Assert(wantKeys, qt.HasLen, 2)
+					c.Assert(keyClauses.FindAllString(blockSizeDDL(c, mySQLDSNForDatabase(c, scratch.adminDSN, copyName)), -1), qt.DeepEquals,
+						wantKeys,
 					)
 				})
 			}
