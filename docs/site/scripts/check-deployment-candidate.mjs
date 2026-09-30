@@ -6,7 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { EDGE, compareReleases, isRelease, retainedReleases } from './lib/doc-versions.mjs';
+import { EDGE, isRelease } from './lib/doc-versions.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = join(scriptDir, '..', '..', '..');
@@ -35,22 +35,6 @@ function isSuperset(candidate, deployed) {
   return deployed.every((version) => candidateSet.has(version));
 }
 
-function positiveInteger(value, label) {
-  if (!Number.isInteger(value) || value < 1) throw new Error(`${label} must be a positive integer`);
-  return value;
-}
-
-// A served version may leave only because the retention window moved past it.
-// The candidate then holds exactly the window over every release either side
-// knows: the newest `keep` of them. A candidate built before a newer tag
-// existed misses that tag, and one whose historical build failed misses a
-// version inside the window; neither equals the window, so both are refused.
-function removalIsRetention(candidateSet, deployedSet, keep) {
-  const window = retainedReleases([...candidateSet, ...deployedSet], keep);
-  const candidateReleases = candidateSet.filter(isRelease).sort(compareReleases);
-  return candidateReleases.join(',') === window.join(',');
-}
-
 function commitDecision({
   candidateCommit,
   deployedCommit,
@@ -58,13 +42,12 @@ function commitDecision({
   deployedSet,
   deployedIsAncestorOfCandidate,
   candidateIsAncestorOfDeployed,
-  keep,
 }) {
   const removed = deployedSet.filter((version) => !candidateSet.includes(version));
-  if (removed.length && !removalIsRetention(candidateSet, deployedSet, keep)) {
+  if (removed.length) {
     return {
       action: 'skip',
-      reason: `candidate would remove ${removed.join(', ')}, which the site serves and the retention window of ${keep} still holds`,
+      reason: `candidate would remove ${removed.join(', ')}, which the site serves at permanent release URLs`,
     };
   }
   const added = candidateSet.filter((version) => !deployedSet.includes(version));
@@ -96,7 +79,6 @@ export function deploymentCandidateDecision({
   deployedVersions,
   deployedIsAncestorOfCandidate,
   candidateIsAncestorOfDeployed,
-  retainedReleases: keep,
   release,
 }) {
   requiredCommit(candidateCommit, 'candidate commit');
@@ -109,7 +91,6 @@ export function deploymentCandidateDecision({
   if (typeof candidateIsAncestorOfDeployed !== 'boolean') {
     throw new Error('candidateIsAncestorOfDeployed must be a boolean');
   }
-  positiveInteger(keep, 'retained releases');
   if (release !== undefined && !isRelease(release)) throw new Error(`release ${release} is not a release version`);
   if (release !== undefined && !candidateSet.includes(release)) {
     return { action: 'fail', reason: `candidate does not carry ${release}, the release this run documents` };
@@ -121,7 +102,6 @@ export function deploymentCandidateDecision({
     deployedSet,
     deployedIsAncestorOfCandidate,
     candidateIsAncestorOfDeployed,
-    keep,
   });
   if (release !== undefined && decision.action === 'skip' && !deployedSet.includes(release)) {
     return { action: 'fail', reason: `${decision.reason}, and the served site does not list ${release}` };
@@ -175,7 +155,7 @@ async function readPublicState(baseUrl, { attempts, delayMilliseconds }) {
   throw new Error(`public deployment state was unavailable after ${attempts} attempts: ${lastProblem}`);
 }
 
-const DECISION_OPTIONS = ['--candidate-commit', '--candidate-versions', '--base-url', '--retained-releases'];
+const DECISION_OPTIONS = ['--candidate-commit', '--candidate-versions', '--base-url'];
 const WAIT_OPTIONS = ['--candidate-commit', '--candidate-versions', '--base-url'];
 
 function parseArguments(arguments_) {
@@ -192,7 +172,7 @@ function parseArguments(arguments_) {
   }
   if (values.has('invalid') || required.some((name) => !values.get(name))) {
     throw new Error(
-      'usage: node scripts/check-deployment-candidate.mjs --candidate-commit <full-sha> --candidate-versions <csv> --base-url <edge-url> --retained-releases <n> [--tag <tag>]\n' +
+      'usage: node scripts/check-deployment-candidate.mjs --candidate-commit <full-sha> --candidate-versions <csv> --base-url <edge-url> [--tag <tag>]\n' +
         '       node scripts/check-deployment-candidate.mjs --wait-for-deployment --candidate-commit <full-sha> --candidate-versions <csv> --base-url <edge-url>',
     );
   }
@@ -204,8 +184,6 @@ function parseArguments(arguments_) {
     wait,
   };
   if (!wait) {
-    const keep = values.get('--retained-releases');
-    options.retainedReleases = positiveInteger(/^\d+$/.test(keep) ? Number(keep) : Number.NaN, '--retained-releases');
     options.tag = values.get('--tag');
   }
   return options;
@@ -226,7 +204,6 @@ function selftest() {
     deployedVersions: versions,
     deployedIsAncestorOfCandidate: true,
     candidateIsAncestorOfDeployed: false,
-    retainedReleases: 10,
   };
   assert(
     deploymentCandidateDecision(base).action === 'deploy',
@@ -266,50 +243,73 @@ function selftest() {
     'divergent history was accepted',
   );
 
-  // A window of three over v0.1.0 to v0.4.0: v0.4.0 is the new release.
+  // New releases must preserve old URLs, including when edge has not changed.
   const served = ['edge', 'v0.1.0', 'v0.2.0', 'v0.3.0'];
-  const window = { ...base, deployedVersions: served, retainedReleases: 3 };
+  const archive = { ...base, deployedVersions: served };
   assert(
-    deploymentCandidateDecision({ ...window, candidateVersions: ['edge', 'v0.2.0', 'v0.3.0', 'v0.4.0'] })
-      .action === 'deploy',
-    'a release that pushed the oldest version out of the retention window was refused',
+    deploymentCandidateDecision({ ...archive, candidateVersions: [...served, 'v0.4.0'] }).action === 'deploy',
+    'a release that preserves every published version was refused',
   );
   assert(
     deploymentCandidateDecision({
-      ...window,
+      ...archive,
       candidateCommit: deployed,
       deployedCommit: deployed,
       candidateVersions: ['edge', 'v0.2.0', 'v0.3.0', 'v0.4.0'],
       candidateIsAncestorOfDeployed: true,
-    }).action === 'deploy',
-    'a release that swapped the oldest version on the served edge source was counted as already served',
+    }).action === 'skip',
+    'a release was allowed to remove an old URL on the served edge source',
   );
   assert(
     deploymentCandidateDecision({
-      ...window,
+      ...archive,
       deployedVersions: ['edge', 'v0.2.0', 'v0.3.0', 'v0.4.0'],
       candidateVersions: ['edge', 'v0.1.0', 'v0.2.0', 'v0.3.0'],
     }).action === 'skip',
     'a candidate built before the newest tag was allowed to remove it',
   );
   assert(
-    deploymentCandidateDecision({ ...window, candidateVersions: ['edge', 'v0.1.0', 'v0.3.0', 'v0.4.0'] })
+    deploymentCandidateDecision({ ...archive, candidateVersions: ['edge', 'v0.1.0', 'v0.3.0', 'v0.4.0'] })
       .action === 'skip',
-    'a candidate missing a version inside the window was accepted',
+    'a candidate missing a published version was accepted',
   );
   assert(
-    deploymentCandidateDecision({ ...window, candidateVersions: ['edge', 'v0.3.0', 'v0.4.0'] }).action ===
+    deploymentCandidateDecision({ ...archive, candidateVersions: ['edge', 'v0.3.0', 'v0.4.0'] }).action ===
       'skip',
-    'a candidate whose oldest retained build is missing was accepted',
+    'a candidate whose oldest release builds are missing was accepted',
   );
   assert(
-    deploymentCandidateDecision({ ...window, retainedReleases: 2, candidateVersions: ['edge', 'v0.2.0', 'v0.3.0'] })
+    deploymentCandidateDecision({
+      ...archive,
+      candidateCommit: deployed,
+      deployedCommit: deployed,
+      candidateVersions: served,
+      deployedVersions: ['edge', 'v0.3.0'],
+      candidateIsAncestorOfDeployed: true,
+    })
       .action === 'deploy',
-    'a narrower retention window could not retire the versions it no longer holds',
+    'restoring old versions without changing edge was refused',
+  );
+  const manyReleases = ['edge', ...Array.from({ length: 12 }, (_, index) => `v0.${index + 1}.0`)];
+  assert(
+    deploymentCandidateDecision({
+      ...base,
+      candidateVersions: manyReleases,
+      deployedVersions: ['edge', ...manyReleases.slice(-10)],
+    }).action === 'deploy',
+    'restoring versions beyond ten releases was refused',
+  );
+  assert(
+    deploymentCandidateDecision({
+      ...base,
+      candidateVersions: ['edge', ...manyReleases.slice(-10), 'v0.13.0'],
+      deployedVersions: manyReleases,
+    }).action === 'skip',
+    'adding a release was allowed to remove versions beyond ten releases',
   );
 
   // A tag run documents one release, and a green run means the site serves it.
-  const tagRun = { ...window, release: 'v0.4.0' };
+  const tagRun = { ...archive, release: 'v0.4.0' };
   assert(
     deploymentCandidateDecision({ ...tagRun, candidateVersions: ['edge', 'v0.1.0', 'v0.2.0', 'v0.3.0'] })
       .action === 'fail',
@@ -318,8 +318,8 @@ function selftest() {
   assert(
     deploymentCandidateDecision({
       ...tagRun,
-      candidateVersions: ['edge', 'v0.2.0', 'v0.3.0', 'v0.4.0'],
-      deployedVersions: ['edge', 'v0.2.0', 'v0.3.0', 'v0.4.0'],
+      candidateVersions: [...served, 'v0.4.0'],
+      deployedVersions: [...served, 'v0.4.0'],
       candidateIsAncestorOfDeployed: true,
       deployedIsAncestorOfCandidate: false,
     }).action === 'skip',
@@ -328,14 +328,14 @@ function selftest() {
   assert(
     deploymentCandidateDecision({
       ...tagRun,
-      candidateVersions: ['edge', 'v0.2.0', 'v0.3.0', 'v0.4.0'],
+      candidateVersions: [...served, 'v0.4.0'],
       candidateIsAncestorOfDeployed: true,
       deployedIsAncestorOfCandidate: false,
     }).action === 'fail',
     'a tag run skipped over a site that does not serve its release, and passed',
   );
   console.log(
-    'check-deployment-candidate.mjs --selftest: OK (later failure, B-before-A, release set, divergence, retention window, tag run)',
+    'check-deployment-candidate.mjs --selftest: OK (later failure, B-before-A, permanent release URLs, archive restoration, divergence, tag run)',
   );
 }
 
@@ -387,7 +387,6 @@ async function main() {
     deployedVersions: deployed.versions,
     deployedIsAncestorOfCandidate: gitIsAncestor(deployed.commit, options.candidateCommit),
     candidateIsAncestorOfDeployed: gitIsAncestor(options.candidateCommit, deployed.commit),
-    retainedReleases: options.retainedReleases,
     release,
   });
   if (decision.action === 'fail') throw new Error(decision.reason);

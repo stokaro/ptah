@@ -19,10 +19,8 @@ export const PAGES_PREFIX = '';
 // Edge, while Ptah is pre-GA. A release is a snapshot of what shipped; edge is
 // what master documents, and before v1 the difference between them is most of
 // the product -- a reader arriving at the apex is asking what Ptah does, not
-// what the last tag did. Nothing is hidden by the choice: every release the
-// retention window keeps has its own stable URL, and the picker lists each of
-// them, so a reader who wants the version they installed is one selection
-// away.
+// what the last tag did. Every release has its own stable URL and a picker
+// entry, so a reader can select the version they installed.
 //
 // The newest tag is still the answer where there is no edge folder at all: a
 // deployment assembled from tags alone needs a default, and the highest one is

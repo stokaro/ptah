@@ -53,8 +53,8 @@ const LISTED = ['edge', WITH_PAGE, WITHOUT_PAGE];
 // An index that does not name the page's version: the panel puts it first.
 const UNLISTED = [WITH_PAGE, WITHOUT_PAGE];
 // Pages this check serves as other versions of the built page. OLDER is a
-// release older than the latest that the index does not list, as a release
-// past the retention window would be; NEWER is newer than the latest, and
+// release older than the latest that this fixture's index does not list;
+// NEWER is newer than the latest, and
 // compares as newer only by number, since "v10" sorts before "v9" as text.
 const OLDER = 'v9.7.0';
 const NEWER = 'v10.0.0';

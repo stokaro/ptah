@@ -451,7 +451,9 @@ jobs:
     needs: scope
     if: github.event_name != 'pull_request' || needs.scope.outputs.code == 'true'
     runs-on: windows-latest
-    timeout-minutes: 40
+    # The whole job must cover the root and nested modules in both contours.
+    # Each lint invocation has its own timeout below.
+    timeout-minutes: 75
 
     steps:
       # Before the checkout, because the checkout is what would rewrite them.

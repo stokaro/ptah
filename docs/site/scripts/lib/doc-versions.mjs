@@ -1,13 +1,9 @@
-// The documentation versions a deployment carries: edge, and the release tags
-// the retention window keeps.
+// The documentation versions a deployment carries: edge and every release tag.
 //
-// Three programs answer questions about the same set. The Docs workflow picks
-// which tags to build (retained-doc-tags.mjs), gen-versions.mjs orders the
-// version picker, and check-deployment-candidate.mjs decides whether a served
-// version may leave the site. All three read the order from this module. With
-// a second ordering, the build could keep a tag that the guard counts as
-// retired: the guard would then refuse every later deploy, or accept one that
-// drops a version the window still holds.
+// The Docs workflow selects tags with release-doc-tags.mjs, gen-versions.mjs
+// orders the version picker, and check-deployment-candidate.mjs validates the
+// deployed version set. They share the release grammar so a built release
+// cannot disappear from the picker or the deployment guard.
 
 export const EDGE = 'edge';
 
@@ -41,11 +37,8 @@ export function compareReleases(a, b) {
   return a < b ? -1 : 1;
 }
 
-// The newest `keep` releases among `names`, oldest first. A name that is not a
-// release tag is ignored, because the workflow hands over every `v*` tag.
-export function retainedReleases(names, keep) {
-  if (!Number.isInteger(keep) || keep < 1) {
-    throw new Error(`the number of retained releases must be a positive integer, got ${keep}`);
-  }
-  return [...new Set(names)].filter(isRelease).sort(compareReleases).slice(-keep);
+// Every release among `names`, oldest first. The workflow hands over every
+// `v*` tag, including names that are not releases.
+export function releaseVersions(names) {
+  return [...new Set(names)].filter(isRelease).sort(compareReleases);
 }
