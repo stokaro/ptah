@@ -119,6 +119,8 @@ SQL:
   nullability or default changes is written without the clause and keeps its
   one key, as Atlas CE writes it.
 - An index's `COMMENT`, including a primary key's, is kept in `STATISTICS.INDEX_COMMENT` on both engines.
+  SQL inspection preserves primary-key comments on both CLI surfaces. Applying
+  the export to the same database keeps the key and comment.
   A changed secondary-index comment rebuilds the index in one statement: `ALTER TABLE t DROP INDEX k,
   ADD INDEX k (...) COMMENT '...'`. MySQL 8.4.11 refuses a `DROP INDEX` alone on
   an index a foreign key needs (`ERROR 1553`) and takes the pair. Atlas CE

@@ -476,6 +476,15 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
+      # Repeated cache extraction can exhaust the Windows job budget. Export
+      # the action's cache directory so later invocations reuse it while
+      # skipping another restoration. The first lint step restores it once.
+      - name: Share lint analysis cache
+        shell: pwsh
+        run: |
+          $ptahLintCache = Join-Path $env:USERPROFILE '.cache/golangci-lint'
+          "GOLANGCI_LINT_CACHE=$ptahLintCache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       # The same recipe the Ubuntu job runs, not a copy of its arguments: a
       # rule added to QTLINT_RULES has to reach every contour, and a second
       # spelling of the list is a second thing to keep in step.
@@ -501,6 +510,7 @@ jobs:
         with:
           args: --timeout=30m --build-tags=integration,observability
           version: v2.14.0
+          skip-cache: true
 
       # The action lints one directory per invocation, so a nested module needs
       # its own step, one per contour. scripts/check-go-module-lint-coverage.sh
@@ -518,6 +528,7 @@ jobs:
         with:
           args: --timeout=30m
           version: v2.14.0
+          skip-cache: true
           working-directory: examples/orm-loaders/gorm
 
       - name: Golint (gorm example, tagged contour)
@@ -525,6 +536,7 @@ jobs:
         with:
           args: --timeout=30m --build-tags=integration,observability
           version: v2.14.0
+          skip-cache: true
           working-directory: examples/orm-loaders/gorm
 
       - name: Golint (documentation source fixture)
@@ -532,6 +544,7 @@ jobs:
         with:
           args: --timeout=30m
           version: v2.14.0
+          skip-cache: true
           working-directory: docs/site/fixtures/source-equivalence
 
       - name: Golint (documentation source fixture, tagged contour)
@@ -539,4 +552,5 @@ jobs:
         with:
           args: --timeout=30m --build-tags=integration,observability
           version: v2.14.0
+          skip-cache: true
           working-directory: docs/site/fixtures/source-equivalence
