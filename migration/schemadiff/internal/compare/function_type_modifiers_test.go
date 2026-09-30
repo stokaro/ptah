@@ -50,6 +50,36 @@ func TestFunctionDefinitions_PostgresDiscardsRoutineTypeModifiers(t *testing.T) 
 	}
 }
 
+// The comparison canonicalizes the declaration before folding routine types.
+// Uppercase unquoted types must converge without folding quoted identifiers.
+func TestFunctionDefinitions_PostgresReturnTypeCaseMatchesCatalog(t *testing.T) {
+	tests := []struct {
+		name     string
+		declared string
+		recorded string
+	}{
+		{name: "unquoted scalar", declared: "TEXT", recorded: "text"},
+		{name: "unquoted array", declared: "TEXT[]", recorded: "text[]"},
+		{name: "unquoted set", declared: "SETOF TEXT", recorded: "SETOF text"},
+		{name: "unquoted table column", declared: "TABLE(code TEXT)", recorded: "TABLE(code text)"},
+		{name: "uppercase modifier", declared: "VARCHAR(20)", recorded: "character varying"},
+		{name: "uppercase time zone", declared: "TIMESTAMP(3) WITH TIME ZONE", recorded: "timestamp with time zone"},
+		{name: "quoted uppercase", declared: `"TEXT"`, recorded: `"TEXT"`},
+		{name: "quoted type spaces", declared: `"Type With Spaces"`, recorded: `"Type With Spaces"`},
+		{name: "quoted type in unquoted schema", declared: `PUBLIC."MixedCase"`, recorded: `public."MixedCase"`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			declared := schemamodel.Function{Name: "f", Returns: test.declared}
+			diff := compare.FunctionDefinitionsWithDialect(declared,
+				catalog.Function{Name: "f", Returns: test.recorded}, platform.Postgres)
+			c.Assert(diff.Changes["returns"], qt.Equals, "")
+			c.Assert(diff.Desired, qt.DeepEquals, declared)
+		})
+	}
+}
+
 func TestFunctionDefinitions_RoutineModifierNormalizationKeepsRealChanges(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -61,6 +91,7 @@ func TestFunctionDefinitions_RoutineModifierNormalizationKeepsRealChanges(t *tes
 		{name: "an array against a scalar", dialect: platform.Postgres, declared: "varchar(20)[]", recorded: "character varying"},
 		{name: "quoted type name", dialect: platform.Postgres, declared: `"type(20)"`, recorded: `"type"`},
 		{name: "quoted type case", dialect: platform.Postgres, declared: `"Type(20)"`, recorded: `"type(20)"`},
+		{name: "quoted against unquoted", dialect: platform.Postgres, declared: `"TEXT"`, recorded: "text"},
 		{name: "another table column", dialect: platform.Postgres, declared: "TABLE(a varchar(20))", recorded: "TABLE(b character varying)"},
 		{name: "MySQL retains return length", dialect: platform.MySQL, declared: "varchar(20)", recorded: "varchar(64)"},
 		{name: "Oracle retains return length", dialect: platform.Oracle, declared: "varchar(20)", recorded: "varchar(64)"},
