@@ -1,4 +1,4 @@
-// The documentation versions a deployment carries: edge and every release tag.
+// The documentation versions a deployment carries: edge, latest, and every release tag.
 //
 // The Docs workflow selects tags with release-doc-tags.mjs, gen-versions.mjs
 // orders the version picker, and check-deployment-candidate.mjs validates the
@@ -6,6 +6,7 @@
 // cannot disappear from the picker or the deployment guard.
 
 export const EDGE = 'edge';
+export const LATEST = 'latest';
 
 const RELEASE = /^v(\d+)\.(\d+)(?:\.(\d+))?$/;
 
@@ -14,7 +15,7 @@ export function isRelease(name) {
 }
 
 export function isVersionFolder(name) {
-  return name === EDGE || isRelease(name);
+  return name === EDGE || name === LATEST || isRelease(name);
 }
 
 export function parseSemver(name) {

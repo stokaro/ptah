@@ -37,6 +37,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { archiveBannerSelftest, publishArchiveBanners } from './lib/archive-version-banner.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const defaultRepoRoot = join(scriptDir, '..', '..', '..');
@@ -209,8 +210,9 @@ export function sourcePath(asset, repoRoot = defaultRepoRoot) {
   return join(repoRoot, asset.source);
 }
 
-// publish copies every root asset into siteDir, writes every redirect page, and
-// returns what it wrote.
+// publish copies the root assets, writes root redirects, and renders archive
+// warnings and latest canonicals into the assembled pages. It returns the root
+// files it wrote.
 //
 // A missing or empty source throws rather than being skipped. The deploy step
 // that calls this is the last chance to notice: past it, the artifact uploads
@@ -240,10 +242,12 @@ export function publish(siteDir, repoRoot = defaultRepoRoot) {
     writeFileSync(to, renderRedirect(redirect));
     written.push(redirectFile(redirect));
   }
+  publishArchiveBanners(siteDir);
   return written;
 }
 
 function selftest() {
+  archiveBannerSelftest();
   const assert = (condition, message) => {
     if (!condition) throw new Error(message);
   };
@@ -260,6 +264,8 @@ function selftest() {
     }
 
     const site = join(tmp, 'site');
+    mkdirSync(join(site, 'edge'), { recursive: true });
+    writeFileSync(join(site, 'versions.json'), JSON.stringify({ versions: [{ slug: 'edge' }] }));
     const written = publish(site, fakeRepo);
     const expected = ROOT_ASSETS.length + ROOT_REDIRECTS.length;
     assert(written.length === expected, `publish wrote ${written.length} of ${expected}`);
