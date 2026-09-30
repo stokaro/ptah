@@ -3692,6 +3692,25 @@ func (p *Parser) handleFunctionCallOrKeyword() (*ast.DefaultValue, error) {
 		return p.parseDefaultFunctionCall(start)
 	}
 
+	// NULL is SQL, not the string 'NULL'. Keep it on the expression side so
+	// the SQL source reader and every renderer preserve the missing value.
+	if upperValue == "NULL" {
+		casts, err := p.parsePostgresCasts()
+		if err != nil {
+			return nil, err
+		}
+		return &ast.DefaultValue{Expression: value + casts}, nil
+	}
+
+	// PostgreSQL's current-time keywords are expressions without an empty
+	// argument list. CURRENT_TIMESTAMP() is invalid there. A precision such
+	// as CURRENT_TIMESTAMP(3) was already read by parseDefaultFunctionCall.
+	if platform.IsPostgresFamily(p.dialect) && slices.Contains([]string{
+		"CURRENT_TIMESTAMP", "CURRENT_DATE", "CURRENT_TIME", "LOCALTIMESTAMP", "LOCALTIME",
+	}, upperValue) {
+		return &ast.DefaultValue{Expression: value}, nil
+	}
+
 	// Handle MySQL/PostgreSQL functions that can be used without parentheses
 	if upperValue == "CURRENT_TIMESTAMP" || upperValue == "NOW" || upperValue == "CURRENT_DATE" || upperValue == "CURRENT_TIME" {
 		return &ast.DefaultValue{Expression: value + "()"}, nil

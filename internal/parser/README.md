@@ -240,6 +240,10 @@ for _, stmt := range statements.Statements {
 - `CHECK (expression)`
 - `REFERENCES table(column) [ON DELETE action] [ON UPDATE action]`
 
+PostgreSQL time keywords such as `CURRENT_TIMESTAMP` remain expressions without
+added parentheses. Explicit precision, such as `CURRENT_TIMESTAMP(3)`, is kept.
+`DEFAULT NULL` is a SQL expression; `DEFAULT 'NULL'` is a string literal.
+
 ### Table Constraints
 - `PRIMARY KEY (column1, column2)`
 - `UNIQUE (column1, column2)`

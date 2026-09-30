@@ -3124,6 +3124,10 @@ func foreignKeyColumnTypesCompatible(localType, referencedType, dialect string) 
 	if localType == referencedType {
 		return !mysqlFamilyForeignKeyTypeUnsupported(localType, dialect)
 	}
+	if dialect == platform.Postgres {
+		family := postgresForeignKeyTypeFamily(localType)
+		return family != "" && family == postgresForeignKeyTypeFamily(referencedType)
+	}
 	if dialect != platform.MySQL && dialect != platform.MariaDB {
 		return false
 	}
@@ -3133,6 +3137,21 @@ func foreignKeyColumnTypesCompatible(localType, referencedType, dialect string) 
 	}
 	return mysqlStringTypeFamily(localType) != "" &&
 		mysqlStringTypeFamily(localType) == mysqlStringTypeFamily(referencedType)
+}
+
+// postgresForeignKeyTypeFamily recognizes comparable types whose declarations
+// need not be identical. PostgreSQL's integer equality operators compare all
+// integer widths; varchar length modifiers do not change its equality type.
+// This does not infer a cast between unrelated or user-defined types.
+func postgresForeignKeyTypeFamily(fieldType string) string {
+	if slices.Contains([]string{"SMALLINT", "INTEGER", "BIGINT"}, fieldType) {
+		return "integer"
+	}
+	base, modifier, hasModifier := strings.Cut(fieldType, "(")
+	if strings.TrimSpace(base) == "VARCHAR" && (!hasModifier || strings.HasSuffix(modifier, ")")) {
+		return "varchar"
+	}
+	return ""
 }
 
 func mysqlStringTypeFamily(fieldType string) string {

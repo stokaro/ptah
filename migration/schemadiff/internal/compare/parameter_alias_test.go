@@ -40,6 +40,10 @@ func TestFunctionDefinitions_AParameterTypeIsComparedByWhatItMeans(t *testing.T)
 			reported: "a numeric(10,2)",
 		},
 		{
+			// PostgreSQL discards modifiers when creating a routine.
+			name: "a discarded modifier", declared: "a numeric(10,2)", reported: "a numeric(12,2)",
+		},
+		{
 			name:     "the integer aliases",
 			declared: "a int4, b int8, c int2",
 			reported: "a integer, b bigint, c smallint",
@@ -95,7 +99,6 @@ func TestFunctionDefinitions_AGenuinelyDifferentParameterTypeIsStillAChange(t *t
 	}{
 		{name: "a different width", declared: "a int4", reported: "a bigint"},
 		{name: "a different type entirely", declared: "a float8", reported: "a text"},
-		{name: "a different modifier", declared: "a numeric(10,2)", reported: "a numeric(12,2)"},
 		{name: "an argument added", declared: "a float8, b text", reported: "a double precision"},
 	}
 

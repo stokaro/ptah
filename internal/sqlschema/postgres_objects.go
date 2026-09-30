@@ -332,6 +332,9 @@ func toDomain(
 // a number, a keyword, a cast, a call -- is SQL and stays SQL, and DEFAULT
 // NULL is no default at all, which is what the server stores for it.
 func domainDefault(value *ast.DefaultValue, sourcePlatform string) (literal, expression string) {
+	if strings.EqualFold(strings.TrimSpace(value.Expression), "NULL") {
+		return "", ""
+	}
 	if value.Expression != "" {
 		return "", value.Expression
 	}

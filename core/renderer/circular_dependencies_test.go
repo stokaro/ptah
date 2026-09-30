@@ -907,25 +907,26 @@ func TestGetOrderedCreateStatements_SQLiteAcceptsInlineUniqueReferencedColumn(t 
 
 func TestGetOrderedCreateStatements_IncompatibleForeignKeyTypes_FailurePath(t *testing.T) {
 	tests := []struct {
-		name    string
-		dialect string
+		name      string
+		dialect   string
+		childType string
 	}{
-		{name: "postgres", dialect: "postgres"},
-		{name: "mysql", dialect: "mysql"},
-		{name: "mariadb", dialect: "mariadb"},
-		{name: "sql server", dialect: "sqlserver"},
-		{name: "spanner", dialect: "spanner"},
+		{name: "postgres", dialect: "postgres", childType: "UUID"},
+		{name: "mysql", dialect: "mysql", childType: "BIGINT"},
+		{name: "mariadb", dialect: "mariadb", childType: "BIGINT"},
+		{name: "sql server", dialect: "sqlserver", childType: "BIGINT"},
+		{name: "spanner", dialect: "spanner", childType: "BIGINT"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			statements, err := renderer.GetOrderedCreateStatements(
-				simpleForeignKeyDatabase("INTEGER", "BIGINT"),
+				simpleForeignKeyDatabase("INTEGER", test.childType),
 				test.dialect,
 			)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-			c.Assert(err, qt.ErrorMatches, `invalid foreign key: foreign-key columns "children"\."parent_id" \(BIGINT\) and "parents"\."id" \(INTEGER\) have incompatible types`)
+			c.Assert(err, qt.ErrorMatches, `invalid foreign key: foreign-key columns "children"\."parent_id" \(`+test.childType+`\) and "parents"\."id" \(INTEGER\) have incompatible types`)
 			c.Assert(statements, qt.IsNil)
 		})
 	}
