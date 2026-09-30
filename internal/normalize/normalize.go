@@ -221,17 +221,17 @@ func DefaultValue(defaultValue, typeName string) string {
 
 	cleanValue := defaultValue
 
-	// MariaDB/MySQL returns 'NULL' string for columns without explicit defaults
-	// Normalize this to empty string for consistent comparison
-	if strings.ToUpper(cleanValue) == "NULL" {
-		return ""
-	}
-
 	// Handle PostgreSQL type casting syntax (e.g., 'user'::text, '0'::bigint)
 	// Remove the ::type suffix before processing quotes
 	// We need to find the last :: to handle cases like 'value::with::colons'::text
 	if lastColonIndex := strings.LastIndex(cleanValue, "::"); lastColonIndex != -1 {
 		cleanValue = cleanValue[:lastColonIndex]
+	}
+
+	// SQL NULL, including a PostgreSQL cast, is no default. Check before
+	// removing quotes so the text 'NULL' remains a different value.
+	if strings.EqualFold(strings.TrimSpace(cleanValue), "NULL") {
+		return ""
 	}
 
 	// Remove surrounding quotes for comparison (both single and double quotes)

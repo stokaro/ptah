@@ -9,6 +9,9 @@ goal: "Identify the PostgreSQL objects and release lines Ptah manages."
 sourceOfTruth:
   - "internal/capabilityprobe/cells.go"
   - "internal/dbschema"
+  - "core/renderer"
+  - "migration/schemadiff"
+  - "internal/routineargs"
 generated: false
 searchAliases:
   - "PostgreSQL extension"
@@ -54,6 +57,12 @@ nothing of `crm` asks for its tables to be dropped. Ptah refuses a key into
 such a schema by name rather than plan the drop: scope the run with
 `search_path` or declare the referenced table.
 
+Foreign key columns may use different widths within PostgreSQL's integer
+family (`smallint`, `integer`, `bigint`), or different `varchar` lengths.
+Ptah keeps the declared column types because PostgreSQL can compare these
+values without widening the columns. This rule does not permit arbitrary
+type pairs; PostgreSQL must have a suitable equality operator for the key.
+
 ## Version-dependent behavior
 
 PostgreSQL release lines differ in grammar that reaches generated SQL:
@@ -91,6 +100,11 @@ summarize behavior that affects how you plan changes.
 PostgreSQL does not keep the text that declared a type, a default or an
 expression. It stores what it parsed and prints that back, so a declaration and
 its own read-back rarely match as text:
+
+Time defaults keep their SQL syntax: `DEFAULT CURRENT_TIMESTAMP` stays a
+keyword expression, and `DEFAULT CURRENT_TIMESTAMP(3)` keeps its precision.
+`DEFAULT NULL` means SQL null, the same as an omitted default.
+`DEFAULT 'NULL'` is a string value and compares as a different default.
 
 | Declared | Read back |
 | --- | --- |
@@ -539,6 +553,13 @@ type of existing function` and a renamed parameter with `cannot change name of
 input parameter` (both SQLSTATE 42P13). A changed parameter *type* it accepts,
 and creates a second overload: without the drop, a declaration of one routine
 leaves two behind.
+
+PostgreSQL discards type modifiers in routine arguments and results.
+`RETURNS varchar(20)` therefore compares equal to the catalog's
+`character varying`, and `numeric(10,2)` to `numeric`. Ptah ignores these
+modifiers when comparing routines and keeps the authored declaration when
+rendering a real change. Column lengths and numeric precision still affect
+stored values and remain part of column comparison.
 
 The drop names the function's argument list, so an overloaded name
 loses only the overload that changed. A function that takes no arguments is

@@ -418,6 +418,7 @@ jobs:
           npm run check:glossary-coverage:selftest
           npm run check:accessibility:selftest
           npm run check:visual-snapshots:selftest
+          npm run check:graphic-preview:selftest
           npm run check:version-picker:selftest
           npm run check:navigation:selftest
           npm run check:search-ranking:selftest
@@ -438,6 +439,7 @@ jobs:
           npm run check:faq-groups
           npm run check:faq-page
           npm run check:build-info
+          npm run check:graphic-preview -- --output "$RUNNER_TEMP/ptah-docs-graphic-preview"
           mkdir -p "$GITHUB_WORKSPACE/_site/edge"
           cp -r dist/. "$GITHUB_WORKSPACE/_site/edge/"
           node scripts/write-build-info.mjs \

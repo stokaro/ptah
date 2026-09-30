@@ -106,17 +106,13 @@ func normalizeRoutineArgument(argument string) string {
 // normalizeRoutineType strips a type modifier and maps an alias, leaving any
 // leading parameter name alone because the catalog keeps it.
 func normalizeRoutineType(text string) string {
+	text = WithoutTypeModifiers(text)
 	dimensions := 0
 	for strings.HasSuffix(text, "[]") {
 		dimensions++
 		text = strings.TrimSpace(strings.TrimSuffix(text, "[]"))
 	}
 	array := strings.Repeat("[]", dimensions)
-	// A type modifier -- varchar(50), numeric(10,2) -- is not part of the
-	// identity; the catalog reports the bare type.
-	if open := strings.Index(text, "("); open >= 0 && strings.HasSuffix(text, ")") {
-		text = strings.TrimSpace(text[:open])
-	}
 	fields := strings.Fields(text)
 	if len(fields) == 0 {
 		return array
@@ -131,6 +127,58 @@ func normalizeRoutineType(text string) string {
 	}
 	joined := strings.TrimSpace(head + " " + tail)
 	return strings.ToLower(joined) + array
+}
+
+// WithoutTypeModifiers removes unquoted parenthesized modifiers from a routine
+// type declaration, preserving array suffixes, time zone words and quoted names.
+// PostgreSQL discards these modifiers in arguments and results alike. Identity
+// matching and definition comparison must share this rule, or a routine can
+// match its overload yet be replaced on every comparison.
+//
+// The input must be a type or one argument declaration without its default,
+// never a TABLE result list or a default expression. Unbalanced input is kept
+// unchanged so it cannot compare equal to a valid catalog type.
+func WithoutTypeModifiers(text string) string {
+	var result strings.Builder
+	var quote byte
+	depth := 0
+	for i := 0; i < len(text); i++ {
+		character := text[i]
+		switch {
+		case quote != 0:
+			if depth == 0 {
+				result.WriteByte(character)
+			}
+			if character == quote {
+				if i+1 < len(text) && text[i+1] == quote {
+					i++
+					if depth == 0 {
+						result.WriteByte(text[i])
+					}
+				} else {
+					quote = 0
+				}
+			}
+		case character == '\'' || character == '"':
+			quote = character
+			if depth == 0 {
+				result.WriteByte(character)
+			}
+		case character == '(':
+			depth++
+		case character == ')':
+			depth--
+			if depth < 0 {
+				return text
+			}
+		case depth == 0:
+			result.WriteByte(character)
+		}
+	}
+	if depth != 0 || quote != 0 {
+		return text
+	}
+	return strings.TrimSpace(result.String())
 }
 
 // CutDefault splits one argument at its default: the declaration before a

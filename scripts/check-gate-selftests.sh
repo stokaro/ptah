@@ -286,6 +286,12 @@ run_node_selftest_case check-page-health.mjs \
 	"the sidebar-to-page rule short-circuited inside analyze()" \
 	"perl -0pi -e 's/if \\(!liveRoutes\\.has\\(entry\\.route\\)\\) \\{/if (false) {/' docs/site/scripts/check-page-health.mjs"
 
+# A modal that lets keyboard focus escape is unusable. Require the preview
+# self-test to fail when its focus rule stops reading that defect.
+run_node_selftest_case check-graphic-preview.mjs \
+	"the modal focus rule short-circuited inside previewProblems()" \
+	"perl -0pi -e 's/if \\(!reading\\.focusInside\\)/if (false)/' docs/site/scripts/check-graphic-preview.mjs"
+
 # The Pages root. Two fixtures, because the gate's two directions fail
 # differently and only one of them leaves a trace anybody would notice.
 #

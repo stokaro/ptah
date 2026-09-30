@@ -9,6 +9,8 @@ goal: "Render a desired schema from SQL DDL."
 sourceOfTruth:
   - "internal/cli/schema"
   - "internal/schemaload"
+  - "internal/parser"
+  - "internal/sqlschema"
 generated: false
 overlaps: []
 disposition: keep
@@ -58,6 +60,8 @@ type outside the search path: `m app.mood`, `m "app"."Mood"[]`,
 `g public.geometry(Point, 4326)`. A comparison matches it to the type the
 database reports by schema and name. A column moved to a type of the same name
 in another schema plans the change.
+
+See [PostgreSQL defaults](../../databases/postgresql/#how-a-declaration-is-compared-with-what-the-server-stored).
 
 ## Render it
 

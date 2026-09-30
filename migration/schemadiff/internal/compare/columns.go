@@ -495,6 +495,12 @@ func columnDefaultChange(
 	if genDefault == "" {
 		genDefault = genCol.DefaultExpr
 	}
+	// Default is a literal value, while DefaultExpr is SQL. The renderer quotes
+	// the literal NULL, so feed its quoted form to the normalizer too. Otherwise
+	// a real text default compares equal to no default at all.
+	if (genCol.DefaultSet || genCol.Default != "") && strings.EqualFold(strings.TrimSpace(genCol.Default), "NULL") {
+		genDefault = "'" + genCol.Default + "'"
+	}
 	genDefault = renderedDefaultForDialect(genDefault, genCol.Type, dialect)
 	dbDefault := ""
 	if dbCol.ColumnDefault != nil {

@@ -341,8 +341,8 @@ func FunctionsWithSemantics(
 // canonicalizePostgresArguments maps each argument's type onto the spelling
 // format_type emits, leaving the argument's NAME alone.
 //
-// The rule is narrow on purpose: it rewrites the last word before any
-// parenthesized modifier, and nothing else. In PostgreSQL's parameter syntax an
+// PostgreSQL discards parenthesized type modifiers. The alias rule rewrites
+// the last word of the remaining declaration. In PostgreSQL's parameter syntax an
 // argument is `type`, `name type` or `mode name type`, so that word is always
 // part of the type and never the name — a parameter called `float8` with type
 // `integer` reads as `float8 integer` and is left untouched, which a rule that
@@ -350,7 +350,7 @@ func FunctionsWithSemantics(
 //
 //	float8                 -> double precision
 //	a float8               -> a double precision
-//	a decimal(10, 2)       -> a numeric(10,2)
+//	a decimal(10, 2)       -> a numeric
 //	a double precision     -> a double precision
 //	float8 integer         -> float8 integer
 func canonicalizePostgresArguments(parameters string) string {
@@ -384,21 +384,14 @@ func canonicalizePostgresArgument(argument string) string {
 // canonicalizePostgresArgumentType canonicalizes the type of one argument
 // that declares no default.
 func canonicalizePostgresArgumentType(argument string) string {
-	trimmed := strings.TrimSpace(argument)
-	head, modifier := trimmed, ""
-	if i := strings.IndexByte(trimmed, '('); i >= 0 {
-		head = strings.TrimSpace(trimmed[:i])
-		modifier = strings.ReplaceAll(trimmed[i:], " ", "")
-	}
-	fields := strings.Fields(head)
+	trimmed := routineargs.WithoutTypeModifiers(argument)
+	fields := strings.Fields(trimmed)
 	if len(fields) == 0 {
 		return trimmed
 	}
 	last := len(fields) - 1
-	if canonical, isAlias := pgTypeAliases[strings.ToLower(fields[last])]; isAlias {
-		fields[last] = canonical
-	}
-	return strings.Join(fields, " ") + modifier
+	fields[last] = canonicalizePostgresRoutineType(fields[last])
+	return strings.Join(fields, " ")
 }
 
 // canonicalizePostgresReturns folds a return clause onto the spelling
@@ -418,14 +411,32 @@ func canonicalizePostgresReturns(returns string) string {
 		return trimmed
 	}
 	if rest, found := cutPrefixFold(trimmed, "setof "); found {
-		return "SETOF " + canonicalizePostgresType(rest)
+		return "SETOF " + canonicalizePostgresRoutineType(rest)
 	}
-	if rest, found := cutPrefixFold(trimmed, "table("); found {
-		if inner, closed := strings.CutSuffix(strings.TrimSpace(rest), ")"); closed {
-			return "TABLE(" + canonicalizePostgresArguments(inner) + ")"
+	if rest, found := cutPrefixFold(trimmed, "table"); found {
+		if list, opened := strings.CutPrefix(strings.TrimSpace(rest), "("); opened {
+			if inner, closed := strings.CutSuffix(strings.TrimSpace(list), ")"); closed {
+				return "TABLE(" + canonicalizePostgresArguments(inner) + ")"
+			}
 		}
 	}
-	return canonicalizePostgresType(trimmed)
+	return canonicalizePostgresRoutineType(trimmed)
+}
+
+// canonicalizePostgresRoutineType folds a result's type after removing the
+// modifiers CREATE FUNCTION discards. Column and domain comparison keep those
+// modifiers, because they change stored values there.
+func canonicalizePostgresRoutineType(typeName string) string {
+	base := routineargs.WithoutTypeModifiers(typeName)
+	var suffix strings.Builder
+	for strings.HasSuffix(base, "[]") {
+		base = strings.TrimSpace(strings.TrimSuffix(base, "[]"))
+		suffix.WriteString("[]")
+	}
+	if canonical, ok := pgTypeAliases[strings.ToLower(base)]; ok {
+		base = canonical
+	}
+	return base + suffix.String()
 }
 
 // impliedPostgresReturns answers a declared function's return clause, filling

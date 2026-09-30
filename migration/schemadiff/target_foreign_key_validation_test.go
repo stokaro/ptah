@@ -50,7 +50,7 @@ func TestCompareWithDatabaseInfo_ValidatesTargetForeignKeys_FailurePath(t *testi
 			dialect: platform.Postgres,
 			schema:  typeMismatchDatabase(),
 			wantIs:  ptaherr.ErrInvalidSchemaDiff,
-			wantErr: `foreign-key columns "children"\."parent_id" \(BIGINT\) and "parents"\."id" \(INTEGER\) have incompatible types`,
+			wantErr: `foreign-key columns "children"\."parent_id" \(UUID\) and "parents"\."id" \(INTEGER\) have incompatible types`,
 		},
 	}
 
@@ -135,7 +135,7 @@ func typeMismatchDatabase() *schemamodel.Database {
 		},
 		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
-			{StructName: "Child", Name: "parent_id", Type: "BIGINT", Foreign: "parents(id)"},
+			{StructName: "Child", Name: "parent_id", Type: "UUID", Foreign: "parents(id)"},
 		},
 	}
 }
