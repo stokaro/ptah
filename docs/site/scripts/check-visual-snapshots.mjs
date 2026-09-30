@@ -9,6 +9,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadChromium, startBuiltSite } from './lib/built-site.mjs';
 import { readVisualManifests } from './lib/visual-contract.mjs';
+import { checkGraphicPreviews, graphicPreviewSelftest } from './check-graphic-preview.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const siteRoot = join(scriptDir, '..');
@@ -29,6 +30,7 @@ function snapshotName(route, viewport, theme) {
 }
 
 function selftest() {
+  graphicPreviewSelftest();
   const routeNames = routes.map(({ name }) => name);
   const files = routes.flatMap((route) => viewports.flatMap((viewport) => themes.map((theme) => snapshotName(route, viewport, theme))));
   if (new Set(routeNames).size !== routeNames.length || new Set(files).size !== files.length) {
@@ -235,6 +237,7 @@ async function main() {
     process.exitCode = 1;
     return;
   }
+  await checkGraphicPreviews({ dist: distRoot, output: join(outputRoot, 'graphic-preview') });
   console.log(`check-visual-snapshots.mjs: OK (${manifest.length} screenshots and ${proofs.length} manifest-backed proof in ${outputRoot})`);
 }
 

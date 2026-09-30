@@ -329,7 +329,7 @@ const measure = ({ tolerance, cellLineLimit }) => {
   // that width. Image-only paragraphs are visual containers rather than prose.
   const proseWidths = [];
   const proseSelector = [
-    '.sl-markdown-content > p:not(:has(> img:only-child))',
+    '.sl-markdown-content > p',
     '.sl-markdown-content > ul',
     '.sl-markdown-content > ol',
     '.sl-markdown-content > blockquote',
@@ -341,7 +341,14 @@ const measure = ({ tolerance, cellLineLimit }) => {
   const markdown = document.querySelector('.sl-markdown-content');
   const markdownRect = markdown?.getBoundingClientRect();
   const proseLeftOffsets = [];
-  for (const element of document.querySelectorAll(proseSelector)) {
+  // Preview links wrap standalone images. The wrapper changes the element
+  // shape, but a paragraph containing text must still obey the prose measure.
+  const imageOnly = (element) => element.tagName === 'P' && !element.textContent.trim() &&
+    element.children.length === 1 && element.querySelector(
+      ':scope > img, :scope > picture > img, :scope > a > img:only-child, :scope > a > picture:only-child > img',
+    );
+  const proseElements = [...document.querySelectorAll(proseSelector)].filter((element) => !imageOnly(element));
+  for (const element of proseElements) {
     const rect = element.getBoundingClientRect();
     if (rect.width > 0) {
       proseWidths.push(Math.round(rect.width));
@@ -369,7 +376,7 @@ const measure = ({ tolerance, cellLineLimit }) => {
     pageHeading: alignmentRect(heading),
     markdownShell: alignmentRect(markdown),
     ordinaryParagraph: alignmentRect(
-      document.querySelector('.sl-markdown-content > p:not(:has(> img:only-child))'),
+      proseElements.find((element) => element.tagName === 'P'),
     ),
     sectionHeading: alignmentRect(document.querySelector('.sl-markdown-content > .sl-heading-wrapper')),
     codeBlock: alignmentRect(document.querySelector('.sl-markdown-content > .expressive-code')),
@@ -1008,6 +1015,28 @@ async function main() {
       const measures = await page.evaluate(measure, { tolerance: overflowTolerance, cellLineLimit: maxCellLines });
       if (measures.widestProse !== 640) {
         failures.push(`prose-width detector returned ${measures.widestProse}, expected 640`);
+      }
+
+      await page.setContent(
+        '<main><div class="sl-markdown-content">' +
+          '<p style="width:1000px"><img alt="Diagram"></p>' +
+          '<p style="width:1000px"><a href="diagram.svg"><picture><img alt="Diagram"></picture></a></p>' +
+          '<p style="width:640px">prose</p></div></main>',
+      );
+      const imageParagraphs = await page.evaluate(measure, { tolerance: overflowTolerance, cellLineLimit: maxCellLines });
+      if (imageParagraphs.widestProse !== 640 || imageParagraphs.proseElementCount !== 1 ||
+          imageParagraphs.articleAlignment.ordinaryParagraph?.width !== 640) {
+        failures.push('prose-width detector treated a standalone image or its preview link as prose');
+      }
+      for (const content of ['<a href="diagram.svg"><img alt="Diagram"></a> explanatory text', 'ordinary prose']) {
+        await page.setContent(
+          '<main><div class="sl-markdown-content">' +
+            `<p class="ptah-wide-content" style="width:1000px">${content}</p></div></main>`,
+        );
+        const withText = await page.evaluate(measure, { tolerance: overflowTolerance, cellLineLimit: maxCellLines });
+        if (withText.widestProse !== 1000 || withText.proseElementCount !== 1) {
+          failures.push('prose-width detector exempted text because of an image or wide-content class');
+        }
       }
 
       await page.setViewportSize({ width: 1200, height: 900 });

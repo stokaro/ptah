@@ -13,7 +13,7 @@ const siteRoot = resolve(scriptDir, '..');
 const fullCommit = /^[0-9a-f]{40}$/;
 const releaseVersion = /^v\d+\.\d+\.\d+$/;
 
-export function releaseActionProblems({ version, sourceCommit, authored, generated, breadcrumb, picker }) {
+export function releaseActionProblems({ version, sourceCommit, authored, generated, breadcrumb, picker, preview }) {
   const problems = [];
   if (!releaseVersion.test(version)) problems.push('version must use vMAJOR.MINOR.PATCH');
   if (!fullCommit.test(sourceCommit)) problems.push('sourceCommit must be a full lowercase Git SHA');
@@ -106,6 +106,9 @@ export function releaseActionProblems({ version, sourceCommit, authored, generat
   // overlay puts in its header, and only if that mount point loads the picker
   // from the Pages root.
   problems.push(...mountProblems(picker ?? {}, { version }).map((problem) => `version picker: ${problem}`));
+  if (preview?.dialogs !== 1 || !preview?.registered || preview?.closeControls !== 1) {
+    problems.push('graphic preview: the release must carry one working viewer and its close control');
+  }
   return problems;
 }
 
@@ -164,6 +167,7 @@ function selftest() {
       arrived: `/${version}/versioned/overview/`,
     },
     picker: mountFixture(version),
+    preview: { dialogs: 1, registered: true, closeControls: 1 },
   };
   assert(releaseActionProblems(valid).length === 0, 'valid release actions failed');
   const directGeneratedEdit = structuredClone(valid);
@@ -192,6 +196,9 @@ function selftest() {
     releaseActionProblems(builtInPicker).some((problem) => problem.startsWith('version picker:')),
     'a release without the version picker mount point passed',
   );
+  for (const preview of [{ dialogs: 0, registered: true, closeControls: 1 }, { dialogs: 1, registered: false, closeControls: 1 }, { dialogs: 1, registered: true, closeControls: 0 }]) {
+    assert(releaseActionProblems({ ...valid, preview }).some((problem) => problem.startsWith('graphic preview:')), 'a release without a usable graphic viewer passed');
+  }
   console.log(
     'check-release-page-actions.mjs --selftest: OK (authored/generated tag source, generator edit routing, version picker)',
   );
@@ -321,6 +328,11 @@ async function main() {
       generated: await readPageActions(page, built, '/reference/command-flags/'),
       breadcrumb: await readVersionedBreadcrumb(page, built),
       picker: await readReleasePicker(page, built),
+      preview: await page.evaluate(() => ({
+        dialogs: document.querySelectorAll('ptah-graphic-preview dialog').length,
+        registered: Boolean(customElements.get('ptah-graphic-preview')),
+        closeControls: document.querySelectorAll('ptah-graphic-preview [data-preview-control="close"]').length,
+      })),
     });
     if (problems.length > 0) throw new Error(problems.join('; '));
   } finally {
