@@ -10,9 +10,6 @@ on:
 permissions:
   contents: read
 
-env:
-  MAX_DOC_TAG_VERSIONS: ${{ vars.MAX_DOC_TAG_VERSIONS || 10 }}
-
 jobs:
   changes:
     name: Detect docs changes
@@ -357,10 +354,10 @@ jobs:
           cache: 'npm'
           cache-dependency-path: docs/site/package-lock.json
 
-      - name: Self-test the version generator and the retained tags
+      - name: Self-test the version generator and the release tags
         run: |
           node docs/site/scripts/gen-versions.mjs --selftest
-          node docs/site/scripts/retained-doc-tags.mjs --selftest
+          node docs/site/scripts/release-doc-tags.mjs --selftest
 
       # The route ledger's primary invariant runs with the other site checks
       # below and needs no history. This is the secondary one, and it is here
@@ -544,11 +541,9 @@ jobs:
         run: |
           set -euo pipefail
           version_action_browser_marker="$RUNNER_TEMP/ptah-version-action-browser-ready"
-          # The newest MAX_DOC_TAG_VERSIONS release tags, chosen by the same
-          # order the deployment guard uses to decide which served version may
-          # leave the site.
-          retained_tags="$(git tag -l 'v*' | node docs/site/scripts/retained-doc-tags.mjs --keep "${MAX_DOC_TAG_VERSIONS:-10}")"
-          for tag in $retained_tags; do
+          # Every release keeps its published URLs and its version-picker entry.
+          release_tags="$(git tag -l 'v*' | node docs/site/scripts/release-doc-tags.mjs)"
+          for tag in $release_tags; do
             echo "::group::Building $tag"
             workdir="$(mktemp -d)"
             tag_source_commit="$(git rev-list -n 1 "$tag")"
@@ -627,12 +622,9 @@ jobs:
                   --version "$tag" \
                   --source-commit "$tag_source_commit"
               else
-                if [ "$release_ui_overlay" = true ]; then
-                  git worktree remove --force "$workdir" || true
-                  echo "::endgroup::"
-                  exit "$release_build_status"
-                fi
-                echo "::warning::$tag predates the supported release overlay and failed to build; skipping this historical version"
+                git worktree remove --force "$workdir" || true
+                echo "::endgroup::"
+                exit "$release_build_status"
               fi
             else
               echo "::warning::$tag has no docs/site; skipping"
@@ -977,7 +969,6 @@ jobs:
             --candidate-commit "$CANDIDATE_COMMIT" \
             --candidate-versions "$CANDIDATE_VERSIONS" \
             --base-url https://docs.ptah.run/edge/ \
-            --retained-releases "$MAX_DOC_TAG_VERSIONS" \
             "${tag_args[@]}"
 
       # Two deploys, because Pages keys a deployment by `pages_build_version`

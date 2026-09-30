@@ -129,10 +129,10 @@ waiting on one is a reason to cut it rather than a note on its own backlog
    curl -o /dev/null -w '%{http_code}\n' https://docs.ptah.run/v0.1.2/
    ```
 
-   The site serves edge and the newest `MAX_DOC_TAG_VERSIONS` releases, ten
-   unless the repository variable says otherwise. A release that makes the
-   window full takes the oldest version off the site, and its URL then answers
-   404.
+   The site serves edge and every release that carries a docs site. Each
+   release keeps its version-picker entry and its published URLs. A failed
+   historical build fails the deployment, and the deployment guard refuses
+   a candidate that removes a served version.
 
 8. Verify the Homebrew install:
 
