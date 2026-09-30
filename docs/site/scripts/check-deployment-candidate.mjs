@@ -6,7 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { EDGE, isRelease } from './lib/doc-versions.mjs';
+import { EDGE, isRelease, isVersionFolder } from './lib/doc-versions.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = join(scriptDir, '..', '..', '..');
@@ -23,7 +23,7 @@ function normalizedVersions(value, label) {
   const versions = Array.isArray(value) ? value : String(value ?? '').split(',');
   const normalized = versions.map((version) => version.trim()).filter(Boolean);
   if (!normalized.includes(EDGE)) throw new Error(`${label} must contain edge`);
-  if (normalized.some((version) => version !== EDGE && !isRelease(version))) {
+  if (normalized.some((version) => !isVersionFolder(version))) {
     throw new Error(`${label} contains an invalid documentation version`);
   }
   if (new Set(normalized).size !== normalized.length) throw new Error(`${label} contains a duplicate`);
@@ -47,7 +47,7 @@ function commitDecision({
   if (removed.length) {
     return {
       action: 'skip',
-      reason: `candidate would remove ${removed.join(', ')}, which the site serves at permanent release URLs`,
+      reason: `candidate would remove ${removed.join(', ')}, which the site serves at permanent documentation URLs`,
     };
   }
   const added = candidateSet.filter((version) => !deployedSet.includes(version));
@@ -208,6 +208,14 @@ function selftest() {
   assert(
     deploymentCandidateDecision(base).action === 'deploy',
     'successful A was suppressed because a later B might fail before deployment',
+  );
+  assert(
+    deploymentCandidateDecision({ ...base, candidateVersions: [...versions, 'latest'] }).action === 'deploy',
+    'adding the latest alias was refused',
+  );
+  assert(
+    deploymentCandidateDecision({ ...base, deployedVersions: [...versions, 'latest'] }).action === 'skip',
+    'a candidate removing the published latest alias was accepted',
   );
   assert(
     deploymentCandidateDecision({

@@ -133,6 +133,12 @@ waiting on one is a reason to cut it rather than a note on its own backlog
    release keeps its version-picker entry and its published URLs. A failed
    historical build fails the deployment, and the deployment guard refuses
    a candidate that removes a served version.
+   Each older release page carries a warning with its version and a link to
+   the latest release. The warning is rendered into the published HTML and
+   works without JavaScript, including releases below the UI overlay's floor.
+   `latest` serves the newest release at `/latest/`. Versioned pages use its
+   matching page as their canonical URL. A page absent from `latest` has no
+   canonical, and its archive warning links to the latest documentation home.
 
 8. Verify the Homebrew install:
 

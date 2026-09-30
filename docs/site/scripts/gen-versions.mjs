@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { EDGE, compareReleases, isRelease, isVersionFolder } from './lib/doc-versions.mjs';
+import { EDGE, LATEST, compareReleases, isRelease, isVersionFolder } from './lib/doc-versions.mjs';
+import { publishLatestAlias, rebaseLatestText } from './lib/latest-docs.mjs';
 
 // The site root, from the one declaration. It is empty because the site is
 // served at the apex of its own domain; it was `/ptah` while the site was a
@@ -31,8 +32,8 @@ export function computeDefault(slugs) {
   return releases.length ? releases[releases.length - 1] : EDGE;
 }
 
-// buildIndex is the version index the picker reads: edge first, then the
-// releases newest first. `latest` names the newest release, and each release
+// buildIndex is the version index the picker reads: edge, latest, then the
+// releases newest first. The `latest` field names the newest tag, and each release
 // carries `released`, the day its tag was made, from `released` (a map from
 // slug to YYYY-MM-DD).
 //
@@ -44,12 +45,14 @@ export function buildIndex(slugs, released = new Map()) {
   const tags = slugs.filter(isRelease).sort((a, b) => compareReleases(b, a));
   const ordered = [];
   if (slugs.includes(EDGE)) ordered.push(EDGE);
+  if (tags.length > 0) ordered.push(LATEST);
   ordered.push(...tags);
   return {
     default: computeDefault(slugs),
     ...(tags.length > 0 ? { latest: tags[0] } : {}),
     versions: ordered.map((slug) =>
-      released.has(slug) ? { slug, label: slug, released: released.get(slug) } : { slug, label: slug },
+      slug === LATEST ? { slug, label: slug, release: tags[0] } :
+        released.has(slug) ? { slug, label: slug, released: released.get(slug) } : { slug, label: slug },
     ),
   };
 }
@@ -69,6 +72,10 @@ export function indexProblems(index) {
   if (index?.latest !== newest) {
     problems.push(`versions.json names ${index?.latest} as latest, want ${newest}`);
   }
+  const alias = index?.versions?.filter((version) => version.slug === LATEST) ?? [];
+  if (newest && (alias.length !== 1 || alias[0].release !== newest)) {
+    problems.push('versions.json must list latest once, pointing to the newest release');
+  } else if (!newest && alias.length) problems.push('versions.json lists latest without a release');
   return problems;
 }
 
@@ -118,6 +125,7 @@ export function generate(dir, released = new Map()) {
     .filter((entry) => entry.isDirectory() && isVersionFolder(entry.name))
     .map((entry) => entry.name);
   const index = buildIndex(slugs, released);
+  if (index.latest) publishLatestAlias(dir, index.latest);
   writeFileSync(join(dir, 'versions.json'), renderVersionsJson(index));
   writeFileSync(join(dir, 'index.html'), renderRedirectHtml(index.default));
   return index;
@@ -131,7 +139,7 @@ function selftest() {
   assert(isVersionFolder('edge'), 'edge is accepted');
   assert(isVersionFolder('v1.2.0'), 'semver tag is accepted');
   assert(isVersionFolder('v1.2'), 'minor tag is accepted');
-  assert(!isVersionFolder('latest'), 'latest is not accepted');
+  assert(isVersionFolder('latest'), 'latest is not accepted');
   assert(!isVersionFolder('_astro'), '_astro is not accepted');
   assert(computeDefault(['edge']) === 'edge', 'edge is default without tags');
   assert(computeDefault(['edge', 'v1.2.0', 'v1.10.0']) === 'edge', 'edge outranks a release');
@@ -143,12 +151,12 @@ function selftest() {
   const dates = new Map([['v1.0.0', '2026-01-02'], ['v1.2.0', '2026-03-04'], ['v1.10.0', '2026-05-06']]);
   const index = buildIndex(['v1.0.0', 'edge', 'v1.2.0'], dates);
   assert(index.default === 'edge', 'edge is default beside releases');
-  assert(index.versions.map((v) => v.slug).join(',') === 'edge,v1.2.0,v1.0.0', 'stable order');
+  assert(index.versions.map((v) => v.slug).join(',') === 'edge,latest,v1.2.0,v1.0.0', 'stable order');
   assert(index.latest === 'v1.2.0', 'latest is not the newest release');
   assert(buildIndex(['edge', 'v1.2.0', 'v1.10.0'], dates).latest === 'v1.10.0', 'latest compares lexically');
   assert(!('latest' in buildIndex(['edge'])), 'an index with no release names a latest one');
   assert(
-    index.versions.map((v) => v.released ?? '-').join(',') === '-,2026-03-04,2026-01-02',
+    index.versions.map((v) => v.released ?? '-').join(',') === '-,-,2026-03-04,2026-01-02',
     'release dates are not carried to their versions, or edge carries one',
   );
   const undated = buildIndex(['edge', 'v1.2.0', 'v9.9.9'], dates);
@@ -166,6 +174,7 @@ function selftest() {
     'an index naming an older release latest was accepted',
   );
   assert(indexProblems(buildIndex(['edge'])).length === 0, 'an index with edge alone was refused');
+  assert(indexProblems({ ...index, versions: index.versions.filter((v) => v.slug !== LATEST) }).length > 0, 'an index without the latest alias passed');
   const repositoryDates = releaseDates();
   assert(
     [...repositoryDates.values()].every((date) => /^\d{4}-\d{2}-\d{2}$/.test(date)),
@@ -178,7 +187,17 @@ function selftest() {
     for (const version of ['edge', 'v1.0.0', 'v1.2.0', '_astro']) {
       mkdirSync(join(tmp, version));
     }
+    const tagged = '<html><head></head><body><a href="/v1.2.0/start/">Docs</a><a href="https://github.com/stokaro/ptah/releases/download/v1.2.0/ptah.zip">Binary</a><script>const base="/v1.2.0/";</script></body></html>';
+    writeFileSync(join(tmp, 'v1.2.0', 'index.html'), tagged);
+    writeFileSync(join(tmp, 'v1.2.0', 'build-info.json'), JSON.stringify({ documentation_version: 'v1.2.0', source_ref: 'v1.2.0', source_commit: '0123456789abcdef0123456789abcdef01234567' }));
     generate(tmp, dates);
+    const alias = readFileSync(join(tmp, LATEST, 'index.html'), 'utf8');
+    assert(alias.includes('href="/latest/start/"') && alias.includes('const base="/latest/"'), 'latest keeps tagged documentation URLs');
+    assert(alias.includes('releases/download/v1.2.0/ptah.zip'), 'latest rewrote an external release URL');
+    assert(readFileSync(join(tmp, 'v1.2.0', 'index.html'), 'utf8') === tagged, 'copying latest changed the original release');
+    const provenance = JSON.parse(readFileSync(join(tmp, LATEST, 'build-info.json'), 'utf8'));
+    assert(provenance.documentation_version === LATEST && provenance.source_ref === 'v1.2.0', 'latest lost its tag source ref');
+    assert(rebaseLatestText('url(/v1.2.0/font.woff) srcset="/v1.2.0/a.svg 1x, /v1.2.0/b.svg 2x"', 'v1.2.0') === 'url(/latest/font.woff) srcset="/latest/a.svg 1x, /latest/b.svg 2x"', 'latest retained an asset base');
     const json1 = readFileSync(join(tmp, 'versions.json'), 'utf8');
     const html1 = readFileSync(join(tmp, 'index.html'), 'utf8');
     assert(html1.includes('/edge/'), 'redirect targets default');

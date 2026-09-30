@@ -21,6 +21,8 @@
 //   - a choice that lands on the same page in the other version, and one that
 //     lands on that version's home page because the page does not exist there;
 //   - scripting disabled, where the mount point shows the version as text;
+//   - static archive warnings without a picker or scripting, latest canonicals
+//     for matching pages, and no canonical for a removed page;
 //   - the banner a page from an older release shows at the top of <main>:
 //     present on such a page, linking to the same page in the latest release
 //     or to its home page when the page does not exist there, and absent on
@@ -39,6 +41,7 @@ import { fileURLToPath } from 'node:url';
 import { detectBase, loadChromium, startBuiltSite } from './lib/built-site.mjs';
 import { mountFixture, mountProblems, pickerRoute, readPicker } from './lib/version-picker-check.mjs';
 import { WCAG_TAGS } from './lib/wcag.mjs';
+import { decorateArchivePage } from './lib/archive-version-banner.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const distRoot = join(scriptDir, '..', 'dist');
@@ -49,9 +52,9 @@ const PAGE = 'versioned/generate/';
 const WITH_PAGE = 'v9.9.0';
 const WITHOUT_PAGE = 'v9.8.0';
 const RELEASED = { [WITH_PAGE]: '2030-02-01', [WITHOUT_PAGE]: '2030-01-01' };
-const LISTED = ['edge', WITH_PAGE, WITHOUT_PAGE];
+const LISTED = ['edge', 'latest', WITH_PAGE, WITHOUT_PAGE];
 // An index that does not name the page's version: the panel puts it first.
-const UNLISTED = [WITH_PAGE, WITHOUT_PAGE];
+const UNLISTED = ['latest', WITH_PAGE, WITHOUT_PAGE];
 // Pages this check serves as other versions of the built page. OLDER is a
 // release older than the latest that this fixture's index does not list;
 // NEWER is newer than the latest, and
@@ -59,10 +62,15 @@ const UNLISTED = [WITH_PAGE, WITHOUT_PAGE];
 const OLDER = 'v9.7.0';
 const NEWER = 'v10.0.0';
 const GONE = 'gone/';
+const LEGACY = 'v0.2.0';
+const ARCHIVED = 'v9.6.0';
 const BANNER_TEXT = `This page documents ${OLDER}, an older release. `;
-const BANNER_SAME_PAGE = { text: `${BANNER_TEXT}Read it in ${WITH_PAGE}, the latest release`, href: `/${WITH_PAGE}/${PAGE}`, first: true, role: 'note', ignored: true };
-const BANNER_HOME = { text: `${BANNER_TEXT}Go to ${WITH_PAGE}, the latest release`, href: `/${WITH_PAGE}/`, first: true, role: 'note', ignored: true };
-const GROUPS = ['In development', 'Releases'];
+const BANNER_SAME_PAGE = { text: `${BANNER_TEXT}Read it in ${WITH_PAGE}, the latest release`, href: `/latest/${PAGE}`, first: true, role: 'note', ignored: true, count: 1, visible: true };
+const BANNER_HOME = { text: `${BANNER_TEXT}Go to ${WITH_PAGE}, the latest release`, href: '/latest/', first: true, role: 'note', ignored: true, count: 1, visible: true };
+const LEGACY_BANNER = { ...BANNER_SAME_PAGE, text: BANNER_SAME_PAGE.text.replace(OLDER, LEGACY) };
+const LEGACY_HOME = { ...BANNER_HOME, text: BANNER_HOME.text.replace(OLDER, LEGACY) };
+const ARCHIVED_BANNER = { ...BANNER_SAME_PAGE, text: BANNER_SAME_PAGE.text.replace(OLDER, ARCHIVED) };
+const GROUPS = ['In development', 'Latest release', 'Releases'];
 
 // pickerBehaviorProblems judges every reading one run takes.
 export function pickerBehaviorProblems(readings) {
@@ -91,17 +99,25 @@ export function pickerBehaviorProblems(readings) {
   expect(`the filter "${WITHOUT_PAGE}" leaves`, readings.filtered, [WITHOUT_PAGE]);
   expect('the first Escape', readings.escaped.once, { open: true, filter: '', shown: LISTED.length });
   expect('the second Escape', readings.escaped.twice, { open: false, focus: 'button' });
-  expect('the keyboard: Enter, then two ArrowDowns, focuses', readings.keyboard, WITH_PAGE);
+  expect('the keyboard: Enter, then two ArrowDowns, focuses', readings.keyboard, 'latest');
   expect('unlisted: the listed versions', readings.unlisted.slugs, [version, ...UNLISTED]);
   expect('no index: the listed versions', readings.missing.slugs, [version]);
   expect(`choosing ${WITH_PAGE} leads to`, readings.samePage, `/${WITH_PAGE}/${PAGE}`);
   expect(`choosing ${WITHOUT_PAGE} leads to`, readings.homePage, `/${WITHOUT_PAGE}/`);
+  expect('choosing latest leads to', readings.latestPage, `/latest/${PAGE}`);
   expect('the banner on an older release', readings.banner.older, BANNER_SAME_PAGE);
   expect('the banner on an older release whose page the latest lacks', readings.banner.gone, BANNER_HOME);
   expect('the banner on edge', readings.banner.edge, null);
   expect('the banner on the latest release', readings.banner.latest, null);
   expect('the banner on a release newer than the latest', readings.banner.newer, null);
   expect('the banner with no index', readings.banner.missing, null);
+  expect('the archive warning without a picker or scripting', readings.archive.legacy, LEGACY_BANNER);
+  expect('the archive warning for a removed page without scripting', readings.archive.gone, LEGACY_HOME);
+  expect('the archive warning with the picker running', readings.archive.modern, ARCHIVED_BANNER);
+  expect('the archive warning on a phone without scripting', readings.archive.mobile, LEGACY_BANNER);
+  expect('canonical URLs in the assembled pages', readings.canonicals, {
+    legacy: `/latest/${PAGE}`, gone: null, edge: `/latest/${PAGE}`, alias: `/latest/${PAGE}`, release: `/latest/${PAGE}`,
+  });
   expect('accessibility violations in the open panel', readings.violations, []);
   expect('page errors', readings.errors, []);
   return problems;
@@ -130,10 +146,13 @@ function selftest() {
     },
     filtered: [WITHOUT_PAGE],
     escaped: { once: { open: true, filter: '', shown: LISTED.length }, twice: { open: false, focus: 'button' } },
-    keyboard: WITH_PAGE,
+    keyboard: 'latest',
     samePage: `/${WITH_PAGE}/${PAGE}`,
     homePage: `/${WITHOUT_PAGE}/`,
+    latestPage: `/latest/${PAGE}`,
     banner: { older: BANNER_SAME_PAGE, gone: BANNER_HOME, edge: null, latest: null, newer: null, missing: null },
+    archive: { legacy: LEGACY_BANNER, gone: LEGACY_HOME, modern: ARCHIVED_BANNER, mobile: LEGACY_BANNER },
+    canonicals: { legacy: `/latest/${PAGE}`, gone: null, edge: `/latest/${PAGE}`, alias: `/latest/${PAGE}`, release: `/latest/${PAGE}` },
     violations: [],
     errors: [],
   };
@@ -156,6 +175,7 @@ function selftest() {
     ['an unlisted version dropped', (r) => { r.unlisted.slugs = UNLISTED; }],
     ['a choice that lands on the home page although the page exists', (r) => { r.samePage = `/${WITH_PAGE}/`; }],
     ['a choice that lands on a missing page', (r) => { r.homePage = `/${WITHOUT_PAGE}/${PAGE}`; }],
+    ['latest choosing a numbered URL', (r) => { r.latestPage = `/${WITH_PAGE}/${PAGE}`; }],
     ['the root stylesheet not applied', (r) => { r.listed.panelPosition = 'static'; }],
     ['the picker loaded from inside the version', (r) => { r.listed.scripts = ['/edge/version-picker.js']; }],
     ['a stylesheet loaded twice', (r) => { r.missing.stylesheets = ['/version-picker.css', '/version-picker.css']; }],
@@ -173,6 +193,13 @@ function selftest() {
     ['a banner on the latest release', (r) => { r.banner.latest = BANNER_SAME_PAGE; }],
     ['a banner on a release that compares older only as text', (r) => { r.banner.newer = BANNER_SAME_PAGE; }],
     ['a banner with no index to name the latest release', (r) => { r.banner.missing = BANNER_SAME_PAGE; }],
+    ['no archive warning without scripting', (r) => { r.archive.legacy = null; }],
+    ['a missing latest page linked without scripting', (r) => { r.archive.gone.href = `/${WITH_PAGE}/${GONE}`; }],
+    ['the picker duplicating the static archive warning', (r) => { r.archive.modern.count = 2; }],
+    ['an archive warning hidden on a phone', (r) => { r.archive.mobile.visible = false; }],
+    ['a numbered canonical on an archive page', (r) => { r.canonicals.legacy = `/${LEGACY}/${PAGE}`; }],
+    ['a home-page canonical on a removed page', (r) => { r.canonicals.gone = '/latest/'; }],
+    ['an edge canonical instead of latest', (r) => { r.canonicals.edge = `/edge/${PAGE}`; }],
     ['an accessibility violation', (r) => { r.violations = ['color-contrast: .ptah-version-picker__meta']; }],
     ['a page error', (r) => { r.errors = ['boom']; }],
   ];
@@ -205,7 +232,16 @@ function readBanner(tab) {
       first: banner.parentElement?.tagName === 'MAIN' && banner.parentElement.firstElementChild === banner,
       role: banner.getAttribute('role'),
       ignored: banner.hasAttribute('data-pagefind-ignore'),
+      count: document.querySelectorAll('.ptah-version-banner').length,
+      visible: banner.getBoundingClientRect().height > 0 && getComputedStyle(banner).visibility === 'visible',
     };
+  });
+}
+
+function readCanonical(tab) {
+  return tab.evaluate(() => {
+    const canonical = document.head.querySelector('link[rel="canonical"]');
+    return canonical ? new URL(canonical.href).pathname : null;
   });
 }
 
@@ -252,13 +288,31 @@ async function main() {
     body: readFileSync(join(distRoot, PAGE, 'index.html'), 'utf8').replaceAll(`data-current="${builtVersion}"`, `data-current="${slug}"`),
     type: 'text/html',
   });
+  const archivedPage = (slug, path, legacy = false) => {
+    let body = pageAs(slug).body;
+    if (legacy) {
+      // A pre-overlay release has neither the maintained mount nor its assets.
+      body = body.replace(/<div\b[^>]*data-ptah-version-picker\b[^>]*>[\s\S]*?<\/div>/, '')
+        .replace(/<link\b[^>]*href="\/version-picker\.css"[^>]*>/g, '')
+        .replace(/<script\b[^>]*src="\/version-picker\.js"[^>]*>[\s\S]*?<\/script>/g, '');
+    }
+    return { status: 200, type: 'text/html', body: decorateArchivePage(body, {
+      version: slug, latest: WITH_PAGE, path: `${path}index.html`, latestPaths: new Set([`${PAGE}index.html`]),
+    }) };
+  };
   const others = new Map([
+    ['/latest/', html('latest')],
+    [`/latest/${PAGE}`, archivedPage('latest', PAGE)],
     [`/${WITH_PAGE}/`, html(WITH_PAGE)],
-    [`/${WITH_PAGE}/${PAGE}`, pageAs(WITH_PAGE)],
+    [`/${WITH_PAGE}/${PAGE}`, archivedPage(WITH_PAGE, PAGE)],
     [`/${WITHOUT_PAGE}/`, html(WITHOUT_PAGE)],
     [`/${OLDER}/${PAGE}`, pageAs(OLDER)],
     [`/${OLDER}/${GONE}`, pageAs(OLDER)],
     [`/${NEWER}/${PAGE}`, pageAs(NEWER)],
+    [`/${LEGACY}/${PAGE}`, archivedPage(LEGACY, PAGE, true)],
+    [`/${LEGACY}/${GONE}`, archivedPage(LEGACY, GONE, true)],
+    [`/${ARCHIVED}/${PAGE}`, archivedPage(ARCHIVED, PAGE)],
+    [`/${builtVersion}/${PAGE}`, archivedPage(builtVersion, PAGE)],
   ]);
   const route = pickerRoute((path) => {
     if (path === '/versions.json') {
@@ -274,7 +328,7 @@ async function main() {
   const index = (slugs) => ({
     default: 'edge',
     latest: WITH_PAGE,
-    versions: slugs.map((slug) => (RELEASED[slug] ? { slug, label: slug, released: RELEASED[slug] } : { slug, label: slug })),
+    versions: slugs.map((slug) => (slug === 'latest' ? { slug, label: slug, release: WITH_PAGE } : RELEASED[slug] ? { slug, label: slug, released: RELEASED[slug] } : { slug, label: slug })),
   });
   const trigger = 'header [data-ptah-version-picker] button';
 
@@ -389,6 +443,7 @@ async function main() {
       keyboard,
       samePage: await choose(WITH_PAGE),
       homePage: await choose(WITHOUT_PAGE),
+      latestPage: await choose('latest'),
       banner,
       errors,
     };
@@ -396,6 +451,22 @@ async function main() {
     const plain = await noScript.newPage();
     await plain.goto(url, { waitUntil: 'load' });
     readings.noScript = await readPicker(plain, { hydrate: false });
+    await plain.goto(`http://127.0.0.1:${built.port}/${LEGACY}/${PAGE}`, { waitUntil: 'load' });
+    const legacy = await readBanner(plain);
+    const canonicals = { legacy: await readCanonical(plain) };
+    assert(await plain.locator('[data-ptah-version-picker]').count() === 0, 'the legacy fixture has a maintained picker');
+    await plain.goto(`http://127.0.0.1:${built.port}/${LEGACY}/${GONE}`, { waitUntil: 'load' });
+    const gone = await readBanner(plain);
+    canonicals.gone = await readCanonical(plain);
+    await plain.setViewportSize({ width: 390, height: 844 });
+    await plain.goto(`http://127.0.0.1:${built.port}/${LEGACY}/${PAGE}`, { waitUntil: 'load' });
+    const mobile = await readBanner(plain);
+    readings.archive = { legacy, gone, mobile, modern: await bannerAt(`/${ARCHIVED}/${PAGE}`, LISTED) };
+    for (const [name, slug] of [['edge', builtVersion], ['alias', 'latest'], ['release', WITH_PAGE]]) {
+      await tab.goto(`http://127.0.0.1:${built.port}/${slug}/${PAGE}`, { waitUntil: 'networkidle' });
+      canonicals[name] = await readCanonical(tab);
+    }
+    readings.canonicals = canonicals;
 
     const problems = pickerBehaviorProblems(readings);
     if (problems.length > 0) throw new Error(problems.join('; '));
@@ -404,7 +475,7 @@ async function main() {
     await new Promise((resolveClose) => built.server.close(resolveClose));
   }
   console.log(
-    `check-version-picker.mjs: OK (${version}: panel, groups, latest, dates, filter, Escape, keyboard, unlisted version, no index, same page, home page, no scripting, older-release banner, axe in both themes)`,
+    `check-version-picker.mjs: OK (${version}: panel, groups, latest, dates, filter, Escape, keyboard, unlisted version, no index, same page, home page, no scripting, older-release banner, static archive warnings without a picker, axe in both themes)`,
   );
 }
 

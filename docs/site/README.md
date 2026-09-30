@@ -418,7 +418,7 @@ loads.
 
 The release UI overlay copies the mount point and `SiteTitle.astro`, which
 renders it, into every release it rebuilds, and every deploy rebuilds every
-release in the window. So a change to the two root files reaches edge and each
+published release. So a change to the two root files reaches edge and each
 overlaid release on the next deploy. Releases older than the overlay's
 `minimumRelease` keep the picker they were built with; it reads the same
 `versions.json`.
@@ -436,7 +436,10 @@ The mount point is built inside each overlaid release, so whatever it imports
 has to exist in the oldest of them. That is why it imports nothing, and why the
 picker's markup and styles live in the root files rather than here.
 
-The button opens a panel that lists edge, then the releases newest first. Each
+The button opens a panel that lists `edge`, `latest`, then the releases newest
+first. `latest` serves the newest tagged release at a stable `/latest/` address;
+`gen-versions.mjs` copies that release's build and rebases documentation links
+and assets. Its source ref and commit remain those of the tag. Each
 release shows the day its tag was made, and the newest carries a `latest` badge;
 both come from `versions.json`, where `gen-versions.mjs` reads the dates from
 the release tags. Each version is a link to the same page in that version, or
@@ -451,15 +454,20 @@ header clips what overflows it.
 
 A page from a release older than the one `versions.json` names latest also gets
 a banner, because a reader who arrives from a search engine may never look at
-the picker. The script places it as the first child of `<main>`, where
-Starlight places its own banner, once the latest release has answered: it names
+the picker. `publish-root-assets.mjs` renders it as the first child of `<main>`
+when it assembles the deployment. It names
 the page's version and links to the same page in the latest release, or to that
-release's home page when the page does not exist there. Edge, the latest
-release, a version newer than it and a page with no index show no banner.
+release's home page when the page does not exist there. Both links use the
+stable `/latest/` address. Edge, the latest
+release and a version newer than it show no archive banner.
+
 Release numbers compare as numbers, so `v0.10.0` is newer than `v0.9.0`. The
-banner carries `data-pagefind-ignore` and is hidden in print. It reaches the
-same versions the picker does; a release older than the overlay's
-`minimumRelease` has no mount point and shows none.
+banner carries `data-pagefind-ignore` and is hidden in print. It appears in
+every historical release, including releases below the UI overlay's
+`minimumRelease`, and works without JavaScript. Its link is resolved against
+the latest release's built routes. The picker also supplies a banner in local
+previews, where no assembled deployment exists, and leaves an existing banner
+in place.
 
 `npm run dev` serves `public/` under the version's base rather than at the root,
 so in dev the mount point loads the picker from `/edge/` and reads the version
@@ -471,10 +479,19 @@ built site: the list, its groups and order, the page's own version, the latest
 badge, the dates, the filter, the keyboard, a version the list does not name, a
 missing list, where a choice leads, the banner on an older release and its
 absence everywhere else, and axe's WCAG rules over the open panel and the
-banner in both themes. `scripts/check-release-page-actions.mjs` requires each overlaid
+banner in both themes. It also checks archive warnings without a picker or
+JavaScript, on desktop and mobile, and refuses duplicate warnings when the
+picker runs. `scripts/check-release-page-actions.mjs` requires each overlaid
 release to carry the mount point and to load the picker from the root.
 `check-pages-root.mjs --site` requires the assembled `versions.json` to date
-every release and to name the newest one latest.
+every release and to name the newest one latest. It verifies the archive
+warning, latest-page link, placement, and stylesheet on every built article.
+
+Every versioned page uses the matching `/latest/` page as its canonical URL.
+This includes edge and numbered releases. A page absent from `latest` has no
+canonical link; its archive warning links to `/latest/` instead. A retired
+route that redirects within `latest` uses the destination page for both links.
+The deployment gate checks these links in the assembled HTML.
 
 ## Brand assets
 

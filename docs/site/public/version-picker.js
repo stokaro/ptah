@@ -40,6 +40,7 @@
   var MOUNT = '[data-ptah-version-picker]';
   var READY = 'data-ptah-version-picker-ready';
   var EDGE = 'edge';
+  var LATEST = 'latest';
   var BANNER = 'ptah-version-banner';
   // A release slug, as scripts/lib/doc-versions.mjs reads it: the patch
   // number may be absent.
@@ -90,6 +91,7 @@
         slug: version.slug,
         label: version.label || version.slug,
         released: typeof version.released === 'string' ? version.released : '',
+        release: typeof version.release === 'string' ? version.release : '',
         latest: Boolean(index.latest) && version.slug === index.latest,
       });
     }
@@ -258,9 +260,9 @@
     if (!olderRelease(this.current, latest)) return;
     var main = document.querySelector('main');
     if (!main || main.querySelector('.' + BANNER)) return;
-    this.target(latest).then(function (href) {
+    this.target(LATEST).then(function (href) {
       if (main.querySelector('.' + BANNER)) return;
-      var home = href === self.root + latest + '/' && self.page !== '';
+      var home = href === self.root + LATEST + '/' && self.page !== '';
       var banner = element('div', BANNER);
       banner.setAttribute('role', 'note');
       banner.setAttribute('data-pagefind-ignore', '');
@@ -285,7 +287,7 @@
     link.appendChild(mark);
     link.appendChild(element('span', 'ptah-version-picker__slug', version.label));
     if (version.latest) link.appendChild(element('span', 'ptah-version-picker__badge', 'latest'));
-    var meta = version.slug === EDGE ? 'tracks master' : version.released;
+    var meta = version.slug === EDGE ? 'tracks master' : version.slug === LATEST ? version.release : version.released;
     if (meta) {
       var detail = element('span', 'ptah-version-picker__meta', meta);
       if (version.released) {
@@ -300,7 +302,7 @@
 
     var item = element('div', 'ptah-version-picker__item');
     item.appendChild(link);
-    return { item: item, link: link, group: version.slug === EDGE ? 'development' : 'releases' };
+    return { item: item, link: link, group: version.slug === EDGE ? 'development' : version.slug === LATEST ? 'latest' : 'releases' };
   };
 
   // Each link starts at the same page in its version and is corrected once
@@ -321,8 +323,8 @@
     this.list.textContent = '';
     this.links = [];
     this.groups = [];
-    var groups = { development: null, releases: null };
-    var titles = { development: 'In development', releases: 'Releases' };
+    var groups = { development: null, latest: null, releases: null };
+    var titles = { development: 'In development', latest: 'Latest release', releases: 'Releases' };
     for (var i = 0; i < this.versions.length; i += 1) {
       var row = this.row(this.versions[i]);
       if (!groups[row.group]) {

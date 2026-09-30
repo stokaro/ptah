@@ -52,7 +52,7 @@
 // not the bytes.
 import { execFileSync } from 'node:child_process';
 import { InstallURL, Origin, PageURL, RootURL, SiteOrigin } from '../src/lib/docs-origin.mjs';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -67,6 +67,8 @@ import {
   sourcePath,
 } from './publish-root-assets.mjs';
 import { indexProblems } from './gen-versions.mjs';
+import { archiveBannerProblems } from './lib/archive-version-banner.mjs';
+import { latestAliasProblems } from './lib/latest-docs.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const siteRoot = join(scriptDir, '..');
@@ -387,6 +389,7 @@ function assembleFixture() {
   try {
     for (const version of ['edge', 'v0.2.0']) {
       mkdirSync(join(root, version), { recursive: true });
+      writeFileSync(join(root, version, 'index.html'), '<html><head></head><body><main data-pagefind-body><h1>Docs</h1></main></body></html>');
     }
     for (const producer of ROOT_PRODUCERS) {
       execFileSync('node', [join(repoRoot, producer), root], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -448,7 +451,10 @@ function checkAssembledSite(siteDir) {
   // known here; one missing is the generator not reading the tags.
   const index = join(siteDir, 'versions.json');
   if (existsSync(index) && statSync(index).size > 0) {
-    problems.push(...indexProblems(JSON.parse(readFileSync(index, 'utf8'))));
+    const versions = JSON.parse(readFileSync(index, 'utf8'));
+    problems.push(...indexProblems(versions));
+    problems.push(...latestAliasProblems(siteDir, versions.latest));
+    problems.push(...archiveBannerProblems(siteDir));
   }
   return problems;
 }
