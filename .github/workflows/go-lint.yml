@@ -476,9 +476,8 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
-      # Repeated cache extraction can exhaust the Windows job budget. Export
-      # the action's cache directory so later invocations reuse it while
-      # skipping another restoration. The first lint step restores it once.
+      # Share analysis produced in this job across all lint invocations.
+      # Remote cache restoration is disabled below; the Go cache stays enabled.
       - name: Share lint analysis cache
         shell: pwsh
         run: |
@@ -501,6 +500,9 @@ jobs:
         with:
           args: --timeout=30m
           version: v2.14.0
+          # A paired Windows run took 15m51s with cache restore, 7m33s without
+          # it (#3984). Extracting the 70 MiB cache alone took 6m26s.
+          skip-cache: true
 
       # Both build-tag contours here too, for the reason the Ubuntu job gives:
       # a tagged file is outside the default build. This run reads the tagged
