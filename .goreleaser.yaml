@@ -183,6 +183,8 @@ dockers_v2:
   - id: ptah
     ids:
       - ptah
+      - ptah-compat
+      - ptah-ls
     dockerfile: Dockerfile
     images:
       - "ghcr.io/stokaro/ptah"

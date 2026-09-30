@@ -8,5 +8,7 @@ ARG TARGETPLATFORM
 RUN apk add --no-cache ca-certificates
 
 COPY $TARGETPLATFORM/ptah /usr/local/bin/ptah
+COPY $TARGETPLATFORM/ptah-compat /usr/local/bin/ptah-compat
+COPY $TARGETPLATFORM/ptah-ls /usr/local/bin/ptah-ls
 
 ENTRYPOINT ["/usr/local/bin/ptah"]
