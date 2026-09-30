@@ -36,6 +36,8 @@ jobs:
             multiline/run:6 \
             serve
       - run: docker    run spaced/run:7
+      - run: docker run --entrypoint ptah-compat entrypoint/separate:8 version
+      - run: docker run --entrypoint=ptah-ls entrypoint/attached:9 --version
       - run: echo argument/run:7
 `)
 
@@ -50,6 +52,8 @@ jobs:
 		"folded/run:5",
 		"multiline/run:6",
 		"spaced/run:7",
+		"entrypoint/separate:8",
+		"entrypoint/attached:9",
 	})
 }
 
