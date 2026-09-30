@@ -230,7 +230,7 @@ func renderInspectSchema(
 	// From the scoped schema too, so a table a selector left out is not named
 	// (stokaro/ptah#3771).
 	hashshard.ReportUndescribed(opts.Diagnostics, schema)
-	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema, "")
+	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema, info.Dialect)
 	output, err := atlasreport.RenderSchemaInspect(format, atlasreport.NewSchemaInspectReport(
 		dbsch,
 		schema,
