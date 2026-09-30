@@ -21,6 +21,7 @@
  * Styles live in src/styles/ptah/furniture.css ("Footer").
  */
 import PageActions from './PageActions.astro';
+import GraphicPreview from './GraphicPreview.astro';
 import { formatDate, pageSourceActions, publishesLlmsTxt, verifiedDate } from '../lib/page-furniture.mjs';
 
 const { entry, lang, lastUpdated, pagination, toc } = Astro.locals.starlightRoute;
@@ -101,3 +102,5 @@ const hasLinks = source.hasSource;
     </nav>
   )}
 </footer>
+
+<GraphicPreview />

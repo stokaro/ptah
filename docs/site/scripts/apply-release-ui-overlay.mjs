@@ -19,6 +19,9 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = join(scriptDir, '..', '..', '..');
 const manifestPath = join(scriptDir, 'data', 'release-ui-overlay.json');
 const requiredFiles = new Set([
+  'docs/site/src/components/Footer.astro',
+  'docs/site/src/components/GraphicPreview.astro',
+  'docs/site/src/lib/graphic-preview.mjs',
   'docs/site/scripts/data/release-ui-overlay.json',
   'docs/site/src/components/PageActions.astro',
   'docs/site/src/components/PageTitle.astro',
