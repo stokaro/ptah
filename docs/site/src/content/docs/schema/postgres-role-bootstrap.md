@@ -98,4 +98,4 @@ DDL. Use a fresh `docker://` server for role-bearing schemas: resetting a
 database does not remove cluster-wide roles or restore their attributes.
 
 For file loading and rendering, see [SQL schema](../sql/). To turn the desired
-state into versioned changes, see [Generate migrations](../../versioned/generate/).
+schema into versioned changes, see [Generate migrations](../../versioned/generate/).
