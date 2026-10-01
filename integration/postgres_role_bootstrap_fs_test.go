@@ -61,3 +61,21 @@ func writeBootstrapSource(c *qt.C, dir, name, body string) string {
 	c.Assert(os.WriteFile(path, []byte(body), 0o600), qt.IsNil)
 	return path
 }
+
+func TestLoadSourcesRoleBootstrapDuplicateBoundaries(t *testing.T) {
+	tests := []struct{ name, first, second string }{
+		{name: "block then top-level", first: `DO $$ BEGIN CREATE ROLE reader NOLOGIN; END $$;`, second: `CREATE ROLE reader LOGIN;`},
+		{name: "top-level then block", first: `CREATE ROLE reader NOLOGIN;`, second: `DO $$ BEGIN CREATE ROLE reader LOGIN; END $$;`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := c.TempDir()
+			first := writeBootstrapSource(c, dir, "first.sql", test.first)
+			second := writeBootstrapSource(c, dir, "second.sql", test.second)
+			database, err := schemafile.LoadSources([]schemafile.Source{{URL: first}, {URL: second}}, schemafile.Options{Dialect: "postgres"})
+			c.Assert(err, qt.ErrorMatches, `(?s).*second.sql.*already declared.*`)
+			c.Assert(database, qt.IsNil)
+		})
+	}
+}

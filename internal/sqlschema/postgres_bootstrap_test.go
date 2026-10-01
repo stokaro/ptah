@@ -121,3 +121,21 @@ func TestPostgresRoleBootstrapRedactsInvalidRole(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, sqlschema.ErrUnmodeledStatement)
 	c.Assert(err.Error(), qt.Not(qt.Contains), "do-not-leak")
 }
+
+func TestPostgresRoleBootstrapDuplicateBoundaries(t *testing.T) {
+	tests := []struct{ name, sql string }{
+		{name: "block then top-level", sql: `DO $$ BEGIN CREATE ROLE r NOLOGIN; END $$; CREATE ROLE r LOGIN;`},
+		{name: "top-level then block", sql: `CREATE ROLE r NOLOGIN; DO $$ BEGIN CREATE ROLE r LOGIN; END $$;`},
+		{name: "two top-level declarations", sql: `CREATE ROLE r NOLOGIN; CREATE ROLE r LOGIN;`},
+		{name: "normalized identifier", sql: `DO $$ BEGIN CREATE ROLE Reader; END $$; CREATE ROLE "reader";`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			database, _, err := sqlschema.Read([]byte(test.sql), "postgres")
+			c.Assert(err, qt.ErrorIs, sqlschema.ErrUnmodeledStatement)
+			c.Assert(err.Error(), qt.Contains, "already declared")
+			c.Assert(database, qt.DeepEquals, schemamodel.Database{})
+		})
+	}
+}

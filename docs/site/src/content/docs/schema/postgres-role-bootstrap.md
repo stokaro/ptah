@@ -1,11 +1,11 @@
 ---
 title: Conditional role bootstrap
 description: Declare PostgreSQL application roles in supported procedural SQL blocks.
-type: how-to
+type: reference
 audience:
   - "schema-author"
-readerQuestion: "How do I keep conditional role declarations in my PostgreSQL desired schema?"
-goal: "Generate role migrations from conditional PostgreSQL declarations."
+readerQuestion: "Which PostgreSQL role-bootstrap declarations can Ptah interpret?"
+goal: "Understand supported role-bootstrap syntax and its evaluation boundaries."
 sourceOfTruth:
   - "internal/sqlschema/postgres_bootstrap.go"
   - "internal/schemafile"
@@ -13,9 +13,13 @@ sourceOfTruth:
 generated: false
 overlaps: []
 disposition: keep
+sourceMode: static-file-only
 ---
 
-## Write the declaration
+This reference defines the PostgreSQL role-bootstrap SQL that Ptah can read as
+a desired schema without executing the procedural body.
+
+## Declaration syntax
 
 PostgreSQL desired SQL can keep a conditional role declaration:
 
@@ -34,6 +38,12 @@ CREATE TABLE documents (id bigint PRIMARY KEY, body text NOT NULL);
 GRANT SELECT ON TABLE documents TO app_reader;
 ```
 
+For this declaration saved as `roles.sql`, the native rendering command is:
+
+```bash
+ptah schema render --schema-file roles.sql --dialect postgres
+```
+
 Ptah reads the selected declarations into the same role model as top-level
 `CREATE ROLE`. Generated migrations contain ordinary role DDL before dependent
 grants. Adding another conditional role and its grants produces an incremental
@@ -43,12 +53,20 @@ This is a bounded interpretation, with no SQL execution or database connection.
 Each desired document starts with no application roles. Earlier declarations in
 the file, ordered source list, or imported SQL establish the roles that later
 conditions see. An existing declaration makes `IF NOT EXISTS` keep its original
-attributes. Roles on a dev server or deployment target never determine this
+attributes. An executed `CREATE ROLE` for an already declared role is refused,
+including across blocks, top-level statements, and ordered source files.
+Roles on a dev server or deployment target never determine this
 result. A grant or policy reference alone does not declare an external role.
 
 ## Supported forms
 
-Supported blocks use `BEGIN`/`END`, `NULL`, `CREATE ROLE`, and nested `IF`/`ELSE`.
+Supported statement forms:
+
+- `BEGIN`/`END` groups declarations.
+- `NULL` makes no change.
+- `CREATE ROLE` declares an application role.
+- Nested `IF`/`ELSE` selects declarations using the conditions below.
+
 Conditions may be `TRUE`, `FALSE`, or `[NOT] EXISTS (SELECT 1 FROM pg_roles WHERE
 rolname = 'name')`; the catalog may be qualified with `pg_catalog`. Ordinary
 string literals and quoted role identifiers preserve their PostgreSQL meaning.
@@ -78,3 +96,6 @@ database user authorized to create the declared roles.
 Commands that materialize a schema on a dev database still execute generated
 DDL. Use a fresh `docker://` server for role-bearing schemas: resetting a
 database does not remove cluster-wide roles or restore their attributes.
+
+For file loading and rendering, see [SQL schema](../sql/). To turn the desired
+state into versioned changes, see [Generate migrations](../../versioned/generate/).

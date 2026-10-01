@@ -765,7 +765,7 @@ func appendStatement(
 	case *ast.CreateSequenceNode:
 		database.Sequences = append(database.Sequences, toSequence(node, sourcePlatform))
 	case *ast.CreateRoleNode:
-		database.Roles = append(database.Roles, toRole(node, sourcePlatform))
+		return appendCreateRole(database, document, node, sourcePlatform)
 	case *ast.CreatePolicyNode:
 		database.RLSPolicies = append(database.RLSPolicies, toRLSPolicy(node, sourcePlatform))
 	case *ast.PostgresDoBlockNode:
