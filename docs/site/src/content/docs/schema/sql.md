@@ -316,21 +316,6 @@ A document may declare several overloads of a function or a procedure, as
 `pg_dump` writes them. Each is a routine of its own, told apart by its input
 argument types, so `COMMENT ON FUNCTION app.f(integer, text)` names one of them.
 
-## PostgreSQL grants
-
-A `GRANT` may name several objects and roles. Ptah records every object-role
-pair, including column privileges and `WITH GRANT OPTION`:
-
-```sql
-GRANT SELECT ON users, tenants TO app_reader, app_operator;
-GRANT UPDATE (name) ON users, tenants TO app_operator;
-```
-
-For function or procedure lists, name the argument types of each routine so
-its overload is unambiguous. Role creation inside a `DO` block is not a
-schema declaration; declare roles with `CREATE ROLE`, or create them in your
-versioned migrations before a grant uses them.
-
 ## Row-level security
 
 A PostgreSQL schema file declares row-level security with the statements a

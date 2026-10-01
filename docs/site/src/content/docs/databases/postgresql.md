@@ -695,6 +695,19 @@ user hold `ALL` on every object and cannot lose it, and an owner holds `ALL`
 on what it owns. CockroachDB records no grantor, so a described grant names
 none.
 
+A `GRANT` may name several objects and roles. Ptah records every object-role
+pair, including column privileges and `WITH GRANT OPTION`:
+
+```sql
+GRANT SELECT ON users, tenants TO app_reader, app_operator;
+GRANT UPDATE (name) ON users, tenants TO app_operator;
+```
+
+For function or procedure lists, name the argument types of each routine so
+its overload is unambiguous. Role creation inside a `DO` block is not a
+schema declaration; declare roles with `CREATE ROLE`, or create them in your
+versioned migrations before a grant uses them.
+
 ### Revoking privileges nobody granted
 
 PostgreSQL gives some privileges without a `GRANT`: every role can execute a
