@@ -186,6 +186,8 @@ dockers_v2:
       - ptah-compat
       - ptah-ls
     dockerfile: Dockerfile
+    extra_files:
+      - LICENSE
     images:
       - "ghcr.io/stokaro/ptah"
       - "docker.io/stokaro/ptah"

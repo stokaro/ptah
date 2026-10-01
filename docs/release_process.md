@@ -98,6 +98,8 @@ waiting on one is a reason to cut it rather than a note on its own backlog
 6. Verify the container images contain `ptah`, `ptah-compat`, and `ptah-ls`
    in `/usr/local/bin` for both Linux architectures. The PR release check
    builds the snapshot images and runs every binary on amd64 and arm64.
+   It also checks that `/usr/share/licenses/ptah/LICENSE` matches the source
+   license, so downstream images can copy it alongside the binaries.
    GHCR is the address the documentation
    gives a reader, because Docker Hub rate-limits anonymous pulls and GHCR does
    not; Docker Hub carries the same images as a mirror:

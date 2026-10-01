@@ -100,6 +100,7 @@ jobs:
           version="$(jq -r .version dist/metadata.json)"
           for arch in amd64 arm64; do
             image="ghcr.io/stokaro/ptah:${version}-${arch}"
+            docker run --rm --platform "linux/$arch" --entrypoint cat "$image" /usr/share/licenses/ptah/LICENSE | cmp LICENSE -
             docker run --rm --platform "linux/$arch" "$image" version
             docker run --rm --platform "linux/$arch" --entrypoint ptah-compat "$image" version
             docker run --rm --platform "linux/$arch" --entrypoint ptah-ls "$image" --version
