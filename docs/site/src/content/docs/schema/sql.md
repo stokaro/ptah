@@ -92,11 +92,9 @@ Path confinement is shared by every `--schema-file` source; see
 
 ## Add a column after the table
 
-A column can be added after its table with `ALTER TABLE ... ADD COLUMN`, in the
-same file or in a later file of a schema directory. An ordered SQL `src` list
-in `atlas.hcl` also allows later files to alter tables declared earlier.
-It joins the table in the
-order the document adds it:
+A column can be added with `ALTER TABLE ... ADD COLUMN` in the same file,
+a schema directory, or an ordered `atlas.hcl` SQL `src` list. Columns follow
+declaration order.
 
 ```sql
 CREATE TABLE users (id integer PRIMARY KEY);
