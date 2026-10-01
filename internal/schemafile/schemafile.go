@@ -224,6 +224,11 @@ func Load(rawURL string, opts Options) (*schemamodel.Database, error) {
 // LoadPath reads one local schema source from a resolved filesystem path: a
 // single schema file, or a directory of schema files (see [loadSchemaDir]).
 func LoadPath(path string, opts Options) (*schemamodel.Database, error) {
+	return loadPathOnto(path, opts, nil)
+}
+
+// loadPathOnto shares SQL declarations across an ordered source list.
+func loadPathOnto(path string, opts Options, earlier *sqlschema.Document) (*schemamodel.Database, error) {
 	return gateSchemaScope(opts, func(opts Options) (*schemamodel.Database, error) {
 		resolved, isDir, err := statSchemaPath(path)
 		if err != nil {
@@ -231,6 +236,13 @@ func LoadPath(path string, opts Options) (*schemamodel.Database, error) {
 		}
 		if isDir {
 			return loadSchemaDir(resolved, opts)
+		}
+		if earlier != nil && strings.EqualFold(filepath.Ext(resolved), dirSQLExtension) {
+			db, _, err := loadSQLFileWithStatements(resolved, opts, earlier)
+			if err != nil {
+				return nil, err
+			}
+			return withFormatLimits(db, resolved), nil
 		}
 		return loadSchemaFile(resolved, opts)
 	})
@@ -644,8 +656,13 @@ func LoadSources(sources []Source, opts Options) (*schemamodel.Database, error) 
 
 	return gateSchemaScope(opts, func(opts Options) (*schemamodel.Database, error) {
 		merged := &schemamodel.Database{}
+		document := sqlschema.NewDocument(merged)
 		for _, source := range sources {
-			db, err := Load(source.URL, source.apply(opts))
+			path, err := LocalFilePath(source.URL)
+			if err != nil {
+				return nil, err
+			}
+			db, err := loadPathOnto(path, source.apply(opts), document)
 			if err != nil {
 				return nil, err
 			}

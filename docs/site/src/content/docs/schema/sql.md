@@ -93,7 +93,9 @@ Path confinement is shared by every `--schema-file` source; see
 ## Add a column after the table
 
 A column can be added after its table with `ALTER TABLE ... ADD COLUMN`, in the
-same file or in a later file of a schema directory. It joins the table in the
+same file or in a later file of a schema directory. An ordered SQL `src` list
+in `atlas.hcl` also allows later files to alter tables declared earlier.
+It joins the table in the
 order the document adds it:
 
 ```sql
@@ -313,6 +315,21 @@ from:
 A document may declare several overloads of a function or a procedure, as
 `pg_dump` writes them. Each is a routine of its own, told apart by its input
 argument types, so `COMMENT ON FUNCTION app.f(integer, text)` names one of them.
+
+## PostgreSQL grants
+
+A `GRANT` may name several objects and roles. Ptah records every object-role
+pair, including column privileges and `WITH GRANT OPTION`:
+
+```sql
+GRANT SELECT ON users, tenants TO app_reader, app_operator;
+GRANT UPDATE (name) ON users, tenants TO app_operator;
+```
+
+For function or procedure lists, name the argument types of each routine so
+its overload is unambiguous. Role creation inside a `DO` block is not a
+schema declaration; declare roles with `CREATE ROLE`, or create them in your
+versioned migrations before a grant uses them.
 
 ## Row-level security
 

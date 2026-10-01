@@ -171,7 +171,9 @@ func (p *Parser) Parse() (*ast.StatementList, error) {
 			return nil, err
 		}
 
-		if stmt != nil {
+		if list, ok := stmt.(*ast.StatementList); ok {
+			statements.Statements = append(statements.Statements, list.Statements...)
+		} else if stmt != nil {
 			statements.Statements = append(statements.Statements, stmt)
 		}
 
