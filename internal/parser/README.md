@@ -175,6 +175,12 @@ PL/pgSQL expressions remain raw; the body parser classifies top-level
 declarations, block statements, exceptions, returns, dynamic execution, raises,
 and control-flow statements.
 
+Parsing a PostgreSQL `DO` body does not execute it. The shared desired-schema
+reader interprets the bounded conditional role-bootstrap form documented in
+[SQL schema](../../docs/site/src/content/docs/schema/postgres-role-bootstrap.md).
+It preserves branch selection and refuses unknown procedural effects. Migration
+replay remains a separate execution path with disposable-server checks.
+
 SQL Server dialect mode parses `CREATE [OR ALTER] FUNCTION`,
 `CREATE [OR ALTER] PROCEDURE`, and `CREATE PROC` through a T-SQL routine layer.
 The parser preserves the executable statement in `ast.SQLServerRoutineNode.SQL`,

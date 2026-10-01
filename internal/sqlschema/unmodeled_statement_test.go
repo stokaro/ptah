@@ -60,8 +60,8 @@ func TestToDatabase_AModeledRoutineStillReachesTheModel(t *testing.T) {
 // TestToDatabase_AStatementThatNamesNoObjectIsNotRefused keeps the refusal from
 // becoming a refusal of everything this package does not append.
 //
-// Each of these is a decision rather than an omission: a DO block does work
-// rather than declare a thing, and a DROP of an object nothing declared, under
+// Each of these is a decision rather than an omission: an empty DO block declares
+// no objects, and a DROP of an object nothing declared, under
 // IF EXISTS, drops nothing, as the server drops nothing. They have cases of
 // their own, so the default means "nobody decided" and not "somebody decided
 // not to". A DROP without IF EXISTS is applied to the schema read so far; see
@@ -74,7 +74,7 @@ func TestToDatabase_AStatementThatNamesNoObjectIsNotRefused(t *testing.T) {
 	}{
 		{name: "a dropped table nothing declares, IF EXISTS", sql: "DROP TABLE IF EXISTS users;", dialect: "postgres"},
 		{name: "a dropped index nothing declares, IF EXISTS", sql: "DROP INDEX IF EXISTS idx_users_email;", dialect: "postgres"},
-		{name: "a DO block", sql: "DO $$ BEGIN PERFORM 1; END $$;", dialect: "postgres"},
+		{name: "an empty DO block", sql: "DO $$ BEGIN NULL; END $$;", dialect: "postgres"},
 	}
 
 	for _, test := range tests {

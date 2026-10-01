@@ -180,6 +180,7 @@ export const sidebar = [
         items: [
           { slug: 'schema/work-with-a-source' },
           { slug: 'schema/sql' },
+          { slug: 'schema/postgres-role-bootstrap' },
           { slug: 'schema/yaml' },
           { slug: 'schema/hcl' },
           { slug: 'schema/dbml' },

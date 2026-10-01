@@ -135,6 +135,7 @@
   "/schema/lineage/",
   "/schema/orm-and-external/",
   "/schema/overview/",
+  "/schema/postgres-role-bootstrap/",
   "/schema/protobuf/",
   "/schema/security/",
   "/schema/serve/",
