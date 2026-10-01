@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/lexer"
 )
@@ -353,6 +354,9 @@ func (p *Parser) parseGrantTargets() ([]grantTarget, error) {
 	targets := []grantTarget{target}
 	p.skipWhitespace()
 	for p.current.MatchOperatorValue(",") {
+		if p.dialect != "" && !platform.IsPostgresFamily(p.dialect) {
+			return nil, fmt.Errorf("GRANT target lists are not supported for %s at position %d", p.dialect, p.current.Start)
+		}
 		p.advance()
 		p.skipWhitespace()
 		next, err := p.parseGrantObject("GRANT", target.objectType)

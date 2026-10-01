@@ -61,3 +61,25 @@ func TestParserGrantListsFailurePath(t *testing.T) {
 		})
 	}
 }
+
+func TestParserGrantTargetListDialects(t *testing.T) {
+	for _, dialect := range []string{"", platform.Postgres, platform.CockroachDB, platform.YugabyteDB} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			statements, err := parser.NewParser("GRANT SELECT ON a, b TO r;", parser.WithDialect(dialect)).Parse()
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements.Statements, qt.HasLen, 2)
+		})
+	}
+}
+
+func TestParserGrantTargetListDialectsFailurePath(t *testing.T) {
+	for _, dialect := range []string{platform.MySQL, platform.MariaDB, platform.SQLServer, platform.SQLite} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			statements, err := parser.NewParser("GRANT SELECT ON a, b TO r;", parser.WithDialect(dialect)).Parse()
+			c.Assert(err, qt.ErrorMatches, "GRANT target lists are not supported for .* at position [0-9]+")
+			c.Assert(statements, qt.IsNil)
+		})
+	}
+}
