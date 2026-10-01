@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/lexer"
 )
@@ -303,46 +304,86 @@ func (p *Parser) applyRolePassword(role *ast.CreateRoleNode) error {
 	return nil
 }
 
-// parseGrantStatement parses GRANT priv[, ...] ON [objtype] name TO role
+// parseGrantStatement parses GRANT priv[, ...] ON [objtype] name[, ...] TO role[, ...]
 // [WITH GRANT OPTION], where a routine target carries its argument types:
 // ON FUNCTION name(argtypes).
-func (p *Parser) parseGrantStatement() (*ast.GrantPrivilegeNode, error) {
+func (p *Parser) parseGrantStatement() (ast.Node, error) {
 	if err := p.expect(lexer.TokenIdentifier, "GRANT"); err != nil {
 		return nil, err
 	}
 	p.skipWhitespace()
-
 	privileges, columns, err := p.parseObjectPrivileges("GRANT")
 	if err != nil {
 		return nil, err
 	}
-
-	target, err := p.parseGrantTarget("GRANT")
+	targets, err := p.parseGrantTargets()
 	if err != nil {
 		return nil, err
 	}
-	if err := requireColumnTarget("GRANT", target, columns); err != nil {
+	if err := requireColumnTarget("GRANT", targets[0], columns); err != nil {
 		return nil, err
 	}
-
-	p.skipWhitespace()
 	if err := p.expect(lexer.TokenIdentifier, "TO"); err != nil {
 		return nil, fmt.Errorf("expected TO after GRANT target: %w", err)
 	}
-	p.skipWhitespace()
-	role, err := p.expectIdentifier()
+	roles, err := p.parseGrantRoles()
 	if err != nil {
-		return nil, fmt.Errorf("expected grantee role: %w", err)
+		return nil, err
 	}
-
-	grant := ast.NewGrantPrivilege(role, target.objectType, target.objectName, privileges).
-		SetArguments(target.arguments).
-		SetColumns(columns)
 	withOption, err := p.parseGrantOptionSuffix()
 	if err != nil {
 		return nil, err
 	}
-	return grant.SetWithOption(withOption), nil
+	// Expand PostgreSQL's Cartesian product so all consumers keep the same
+	// single-object privilege representation.
+	grants := &ast.StatementList{}
+	for _, target := range targets {
+		for _, role := range roles {
+			grants.Statements = append(grants.Statements, ast.NewGrantPrivilege(role, target.objectType, target.objectName, privileges).
+				SetArguments(target.arguments).SetColumns(columns).SetWithOption(withOption))
+		}
+	}
+	return grants, nil
+}
+
+func (p *Parser) parseGrantTargets() ([]grantTarget, error) {
+	target, err := p.parseGrantTarget("GRANT")
+	if err != nil {
+		return nil, err
+	}
+	targets := []grantTarget{target}
+	p.skipWhitespace()
+	for p.current.MatchOperatorValue(",") {
+		if p.dialect != "" && !platform.IsPostgresFamily(p.dialect) {
+			return nil, fmt.Errorf("GRANT target lists are not supported for %s at position %d", p.dialect, p.current.Start)
+		}
+		p.advance()
+		p.skipWhitespace()
+		next, err := p.parseGrantObject("GRANT", target.objectType)
+		if err != nil {
+			return nil, err
+		}
+		targets = append(targets, next)
+		p.skipWhitespace()
+	}
+	return targets, nil
+}
+
+func (p *Parser) parseGrantRoles() ([]string, error) {
+	var roles []string
+	for {
+		p.skipWhitespace()
+		role, err := p.expectIdentifier()
+		if err != nil {
+			return nil, fmt.Errorf("expected grantee role: %w", err)
+		}
+		roles = append(roles, role)
+		p.skipWhitespace()
+		if !p.current.MatchOperatorValue(",") {
+			return roles, nil
+		}
+		p.advance()
+	}
 }
 
 // parseRevokeStatement parses REVOKE [GRANT OPTION FOR] priv[, ...] ON
@@ -569,6 +610,11 @@ func (p *Parser) parseGrantTarget(statement string) (grantTarget, error) {
 			p.skipWhitespace()
 		}
 	}
+	return p.parseGrantObject(statement, target.objectType)
+}
+
+func (p *Parser) parseGrantObject(statement, objectType string) (grantTarget, error) {
+	target := grantTarget{objectType: objectType}
 	objectName, err := p.parseQualifiedIdentifier(statement + " object name")
 	if err != nil {
 		return grantTarget{}, err

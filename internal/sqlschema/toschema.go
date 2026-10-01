@@ -28,6 +28,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	sqlplatform "ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/privilegefold"
@@ -142,6 +143,12 @@ func fieldFromColumn(column *ast.ColumnNode, structName, sourcePlatform string) 
 		Charset:             column.Charset,
 		Collate:             column.Collate,
 		Comment:             column.Comment,
+	}
+
+	// PostgreSQL identity columns are implicitly NOT NULL, even when the SQL
+	// omits that clause. Preserve the server semantics in desired-state diffs.
+	if sqlplatform.NormalizeDialect(sourcePlatform) == sqlplatform.Postgres && column.IdentityGeneration != "" {
+		field.Nullable = false
 	}
 
 	// Mirror the model-to-AST guarding: only surface CheckName when there's
