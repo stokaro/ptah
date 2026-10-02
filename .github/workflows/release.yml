@@ -82,7 +82,7 @@ jobs:
           version: v2.18.2
           args: check
 
-      - uses: anchore/sbom-action/download-syft@v0.24.2
+      - uses: anchore/sbom-action/download-syft@v0.24.3
 
       - uses: docker/setup-qemu-action@v4
 
@@ -233,7 +233,7 @@ jobs:
 
       - uses: sigstore/cosign-installer@v4.1.2
 
-      - uses: anchore/sbom-action/download-syft@v0.24.2
+      - uses: anchore/sbom-action/download-syft@v0.24.3
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
