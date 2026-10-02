@@ -1120,6 +1120,11 @@ role and a privilege on a schema or database, which a server URL refuses; see
 a CI service container, the same treatment; see
 [a server declared disposable](../../concepts/database-urls-and-dev-databases/#a-server-declared-disposable).
 
+Desired SQL uses a separate, non-executing reader. It supports
+[bounded conditional role-bootstrap blocks](../../schema/postgres-role-bootstrap/)
+and includes their selected roles in the diff. This does not relax the
+server-level authorization required to replay migration history.
+
 ### A whole dev server
 
 A `--dev-url` that names no MySQL or MariaDB database is a whole dev server.

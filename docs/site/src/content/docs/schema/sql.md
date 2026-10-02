@@ -90,6 +90,8 @@ includes the two documentation targets, so
 Path confinement is shared by every `--schema-file` source; see
 [Schema file paths](../../reference/native-commands/#schema-file-paths).
 
+For PostgreSQL application roles, see [Conditional role bootstrap](../postgres-role-bootstrap/).
+
 ## Add a column after the table
 
 A column can be added with `ALTER TABLE ... ADD COLUMN` in the same file,

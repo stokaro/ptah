@@ -765,14 +765,14 @@ func appendStatement(
 	case *ast.CreateSequenceNode:
 		database.Sequences = append(database.Sequences, toSequence(node, sourcePlatform))
 	case *ast.CreateRoleNode:
-		database.Roles = append(database.Roles, toRole(node, sourcePlatform))
+		return appendCreateRole(database, document, node, sourcePlatform)
 	case *ast.CreatePolicyNode:
 		database.RLSPolicies = append(database.RLSPolicies, toRLSPolicy(node, sourcePlatform))
-	case *ast.PostgresDoBlockNode, *ast.RawSQLNode:
-		// Deliberately not modeled, and each for the same reason: a
-		// schemamodel.Database is what a schema SHOULD contain, and neither
-		// names an object it would contain. A DO block and a raw statement do
-		// work rather than declare a thing.
+	case *ast.PostgresDoBlockNode:
+		return appendRoleBootstrap(database, document, node, sourcePlatform)
+	case *ast.RawSQLNode:
+		// Raw statements do not declare modeled schema objects. Procedural
+		// blocks are handled separately so unknown effects cannot disappear.
 		//
 		// Written out rather than left to fall through, so that the default
 		// below means "nobody decided" and not "somebody decided not to".

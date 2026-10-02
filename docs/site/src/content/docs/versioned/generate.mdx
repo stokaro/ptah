@@ -134,6 +134,12 @@ statement assessment. It does not print migration SQL or write migration
 files. Run the default text plan separately when reviewers also need the SQL,
 as the [CI](../../testing/ci/) workflow does.
 
+PostgreSQL desired SQL may include
+[conditional role-bootstrap blocks](../../schema/postgres-role-bootstrap/).
+Their supported declarations are interpreted without executing SQL on the
+comparison database. Generation against replayed history still needs the
+existing disposable-server authorization for role-affecting migrations.
+
 ## Generate the migration files
 
 ```console

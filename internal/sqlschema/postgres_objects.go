@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/dialectlexer"
@@ -32,6 +33,28 @@ func toSequence(node *ast.CreateSequenceNode, sourcePlatform string) schemamodel
 		IfNotExists: node.IfNotExists,
 		Comment:     node.Comment,
 	}
+}
+
+// appendCreateRole checks the full ordered document before Finalize can merge
+// duplicate names. PostgreSQL refuses a repeated CREATE ROLE regardless of
+// whether an earlier declaration was top-level or inside a selected DO branch.
+func appendCreateRole(database *schemamodel.Database, document *Document, node *ast.CreateRoleNode, dialect string) error {
+	role := toRole(node, dialect)
+	if platform.NormalizeDialect(dialect) == platform.Postgres || dialect == "" {
+		sources := []*schemamodel.Database{database, document.base}
+		for _, source := range sources {
+			if source == nil {
+				continue
+			}
+			for _, declared := range source.Roles {
+				if declared.Name == role.Name {
+					return fmt.Errorf("%w: CREATE ROLE %q repeats a role already declared in this desired schema", ErrUnmodeledStatement, role.Name)
+				}
+			}
+		}
+	}
+	database.Roles = append(database.Roles, role)
+	return nil
 }
 
 func toRole(node *ast.CreateRoleNode, sourcePlatform string) schemamodel.Role {
