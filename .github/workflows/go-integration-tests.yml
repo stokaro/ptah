@@ -264,7 +264,7 @@ jobs:
       # endpoint a container can provide. It holds its data in memory and
       # starts empty, so it needs no volume (stokaro/ptah#1719).
       spanner:
-        image: gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.55.3
+        image: gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.56.1
         ports:
           - 5434:5432
 
