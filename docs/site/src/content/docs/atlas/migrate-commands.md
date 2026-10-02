@@ -909,6 +909,10 @@ reference into the evaluated `atlas.hcl` environment. With `--env`, Ptah can
 read `env.schema.src`, `env.dev`, `migration.dir`, `format.migrate.diff`, and
 supported `diff` policy from `atlas.hcl`.
 
+The `sql` template helper indents SQL outside quoted tokens. It preserves
+line breaks and whitespace inside string literals, quoted identifiers, and
+dollar-quoted routine bodies, so formatting does not change stored values.
+
 Ptah snapshots the desired schema first, cleans the dev database, and replays
 the migration directory into it. It compares the replayed state to the
 snapshot, cleans the dev database again, and only then writes Atlas-style
