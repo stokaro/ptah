@@ -397,7 +397,7 @@ func (r *SchemaInspectReport) MarshalSQL(indent ...string) (string, error) {
 	if sql == "" || len(indent) == 0 || indent[0] == "" {
 		return sql, nil
 	}
-	return indent[0] + strings.ReplaceAll(sql, "\n", "\n"+indent[0]), nil
+	return indentSQL(sql, indent[0]), nil
 }
 
 func (r *SchemaInspectReport) MarshalJSON() ([]byte, error) {

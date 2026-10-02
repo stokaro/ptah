@@ -182,5 +182,5 @@ func schemaStatement(statement string) string {
 
 func schemaIndentSQL(sql, indent string) string {
 	trimmed := strings.TrimSuffix(sql, "\n")
-	return indent + strings.ReplaceAll(trimmed, "\n", "\n"+indent) + "\n"
+	return indentSQL(trimmed, indent) + "\n"
 }
