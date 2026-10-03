@@ -41,6 +41,11 @@ type AtlasLoadOptions struct {
 	RejectListMapForEach bool
 	// Verb names the command doing the load. See [LoadOptions.Verb].
 	Verb string
+	// RejectCompositeSchema refuses a `data "composite_schema"` block, declared
+	// or referenced, with the pinned community binary's own words. That binary
+	// has no handler for the data source; a compatibility adapter selects this
+	// option for its strict policy. The zero value evaluates the block.
+	RejectCompositeSchema bool
 }
 
 // LoadAtlasFile loads the supported subset of an Atlas project config file. A
@@ -212,10 +217,11 @@ func ParseAtlasFSCollectionWithOptions(
 	}
 
 	p, err := newAtlasParser(opts.Context, fsys, opts.Vars, filename, opts.RejectListMapForEach, ignoreSchemas)
-	p.source = data
 	if err != nil {
 		return nil, err
 	}
+	p.source = data
+	p.rejectCompositeSchema = opts.RejectCompositeSchema
 	return p.parseCollection(body, opts.EnvName)
 }
 
@@ -317,6 +323,12 @@ type atlasParser struct {
 	// but a map header is shared, and every write happens before any env body is
 	// parsed.
 	hclSchemaScopes map[string]hclSchemaVarScope
+	// compositeSchemas records each evaluated data "composite_schema" block by
+	// name, for [Config.CompositeSchema]. A plain map for the reason
+	// hclSchemaScopes is one.
+	compositeSchemas map[string]CompositeSchema
+	// rejectCompositeSchema is [AtlasLoadOptions.RejectCompositeSchema].
+	rejectCompositeSchema bool
 }
 
 // hclSchemaVarScope is one data "hcl_schema" block's contribution to the
@@ -392,6 +404,7 @@ func newAtlasParser(
 		rejectListMapForEach: rejectListMapForEach,
 		externalSchemas:      make(map[string]externalSchemaDataSource),
 		hclSchemaScopes:      make(map[string]hclSchemaVarScope),
+		compositeSchemas:     make(map[string]CompositeSchema),
 		migrationDirectories: make(map[string]MigrationDirectorySource),
 	}, nil
 }
@@ -457,6 +470,7 @@ func (p atlasParser) parseCollection(body *hclsyntax.Body, envName string) ([]Co
 	}
 	if len(blocks.envs) == 0 {
 		base.migrationDirectories = cloneMigrationDirectories(p.migrationDirectories)
+		base.compositeSchemas = mergeCompositeSchemas(p.compositeSchemas, nil)
 		base.IgnoredConstructs = p.ignoredConstructs()
 		return []Config{base}, nil
 	}
@@ -470,6 +484,7 @@ func (p atlasParser) parseCollection(body *hclsyntax.Body, envName string) ([]Co
 		for _, instance := range instances {
 			merged := Merge(base, instance)
 			merged.migrationDirectories = cloneMigrationDirectories(p.migrationDirectories)
+			merged.compositeSchemas = mergeCompositeSchemas(p.compositeSchemas, nil)
 			if err := p.resolveExternalSchemaMarkers(&merged); err != nil {
 				return nil, err
 			}
@@ -2357,6 +2372,9 @@ func applyExternalSchemaEnv(
 // schema.src); any other reference is rejected. Declared-but-unreferenced data
 // sources are ignored and never executed.
 func (p atlasParser) resolveExternalSchemaMarkers(cfg *Config) error {
+	if err := rejectCompositeSchemaMarkers(cfg); err != nil {
+		return err
+	}
 	if err := rejectExternalSchemaMarker(cfg.DatabaseURL, "env url"); err != nil {
 		return err
 	}

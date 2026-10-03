@@ -108,6 +108,9 @@ type Config struct {
 	// Read through [Config.SchemaSourceVars]; see there for the rule it carries.
 	schemaSourceVars     map[string]map[string]string
 	migrationDirectories map[string]MigrationDirectorySource
+	// compositeSchemas holds the evaluated atlas.hcl `data "composite_schema"`
+	// blocks by name. Read through [Config.CompositeSchema].
+	compositeSchemas map[string]CompositeSchema
 }
 
 // SchemaSourceVars reports the variable values scoped to one desired-state
@@ -925,6 +928,7 @@ func Merge(base, override Config) Config {
 		}
 		maps.Copy(result.migrationDirectories, override.migrationDirectories)
 	}
+	result.compositeSchemas = mergeCompositeSchemas(base.compositeSchemas, override.compositeSchemas)
 	result.IgnoredConstructs = slices.Concat(base.IgnoredConstructs, override.IgnoredConstructs)
 	result.presence = base.presence.clone()
 	result.EnvName = mergeStringValue(

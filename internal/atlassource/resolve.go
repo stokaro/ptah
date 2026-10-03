@@ -262,6 +262,12 @@ func (s Set) resolve(ctx context.Context, opts ResolveOptions, finish HoldFunc) 
 			return err
 		}
 		return finish(state, nil)
+	case KindCompositeSchema:
+		state, err := s.resolveCompositeSchema(ctx, opts)
+		if err != nil {
+			return err
+		}
+		return finish(state, nil)
 	default:
 		return fmt.Errorf("%s: unresolved %s desired-state source", s.Flag, s.Kind)
 	}

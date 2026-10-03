@@ -413,6 +413,9 @@ func atlasProjectLoadOptions(
 		EnvName:              flags.envName,
 		Vars:                 flags.vars,
 		RejectListMapForEach: policy.IsStrictCE(),
+		// The pinned community binary has no handler for this data source and
+		// refuses a project that declares one, referenced or not.
+		RejectCompositeSchema: policy.IsStrictCE(),
 		// So a refusal about a for_each env names the command the operator
 		// ran (stokaro/ptah#1696). Empty where no command is in scope, which
 		// leaves the sentence general rather than wrong.
@@ -1255,9 +1258,9 @@ func applyAtlasSchemaTestProjectConfig(
 	}
 	// The schema test verb consumes a single local schema file as --url; an
 	// external schema program has no file spelling to map onto it.
-	if atlasExternalSchemaConfigured(cfg) {
+	if expanded := atlasExpandedDesiredState(cfg); expanded != "" {
 		return nil, nil, fmt.Errorf(
-			"atlas schema test does not support atlas.hcl data.external_schema desired state yet; pass --url explicitly",
+			"atlas schema test does not support atlas.hcl %s desired state yet; pass --url explicitly", expanded,
 		)
 	}
 	sources := cfg.SchemaSourcesValue()
@@ -1330,6 +1333,26 @@ func atlasSchemaTestScopedVarArgs(values map[string]string) ([]string, error) {
 // expand (and gate) the program.
 func atlasExternalSchemaConfigured(cfg projectconfig.Config) bool {
 	return len(cfg.ExternalSchema.Program) > 0
+}
+
+// atlasExpandedDesiredState names the atlas.hcl data source the loaded env's
+// desired state is when that state is not a list of local schema files, and
+// is empty otherwise.
+//
+// Either one is spelled env://src and expanded by the source resolver, which is
+// the only layer that classifies it; resolving it as file:// URLs here would
+// refuse it as "only local file:// schema files are supported". The commands
+// that substitute env://src and the commands that refuse it ask this one
+// question, so a data source added to the first cannot be missed by the second.
+func atlasExpandedDesiredState(cfg projectconfig.Config) string {
+	switch {
+	case atlasExternalSchemaConfigured(cfg):
+		return "data.external_schema"
+	case cfg.HasCompositeSchemaSource():
+		return "data.composite_schema"
+	default:
+		return ""
+	}
 }
 
 func atlasProjectLatest(cfg projectconfig.Config) projectconfig.Value[string] {

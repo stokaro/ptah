@@ -133,7 +133,9 @@ Go roots also keep separate type namespaces:
 ## Relation to Atlas
 
 This is Ptah's open, local, no-account equivalent of Atlas's Pro-only
-`composite_schema` data source.
+`composite_schema` data source. `ptah-compat` also reads that data source from
+`atlas.hcl` and merges its parts by the rules on this page; see
+[Composite schema data source](../../atlas/project-config/#composite-schema-data-source).
 
 ## Next steps
 

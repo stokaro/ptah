@@ -350,14 +350,23 @@ func inspectOnDev(
 		if err != nil {
 			return InspectResult{}, err
 		}
-	case atlassource.KindExternalSchema, atlassource.KindRemoteSchema:
-		// Both resolve to a schema IR rather than to files: an external program
-		// prints one, and a registry artifact records one. Neither has a local
-		// path for the file loader above to read.
+	case atlassource.KindExternalSchema, atlassource.KindRemoteSchema, atlassource.KindCompositeSchema:
+		// Each resolves to a schema IR rather than to files: an external
+		// program prints one, a registry artifact records one, and a
+		// composition merges its parts into one. None has a single local path
+		// for the file loader above to read.
+		// The file options reach a composition's local parts, which load as
+		// the file arm above loads them; the other two kinds read none of them.
+		schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(devURL, "", "")
 		state, err := set.Resolve(ctx, atlassource.ResolveOptions{
 			Dialect:                   dialect,
 			DialectFlag:               "--dev-url",
 			ValidateLocalSchemaSource: opts.ValidateLocalSchemaSource,
+			IgnoreUnknownHCLNames:     opts.IgnoreUnknownHCLNames,
+			ReportIgnored:             opts.Diagnostics,
+			SchemaScope:               schemaScope,
+			SchemaScopeFlag:           schemaScopeFlag,
+			Vars:                      opts.Vars,
 		})
 		if err != nil {
 			return InspectResult{}, err
@@ -440,7 +449,8 @@ func inspectOnDev(
 			return InspectResult{}, fmt.Errorf("--url %q: %w", set.Sources[0].Raw, err)
 		}
 		return rendered, nil
-	case atlassource.KindLocalFile, atlassource.KindExternalSchema, atlassource.KindRemoteSchema:
+	case atlassource.KindLocalFile, atlassource.KindExternalSchema, atlassource.KindRemoteSchema,
+		atlassource.KindCompositeSchema:
 		var rendered InspectResult
 		err := withMaterializedDevSchema(
 			ctx,

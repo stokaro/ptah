@@ -476,8 +476,73 @@ The lazy set also recognizes `remote_schema`, `aws_rds_token`, and
 unreferenced blocks. Referencing `aws_rds_token` or `gcp_cloudsql_token` still
 fails explicitly because Ptah does not implement it; `remote_schema` resolves
 through Ptah's OCI backend (see [Remote schema data
-source](#remote-schema-data-source)). An unknown type, including
-`composite_schema`, fails during structural validation even when unreferenced.
+source](#remote-schema-data-source)), and `composite_schema` merges its parts
+(see [Composite schema data source](#composite-schema-data-source)). An unknown
+type fails during structural validation even when unreferenced.
+
+## Composite schema data source
+
+`data "composite_schema"` assembles a desired schema from parts. Each `schema`
+block names one part by `url`. The parts merge in the order they are written,
+by the rules native Ptah applies to repeated `--schema-file` sources (see
+[Composite desired schema](../../schema/composite/)), so an object that two
+parts declare differently is a conflict.
+
+```hcl
+data "hcl_schema" "auth" {
+  path = "schema/auth.hcl"
+}
+
+data "composite_schema" "app" {
+  schema "auth" {
+    url = data.hcl_schema.auth.url
+  }
+  schema "public" {
+    url = "file://schema/public"
+  }
+}
+
+env "dev" {
+  url = getenv("DATABASE_URL")
+  dev = "docker://postgres/17/dev"
+  schema {
+    src = data.composite_schema.app.url
+  }
+}
+```
+
+A part is a schema file or directory, or the value of an `hcl_schema`,
+`external_schema` or `remote_schema` data source. An `hcl_schema` part keeps
+that block's `vars`. An `external_schema` part needs
+`PTAH_ALLOW_EXTERNAL_SCHEMA=1`, as an env-level program does. A database URL or
+a migration directory is refused as a part, because reading either needs a
+connection that the composition cannot scope to one part.
+
+The label of a `schema` block names the schema the part's objects belong to,
+and the composition declares that schema, so a SQL part needs no `CREATE
+SCHEMA` of its own. Ptah checks where each object is and does not move it. An
+object the part names in another schema is refused. An unqualified object is
+refused too, unless the label is the run's default schema: the schema the URL
+pins, or else `public` on PostgreSQL and `main` on SQLite. Moving an
+unqualified table into the label's schema would leave the unqualified names in
+its views, routines and triggers resolving through the target's search path, so
+the refusal asks for the qualified name instead. A block with no label,
+`schema { url = "..." }`, is read as written.
+
+`migrate diff`, `schema apply`, `schema diff` and `schema inspect --url
+env://src` read the composition. `schema plan`, `schema test` and `schema apply
+--plan` read local schema files only, so they refuse it by name; pass `--to`, or
+`--url` for `schema test`.
+
+The block resolves to an internal marker, `ptah-composite-schema://<name>`,
+which is valid only as an env's `src`; the same spelling on a
+flag is refused. The pinned community binary has no handler for the data
+source and refuses a project that declares one, referenced or not, and
+`PTAH_ATLAS_STRICT_COMPAT=1` keeps that refusal:
+
+```text
+Error: missing data source handler for "composite_schema"
+```
 
 ## Remote schema data source
 

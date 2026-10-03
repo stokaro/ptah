@@ -65,6 +65,11 @@ one selected instance and return an error rather than discarding the others.
 `AtlasLoadOptions.RejectListMapForEach` lets a compatibility adapter retain
 tuple, object, and set expansion while refusing Ptah's list/map extension. Its
 zero value keeps the complete dynamic-environment capability.
+`AtlasLoadOptions.RejectCompositeSchema` refuses a `data "composite_schema"`
+block with the community binary's own message; its zero value evaluates the
+block. `Config.CompositeSchema` returns the parts behind a
+`CompositeSchemaMarkerScheme` value in `Config.SchemaSources`, as a copy, and
+`Config.HasCompositeSchemaSource` reports whether a source is one.
 `AtlasLoadOptions.Context` and `LoadOptions.Context` govern project data-source
 database calls, runtime-variable reads, and subprocesses; nil uses a background
 context.

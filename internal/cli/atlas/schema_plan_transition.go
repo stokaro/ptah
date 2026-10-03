@@ -132,18 +132,19 @@ func resolveAtlasSchemaPlanTransitionConfig(
 			return in, policy, err
 		}
 	}
+	// Schema plan resolves local schema files only (LocalFilesOnly), so an env
+	// whose desired state is a program's output or a composition cannot feed
+	// it yet.
+	if expanded := atlasExpandedDesiredState(projectCfg); loaded && !cmd.Flags().Changed("to") && expanded != "" {
+		return in, policy, fmt.Errorf(
+			"%s does not support atlas.hcl %s desired state yet; pass --to explicitly", verb, expanded)
+	}
 	if loaded && !cmd.Flags().Changed("to") && len(projectCfg.SchemaSources) > 0 {
 		in.toURLs, err = atlasProjectConfigSchemaURLs(cmd, in.toURLs)
 		if err != nil {
 			return in, policy, fmt.Errorf("atlas.hcl schema.src: %w", err)
 		}
 		in.toSources = atlasProjectSchemaFileSources(projectCfg, in.toURLs)
-	}
-	// Schema plan resolves local schema files only (LocalFilesOnly), so an env
-	// whose desired state is an external schema program cannot feed it yet.
-	if loaded && !cmd.Flags().Changed("to") && atlasExternalSchemaConfigured(projectCfg) {
-		return in, policy, fmt.Errorf(
-			"%s does not support atlas.hcl data.external_schema desired state yet; pass --to explicitly", verb)
 	}
 	return in, policy, nil
 }
