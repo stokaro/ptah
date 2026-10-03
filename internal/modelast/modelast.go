@@ -771,6 +771,13 @@ func renderTableName(table schemamodel.Table, targetPlatform string) string {
 	if isSQLiteTarget(targetPlatform) && table.VirtualModule != "" {
 		return tableref.CanonicalExact(table.Schema, table.Name)
 	}
+	// The YDB renderer reads every table reference through tableref, so it
+	// takes the canonical spelling, whose quoting tableref reads. Quoting the
+	// name for YDB here would hand it a backtick escaped with a backslash,
+	// which tableref does not read, and the name would be quoted twice.
+	if platform.NormalizeDialect(targetPlatform) == platform.YDB {
+		return table.QualifiedName()
+	}
 	if strings.Contains(table.Schema, ".") || strings.Contains(table.Name, ".") {
 		return sqlident.Qualified(targetPlatform, table.Schema, table.Name)
 	}

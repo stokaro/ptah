@@ -6,7 +6,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer/internal/dialects/internal/defaultlit"
+	"ptah.run/internal/defaultlit"
 )
 
 // visitCreateDomain renders Oracle 23's CREATE DOMAIN.

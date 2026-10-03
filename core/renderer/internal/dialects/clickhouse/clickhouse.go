@@ -36,8 +36,8 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer/internal/dialects/internal/bufwriter"
-	"ptah.run/core/renderer/internal/dialects/internal/defaultlit"
 	"ptah.run/internal/chrefresh"
+	"ptah.run/internal/defaultlit"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/tableref"
 )

@@ -5,16 +5,18 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/internal/dialectlexer"
+	"ptah.run/internal/lexer"
 )
 
 // Rebind converts portable `?` placeholders in query to the dialect's
 // placeholder syntax. For PostgreSQL it rewrites them to `$1`, `$2`, ... in
 // the order they appear; for SQL Server it rewrites them to `@p1`, `@p2`, ...
 // for github.com/microsoft/go-mssqldb; for MySQL/MariaDB the query is returned
-// unchanged because `?` is already the native placeholder. YDB keeps `?` too:
-// YQL's own form is a named `$p`, and the YDB driver is opened with positional
-// binding so that `?` stays the one spelling Ptah writes. Unknown dialects
-// pass through verbatim: Rebind is a translator, not a validator.
+// unchanged because `?` is already the native placeholder. For YDB it rewrites
+// them to YQL's named parameters `$p1`, `$p2`, ..., which the YDB connection
+// binds from positional arguments; see [rebindYQL]. Unknown dialects pass
+// through verbatim: Rebind is a translator, not a validator.
 //
 // The scanner skips occurrences inside standard single-quoted string
 // literals (where a single quote inside is escaped by doubling it, per the
@@ -38,11 +40,7 @@ func Rebind(dialect, query string) string {
 		// $1 both answer ORA-00911, invalid character.
 		return rebindToOrdinal(query, ":")
 	case platform.YDB:
-		// `?` is bound positionally by the YDB driver's connector option
-		// (ydb.WithPositionalArgs), decided in stokaro/ptah#4015 (decision
-		// 11). Measured on 26.2.1.14 through ydb-go-sdk, the ordinal `$1` is
-		// a parse error, so rewriting to it would break every query.
-		return query
+		return rebindYQL(query)
 	default:
 		return query
 	}
@@ -109,5 +107,45 @@ func rebindToOrdinal(query, prefix string) string {
 			b.WriteByte(c)
 		}
 	}
+	return b.String()
+}
+
+// rebindYQL rewrites each `?` placeholder to `$p1`, `$p2`, ... in the order they
+// appear.
+//
+// YQL has no positional placeholder: `$1` is a parse error, and a bare `?` is
+// one too unless a client rewrites it. ydb-go-sdk's own positional binder does
+// that rewrite, and it reads doubled quotes, no backslash escapes and no
+// @@...@@ strings, so it rewrote the `?` inside `'a\'?'` into a parameter and
+// returned the wrong value without an error (measured on YDB 26.2.1.14 with
+// ydb-go-sdk v3.153.2). Here the text is read with Ptah's YQL lexer, which
+// reads literals, comments and backticked names by YQL's grammar, so a `?`
+// inside one of them is left alone. A named parameter needs no DECLARE on the
+// lines Ptah supports.
+//
+// `?` also marks an optional type (`Utf8?`), an optional lambda argument and
+// the `??` operator in YQL. Rebind reads every `?` outside a literal as a
+// placeholder, which is why it is for Ptah's own templates and not for an
+// author's YQL.
+func rebindYQL(query string) string {
+	lexr := lexer.NewLexerWithOptions(query, dialectlexer.Options(platform.YDB))
+	var b strings.Builder
+	b.Grow(len(query) + 8)
+	written, n := 0, 0
+	for {
+		token := lexr.NextToken()
+		if token.Type == lexer.TokenEOF {
+			break
+		}
+		if token.Type != lexer.TokenOperator || token.Value != "?" {
+			continue
+		}
+		n++
+		b.WriteString(query[written:token.Start])
+		b.WriteString("$p")
+		b.WriteString(strconv.Itoa(n))
+		written = token.End
+	}
+	b.WriteString(query[written:])
 	return b.String()
 }

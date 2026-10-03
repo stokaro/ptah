@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/renderer/internal/dialects/internal/defaultlit"
+	"ptah.run/internal/defaultlit"
 )
 
 func TestIsSQLLiteral(t *testing.T) {
