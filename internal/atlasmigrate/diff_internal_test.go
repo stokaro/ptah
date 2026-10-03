@@ -28,6 +28,7 @@ import (
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/devclean"
 	"ptah.run/internal/migratesum"
 	"ptah.run/internal/migrationreplay"
 	"ptah.run/internal/migrationsnapshot"
@@ -97,7 +98,7 @@ func TestCompareReplayedState_CarriesTheDropPolicyIntoTheVirtualTableGuard(t *te
 
 			_, _, err := compareReplayedState(
 				c.Context(), conn, runtime, nil, conn.Info().Schema,
-				&schemamodel.Database{}, nil, nil, tt.policy,
+				&schemamodel.Database{}, devclean.Baseline{}, nil, nil, tt.policy,
 			)
 
 			c.Assert(err != nil, qt.Equals, tt.wantErr)
@@ -136,7 +137,7 @@ func TestCompareReplayedState_PreservesDesiredCoverage(t *testing.T) {
 	}
 
 	replayed, diff, err := compareReplayedState(
-		c.Context(), conn, runtime, nil, conn.Info().Schema, desired, nil, nil,
+		c.Context(), conn, runtime, nil, conn.Info().Schema, desired, devclean.Baseline{}, nil, nil,
 		atlasschema.DiffPolicy{},
 	)
 
@@ -164,7 +165,7 @@ func TestCompareReplayedState_PreservesExplicitRemoval(t *testing.T) {
 
 	_, diff, err := compareReplayedState(
 		c.Context(), conn, runtime, nil, conn.Info().Schema,
-		&schemamodel.Database{}, nil, nil, atlasschema.DiffPolicy{},
+		&schemamodel.Database{}, devclean.Baseline{}, nil, nil, atlasschema.DiffPolicy{},
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -201,7 +202,7 @@ func TestCompareReplayedState_SchemaScopeKeepsDatabaseWideExtensionSynced(t *tes
 	}
 
 	replayed, diff, err := compareReplayedState(
-		c.Context(), conn, runtime, schemas, "public", desired, nil, nil,
+		c.Context(), conn, runtime, schemas, "public", desired, devclean.Baseline{}, nil, nil,
 		atlasschema.DiffPolicy{},
 	)
 
@@ -230,7 +231,7 @@ func TestCompareReplayedState_SchemaScopePreservesExplicitExtensionRemoval(t *te
 
 	replayed, diff, err := compareReplayedState(
 		c.Context(), conn, runtime, schemas, "public",
-		schemascope.FilterGeneratedWithDefaultSchema(&schemamodel.Database{}, schemas, "public"), nil, nil,
+		schemascope.FilterGeneratedWithDefaultSchema(&schemamodel.Database{}, schemas, "public"), devclean.Baseline{}, nil, nil,
 		atlasschema.DiffPolicy{},
 	)
 
@@ -260,7 +261,7 @@ func TestCompareReplayedState_ReportsUndecidedAddition(t *testing.T) {
 	_, diff, err := compareReplayedState(
 		c.Context(), conn, runtime, nil, conn.Info().Schema,
 		&schemamodel.Database{Sequences: []schemamodel.Sequence{{Name: "order_seq"}}},
-		diagnostics, nil, atlasschema.DiffPolicy{},
+		devclean.Baseline{}, diagnostics, nil, atlasschema.DiffPolicy{},
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -1258,7 +1259,7 @@ func TestGenerateDiff_FinalCleanupFailureIsNotRetried(t *testing.T) {
 			conn *dbschema.DatabaseConnection,
 			snapshot fs.FS,
 			format migrationfile.DirFormat,
-			consume func(*dbschema.DatabaseConnection) error,
+			consume migrationreplay.Consumer,
 		) error {
 			cleanupCalls++
 			return errors.Join(
@@ -1296,7 +1297,7 @@ func TestGenerateDiff_JoinsPostReplayFailureAndCleanupFailure(t *testing.T) {
 			conn *dbschema.DatabaseConnection,
 			snapshot fs.FS,
 			format migrationfile.DirFormat,
-			consume func(*dbschema.DatabaseConnection) error,
+			consume migrationreplay.Consumer,
 		) error {
 			cleanupCalls++
 			return errors.Join(
@@ -1327,7 +1328,7 @@ func TestGenerateDiff_CancellationDuringCleanupPreventsArtifacts(t *testing.T) {
 			replayConn *dbschema.DatabaseConnection,
 			snapshot fs.FS,
 			format migrationfile.DirFormat,
-			consume func(*dbschema.DatabaseConnection) error,
+			consume migrationreplay.Consumer,
 		) error {
 			cleanupCalls++
 			return migrationreplay.WithReplayedSnapshotLocked(
@@ -1335,8 +1336,8 @@ func TestGenerateDiff_CancellationDuringCleanupPreventsArtifacts(t *testing.T) {
 				replayConn,
 				snapshot,
 				format,
-				func(conn *dbschema.DatabaseConnection) error {
-					consumeErr := consume(conn)
+				func(conn *dbschema.DatabaseConnection, baseline devclean.Baseline) error {
+					consumeErr := consume(conn, baseline)
 					cancel()
 					return errors.Join(consumeErr, replayCtx.Err())
 				},

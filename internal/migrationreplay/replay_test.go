@@ -13,6 +13,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/dbschema"
+	"ptah.run/internal/devclean"
 	"ptah.run/internal/migrationreplay"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
@@ -352,7 +353,7 @@ CREATE TABLE users (id INTEGER PRIMARY KEY);
 			},
 		},
 		migrationfile.DirFormatAtlas,
-		func(replayConn *dbschema.DatabaseConnection) error {
+		func(replayConn *dbschema.DatabaseConnection, _ devclean.Baseline) error {
 			err := replayConn.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&callbackForeignKeys)
 			c.Assert(err, qt.IsNil)
 			err = replayConn.QueryRowContext(ctx, `
@@ -398,7 +399,7 @@ func TestWithReplayedSnapshot_TransactionalMigrationIgnoresAForeignKeysPragma(t 
 			},
 		},
 		migrationfile.DirFormatAtlas,
-		func(replayConn *dbschema.DatabaseConnection) error {
+		func(replayConn *dbschema.DatabaseConnection, _ devclean.Baseline) error {
 			return replayConn.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&callbackForeignKeys)
 		},
 	)
@@ -425,7 +426,7 @@ func TestWithReplayedSnapshot_CallbackFailureCleansDatabaseRealm(t *testing.T) {
 			},
 		},
 		migrationfile.DirFormatAtlas,
-		func(*dbschema.DatabaseConnection) error {
+		func(*dbschema.DatabaseConnection, devclean.Baseline) error {
 			return consumeErr
 		},
 	)
@@ -484,7 +485,7 @@ func TestWithReplayedSnapshot_SerializesConcurrentRealmReplay(t *testing.T) {
 			firstConn,
 			snapshot,
 			migrationfile.DirFormatAtlas,
-			func(*dbschema.DatabaseConnection) error {
+			func(*dbschema.DatabaseConnection, devclean.Baseline) error {
 				close(firstEntered)
 				<-releaseFirst
 				return nil
@@ -500,7 +501,7 @@ func TestWithReplayedSnapshot_SerializesConcurrentRealmReplay(t *testing.T) {
 		secondConn,
 		snapshot,
 		migrationfile.DirFormatAtlas,
-		func(*dbschema.DatabaseConnection) error {
+		func(*dbschema.DatabaseConnection, devclean.Baseline) error {
 			return nil
 		},
 	)

@@ -137,7 +137,10 @@ exercise a real server dialect — see
   an extension is a database-wide identity, and its schema records installation
   placement rather than ownership by that schema. An extension declared on
   both sides remains synced even when installed outside the named schemas; an
-  extension omitted from desired state remains an explicit global removal.
+  extension the replay created and the desired schema omits remains an explicit
+  global removal. One the dev database held when the command started is its
+  environment: a comparison leaves it out unless the desired schema declares
+  it, so no migration drops it.
 - **The replay realm follows the database engine.** PostgreSQL, CockroachDB,
   and YugabyteDB cleanup treats all user schemas and user-installed extensions
   in the selected database as one dependency graph. Extensions the dev

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 	"strings"
 
 	"ptah.run/catalog"
@@ -473,7 +472,7 @@ func recreateCurrentSchema(
 	if err != nil {
 		return fmt.Errorf("read dev database schema: %w", err)
 	}
-	devCurrent = withoutKeptExtensions(devCurrent, keptExtensions, catalogExtensionNames(current))
+	devCurrent = devclean.WithoutKeptExtensions(devCurrent, keptExtensions, catalogExtensionNames(current))
 	info := devConn.Info()
 	diff, err := schemadiff.CompareWithDatabase(ctx, devConn, baseline, devCurrent, nil)
 	if err != nil {
@@ -490,25 +489,6 @@ func recreateCurrentSchema(
 		return fmt.Errorf("generate current schema DDL for dev database: %w", err)
 	}
 	return executeApplyStatements(ctx, devConn.Writer(), statements)
-}
-
-// withoutKeptExtensions returns dev without the kept extensions the other side
-// of a comparison does not name, so the comparison plans no DROP EXTENSION for
-// them: they are the dev database's environment, see [devclean.Baseline]. A
-// kept extension the other side names too is left in, and matches.
-func withoutKeptExtensions(dev *catalog.Database, kept []string, named map[string]bool) *catalog.Database {
-	if dev == nil || len(kept) == 0 {
-		return dev
-	}
-	filtered := *dev
-	filtered.Extensions = nil
-	for _, extension := range dev.Extensions {
-		if slices.Contains(kept, extension.Name) && !named[extension.Name] {
-			continue
-		}
-		filtered.Extensions = append(filtered.Extensions, extension)
-	}
-	return &filtered
 }
 
 // catalogExtensionNames is the set of extensions a read database holds.

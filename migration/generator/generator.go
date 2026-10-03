@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/devclean"
 	"ptah.run/internal/fsnapshot"
 	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/migrationfile"
@@ -58,6 +59,13 @@ type GenerateMigrationOptions struct {
 	// Schemas restricts database introspection to the listed schemas when the
 	// connected dialect supports schema scoping.
 	Schemas []string
+	// EnvironmentExtensions names extensions the database held before the
+	// current state was built and that the desired schema does not own: a dev
+	// database's own, which the replay that built the current state kept. The
+	// current state leaves out each one the desired schema does not declare,
+	// so the plan does not drop it, and keeps one it declares, so the two
+	// match. Nil compares every extension the database holds.
+	EnvironmentExtensions []string
 	// CheckDestructive refuses to generate destructive up migrations unless
 	// AllowDestructive is set.
 	CheckDestructive bool
@@ -256,6 +264,7 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 	if err != nil {
 		return nil, fmt.Errorf("error reading database schema: %w", err)
 	}
+	dbSchema = devclean.WithoutKeptExtensions(dbSchema, opts.EnvironmentExtensions, declaredExtensions(desired))
 	if err := recoverMigrationPublication(ctx, opts.AllowedOutputRoot, opts.OutputDir); err != nil {
 		return nil, err
 	}
@@ -344,4 +353,16 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 		reportFormat:                 opts.ReportFormat,
 		specs:                        specs,
 	}, nil
+}
+
+// declaredExtensions is the set of extensions a desired schema declares.
+func declaredExtensions(desired *schemamodel.Database) map[string]bool {
+	names := make(map[string]bool)
+	if desired == nil {
+		return names
+	}
+	for _, extension := range desired.Extensions {
+		names[extension.Name] = true
+	}
+	return names
 }

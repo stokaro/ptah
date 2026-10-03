@@ -49,7 +49,7 @@ func TestWithReplayedSnapshot_PostgresCleanupOutlivesTheGraceLive(t *testing.T) 
 		realm,
 		snapshot,
 		migrationfile.DirFormatAtlas,
-		func(*dbschema.DatabaseConnection) error {
+		func(*dbschema.DatabaseConnection, devclean.Baseline) error {
 			tx, beginErr := blocker.BeginTx(c.Context(), nil)
 			c.Assert(beginErr, qt.IsNil)
 			_, lockErr := tx.ExecContext(c.Context(), "LOCK TABLE events IN ACCESS SHARE MODE")

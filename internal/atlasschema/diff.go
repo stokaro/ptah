@@ -24,6 +24,7 @@ import (
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/crdbttl"
+	"ptah.run/internal/devclean"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/schemafile"
@@ -208,6 +209,10 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 	}
 	err = withResolvedDiffSources(ctx, fromSet, toSet, resolveOpts,
 		func(fromState, toState atlassource.State, conn *dbschema.DatabaseConnection) error {
+			// A side read from the dev database holds that database's own
+			// extensions, which neither source declared.
+			fromState, toState = fromState.WithoutEnvironment(toState.ExtensionNames()),
+				toState.WithoutEnvironment(fromState.ExtensionNames())
 			var diffErr error
 			report, changes, diffErr = diffResolvedStates(ctx, conn, fromState, toState, dialect,
 				diffCapabilities(target, opts.ServerVersion, conn, documentCaps), devServerSidesOf(opts.DevURL, fromSet, toSet), opts)
@@ -691,11 +696,12 @@ func materializedState(
 
 	var state atlassource.State
 	err = withMaterializedDevSchema(ctx, devConn, declared.Schema, opts.ReportIgnored,
-		func(materialized *dbschema.DatabaseConnection) error {
+		func(materialized *dbschema.DatabaseConnection, baseline devclean.Baseline) error {
 			read, err := set.DevState(ctx, materialized, opts)
 			if err != nil {
 				return err
 			}
+			read.EnvironmentExtensions = baseline.Extensions()
 			read.DB.NotDescribed = declared.Schema.NotDescribed
 			read.Schema.NotDescribed = declared.Schema.NotDescribed
 			if opts.ValidateInspectedSchema != nil {

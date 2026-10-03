@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"ptah.run/internal/atlasregistry"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/devclean"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/migratesum"
@@ -164,6 +166,52 @@ type State struct {
 	// WholeServer reports that a database source is a whole MySQL or MariaDB
 	// server; see [catalog.ServerInfo.WholeServer].
 	WholeServer bool
+	// EnvironmentExtensions are the extensions the dev database held before a
+	// migration directory was replayed there or a declaration was created
+	// there, and empty for every other source. They are the dev database's,
+	// not the source's: a comparison leaves them out with
+	// [State.WithoutEnvironment].
+	EnvironmentExtensions []string
+}
+
+// ExtensionNames is the set of extensions the state holds.
+func (s State) ExtensionNames() map[string]bool {
+	names := make(map[string]bool)
+	if s.DB != nil {
+		for _, extension := range s.DB.Extensions {
+			names[extension.Name] = true
+		}
+	}
+	if s.Schema != nil {
+		for _, extension := range s.Schema.Extensions {
+			names[extension.Name] = true
+		}
+	}
+	return names
+}
+
+// WithoutEnvironment returns the state with its dev database's environment
+// left out of what a comparison reads: the [State.EnvironmentExtensions] the
+// other side of the comparison does not hold, which declared names. A state
+// read from no dev database comes back as it is. See
+// [devclean.Baseline.WithoutEnvironment].
+func (s State) WithoutEnvironment(declared map[string]bool) State {
+	filtered := devclean.WithoutKeptExtensions(s.DB, s.EnvironmentExtensions, declared)
+	if filtered == s.DB {
+		return s
+	}
+	s.DB = filtered
+	if s.Schema != nil {
+		schema := *s.Schema
+		schema.Extensions = nil
+		for _, extension := range s.Schema.Extensions {
+			if slices.ContainsFunc(filtered.Extensions, func(kept catalog.Extension) bool { return kept.Name == extension.Name }) {
+				schema.Extensions = append(schema.Extensions, extension)
+			}
+		}
+		s.Schema = &schema
+	}
+	return s
 }
 
 // Resolve materializes the set's desired state. Local schema files load
@@ -479,11 +527,12 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions, finis
 		conn,
 		snapshot,
 		migrationfile.DirFormatAtlas,
-		func(replayConn *dbschema.DatabaseConnection) error {
+		func(replayConn *dbschema.DatabaseConnection, baseline devclean.Baseline) error {
 			state, err := s.DevState(ctx, replayConn, opts)
 			if err != nil {
 				return err
 			}
+			state.EnvironmentExtensions = baseline.Extensions()
 			// Finished here rather than after the replay returns, because the
 			// replay's cleanup drops the schema this session holds, and a
 			// caller holding the state may need to ask the server about it.

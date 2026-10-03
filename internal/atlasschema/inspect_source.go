@@ -429,7 +429,7 @@ func inspectOnDev(
 			devConn,
 			migrationSnapshot,
 			migrationfile.DirFormatAtlas,
-			func(replayConn *dbschema.DatabaseConnection) error {
+			func(replayConn *dbschema.DatabaseConnection, baseline devclean.Baseline) error {
 				schema, validatedOpts, err := readValidatedInspectDevSchema(ctx, replayConn, inspectDevReadOptions{
 					inspect:         inspectOpts,
 					withoutRevision: true,
@@ -437,6 +437,10 @@ func inspectOnDev(
 				if err != nil {
 					return err
 				}
+				// A directory cannot say which extensions it means, since one
+				// it creates IF NOT EXISTS is a no-op beside a kept one, so the
+				// dev database's own are left out of what the directory built.
+				schema = baseline.WithoutEnvironment(schema, nil)
 				rendered, err = renderInspectSchema(
 					schema,
 					replayConn.Info(),
@@ -457,13 +461,14 @@ func inspectOnDev(
 			devConn,
 			desired,
 			opts.Diagnostics,
-			func(materializedConn *dbschema.DatabaseConnection) error {
+			func(materializedConn *dbschema.DatabaseConnection, baseline devclean.Baseline) error {
 				schema, validatedOpts, err := readValidatedInspectDevSchema(ctx, materializedConn, inspectDevReadOptions{
 					inspect: inspectOpts,
 				})
 				if err != nil {
 					return err
 				}
+				schema = baseline.WithoutEnvironment(schema, declaredExtensionNames(desired))
 				rendered, err = renderInspectSchema(schema, materializedConn.Info(), validatedOpts)
 				return err
 			},
@@ -516,7 +521,7 @@ func withMaterializedDevSchema(
 	devConn *dbschema.DatabaseConnection,
 	desired *schemamodel.Database,
 	diag io.Writer,
-	consume func(*dbschema.DatabaseConnection) error,
+	consume migrationreplay.Consumer,
 ) (resultErr error) {
 	lock, err := devlock.Acquire(ctx, devConn, 0)
 	if err != nil {
@@ -552,7 +557,7 @@ func withMaterializedDevSchema(
 		if err := materializeOnDev(ctx, materializedConn, desired, diag); err != nil {
 			return err
 		}
-		return consume(materializedConn)
+		return consume(materializedConn, baseline)
 	})
 }
 

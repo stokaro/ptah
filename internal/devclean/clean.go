@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"slices"
 
+	"ptah.run/catalog"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dbreset"
 	"ptah.run/internal/devdocker"
@@ -269,4 +270,41 @@ func (b Baseline) kept() dbreset.Kept {
 		Artifacts:         b.artifacts,
 		Server:            b.server,
 	}
+}
+
+// WithoutEnvironment returns current, a read of a dev database the caller
+// claimed with this baseline, without the baseline's extensions the other side
+// of the comparison does not declare. declared names the extensions that side
+// holds.
+//
+// The baseline's extensions are the dev database's environment, which every
+// reset keeps: the dev database held them before the run, and the run did not
+// create them. Left in, they are a difference from any desired schema that
+// does not name them, and a migration planned against the replay drops each
+// one. The next replay then executes that drop on the dev database, and no
+// reset can put the extension back (stokaro/ptah#4070). One the other side
+// declares is left in, and matches.
+//
+// current is not changed; the result shares everything but its extension
+// list. A nil current, or a baseline that keeps no extension, comes back as
+// it is.
+func (b Baseline) WithoutEnvironment(current *catalog.Database, declared map[string]bool) *catalog.Database {
+	return WithoutKeptExtensions(current, b.extensions, declared)
+}
+
+// WithoutKeptExtensions is [Baseline.WithoutEnvironment] for a caller that
+// holds the kept extensions as a list.
+func WithoutKeptExtensions(current *catalog.Database, kept []string, declared map[string]bool) *catalog.Database {
+	if current == nil || len(kept) == 0 {
+		return current
+	}
+	filtered := *current
+	filtered.Extensions = nil
+	for _, extension := range current.Extensions {
+		if slices.Contains(kept, extension.Name) && !declared[extension.Name] {
+			continue
+		}
+		filtered.Extensions = append(filtered.Extensions, extension)
+	}
+	return &filtered
 }
