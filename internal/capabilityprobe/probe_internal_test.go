@@ -1254,50 +1254,50 @@ func TestYDBNamespaceStatements(t *testing.T) {
 		"SELECT COUNT(DISTINCT Path) FROM `/local/.sys/partition_stats` WHERE NOT StartsWith(Path, '/local/.')")
 }
 
-// TestReportErr_AnUnderstatementIsAClaimAboutTheServerToo pins both readings of
-// a declared understatement: the server doing the key is the decision the cell
-// recorded and passes, and the server not doing it makes the declaration's
-// reason false and fails the run -- which is also what an experiment that
-// stopped proving the object exists would produce.
-func TestReportErr_AnUnderstatementIsAClaimAboutTheServerToo(t *testing.T) {
+// understatementReport is a fully decided run on a cell that declares its
+// preset understates hypertables, against a server measured to do it or not.
+func understatementReport(serverDoes bool) *Report {
 	const key = capability.Hypertables // Postgres17 says false.
 	cell := measuredCell
 	cell.Understates = map[capability.Capability]string{key: "the server has it and Ptah does not plan it yet"}
-	for _, tc := range []struct {
-		name        string
-		serverDoes  bool
-		wantOutcome Outcome
-		wantErr     string
-	}{{
-		name:        "the server does the understated key",
-		serverDoes:  true,
-		wantOutcome: Conservative,
-	}, {
-		name:        "the server does not do it either",
-		serverDoes:  false,
-		wantOutcome: Agrees,
-		wantErr: `(?s).*hypertables: matrix cell postgres 17 declares that its preset understates this key ` +
-			`\(the server has it and Ptah does not plan it yet\), and the server was measured not to do it ` +
-			`either, so the declaration is stale.*`,
-	}} {
-		t.Run(tc.name, func(t *testing.T) {
-			c := qt.New(t)
-			preset := capability.Postgres17()
-			report := reportOn(cell, true, preset)
-			report.Planned = true
-			report.Control = Attempt{Statement: nonsenseControl}
-			report.Resolution.Capabilities = preset
-			observations := make(map[capability.Capability]observation)
-			for _, registered := range capability.All() {
-				observations[registered] = decided(preset.Has(registered))
-			}
-			observations[key] = decided(tc.serverDoes)
-			report.Rows = assemble(report, observations, nil)
-
-			c.Assert(rowFor(c, report.Rows, key).Outcome, qt.Equals, tc.wantOutcome)
-			assertErrMatches(c, report.Err(), tc.wantErr)
-		})
+	preset := capability.Postgres17()
+	report := reportOn(cell, true, preset)
+	report.Planned = true
+	report.Control = Attempt{Statement: nonsenseControl}
+	report.Resolution.Capabilities = preset
+	observations := make(map[capability.Capability]observation)
+	for _, registered := range capability.All() {
+		observations[registered] = decided(preset.Has(registered))
 	}
+	observations[key] = decided(serverDoes)
+	report.Rows = assemble(report, observations, nil)
+	return report
+}
+
+// A declared understatement is a claim about the server as well as about
+// Ptah. The server doing the key is the decision the cell recorded, and the
+// run passes with the row CONSERVATIVE.
+func TestReportErr_AnUnderstatementIsAClaimAboutTheServerToo_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	report := understatementReport(true)
+
+	c.Assert(rowFor(c, report.Rows, capability.Hypertables).Outcome, qt.Equals, Conservative)
+	c.Assert(report.Err(), qt.IsNil)
+}
+
+// The server not doing the key makes the declaration's reason false and fails
+// the run -- which is also what an experiment that stopped proving the object
+// exists would produce.
+func TestReportErr_AnUnderstatementIsAClaimAboutTheServerToo_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	report := understatementReport(false)
+
+	c.Assert(rowFor(c, report.Rows, capability.Hypertables).Outcome, qt.Equals, Agrees)
+	c.Assert(report.Err(), qt.ErrorMatches, `hypertables: matrix cell postgres 17 declares that its preset `+
+		`understates this key \(the server has it and Ptah does not plan it yet\), and the server was measured `+
+		`not to do it either, so the declaration is stale`)
 }
 
 // ydb262Cell is the YDB 26.2 cell as cells.go declares it, with the fields the
