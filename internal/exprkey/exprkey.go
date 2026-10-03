@@ -150,6 +150,16 @@ func RoutineArguments(routine schemamodel.Function) string {
 	return lengthPrefixed(kind, routine.Parameters, routine.Returns)
 }
 
+// ViewBody is the key [config.CompareOptions.ViewBodies] is held under for a
+// declared view or materialized view: its body exactly as declared.
+//
+// It names no view, for the reason [RoutineArguments] gives: what the server
+// prints for a body depends on the body, not on the view's name or kind, so
+// two views declaring one body share one answer.
+func ViewBody(body string) string {
+	return lengthPrefixed("view", body)
+}
+
 // encode renders an identity as an opaque string whose component boundaries
 // come from the lengths written in front of each component, never from a
 // separator a component could contain.

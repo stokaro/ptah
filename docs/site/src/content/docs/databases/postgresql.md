@@ -173,16 +173,36 @@ column is NOT NULL on the file's side either way, as the server holds it.
 `ptah-compat schema diff` refuses a schema file without `--dev-url`, as Atlas
 CE does, unless `PTAH_ATLAS_DIFF_WITHOUT_DEV_URL=1` is set.
 
-A view or materialized view body is compared by folding, not by asking the
-server. The server expands a `*` into the column list when it creates the view,
-so `SELECT * FROM orders WHERE total > 100` reads back as
+A view or materialized view body is compared by folding first. The server
+expands a `*` into the column list when it creates the view, so
+`SELECT * FROM orders WHERE total > 100` reads back as
 `SELECT id, total FROM orders WHERE (total > 100)`. Ptah expands each top-level
 `*` of a view that reads one table into that table's declared columns before it
 compares, so the declaration and its read-back match. Because the declared
 columns are used, a view created before its table gained a column is replaced,
-and the new column appears in it. A `*` over a join or inside a subquery is
-compared as written, so such a view is replaced on every plan; list its
-columns instead.
+and the new column appears in it. A `*` over a join, over a function or inside
+a subquery is compared as written, so such a view is replaced on every plan;
+list its columns instead.
+
+A body the fold finds different is then asked of the server, when the database
+holds a view or materialized view of that name and the body selects no `*`.
+Ptah creates a view with the declared body inside the rolled-back transaction,
+reads `pg_get_viewdef` back and compares that with the catalog's. The server's
+answer can only match a body; it never makes a body the fold matched differ.
+This is what matches a view over a set-returning function, which the server
+stores with the function's whole result as a column alias list:
+
+| Declared | Read back |
+| --- | --- |
+| `SELECT id FROM public.all_items()` | `SELECT id FROM all_items() all_items(id, title, tags)` |
+| `SELECT g FROM generate_series(1, 3) g` | `SELECT g FROM generate_series(1, 3) g(g)` |
+
+The probe view is temporary on PostgreSQL and YugabyteDB. CockroachDB refuses
+temporary views by default, so there it is created in the current schema inside
+the same transaction. Either way it is dropped before the transaction rolls
+back, because YugabyteDB keeps a temporary view through the rollback and the
+session. A `*` is not asked, because the server expands it against the columns
+the database holds now, not the ones the desired tables declare.
 
 ## Constraint enforcement and the MATCH type
 
@@ -900,9 +920,12 @@ the routine follows it. A PL/pgSQL body is read when the routine first runs,
 so it does not hold the routine back. A routine that names nothing the plan
 creates comes first, where a domain, a column default, a policy or a trigger
 can call it. `ptah schema render` places routines by the same rule, treating
-everything it declares as created. A name counts with or without its schema: a
-table declared as `app.orders` is named by `app.orders` and by `orders`, and one
-declared without a schema is also named by `public.orders`.
+everything it declares as created.
+
+A name counts with or without its schema: a table declared as `app.orders` is
+named by `app.orders` and by `orders`, and one declared without a schema is also
+named by `public.orders`. CockroachDB and YugabyteDB resolve a bare name in
+`public` too, and the same rule holds there.
 
 A column default or a `CHECK` that calls a `LANGUAGE sql` routine reading
 another new table gets the one order PostgreSQL accepts: the table the routine

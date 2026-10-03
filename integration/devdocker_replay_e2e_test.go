@@ -136,7 +136,7 @@ func TestDevReplayOnANamedServerRefusesServerWideStatements(t *testing.T) {
 	)
 
 	refusal := `postgres migration replay rejects DO sublanguage because its effects cannot be confined to the disposable database realm; ` +
-		`if nothing else uses this server, declare it disposable with PTAH_DEV_SERVER_DISPOSABLE=1, or use a docker:// dev URL\nSQL: DO .*`
+		`if nothing else uses this server, declare it disposable with PTAH_DEV_SERVER_DISPOSABLE=1, or use a docker:// or docker\+<driver>:// dev URL\nSQL: DO .*`
 	c.Assert(err, qt.ErrorMatches, `(?s).*replay migration 20240101000000 on dev database: .*`+refusal)
 	c.Assert(nativeErr, qt.ErrorMatches, `(?s).*`+refusal, qt.Commentf("%s", native))
 	var roles int

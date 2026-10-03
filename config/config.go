@@ -175,6 +175,34 @@ type CompareOptions struct {
 	// materialized history.
 	ContinuousAggregateBodies map[string]ContinuousAggregateBody
 
+	// ViewBodies carries each declared view's and materialized view's SELECT
+	// as the target server itself spells it, keyed by the body as declared.
+	//
+	// PostgreSQL does not store a view's text. It prints the parse tree back,
+	// and for a function in FROM it adds the function's whole result as a
+	// column alias list. Measured on 18.6:
+	//
+	//	declared                                 stored
+	//	SELECT id FROM public.all_items()     -> SELECT id FROM all_items() all_items(id, title, tags)
+	//	SELECT g FROM generate_series(1, 3) g -> SELECT g FROM generate_series(1, 3) g(g)
+	//
+	// The list names columns the declaration never mentions, so no fold over
+	// the declared text can produce it, and compared as text every such view
+	// was dropped with CASCADE and created again on every plan
+	// (stokaro/ptah#4057). CockroachDB rewrites more: v26.3.2 stores
+	// `FROM ROWS FROM (public.all_items())`, and a table as `db.public.items`.
+	//
+	// A resolved entry is the declaration after the same rewrite. The
+	// comparison reads it as a second chance to match, never as a reason to
+	// differ: a view the text comparison already finds equal stays equal. A
+	// body that selects `*` is not resolved, because the server expands the
+	// star against the columns the database has now, and the declaration asks
+	// for the columns the desired tables declare.
+	//
+	// A nil map means nobody could ask a server, and the comparison folds the
+	// two texts as before.
+	ViewBodies map[string]ViewBody
+
 	// CheckExpressions carries each declared table CHECK as the target server
 	// itself spells it, keyed by the constraint's qualified name.
 	//
@@ -440,6 +468,19 @@ type ContinuousAggregateBody struct {
 	// Resolved reports that a server answered for this aggregate. A false value
 	// on a present key is a declaration the server refused, and the body may
 	// not be compared.
+	Resolved bool
+}
+
+// ViewBody is one view's SELECT in the target server's own spelling. See
+// [CompareOptions.ViewBodies].
+//
+// The zero value is what a resolver returns for a declaration it did not or
+// could not put through the server; a comparison must then fall back to its
+// own folding. Resolved reports which it is.
+type ViewBody struct {
+	// Body is the SELECT as pg_get_viewdef prints it.
+	Body string
+	// Resolved reports that a server answered for this body.
 	Resolved bool
 }
 

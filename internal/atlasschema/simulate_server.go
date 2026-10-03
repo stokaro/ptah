@@ -109,8 +109,13 @@ func openRehearsalDatabase(
 // server that the reset of that server would leave behind: a role, a user, a
 // privilege or a stored body. Databases, and everything in them, the reset
 // drops; see [devclean.ReplayRealmServerDatabases].
+//
+// On a server the run owns, started by a docker URL or declared disposable,
+// nothing outlives the run that matters, and the rehearsal runs what a
+// migration replay there runs; see [devclean.DevReplayRealm]. On any other
+// server a refusal that ownership would lift names the two ways to it.
 func guardServerRehearsal(statements []string, dev catalog.ServerInfo) error {
-	guard := devclean.NewReplayGuard(dev, devclean.ReplayRealmServerDatabases)
+	guard := devclean.NewDevReplayGuard(dev)
 	for i, statement := range statements {
 		if err := guard.ValidateStatement(statement); err != nil {
 			return fmt.Errorf("statement %d cannot be rehearsed on a whole dev server: %w", i+1, err)

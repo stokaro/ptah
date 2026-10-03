@@ -105,8 +105,9 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 		ownerSchema, ownerTable := sequenceOwnerTable(sequence.Schema, sequence.OwnedBy)
 		return s.tableKept(keptTables, ownerSchema, ownerTable)
 	})
+	columnSequences := s.databaseColumnSequences(db.Tables, keptTables)
 	out.Grants = keep(db.Grants, func(grant catalog.Grant) bool {
-		return s.databaseGrantSelected(out, keptTables, grant)
+		return s.databaseGrantSelected(out, keptTables, columnSequences, grant)
 	})
 	// Projected BEFORE the roles below, which keep a role that a surviving
 	// statement names. A default privilege names two of them, so projecting it
@@ -154,10 +155,11 @@ func (s *scopeSelection) projectDatabaseSupport(db, out *catalog.Database) {
 }
 
 // databaseGrantSelected mirrors generatedGrantSelected for introspected
-// grants.
+// grants. columnSequences holds the sequences that are part of a column and
+// survive the selection; see [scopeSelection.databaseColumnSequences].
 func (s *scopeSelection) databaseGrantSelected(
 	out *catalog.Database,
-	keptTables map[tableIdentity]struct{},
+	keptTables, columnSequences map[tableIdentity]struct{},
 	grant catalog.Grant,
 ) bool {
 	switch {
@@ -171,7 +173,8 @@ func (s *scopeSelection) databaseGrantSelected(
 		_, named := s.allowed[strings.TrimSpace(grant.ObjectName)]
 		return named
 	case strings.EqualFold(grant.ObjectType, "SEQUENCE"):
-		return databaseSequenceNameKept(out.Sequences, grant.Schema, grant.ObjectName)
+		return databaseSequenceNameKept(out.Sequences, grant.Schema, grant.ObjectName) ||
+			s.columnSequenceKept(columnSequences, grant.Schema, grant.ObjectName)
 	case routineGrantObjectTypes[strings.ToUpper(grant.ObjectType)]:
 		// A routine grant rides its routine, which the projection keeps by
 		// name, every overload together.

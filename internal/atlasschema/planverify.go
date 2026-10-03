@@ -71,6 +71,9 @@ type PlanRehearsalOptions struct {
 	Exclude []string
 	// TxMode is the transaction mode the target apply will use.
 	TxMode migrator.MigrationTxMode
+	// DevServerDisposable is the operator's declaration that the server
+	// DevURL names is the run's own; see [SimulateOptions.DevServerDisposable].
+	DevServerDisposable bool
 }
 
 // RehearsePlanStatements verifies a pre-planned migration semantically, the
@@ -115,7 +118,7 @@ func RehearsePlanStatements(
 		return fmt.Errorf("apply plan exclude patterns to current schema: %w", err)
 	}
 
-	dev, err := connectSimulationDev(ctx, opts.DevURL, conn, opts.TargetURL, opts.DesiredURLs)
+	dev, err := connectSimulationDev(ctx, opts.DevURL, opts.DevServerDisposable, conn, opts.TargetURL, opts.DesiredURLs)
 	if err != nil {
 		return err
 	}

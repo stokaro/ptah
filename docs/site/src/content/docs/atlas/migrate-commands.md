@@ -1176,7 +1176,9 @@ A `--dev-url` that names no MySQL or MariaDB database is a whole dev server.
 it as Atlas does, with every name qualified by its database, and leave it
 empty. The replay may create, change and drop databases and write in any of
 them. A user, a role, a privilege or a stored body outlives the cleanup, which
-drops databases, and is refused, as it is on a dev database.
+drops databases, and is refused, as it is on a dev database, unless the dev
+server is the run's own; see
+[a server declared disposable](../../concepts/database-urls-and-dev-databases/#a-server-declared-disposable).
 
 The server must hold no user database, and the refusal names the first one in
 byte order, in Atlas's words for each verb:
@@ -1217,7 +1219,13 @@ scope, and Atlas's rules for pairing it apply:
 `schema apply` takes one as well. It plans as Atlas does, and rehearses the
 plan on the dev server before it touches the target, which Atlas does not.
 Beside a whole server the plan runs as written, and a user, a role, a
-privilege or a stored body in it is refused, as it is in a replay. Beside a URL
+privilege or a stored body in it is refused, as it is in a replay, unless the
+dev server is the run's own: one a `docker+<driver>://` URL naming no database
+starts, such as `docker+mysql://_/mysql:8.4`, or one declared with
+`PTAH_DEV_SERVER_DISPOSABLE=1`. There the rehearsal runs what a replay on such
+a server runs; see
+[a server Ptah provisions](../../concepts/database-urls-and-dev-databases/#a-server-ptah-provisions).
+The refusal names both ways. Beside a URL
 naming one database the plan runs in a database of that name, created on the
 dev server and dropped after the rehearsal. The pairs Atlas refuses are
 refused in its words:

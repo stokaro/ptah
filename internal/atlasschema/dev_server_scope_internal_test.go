@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlassource"
+	"ptah.run/internal/devdocker"
 )
 
 // document is a schema file state declaring the named databases.
@@ -188,23 +189,78 @@ func TestGuardServerRehearsal_HappyPath(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 }
 
+// serverRehearsalOwnedStatements are what the reset of a whole dev server the
+// operator named leaves behind, and a server the run owns rehearses.
+var serverRehearsalOwnedStatements = []struct {
+	name      string
+	statement string
+}{
+	{name: "a user", statement: "CREATE USER 'u'@'%'"},
+	{name: "a privilege", statement: "GRANT SELECT ON `app`.* TO 'u'@'%'"},
+	{name: "a stored body", statement: "CREATE PROCEDURE `app`.`add_t`(IN v int) BEGIN INSERT INTO `app`.`t` (id) VALUES (v); END"},
+}
+
 // TestGuardServerRehearsal_FailurePath refuses what the reset leaves behind,
-// naming the statement.
+// naming the statement, and the two ways to a server the run owns.
 func TestGuardServerRehearsal_FailurePath(t *testing.T) {
-	tests := []struct {
-		name      string
-		statement string
-	}{
-		{name: "a user", statement: "CREATE USER 'u'@'%'"},
-		{name: "a privilege", statement: "GRANT SELECT ON `app`.* TO 'u'@'%'"},
-	}
-	for _, test := range tests {
+	for _, test := range serverRehearsalOwnedStatements {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
 			err := guardServerRehearsal([]string{"CREATE DATABASE `more`", test.statement}, wholeMySQLServerInfo)
 
-			c.Assert(err, qt.ErrorMatches, `(?s)statement 2 cannot be rehearsed on a whole dev server: .*`)
+			c.Assert(err, qt.ErrorMatches, `(?s)statement 2 cannot be rehearsed on a whole dev server: `+
+				`mysql migration replay rejects .* because its effects cannot be confined to the disposable database realm; `+
+				`if nothing else uses this server, declare it disposable with PTAH_DEV_SERVER_DISPOSABLE=1, `+
+				`or use a docker:// or docker\+<driver>:// dev URL`)
+		})
+	}
+}
+
+// TestGuardServerRehearsal_OwnedServer rehearses the same statements on a
+// whole dev server the operator declared the run's own, as a migration replay
+// there runs them (stokaro/ptah#4060). A scheduled event stays refused there,
+// without the remedy, because owning the server does not lift it.
+func TestGuardServerRehearsal_OwnedServer(t *testing.T) {
+	owned := catalog.ServerInfo{Dialect: platform.MariaDB, WholeServer: true, URL: "mariadb://root@guard-owned-server:3306/"}
+	for _, test := range serverRehearsalOwnedStatements {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			_, release, err := devdocker.Resolve(c.Context(), owned.URL, devdocker.Options{DeclaredDisposable: true})
+			c.Assert(err, qt.IsNil)
+			c.Cleanup(release)
+
+			c.Assert(guardServerRehearsal([]string{"CREATE DATABASE `more`", test.statement}, owned), qt.IsNil)
+			c.Assert(guardServerRehearsal([]string{"CREATE EVENT purge ON SCHEDULE EVERY 1 MINUTE DO DELETE FROM `app`.`t`"}, owned),
+				qt.ErrorMatches, `statement 1 cannot be rehearsed on a whole dev server: `+
+					`mariadb migration replay rejects CREATE executable stored body because its effects cannot be confined to the disposable database realm`)
+		})
+	}
+}
+
+// TestIsDevServer reads a whole dev server out of the operator's spelling: a
+// MySQL-family URL naming no database, written out or as a docker URL that
+// starts one. A `docker://` URL always names a database.
+func TestIsDevServer(t *testing.T) {
+	tests := []struct {
+		devURL string
+		want   bool
+	}{
+		{devURL: "mysql://root@localhost:3307/", want: true},
+		{devURL: "mariadb://root@localhost:3307/", want: true},
+		{devURL: "docker+mysql://_/mysql:8.4.11", want: true},
+		{devURL: "docker+mariadb://_/mariadb:11.8.9", want: true},
+		{devURL: "mysql://root@localhost:3307/dev", want: false},
+		{devURL: "docker+mysql://_/mysql:8.4.11/dev", want: false},
+		{devURL: "docker://mysql/8.4.11", want: false},
+		{devURL: "docker://mysql/8.4.11/dev", want: false},
+		{devURL: "docker+postgres://_/postgres:18", want: false},
+		{devURL: "postgres://root@localhost:5432/", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.devURL, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(isDevServer(test.devURL), qt.Equals, test.want)
 		})
 	}
 }

@@ -334,6 +334,17 @@ Sequences, domains, composite types and range types used to be selectable by
 domain in the plan and `DROP DOMAIN` ran on an object the selector was written
 to protect.
 
+A sequence that a `SERIAL` or identity column creates is part of its column,
+so neither side describes it as a sequence. A grant on it is still compared,
+and it follows the column's table: `--include items` manages the grant on
+`items_id_seq`, and `--exclude items` or `--exclude items.id` leaves it alone.
+A selector can also name the sequence, as `items_id_seq` or
+`items_id_seq[type=sequence]`, and then only the grant on it is kept or
+removed. A standalone sequence `OWNED BY` a column leaves with an excluded table
+or column, as `--include` keeps it with a selected table. `schema clean` is
+stricter about the column's own sequence, because dropping the table drops the
+sequence with it: there a selector that splits the two is refused.
+
 ### Excluding a schema
 
 A one-part selector also names a **schema**, and a schema that matches takes
@@ -1444,7 +1455,9 @@ see, on `schema apply` and `schema diff` alike:
   table — columns, indexes, constraints, triggers, policies, grants, and seed
   data — ride along with it, and support objects the selection depends on
   (enums and other types used by kept columns, sequences owned by kept
-  tables, roles named by kept grants, owning schemas) are retained.
+  tables, roles named by kept grants, owning schemas) are retained. A grant
+  on the sequence a serial or identity column of a kept table creates is kept
+  with the table.
   Extensions skip the schema universe. An extension-only selection such as
   `--schema app --include extensions.citext` selects only that database-wide
   extension. When any non-extension resource matches, all extensions ride as

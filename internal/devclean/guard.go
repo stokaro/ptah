@@ -6,6 +6,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/internal/devdocker"
 	"ptah.run/internal/lexer"
 )
 
@@ -52,6 +53,42 @@ const (
 // confined to realm.
 func NewReplayGuard(info catalog.ServerInfo, realm ReplayRealm) *ReplayGuard {
 	return &ReplayGuard{info: info, realm: realm}
+}
+
+// NewDevReplayGuard is the guard for statements a run executes on the dev
+// server reached through info: a migration replay, and a plan rehearsal on a
+// whole MySQL or MariaDB server. The realm is [DevReplayRealm]'s, and a
+// refusal the server realm would lift ends with [devdocker.OwnedServerRemedy],
+// the two ways to that realm.
+func NewDevReplayGuard(info catalog.ServerInfo) *ReplayGuard {
+	return NewReplayGuard(info, DevReplayRealm(info)).WithServerRealmRemedy(devdocker.OwnedServerRemedy)
+}
+
+// DevReplayRealm is how much of the dev server reached through info a run may
+// change: the whole server when the run owns it, every user database of a
+// MySQL-family server whose URL named no database, and the dev database
+// otherwise. The run owns a server this process provisioned and removes
+// afterwards, and a server the operator declared disposable with
+// [devdocker.DisposableServerEnvVar].
+//
+// Both answers come from the one record [devdocker.RunOwned] reads, keyed on
+// the URL the connection was opened with, and the two cases cannot be asked
+// apart: a second question would be a second place for the next consumer to
+// forget. The answer is not re-derived from the operator's `--dev-url`
+// spelling, because every consumer resolves a docker URL before it connects
+// and hands the connectable URL on, so by the time statements run no docker
+// URL is left to read. [Claim] reads the same record to decide whether the
+// server's default database may be reset.
+func DevReplayRealm(info catalog.ServerInfo) ReplayRealm {
+	if devdocker.RunOwned(info.URL) {
+		return ReplayRealmServer
+	}
+	// A dev URL naming no MySQL-family database gave the run every user
+	// database on the server, and the claim found none there.
+	if info.WholeServer {
+		return ReplayRealmServerDatabases
+	}
+	return ReplayRealmDatabase
 }
 
 // WithServerRealmRemedy returns a copy of the guard that ends a refusal with

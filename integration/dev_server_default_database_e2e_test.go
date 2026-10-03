@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -138,7 +139,7 @@ func TestDevDefaultDatabaseOfANamedServerIsRefusedE2E(t *testing.T) {
 
 	refusal := `refusing to clean protected PostgreSQL-family database "postgres": ` +
 		`it is the server's default database, which is reset only on a server the run owns; ` +
-		`if nothing else uses this server, declare it disposable with PTAH_DEV_SERVER_DISPOSABLE=1, or use a docker:// dev URL`
+		`if nothing else uses this server, declare it disposable with PTAH_DEV_SERVER_DISPOSABLE=1, or use a docker:// or docker\+<driver>:// dev URL`
 	c.Assert(err, qt.ErrorMatches, `(?s).*`+refusal+`.*`)
 	c.Assert(nativeErr, qt.ErrorMatches, `(?s).*`+refusal+`.*`, qt.Commentf("%s", native))
 }
@@ -158,4 +159,97 @@ func TestDevDefaultDatabaseOfADeclaredServerIsCleanedE2E(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
 	c.Assert(nativeErr, qt.IsNil, qt.Commentf("%s", native))
 	c.Assert(userTables(c, dev), qt.Equals, 0)
+}
+
+// devDefaultDatabaseRehearsals are the commands that rehearse a plan on a dev
+// database before they touch the target: `schema apply` on both binaries, and
+// the plan-file checks of the compatibility surface. Each reads the
+// declaration as a migration replay does (stokaro/ptah#4060). {plan} is a plan
+// for the target, made beside a dev database of its own.
+var devDefaultDatabaseRehearsals = []struct {
+	name string
+	// run is the binary the row drives, in process.
+	run  func(args ...string) (string, error)
+	args []string
+	// added is how many `added` tables the target holds after a run the dev
+	// database rehearsed: one where the command applies, none where it only
+	// checks the plan.
+	added int
+}{
+	{name: "schema apply", run: runCompatVerb, args: []string{"schema", "apply", "-u", "{target}", "--to", "{schema}", "--dev-url", "{dev}", "--auto-approve"}, added: 1},
+	{name: "schema apply --plan", run: runCompatVerb, args: []string{"schema", "apply", "-u", "{target}", "--to", "{schema}", "--plan", "file://{plan}", "--dev-url", "{dev}", "--auto-approve"}, added: 1},
+	{name: "schema plan validate", run: runCompatVerb, args: []string{"schema", "plan", "validate", "--file", "file://{plan}", "--from", "{target}", "--to", "{schema}", "--dev-url", "{dev}"}, added: 0},
+	{name: "schema plan lint", run: runCompatVerb, args: []string{"schema", "plan", "lint", "--file", "file://{plan}", "--from", "{target}", "--to", "{schema}", "--dev-url", "{dev}"}, added: 0},
+	{name: "ptah schema apply", run: runPtahNativeWithError, args: []string{"schema", "apply", "--db-url", "{target}", "--schema-file", "{rawschema}", "--dev-url", "{dev}", "--auto-approve"}, added: 1},
+}
+
+// devDefaultDatabaseRehearsalArgs spells a row's arguments: the target, its
+// desired state, and a plan for it made beside a scratch dev database, which
+// the rehearsal does not use.
+func devDefaultDatabaseRehearsalArgs(c *qt.C, template []string, dev string) (args []string, target devIdentityTarget) {
+	c.Helper()
+	target = newDevIdentityTarget(c, dbtarget.PostgreSQL, " WITH (FORCE)")
+	schemaFile, dir := writeDevIdentitySources(c)
+	planDev, _ := scratchReplayDatabase(c)
+	plan := filepath.Join(c.TempDir(), "change.plan.hcl")
+	output, err := runCompatVerb("schema", "plan", "--from", target.url, "--to", "file://"+schemaFile,
+		"--dev-url", planDev, "--output", plan)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
+	args = devNotCleanArgs(template, dev, target.url, schemaFile, dir, "")
+	for i := range args {
+		args[i] = strings.ReplaceAll(args[i], "{plan}", plan)
+	}
+	return args, target
+}
+
+// addedTables counts `added`, the table the desired state adds, in target.
+func addedTables(c *qt.C, target devIdentityTarget) int {
+	c.Helper()
+	var tables int
+	c.Assert(target.conn.QueryRowContext(c.Context(),
+		"SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND tablename = 'added'").Scan(&tables), qt.IsNil)
+	return tables
+}
+
+// TestDevRehearsalsRefuseTheDefaultDatabaseOfANamedServerE2E rehearses each
+// command's plan on the postgres database of a server reached by a spelling
+// nothing recorded, without the declaration. The rehearsal refuses the
+// database before it touches the target, and names the two ways to make the
+// server the run's own.
+func TestDevRehearsalsRefuseTheDefaultDatabaseOfANamedServerE2E(t *testing.T) {
+	envbooltest.Unset(devdocker.DisposableServerEnvVar)(t)
+	dev := namedSpelling(qt.New(t), provisionDevDefaultDatabase(qt.New(t)))
+	for _, verb := range devDefaultDatabaseRehearsals {
+		t.Run(verb.name, func(t *testing.T) {
+			c := qt.New(t)
+			args, target := devDefaultDatabaseRehearsalArgs(c, verb.args, dev)
+
+			output, err := verb.run(args...)
+
+			c.Assert(err, qt.ErrorMatches, `(?s).*refusing to clean protected PostgreSQL-family database "postgres": `+
+				`it is the server's default database.*PTAH_DEV_SERVER_DISPOSABLE=1.*`, qt.Commentf("%s", output))
+			c.Assert(addedTables(c, target), qt.Equals, 0)
+		})
+	}
+}
+
+// TestDevRehearsalsCleanTheDefaultDatabaseOfADeclaredServerE2E is the control:
+// the same spelling declared disposable rehearses each command's plan there,
+// the commands that apply reach the target, and the dev database is left
+// empty.
+func TestDevRehearsalsCleanTheDefaultDatabaseOfADeclaredServerE2E(t *testing.T) {
+	envbooltest.Set(devdocker.DisposableServerEnvVar, "1")(t)
+	dev := namedSpelling(qt.New(t), provisionDevDefaultDatabase(qt.New(t)))
+	for _, verb := range devDefaultDatabaseRehearsals {
+		t.Run(verb.name, func(t *testing.T) {
+			c := qt.New(t)
+			args, target := devDefaultDatabaseRehearsalArgs(c, verb.args, dev)
+
+			output, err := verb.run(args...)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
+			c.Assert(addedTables(c, target), qt.Equals, verb.added)
+			c.Assert(userTables(c, dev), qt.Equals, 0)
+		})
+	}
 }

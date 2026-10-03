@@ -908,13 +908,13 @@ func ViewDefinitions(genView schemamodel.View, dbView catalog.View) difftypes.Vi
 // ViewDefinitionsWithDialect performs detailed comparison between generated and
 // database view definitions with dialect-aware catalog readback normalization.
 func ViewDefinitionsWithDialect(genView schemamodel.View, dbView catalog.View, dialect string) difftypes.ViewDiff {
-	return viewDefinitions(genView, dbView, dialect, nil)
+	return viewDefinitions(genView, dbView, dialect, declaredBodies{})
 }
 
 // viewDefinitions is [ViewDefinitionsWithDialect] with the desired relations'
 // columns, which is what lets a declared `*` match the column list a server
 // stores in its place.
-func viewDefinitions(genView schemamodel.View, dbView catalog.View, dialect string, columns relationColumns) difftypes.ViewDiff {
+func viewDefinitions(genView schemamodel.View, dbView catalog.View, dialect string, bodies declaredBodies) difftypes.ViewDiff {
 	viewDiff := difftypes.ViewDiff{
 		ViewName: genView.Name,
 		Changes:  make(map[string]string),
@@ -928,7 +928,7 @@ func viewDefinitions(genView schemamodel.View, dbView catalog.View, dialect stri
 		PreviousBody: strings.TrimSpace(dbView.Body),
 	}
 
-	if !declaredBodyEqual(genView.Body, dbView.Body, dialect, dbView.Schema, columns) {
+	if !declaredBodyEqual(genView.Body, dbView.Body, dialect, dbView.Schema, bodies) {
 		viewDiff.Changes["body"] = fmt.Sprintf("%s -> %s", strings.TrimSpace(dbView.Body), strings.TrimSpace(genView.Body))
 	}
 
@@ -1021,7 +1021,7 @@ func MaterializedViewDefinitionsWithDialect(
 	dbView catalog.MaterializedView,
 	dialect string,
 ) difftypes.MaterializedViewDiff {
-	return materializedViewDefinitions(genView, dbView, dialect, nil)
+	return materializedViewDefinitions(genView, dbView, dialect, declaredBodies{})
 }
 
 // materializedViewDefinitions is [MaterializedViewDefinitionsWithDialect] with
@@ -1030,7 +1030,7 @@ func materializedViewDefinitions(
 	genView schemamodel.MaterializedView,
 	dbView catalog.MaterializedView,
 	dialect string,
-	columns relationColumns,
+	bodies declaredBodies,
 ) difftypes.MaterializedViewDiff {
 	viewDiff := difftypes.MaterializedViewDiff{
 		ViewName: genView.Name,
@@ -1038,7 +1038,7 @@ func materializedViewDefinitions(
 		Desired:  genView,
 	}
 
-	if !declaredBodyEqual(genView.Body, dbView.Body, dialect, dbView.Schema, columns) {
+	if !declaredBodyEqual(genView.Body, dbView.Body, dialect, dbView.Schema, bodies) {
 		viewDiff.Changes["body"] = fmt.Sprintf("%s -> %s", strings.TrimSpace(dbView.Body), strings.TrimSpace(genView.Body))
 	}
 	if desired, current, changed := refreshChange(genView, dbView); changed {
@@ -1122,17 +1122,36 @@ func schemaObjectBodiesEqual(generatedBody, databaseBody, dialect, databaseSchem
 		)
 }
 
+// declaredBodies is what a view-like comparison knows about a declared body
+// beyond its text: the columns the desired relations declare, which a `*`
+// stands for, and the server's spelling of each body, keyed by
+// [exprkey.ViewBody] and nil when no server was asked.
+type declaredBodies struct {
+	columns relationColumns
+	spelled map[string]config.ViewBody
+}
+
 // declaredBodyEqual is [schemaObjectBodiesEqual], and failing that the same
 // question with each `*` of a single-relation declaration replaced by the
 // relation's declared columns; see expandSelectStar. The text as written is
 // asked first, so a server that keeps the star, as SQL Server does, never
 // reaches the expansion.
-func declaredBodyEqual(generatedBody, databaseBody, dialect, databaseSchema string, columns relationColumns) bool {
+//
+// The server's spelling of the declaration is asked last, and only ever to
+// match: a body the text comparison finds equal stays equal whatever the
+// server says. It is what matches a body the server rewrites beyond any fold,
+// such as a function in FROM, which PostgreSQL prints with the function's
+// whole result as a column alias list (stokaro/ptah#4057).
+func declaredBodyEqual(generatedBody, databaseBody, dialect, databaseSchema string, bodies declaredBodies) bool {
 	if schemaObjectBodiesEqual(generatedBody, databaseBody, dialect, databaseSchema) {
 		return true
 	}
-	expanded, ok := expandSelectStar(normalizeSQLBody(generatedBody, dialect), columns)
-	return ok && schemaObjectBodiesEqual(expanded, databaseBody, dialect, databaseSchema)
+	expanded, ok := expandSelectStar(normalizeSQLBody(generatedBody, dialect), bodies.columns)
+	if ok && schemaObjectBodiesEqual(expanded, databaseBody, dialect, databaseSchema) {
+		return true
+	}
+	spelled := bodies.spelled[exprkey.ViewBody(generatedBody)]
+	return spelled.Resolved && schemaObjectBodiesEqual(spelled.Body, databaseBody, dialect, databaseSchema)
 }
 
 func normalizeSQLBodyPreservingQualifiers(body, dialect string) string {

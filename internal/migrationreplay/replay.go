@@ -30,7 +30,7 @@ type Options struct {
 	// DevServerDisposable is the operator's declaration that the server
 	// DevURL names is the run's own, as [devdocker.DisposableServerDeclared]
 	// resolved it. The replay then runs the statements whose effect reaches
-	// past the dev database; see replayRealm.
+	// past the dev database; see [devclean.DevReplayRealm].
 	DevServerDisposable bool
 	// FS supplies an immutable migration snapshot. When nil, Replay opens Dir.
 	FS                fs.FS
@@ -255,10 +255,7 @@ func replayOnLockedConnection(
 		migrator.WithMigrationDirFormat(dirFormat),
 		migrator.WithAtlasTemplateData(atlasTemplateData),
 		migrator.WithAtlasRevisionVersions(revisionVersions),
-		migrator.WithStatementValidator(
-			devclean.NewReplayGuard(conn.Info(), replayRealm(conn.Info())).
-				WithServerRealmRemedy(devdocker.OwnedServerRemedy),
-		),
+		migrator.WithStatementValidator(devclean.NewDevReplayGuard(conn.Info())),
 	)
 	if err != nil {
 		return fmt.Errorf("load migration directory: %w", err)
@@ -281,32 +278,6 @@ func replayOnLockedConnection(
 			hooks,
 		)
 	})
-}
-
-// replayRealm is how much of the dev server this replay may change: the whole
-// server when the run owns it, and the dev database otherwise. The run owns a
-// server this process provisioned and removes afterwards, and a server the
-// operator declared disposable with [devdocker.DisposableServerEnvVar]. Those
-// are the two ways [devdocker.OwnedServerRemedy] names, which is why the guard
-// ends a refusal the server realm lifts with it.
-//
-// Both answers come from the one record [devdocker.RunOwned] reads, keyed on
-// the URL the connection was opened with, and the two cases cannot be asked
-// apart: a second question here would be a second place for the next consumer
-// to forget. The answer is not re-derived from the operator's `--dev-url`
-// spelling, because every consumer resolves a docker URL before it connects
-// and hands the connectable URL on, so by the time a replay runs no docker URL
-// is left to read.
-func replayRealm(info catalog.ServerInfo) devclean.ReplayRealm {
-	if devdocker.RunOwned(info.URL) {
-		return devclean.ReplayRealmServer
-	}
-	// A dev URL naming no MySQL-family database gave the replay every user
-	// database on the server, and the claim found none there.
-	if info.WholeServer {
-		return devclean.ReplayRealmServerDatabases
-	}
-	return devclean.ReplayRealmDatabase
 }
 
 func replayMigrations(
