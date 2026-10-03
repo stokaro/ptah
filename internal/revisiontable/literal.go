@@ -34,14 +34,13 @@ func VersionLiteral(dialect, value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
-// yqlEscaper escapes what would end or change a YQL string literal. YQL has
-// no session mode that turns escapes off, and a doubled quote is not an
-// escape there: 'a''b' is two literals.
+// yqlEscaper escapes what would end or change a YQL string literal. YQL's
+// default lexer reads backslash escapes in every string, and a doubled quote
+// is not an escape there: it ends one literal and opens the next.
 var yqlEscaper = strings.NewReplacer(`\`, `\\`, "'", `\'`)
 
 // yqlUtf8Literal renders value as a typed YQL Utf8 literal. The u suffix is
-// the type, as Ptah types every YQL data literal (stokaro/ptah#4015, decision
-// 11). Measured on YDB 26.2.1.14, '20260103_a\\b\'c'u reads back as
+// the type: decision 11 of stokaro/ptah#4015 types every YQL data literal. Measured on YDB 26.2.1.14, '20260103_a\\b\'c'u reads back as
 // 20260103_a\b'c of type Utf8.
 func yqlUtf8Literal(value string) string {
 	return "'" + yqlEscaper.Replace(value) + "'u"

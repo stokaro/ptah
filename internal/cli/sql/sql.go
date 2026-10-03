@@ -36,8 +36,9 @@ const (
 // accepted here and exits 0, while nothing in internal/sqllint has been
 // measured to analyze Oracle. Naming a tenth dialect would claim coverage
 // nobody established, and refusing it is a behavior change this help-text
-// change does not get to make. YDB is refused by name, because its lexer reads
-// a double-quoted "x" as a string where every rule here reads a name.
+// change does not get to make. YDB is refused, through
+// sqllint.ValidateDialect, because YQL reads a double-quoted "x" as a string
+// where every rule here reads a name.
 const sqlLintDialects = "postgres, mysql, mariadb, sqlite, sqlserver, clickhouse, cockroachdb, yugabytedb, or spanner"
 
 var errSQLLintFindings = errors.New("sql lint findings found")

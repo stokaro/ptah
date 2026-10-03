@@ -113,12 +113,12 @@ func connect(ctx context.Context, dbURL string, scope scopeRule) (*DatabaseConne
 		return nil, err
 	}
 
-	dialectProtocol, connectionString := databaseDriverConfig(dialect, dbURL)
 	if dialect == platform.YDB {
 		// A dialect name with no driver behind it yet. The generic arm below
 		// would say Ptah renders and plans YDB schemas, which it does not.
 		return nil, errors.New(ydbgap.Connecting.Message())
 	}
+	dialectProtocol, connectionString := databaseDriverConfig(dialect, dbURL)
 	if dialectProtocol == "" {
 		// A dialect Ptah renders and plans for, and does not connect to yet.
 		// Without this the empty driver name reaches sql.Open, which answers
