@@ -783,11 +783,13 @@ Read the columns as follows.
 | `--env` | `string` | — | `PTAH_ENV` | — |
 | `--ignore-extension` | `stringArray` | `[]` | `PTAH_IGNORE_EXTENSION` | — |
 | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
+| `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
 | `--name` | `string` | `migration` | `PTAH_NAME` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--qualifier` | `string` | — | `PTAH_QUALIFIER` | — |
 | `--replay` | `bool` | `false` | `PTAH_REPLAY` | — |
 | `--report` | `string` | — | `PTAH_REPORT` | — |
+| `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
 | `--schema-cmd` | `string` | — | `PTAH_SCHEMA_CMD` | — |
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
@@ -904,8 +906,10 @@ Read the columns as follows.
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--env` | `string` | — | `PTAH_ENV` | — |
 | `--ignore-extension` | `stringArray` | `[]` | `PTAH_IGNORE_EXTENSION` | — |
+| `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--report` | `string` | `text` | `PTAH_REPORT` | — |
+| `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
 | `--schema-cmd` | `string` | — | `PTAH_SCHEMA_CMD` | — |
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |

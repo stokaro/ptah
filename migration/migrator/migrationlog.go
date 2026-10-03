@@ -12,6 +12,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
+	"ptah.run/internal/revisiontable"
 )
 
 // The revision table answers what is applied. It cannot answer what happened:
@@ -165,8 +166,9 @@ func (m *Migrator) migrationLogTable() string {
 
 // migrationLogTableSuffix is what separates the log's name from the revision
 // table's. One constant, because the DDL, the writer and the reader all have
-// to name the same table.
-const migrationLogTableSuffix = "_log"
+// to name the same table, and so do the callers that leave the log out of a
+// schema they compare (revisiontable.Configured).
+const migrationLogTableSuffix = revisiontable.LogSuffix
 
 // MigrationLogTableIdentifier returns the dialect-quoted name of the operation
 // log's table, or an empty string when this migrator keeps no log.

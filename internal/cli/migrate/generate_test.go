@@ -28,6 +28,31 @@ func TestMigrateGenerateCommandExposesShadowDBFlag(t *testing.T) {
 	c.Assert(cmd.Flags().Lookup("migrations-dir"), qt.IsNotNil)
 	c.Assert(cmd.Flags().Lookup("config"), qt.IsNotNil)
 	c.Assert(cmd.Flags().Lookup("env"), qt.IsNotNil)
+	c.Assert(cmd.Flags().Lookup("migrations-table"), qt.IsNotNil)
+	c.Assert(cmd.Flags().Lookup("revision-format"), qt.IsNotNil)
+}
+
+// TestMigrateGenerateRefusesAnUnknownRevisionFormatFailure refuses a revision
+// format `migrations up` would refuse too, before the plan reads the database.
+// Read as the native format, a typo would leave an Atlas-format revision table
+// in the comparison, and the plan would drop it.
+func TestMigrateGenerateRefusesAnUnknownRevisionFormatFailure(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	t.Chdir(root)
+
+	cmd := migrate.NewMigrateGenerateCommand()
+	cmd.SetArgs([]string{
+		"--db-url", "sqlite://" + filepath.ToSlash(filepath.Join(root, "app.db")),
+		"--migrations-dir", filepath.Join(root, "migrations"),
+		"--revision-format", "atlass",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `unknown revision table format "atlass": expected ptah or atlas`)
+	_, statErr := os.Stat(filepath.Join(root, "app.db"))
+	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
 }
 
 func TestMigrateGenerateProjectConfigPrecedence(t *testing.T) {
