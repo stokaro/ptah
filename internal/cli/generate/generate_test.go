@@ -125,6 +125,31 @@ func TestGenerateCommandUnsupportedDialectExits2WithoutPanicTrace(t *testing.T) 
 	c.Assert(errOut.String(), qt.Not(qt.Contains), "Usage:")
 }
 
+// YDB is a dialect name before it has a renderer. `schema render --dialect
+// ydb` refuses with the gap, exit 2, rather than rendering another dialect's
+// DDL or reporting an unknown dialect.
+func TestGenerateCommand_RefusesYDBUntilItsRendererLands(t *testing.T) {
+	for _, dialect := range []string{"ydb", "ydbs"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			cmd := generate.NewGenerateCommand()
+			var out bytes.Buffer
+			var errOut bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&errOut)
+			cmd.SetArgs([]string{"--root-dir", filepath.Join("..", "..", "..", "internal", "stubs"), "--dialect", dialect})
+
+			err := cmd.Execute()
+
+			c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+			c.Assert(errOut.String(), qt.Contains,
+				"error: error rendering "+dialect+" schema: rendering a YDB schema is not implemented yet (stokaro/ptah#4015, phase 3)")
+			c.Assert(out.String(), qt.Not(qt.Contains), "CREATE TABLE")
+		})
+	}
+}
+
 func TestGenerateCommand_MutualForeignKeysAreTwoPhase(t *testing.T) {
 	c := qt.New(t)
 

@@ -64,3 +64,22 @@ CREATE TABLE right_nodes (
 	c.Assert(tableCount, qt.Equals, 2)
 	c.Assert(strings.Count(stdout.String(), "REFERENCES"), qt.Equals, 2)
 }
+
+// A YDB URL is refused with the gap before anything is opened, so the
+// command says what is missing rather than reporting an empty driver name.
+func TestReadDBCommand_RefusesYDBUntilItsDriverLands(t *testing.T) {
+	c := qt.New(t)
+
+	cmd := readdb.NewReadDBCommand()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"--db-url", "ydb://localhost:2136/local"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `connecting to a YDB server is not implemented yet \(stokaro/ptah#4015, phase 4\)`)
+	c.Assert(stdout.String(), qt.Equals, "")
+	c.Assert(stderr.String(), qt.Contains, "Error connecting to database: connecting to a YDB server is not implemented yet")
+}
