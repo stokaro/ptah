@@ -14,6 +14,9 @@ import (
 type ReplayGuard struct {
 	info  catalog.ServerInfo
 	realm ReplayRealm
+	// remedy ends a refusal that [ReplayRealmServer] lifts; see
+	// [ReplayGuard.WithServerRealmRemedy].
+	remedy string
 }
 
 // ReplayRealm is how much of the dev server a replay may change.
@@ -51,9 +54,41 @@ func NewReplayGuard(info catalog.ServerInfo, realm ReplayRealm) *ReplayGuard {
 	return &ReplayGuard{info: info, realm: realm}
 }
 
+// WithServerRealmRemedy returns a copy of the guard that ends a refusal with
+// remedy when [ReplayRealmServer] would have accepted the statement, so the
+// operator reads how to reach that realm in the refusal itself.
+//
+// Whether the server realm would accept it is asked of the server realm's own
+// rules, not of a second list: a list kept beside them would agree when it is
+// written and stop agreeing when either is extended. A refusal the server realm
+// keeps, such as ALTER SYSTEM, ends as it did, because reaching that realm
+// would not lift it.
+//
+// Only a caller whose realm the operator can raise to the server passes a
+// remedy; a guard built for a fixed realm has nothing to suggest. A guard for
+// [ReplayRealmServer] never appends it, since the server realm keeps every
+// refusal it makes.
+func (g *ReplayGuard) WithServerRealmRemedy(remedy string) *ReplayGuard {
+	guard := *g
+	guard.remedy = remedy
+	return &guard
+}
+
 // ValidateStatement rejects statements whose effects cannot be confined to
 // the replay database realm.
 func (g *ReplayGuard) ValidateStatement(stmt string) error {
+	err := g.validate(stmt, g.realm)
+	if err == nil || g.remedy == "" {
+		return err
+	}
+	if g.validate(stmt, ReplayRealmServer) != nil {
+		return err
+	}
+	return fmt.Errorf("%w; %s", err, g.remedy)
+}
+
+// validate is [ReplayGuard.ValidateStatement] for one realm.
+func (g *ReplayGuard) validate(stmt string, realm ReplayRealm) error {
 	dialect := platform.NormalizeDialect(g.info.Dialect)
 	if dialect == platform.MySQL || dialect == platform.MariaDB {
 		if err := rejectMySQLExecutableComments(dialect, stmt); err != nil {
@@ -65,18 +100,18 @@ func (g *ReplayGuard) ValidateStatement(stmt string) error {
 	case platform.SQLite:
 		return validateSQLiteReplayStatement(tokens)
 	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		if g.realm == ReplayRealmServer && postgresServerWideOperation(tokens) != "" {
+		if realm == ReplayRealmServer && postgresServerWideOperation(tokens) != "" {
 			return validatePostgresServerWideStatement(dialect, tokens)
 		}
 		return validatePostgresReplayStatement(dialect, tokens)
 	case platform.MySQL, platform.MariaDB:
-		if g.realm == ReplayRealmServer && mysqlServerWideOperation(tokens) != "" {
+		if realm == ReplayRealmServer && mysqlServerWideOperation(tokens) != "" {
 			return nil
 		}
-		if g.realm == ReplayRealmServerDatabases && mysqlDatabaseOperation(tokens) {
+		if realm == ReplayRealmServerDatabases && mysqlDatabaseOperation(tokens) {
 			return nil
 		}
-		return validateMySQLReplayStatement(dialect, g.info.Schema, tokens, g.realm)
+		return validateMySQLReplayStatement(dialect, g.info.Schema, tokens, realm)
 	case platform.SQLServer:
 		return validateSQLServerReplayStatement(tokens)
 	case platform.ClickHouse:

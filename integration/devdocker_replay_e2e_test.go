@@ -120,7 +120,9 @@ func TestDevDockerReplayRunsServerWideStatements(t *testing.T) {
 
 // TestDevReplayOnANamedServerRefusesServerWideStatements is the control: the
 // same directory on a server the operator named is refused at its first
-// migration, and the role it would have created is not on the server.
+// migration, and the role it would have created is not on the server. The
+// refusal names the two ways to the server realm, which lifts it, on both
+// binaries.
 func TestDevReplayOnANamedServerRefusesServerWideStatements(t *testing.T) {
 	c := qt.New(t)
 	envbooltest.Unset(devdocker.DisposableServerEnvVar)(t)
@@ -129,9 +131,14 @@ func TestDevReplayOnANamedServerRefusesServerWideStatements(t *testing.T) {
 	devURL, admin := scratchReplayDatabase(c)
 
 	_, err := runCompatVerb("migrate", "validate", "--dir", "file://"+dir, "--dev-url", devURL)
+	native, nativeErr := runPtahNativeWithError(
+		"migrations", "validate", "--dir", dir, "--dir-format", "atlas", "--dev-url", devURL,
+	)
 
-	c.Assert(err, qt.ErrorMatches, `(?s).*replay migration 20240101000000 on dev database: .*`+
-		`postgres migration replay rejects DO sublanguage because its effects cannot be confined to the disposable database realm.*`)
+	refusal := `postgres migration replay rejects DO sublanguage because its effects cannot be confined to the disposable database realm; ` +
+		`if nothing else uses this server, declare it disposable with PTAH_DEV_SERVER_DISPOSABLE=1, or use a docker:// dev URL\nSQL: DO .*`
+	c.Assert(err, qt.ErrorMatches, `(?s).*replay migration 20240101000000 on dev database: .*`+refusal)
+	c.Assert(nativeErr, qt.ErrorMatches, `(?s).*`+refusal, qt.Commentf("%s", native))
 	var roles int
 	c.Assert(admin.QueryRowContext(c.Context(),
 		"SELECT count(*) FROM pg_roles WHERE rolname = $1", role,
