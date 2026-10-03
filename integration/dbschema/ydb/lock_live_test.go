@@ -63,9 +63,10 @@ func TestYDBLock_ReportsALoss(t *testing.T) {
 }
 
 // A run that loses the migration lock stops before its next statement and
-// writes nothing more: the CREATE TABLE after the loss does not run, and the
-// revision row still records the statement committed before it, not a
-// failure another runner would have to read past.
+// writes nothing more: the body's context ends with the loss, the CREATE
+// TABLE after it does not run, and the revision row still records the
+// statement committed before it, not a failure another runner would have to
+// read past.
 func TestYDBMigrator_StopsWhenTheLockIsLost(t *testing.T) {
 	c := qt.New(t)
 	conn := openYDB(c)
@@ -78,10 +79,12 @@ func TestYDBMigrator_StopsWhenTheLockIsLost(t *testing.T) {
 		"0000000001_x.down.sql": "DROP TABLE `" + dir + "/y`;\nDROP TABLE `" + dir + "/x`;\n",
 	})
 	var dropOnce sync.Once
+	var cause error
 	loseTheLock := migrator.StatementObserverFunc(func(ctx context.Context, _ migrator.StatementEvent) error {
 		dropOnce.Do(func() {
 			dropLockNode(c)
 			closedWithin(ctx.Done(), 15*time.Second)
+			cause = context.Cause(ctx)
 		})
 		return nil
 	})
@@ -93,6 +96,7 @@ func TestYDBMigrator_StopsWhenTheLockIsLost(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches,
 		`(?s).*advisory lock "ptah_migrate" on ydb was lost while it was held: .*the run stopped there.*`)
+	c.Assert(dblock.IsLost(cause), qt.IsTrue, qt.Commentf("the body's context ended with %v", cause))
 	c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.DeepEquals, []string{dir + "|x"})
 	c.Assert(revisionProgress(c, newMigrator(c, openYDB(c), map[string]string{}, migrator.RevisionTableFormatPtah, dir)),
 		qt.DeepEquals, []progress{{Version: 1, State: "pending", Applied: 1, Total: 2}})

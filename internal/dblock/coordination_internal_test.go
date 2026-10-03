@@ -245,6 +245,25 @@ func TestYDBHold_Release(t *testing.T) {
 	}
 }
 
+// A lock already lost has nothing to give back: its release ends the session
+// without waiting on the lease, which on a live server waited for the whole
+// release timeout.
+func TestYDBHold_ReleaseOfALostLockEndsTheSession(t *testing.T) {
+	c := qt.New(t)
+	hold, session, lease, _ := newFakeHold(c)
+	lease.hang = true
+	session.owners = []uint64{8}
+	hold.check(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	c.Cleanup(cancel)
+
+	err := hold.release(ctx)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(closed(session.closed), qt.IsTrue)
+	c.Assert(ctx.Err(), qt.IsNil)
+}
+
 // A lock reports its loss through Err, Done and the context Guard returns,
 // and a lock that reports no loss answers none of them.
 func TestLock_ReportsALoss(t *testing.T) {

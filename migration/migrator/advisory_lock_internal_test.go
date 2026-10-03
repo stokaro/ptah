@@ -9,10 +9,12 @@ package migrator
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/dbschema"
 	"ptah.run/internal/dblock"
 )
 
@@ -82,4 +84,62 @@ func TestMigrationLockLost(t *testing.T) {
 			c.Assert(migrationLockLost(test.ctx), qt.ErrorIs, test.wantErr)
 		})
 	}
+}
+
+// openLockedSQLite opens a SQLite database, which a test drives the statement
+// loops over with a held lock the test says is lost.
+func openLockedSQLite(c *qt.C) *dbschema.DatabaseConnection {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+filepath.Join(c.TempDir(), "locked.db"))
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { _ = conn.Close() })
+	return conn
+}
+
+// sqliteTables counts the tables in a SQLite database.
+func sqliteTables(c *qt.C, conn *dbschema.DatabaseConnection) int {
+	c.Helper()
+	var count int
+	c.Assert(conn.QueryRowContext(context.Background(),
+		"SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'").Scan(&count), qt.IsNil)
+	return count
+}
+
+var lostLockContext = withHeldMigrationLock(context.Background(), heldLockAnswer{err: lostMigrationLock})
+
+// Each loop that runs a body asks for the lock before each statement, so a
+// run that lost it runs nothing more, whether or not anything canceled its
+// context.
+func TestExecuteMigrationFileSQL_StopsWhenTheLockIsLost(t *testing.T) {
+	c := qt.New(t)
+	conn := openLockedSQLite(c)
+
+	err := executeMigrationFileSQL(lostLockContext, conn, "1_a.up.sql", "CREATE TABLE a (id INTEGER);",
+		statementExecutionHooks{}, migrationExecutionNoTransaction)
+
+	c.Assert(err, qt.ErrorIs, error(lostMigrationLock))
+	c.Assert(sqliteTables(c, conn), qt.Equals, 0)
+}
+
+func TestExecuteSQLStatements_StopsWhenTheLockIsLost(t *testing.T) {
+	c := qt.New(t)
+	conn := openLockedSQLite(c)
+
+	err := executeSQLStatements(lostLockContext, conn, "CREATE TABLE a (id INTEGER);", migrationExecutionNoTransaction)
+
+	c.Assert(err, qt.ErrorIs, error(lostMigrationLock))
+	c.Assert(sqliteTables(c, conn), qt.Equals, 0)
+}
+
+func TestResumeStatementsOnSession_StopsWhenTheLockIsLost(t *testing.T) {
+	c := qt.New(t)
+	conn := openLockedSQLite(c)
+	m := NewMigrator(conn, nil)
+	migration := CreateMigrationFromSQL(1, "a", "CREATE TABLE a (id INTEGER);", "DROP TABLE a;")
+
+	err := m.resumeStatementsOnSession(lostLockContext, migration, []string{"CREATE TABLE a (id INTEGER)"}, 1,
+		MigrationDirectionUp)
+
+	c.Assert(err, qt.ErrorIs, error(lostMigrationLock))
+	c.Assert(sqliteTables(c, conn), qt.Equals, 0)
 }
