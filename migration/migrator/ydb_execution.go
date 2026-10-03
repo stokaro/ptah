@@ -28,8 +28,13 @@ import (
 // as every statement outside a transaction is: an interruption between the
 // two leaves an outcome nobody knows, and a resume refuses to guess it. A data
 // query runs in one serializable transaction together with the checkpoint that
-// records it, so the two commit together or not at all, and a resume after an
-// interruption runs again exactly the data query that did not commit.
+// records it, so the two commit together or not at all.
+//
+// The revision row is therefore the record of what a body committed, and a
+// failure never records less than the row holds (see
+// [revisionFailureRecord]). A resume after an interruption starts at the
+// first query the row does not record, which for a data query is exactly the
+// one that did not commit.
 
 // ydbQueryTexts is the texts of the queries a YDB body runs as. A body the
 // split refuses is refused before anything runs (see refuseUnsplittableSQL),
@@ -163,9 +168,9 @@ func isYDBDataQuery(query string) bool {
 	return ok && kind == yqlquery.Data
 }
 
-// ydbDataQueryAttempts bounds how often a data query YDB aborted for a
-// conflicting transaction is run again.
-const ydbDataQueryAttempts = 5
+// ydbTransactionAttempts bounds how often a transaction YDB aborted for a
+// conflicting one is run again.
+const ydbTransactionAttempts = 5
 
 // commitYDBDataQuery runs one data query of a YDB body and the checkpoint that
 // records it in one serializable transaction; see [dataQueryCommit].
@@ -187,9 +192,9 @@ func (m *Migrator) commitYDBDataQuery(
 			if err != nil {
 				return false, err
 			}
-			return revision != nil && revision.Applied >= event.Index && revision.Error == "", nil
+			return checkpointRecorded(revision, event.Index), nil
 		},
-		wait: waitForYDBDataQueryRetry,
+		wait: waitForYDBTransactionRetry,
 	}.run(ctx)
 }
 
@@ -216,7 +221,7 @@ type dataQueryCommit struct {
 
 func (d dataQueryCommit) run(ctx context.Context) error {
 	var err error
-	for attempt := range ydbDataQueryAttempts {
+	for attempt := range ydbTransactionAttempts {
 		var committing bool
 		committing, err = d.try(ctx)
 		if err == nil {
@@ -225,7 +230,7 @@ func (d dataQueryCommit) run(ctx context.Context) error {
 		if committing && !atlasretry.IsRetryable(err) {
 			return d.outcome(ctx, err)
 		}
-		if !atlasretry.IsRetryable(err) || attempt == ydbDataQueryAttempts-1 {
+		if !atlasretry.IsRetryable(err) || attempt == ydbTransactionAttempts-1 {
 			return err
 		}
 		if waitErr := d.wait(ctx, attempt); waitErr != nil {
@@ -273,8 +278,102 @@ func (d dataQueryCommit) outcome(ctx context.Context, commitErr error) error {
 	return commitErr
 }
 
-// waitForYDBDataQueryRetry waits longer after each aborted attempt.
-func waitForYDBDataQueryRetry(ctx context.Context, attempt int) error {
+// checkpointRecorded reports whether revision records the unit at index as
+// committed: its progress reaches the unit, and no failure was written over
+// the checkpoint, which clears the failure columns.
+func checkpointRecorded(revision *MigrationRevision, index int) bool {
+	return revision != nil && revision.Applied >= index && revision.Error == ""
+}
+
+// revisionFailureRecord records a failed migration on YDB without moving its
+// progress backwards.
+//
+// A failure states its progress from the error: the units before the one that
+// failed. On YDB that can say less than the revision row, which is the record:
+// a data query commits together with its checkpoint, so a commit whose answer
+// was lost -- and that the read-back in [dataQueryCommit] could not settle --
+// may have committed both. Writing the failure's count over the row would make
+// a resume run that query again.
+//
+// So the failure is written in one serializable transaction with a read of the
+// row, and records the larger of the two counts. A row that cannot be read gets
+// nothing written: it already says what committed, and a resume reads it. A
+// transaction YDB aborts -- because the lost commit landed after the read --
+// runs again and reads the row it conflicted with.
+type revisionFailureRecord struct {
+	begin func(context.Context, *sql.TxOptions) (*sql.Tx, error)
+	// read returns the revision row, or nil when there is none.
+	read func(context.Context, *sql.Tx) (*MigrationRevision, error)
+	// statement is the write that records the failure with applied units
+	// committed, and its arguments.
+	statement func(applied int) (string, []any)
+	// applied is the progress the failure states.
+	applied int
+	wait    func(context.Context, int) error
+}
+
+func (r revisionFailureRecord) run(ctx context.Context) error {
+	var err error
+	for attempt := range ydbTransactionAttempts {
+		err = r.try(ctx)
+		if err == nil || !atlasretry.IsRetryable(err) || attempt == ydbTransactionAttempts-1 {
+			return err
+		}
+		if waitErr := r.wait(ctx, attempt); waitErr != nil {
+			return errors.Join(err, waitErr)
+		}
+	}
+	return err
+}
+
+func (r revisionFailureRecord) try(ctx context.Context) error {
+	tx, err := r.begin(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return err
+	}
+	revision, err := r.read(ctx, tx)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("read the revision before recording the failure over it: %w", err)
+	}
+	applied := r.applied
+	if revision != nil {
+		applied = max(applied, revision.Applied)
+	}
+	query, args := r.statement(applied)
+	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
+// ydbFailureRecord is the [revisionFailureRecord] that writes failed over
+// the migration's revision row, given the progress the failure states.
+func (m *Migrator) ydbFailureRecord(failed failedRevision, applied int) revisionFailureRecord {
+	return revisionFailureRecord{
+		begin: m.conn.BeginTx,
+		read: func(ctx context.Context, tx *sql.Tx) (*MigrationRevision, error) {
+			query := sqlutil.Rebind(m.conn.Info().Dialect, m.getRevisionSQL())
+			revision, err := m.scanRevisionRow(
+				tx.QueryRowContext(ctx, query, m.migrationRevisionVersionArg(failed.migration)),
+			)
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, nil
+			}
+			if err != nil {
+				return nil, err
+			}
+			return &revision, nil
+		},
+		statement: func(applied int) (string, []any) { return m.failedRevisionStatement(failed, applied) },
+		applied:   applied,
+		wait:      waitForYDBTransactionRetry,
+	}
+}
+
+// waitForYDBTransactionRetry waits longer after each aborted attempt.
+func waitForYDBTransactionRetry(ctx context.Context, attempt int) error {
 	timer := time.NewTimer(time.Duration(attempt+1) * 50 * time.Millisecond)
 	defer timer.Stop()
 	select {
