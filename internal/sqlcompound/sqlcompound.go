@@ -67,19 +67,36 @@ type State struct {
 //   - a lambda body, ($x) -> { ...; RETURN ...; }, between braces.
 //
 // The grammar is SQLv1Antlr4.g.in: define_action_or_subquery_stmt,
-// inline_action and lambda. Each keyword pair has to be adjacent words: END
-// alone also closes a CASE, DEFINE alone opens MATCH_RECOGNIZE's pattern
-// definitions, and BEGIN and DO are ordinary names elsewhere.
+// inline_action and lambda. Each keyword pair has to be adjacent words:
+// DEFINE alone opens MATCH_RECOGNIZE's pattern definitions, and BEGIN and DO
+// are ordinary names elsewhere. END alone closes a CASE, and a CASE may end
+// right before the DO of an IF, as in EVALUATE IF CASE ... END DO BEGIN, so
+// CASE expressions are counted and their END pairs with nothing. Measured on
+// YDB 26.2.1.14, CASE and END are also names after AS and after a dot
+// (SELECT 1 AS case; SELECT t.case FROM ...), where they count for nothing.
 type yqlBodies struct {
 	blocks   int
 	braces   int
+	cases    int
 	previous string
+	// named records that the last token was AS or a dot, after which a word
+	// is a name.
+	named bool
 }
 
 func (b *yqlBodies) word(word string) {
-	previous := b.previous
-	b.previous = word
+	previous, named := b.previous, b.named
+	b.previous, b.named = word, word == "AS"
+	if named && (word == "CASE" || word == "END") {
+		b.previous = ""
+		return
+	}
 	switch {
+	case word == "CASE":
+		b.cases++
+	case word == "END" && b.cases > 0:
+		b.cases--
+		b.previous = ""
 	case previous == "DEFINE" && (word == "ACTION" || word == "SUBQUERY"):
 		b.blocks++
 	case previous == "DO" && word == "BEGIN":
@@ -91,9 +108,16 @@ func (b *yqlBodies) word(word string) {
 	}
 }
 
-func (b *yqlBodies) symbol(value string) {
-	// Punctuation separates two words, so END ) DO pairs nothing.
+// separate records a token that stands between two words, so the words on
+// either side of it pair with nothing.
+func (b *yqlBodies) separate() {
 	b.previous = ""
+	b.named = false
+}
+
+func (b *yqlBodies) symbol(value string) {
+	b.separate()
+	b.named = value == "."
 	switch value {
 	case "{":
 		b.braces++
@@ -307,7 +331,7 @@ func (s *State) KeepSemicolonInsideStatement() bool {
 	if s.dialect == platform.YDB {
 		// A semicolon separates the words on either side of it as well, so
 		// END; DO is not END DO.
-		s.yql.previous = ""
+		s.yql.separate()
 		return s.yql.inside()
 	}
 	if !s.inCompoundCreate {

@@ -90,6 +90,39 @@ func TestSplitSQLStatementsForDialect_YDBCompoundBodies(t *testing.T) {
 			},
 		},
 		{
+			// The CASE's END and the IF's DO are adjacent words, and they
+			// close nothing.
+			name: "a CASE ending right before an IF's DO, inside a body",
+			sql: "DEFINE ACTION $a() AS EVALUATE IF CASE WHEN true THEN true ELSE false END DO BEGIN SELECT 1 AS x; " +
+				"SELECT 2 AS y; END DO; END DEFINE; DO $a();",
+			want: []string{
+				"DEFINE ACTION $a() AS EVALUATE IF CASE WHEN true THEN true ELSE false END DO BEGIN SELECT 1 AS x; " +
+					"SELECT 2 AS y; END DO; END DEFINE",
+				"DO $a()",
+			},
+		},
+		{
+			name: "a parenthesized CASE before an IF's DO, inside a body",
+			sql: "DEFINE ACTION $a() AS EVALUATE IF (CASE WHEN true THEN true ELSE false END) DO BEGIN SELECT 1 AS x; " +
+				"SELECT 2 AS y; END DO; END DEFINE; DO $a();",
+			want: []string{
+				"DEFINE ACTION $a() AS EVALUATE IF (CASE WHEN true THEN true ELSE false END) DO BEGIN SELECT 1 AS x; " +
+					"SELECT 2 AS y; END DO; END DEFINE",
+				"DO $a()",
+			},
+		},
+		{
+			// After AS and after a dot, case and end are names.
+			name: "keyword spellings used as names inside a body",
+			sql: "DEFINE ACTION $a() AS SELECT 1 AS case, 2 AS end; SELECT t.case FROM (SELECT 3 AS case) AS t; " +
+				"END DEFINE; DO $a();",
+			want: []string{
+				"DEFINE ACTION $a() AS SELECT 1 AS case, 2 AS end; SELECT t.case FROM (SELECT 3 AS case) AS t; " +
+					"END DEFINE",
+				"DO $a()",
+			},
+		},
+		{
 			// A backticked word is a name, never the keyword.
 			name: "a quoted END is a name",
 			sql:  "DEFINE ACTION $a() AS SELECT 1 AS `END`; SELECT 2; END DEFINE; SELECT 3;",
