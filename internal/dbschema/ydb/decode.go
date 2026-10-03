@@ -3,11 +3,13 @@ package ydb
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Table"
 	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/reflect/protoreflect"
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
@@ -75,6 +77,13 @@ func (r *Reader) table(schema, name string, described *Ydb_Table.DescribeTableRe
 // as its integer type with IsAutoIncrement set, which is how the comparison
 // reads an incrementing integer on either side.
 func (r *Reader) column(meta *Ydb_Table.ColumnMeta, position int) (catalog.Column, error) {
+	if unknown := unknownFields(meta); len(unknown) > 0 {
+		// A default of a kind the pinned protocol buffers do not model arrives
+		// here, with no default set, and so would a column setting a newer
+		// YDB added; read as known, the column would lose it in silence.
+		return catalog.Column{}, fmt.Errorf("column %q carries field %s of its description, which this build of "+
+			"Ptah does not read", meta.GetName(), joinNumbers(unknown))
+	}
 	ydbType, nullable, err := columnType(meta.GetType())
 	if err != nil {
 		return catalog.Column{}, fmt.Errorf("column %q: %w", meta.GetName(), err)
@@ -106,10 +115,38 @@ func (r *Reader) column(meta *Ydb_Table.ColumnMeta, position int) (catalog.Colum
 			return catalog.Column{}, fmt.Errorf("column %q: %w", meta.GetName(), err)
 		}
 		column.ColumnDefault = new(literal)
-	case meta.GetDefaultValue() != nil:
-		return catalog.Column{}, fmt.Errorf("column %q has a default of a kind Ptah does not read", meta.GetName())
 	}
 	return column, nil
+}
+
+// unknownFields lists the numbers of the fields a message carries that the
+// pinned protocol buffers do not model, in the order they arrived.
+func unknownFields(message protoreflect.ProtoMessage) []protowire.Number {
+	var numbers []protowire.Number
+	unknown := message.ProtoReflect().GetUnknown()
+	for len(unknown) > 0 {
+		number, wireType, length := protowire.ConsumeTag(unknown)
+		if length < 0 {
+			break
+		}
+		numbers = append(numbers, number)
+		unknown = unknown[length:]
+		valueLength := protowire.ConsumeFieldValue(number, wireType, unknown)
+		if valueLength < 0 {
+			break
+		}
+		unknown = unknown[valueLength:]
+	}
+	return numbers
+}
+
+// joinNumbers writes field numbers as a reader of an error expects them.
+func joinNumbers(numbers []protowire.Number) string {
+	written := make([]string, len(numbers))
+	for i, number := range numbers {
+		written[i] = strconv.Itoa(int(number))
+	}
+	return strings.Join(written, ", ")
 }
 
 // primitiveTypes are the YDB names of the primitive types a row table column
@@ -235,21 +272,10 @@ func unreadIndexKind(described *Ydb_Table.TableIndexDescription) string {
 	if described.GetType() != nil {
 		return fmt.Sprintf("%T index", described.GetType())
 	}
-	unknown := described.ProtoReflect().GetUnknown()
-	for len(unknown) > 0 {
-		number, wireType, length := protowire.ConsumeTag(unknown)
-		if length < 0 {
-			break
-		}
+	for _, number := range unknownFields(described) {
 		if kind, named := unreadIndexFields[number]; named {
 			return kind
 		}
-		unknown = unknown[length:]
-		valueLength := protowire.ConsumeFieldValue(number, wireType, unknown)
-		if valueLength < 0 {
-			break
-		}
-		unknown = unknown[valueLength:]
 	}
 	return "index of a kind this build of Ptah does not know"
 }

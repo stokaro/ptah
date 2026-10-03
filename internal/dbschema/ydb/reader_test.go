@@ -165,7 +165,8 @@ func TestReader_SetSchemas(t *testing.T) {
 }
 
 // Each column carries its YDB type, its nullability from whether the type is
-// Optional, and its default as the literal ydbtype writes. A Serial column is
+// Optional or the description sets not_null, and its default as the literal
+// ydbtype writes. A Serial column is
 // its integer type, incrementing, with no default of its own.
 func TestReader_Columns(t *testing.T) {
 	c := qt.New(t)
@@ -178,7 +179,7 @@ func TestReader_Columns(t *testing.T) {
 			DefaultValue: literal(decimal(10, 2), &Ydb.Value{Value: &Ydb.Value_Low_128{Low_128: 1250}})},
 		&Ydb_Table.ColumnMeta{Name: "seq", Type: primitive(Ydb.Type_INT32),
 			DefaultValue: &Ydb_Table.ColumnMeta_FromSequence{FromSequence: &Ydb_Table.SequenceDescription{}}},
-		&Ydb_Table.ColumnMeta{Name: "column_store_flag", Type: primitive(Ydb.Type_BOOL), NotNull: new(true)},
+		&Ydb_Table.ColumnMeta{Name: "column_store_flag", Type: optional(primitive(Ydb.Type_BOOL)), NotNull: new(true)},
 	)
 	source := fakeSource{
 		directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
@@ -575,6 +576,35 @@ func TestReader_FailurePath(t *testing.T) {
 			},
 			wantErr: `YDB table /local/t: index "embedding_idx" is a vector_kmeans_tree index: reading or creating ` +
 				`a YDB vector, full-text, JSON or column-table index is not implemented yet \(stokaro/ptah#4015, phase 10\)`,
+		},
+		{
+			// The scheme service lists it as a row table, so a description that
+			// says otherwise is a server this reader does not understand.
+			name: "a row table that describes itself as a column table",
+			source: fakeSource{
+				directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
+				tables: map[string]*Ydb_Table.DescribeTableResult{"/local/t": func() *Ydb_Table.DescribeTableResult {
+					described := plainTable()
+					described.StoreType = Ydb_Table.StoreType_STORE_TYPE_COLUMN
+					return described
+				}()},
+			},
+			wantErr: `YDB table /local/t is listed as a row table and describes itself as a column table`,
+		},
+		{
+			// A default of a kind the pinned protocol buffers do not model
+			// arrives as an unknown field, with no default set.
+			name: "a column description with a field the reader does not know",
+			source: fakeSource{
+				directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
+				tables: map[string]*Ydb_Table.DescribeTableResult{"/local/t": plainTable(func() *Ydb_Table.ColumnMeta {
+					column := &Ydb_Table.ColumnMeta{Name: "c", Type: optional(primitive(Ydb.Type_INT64))}
+					unknown := protowire.AppendTag(nil, 7, protowire.BytesType)
+					column.ProtoReflect().SetUnknown(protowire.AppendBytes(unknown, nil))
+					return column
+				}())},
+			},
+			wantErr: `YDB table /local/t: column "c" carries field 7 of its description, which this build of Ptah does not read`,
 		},
 		{
 			name: "a column type that is Optional twice",
