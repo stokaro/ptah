@@ -3,10 +3,10 @@ package sqlschema
 import (
 	"fmt"
 	"slices"
-	"strings"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/columnsequence"
 	"ptah.run/internal/pgname"
 )
 
@@ -121,8 +121,8 @@ func ownedSequenceNamed(databases []*schemamodel.Database, schema, name, sourceP
 			}
 			for _, database := range databases {
 				if slices.ContainsFunc(database.Fields, func(field schemamodel.Field) bool {
-					return field.StructName == table.StructName && ownsSequence(field) &&
-						pgname.Constraint(table.Name, []string{field.Name}, "seq", nil) == name
+					sequence, ok := columnsequence.Declared(table.Name, field)
+					return field.StructName == table.StructName && ok && sequence == name
 				}) {
 					return true
 				}
@@ -130,15 +130,4 @@ func ownedSequenceNamed(databases []*schemamodel.Database, schema, name, sourceP
 		}
 	}
 	return false
-}
-
-// ownsSequence reports whether PostgreSQL builds a sequence for the column: a
-// serial type or an identity.
-func ownsSequence(field schemamodel.Field) bool {
-	switch strings.ToLower(field.Type) {
-	case "smallserial", "serial2", "serial", "serial4", "bigserial", "serial8":
-		return true
-	default:
-		return field.IdentityGeneration != ""
-	}
 }

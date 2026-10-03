@@ -587,6 +587,21 @@ type Column struct {
 	// does not report them.
 	IdentityStart     string `json:"identity_start,omitempty"`
 	IdentityIncrement string `json:"identity_increment,omitempty"`
+
+	// OwnedSequence names the sequence that is part of this column: the one a
+	// serial column draws its default from, or an identity column's own. The
+	// sequence is in the column's schema, and it is not described in
+	// [Database.Sequences], because writing the column back creates it.
+	//
+	// It is the name the catalog holds, which is the name the column was
+	// created with: renaming the table or the column leaves the sequence's
+	// name as it was. A grant on the sequence names it this way, so this is
+	// where a grant finds the column it belongs to.
+	//
+	// Empty for every other column, including one drawing from a sequence the
+	// description carries on its own. The PostgreSQL-family readers fill it;
+	// other readers leave it empty.
+	OwnedSequence string `json:"owned_sequence,omitempty"`
 }
 
 // Enum represents a database enum type (PostgreSQL)

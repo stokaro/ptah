@@ -14,6 +14,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/columnsequence"
 	"ptah.run/internal/pgdefaultacl"
 	"ptah.run/internal/pgprivilege"
 	"ptah.run/internal/routineargs"
@@ -162,7 +163,11 @@ func toDBColumns(table schemamodel.Table, fields []schemamodel.Field, dialect st
 		if sqlitekey.KeyColumnIsNotNull(dialect, table, keyColumns, field) {
 			field.Nullable = false
 		}
-		out = append(out, toDBColumn(field, i+1))
+		column := toDBColumn(field, i+1)
+		if platform.IsPostgresFamily(dialect) {
+			column.OwnedSequence, _ = columnsequence.Declared(table.Name, field)
+		}
+		out = append(out, column)
 	}
 	return out
 }
