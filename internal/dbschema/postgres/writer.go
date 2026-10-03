@@ -2011,19 +2011,16 @@ func rejectProtectedPostgresDatabase(
 	return protected.refusal(database, server)
 }
 
-// rejectPostgresDatabaseScopedArtifacts refuses a realm cleanup while the
-// database holds a database-scoped object the cleanup cannot remove. An object
-// an extension owns is not counted, since dropping the extension removes it,
-// and neither is one the server made at initdb: an OID below 16384,
-// PostgreSQL's FirstNormalObjectId, is assigned only while initdb builds the
-// template, and every later object gets one at or above it. YugabyteDB 2026.1
-// creates the foreign server yb_global_views_server that way, with OID 13543,
-// in every database, and counted, it refuses every cleanup on that line
+// databaseScopedArtifactsQuery lists the database-scoped objects a realm
+// cleanup cannot remove, by kind and name, sorted. An object an extension owns
+// is not counted, since dropping the extension removes it, and neither is one
+// the server made at initdb: an OID below 16384, PostgreSQL's
+// FirstNormalObjectId, is assigned only while initdb builds the template, and
+// every later object gets one at or above it. YugabyteDB 2026.1 creates the
+// foreign server yb_global_views_server that way, with OID 13543, in every
+// database, and counted, it refuses every cleanup on that line
 // (stokaro/ptah#3693).
-func rejectPostgresDatabaseScopedArtifacts(ctx context.Context, tx *sql.Tx) error {
-	var kind string
-	var name string
-	err := tx.QueryRowContext(ctx, `
+const databaseScopedArtifactsQuery = `
 		WITH database_scoped_artifacts AS (
 			SELECT
 				'publication'::text AS object_kind,
@@ -2120,19 +2117,98 @@ func rejectPostgresDatabaseScopedArtifacts(ctx context.Context, tx *sql.Tx) erro
 		SELECT object_kind, object_name
 		FROM database_scoped_artifacts
 		ORDER BY object_kind, object_name
-		LIMIT 1
-	`).Scan(&kind, &name)
-	if errors.Is(err, sql.ErrNoRows) {
+	`
+
+// DatabaseScopedArtifacts lists the database-scoped objects the database
+// holds that a realm cleanup cannot remove: an event trigger, a publication, a
+// subscription, a logical replication slot, a foreign-data wrapper, a foreign
+// server or a user mapping, none of them an extension's, by kind and name. A
+// dev database's claim records them, and its realm cleanups leave them alone;
+// see [dbreset.Kept]. A server whose cleanup does not look for them answers
+// none.
+func (w *PostgreSQLWriter) DatabaseScopedArtifacts(ctx context.Context) ([]dbreset.Object, error) {
+	if w.db == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+	capabilities, err := inspectCleanupCapabilities(ctx, w.db)
+	if err != nil {
+		return nil, err
+	}
+	if !capabilities.inspectDatabaseArtifacts {
+		return nil, nil
+	}
+	return readDatabaseScopedArtifacts(ctx, w.db)
+}
+
+// readDatabaseScopedArtifacts runs [databaseScopedArtifactsQuery].
+func readDatabaseScopedArtifacts(ctx context.Context, q cleanupConn) ([]dbreset.Object, error) {
+	rows, err := q.QueryContext(ctx, databaseScopedArtifactsQuery)
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect PostgreSQL database-scoped artifacts: %w", err)
+	}
+	defer rows.Close()
+	var artifacts []dbreset.Object
+	for rows.Next() {
+		var artifact dbreset.Object
+		if err := rows.Scan(&artifact.Kind, &artifact.Name); err != nil {
+			return nil, fmt.Errorf("failed to scan PostgreSQL database-scoped artifact: %w", err)
+		}
+		artifacts = append(artifacts, artifact)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to inspect PostgreSQL database-scoped artifacts: %w", err)
+	}
+	return artifacts, nil
+}
+
+// rejectPostgresDatabaseScopedArtifacts refuses a realm cleanup while the
+// database holds a database-scoped object the cleanup cannot remove and kept
+// does not name. One kept names was there when the dev database was claimed,
+// so it is the dev database's environment rather than the run's: the
+// community binary v1.3.0 uses such a database and leaves it, and the
+// Supabase image ships six event triggers and a publication
+// (stokaro/ptah#4055). One the run created is still refused, since the
+// cleanup cannot take it away.
+func rejectPostgresDatabaseScopedArtifacts(ctx context.Context, tx *sql.Tx, kept []dbreset.Object) error {
+	artifacts, err := readDatabaseScopedArtifacts(ctx, tx)
+	if err != nil {
+		return err
+	}
+	for _, artifact := range artifacts {
+		if !slices.Contains(kept, artifact) {
+			return fmt.Errorf(
+				"refusing to clean PostgreSQL database realm with unsupported database-scoped %s %q",
+				artifact.Kind,
+				artifact.Name,
+			)
+		}
+	}
+	return nil
+}
+
+// verifyKeptDatabaseScopedArtifacts refuses a realm cleanup that finds an
+// artifact kept names gone. The cleanup does not drop one, so the run did, and
+// the cleanup cannot create it again: committed, the next claim would take a
+// dev database that lost part of its environment without saying so.
+func verifyKeptDatabaseScopedArtifacts(ctx context.Context, tx *sql.Tx, kept []dbreset.Object) error {
+	if len(kept) == 0 {
 		return nil
 	}
+	artifacts, err := readDatabaseScopedArtifacts(ctx, tx)
 	if err != nil {
-		return fmt.Errorf("failed to inspect PostgreSQL database-scoped artifacts: %w", err)
+		return err
 	}
-	return fmt.Errorf(
-		"refusing to clean PostgreSQL database realm with unsupported database-scoped %s %q",
-		kind,
-		name,
-	)
+	for _, artifact := range kept {
+		if !slices.Contains(artifacts, artifact) {
+			return fmt.Errorf(
+				"PostgreSQL database realm cleanup found the dev database's %s %q gone; "+
+					"it was there when the run took the database, and the cleanup cannot create it again",
+				artifact.Kind,
+				artifact.Name,
+			)
+		}
+	}
+	return nil
 }
 
 func cleanupPostgresLargeObjects(ctx context.Context, tx *sql.Tx) error {
@@ -2302,6 +2378,11 @@ func (w *PostgreSQLWriter) dropDatabaseRealm(ctx context.Context, kept dbreset.K
 	if err := w.verifyKeptDefaultPrivileges(ctx, sqlTx, plan.keptDefaultPrivileges); err != nil {
 		return err
 	}
+	if plan.capabilities.inspectDatabaseArtifacts {
+		if err := verifyKeptDatabaseScopedArtifacts(ctx, sqlTx, kept.Artifacts); err != nil {
+			return err
+		}
+	}
 	if err := sqlTx.Commit(); err != nil {
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
@@ -2329,7 +2410,7 @@ func (w *PostgreSQLWriter) planDatabaseRealmCleanup(
 		return postgresDatabaseCleanupPlan{}, err
 	}
 	if capabilities.inspectDatabaseArtifacts {
-		if err := rejectPostgresDatabaseScopedArtifacts(ctx, tx); err != nil {
+		if err := rejectPostgresDatabaseScopedArtifacts(ctx, tx, kept.Artifacts); err != nil {
 			return postgresDatabaseCleanupPlan{}, err
 		}
 	}
@@ -2357,6 +2438,15 @@ func (w *PostgreSQLWriter) planDatabaseRealmCleanup(
 	if err != nil {
 		return postgresDatabaseCleanupPlan{}, err
 	}
+	// A kept extension's schema is emptied in place only when the cleanup
+	// would otherwise drop it. A schema kept whole beside a pinned one is left
+	// alone, so it is not the cleanup's to preserve: expected among the
+	// schemas the cleanup recreated, it failed every cleanup of a database
+	// that installs an extension there, as the Supabase image installs
+	// uuid-ossp in `extensions` (stokaro/ptah#4055).
+	inPlaceSchemas = slices.DeleteFunc(inPlaceSchemas, func(schema string) bool {
+		return !slices.Contains(schemas, schema)
+	})
 	scope := postgresDatabaseCleanupScope(schemas, keptExtensions)
 	scope.keptDefaultPrivileges = kept.DefaultPrivileges
 	keptDefaults := keptDefaultPrivilegesIn(scope, capabilities)

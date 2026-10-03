@@ -62,6 +62,14 @@ func DatabaseRealm(ctx context.Context, conn *dbschema.DatabaseConnection) error
 // what they were: a default the run added is revoked, one it changed is set
 // back, and one it did not touch is left alone.
 //
+// So are the database-scoped objects a realm cleanup cannot remove, such as an
+// event trigger or a publication. The pinned community binary uses a dev
+// database holding them and leaves them, and the Supabase image ships six
+// event triggers and a publication. A realm cleanup refused the database
+// rather than leave them (stokaro/ptah#4055). The baseline records the ones
+// the database held, which the cleanup leaves and checks are still there; it
+// still refuses one the run created.
+//
 // The zero Baseline keeps nothing, which is [DatabaseRealm].
 type Baseline struct {
 	extensions []string
@@ -70,6 +78,8 @@ type Baseline struct {
 	// defaultPrivileges are what the default privileges were at the claim;
 	// see above.
 	defaultPrivileges dbreset.DefaultPrivileges
+	// artifacts are the database-scoped objects the database held; see above.
+	artifacts []dbreset.Object
 	// realm records whether the claim judged the dev database's whole realm
 	// or only its connected schema; see [Reset].
 	realm bool
@@ -91,6 +101,10 @@ func (b Baseline) Schemas() []string {
 
 type extensionLister interface {
 	InstalledExtensions(context.Context) ([]string, error)
+}
+
+type artifactLister interface {
+	DatabaseScopedArtifacts(context.Context) ([]dbreset.Object, error)
 }
 
 type defaultPrivilegeReader interface {
@@ -146,6 +160,13 @@ func Claim(ctx context.Context, conn *dbschema.DatabaseConnection) (Baseline, er
 			return Baseline{}, fmt.Errorf("capture dev database baseline: %w", err)
 		}
 		baseline.defaultPrivileges = defaults
+	}
+	if lister, ok := writer.(artifactLister); ok {
+		artifacts, err := lister.DatabaseScopedArtifacts(ctx)
+		if err != nil {
+			return Baseline{}, fmt.Errorf("capture dev database baseline: %w", err)
+		}
+		baseline.artifacts = artifacts
 	}
 	if lister, ok := writer.(schemaLister); ok && !baseline.realm {
 		schemas, err := lister.UserSchemas(ctx)
@@ -232,8 +253,9 @@ func DatabaseRealmKeeping(ctx context.Context, conn *dbschema.DatabaseConnection
 		}
 		return err
 	}
-	if len(baseline.extensions) > 0 || len(baseline.schemas) > 0 || len(baseline.defaultPrivileges.Rows) > 0 {
-		return fmt.Errorf("clean dev database realm: this writer cannot keep the extensions, schemas or default privileges the database held before the run")
+	if len(baseline.extensions) > 0 || len(baseline.schemas) > 0 || len(baseline.defaultPrivileges.Rows) > 0 ||
+		len(baseline.artifacts) > 0 {
+		return fmt.Errorf("clean dev database realm: this writer cannot keep the extensions, schemas, default privileges or database-scoped objects the database held before the run")
 	}
 	return DatabaseRealm(ctx, conn)
 }
@@ -244,6 +266,7 @@ func (b Baseline) kept() dbreset.Kept {
 		Extensions:        b.extensions,
 		Schemas:           b.schemas,
 		DefaultPrivileges: b.defaultPrivileges,
+		Artifacts:         b.artifacts,
 		Server:            b.server,
 	}
 }
