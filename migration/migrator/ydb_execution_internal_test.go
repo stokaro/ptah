@@ -261,9 +261,9 @@ type abortedError struct{}
 func (abortedError) Error() string    { return "Transaction locks invalidated" }
 func (abortedError) SQLState() string { return "40001" }
 
-// newDataQueryCommit builds the commit under test over fake, with recorded
-// answering a read-back.
-func newDataQueryCommit(c *qt.C, fake *fakeTxDriver, recorded bool) dataQueryCommit {
+// newDataQueryCommit builds the commit under test over fake, with recorded and
+// readErr answering a read-back.
+func newDataQueryCommit(c *qt.C, fake *fakeTxDriver, recorded bool, readErr error) dataQueryCommit {
 	c.Helper()
 	db := sql.OpenDB(fake)
 	c.Cleanup(func() { _ = db.Close() })
@@ -272,7 +272,7 @@ func newDataQueryCommit(c *qt.C, fake *fakeTxDriver, recorded bool) dataQueryCom
 		query:      "UPSERT data",
 		checkpoint: "UPDATE checkpoint",
 		args:       []any{int64(2), int64(1)},
-		recorded:   func(context.Context) (bool, error) { return recorded, nil },
+		recorded:   func(context.Context) (bool, error) { return recorded, readErr },
 		wait:       func(context.Context, int) error { return nil },
 	}
 }
@@ -314,7 +314,7 @@ func TestDataQueryCommit_HappyPath(t *testing.T) {
 			c := qt.New(t)
 			fake := &fakeTxDriver{commitErrors: test.commitErrors}
 
-			err := newDataQueryCommit(c, fake, test.recorded).run(context.Background())
+			err := newDataQueryCommit(c, fake, test.recorded, nil).run(context.Background())
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(fake.log, qt.DeepEquals, test.wantLog)
@@ -331,6 +331,7 @@ func TestDataQueryCommit_FailurePath(t *testing.T) {
 		queryErrors    []error
 		checkpointErrs []error
 		commitErrors   []error
+		readErr        error
 		wantErr        string
 		wantLog        []string
 		wantCommits    int
@@ -361,6 +362,19 @@ func TestDataQueryCommit_FailurePath(t *testing.T) {
 			wantCommits: 1,
 		},
 		{
+			// Neither error says the query is not applied, and the caller
+			// records the failure without lowering what the row holds; see
+			// TestRevisionFailureRecord_HappyPath.
+			name:         "a commit of unknown outcome whose read-back fails",
+			commitErrors: []error{errors.New("connection reset")},
+			readErr:      errors.New("transport: connection refused"),
+			wantErr:      "connection reset\nread back whether the query committed: transport: connection refused",
+			wantLog: []string{
+				"begin isolation=6", "exec UPSERT data (0 args)", "exec UPDATE checkpoint (2 args)", "commit",
+			},
+			wantCommits: 1,
+		},
+		{
 			name: "a conflict on every attempt",
 			commitErrors: []error{abortedError{}, abortedError{}, abortedError{}, abortedError{},
 				abortedError{}},
@@ -368,7 +382,7 @@ func TestDataQueryCommit_FailurePath(t *testing.T) {
 			wantLog: []string{
 				"begin isolation=6", "exec UPSERT data (0 args)", "exec UPDATE checkpoint (2 args)", "commit",
 			},
-			wantCommits: ydbDataQueryAttempts,
+			wantCommits: ydbTransactionAttempts,
 		},
 	}
 	for _, test := range tests {
@@ -378,7 +392,197 @@ func TestDataQueryCommit_FailurePath(t *testing.T) {
 				queryErrors: test.queryErrors, checkpointErrs: test.checkpointErrs, commitErrors: test.commitErrors,
 			}
 
-			err := newDataQueryCommit(c, fake, false).run(context.Background())
+			err := newDataQueryCommit(c, fake, false, test.readErr).run(context.Background())
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(fake.commitAttempt, qt.Equals, test.wantCommits)
+			c.Assert(fake.log[:len(test.wantLog)], qt.DeepEquals, test.wantLog)
+		})
+	}
+}
+
+// A data query's checkpoint is recorded only by a row whose progress reaches
+// the query and that holds no failure written over the checkpoint.
+func TestCheckpointRecorded(t *testing.T) {
+	tests := []struct {
+		name     string
+		revision *MigrationRevision
+		want     bool
+	}{
+		{name: "no row", revision: nil, want: false},
+		{name: "the query's own checkpoint", revision: &MigrationRevision{Applied: 3}, want: true},
+		{name: "a later checkpoint", revision: &MigrationRevision{Applied: 4}, want: true},
+		{name: "the row as it was before the query", revision: &MigrationRevision{Applied: 2}, want: false},
+		{
+			name:     "a failure written over the checkpoint",
+			revision: &MigrationRevision{Applied: 3, Error: "rpc error: code = Unavailable"},
+			want:     false,
+		},
+		{
+			name:     "a statement marked in flight",
+			revision: &MigrationRevision{Applied: 3, Error: unknownStatementOutcomeError},
+			want:     false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(checkpointRecorded(test.revision, 3), qt.Equals, test.want)
+		})
+	}
+}
+
+// failureRecordUnderTest is a [revisionFailureRecord] over fake whose read
+// answers each attempt with the next of revisions and readErrs, and whose
+// statement records the progress it was asked to write.
+type failureRecordUnderTest struct {
+	record  revisionFailureRecord
+	written []int
+}
+
+func newFailureRecord(
+	c *qt.C,
+	fake *fakeTxDriver,
+	applied int,
+	revisions []*MigrationRevision,
+	readErrs []error,
+) *failureRecordUnderTest {
+	c.Helper()
+	db := sql.OpenDB(fake)
+	c.Cleanup(func() { _ = db.Close() })
+	under := &failureRecordUnderTest{}
+	reads := 0
+	under.record = revisionFailureRecord{
+		begin: db.BeginTx,
+		read: func(context.Context, *sql.Tx) (*MigrationRevision, error) {
+			attempt := reads
+			reads++
+			fake.log = append(fake.log, "read")
+			var revision *MigrationRevision
+			if attempt < len(revisions) {
+				revision = revisions[attempt]
+			}
+			return revision, errorAt(readErrs, attempt)
+		},
+		statement: func(applied int) (string, []any) {
+			under.written = append(under.written, applied)
+			return "UPDATE failed", []any{int64(applied)}
+		},
+		applied: applied,
+		wait:    func(context.Context, int) error { return nil },
+	}
+	return under
+}
+
+// The failure is written in one serializable transaction with a read of the
+// row, and records the larger of the progress the failure states and the
+// progress the row holds. A transaction YDB aborts runs again and reads the
+// row again.
+func TestRevisionFailureRecord_HappyPath(t *testing.T) {
+	tests := []struct {
+		name         string
+		revisions    []*MigrationRevision
+		readErrs     []error
+		commitErrors []error
+		wantWritten  []int
+		wantLog      []string
+	}{
+		{
+			name:        "the row holds what the failure states",
+			revisions:   []*MigrationRevision{{Applied: 2}},
+			wantWritten: []int{2},
+			wantLog:     []string{"begin isolation=6", "read", "exec UPDATE failed (1 args)", "commit"},
+		},
+		{
+			name:        "the row holds a query whose commit answer was lost",
+			revisions:   []*MigrationRevision{{Applied: 3}},
+			wantWritten: []int{3},
+			wantLog:     []string{"begin isolation=6", "read", "exec UPDATE failed (1 args)", "commit"},
+		},
+		{
+			name:        "no row",
+			wantWritten: []int{2},
+			wantLog:     []string{"begin isolation=6", "read", "exec UPDATE failed (1 args)", "commit"},
+		},
+		{
+			name:         "the lost commit lands after the read",
+			revisions:    []*MigrationRevision{{Applied: 2}, {Applied: 3}},
+			commitErrors: []error{abortedError{}},
+			wantWritten:  []int{2, 3},
+			wantLog: []string{
+				"begin isolation=6", "read", "exec UPDATE failed (1 args)", "commit",
+				"begin isolation=6", "read", "exec UPDATE failed (1 args)", "commit",
+			},
+		},
+		{
+			name:        "a read YDB aborted",
+			revisions:   []*MigrationRevision{nil, {Applied: 3}},
+			readErrs:    []error{abortedError{}},
+			wantWritten: []int{3},
+			wantLog: []string{
+				"begin isolation=6", "read", "rollback",
+				"begin isolation=6", "read", "exec UPDATE failed (1 args)", "commit",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fake := &fakeTxDriver{commitErrors: test.commitErrors}
+			under := newFailureRecord(c, fake, 2, test.revisions, test.readErrs)
+
+			err := under.record.run(context.Background())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(under.written, qt.DeepEquals, test.wantWritten)
+			c.Assert(fake.log, qt.DeepEquals, test.wantLog)
+		})
+	}
+}
+
+// A row that cannot be read gets nothing written: it already records what the
+// body committed, and a resume reads it.
+func TestRevisionFailureRecord_FailurePath(t *testing.T) {
+	tests := []struct {
+		name           string
+		readErrs       []error
+		checkpointErrs []error
+		commitErrors   []error
+		wantErr        string
+		wantLog        []string
+		wantCommits    int
+	}{
+		{
+			name:     "the row cannot be read",
+			readErrs: []error{errors.New("transport: connection refused")},
+			wantErr: "read the revision before recording the failure over it: " +
+				"transport: connection refused",
+			wantLog:     []string{"begin isolation=6", "read", "rollback"},
+			wantCommits: 0,
+		},
+		{
+			name:           "the write fails",
+			checkpointErrs: []error{errors.New("no such column")},
+			wantErr:        "no such column",
+			wantLog:        []string{"begin isolation=6", "read", "exec UPDATE failed (1 args)", "rollback"},
+			wantCommits:    0,
+		},
+		{
+			name: "a conflict on every attempt",
+			commitErrors: []error{abortedError{}, abortedError{}, abortedError{}, abortedError{},
+				abortedError{}},
+			wantErr:     "Transaction locks invalidated",
+			wantLog:     []string{"begin isolation=6", "read", "exec UPDATE failed (1 args)", "commit"},
+			wantCommits: ydbTransactionAttempts,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fake := &fakeTxDriver{checkpointErrs: test.checkpointErrs, commitErrors: test.commitErrors}
+			under := newFailureRecord(c, fake, 2, []*MigrationRevision{{Applied: 3}}, test.readErrs)
+
+			err := under.record.run(context.Background())
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(fake.commitAttempt, qt.Equals, test.wantCommits)

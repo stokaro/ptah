@@ -2413,25 +2413,62 @@ func (m *Migrator) failMigrationRevisionWithMode(
 	if direction == MigrationDirectionUp {
 		applied = max(applied, migrationAppliedFloor(ctx))
 	}
-	if m.revisionTableFormat.isAtlas() {
-		return m.failAtlasMigrationRevision(
-			recordCtx, migration, startedAt, failure, sqlText, direction, applied, total, stmt, failedIndex,
-		)
+	failed := failedRevision{
+		migration:   migration,
+		startedAt:   startedAt,
+		failure:     failure,
+		sqlText:     sqlText,
+		direction:   direction,
+		total:       total,
+		statement:   stmt,
+		failedIndex: failedIndex,
 	}
+	if m.runsQueriesOnTheirOwn() {
+		return m.ydbFailureRecord(failed, applied).run(recordCtx)
+	}
+	query, args := m.failedRevisionStatement(failed, applied)
+	return executeSQLOutsideTransaction(recordCtx, m.conn, query, args...)
+}
+
+// failedRevision is what a failure record writes, apart from how many of the
+// body's statements it records as applied.
+type failedRevision struct {
+	migration   *Migration
+	startedAt   time.Time
+	failure     error
+	sqlText     string
+	direction   MigrationDirection
+	total       int
+	statement   string
+	failedIndex int
+}
+
+// failedRevisionStatement is the statement that records failed with applied
+// of the body's statements committed, and its arguments.
+func (m *Migrator) failedRevisionStatement(failed failedRevision, applied int) (string, []any) {
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.failMigrationSQL())
-	return executeSQLOutsideTransaction(
-		recordCtx,
-		m.conn,
-		query,
-		encodeRevisionState(migrationStateFailed, direction),
+	if m.revisionTableFormat.isAtlas() {
+		return query, []any{
+			applied,
+			failed.total,
+			time.Since(failed.startedAt).Nanoseconds(),
+			atlasFailureError(failed.failure),
+			atlasFailureStatement(failed.sqlText, m.connectionDialect(), failed.failedIndex, failed.statement),
+			m.atlasDirtyPartialHashes(failed.sqlText, failed.direction, applied, failed.total),
+			atlasOperatorVersionForMigration(failed.migration, failed.direction),
+			failed.migration.RevisionVersion(),
+		}
+	}
+	return query, []any{
+		encodeRevisionState(migrationStateFailed, failed.direction),
 		applied,
-		total,
-		revisiontext.ValidUTF8(strings.TrimSpace(failure.Error())),
-		revisiontext.ValidUTF8(stmt),
-		time.Since(startedAt).Milliseconds(),
-		m.dirtyRevisionChecksum(migration, direction, applied),
-		migration.Version,
-	)
+		failed.total,
+		revisiontext.ValidUTF8(strings.TrimSpace(failed.failure.Error())),
+		revisiontext.ValidUTF8(failed.statement),
+		time.Since(failed.startedAt).Milliseconds(),
+		m.dirtyRevisionChecksum(failed.migration, failed.direction, applied),
+		failed.migration.Version,
+	}
 }
 
 func usesTransactionalProgressWitness(dialect string, txMode MigrationTxMode) bool {
@@ -2497,34 +2534,6 @@ func preservesUnknownStatementOutcome(ctx context.Context, failure error, txMode
 
 func durableRevisionWriteContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(ctx), revisionWriteTimeout)
-}
-
-func (m *Migrator) failAtlasMigrationRevision(
-	ctx context.Context,
-	migration *Migration,
-	startedAt time.Time,
-	failure error,
-	sqlText string,
-	direction MigrationDirection,
-	applied,
-	total int,
-	stmt string,
-	failedIndex int,
-) error {
-	query := sqlutil.Rebind(m.conn.Info().Dialect, m.failMigrationSQL())
-	return executeSQLOutsideTransaction(
-		ctx,
-		m.conn,
-		query,
-		applied,
-		total,
-		time.Since(startedAt).Nanoseconds(),
-		atlasFailureError(failure),
-		atlasFailureStatement(sqlText, m.connectionDialect(), failedIndex, stmt),
-		m.atlasDirtyPartialHashes(sqlText, direction, applied, total),
-		atlasOperatorVersionForMigration(migration, direction),
-		migration.RevisionVersion(),
-	)
 }
 
 // Baseline records provider migrations as already applied without executing

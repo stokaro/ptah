@@ -763,8 +763,10 @@ The queries are what the revision counts, what partial hashes digest and what a
 resume skips. Progress is recorded after each query. An interrupted schema query
 leaves its outcome unknown, as an interrupted statement does under `none`, and
 the row has to be inspected and repaired. A data query commits together with
-its checkpoint, so after an interruption either both are in the database or
-neither is, and `up --allow-dirty` runs it again.
+its checkpoint, so the revision row records it exactly when it committed. A
+failed run never records fewer queries than the row holds, even when the answer
+to a commit was lost, and when the row cannot be read the run writes nothing to
+it. `up --allow-dirty` then resumes at the first query the row does not record.
 
 Some files cannot be split the way YDB reads them, and Ptah refuses them before
 the run writes anything:

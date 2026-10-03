@@ -525,3 +525,131 @@ func TestYDBMigrator_RunsADataQueryWithItsCheckpoint(t *testing.T) {
 	})
 	c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+dir+"/h`"), qt.Equals, int64(1))
 }
+
+// lostAnswer is an interceptor that runs one statement on a connection of its
+// own, records it as committed the way a checkpoint does, and then reports a
+// failure: a client whose server applied a statement and whose answer was lost
+// on the way back. Every other statement it leaves to the migrator.
+type lostAnswer struct {
+	other      *dbschema.DatabaseConnection
+	statement  string
+	checkpoint string
+}
+
+func (l *lostAnswer) ValidateDirectives(map[string]string) error { return nil }
+
+func (l *lostAnswer) ExecuteStatement(
+	ctx context.Context, _ *dbschema.DatabaseConnection, statement string, _ map[string]string,
+) (bool, error) {
+	if statement != l.statement {
+		return false, nil
+	}
+	if err := l.other.Writer().ExecuteSQL(ctx, statement); err != nil {
+		return false, err
+	}
+	if err := l.other.Writer().ExecuteSQL(ctx, l.checkpoint); err != nil {
+		return false, err
+	}
+	return false, errors.New("the connection closed before the answer arrived")
+}
+
+// The revision row is the record of what a body committed, and a failure
+// never records less: a statement whose answer was lost after the row
+// recorded it stays recorded, and the resume does not run it again -- here a
+// second CREATE TABLE, which would fail; for a data query, a second UPDATE.
+func TestYDBMigrator_FailureKeepsTheProgressTheRowRecords(t *testing.T) {
+	tests := []struct {
+		name       string
+		format     migrator.RevisionTableFormat
+		dir        string
+		checkpoint string
+	}{
+		{
+			name:   "ptah format",
+			format: migrator.RevisionTableFormatPtah,
+			dir:    "ptah_ydb_mig_lost_native",
+			checkpoint: "UPDATE `ptah_ydb_mig_lost_native/schema_migrations` " +
+				"SET applied = 2l, error = NULL, error_stmt = NULL WHERE version = 1l",
+		},
+		{
+			name:   "atlas format",
+			format: migrator.RevisionTableFormatAtlas,
+			dir:    "ptah_ydb_mig_lost_atlas",
+			checkpoint: "UPDATE `ptah_ydb_mig_lost_atlas/atlas_schema_revisions` " +
+				"SET applied = 2l, error = ''u, error_stmt = ''u WHERE version = '1'u",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c)
+			dropDirectory(c, conn, test.dir, "l", "m")
+			c.Cleanup(func() { dropDirectory(c, conn, test.dir, "l", "m") })
+			lost := "CREATE TABLE `" + test.dir + "/m` (id Int64 NOT NULL, PRIMARY KEY (id))"
+			files := migrationFiles(map[string]string{
+				"0000000001_l.up.sql": "CREATE TABLE `" + test.dir + "/l` (id Int64 NOT NULL, PRIMARY KEY (id));\n" +
+					lost + ";\nINSERT INTO `" + test.dir + "/l` (id) VALUES (1l);\n",
+				"0000000001_l.down.sql": "DROP TABLE `" + test.dir + "/m`;\nDROP TABLE `" + test.dir + "/l`;\n",
+			})
+			interceptor := &lostAnswer{other: openYDB(c), statement: lost, checkpoint: test.checkpoint}
+			failing, err := migrator.NewFSMigrator(conn, files, migrator.WithStatementInterceptor(interceptor))
+			c.Assert(err, qt.IsNil)
+
+			failed := failing.WithRevisionTableFormat(test.format).WithMigrationsTable(test.dir, "").
+				MigrateUp(c.Context())
+
+			c.Assert(failed, qt.ErrorMatches, `(?s).*the connection closed before the answer arrived.*`)
+			resumed, err := migrator.NewFSMigrator(conn, files)
+			c.Assert(err, qt.IsNil)
+			resumed = resumed.WithRevisionTableFormat(test.format).WithMigrationsTable(test.dir, "")
+			c.Assert(revisionProgress(c, resumed), qt.DeepEquals,
+				[]progress{{Version: 1, State: "failed", Applied: 2, Total: 3}})
+
+			c.Assert(resumed.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true}), qt.IsNil)
+			c.Assert(revisionProgress(c, resumed), qt.DeepEquals,
+				[]progress{{Version: 1, State: "applied", Applied: 3, Total: 3}})
+			c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+test.dir+"/l`"), qt.Equals, int64(1))
+		})
+	}
+}
+
+// text reads one Utf8 value.
+func text(c *qt.C, conn *dbschema.DatabaseConnection, query string) string {
+	c.Helper()
+	var value string
+	c.Assert(conn.QueryRowContext(c.Context(), query).Scan(&value), qt.IsNil, qt.Commentf("query: %s", query))
+	return value
+}
+
+// A repair that resumes the body runs a data query the way a run does: in one
+// transaction with its checkpoint, with no in-flight mark written before it.
+// The INSERT below copies the revision row's failing statement, so it reads
+// the failure the first run recorded; a mark would have replaced that with the
+// INSERT itself.
+func TestYDBMigrator_RepairRunsADataQueryWithItsCheckpoint(t *testing.T) {
+	c := qt.New(t)
+	conn := openYDB(c)
+	const dir = "ptah_ydb_mig_repair"
+	dropDirectory(c, conn, dir, "r")
+	c.Cleanup(func() { dropDirectory(c, conn, dir, "r") })
+	head := "CREATE TABLE `" + dir + "/r` (id Int64 NOT NULL, note Utf8, PRIMARY KEY (id));\n"
+	broken := map[string]string{
+		"0000000001_r.up.sql":   head + "CREATE TABLE `" + dir + "/bad` (id NoSuchType NOT NULL, PRIMARY KEY (id));\n",
+		"0000000001_r.down.sql": "DROP TABLE `" + dir + "/r`;\n",
+	}
+	fixed := map[string]string{
+		"0000000001_r.up.sql": head + "INSERT INTO `" + dir + "/r` " +
+			"SELECT 1l AS id, error_stmt AS note FROM `" + dir + "/schema_migrations` WHERE version = 1l;\n",
+		"0000000001_r.down.sql": broken["0000000001_r.down.sql"],
+	}
+	c.Assert(newMigrator(c, conn, broken, migrator.RevisionTableFormatPtah, dir).MigrateUp(c.Context()), qt.IsNotNil)
+	failedStatement := text(c, conn, "SELECT error_stmt FROM `"+dir+"/schema_migrations` WHERE version = 1l")
+
+	repaired := newMigrator(c, conn, fixed, migrator.RevisionTableFormatPtah, dir)
+	err := repaired.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 2})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(failedStatement, qt.Equals, "CREATE TABLE `"+dir+"/bad` (id NoSuchType NOT NULL, PRIMARY KEY (id))")
+	c.Assert(text(c, conn, "SELECT note FROM `"+dir+"/r` WHERE id = 1l"), qt.Equals, failedStatement)
+	c.Assert(revisionProgress(c, repaired), qt.DeepEquals, []progress{{Version: 1, State: "applied", Applied: 2, Total: 2}})
+}
