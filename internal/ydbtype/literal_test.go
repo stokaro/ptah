@@ -260,6 +260,12 @@ func TestLiteral_FailurePath(t *testing.T) {
 			wantErr: `default "1 day" has no YDB counterpart: Interval takes an ISO 8601 duration such as P1D or PT30M`},
 		{name: "a bare P", ydbType: "Interval", value: "P", caps: capability.YDB262(),
 			wantErr: `default "P" has no YDB counterpart: Interval takes an ISO 8601 duration.*`},
+		// 15250285 weeks is past the microseconds an int64 holds, so the
+		// duration cannot be written in the unit YDB stores.
+		{name: "weeks past int64 microseconds", ydbType: "Interval64", value: "P15250285W", caps: capability.YDB262(),
+			wantErr: `default "P15250285W" has no YDB counterpart: Interval64 takes an ISO 8601 duration.*`},
+		{name: "seconds past int64 microseconds", ydbType: "Interval64", value: "PT9223372036855S", caps: capability.YDB262(),
+			wantErr: `default "PT9223372036855S" has no YDB counterpart: Interval64 takes an ISO 8601 duration.*`},
 	}
 
 	for _, test := range tests {
