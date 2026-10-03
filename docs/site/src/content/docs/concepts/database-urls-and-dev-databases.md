@@ -34,7 +34,7 @@ link here instead of redefining them.
 | YugabyteDB | `yugabytedb://user:pass@localhost:5433/app` |
 | Spanner (PostgreSQL interface) | `spanner://user:pass@localhost:5432/app` |
 | Oracle | `oracle://user:pass@localhost:1521/service` (renders, plans, reads a live catalog, and runs versioned migrations) |
-| YDB | `ydb://localhost:2136/local`, or `ydbs://` over TLS (see [YDB](#ydb)) |
+| YDB | `ydb://localhost:2136/local`, or `ydbs://` over TLS (see [YDB](../../databases/ydb/#connecting)) |
 
 Scheme aliases normalize to the canonical dialect (`postgresql://`,
 `sqlite3://`, `mssql://`, `crdb://`, `ysql://`, `ch://`, and more) — the full
@@ -51,17 +51,6 @@ names the database, and a host is ignored. The Go-driver form
 A MySQL or MariaDB URL naming no database is the whole server, as in the
 Atlas CLI; as a dev database it is a
 [dev server](../../atlas/migrate-commands/#a-whole-dev-server).
-
-### YDB
-
-`ydb://` is plaintext gRPC on port 2136 and `ydbs://` is TLS on port 2135. The
-database is the URL path or the `database` parameter, and a Ptah schema is a
-directory in it, the root by default. Credentials come from the URL's user and
-password, a `token` parameter, or `use_env_credentials` with the `YDB_*`
-variables, and an unknown parameter is refused. A server in a container behind
-another host needs `go_balancer=disable`. Versioned migrations, data plans, dev
-databases and `ptah-compat` are refused for now
-([stokaro/ptah#4015](https://github.com/stokaro/ptah/issues/4015)).
 
 ## The four database roles
 

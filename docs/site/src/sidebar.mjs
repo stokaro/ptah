@@ -226,6 +226,7 @@ export const sidebar = [
       { slug: 'databases/clickhouse' },
       { slug: 'databases/distributed' },
       { slug: 'databases/sqlserver' },
+      { slug: 'databases/ydb' },
     ],
   },
   {

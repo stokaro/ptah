@@ -39,7 +39,7 @@
     "route": "/concepts/database-urls-and-dev-databases/",
     "check": "page-length",
     "target": "page",
-    "reason": "The concept page states what a dev database cleanup keeps and refuses on each engine, extensions, schemas and default privileges included; a reader pointing --dev-url at an image needs those rules beside the realm they apply to. Its URL table also carries an engine's connection rules until that engine has its own database page, which is where YDB's ports, database path and credential sources are."
+    "reason": "The concept page states what a dev database cleanup keeps and refuses on each engine, extensions, schemas and default privileges included; a reader pointing --dev-url at an image needs those rules beside the realm they apply to."
   },
   {
     "route": "/databases/mysql/",
