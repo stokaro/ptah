@@ -684,9 +684,15 @@ func TestCells_BestEffortLinesAreExactlyTheUnmeasuredOnes(t *testing.T) {
 	// (stokaro/ptah#3190).
 	c.Assert(bestEffort, qt.ContentEquals, []string{
 		"spanner-0",
-		// No YDB line is here: the matrix has a YDB statement table and a
-		// launch recipe, so each of the six lines starts its own server on
-		// every run of the tiered workflows.
+		// The YDB lines between 25.1 and 26.2. Each has a preset, a launch
+		// recipe and a statement table, and declares in Unprobed why no job
+		// runs it: YDB publishes no support period for its open-source lines,
+		// so the matrix probes the current release and 25.1, the one line
+		// with a published support date.
+		"ydb-26-1",
+		"ydb-25-4",
+		"ydb-25-3",
+		"ydb-25-2",
 		// ClickHouse 25.8 came back, and by the other route: not a line that
 		// lost a recipe, but one whose vendor stopped patching it. Upstream
 		// support ended on 2026-08-29, and end of life lowers what Ptah

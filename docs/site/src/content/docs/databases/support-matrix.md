@@ -106,20 +106,24 @@ the declared set cannot say one thing here and another in a workflow file.
 | `sqlite` | 3 | certified | `SQLite3` | yes |
 | `spanner` | 0 | best-effort | `SpannerPostgres` | yes |
 | `ydb` | 26.2 | certified | `YDB262` | yes |
-| `ydb` | 26.1 | certified | `YDB261` | yes |
-| `ydb` | 25.4 | certified | `YDB253` | yes |
-| `ydb` | 25.3 | certified | `YDB253` | yes |
-| `ydb` | 25.2 | certified | `YDB252` | yes |
 | `ydb` | 25.1 | certified | `YDB251` | yes |
 | `clickhouse` | 25.8 | best-effort | `ClickHouse2411` | no |
+| `ydb` | 26.1 | best-effort | `YDB261` | no |
+| `ydb` | 25.4 | best-effort | `YDB253` | no |
+| `ydb` | 25.3 | best-effort | `YDB253` | no |
+| `ydb` | 25.2 | best-effort | `YDB252` | no |
 
-Declared release lines: 38. Probed on every pull request: 37.
+Declared release lines: 38. Probed on every pull request: 33.
 
-Support levels across the 38 declared lines: 34 certified, 2 legacy-tested, 2 best-effort.
+Support levels across the 38 declared lines: 30 certified, 2 legacy-tested, 6 best-effort.
 
 Lines that are declared and not probed, and why:
 
 - `clickhouse` 25.8 — upstream support ended on 2026-08-29 (endoflife.date/clickhouse).
+- `ydb` 26.1 — YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date.
+- `ydb` 25.4 — YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date.
+- `ydb` 25.3 — YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date.
+- `ydb` 25.2 — YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date.
 
 Lines whose container tag does not name the line, so which patch it resolves to has to be read off the tag:
 

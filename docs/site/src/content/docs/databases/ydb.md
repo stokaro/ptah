@@ -210,8 +210,10 @@ or `stable-25-4-1`:
 | `YDB251` | 25.1 | the 64-bit date and time types, `Decimal` precision other than 22,9, an `Int16` or `Uint16` default |
 
 `ptah schema render --dialect ydb --server-version 25.1.4.7` renders for a line
-without a server. The capability probe measures every declared line against a
-server of its own on each run of the capability matrix.
+without a server. The capability probe measures 26.2, the current release, and
+25.1, the one line with a published support date, against a server of its own on
+each run of the capability matrix. The other lines keep the presets measured on
+them and are best-effort.
 
 ### Feature flags
 

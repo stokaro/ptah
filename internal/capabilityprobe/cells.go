@@ -703,12 +703,29 @@ var Cells = []Cell{
 		Note:       "measured against the Cloud Spanner emulator behind PGAdapter, which is the only Spanner endpoint a container can provide; the managed service is not what runs here",
 	},
 
-	// YDB: six release lines, each started from its newest local-ydb patch and
-	// probed by the YDB statement table on every run of the tiered workflows,
-	// which is what certifies them; the integration workflow also runs the YDB
-	// live tests against 26.2. YDB publishes no support period, so the
-	// upstream half of the rubric has nothing to read, and the odd lines stay
-	// beside the even ones because a cluster can run either.
+	// YDB: six release lines with a measured preset. The probe runs two of them
+	// on every run of the tiered workflows, 26.2 and 25.1, which certifies
+	// them; the integration workflow also runs the YDB live tests against
+	// 26.2. The other four are best-effort, and their Unprobed reason says
+	// why no job is spent on them.
+	//
+	// Read 2026-10-03 (ydb.tech/docs/en/devops/concepts/versioning and the
+	// tags of ydb-platform/ydb): YDB names testing, stable and lts version
+	// types, and none of the 720 open-source tags carries the lts suffix. No
+	// open-source line has a published support period. The one published
+	// date is for the certified build of Yandex Enterprise Database 25.1,
+	// supported until 2030-10-30, at
+	// https://ydb.tech/docs/en/downloads/yandex-enterprise-database. So the
+	// matrix probes the current release, 26.2, and the one line with a
+	// published date, 25.1.
+	//
+	// 26.3 has no cell: GitHub marks 26.3.1.16 as a pre-release. Probed on
+	// local-ydb 26.3.1.18 through a 26.3 cell with the 26.2 recipe, it decided
+	// 80 of 80 promised rows with none disagreeing with YDB262, and its
+	// feature flags at their defaults refine YDB262 into itself; the resolver
+	// hands such a server YDB262 as newer than the newest measured line. A
+	// line gets a cell when YDB publishes it as a release GitHub does not mark
+	// as a pre-release.
 	//
 	// The image tags name the line and resolve to its newest patch, because
 	// local-ydb's own line tags are stale builds: `26.2` is a June build
@@ -719,39 +736,46 @@ var Cells = []Cell{
 		Refinement: RefinedByVersion, Support: capability.Certified,
 		Image: "ydbplatform/local-ydb:26.2", ResolveNewestPatch: true,
 		Understates: ydbUnderstates,
-		Note:        ydbMeasuredNote("26.2.1.14") + " The first line that sets and drops a column default in place.",
+		Note: ydbProbedNote("26.2.1.14") + " The current YDB release, and the first line that sets and drops " +
+			"a column default in place.",
 	},
 	{
 		Dialect: platform.YDB, Line: capabilityline.YDB261,
 		Preset: capability.YDB261, PresetName: "YDB261",
-		Refinement: RefinedByVersion, Support: capability.Certified,
+		Refinement: RefinedByVersion, Support: capability.BestEffort,
 		Image: "ydbplatform/local-ydb:26.1", ResolveNewestPatch: true,
+		Unprobed:    ydbUnprobed,
 		Understates: ydbUnderstates,
-		Note:        ydbMeasuredNote("26.1.1.22") + " The first line that adds a column with a default to a table holding rows.",
+		Note:        ydbUnprobedNote("26.1.1.22") + " The first line that adds a column with a default to a table holding rows.",
 	},
 	{
 		Dialect: platform.YDB, Line: capabilityline.YDB254,
 		Preset: capability.YDB253, PresetName: "YDB253",
-		Refinement: RefinedByVersion, Support: capability.Certified,
+		Refinement: RefinedByVersion, Support: capability.BestEffort,
 		Image: "ydbplatform/local-ydb:25.4", ResolveNewestPatch: true,
+		Unprobed:    ydbUnprobed,
 		Understates: ydbUnderstates,
-		Note:        ydbMeasuredNote("25.4.1.15") + " It answers every statement as 25.3 does, and reports its version as `stable-25-4-1`.",
+		Note: ydbUnprobedNote("25.4.1.15") + " It answers every statement as 25.3 does, and reports its version " +
+			"as `stable-25-4-1`.",
 	},
 	{
 		Dialect: platform.YDB, Line: capabilityline.YDB253,
 		Preset: capability.YDB253, PresetName: "YDB253",
-		Refinement: RefinedByVersion, Support: capability.Certified,
+		Refinement: RefinedByVersion, Support: capability.BestEffort,
 		Image: "ydbplatform/local-ydb:25.3", ResolveNewestPatch: true,
+		Unprobed:    ydbUnprobed,
 		Understates: ydbUnderstates,
-		Note:        ydbMeasuredNote("25.3.1.25") + " The first line that takes a literal default on JsonDocument and DyNumber.",
+		Note:        ydbUnprobedNote("25.3.1.25") + " The first line that takes a literal default on JsonDocument and DyNumber.",
 	},
 	{
 		Dialect: platform.YDB, Line: capabilityline.YDB252,
 		Preset: capability.YDB252, PresetName: "YDB252",
-		Refinement: RefinedByVersion, Support: capability.Certified,
+		Refinement: RefinedByVersion, Support: capability.BestEffort,
 		Image: "ydbplatform/local-ydb:25.2", ResolveNewestPatch: true,
+		Unprobed:    ydbUnprobed,
 		Understates: ydbUnderstates,
-		Note:        ydbMeasuredNote("25.2.1.24") + " The first line with the 64-bit date and time types and a Decimal of any precision.",
+		Note: ydbUnprobedNote("25.2.1.24") + " The first line with the 64-bit date and time types and a Decimal " +
+			"of any precision.",
 	},
 	{
 		Dialect: platform.YDB, Line: capabilityline.YDB251,
@@ -759,14 +783,27 @@ var Cells = []Cell{
 		Refinement: RefinedByVersion, Support: capability.Certified,
 		Image: "ydbplatform/local-ydb:25.1", ResolveNewestPatch: true,
 		Understates: ydbUnderstates,
-		Note:        ydbMeasuredNote("25.1.4.7") + " The oldest measured line: no 64-bit date types, Decimal(22,9) only, and no default on a 16-bit integer.",
+		Note: ydbProbedNote("25.1.4.7") + " The line Yandex Enterprise Database 25.1 is certified on, and the " +
+			"oldest measured: no 64-bit date types, Decimal(22,9) only, and no default on a 16-bit integer.",
 	},
 }
 
-// ydbMeasuredNote opens a YDB cell's note with the probe run that measured it.
-func ydbMeasuredNote(version string) string {
+// ydbUnprobed is why the four YDB lines between 25.1 and 26.2 run no probe
+// job. It is a policy rather than a gap: each line has a preset and a launch
+// recipe, and was probed once with it.
+const ydbUnprobed = "YDB publishes no support period for its open-source lines, and the matrix probes the " +
+	"current release and the one line with a published support date"
+
+// ydbProbedNote opens the note of a YDB cell the probe runs.
+func ydbProbedNote(version string) string {
 	return "probed on every run of the tiered workflows. Measured on " + version + " through this cell's " +
 		"launch recipe: 94 rows, 77 agree, 3 are understated on purpose, 14 are undecidable and none disagrees."
+}
+
+// ydbUnprobedNote opens the note of a YDB cell the probe skips.
+func ydbUnprobedNote(version string) string {
+	return "best-effort: the preset was measured by hand on " + version + ", and the probe agreed on one run " +
+		"through this cell's launch recipe (80 of 80 promised rows decided, none disagreeing); no job runs it."
 }
 
 // ydbUnderstates are the keys every YDB preset claims less than the server
