@@ -227,14 +227,12 @@ func postgresSessionTimeoutStatements(timeouts migrationfile.Timeouts) (setupSta
 }
 
 func mysqlTimeoutStatements(timeouts migrationfile.Timeouts) (setupStatements, restoreStatements []string, err error) {
-	setup := make([]string, 0, 4)
-	restore := make([]string, 0, 2)
+	setup := make([]string, 0, 6)
+	restore := make([]string, 0, 3)
 	if timeouts.HasLockTimeout {
-		setup = append(setup,
-			"SET @ptah_prev_innodb_lock_wait_timeout = @@SESSION.innodb_lock_wait_timeout",
-			"SET SESSION innodb_lock_wait_timeout = "+strconv.FormatInt(durationSeconds(timeouts.LockTimeout), 10),
-		)
-		restore = append(restore, "SET SESSION innodb_lock_wait_timeout = @ptah_prev_innodb_lock_wait_timeout")
+		lockSetup, lockRestore := mysqlFamilyLockTimeoutStatements(timeouts.LockTimeout)
+		setup = append(setup, lockSetup...)
+		restore = append(restore, lockRestore...)
 	}
 	if timeouts.HasStatementTimeout {
 		setup = append(setup,
@@ -247,14 +245,12 @@ func mysqlTimeoutStatements(timeouts migrationfile.Timeouts) (setupStatements, r
 }
 
 func mariaDBTimeoutStatements(timeouts migrationfile.Timeouts) (setupStatements, restoreStatements []string, err error) {
-	setup := make([]string, 0, 4)
-	restore := make([]string, 0, 2)
+	setup := make([]string, 0, 6)
+	restore := make([]string, 0, 3)
 	if timeouts.HasLockTimeout {
-		setup = append(setup,
-			"SET @ptah_prev_innodb_lock_wait_timeout = @@SESSION.innodb_lock_wait_timeout",
-			"SET SESSION innodb_lock_wait_timeout = "+strconv.FormatInt(durationSeconds(timeouts.LockTimeout), 10),
-		)
-		restore = append(restore, "SET SESSION innodb_lock_wait_timeout = @ptah_prev_innodb_lock_wait_timeout")
+		lockSetup, lockRestore := mysqlFamilyLockTimeoutStatements(timeouts.LockTimeout)
+		setup = append(setup, lockSetup...)
+		restore = append(restore, lockRestore...)
 	}
 	if timeouts.HasStatementTimeout {
 		setup = append(setup,
@@ -264,6 +260,33 @@ func mariaDBTimeoutStatements(timeouts migrationfile.Timeouts) (setupStatements,
 		restore = append(restore, "SET SESSION max_statement_time = @ptah_prev_max_statement_time")
 	}
 	return setup, reverseStrings(restore), nil
+}
+
+// mysqlFamilyLockTimeoutStatements bounds both lock waits a MySQL or MariaDB
+// statement can make, in the order they are restored.
+//
+// innodb_lock_wait_timeout bounds a wait for a row lock and nothing else. DDL
+// waits for a metadata lock, and lock_wait_timeout bounds that wait; its
+// server default is a year on MySQL and a day on MariaDB. Measured on MySQL
+// 8.4.11 and MariaDB 11.8.9 with a second session holding an open transaction
+// that read the table: under innodb_lock_wait_timeout = 3 alone, DROP TRIGGER
+// waited until that transaction ended, 7 and 8 seconds later, and every later
+// write to the table queued behind it; under lock_wait_timeout = 3 it failed
+// with ERROR 1205 after 3 seconds (stokaro/ptah#4012). Both take whole seconds,
+// and a timeout is never zero, so rounding up never asks for no wait.
+func mysqlFamilyLockTimeoutStatements(timeout time.Duration) (setup, restore []string) {
+	seconds := strconv.FormatInt(durationSeconds(timeout), 10)
+	setup = []string{
+		"SET @ptah_prev_innodb_lock_wait_timeout = @@SESSION.innodb_lock_wait_timeout",
+		"SET SESSION innodb_lock_wait_timeout = " + seconds,
+		"SET @ptah_prev_lock_wait_timeout = @@SESSION.lock_wait_timeout",
+		"SET SESSION lock_wait_timeout = " + seconds,
+	}
+	restore = []string{
+		"SET SESSION innodb_lock_wait_timeout = @ptah_prev_innodb_lock_wait_timeout",
+		"SET SESSION lock_wait_timeout = @ptah_prev_lock_wait_timeout",
+	}
+	return setup, restore
 }
 
 func reverseStrings(values []string) []string {

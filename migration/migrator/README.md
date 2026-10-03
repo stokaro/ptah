@@ -758,7 +758,7 @@ one only when a whitespace or control character follows the second dash, so a
 `--` line carrying nothing but its line terminator — while `--x`, which those
 two read as SQL rather than as a comment, ends the header there.
 
-PostgreSQL runs `SET LOCAL lock_timeout` and `SET LOCAL statement_timeout` inside the migration transaction. MySQL and MariaDB run `SET SESSION innodb_lock_wait_timeout`; statement timeouts use MySQL `max_execution_time` and MariaDB `max_statement_time`.
+PostgreSQL runs `SET LOCAL lock_timeout` and `SET LOCAL statement_timeout` inside the migration transaction. MySQL and MariaDB set a lock timeout as `SET SESSION innodb_lock_wait_timeout`, which bounds a wait for a row lock, and `SET SESSION lock_wait_timeout`, which bounds the metadata-lock wait every DDL statement and `LOCK TABLES` makes; both are restored afterwards. Statement timeouts use MySQL `max_execution_time` and MariaDB `max_statement_time`.
 
 ### Transaction Modes
 
