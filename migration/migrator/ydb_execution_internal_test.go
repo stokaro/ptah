@@ -9,7 +9,10 @@ package migrator
 
 import (
 	"context"
+	"database/sql"
+	"database/sql/driver"
 	"errors"
+	"fmt"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -190,4 +193,196 @@ func TestCommitStatement(t *testing.T) {
 	committed, err := commitStatement(context.Background(), StatementEvent{Statement: "UPSERT INTO a (id) VALUES (1l)"})
 	c.Assert(committed, qt.IsFalse)
 	c.Assert(err, qt.IsNil)
+}
+
+// fakeTxDriver is a database/sql driver whose connections log what they are
+// asked to do, and answer each attempt's query, checkpoint and commit with the
+// errors a test gives it, attempt by attempt.
+type fakeTxDriver struct {
+	log             []string
+	queryErrors     []error
+	checkpointErrs  []error
+	commitErrors    []error
+	queryAttempt    int
+	checkpointCount int
+	commitAttempt   int
+}
+
+func (d *fakeTxDriver) Connect(context.Context) (driver.Conn, error) { return fakeTxConn{d: d}, nil }
+func (d *fakeTxDriver) Driver() driver.Driver                       { return nil }
+
+type fakeTxConn struct{ d *fakeTxDriver }
+
+func (c fakeTxConn) Prepare(string) (driver.Stmt, error) { return nil, errors.New("not used") }
+func (c fakeTxConn) Close() error                        { return nil }
+func (c fakeTxConn) Begin() (driver.Tx, error)           { return nil, errors.New("not used") }
+func (c fakeTxConn) BeginTx(_ context.Context, opts driver.TxOptions) (driver.Tx, error) {
+	c.d.log = append(c.d.log, fmt.Sprintf("begin isolation=%d", opts.Isolation))
+	return fakeTx(c), nil
+}
+
+func (c fakeTxConn) ExecContext(_ context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	c.d.log = append(c.d.log, fmt.Sprintf("exec %s (%d args)", query, len(args)))
+	if query == "UPSERT data" {
+		attempt := c.d.queryAttempt
+		c.d.queryAttempt++
+		return driver.RowsAffected(1), errorAt(c.d.queryErrors, attempt)
+	}
+	attempt := c.d.checkpointCount
+	c.d.checkpointCount++
+	return driver.RowsAffected(1), errorAt(c.d.checkpointErrs, attempt)
+}
+
+type fakeTx fakeTxConn
+
+func (t fakeTx) Commit() error {
+	t.d.log = append(t.d.log, "commit")
+	attempt := t.d.commitAttempt
+	t.d.commitAttempt++
+	return errorAt(t.d.commitErrors, attempt)
+}
+
+func (t fakeTx) Rollback() error {
+	t.d.log = append(t.d.log, "rollback")
+	return nil
+}
+
+func errorAt(errs []error, attempt int) error {
+	if attempt < len(errs) {
+		return errs[attempt]
+	}
+	return nil
+}
+
+// abortedError is a serialization conflict as a SQLSTATE, which
+// internal/atlasretry reads the way it reads YDB's ABORTED status.
+type abortedError struct{}
+
+func (abortedError) Error() string    { return "Transaction locks invalidated" }
+func (abortedError) SQLState() string { return "40001" }
+
+// newDataQueryCommit builds the commit under test over fake, with recorded
+// answering a read-back.
+func newDataQueryCommit(c *qt.C, fake *fakeTxDriver, recorded bool) dataQueryCommit {
+	c.Helper()
+	db := sql.OpenDB(fake)
+	c.Cleanup(func() { _ = db.Close() })
+	return dataQueryCommit{
+		begin:      db.BeginTx,
+		query:      "UPSERT data",
+		checkpoint: "UPDATE checkpoint",
+		args:       []any{int64(2), int64(1)},
+		recorded:   func(context.Context) (bool, error) { return recorded, nil },
+		wait:       func(context.Context, int) error { return nil },
+	}
+}
+
+// The data query and its checkpoint run in one serializable transaction, and a
+// transaction YDB aborted runs again as a whole.
+func TestDataQueryCommit_HappyPath(t *testing.T) {
+	tests := []struct {
+		name         string
+		commitErrors []error
+		recorded     bool
+		wantLog      []string
+	}{
+		{
+			name: "one transaction",
+			wantLog: []string{
+				"begin isolation=6", "exec UPSERT data (0 args)", "exec UPDATE checkpoint (2 args)", "commit",
+			},
+		},
+		{
+			name:         "an aborted commit runs the transaction again",
+			commitErrors: []error{abortedError{}},
+			wantLog: []string{
+				"begin isolation=6", "exec UPSERT data (0 args)", "exec UPDATE checkpoint (2 args)", "commit",
+				"begin isolation=6", "exec UPSERT data (0 args)", "exec UPDATE checkpoint (2 args)", "commit",
+			},
+		},
+		{
+			name:         "a commit of unknown outcome whose checkpoint is recorded",
+			commitErrors: []error{errors.New("connection reset")},
+			recorded:     true,
+			wantLog: []string{
+				"begin isolation=6", "exec UPSERT data (0 args)", "exec UPDATE checkpoint (2 args)", "commit",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fake := &fakeTxDriver{commitErrors: test.commitErrors}
+
+			err := newDataQueryCommit(c, fake, test.recorded).run(context.Background())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(fake.log, qt.DeepEquals, test.wantLog)
+		})
+	}
+}
+
+// A failure leaves the transaction uncommitted: a failing query or checkpoint
+// is rolled back, so neither is applied without the other, and a commit of
+// unknown outcome whose checkpoint is not recorded is reported.
+func TestDataQueryCommit_FailurePath(t *testing.T) {
+	tests := []struct {
+		name           string
+		queryErrors    []error
+		checkpointErrs []error
+		commitErrors   []error
+		wantErr        string
+		wantLog        []string
+		wantCommits    int
+	}{
+		{
+			name:        "the query fails",
+			queryErrors: []error{errors.New("Conflict with existing key")},
+			wantErr:     "Conflict with existing key",
+			wantLog:     []string{"begin isolation=6", "exec UPSERT data (0 args)", "rollback"},
+			wantCommits: 0,
+		},
+		{
+			name:           "the checkpoint fails",
+			checkpointErrs: []error{errors.New("no such column")},
+			wantErr:        "record the query in the revision table: no such column",
+			wantLog: []string{
+				"begin isolation=6", "exec UPSERT data (0 args)", "exec UPDATE checkpoint (2 args)", "rollback",
+			},
+			wantCommits: 0,
+		},
+		{
+			name:         "a commit of unknown outcome whose checkpoint is not recorded",
+			commitErrors: []error{errors.New("connection reset")},
+			wantErr:      "connection reset",
+			wantLog: []string{
+				"begin isolation=6", "exec UPSERT data (0 args)", "exec UPDATE checkpoint (2 args)", "commit",
+			},
+			wantCommits: 1,
+		},
+		{
+			name: "a conflict on every attempt",
+			commitErrors: []error{abortedError{}, abortedError{}, abortedError{}, abortedError{},
+				abortedError{}},
+			wantErr: "Transaction locks invalidated",
+			wantLog: []string{
+				"begin isolation=6", "exec UPSERT data (0 args)", "exec UPDATE checkpoint (2 args)", "commit",
+			},
+			wantCommits: ydbDataQueryAttempts,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fake := &fakeTxDriver{
+				queryErrors: test.queryErrors, checkpointErrs: test.checkpointErrs, commitErrors: test.commitErrors,
+			}
+
+			err := newDataQueryCommit(c, fake, false).run(context.Background())
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(fake.commitAttempt, qt.Equals, test.wantCommits)
+			c.Assert(fake.log[:len(test.wantLog)], qt.DeepEquals, test.wantLog)
+		})
+	}
 }

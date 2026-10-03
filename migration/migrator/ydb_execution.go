@@ -168,7 +168,33 @@ func isYDBDataQuery(query string) bool {
 const ydbDataQueryAttempts = 5
 
 // commitYDBDataQuery runs one data query of a YDB body and the checkpoint that
-// records it in one serializable transaction.
+// records it in one serializable transaction; see [dataQueryCommit].
+func (m *Migrator) commitYDBDataQuery(
+	ctx context.Context,
+	migration *Migration,
+	startedAt time.Time,
+	event StatementEvent,
+	direction MigrationDirection,
+) error {
+	checkpoint, args := m.checkpointMigrationRevisionStatement(migration, startedAt, event, direction)
+	return dataQueryCommit{
+		begin:      m.conn.BeginTx,
+		query:      event.Statement,
+		checkpoint: checkpoint,
+		args:       args,
+		recorded: func(ctx context.Context) (bool, error) {
+			revision, err := m.getMigrationRevision(ctx, migration)
+			if err != nil {
+				return false, err
+			}
+			return revision != nil && revision.Applied >= event.Index && revision.Error == "", nil
+		},
+		wait: waitForYDBDataQueryRetry,
+	}.run(ctx)
+}
+
+// dataQueryCommit runs a data query and the checkpoint that records it in one
+// serializable transaction.
 //
 // YDB's optimistic locking aborts the transaction of two conflicting ones that
 // commits second, with `Transaction locks invalidated`, and nothing of an
@@ -177,57 +203,53 @@ const ydbDataQueryAttempts = 5
 // caller records the query as not applied.
 //
 // A commit that fails without saying whether it took effect is answered by
-// reading the revision back: the checkpoint commits with the query, so a
-// recorded checkpoint is the proof that the query did too.
-func (m *Migrator) commitYDBDataQuery(
-	ctx context.Context,
-	migration *Migration,
-	startedAt time.Time,
-	event StatementEvent,
-	direction MigrationDirection,
-) error {
+// recorded, which reads the revision back: the checkpoint commits with the
+// query, so a recorded checkpoint is the proof that the query did too.
+type dataQueryCommit struct {
+	begin      func(context.Context, *sql.TxOptions) (*sql.Tx, error)
+	query      string
+	checkpoint string
+	args       []any
+	recorded   func(context.Context) (bool, error)
+	wait       func(context.Context, int) error
+}
+
+func (d dataQueryCommit) run(ctx context.Context) error {
 	var err error
 	for attempt := range ydbDataQueryAttempts {
 		var committing bool
-		committing, err = m.tryYDBDataQuery(ctx, migration, startedAt, event, direction)
+		committing, err = d.try(ctx)
 		if err == nil {
 			return nil
 		}
 		if committing && !atlasretry.IsRetryable(err) {
-			return m.ydbCommitOutcome(ctx, migration, event, err)
+			return d.outcome(ctx, err)
 		}
 		if !atlasretry.IsRetryable(err) || attempt == ydbDataQueryAttempts-1 {
 			return err
 		}
-		if waitErr := waitForYDBDataQueryRetry(ctx, attempt); waitErr != nil {
+		if waitErr := d.wait(ctx, attempt); waitErr != nil {
 			return errors.Join(err, waitErr)
 		}
 	}
 	return err
 }
 
-// tryYDBDataQuery is one attempt. committing reports that the failure, if
-// any, was the commit's own, whose outcome the server did not report.
-func (m *Migrator) tryYDBDataQuery(
-	ctx context.Context,
-	migration *Migration,
-	startedAt time.Time,
-	event StatementEvent,
-	direction MigrationDirection,
-) (committing bool, err error) {
-	tx, err := m.conn.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+// try is one attempt. committing reports that the failure, if any, was the
+// commit's own, whose outcome the server did not report.
+func (d dataQueryCommit) try(ctx context.Context) (committing bool, err error) {
+	tx, err := d.begin(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return false, err
 	}
-	if _, err := tx.ExecContext(ctx, event.Statement); err != nil {
+	if _, err := tx.ExecContext(ctx, d.query); err != nil {
 		// YDB has ended the transaction already: a rollback of it answers
 		// `Transaction not found`, and the statement's failure is the one
 		// that matters.
 		_ = tx.Rollback()
 		return false, err
 	}
-	query, args := m.checkpointMigrationRevisionStatement(migration, startedAt, event, direction)
-	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
+	if _, err := tx.ExecContext(ctx, d.checkpoint, d.args...); err != nil {
 		_ = tx.Rollback()
 		return false, fmt.Errorf("record the query in the revision table: %w", err)
 	}
@@ -237,21 +259,15 @@ func (m *Migrator) tryYDBDataQuery(
 	return false, nil
 }
 
-// ydbCommitOutcome answers a commit that failed without saying whether it
-// took effect, from the revision the transaction would have checkpointed.
-func (m *Migrator) ydbCommitOutcome(
-	ctx context.Context,
-	migration *Migration,
-	event StatementEvent,
-	commitErr error,
-) error {
+// outcome answers a commit that failed without saying whether it took effect.
+func (d dataQueryCommit) outcome(ctx context.Context, commitErr error) error {
 	readCtx, cancel := durableRevisionWriteContext(ctx)
 	defer cancel()
-	revision, err := m.getMigrationRevision(readCtx, migration)
+	recorded, err := d.recorded(readCtx)
 	if err != nil {
 		return errors.Join(commitErr, fmt.Errorf("read back whether the query committed: %w", err))
 	}
-	if revision != nil && revision.Applied >= event.Index && revision.Error == "" {
+	if recorded {
 		return nil
 	}
 	return commitErr

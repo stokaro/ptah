@@ -145,7 +145,8 @@ func TestYDBMigrator_RunsQueriesAndRollsBack(t *testing.T) {
 // failure -- YDB commits each on its own -- and records how many. After the
 // failing query is fixed, an --allow-dirty run resumes at that query: the
 // INSERT before it is not run again, which would answer `Conflict with
-// existing key`.
+// existing key`, and its query, which opens with a named expression, carries
+// no session state the resumed run would have to replay.
 func TestYDBMigrator_ResumesWhereAFailedMigrationStopped(t *testing.T) {
 	c := qt.New(t)
 	conn := openYDB(c)
@@ -153,7 +154,7 @@ func TestYDBMigrator_ResumesWhereAFailedMigrationStopped(t *testing.T) {
 	dropDirectory(c, conn, dir, "a", "b")
 	c.Cleanup(func() { dropDirectory(c, conn, dir, "a", "b") })
 	head := "CREATE TABLE `" + dir + "/a` (id Int64 NOT NULL, PRIMARY KEY (id));\n" +
-		"INSERT INTO `" + dir + "/a` (id) VALUES (1l);\n"
+		"$id = 1l;\nINSERT INTO `" + dir + "/a` (id) VALUES ($id);\n"
 	broken := map[string]string{
 		"0000000001_tables.up.sql":   head + "CREATE TABLE `" + dir + "/b` (id NoSuchType NOT NULL, PRIMARY KEY (id));\n",
 		"0000000001_tables.down.sql": "DROP TABLE `" + dir + "/b`;\nDROP TABLE `" + dir + "/a`;\n",
@@ -367,3 +368,95 @@ func TestYDBMigrator_RecordsTagsAndTheLog(t *testing.T) {
 	c.Assert(attempts, qt.HasLen, 1)
 	c.Assert(string(attempts[0].Outcome.State), qt.Equals, "applied")
 }
+
+// Progress is recorded after each query rather than once the file is done:
+// read during the run, the revision counts one more query after each of them.
+// The file holds a scheme query, a run of data statements and another scheme
+// query, and YDB commits each on its own.
+func TestYDBMigrator_RecordsProgressAfterEachQuery(t *testing.T) {
+	c := qt.New(t)
+	conn := openYDB(c)
+	observer := openYDB(c)
+	const dir = "ptah_ydb_mig_progress"
+	dropDirectory(c, conn, dir, "g")
+	c.Cleanup(func() { dropDirectory(c, conn, dir, "g") })
+	files := migrationFiles(map[string]string{
+		"0000000001_g.up.sql": "CREATE TABLE `" + dir + "/g` (id Int64 NOT NULL, PRIMARY KEY (id));\n" +
+			"INSERT INTO `" + dir + "/g` (id) VALUES (1l);\nINSERT INTO `" + dir + "/g` (id) VALUES (2l);\n" +
+			"ALTER TABLE `" + dir + "/g` ADD COLUMN note Utf8;\n",
+		"0000000001_g.down.sql": "DROP TABLE `" + dir + "/g`;\n",
+	})
+	var seen []int64
+	record := migrator.StatementObserverFunc(func(ctx context.Context, _ migrator.StatementEvent) error {
+		var applied int64
+		err := observer.QueryRowContext(ctx,
+			"SELECT applied FROM `"+dir+"/schema_migrations` WHERE version = 1l").Scan(&applied)
+		seen = append(seen, applied)
+		return err
+	})
+	m, err := migrator.NewFSMigrator(conn, files, migrator.WithStatementObserver(record))
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(m.WithMigrationsTable(dir, "").MigrateUp(c.Context()), qt.IsNil)
+	c.Assert(seen, qt.DeepEquals, []int64{1, 2, 3})
+}
+
+// A resume skips only a prefix it can prove unchanged: the digest of the
+// committed queries is recorded with the progress, and a file whose committed
+// INSERT was edited is refused rather than resumed past the edit.
+func TestYDBMigrator_RefusesToResumeOverAnEditedPrefix(t *testing.T) {
+	c := qt.New(t)
+	conn := openYDB(c)
+	const dir = "ptah_ydb_mig_edited"
+	dropDirectory(c, conn, dir, "e", "f")
+	c.Cleanup(func() { dropDirectory(c, conn, dir, "e", "f") })
+	body := func(id, fType string) string {
+		return "CREATE TABLE `" + dir + "/e` (id Int64 NOT NULL, PRIMARY KEY (id));\n" +
+			"$id = " + id + ";\nINSERT INTO `" + dir + "/e` (id) VALUES ($id);\n" +
+			"CREATE TABLE `" + dir + "/f` (id " + fType + " NOT NULL, PRIMARY KEY (id));\n"
+	}
+	files := func(up string) map[string]string {
+		return map[string]string{
+			"0000000001_e.up.sql":   up,
+			"0000000001_e.down.sql": "DROP TABLE `" + dir + "/f`;\nDROP TABLE `" + dir + "/e`;\n",
+		}
+	}
+	failed := newMigrator(c, conn, files(body("1l", "NoSuchType")), migrator.RevisionTableFormatPtah, dir).
+		MigrateUp(c.Context())
+	c.Assert(failed, qt.IsNotNil)
+
+	edited := newMigrator(c, conn, files(body("7l", "Int64")), migrator.RevisionTableFormatPtah, dir)
+	err := edited.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true})
+
+	c.Assert(err, qt.ErrorMatches, `migration 1 cannot resume automatically: the already committed statement prefix `+
+		`changed after 2 of 3 statements committed; inspect the database before choosing a repair point`)
+	c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+dir+"/e` WHERE id = 7l"), qt.Equals, int64(0))
+	c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.DeepEquals, []string{dir + "|e"})
+}
+
+// YDB cannot add a NOT NULL column to a table that has rows on every line
+// Ptah supports, and no Ptah wrote a revision table there in an older layout,
+// so a revision table missing a column was made by something else and is
+// refused rather than altered.
+func TestYDBMigrator_RefusesARevisionTableItDidNotCreate(t *testing.T) {
+	c := qt.New(t)
+	conn := openYDB(c)
+	const dir = "ptah_ydb_mig_foreign"
+	dropDirectory(c, conn, dir)
+	c.Cleanup(func() { dropDirectory(c, conn, dir) })
+	c.Assert(conn.Writer().ExecuteSQL(c.Context(), "CREATE TABLE `"+dir+"/schema_migrations` "+
+		"(version Int64 NOT NULL, description Utf8 NOT NULL, applied_at Timestamp NOT NULL, PRIMARY KEY (version))"),
+		qt.IsNil)
+	m := newMigrator(c, conn, map[string]string{
+		"0000000001_x.up.sql":   "CREATE TABLE `" + dir + "/x` (id Int64 NOT NULL, PRIMARY KEY (id));\n",
+		"0000000001_x.down.sql": "DROP TABLE `" + dir + "/x`;\n",
+	}, migrator.RevisionTableFormatPtah, dir)
+
+	err := m.Initialize(c.Context())
+
+	c.Assert(err, qt.ErrorMatches, "failed to prepare migrations revision columns: migration metadata table `"+
+		dir+"/schema_migrations` has no column state, applied, total, error, error_stmt, execution_time_ms, "+
+		"checksum, so Ptah did not create it; drop it and let Ptah create it, or configure another migrations table")
+	c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.HasLen, 0)
+}
+
