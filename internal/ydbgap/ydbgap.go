@@ -30,7 +30,10 @@ type Layer int
 // The layers YDB does not reach yet. Each answers [Layer.Phase] with the phase
 // of [Plan] that implements it.
 const (
-	// SchemaFiles is reading a YQL file as a desired schema.
+	// SchemaFiles is reading a YQL file as a desired schema: a parser for
+	// YQL's CREATE TABLE, whose key, index and option clauses no other
+	// dialect has. It lands with the object families, because each family
+	// brings the clauses the parser has to read.
 	SchemaFiles Layer = iota + 1
 	// Migrating is the versioned migrator: its revision, log and tag tables,
 	// its lock, and every command that applies or records a migration file.
@@ -110,8 +113,6 @@ func (l Layer) work() string {
 // that names no layer.
 func (l Layer) Phase() int {
 	switch l {
-	case SchemaFiles:
-		return 2
 	case Migrating:
 		return 6
 	case QueryBuilding, DataChanges:
@@ -120,7 +121,7 @@ func (l Layer) Phase() int {
 		return 8
 	case CreatingDatabases, DevDatabases:
 		return 9
-	case Comments, Views, AccessControl, TableSettings, IndexFamilies:
+	case SchemaFiles, Comments, Views, AccessControl, TableSettings, IndexFamilies:
 		return 10
 	case Compatibility:
 		return 11
