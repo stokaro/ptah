@@ -33,7 +33,7 @@ func TestOpen_FailurePath(t *testing.T) {
 			name: "an unknown parameter",
 			url:  "ydb://localhost:2136/local?sslmode=disable",
 			wantErr: `invalid YDB URL: parameter "sslmode" is not one Ptah reads on a YDB URL; accepted: ` +
-				"database, token, use_env_credentials, go_balancer, balancer, go_query_mode, query_mode, " +
+				"database, monitoring, token, use_env_credentials, go_balancer, balancer, go_query_mode, query_mode, " +
 				"go_default_idempotent, prefetch_query_result_parts",
 		},
 		{
@@ -105,6 +105,12 @@ func TestOpen_FailurePath(t *testing.T) {
 			name:    "an environment switch that is not a boolean",
 			url:     "ydb://localhost:2136/local?use_env_credentials=maybe",
 			wantErr: `invalid YDB URL: parameter use_env_credentials="maybe" is not a boolean`,
+		},
+		{
+			name: "a monitoring endpoint without a scheme",
+			url:  "ydb://localhost:2136/local?monitoring=localhost:8765",
+			wantErr: `invalid YDB URL: the monitoring parameter "localhost:8765" names no http:// or https:// ` +
+				"endpoint: write monitoring=http://host:8765",
 		},
 	}
 
@@ -199,6 +205,9 @@ func TestOpen_FailurePath_AcceptedURLsReachTheDriver(t *testing.T) {
 		{name: "the older query mode spelling", url: "ydb://localhost:2136/local?query_mode=query"},
 		{name: "default idempotence", url: "ydb://localhost:2136/local?go_default_idempotent=true"},
 		{name: "no prefetch", url: "ydb://localhost:2136/local?prefetch_query_result_parts=0"},
+		// Ptah reads it; internal/ydburl takes it out before the SDK sees the
+		// URL.
+		{name: "a monitoring endpoint", url: "ydb://localhost:2136/local?monitoring=http://localhost:8765"},
 		// #nosec G101 -- a fixture with a made-up password, not a credential
 		{name: "a user and a password", url: "ydb://alice:secret@localhost:2136/local"},
 		{name: "a token", url: "ydb://localhost:2136/local?token=t1.abc"},

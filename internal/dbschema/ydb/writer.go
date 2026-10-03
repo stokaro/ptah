@@ -15,12 +15,14 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/atlasretry"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlrunner"
+	"ptah.run/internal/ydbflags"
 )
 
 // Scheme is what the writer asks of YDB's scheme service: the entries of a
@@ -119,13 +121,32 @@ func (w *Writer) execute(ctx context.Context, statement string, args []any) erro
 			return nil
 		}
 		if attempt == attempts-1 || !atlasretry.IsRetryable(err) {
-			return fmt.Errorf("ydb: SQL execution failed: %w\nSQL: %s", err, statement)
+			return executionError(err, statement)
 		}
 		if err := w.pause(ctx, attempt); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// executionError names the statement a failure belongs to. Where the server's
+// refusal says a feature flag is off, the error also names the capability the
+// flag decides, because the plan that sent the statement took it from the
+// release line's preset, and this cluster runs with the flag off.
+func executionError(err error, statement string) error {
+	if gate, off := ydbflags.Refused(err.Error()); off {
+		err = &ptaherr.CapabilityError{
+			Dialect: platform.YDB,
+			Feature: string(gate.Key),
+			Err:     fmt.Errorf("%w: %w", ptaherr.ErrUnsupportedFeature, err),
+			Message: fmt.Sprintf("capability %s is off on this YDB cluster, which runs with feature flag %s off: %v. "+
+				"Turn the flag on, or name the cluster's monitoring endpoint in the URL "+
+				"(monitoring=http://host:8765) so Ptah reads the flags before it plans",
+				gate.Key, gate.Flag, err),
+		}
+	}
+	return fmt.Errorf("ydb: SQL execution failed: %w\nSQL: %s", err, statement)
 }
 
 // maxDataAttempts bounds how often a data statement YDB aborted is run.

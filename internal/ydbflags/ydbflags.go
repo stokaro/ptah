@@ -1,0 +1,215 @@
+// Package ydbflags reads the feature flags a YDB cluster runs with from its
+// monitoring endpoint, and turns the flags that gate a capability Ptah reads
+// into that capability's value on the cluster.
+//
+// A YDB capability preset describes a release line running with its default
+// flags. An operator can turn a flag on or off, and YDB ships features behind
+// flags on odd releases and turns them on in even ones, so one release can do
+// more or less than its line's preset says. The cluster's own list is the
+// answer, and it is read-only: `GET /viewer/json/feature_flags?database=<db>`
+// on the monitoring port lists every flag the database knows with its default
+// and, where it was set, its current value (stokaro/ptah#4015, decision 12).
+//
+// The package links no YDB SDK, so the connection layer reaches it without
+// pulling a driver into any other path.
+package ydbflags
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"slices"
+	"strings"
+	"time"
+
+	"ptah.run/core/platform/capability"
+)
+
+// Gate is one capability a YDB feature flag decides.
+type Gate struct {
+	// Key is the capability.
+	Key capability.Capability
+	// Flag is the flag's name as the monitoring endpoint spells it.
+	Flag string
+	// refusals are texts the server's refusal contains when the flag is off,
+	// each measured; a gate whose refusal was never seen has none.
+	refusals []string
+}
+
+// gates are the measured flags. Each one's default on every YDB line agrees
+// with the line's preset, measured on local-ydb 25.1.4.7, 25.2.1.24,
+// 25.3.1.25, 25.4.1.15, 26.1.1.22 and 26.2.1.14, and each one was turned on
+// with YDB_FEATURE_FLAGS on a line where it is off by default and the
+// statement it gates was then accepted.
+var gates = []Gate{
+	{
+		// Off on every line that lists it (25.3 and later); 25.1 and 25.2 do
+		// not list it, and refuse a unique index on an existing table outright.
+		Key:      capability.UniqueIndexOnExistingTable,
+		Flag:     "EnableAddUniqueIndex",
+		refusals: []string{"Adding a unique index to an existing table is disabled"},
+	},
+	{
+		// The upstream spelling drops the n. Off up to 25.4 and on from 26.1;
+		// 25.1 answers with the second text, and takes the column once the
+		// flag is on.
+		Key:  capability.AddColumnWithDefault,
+		Flag: "EnableAddColumsWithDefaults",
+		refusals: []string{
+			"Adding columns with defaults is disabled",
+			"Column addition with default value is not supported now",
+		},
+	},
+	{
+		// Off on 26.1 and on from 26.2; the lines before 26.1 do not list it,
+		// and their parser has no SET DEFAULT in ALTER COLUMN at all.
+		Key:      capability.AlterColumnDefault,
+		Flag:     "EnableSetDropDefaultValue",
+		refusals: []string{"Set/drop default value is not enabled"},
+	},
+	{
+		// Off on 25.1 and on from 25.2. The refusal names the flag itself.
+		Key:      capability.WideDateTimeTypes,
+		Flag:     "EnableTableDatetime64",
+		refusals: []string{"EnableTableDatetime64 feature flag is off"},
+	},
+	{
+		Key:      capability.ParameterizedDecimal,
+		Flag:     "EnableParameterizedDecimal",
+		refusals: []string{"EnableParameterizedDecimal feature flag is off"},
+	},
+}
+
+// Gates returns every capability a flag decides, in a fixed order.
+func Gates() []Gate {
+	return slices.Clone(gates)
+}
+
+// Flags is the value of every flag one database lists: the current value
+// where the cluster set one, and the default otherwise.
+type Flags map[string]bool
+
+// Refine returns caps with every gated capability set from the flags. A flag
+// the database does not list is a feature the line does not have, so its
+// capability is false. caps is not changed.
+func (f Flags) Refine(caps capability.Capabilities) capability.Capabilities {
+	refined := caps.Clone()
+	for _, gate := range gates {
+		refined = refined.With(gate.Key, f[gate.Flag])
+	}
+	return refined
+}
+
+// Path is the monitoring page the flags are read from.
+const Path = "/viewer/json/feature_flags"
+
+// timeout bounds one read when the caller's context sets no deadline.
+const timeout = 30 * time.Second
+
+// maxBody bounds the page Ptah reads. A database lists a few hundred flags,
+// about 15 KB measured.
+const maxBody = 4 << 20
+
+var client = &http.Client{Timeout: timeout}
+
+// Read asks the monitoring endpoint for the flags of database, an absolute
+// path such as /local. It sends no credentials: a cluster that requires a
+// viewer token answers with a status that is returned as an error.
+func Read(ctx context.Context, monitoring *url.URL, database string) (Flags, error) {
+	if monitoring == nil {
+		return nil, errors.New("no monitoring endpoint to read feature flags from")
+	}
+	page := *monitoring
+	page.Path = Path
+	page.RawQuery = url.Values{"database": {database}}.Encode()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, page.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("read YDB feature flags: %w", err)
+	}
+	request.Header.Set("Accept", "application/json")
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("read YDB feature flags from %s: %w", page.Redacted(), err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxBody))
+	if err != nil {
+		return nil, fmt.Errorf("read YDB feature flags from %s: %w", page.Redacted(), err)
+	}
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("read YDB feature flags from %s: %s: %s",
+			page.Redacted(), response.Status, strings.TrimSpace(string(body)))
+	}
+	flags, err := Decode(body, database)
+	if err != nil {
+		return nil, fmt.Errorf("read YDB feature flags from %s: %w", page.Redacted(), err)
+	}
+	return flags, nil
+}
+
+// pageVersion is the only page layout Ptah reads; measured on 25.1.4.7
+// through 26.2.1.14.
+const pageVersion = 2
+
+// page is the monitoring endpoint's answer.
+type page struct {
+	Version   int `json:"Version"`
+	Databases []struct {
+		Name         string `json:"Name"`
+		FeatureFlags []struct {
+			Name    string `json:"Name"`
+			Default *bool  `json:"Default"`
+			Current *bool  `json:"Current"`
+		} `json:"FeatureFlags"`
+	} `json:"Databases"`
+}
+
+// Decode reads the flags of database out of a feature-flags page. A page in
+// another layout, one that does not list the database, and a flag with no
+// value are refused rather than read as flags that are off.
+func Decode(body []byte, database string) (Flags, error) {
+	var decoded page
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return nil, fmt.Errorf("the feature-flags page is not the JSON Ptah reads: %w", err)
+	}
+	if decoded.Version != pageVersion {
+		return nil, fmt.Errorf("the feature-flags page has version %d, and Ptah reads version %d",
+			decoded.Version, pageVersion)
+	}
+	want := "/" + strings.Trim(database, "/")
+	for _, listed := range decoded.Databases {
+		if "/"+strings.Trim(listed.Name, "/") != want {
+			continue
+		}
+		flags := make(Flags, len(listed.FeatureFlags))
+		for _, flag := range listed.FeatureFlags {
+			switch {
+			case flag.Current != nil:
+				flags[flag.Name] = *flag.Current
+			case flag.Default != nil:
+				flags[flag.Name] = *flag.Default
+			default:
+				return nil, fmt.Errorf("the feature-flags page lists %s with no value", flag.Name)
+			}
+		}
+		return flags, nil
+	}
+	return nil, fmt.Errorf("the feature-flags page does not list database %s", want)
+}
+
+// Refused returns the gate whose flag a server refusal says is off, and false
+// when the refusal is about something else.
+func Refused(serverText string) (Gate, bool) {
+	for _, gate := range gates {
+		for _, refusal := range gate.refusals {
+			if strings.Contains(serverText, refusal) {
+				return gate, true
+			}
+		}
+	}
+	return Gate{}, false
+}

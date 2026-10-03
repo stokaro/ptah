@@ -1,0 +1,847 @@
+{
+ "Version": 2,
+ "Databases": [
+  {
+   "Name": "/local",
+   "FeatureFlags": [
+    {
+     "Name": "EnableSeparateSolomonShardForPDisk",
+     "Default": true
+    },
+    {
+     "Name": "UseForsetiSchedulerByDefaultForPDisk",
+     "Default": true
+    },
+    {
+     "Name": "EnableSeparateTrimThreadForPDisk",
+     "Default": true
+    },
+    {
+     "Name": "EnableSeparateSubmitThreadForPDisk",
+     "Default": true
+    },
+    {
+     "Name": "EnablePerOwnerChunkLimitForPDisk",
+     "Default": false
+    },
+    {
+     "Name": "TrimEntireDeviceOnStartup",
+     "Default": false
+    },
+    {
+     "Name": "EnableChunkGraceForPDisk",
+     "Default": true
+    },
+    {
+     "Name": "AllowConsistentOperationsForSchemeShard",
+     "Default": true
+    },
+    {
+     "Name": "EnableSchemeBoard",
+     "Default": true
+    },
+    {
+     "Name": "AllowYdbRequestsWithoutDatabase",
+     "Default": true
+    },
+    {
+     "Name": "EnableExternalSubdomains",
+     "Default": true
+    },
+    {
+     "Name": "AllowRecursiveMkDir",
+     "Default": true
+    },
+    {
+     "Name": "AllowHugeKeyValueDeletes",
+     "Default": true
+    },
+    {
+     "Name": "SendSchemaVersionToDatashard",
+     "Default": true
+    },
+    {
+     "Name": "EnableSchemeBoardCache",
+     "Default": true
+    },
+    {
+     "Name": "EnableSystemViews",
+     "Default": true
+    },
+    {
+     "Name": "EnableExternalHive",
+     "Default": true
+    },
+    {
+     "Name": "UseSchemeBoardCacheForSchemeRequests",
+     "Default": true
+    },
+    {
+     "Name": "CompileMinikqlWithVersion",
+     "Default": true
+    },
+    {
+     "Name": "ReadTableWithSnapshot",
+     "Default": true
+    },
+    {
+     "Name": "ImportantTabletsUseSystemPool",
+     "Default": true
+    },
+    {
+     "Name": "EnableOfflineSlaves",
+     "Default": true
+    },
+    {
+     "Name": "CheckDatabaseAccessPermission",
+     "Default": false
+    },
+    {
+     "Name": "AllowOnlineIndexBuild",
+     "Default": true
+    },
+    {
+     "Name": "EnablePersistentQueryStats",
+     "Current": true,
+     "Default": true
+    },
+    {
+     "Name": "DisableDataShardBarrier",
+     "Default": false
+    },
+    {
+     "Name": "EnablePutBatchingForBlobStorage",
+     "Default": true
+    },
+    {
+     "Name": "EnableKqpWideFlow",
+     "Default": true
+    },
+    {
+     "Name": "EnableKqpScanQueries",
+     "Default": true
+    },
+    {
+     "Name": "EnablePersistentPartitionStats",
+     "Default": false
+    },
+    {
+     "Name": "EnableTtlOnIndexedTables",
+     "Default": true
+    },
+    {
+     "Name": "AllowUpdateChannelsBindingOfSolomonPartitions",
+     "Default": false
+    },
+    {
+     "Name": "DisableLegacyYql",
+     "Default": true
+    },
+    {
+     "Name": "EnableDataColumnForIndexTable",
+     "Default": true
+    },
+    {
+     "Name": "AllowServerlessStorageBillingForSchemeShard",
+     "Default": false
+    },
+    {
+     "Name": "EnableGracefulShutdown",
+     "Default": true
+    },
+    {
+     "Name": "EnableDrainOnShutdown",
+     "Current": false,
+     "Default": true
+    },
+    {
+     "Name": "EnableConfigurationCache",
+     "Default": false
+    },
+    {
+     "Name": "EnableDbCounters",
+     "Default": false
+    },
+    {
+     "Name": "EnableClockGettimeForUserCpuAccounting",
+     "Default": false
+    },
+    {
+     "Name": "EnableAsyncIndexes",
+     "Default": true
+    },
+    {
+     "Name": "AllowStreamExecuteYqlScript",
+     "Default": true
+    },
+    {
+     "Name": "EnableKqpScanOverPersistentSnapshot",
+     "Default": true
+    },
+    {
+     "Name": "EnableOlapSchemaOperations",
+     "Default": true
+    },
+    {
+     "Name": "EnableVPatch",
+     "Default": true
+    },
+    {
+     "Name": "EnableMvccSnapshotReads",
+     "Current": true,
+     "Default": true
+    },
+    {
+     "Name": "EnableSchemeTransactionsAtSchemeShard",
+     "Current": true,
+     "Default": true
+    },
+    {
+     "Name": "EnableArrowFormatAtDatashard",
+     "Default": false
+    },
+    {
+     "Name": "Enable3x3RequestsForMirror3DCMinLatencyPut",
+     "Default": false
+    },
+    {
+     "Name": "EnableBackgroundCompaction",
+     "Default": true
+    },
+    {
+     "Name": "EnableArrowFormatInChannels",
+     "Default": false
+    },
+    {
+     "Name": "EnableBackgroundCompactionServerless",
+     "Default": false
+    },
+    {
+     "Name": "EnableNotNullColumns",
+     "Default": true
+    },
+    {
+     "Name": "EnableTtlOnAsyncIndexedTables",
+     "Default": true
+    },
+    {
+     "Name": "EnableBulkUpsertToAsyncIndexedTables",
+     "Default": true
+    },
+    {
+     "Name": "EnableNodeBrokerSingleDomainMode",
+     "Default": true
+    },
+    {
+     "Name": "EnablePublicApiExternalBlobs",
+     "Current": false,
+     "Default": false
+    },
+    {
+     "Name": "EnablePublicApiKeepInMemory",
+     "Default": false
+    },
+    {
+     "Name": "EnableImplicitScanQueryInScripts",
+     "Default": true
+    },
+    {
+     "Name": "AllowVDiskDefrag",
+     "Default": true
+    },
+    {
+     "Name": "EnableAsyncHttpMon",
+     "Default": true
+    },
+    {
+     "Name": "EnableChangefeeds",
+     "Default": true
+    },
+    {
+     "Name": "EnableKqpScanQueryMultipleOlapShardsReads",
+     "Default": false
+    },
+    {
+     "Name": "EnableMoveIndex",
+     "Default": true
+    },
+    {
+     "Name": "EnableFailureInjectionTermination",
+     "Default": false
+    },
+    {
+     "Name": "EnableChunkLocking",
+     "Default": false
+    },
+    {
+     "Name": "EnableNotNullDataColumns",
+     "Default": true
+    },
+    {
+     "Name": "EnableGrpcAudit",
+     "Default": false
+    },
+    {
+     "Name": "EnableBorrowedSplitCompaction",
+     "Default": true
+    },
+    {
+     "Name": "EnableChangefeedInitialScan",
+     "Default": true
+    },
+    {
+     "Name": "EnableDynamicNodeAuthorization",
+     "Default": false
+    },
+    {
+     "Name": "EnableDataShardGenericReadSets",
+     "Default": false
+    },
+    {
+     "Name": "EnableAlterDatabaseCreateHiveFirst",
+     "Default": true
+    },
+    {
+     "Name": "EnableSmallDiskOptimization",
+     "Default": true
+    },
+    {
+     "Name": "EnableDataShardVolatileTransactions",
+     "Default": true
+    },
+    {
+     "Name": "EnableTopicServiceTx",
+     "Default": true
+    },
+    {
+     "Name": "EnableLLVMCache",
+     "Default": false
+    },
+    {
+     "Name": "EnableExternalDataSources",
+     "Default": false
+    },
+    {
+     "Name": "EnableTopicDiskSubDomainQuota",
+     "Default": true
+    },
+    {
+     "Name": "EnableSeparationComputeActorsFromRead",
+     "Default": false
+    },
+    {
+     "Name": "EnablePQConfigTransactionsAtSchemeShard",
+     "Default": true
+    },
+    {
+     "Name": "EnableScriptExecutionOperations",
+     "Default": true
+    },
+    {
+     "Name": "EnableImplicitQueryParameterTypes",
+     "Default": true
+    },
+    {
+     "Name": "EnableForceImmediateEffectsExecution",
+     "Default": false
+    },
+    {
+     "Name": "EnableTopicSplitMerge",
+     "Default": true
+    },
+    {
+     "Name": "EnableChangefeedDynamoDBStreamsFormat",
+     "Default": true
+    },
+    {
+     "Name": "ForceColumnTablesCompositeMarks",
+     "Default": false
+    },
+    {
+     "Name": "EnableSubscriptionsInDiscovery",
+     "Default": false
+    },
+    {
+     "Name": "EnableGetNodeLabels",
+     "Default": false
+    },
+    {
+     "Name": "EnableTopicMessageMeta",
+     "Default": true
+    },
+    {
+     "Name": "EnableIcNodeCache",
+     "Default": true
+    },
+    {
+     "Name": "EnableTempTables",
+     "Default": true
+    },
+    {
+     "Name": "SuppressCompatibilityCheck",
+     "Default": false
+    },
+    {
+     "Name": "EnableUniqConstraint",
+     "Default": true
+    },
+    {
+     "Name": "EnableChangefeedDebeziumJsonFormat",
+     "Default": true
+    },
+    {
+     "Name": "EnableStatistics",
+     "Default": true
+    },
+    {
+     "Name": "EnableUuidAsPrimaryKey",
+     "Default": true
+    },
+    {
+     "Name": "EnableTablePgTypes",
+     "Default": false
+    },
+    {
+     "Name": "EnableLocalDBBtreeIndex",
+     "Default": true
+    },
+    {
+     "Name": "EnablePDiskHighHDDInFlight",
+     "Default": false
+    },
+    {
+     "Name": "EnableViews",
+     "Default": true
+    },
+    {
+     "Name": "EnableServerlessExclusiveDynamicNodes",
+     "Default": false
+    },
+    {
+     "Name": "EnableAccessServiceBulkAuthorization",
+     "Default": false
+    },
+    {
+     "Name": "EnableAddColumsWithDefaults",
+     "Default": false
+    },
+    {
+     "Name": "EnableReplaceIfExistsForExternalEntities",
+     "Default": false
+    },
+    {
+     "Name": "EnableCMSRequestPriorities",
+     "Default": true
+    },
+    {
+     "Name": "EnableKeyvalueLogBatching",
+     "Default": false
+    },
+    {
+     "Name": "EnableLocalDBFlatIndex",
+     "Default": true
+    },
+    {
+     "Name": "ExtendedVDiskCounters",
+     "Default": true
+    },
+    {
+     "Name": "ExtendedPDiskSensors",
+     "Default": true
+    },
+    {
+     "Name": "EnableStableNodeNames",
+     "Default": false
+    },
+    {
+     "Name": "EnableBackupService",
+     "Default": false
+    },
+    {
+     "Name": "EnableVolatileTransactionArbiters",
+     "Default": true
+    },
+    {
+     "Name": "EnableGraphShard",
+     "Default": false
+    },
+    {
+     "Name": "EnableExternalSourceSchemaInference",
+     "Default": false
+    },
+    {
+     "Name": "EnableDbMetadataCache",
+     "Default": false
+    },
+    {
+     "Name": "EnableTableDatetime64",
+     "Default": true
+    },
+    {
+     "Name": "EnableResourcePools",
+     "Default": false
+    },
+    {
+     "Name": "EnableColumnStatistics",
+     "Default": false
+    },
+    {
+     "Name": "EnableSingleCompositeActionGroup",
+     "Default": false
+    },
+    {
+     "Name": "EnableResourcePoolsOnServerless",
+     "Default": false
+    },
+    {
+     "Name": "EnableVectorIndex",
+     "Default": true
+    },
+    {
+     "Name": "EnableChangefeedsOnIndexTables",
+     "Default": true
+    },
+    {
+     "Name": "EnableResourcePoolsCounters",
+     "Default": false
+    },
+    {
+     "Name": "EnableOptionalColumnsInColumnShard",
+     "Default": false
+    },
+    {
+     "Name": "EnableGranularTimecast",
+     "Default": true
+    },
+    {
+     "Name": "EnableAlterShardingInColumnShard",
+     "Default": false
+    },
+    {
+     "Name": "EnablePgSyntax",
+     "Default": false
+    },
+    {
+     "Name": "EnableTieringInColumnShard",
+     "Default": false
+    },
+    {
+     "Name": "EnableMetadataObjectsOnServerless",
+     "Default": true
+    },
+    {
+     "Name": "EnableOlapCompression",
+     "Default": false
+    },
+    {
+     "Name": "EnableExternalDataSourcesOnServerless",
+     "Default": true
+    },
+    {
+     "Name": "EnableSparsedColumns",
+     "Default": false
+    },
+    {
+     "Name": "EnableParameterizedDecimal",
+     "Default": true
+    },
+    {
+     "Name": "EnableImmediateWritingOnBulkUpsert",
+     "Default": true
+    },
+    {
+     "Name": "EnableInsertWriteIdSpecialColumnCompatibility",
+     "Default": false
+    },
+    {
+     "Name": "EnableTopicAutopartitioningForCDC",
+     "Default": true
+    },
+    {
+     "Name": "EnableWritePortionsOnInsert",
+     "Default": true
+    },
+    {
+     "Name": "EnableFollowerStats",
+     "Default": true
+    },
+    {
+     "Name": "EnableTopicAutopartitioningForReplication",
+     "Default": true
+    },
+    {
+     "Name": "EnableDriveSerialsDiscovery",
+     "Default": false
+    },
+    {
+     "Name": "EnableSeparateDiskSpaceQuotas",
+     "Default": false
+    },
+    {
+     "Name": "EnableAntlr4Parser",
+     "Default": true
+    },
+    {
+     "Name": "EnableReleaseNodeNameOnGracefulShutdown",
+     "Default": false
+    },
+    {
+     "Name": "ForceDistconfDisable",
+     "Default": false
+    },
+    {
+     "Name": "EnableScaleRecommender",
+     "Default": true
+    },
+    {
+     "Name": "EnableVDiskThrottling",
+     "Default": false
+    },
+    {
+     "Name": "EnableDataShardInMemoryStateMigration",
+     "Default": true
+    },
+    {
+     "Name": "EnableDataShardInMemoryStateMigrationAcrossGenerations",
+     "Default": true
+    },
+    {
+     "Name": "DisableLocalDBEraseCache",
+     "Default": false
+    },
+    {
+     "Name": "EnableChecksumsExport",
+     "Default": true
+    },
+    {
+     "Name": "EnableTopicTransfer",
+     "Default": true
+    },
+    {
+     "Name": "EnableViewExport",
+     "Default": true
+    },
+    {
+     "Name": "EnableColumnStore",
+     "Default": false
+    },
+    {
+     "Name": "EnableStrictAclCheck",
+     "Default": false
+    },
+    {
+     "Name": "DatabaseYamlConfigAllowed",
+     "Default": false
+    },
+    {
+     "Name": "EnableStrictUserManagement",
+     "Default": false
+    },
+    {
+     "Name": "EnableDatabaseAdmin",
+     "Default": false
+    },
+    {
+     "Name": "EnableChangefeedsImport",
+     "Default": true
+    },
+    {
+     "Name": "EnablePermissionsExport",
+     "Default": true
+    },
+    {
+     "Name": "EnableDataErasure",
+     "Default": false
+    },
+    {
+     "Name": "EnableShowCreate",
+     "Default": false
+    },
+    {
+     "Name": "EnableChangefeedsExport",
+     "Default": true
+    },
+    {
+     "Name": "EnableKafkaNativeBalancing",
+     "Default": true
+    },
+    {
+     "Name": "EnableTabletRestartOnUnhandledExceptions",
+     "Default": true
+    },
+    {
+     "Name": "EnableKafkaTransactions",
+     "Default": true
+    },
+    {
+     "Name": "EnableLoginCache",
+     "Default": false
+    },
+    {
+     "Name": "SwitchToConfigV2",
+     "Default": false
+    },
+    {
+     "Name": "SwitchToConfigV1",
+     "Default": false
+    },
+    {
+     "Name": "EnableEncryptedExport",
+     "Default": false
+    },
+    {
+     "Name": "EnableAlterDatabase",
+     "Default": false
+    },
+    {
+     "Name": "EnableExportAutoDropping",
+     "Default": true
+    },
+    {
+     "Name": "EnableThrottlingReport",
+     "Default": true
+    },
+    {
+     "Name": "EnableNodeBrokerDeltaProtocol",
+     "Default": true
+    },
+    {
+     "Name": "EnableAccessToIndexImplTables",
+     "Default": true
+    },
+    {
+     "Name": "EnableAddUniqueIndex",
+     "Default": false
+    },
+    {
+     "Name": "EnableSharedMetadataAccessorCache",
+     "Default": true
+    },
+    {
+     "Name": "RequireDbPrefixInSecretName",
+     "Default": false
+    },
+    {
+     "Name": "EnableSystemNamesProtection",
+     "Default": false
+    },
+    {
+     "Name": "EnableRealSystemViewPaths",
+     "Default": true
+    },
+    {
+     "Name": "EnableCSSchemasCollapsing",
+     "Default": false
+    },
+    {
+     "Name": "EnableMoveColumnTable",
+     "Default": true
+    },
+    {
+     "Name": "EnableArrowResultSetFormat",
+     "Default": false
+    },
+    {
+     "Name": "EnableCsOverloadsSubscriptionRetries",
+     "Default": true
+    },
+    {
+     "Name": "EnableTopicCompactificationByKey",
+     "Default": true
+    },
+    {
+     "Name": "EnableCompactionOverloadDetection",
+     "Default": true
+    },
+    {
+     "Name": "EnableDataShardWriteAlwaysVolatile",
+     "Default": true
+    },
+    {
+     "Name": "EnableMirroredTopicSplitMerge",
+     "Default": false
+    },
+    {
+     "Name": "EnableFulltextIndex",
+     "Default": false
+    },
+    {
+     "Name": "EnableSetColumnConstraint",
+     "Default": false
+    },
+    {
+     "Name": "EnableSchemaSecrets",
+     "Default": true
+    },
+    {
+     "Name": "EnableTableCacheModes",
+     "Default": true
+    },
+    {
+     "Name": "EnableSkipMessagesWithObsoleteTimestamp",
+     "Default": false
+    },
+    {
+     "Name": "EnableStreamingQueries",
+     "Default": false
+    },
+    {
+     "Name": "EnableTinyDisks",
+     "Default": false
+    },
+    {
+     "Name": "EnableMetricsLevel",
+     "Default": false
+    },
+    {
+     "Name": "EnableSecureScriptExecutions",
+     "Default": false
+    },
+    {
+     "Name": "EnableColumnshardBool",
+     "Default": false
+    },
+    {
+     "Name": "EnableOlapRejectProbability",
+     "Default": false
+    },
+    {
+     "Name": "DisableMissingDefaultColumnsInBulkUpsert",
+     "Default": false
+    },
+    {
+     "Name": "EnableReplication",
+     "Default": true
+    },
+    {
+     "Name": "EnableShuttingDownNodeState",
+     "Default": false
+    },
+    {
+     "Name": "EnableStreamingQueriesCounters",
+     "Default": false
+    },
+    {
+     "Name": "UseYdsTopicStorageMetering",
+     "Default": false
+    },
+    {
+     "Name": "EnableFsBackups",
+     "Default": false
+    },
+    {
+     "Name": "EnableResourcePoolsScheduler",
+     "Default": true
+    },
+    {
+     "Name": "EnableConditionalEraseResponseBatching",
+     "Default": false
+    },
+    {
+     "Name": "EnableStreamingQueriesPqSinkDeduplication",
+     "Default": false
+    }
+   ]
+  }
+ ]
+}

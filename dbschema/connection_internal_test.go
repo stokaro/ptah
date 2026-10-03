@@ -9,6 +9,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"fmt"
 	"log/slog"
 	"path/filepath"
 	"regexp"
@@ -430,6 +431,51 @@ func TestDatabaseConnectionWithSession_MySQLRelaxationIsCallbackScoped(t *testin
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.QueryCount(), qt.Equals, 1)
 	c.Assert(conn.Info().Capabilities, qt.DeepEquals, baseline)
+}
+
+// A connection's refinement belongs to every session it pins. A YDB cluster's
+// feature flags are read once, at connect time, and a session that started
+// from the release line's preset again would plan a unique index on an
+// existing table as refused on a cluster that takes it.
+func TestDatabaseConnectionWithSession_KeepsTheConnectionRefinement(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		return dbtest.QueryResult{}, fmt.Errorf("no query is expected, got %q", query)
+	})
+	db.SQL.SetMaxOpenConns(1)
+	newReader := func(runner sqlrunner.Runner) catalog.SchemaReader {
+		return &connectionSessionReader{runner: runner}
+	}
+	newWriter := func(runner sqlrunner.Runner, _ *sql.Conn) catalog.SchemaWriter {
+		return &connectionSessionWriter{runner: runner}
+	}
+	refined := capability.YDB262().With(capability.UniqueIndexOnExistingTable, true)
+	rootRunner := sqlrunner.Runner(db.SQL)
+	conn := &DatabaseConnection{
+		db:     db.SQL,
+		runner: rootRunner,
+		info: catalog.ServerInfo{
+			Dialect:      platform.YDB,
+			Version:      "26.2.1.14",
+			Capabilities: refined,
+		},
+		reader:    newReader(rootRunner),
+		writer:    newWriter(rootRunner, nil),
+		newReader: newReader,
+		newWriter: newWriter,
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	t.Cleanup(cancel)
+
+	var scopedCapabilities capability.Capabilities
+	err := conn.WithSession(ctx, func(scoped *DatabaseConnection) error {
+		scopedCapabilities = scoped.Info().Capabilities
+		return nil
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(scopedCapabilities, qt.DeepEquals, refined)
+	c.Assert(db.QueryCount(), qt.Equals, 0)
 }
 
 func TestRefineMySQLForeignKeyCapabilities_RestrictionEnabled(t *testing.T) {

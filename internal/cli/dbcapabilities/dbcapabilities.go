@@ -19,6 +19,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/dbschema"
 	"ptah.run/internal/capabilityprobe"
@@ -145,7 +146,7 @@ func withSessionRefinement(
 	}); err != nil {
 		return profile, nil
 	}
-	return profile.Refined(effective, sessionRefinementReason), nil
+	return profile.Refined(effective, refinementReason(conn.Info().Dialect)), nil
 }
 
 // sessionRefinementReason names, in the server's own vocabulary, what a pinned
@@ -153,6 +154,21 @@ func withSessionRefinement(
 // goes looking needs the setting, and the settings a session reads are listed
 // where they are read.
 const sessionRefinementReason = "read from this server's session settings, not from its release line"
+
+// featureFlagRefinementReason is the same sentence for YDB, whose refinement
+// is the cluster's feature flags rather than a session setting: the
+// connection reads them from the endpoint the URL's monitoring parameter
+// names, and without that parameter nothing is refined.
+const featureFlagRefinementReason = "read from this cluster's feature flags at its monitoring endpoint, " +
+	"not from its release line"
+
+// refinementReason names what refined a dialect's capability set.
+func refinementReason(dialect string) string {
+	if platform.NormalizeDialect(dialect) == platform.YDB {
+		return featureFlagRefinementReason
+	}
+	return sessionRefinementReason
+}
 
 // validateFormat rejects a format value both entry points have to reject the
 // same way. Two spellings of this message is how the pre-connect check and the
