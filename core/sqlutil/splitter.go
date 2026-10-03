@@ -22,9 +22,11 @@ func StripComments(sql string) string {
 
 // StripCommentsForDialect removes SQL comments while preserving constructs
 // whose lexical meaning depends on dialect, including SQL Server bracketed
-// identifiers containing comment markers. The dialect is folded through
-// [platform.NormalizeDialect]; a blank or unrecognized one is not an error and
-// strips exactly as [StripComments] does.
+// identifiers containing comment markers, and a YDB translation setting such
+// as a leading `--!ansi_lexer`, which changes how the server reads the text
+// after it. The dialect is folded through [platform.NormalizeDialect]; a blank
+// or unrecognized one is not an error and strips exactly as [StripComments]
+// does.
 func StripCommentsForDialect(sql, dialect string) string {
 	return stripComments(sql, platform.NormalizeDialect(dialect))
 }
@@ -90,6 +92,13 @@ func SplitSQLStatements(sql string) []string {
 // closing one — the terminator after the final END belongs to the block, so it
 // stays part of the returned statement instead of being dropped like an
 // ordinary terminator.
+//
+// YDB text is read as YQL: both quote styles are string literals with
+// backslash escapes, and a DEFINE ACTION or DEFINE SUBQUERY body, a DO BEGIN
+// block and a lambda body keep their semicolons. YQL's named expressions and
+// actions belong to the query that defines them, so a statement that uses one
+// defined by an earlier statement runs only where the statements are sent as
+// one query.
 func SplitSQLStatementsForDialect(sql, dialect string) []string {
 	return splitSQLStatements(sql, platform.NormalizeDialect(dialect))
 }
@@ -230,14 +239,17 @@ func consumeSemicolon(state *sqlcompound.State, token lexer.Token, current *stri
 	return false
 }
 
-// observeToken feeds an identifier to the compound-body state. Only identifiers
-// carry the keywords the state reads; a quoted `"BEGIN"` arrives with its
-// quotes and is therefore not the keyword.
+// observeToken feeds an identifier or an operator to the compound-body state.
+// Identifiers carry the keywords the state reads, and a quoted `"BEGIN"`
+// arrives with its quotes and is therefore not the keyword. Operators carry
+// the braces around a YQL lambda's body; see [sqlcompound.State.Symbol].
 func observeToken(state *sqlcompound.State, token lexer.Token) {
-	if token.Type != lexer.TokenIdentifier {
-		return
+	switch token.Type {
+	case lexer.TokenIdentifier:
+		state.Word(token.Value)
+	case lexer.TokenOperator:
+		state.Symbol(token.Value)
 	}
-	state.Word(token.Value)
 }
 
 // sqlServerGoBatchSeparatorRepeatCountAt reports whether a GO token is a SQL

@@ -17,6 +17,10 @@
 // decision, and it matters: a quoted `"BEGIN"` is an identifier and not the
 // keyword, so a caller that keeps its quotes in the text passes it through
 // safely, and one that strips them must not.
+//
+// YQL needs punctuation as well, because a lambda's body sits between braces,
+// so a scanner that splits YQL also feeds [State.Symbol] every operator token.
+// For every other dialect Symbol does nothing.
 package sqlcompound
 
 import (
@@ -50,6 +54,58 @@ type State struct {
 	caseDepth                    int
 	pendingEndKeyword            bool
 	pendingCaseEndKeyword        bool
+	// yql is the YQL position, which shares nothing with the routine bodies
+	// above.
+	yql yqlBodies
+}
+
+// yqlBodies tracks the YQL constructs whose body holds statements:
+//
+//   - DEFINE ACTION and DEFINE SUBQUERY, closed by END DEFINE;
+//   - DO BEGIN, the inline action that EVALUATE FOR, EVALUATE IF, a plain DO
+//     and CREATE VIEW ... AS DO all write, closed by END DO;
+//   - a lambda body, ($x) -> { ...; RETURN ...; }, between braces.
+//
+// The grammar is SQLv1Antlr4.g.in: define_action_or_subquery_stmt,
+// inline_action and lambda. Each keyword pair has to be adjacent words: END
+// alone also closes a CASE, DEFINE alone opens MATCH_RECOGNIZE's pattern
+// definitions, and BEGIN and DO are ordinary names elsewhere.
+type yqlBodies struct {
+	blocks   int
+	braces   int
+	previous string
+}
+
+func (b *yqlBodies) word(word string) {
+	previous := b.previous
+	b.previous = word
+	switch {
+	case previous == "DEFINE" && (word == "ACTION" || word == "SUBQUERY"):
+		b.blocks++
+	case previous == "DO" && word == "BEGIN":
+		b.blocks++
+	case previous == "END" && (word == "DEFINE" || word == "DO") && b.blocks > 0:
+		b.blocks--
+		// A closed END DO is not the DO of a DO BEGIN.
+		b.previous = ""
+	}
+}
+
+func (b *yqlBodies) symbol(value string) {
+	// Punctuation separates two words, so END ) DO pairs nothing.
+	b.previous = ""
+	switch value {
+	case "{":
+		b.braces++
+	case "}":
+		if b.braces > 0 {
+			b.braces--
+		}
+	}
+}
+
+func (b *yqlBodies) inside() bool {
+	return b.blocks > 0 || b.braces > 0
 }
 
 // New returns the state for a dialect. The dialect is normalized here, so a
@@ -67,6 +123,10 @@ func (s *State) Reset() {
 // Word feeds one identifier-like word, in the spelling it was written.
 func (s *State) Word(value string) {
 	value = strings.ToUpper(value)
+	if s.dialect == platform.YDB {
+		s.yql.word(value)
+		return
+	}
 	if !s.inCompoundCreate {
 		s.observeCreatePrefix(value)
 		return
@@ -98,6 +158,15 @@ func (s *State) Word(value string) {
 			s.pendingEndKeyword = false
 		}
 		s.pendingCaseEndKeyword = false
+	}
+}
+
+// Symbol feeds one punctuation token, such as `{` or `)`. Only YQL reads
+// punctuation, for the braces around a lambda's body; for every other dialect
+// it does nothing.
+func (s *State) Symbol(value string) {
+	if s.dialect == platform.YDB {
+		s.yql.symbol(value)
 	}
 }
 
@@ -235,6 +304,12 @@ func (s State) TerminatorBelongsToStatement() bool {
 // body text rather than a statement terminator. It advances the state, so it is
 // called once per semicolon.
 func (s *State) KeepSemicolonInsideStatement() bool {
+	if s.dialect == platform.YDB {
+		// A semicolon separates the words on either side of it as well, so
+		// END; DO is not END DO.
+		s.yql.previous = ""
+		return s.yql.inside()
+	}
 	if !s.inCompoundCreate {
 		return false
 	}
