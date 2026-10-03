@@ -64,9 +64,8 @@ func TestTimeoutStatements_SessionScopeResetsOnlyWhatItSet(t *testing.T) {
 	c.Assert(restore, qt.DeepEquals, []string{"RESET lock_timeout"})
 }
 
-// The MySQL family already sets session variables and restores the values it
-// found, so one spelling serves a migration inside a transaction and one
-// outside it.
+// The MySQL family sets session variables, including both row-lock and
+// metadata-lock timeouts, so one spelling serves both transaction scopes.
 func TestTimeoutStatements_MySQLFamilySpellingDoesNotDependOnScope(t *testing.T) {
 	timeouts := migrationfile.Timeouts{
 		LockTimeout:         2 * time.Second,
@@ -86,7 +85,7 @@ func TestTimeoutStatements_MySQLFamilySpellingDoesNotDependOnScope(t *testing.T)
 
 			c.Assert(sessionSetup, qt.DeepEquals, transactionSetup)
 			c.Assert(sessionRestore, qt.DeepEquals, transactionRestore)
-			c.Assert(sessionRestore, qt.HasLen, 2)
+			c.Assert(sessionRestore, qt.HasLen, 3)
 		})
 	}
 }

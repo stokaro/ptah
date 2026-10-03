@@ -233,8 +233,11 @@ func mysqlTimeoutStatements(timeouts migrationfile.Timeouts) (setupStatements, r
 		setup = append(setup,
 			"SET @ptah_prev_innodb_lock_wait_timeout = @@SESSION.innodb_lock_wait_timeout",
 			"SET SESSION innodb_lock_wait_timeout = "+strconv.FormatInt(durationSeconds(timeouts.LockTimeout), 10),
+			"SET @ptah_prev_lock_wait_timeout = @@SESSION.lock_wait_timeout",
+			"SET SESSION lock_wait_timeout = "+strconv.FormatInt(durationSeconds(timeouts.LockTimeout), 10),
 		)
 		restore = append(restore, "SET SESSION innodb_lock_wait_timeout = @ptah_prev_innodb_lock_wait_timeout")
+		restore = append(restore, "SET SESSION lock_wait_timeout = @ptah_prev_lock_wait_timeout")
 	}
 	if timeouts.HasStatementTimeout {
 		setup = append(setup,
@@ -253,8 +256,11 @@ func mariaDBTimeoutStatements(timeouts migrationfile.Timeouts) (setupStatements,
 		setup = append(setup,
 			"SET @ptah_prev_innodb_lock_wait_timeout = @@SESSION.innodb_lock_wait_timeout",
 			"SET SESSION innodb_lock_wait_timeout = "+strconv.FormatInt(durationSeconds(timeouts.LockTimeout), 10),
+			"SET @ptah_prev_lock_wait_timeout = @@SESSION.lock_wait_timeout",
+			"SET SESSION lock_wait_timeout = "+strconv.FormatInt(durationSeconds(timeouts.LockTimeout), 10),
 		)
 		restore = append(restore, "SET SESSION innodb_lock_wait_timeout = @ptah_prev_innodb_lock_wait_timeout")
+		restore = append(restore, "SET SESSION lock_wait_timeout = @ptah_prev_lock_wait_timeout")
 	}
 	if timeouts.HasStatementTimeout {
 		setup = append(setup,
