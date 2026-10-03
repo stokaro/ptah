@@ -128,6 +128,9 @@ const (
 	// covered by the servers the other engines name (stokaro/ptah#3885).
 	MySQLDevServer
 	MariaDBDevServer
+	// YDB is a YDB database, reached over gRPC through a ydb:// or ydbs://
+	// URL that names the database.
+	YDB
 )
 
 // source is where one engine's address comes from.
@@ -253,6 +256,10 @@ var sources = map[Engine]source{
 	MariaDBDevServer: {
 		canonical: "MARIADB_DEV_SERVER_URL",
 		scheme:    []string{"mariadb", "mysql"},
+	},
+	YDB: {
+		canonical: "YDB_TEST_URL",
+		scheme:    []string{"ydb", "ydbs"},
 	},
 }
 
@@ -384,6 +391,8 @@ func engineName(engine Engine) string {
 		return "second MySQL server"
 	case MariaDBDevServer:
 		return "second MariaDB server"
+	case YDB:
+		return "YDB"
 	}
 	return engine.String()
 }
@@ -478,6 +487,10 @@ func driverForm(engine Engine, address string) string {
 		// wire protocol, and a raw pgx caller handed `spanner://` cannot parse
 		// it (stokaro/ptah#1719).
 		return postgresWireURL(address)
+	case YDB:
+		// ydb-go-sdk reads grpc:// and grpcs://, the two transports ydb:// and
+		// ydbs:// name.
+		return ydbSDKURL(address)
 	}
 	// Every other engine's driver reads the address as it stands: pgx parses
 	// postgres:// and postgresql://, go-mssqldb parses sqlserver://, and
@@ -499,6 +512,21 @@ func postgresWireURL(address string) string {
 	switch scheme {
 	case "cockroachdb", "yugabytedb", "spanner":
 		return "postgres://" + rest
+	}
+	return address
+}
+
+// ydbSDKURL rewrites a YDB URL to the scheme ydb-go-sdk reads.
+func ydbSDKURL(address string) string {
+	scheme, rest, found := strings.Cut(address, "://")
+	if !found {
+		return address
+	}
+	switch scheme {
+	case "ydb":
+		return "grpc://" + rest
+	case "ydbs":
+		return "grpcs://" + rest
 	}
 	return address
 }
@@ -535,7 +563,7 @@ func Engines() []Engine {
 		PostgreSQL, MySQL, MySQLAdmin, MariaDB, MariaDBAdmin,
 		ClickHouse, SQLServer, CockroachDB, YugabyteDB,
 		MySQLSocket, MariaDBSocket, PostgreSQLAliased, PostgreSQLAlias,
-		MySQLDevServer, MariaDBDevServer,
+		MySQLDevServer, MariaDBDevServer, YDB,
 	}
 }
 

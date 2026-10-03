@@ -706,11 +706,12 @@ var Cells = []Cell{
 	// YDB: six release lines, measured by hand on ydbplatform/local-ydb
 	// 25.1.4.7, 25.2.1.24, 25.3.1.25, 25.4.1.15, 26.1.1.22 and 26.2.1.14
 	// through the bundled CLI, each statement read back with `scheme
-	// describe`. Every line is best-effort because nothing in continuous
-	// integration starts a YDB server: the probe has no YDB statement table
-	// or launch recipe, and no integration service runs one
-	// (stokaro/ptah#4015 plans each). YDB publishes no support period, so
-	// the upstream half of the rubric has nothing to read.
+	// describe`. The probe has no YDB statement table or launch recipe yet
+	// (stokaro/ptah#4015). The integration workflow starts a 26.2 server and
+	// the YDB live tests run against it, so that line is certified; the
+	// others are best-effort, since nothing in continuous integration starts
+	// them. YDB publishes no support period, so the upstream half of the
+	// rubric has nothing to read.
 	//
 	// The image tags name the line and resolve to its newest patch, because
 	// local-ydb's own line tags are stale builds: `26.2` is a June build
@@ -718,9 +719,11 @@ var Cells = []Cell{
 	{
 		Dialect: platform.YDB, Line: capabilityline.YDB262,
 		Preset: capability.YDB262, PresetName: "YDB262",
-		Refinement: RefinedByVersion, Support: capability.BestEffort,
+		Refinement: RefinedByVersion, Support: capability.Certified,
 		Image: "ydbplatform/local-ydb:26.2", ResolveNewestPatch: true,
-		Note: ydbBestEffortNote + " The first line that sets and drops a column default in place.",
+		Note: "certified: the integration workflow starts local-ydb 26.2 and runs the YDB live tests against it; " +
+			"the probe has no YDB statement table, so the preset itself was measured by hand. " +
+			"The first line that sets and drops a column default in place.",
 	},
 	{
 		Dialect: platform.YDB, Line: capabilityline.YDB261,

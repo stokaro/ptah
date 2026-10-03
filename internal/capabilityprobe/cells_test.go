@@ -332,6 +332,9 @@ var databaseImages = map[string]string{
 	// gvenzl/oracle-xe ships Express Edition, so neither cell is Emulated.
 	"gvenzl/oracle-free": platform.Oracle,
 	"gvenzl/oracle-xe":   platform.Oracle,
+	// YDB's own single-node image, which runs the server rather than an
+	// emulator of it.
+	"ydbplatform/local-ydb": platform.YDB,
 }
 
 // notADatabase lists the images these files start that no capability preset
@@ -673,11 +676,10 @@ func TestCells_BestEffortLinesAreExactlyTheUnmeasuredOnes(t *testing.T) {
 	// (stokaro/ptah#3190).
 	c.Assert(bestEffort, qt.ContentEquals, []string{
 		"spanner-0",
-		// Every YDB line: the probe has no YDB statement table or launch
-		// recipe (stokaro/ptah#4015). The presets were measured by hand on
-		// local-ydb, and nothing in continuous integration starts a YDB
-		// server.
-		"ydb-26-2",
+		// Every YDB line but 26.2: the probe has no YDB statement table or
+		// launch recipe (stokaro/ptah#4015), the presets were measured by hand
+		// on local-ydb, and continuous integration starts a YDB server of the
+		// newest line only, for the integration contour.
 		"ydb-26-1",
 		"ydb-25-4",
 		"ydb-25-3",

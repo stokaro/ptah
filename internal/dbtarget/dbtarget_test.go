@@ -367,6 +367,19 @@ func TestLookup_RefusesASiblingEngineURL(t *testing.T) {
 	c.Assert(got, qt.Equals, "")
 }
 
+// A grpc:// address in the YDB variable is the SDK's spelling, which Ptah does
+// not connect through, so it is refused rather than handed to a test.
+func TestLookup_RefusesTheSDKSpellingOfAYDBAddress(t *testing.T) {
+	c := qt.New(t)
+	clearAll(t)
+	t.Setenv("YDB_TEST_URL", "grpc://localhost:2136/local")
+
+	got, err := dbtarget.Lookup(dbtarget.YDB)
+
+	c.Assert(err, qt.ErrorMatches, `YDB_TEST_URL carries scheme "grpc", which YDB_TEST_URL does not speak; it names ydb or ydbs`)
+	c.Assert(got, qt.Equals, "")
+}
+
 // TestLookup_AcceptsTheMySQLSpellingOfAMariaDBAddress is the control the rule
 // above needs. MariaDB speaks the MySQL protocol and its address is routinely
 // written mysql://, so refusing that spelling would break working setups; only
@@ -537,6 +550,20 @@ func TestLookupDriverDSN_KeepsASchemeItsDriverParses(t *testing.T) {
 			engine: dbtarget.ClickHouse,
 			set:    func(t *testing.T) { t.Setenv("CLICKHOUSE_URL", "clickhouse://default@localhost:9000/db") },
 			want:   "clickhouse://default@localhost:9000/db",
+		},
+		{
+			// Rewritten rather than kept: ydb-go-sdk reads grpc:// and
+			// grpcs://, which are the transports the two YDB schemes name.
+			name:   "YDB plaintext becomes grpc for ydb-go-sdk",
+			engine: dbtarget.YDB,
+			set:    func(t *testing.T) { t.Setenv("YDB_TEST_URL", "ydb://localhost:2136/local?go_balancer=disable") },
+			want:   "grpc://localhost:2136/local?go_balancer=disable",
+		},
+		{
+			name:   "YDB over TLS becomes grpcs",
+			engine: dbtarget.YDB,
+			set:    func(t *testing.T) { t.Setenv("YDB_TEST_URL", "ydbs://ydb.example:2135/local") },
+			want:   "grpcs://ydb.example:2135/local",
 		},
 	}
 

@@ -295,6 +295,26 @@ jobs:
         ports:
           - 1521:1521
 
+      # YDB, the newest measured line. local-ydb advertises its node through
+      # discovery under the container's host name, so the container is named
+      # localhost: a client on the runner then reaches the advertised address
+      # through the published port, and the SDK's default balancer works.
+      # The health check is the image's own script, which runs a query, lists
+      # the scheme and creates and drops a table; measured, a container
+      # started this way reports healthy about six seconds after it starts.
+      ydb:
+        image: ydbplatform/local-ydb:26.2.1.14
+        env:
+          YDB_USE_IN_MEMORY_PDISKS: "true"
+        options: >-
+          --hostname localhost
+          --health-cmd "sh /health_check"
+          --health-interval 5s
+          --health-timeout 20s
+          --health-retries 30
+        ports:
+          - 2136:2136
+
       registry:
         image: registry:3
         ports:
@@ -578,6 +598,7 @@ jobs:
           # database.
           MYSQL_DEV_SERVER_URL: "mysql://root:root_password@127.0.0.1:3316/"
           MARIADB_DEV_SERVER_URL: "mariadb://root:root_password@127.0.0.1:3317/"
+          YDB_TEST_URL: "ydb://localhost:2136/local"
           CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
           PTAH_CLICKHOUSE_REALM_TEST_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
           PTAH_CLICKHOUSE_LEGACY_REALM_TEST_URL: "clickhouse://ptah_user:ptah_password@localhost:9001/ptah_test"
