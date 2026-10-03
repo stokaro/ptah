@@ -80,6 +80,16 @@ func TestSplitSQLStatementsForDialect_YDBCompoundBodies(t *testing.T) {
 			want: []string{"SELECT CASE WHEN true THEN 1 ELSE 2 END", "DO $a()"},
 		},
 		{
+			// Inside a body too: the CASE's END and the next statement's DO
+			// are separated by a semicolon, so they close nothing.
+			name: "END and DO on either side of a semicolon inside a body",
+			sql:  "DEFINE ACTION $b() AS SELECT CASE WHEN true THEN 1 ELSE 2 END; DO EMPTY_ACTION(); END DEFINE; DO $b();",
+			want: []string{
+				"DEFINE ACTION $b() AS SELECT CASE WHEN true THEN 1 ELSE 2 END; DO EMPTY_ACTION(); END DEFINE",
+				"DO $b()",
+			},
+		},
+		{
 			// A backticked word is a name, never the keyword.
 			name: "a quoted END is a name",
 			sql:  "DEFINE ACTION $a() AS SELECT 1 AS `END`; SELECT 2; END DEFINE; SELECT 3;",
