@@ -315,7 +315,9 @@ func inspectOnDev(
 		return InspectResult{}, err
 	}
 	devURL := strings.TrimSpace(opts.DevURL)
-	dialect, _, err := atlassource.PinDialect(devURL, set)
+	// Pinned from the value as written: atlasurl trims any other URL itself,
+	// and reads a docker URL as written, as the provisioner does.
+	dialect, _, err := atlassource.PinDialect(opts.DevURL, set)
 	if err != nil {
 		return InspectResult{}, err
 	}

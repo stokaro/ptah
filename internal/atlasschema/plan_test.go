@@ -104,17 +104,16 @@ func TestPreparePlanFileHonorsCustomNameAndDevURLDialect(t *testing.T) {
 //
 // A saved plan reads local desired-state files, so there is nothing to replay
 // and a container would do nothing. What changed is that the run says it.
+//
+// The rows here are the silent ones. The warning needs a docker URL whose
+// engine speaks the target's dialect, and no engine Ptah starts speaks SQLite,
+// so its row is TestPreparePlanFileNamesTheContainerItDoesNotStartLive.
 func TestPreparePlanFileNamesTheContainerItDoesNotStart(t *testing.T) {
 	tests := []struct {
 		name        string
 		devURL      string
 		wantWarning string
 	}{
-		{
-			name:        "a container dev URL is answered with a sentence",
-			devURL:      "docker://sqlite/dev",
-			wantWarning: "schema plan starts none",
-		},
 		{
 			name:   "an ordinary dev URL says nothing, having nothing to explain",
 			devURL: "sqlite://dev.db",
@@ -146,6 +145,25 @@ func TestPreparePlanFileNamesTheContainerItDoesNotStart(t *testing.T) {
 				qt.Commentf("diagnostics: %q", diagnostics.String()))
 		})
 	}
+}
+
+// TestPreparePlanFileRefusesADockerEngineItDoesNotStart pins the dialect check
+// on a docker URL naming no engine Ptah starts: it is refused in the pinned
+// community binary's words, as the provisioner refuses it
+// (stokaro/ptah#4066).
+func TestPreparePlanFileRefusesADockerEngineItDoesNotStart(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	conn := connectPlanSQLite(c, filepath.Join(dir, "refused.db"))
+	desired := writePlanDesiredSchema(c, dir, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
+
+	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
+		DevURL: "docker://sqlite/dev",
+		ToURLs: []string{desired},
+	})
+
+	c.Assert(err, qt.ErrorMatches, `unsupported docker image "sqlite"`)
+	c.Assert(plan.Dialect, qt.Equals, "")
 }
 
 func TestPreparePlanFileRequiresConnection(t *testing.T) {

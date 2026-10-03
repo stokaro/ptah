@@ -41,10 +41,10 @@ import (
 // answers `unsupported docker image "sqlite"` and exits 1, because sqlite is a
 // dialect Ptah has and an image that binary will not run. So a build that grew
 // a container for it would be exiting 0 where the pinned binary exits 1, the
-// one direction AGENTS.md compatibility rule (a) forbids. Ptah's own dialect
-// parser answers `sqlite` for this URL quite happily, so the refusal can only
-// come from the provisioning layer -- which makes the message proof that the
-// value reached that layer and was not answered by something in front of it.
+// one direction AGENTS.md compatibility rule (a) forbids. The message is the
+// docker layer's: internal/devdocker and the dialect pin in front of it,
+// atlasurl.DialectFromURL, refuse the value with the same sentence, and nothing
+// else in Ptah says it.
 //
 // And it separates the wired verbs from the unwired ones by their words. A verb
 // that still hands a docker URL to the database connector answers `unsupported
@@ -59,7 +59,8 @@ import (
 // all: it uses `--dev-url` only to pin the SQL dialect, and it does that
 // identically for `docker://postgres/16/dev` and for a directly connectable
 // `postgres://` URL. Measured after this change, both produce the same
-// statement, and neither starts a container. Its migration-directory source
+// statement, and neither starts a container. The pin still refuses an engine
+// Ptah does not start, as the pinned binary does. Its migration-directory source
 // does provision, and that is the row below. The remaining divergence -- the
 // pinned binary normalizes local files through the dev database and so writes
 // `ALTER TABLE "public"."users" ADD COLUMN "email" text NULL` where Ptah writes
@@ -99,7 +100,6 @@ type devURLOutcome string
 
 const (
 	refusedByProvisioner devURLOutcome = "refused by the provisioner"
-	devURLNotConsulted   devURLOutcome = "dev URL never consulted"
 	notADockerURL        devURLOutcome = "refused before the provisioner"
 )
 
@@ -109,8 +109,6 @@ func assertDevURLOutcome(c *qt.C, want devURLOutcome, stdout, stderr string, err
 	switch want {
 	case refusedByProvisioner:
 		assertRefusedByProvisioner(c, stdout, stderr, err)
-	case devURLNotConsulted:
-		assertDevURLNotConsulted(c, stdout, stderr, err)
 	case notADockerURL:
 		assertNotADockerURL(c, stdout, stderr, err)
 	default:
@@ -208,14 +206,6 @@ func assertRefusedByProvisioner(c *qt.C, stdout, stderr string, err error) {
 	// The old wording must be gone: a verb that still reports the URL as an
 	// unknown dialect never reached the provisioner, whatever else it printed.
 	c.Check(stderr, qt.Not(qt.Contains), "unsupported database dialect: docker")
-}
-
-// devURLNotConsulted asserts the verb completed without ever opening a dev
-// database, which is what `schema diff` between two local files does.
-func assertDevURLNotConsulted(c *qt.C, stdout, stderr string, err error) {
-	c.Helper()
-	c.Assert(err, qt.IsNil, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
-	c.Check(stdout, qt.Equals, "Schemas are synced, no changes to be made.\n")
 }
 
 // notADockerURL asserts the verb refused a dev URL written with a leading
@@ -361,15 +351,21 @@ func compatDockerRows() []compatDockerRow {
 			checkWhitespace: notADockerURL,
 		},
 		{
-			name: "schema diff between two local files never opens a dev database",
+			// Between two local files no dev database is opened, and the URL
+			// pins the dialect. The pin refuses an engine Ptah does not start
+			// in the provisioner's words, and so does the pinned binary, which
+			// opens the URL here: measured on 2026-10-03, `schema diff --from
+			// file://schema.sql --to file://schema.sql --dev-url
+			// docker://sqlite/dev` exits 1 with `unsupported docker image
+			// "sqlite"`, and with a leading space with `parse open url`
+			// (stokaro/ptah#4066).
+			name: "schema diff between two local files refuses an image the binary refuses",
 			verb: "schema diff",
 			args: func(fx compatDockerFixture) []string {
 				return []string{"schema", "diff", "--from", "file://" + fx.schema, "--to", "file://" + fx.schema}
 			},
-			check: devURLNotConsulted,
-			// Unchanged: this row never opens a dev database, so the
-			// spelling of the URL cannot reach anything that would.
-			checkWhitespace: devURLNotConsulted,
+			check:           refusedByProvisioner,
+			checkWhitespace: notADockerURL,
 		},
 	}
 }

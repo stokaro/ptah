@@ -27,11 +27,11 @@ import (
 //	docker://nosuchengine/1/dev  exit 1, `unsupported docker image "nosuchengine"`
 //	docker:///dev                exit 1, `unsupported docker image ""`
 //
-// Three of those rows are the reason this parser exists at all rather than
-// reusing [atlasurl.DialectFromURL], which answers a dialect for
-// `docker://sqlite` and for `docker://postgres:16/dev`. Provisioning either
-// would make ptah-compat exit 0 where the pinned binary exits 1 -- the one
-// direction AGENTS.md compatibility rule (a) forbids outright. The
+// Three of those rows are why the engine is matched whole against an engine
+// table rather than read as a dialect: `sqlite` is a dialect Ptah has, and
+// `postgres:16` reads as an engine with a port, so provisioning either would
+// make ptah-compat exit 0 where the pinned binary exits 1 -- the one direction
+// AGENTS.md compatibility rule (a) forbids outright. The
 // `docker://postgres/dev` row is why a one-segment path is a TAG: reading it as
 // a database name would run `postgres:latest` for a URL the pinned binary
 // resolves to the image `postgres:dev`.
