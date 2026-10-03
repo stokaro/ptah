@@ -443,6 +443,56 @@ it replayed, so it drops only the databases the session sees, which are the
 ones it created; see
 [A whole dev server](../../atlas/migrate-commands/#a-whole-dev-server).
 
+## Replacing a trigger
+
+A plan runs every trigger change in one block. The block comes after the
+columns a new trigger body uses are added, and before the columns an old body
+reads are dropped. Both servers accept a trigger whose body writes a column that
+does not exist yet, and a column dropped while a trigger reads it through
+`NEW`. In both cases every write to the table fails with error 1054 until the
+plan reaches its next statement.
+
+MySQL has no `CREATE OR REPLACE TRIGGER`, so a changed trigger is replaced with
+`DROP TRIGGER` and `CREATE TRIGGER`. A renamed trigger is created before the old
+one is dropped, so a body the server refuses leaves the old trigger in place.
+A write that lands between two such statements sees no trigger, or both of
+them. So when the block both removes or replaces a trigger and creates one on a
+table, it runs under `LOCK TABLES ... WRITE`, and the write waits for the
+metadata lock instead:
+
+```sql
+ALTER TABLE `secondtable` ADD COLUMN `NewColumn` VARCHAR(100);
+-- Writes to these tables wait until their triggers are replaced
+LOCK TABLES `mytable` WRITE;
+CREATE TRIGGER `mytable_after_insert_v2` AFTER INSERT ON `mytable` FOR EACH ROW
+  INSERT INTO secondtable (tbl_time, NewColumn) VALUES (NOW(), NEW.name);
+DROP TRIGGER IF EXISTS `mytable_after_insert_v1`;
+UNLOCK TABLES;
+```
+
+MariaDB replaces a trigger that keeps its name with one
+`CREATE OR REPLACE TRIGGER`. The statement keeps the old trigger when the
+server refuses the new body, and takes no lock. A rename takes the lock on
+MariaDB too.
+
+The lock has these requirements and limits:
+
+- The statements run in order on one session. `migrations up`,
+  `schema apply` and `ptah-compat migrate apply` do. A program that runs planned
+  statements itself has to use one connection: on a pool, a statement after
+  `LOCK TABLES` can wait behind the lock another connection holds.
+- The migration account needs the `LOCK TABLES` privilege on the tables.
+- The migrator refuses `CREATE TRIGGER` and `LOCK TABLES` in a migration that
+  runs in one transaction, so a migration that changes triggers runs with
+  `--tx-mode none`.
+- When MySQL refuses the new body of a trigger it replaces by name, the old
+  trigger is already gone. The migration stops and is recorded dirty, and the
+  lock ends with the session. `migrations up --allow-dirty` takes the lock
+  again before it retries the failed statement.
+- A migration replayed on a dev database takes the lock there too. The replay
+  refuses a lock on a table in another database unless the dev server belongs
+  to the run.
+
 ## Making a column NOT NULL
 
 A plan that makes an existing column `NOT NULL` writes `MODIFY COLUMN` with

@@ -210,13 +210,22 @@ func applyDesiredSchema(
 	if err != nil {
 		return false, fmt.Errorf("plan desired schema for dialect %q: %w", info.Dialect, err)
 	}
-	for _, stmt := range sqlutil.SplitStatementsForDialect(conn.Info().Dialect, sql) {
-		if strings.TrimSpace(stmt) == "" {
-			continue
+	// One session, because a MySQL-family plan that replaces a trigger holds
+	// LOCK TABLES across statements, and on a pool the next statement can wait
+	// behind the lock another connection holds.
+	err = conn.WithSessionOrCurrent(ctx, func(session *dbschema.DatabaseConnection) error {
+		for _, stmt := range sqlutil.SplitStatementsForDialect(session.Info().Dialect, sql) {
+			if strings.TrimSpace(stmt) == "" {
+				continue
+			}
+			if _, err := session.ExecContext(ctx, stmt); err != nil {
+				return fmt.Errorf("apply desired schema: %w", err)
+			}
 		}
-		if _, err := conn.ExecContext(ctx, stmt); err != nil {
-			return false, fmt.Errorf("apply desired schema: %w", err)
-		}
+		return nil
+	})
+	if err != nil {
+		return false, err
 	}
 	return true, nil
 }

@@ -721,36 +721,47 @@ func appendTableComment(result []ast.Node, tableDiff difftypes.TableDiff) []ast.
 	})
 }
 
-func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.SchemaDiff) ([]ast.Node, error) {
+// modifyExistingTables plans the column changes of every modified table.
+//
+// Column drops are returned separately rather than appended to result: they run
+// after the trigger block, so a trigger is replaced or removed before a column
+// it reads goes away (see [Planner.planTriggers]). Each half carries the
+// table's header, and a table whose only change is a drop has no header in
+// result.
+func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.SchemaDiff) (_, columnDrops []ast.Node, _ error) {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, tableDiff := range diff.TablesModified {
-		astCommentNode := ast.NewComment(fmt.Sprintf("Modify table: %s", tableDiff.TableName))
-		result = append(result, astCommentNode)
+		header := ast.NewComment(fmt.Sprintf("Modify table: %s", tableDiff.TableName))
 
 		// The table's own comment is a table option here, so it needs a
 		// statement of its own. A column's does not: MySQL restates the whole
 		// column to change anything about it, and MODIFY COLUMN already
 		// carries the comment -- which is why only the table half is emitted
 		// here while PostgreSQL emits both (stokaro/ptah#2168).
-		result = appendTableComment(result, tableDiff)
+		inPlace := appendTableComment(nil, tableDiff)
 
 		// Add new columns
-		result = p.addNewTableColumns(result, &tableDiff, diff.DeclaredTables, diff.DeclaredUserTypes, semantics)
+		inPlace = p.addNewTableColumns(inPlace, &tableDiff, diff.DeclaredTables, diff.DeclaredUserTypes, semantics)
 
 		// Modify existing columns
-		var err error
-		result, err = p.modifyExistingColumns(result, diff, &tableDiff, semantics)
+		inPlace, err := p.modifyExistingColumns(inPlace, diff, &tableDiff, semantics)
 		if err != nil {
-			return result, err
+			return result, nil, err
 		}
 
 		// Remove columns (dangerous!)
-		result, err = p.removeColumns(result, &tableDiff)
+		drops, err := p.removeColumns(nil, &tableDiff)
 		if err != nil {
-			return result, err
+			return result, nil, err
+		}
+		if len(inPlace) > 0 || len(drops) == 0 {
+			result = append(append(result, header), inPlace...)
+		}
+		if len(drops) > 0 {
+			columnDrops = append(append(columnDrops, header), drops...)
 		}
 	}
-	return result, nil
+	return result, columnDrops, nil
 }
 
 // affectedForeignKey identifies a foreign key that a MySQL/MariaDB column
@@ -1415,7 +1426,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	released := keyrelease.Find(diff, p.targetDialect())
 	result = p.releaseKeyNames(result, diff, released)
 
-	result, err = p.modifyExistingTables(result, diff)
+	result, columnDrops, err := p.modifyExistingTables(result, diff)
 	if err != nil {
 		return nil, err
 	}
@@ -1433,8 +1444,13 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	}
 	result = p.addNewMaterializedViews(result, diff)
 	result = p.modifyExistingMaterializedViews(result, diff)
-	result = p.addNewTriggers(result, diff)
-	result = p.modifyExistingTriggers(result, diff)
+
+	// 4.6. Create, replace and remove triggers in one block, after the columns
+	// a new body uses exist and before the columns an old body reads go away.
+	result = p.planTriggers(result, diff)
+
+	// 4.7. Drop the columns step 4 held back.
+	result = append(result, columnDrops...)
 
 	// 5. Add new indexes
 	result, err = p.addNewIndexes(result, diff)
@@ -1472,8 +1488,8 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	maps.Copy(alreadyDropped, fkPlan.dropped)
 	result = p.removeConstraints(result, diff, alreadyDropped)
 
-	// 6.6. Remove triggers and view-like objects before dependent tables.
-	result = p.removeTriggers(result, diff)
+	// 6.6. Remove view-like objects before dependent tables. Triggers were
+	// removed at step 4.6.
 	result = p.removeMaterializedViews(result, diff)
 	result = p.removeViews(result, diff)
 	result = p.removeExtendedProperties(result, diff)
@@ -1696,32 +1712,6 @@ func extendedPropertyNode(
 	return ast.NewExtendedProperty(operation, ref.Name).
 		SetOwner(ref.Schema, ref.Table, ref.Column).
 		SetValue(ref.Value)
-}
-
-func (p *Planner) addNewTriggers(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	// The definition travels WITH the entry (stokaro/ptah#2315).
-	for _, triggerRef := range diff.TriggersAdded {
-		if triggerRef.Desired.Name != "" {
-			result = append(result, modelast.FromTrigger(triggerRef.Desired))
-		}
-	}
-	return result
-}
-
-func (p *Planner) modifyExistingTriggers(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, triggerDiff := range diff.TriggersModified {
-		if triggerDiff.Desired.Name != "" {
-			result = append(result, modelast.FromTrigger(triggerDiff.Desired).SetReplace())
-		}
-	}
-	return result
-}
-
-func (p *Planner) removeTriggers(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, triggerRef := range diff.TriggersRemoved {
-		result = append(result, ast.NewDropTrigger(triggerRef.TriggerName, triggerRef.TableName).SetIfExists())
-	}
-	return result
 }
 
 // addNewMaterializedViews emits the declared materialized views a diff adds.

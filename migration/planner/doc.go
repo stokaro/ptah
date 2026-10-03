@@ -141,6 +141,15 @@
 //  7. Remove tables (with CASCADE warnings)
 //  8. Remove enum types (with dependency warnings)
 //
+// On MySQL and MariaDB, trigger changes form one block that runs after columns
+// are added and modified and before columns are dropped, because the server
+// accepts a trigger whose body uses a missing column and fails every write to
+// the table afterwards. When the block both removes or replaces a trigger and
+// creates one on a table, it runs between LOCK TABLES and UNLOCK TABLES, so no
+// write lands between the statements. Such a plan has to run in order on one
+// database session: on a connection pool, a statement after LOCK TABLES can
+// wait behind the lock another connection holds.
+//
 // # AST-Based Generation
 //
 // The planner uses AST-based SQL generation for several benefits:

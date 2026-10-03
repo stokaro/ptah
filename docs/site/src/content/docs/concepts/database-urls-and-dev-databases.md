@@ -214,6 +214,12 @@ proven to stay inside the disposable realm:
   materialized views must select an explicitly allowlisted engine.
 - SQLite `ATTACH`, `DETACH`, temporary objects, and non-restorable pragmas.
 
+A MySQL or MariaDB `LOCK TABLES` replays when every table it names is in the
+dev database. A planned trigger replacement takes one, see
+[Replacing a trigger](../../databases/mysql/#replacing-a-trigger), and the lock
+ends with the replay session. A lock on a table in another database is refused,
+except on a server that belongs to the run.
+
 Replay runs every migration of a directory on one session, so a PostgreSQL
 `SET` or `RESET` that changes the session would carry into the migrations after
 it, and is refused. A setting that ends with its transaction is accepted:
