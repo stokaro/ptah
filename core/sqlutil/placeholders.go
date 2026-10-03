@@ -11,7 +11,9 @@ import (
 // placeholder syntax. For PostgreSQL it rewrites them to `$1`, `$2`, ... in
 // the order they appear; for SQL Server it rewrites them to `@p1`, `@p2`, ...
 // for github.com/microsoft/go-mssqldb; for MySQL/MariaDB the query is returned
-// unchanged because `?` is already the native placeholder. Unknown dialects
+// unchanged because `?` is already the native placeholder. YDB keeps `?` too:
+// YQL's own form is a named `$p`, and the YDB driver is opened with positional
+// binding so that `?` stays the one spelling Ptah writes. Unknown dialects
 // pass through verbatim: Rebind is a translator, not a validator.
 //
 // The scanner skips occurrences inside standard single-quoted string
@@ -35,6 +37,12 @@ func Rebind(dialect, query string) string {
 		// Measured on 23.26: an INSERT bound with :1 is accepted, while ? and
 		// $1 both answer ORA-00911, invalid character.
 		return rebindToOrdinal(query, ":")
+	case platform.YDB:
+		// `?` is bound positionally by the YDB driver's connector option
+		// (ydb.WithPositionalArgs), decided in stokaro/ptah#4015 (decision
+		// 11). Measured on 26.2.1.14 through ydb-go-sdk, the ordinal `$1` is
+		// a parse error, so rewriting to it would break every query.
+		return query
 	default:
 		return query
 	}

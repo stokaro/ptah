@@ -14,6 +14,7 @@ import (
 
 	"ptah.run/internal/cli/internal/exitcode"
 	cmdlint "ptah.run/internal/cli/lint"
+	"ptah.run/internal/ydbgap"
 	migrationlint "ptah.run/migration/lint"
 )
 
@@ -1043,6 +1044,24 @@ func TestRunLint_FailOnThresholds(t *testing.T) {
 	stdout, _, err = execute("--dir", "testdata/bad", "--disable", "DS")
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Contains, "PG101")
+}
+
+// YDB is a dialect Ptah accepts and lint does not analyze yet. The refusal
+// says so and names the plan, rather than listing the dialects as if ydb were
+// a typo.
+func TestRunLint_RefusesYDB(t *testing.T) {
+	for _, dialect := range []string{"ydb", "ydbs"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			stdout, stderr, err := execute("--dir", "testdata/clean", "--dialect", dialect)
+
+			c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+			c.Assert(stderr, qt.Contains,
+				`invalid --dialect value "`+dialect+`": `+ydbgap.Linting.Message())
+			c.Assert(stdout, qt.Equals, "")
+		})
+	}
 }
 
 func TestRunLint_InvalidFlagValuesExitCode2(t *testing.T) {

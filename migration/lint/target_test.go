@@ -1,12 +1,14 @@
 package lint_test
 
 import (
+	"regexp"
 	"testing"
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/ydbgap"
 	"ptah.run/migration/lint"
 )
 
@@ -108,6 +110,15 @@ func TestResolveTarget_FailurePath(t *testing.T) {
 		target, err := lint.ResolveTarget("oracle", "23")
 
 		c.Assert(err, qt.ErrorMatches, `unsupported lint dialect "oracle": expected postgres, mysql,.*`)
+		c.Assert(target, qt.DeepEquals, lint.Target{})
+	})
+
+	t.Run("YDB, which lint does not read", func(t *testing.T) {
+		c := qt.New(t)
+
+		target, err := lint.ResolveTarget("ydbs", "")
+
+		c.Assert(err, qt.ErrorMatches, `unsupported lint dialect "ydbs": `+regexp.QuoteMeta(ydbgap.Linting.Message()))
 		c.Assert(target, qt.DeepEquals, lint.Target{})
 	})
 

@@ -45,6 +45,19 @@ func TestFormat(t *testing.T) {
 			expected: "not-a-url",
 		},
 		{
+			// The YDB SDK reads a static user and password from the
+			// authority and an access token from the token parameter; it
+			// reads no other credential from a URL.
+			name:     "YDB URL with a user, a password and a token",
+			input:    "ydbs://user:secret123@ydb.example:2135/local?token=t0k3n",
+			expected: "ydbs://user:***@ydb.example:2135/local?token=redacted",
+		},
+		{
+			name:     "YDB URL with its database in a parameter",
+			input:    "ydb://localhost:2136/?database=%2Flocal&token=t0k3n",
+			expected: "ydb://localhost:2136/?database=%2Flocal&token=redacted",
+		},
+		{
 			name:     "MySQL URL with password",
 			input:    "mysql://root:password@localhost:3306/testdb",
 			expected: "mysql://root:***@localhost:3306/testdb",

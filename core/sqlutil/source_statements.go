@@ -39,7 +39,7 @@ func SplitSourceStatements(sql, dialect string) []SourceStatement {
 		return nil
 	}
 
-	normalized := NormalizeClientDelimiters(sql)
+	normalized := normalizeClientDelimitersFor(sql, dialect)
 	lexr := lexer.NewLexerWithOptions(normalized, dialectlexer.Options(platform.NormalizeDialect(dialect)))
 	state := sqlcompound.New(dialect)
 

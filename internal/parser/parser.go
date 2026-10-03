@@ -21,6 +21,7 @@ import (
 	"ptah.run/internal/mysqlname"
 	"ptah.run/internal/nullsdistinct"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/ydbgap"
 )
 
 // Parser converts SQL tokens into AST nodes.
@@ -131,6 +132,13 @@ func lexerOptions(dialect string) lexer.Options {
 //
 // Returns an error if the SQL syntax is invalid or unsupported.
 func (p *Parser) Parse() (*ast.StatementList, error) {
+	if p.dialect == platform.YDB {
+		// The lexer reads YQL, and nothing here reads its statements: a YDB
+		// CREATE TABLE declares its key, indexes and options in clauses no
+		// other dialect has, and parsing it by the rules of one would build a
+		// model of a table YDB never declared.
+		return nil, errors.New(ydbgap.SchemaFiles.Message())
+	}
 	statements := &ast.StatementList{
 		Statements: make([]ast.Node, 0),
 	}

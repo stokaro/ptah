@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/internal/lintdialect"
+	"ptah.run/internal/ydbgap"
 	"ptah.run/migration/lint"
 )
 
@@ -129,7 +130,7 @@ func TestAcceptedSpellings_ExtractionControls(t *testing.T) {
 	}
 	// The engine count is what the exhaustive sweeps below depend on.
 	c.Assert(canonicalDialects(c), qt.HasLen, 9)
-	c.Assert(platformCanonicalDialects(c), qt.HasLen, 10)
+	c.Assert(platformCanonicalDialects(c), qt.HasLen, 11)
 }
 
 // TestCanonical_RefusesEveryEngineLintCannotAnalyzeYet is the other side of the
@@ -148,7 +149,9 @@ func TestAcceptedSpellings_ExtractionControls(t *testing.T) {
 func TestCanonical_RefusesEveryEngineLintCannotAnalyzeYet(t *testing.T) {
 	c := qt.New(t)
 
-	unanalyzed := []string{platform.Oracle}
+	// YDB is here because no rule in migration/lint or internal/sqllint has
+	// been classified for YQL.
+	unanalyzed := []string{platform.Oracle, platform.YDB}
 
 	for _, canonical := range unanalyzed {
 		c.Assert(platformCanonicalDialects(c), qt.Contains, canonical,
@@ -223,13 +226,33 @@ func TestCanonical_HappyPath_EmptyDialectResolvesToItself(t *testing.T) {
 }
 
 func TestValid_FailurePath(t *testing.T) {
-	for _, dialect := range []string{"oracle", "db2", "postgres!", "post gres", " ", "sqlserver2022"} {
+	for _, dialect := range []string{"oracle", "ydb", "ydbs", "db2", "postgres!", "post gres", " ", "sqlserver2022"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(lintdialect.Valid(dialect), qt.IsFalse)
 			canonical, ok := lintdialect.Canonical(dialect)
 			c.Assert(ok, qt.IsFalse)
 			c.Assert(canonical, qt.Equals, "")
+		})
+	}
+}
+
+// A dialect Ptah accepts and lint does not analyze is refused with the plan
+// that adds it; any other refused value with the list a user chooses from.
+func TestRefusal(t *testing.T) {
+	tests := []struct {
+		dialect string
+		want    string
+	}{
+		{dialect: "ydb", want: ydbgap.Linting.Message()},
+		{dialect: "YDBS", want: ydbgap.Linting.Message()},
+		{dialect: "oracle", want: "expected " + lintdialect.Expected},
+		{dialect: "db2", want: "expected " + lintdialect.Expected},
+	}
+	for _, test := range tests {
+		t.Run(test.dialect, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(lintdialect.Refusal(test.dialect), qt.Equals, test.want)
 		})
 	}
 }

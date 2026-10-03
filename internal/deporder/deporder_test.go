@@ -285,6 +285,60 @@ func TestViewLikesForCreateForDialect_ClickHouseEscapesDoNotCreateFalseCycles(t 
 	}
 }
 
+// A YDB view names another by its path, `dir/name`, which is how
+// sqlident.Qualified spells a YDB table in a directory.
+func TestViewLikesForCreateForDialect_YDBPathReferences(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "path", body: "SELECT id FROM `analytics/z_base`"},
+		{name: "unqualified", body: "SELECT id FROM z_base"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			objects := deporder.ViewLikesForCreateForDialect([]deporder.ViewLike{
+				{Name: "analytics.a_report", Body: test.body},
+				{Name: "analytics.z_base", Body: "SELECT id FROM users"},
+			}, platform.YDB)
+
+			c.Assert(viewLikeNames(objects), qt.DeepEquals, []string{"analytics.z_base", "analytics.a_report"})
+		})
+	}
+}
+
+// Each body mentions a_report only inside a YQL string or name, which refers
+// to nothing. Read by PostgreSQL's rules, an escaped quote ends a literal
+// early, a multiline string is code, and a backslash does not escape a
+// backtick, so the mention turns into a reference and the two views into a
+// cycle. The double-quoted row is the string PostgreSQL would read as a name.
+func TestViewLikesForCreateForDialect_YDBStringsDoNotCreateFalseCycles(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "double-quoted string", body: "SELECT \"`analytics/a_report`\" AS label"},
+		{name: "escaped quote in a double-quoted string", body: "SELECT \"x\\\" `analytics/a_report`\" AS label"},
+		{name: "escaped quote in a single-quoted string", body: "SELECT 'it\\'s `analytics/a_report`' AS label"},
+		{name: "multiline string", body: "SELECT @@`analytics/a_report`@@ AS label"},
+		{name: "backtick name with an escaped backtick", body: "SELECT 1 AS `odd\\` a_report`"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			objects := deporder.ViewLikesForCreateForDialect([]deporder.ViewLike{
+				{Name: "analytics.a_report", Body: "SELECT id FROM `analytics/z_base`"},
+				{Name: "analytics.z_base", Body: test.body},
+			}, platform.YDB)
+
+			c.Assert(viewLikeNames(objects), qt.DeepEquals, []string{"analytics.z_base", "analytics.a_report"})
+		})
+	}
+}
+
 // TestReferencesIdentifier_ReadsCodeOnly pins what counts as a reference.
 //
 // The PostgreSQL planner asks this question to work out what

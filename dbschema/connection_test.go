@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/ydbgap"
 )
 
 func TestDatabaseConnectionWithSession_DiscardsSessionState(t *testing.T) {
@@ -176,6 +178,22 @@ func TestConnectToDatabase_InvalidURL(t *testing.T) {
 }
 
 // TestPostgreSQLConnection tests PostgreSQL connection (will fail if no server running)
+// A YDB URL names a dialect Ptah accepts and has no driver for. The
+// refusal says so in the words of the gap, and is reached before anything is
+// opened, so it does not depend on a server answering.
+func TestConnectToDatabase_RefusesYDB(t *testing.T) {
+	for _, dbURL := range []string{"ydb://localhost:2136/local", "ydbs://user:secret@localhost:2135/?database=/local"} {
+		t.Run(dbURL, func(t *testing.T) {
+			c := qt.New(t)
+
+			conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
+
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(ydbgap.Connecting.Message()))
+			c.Assert(conn, qt.IsNil)
+		})
+	}
+}
+
 func TestPostgreSQLConnection_NoServer(t *testing.T) {
 	c := qt.New(t)
 

@@ -17,6 +17,10 @@
 // decision, and it matters: a quoted `"BEGIN"` is an identifier and not the
 // keyword, so a caller that keeps its quotes in the text passes it through
 // safely, and one that strips them must not.
+//
+// YQL needs punctuation as well, because a lambda's body sits between braces,
+// so a scanner that splits YQL also feeds [State.Symbol] every operator token.
+// For every other dialect Symbol does nothing.
 package sqlcompound
 
 import (
@@ -50,6 +54,84 @@ type State struct {
 	caseDepth                    int
 	pendingEndKeyword            bool
 	pendingCaseEndKeyword        bool
+	// yql is the YQL position, which shares nothing with the routine bodies
+	// above.
+	yql yqlBodies
+}
+
+// yqlBodies tracks the YQL constructs whose body holds statements:
+//
+//   - DEFINE ACTION and DEFINE SUBQUERY, closed by END DEFINE;
+//   - DO BEGIN, the inline action that EVALUATE FOR, EVALUATE IF, a plain DO
+//     and CREATE VIEW ... AS DO all write, closed by END DO;
+//   - a lambda body, ($x) -> { ...; RETURN ...; }, between braces.
+//
+// The grammar is SQLv1Antlr4.g.in: define_action_or_subquery_stmt,
+// inline_action and lambda. Each keyword pair has to be adjacent words:
+// DEFINE alone opens MATCH_RECOGNIZE's pattern definitions, and BEGIN and DO
+// are ordinary names elsewhere. END alone closes a CASE, and a CASE may end
+// right before the DO of an IF, as in EVALUATE IF CASE ... END DO BEGIN, so
+// CASE expressions are counted and their END pairs with nothing. Measured on
+// YDB 26.2.1.14, CASE and END are also names after AS and after a dot
+// (SELECT 1 AS case; SELECT t.case FROM ...), where they count for nothing.
+type yqlBodies struct {
+	blocks   int
+	braces   int
+	cases    int
+	previous string
+	// named records that the last token was AS or a dot, after which a word
+	// is a name.
+	named bool
+}
+
+func (b *yqlBodies) word(word string) {
+	previous, named := b.previous, b.named
+	b.previous, b.named = word, word == "AS"
+	if named && (word == "CASE" || word == "END") {
+		b.previous = ""
+		return
+	}
+	switch {
+	case word == "CASE":
+		b.cases++
+	case word == "END" && b.cases > 0:
+		b.cases--
+		b.previous = ""
+	case previous == "DEFINE" && (word == "ACTION" || word == "SUBQUERY"):
+		b.blocks++
+	case previous == "DO" && word == "BEGIN":
+		b.blocks++
+	case previous == "END" && (word == "DEFINE" || word == "DO") && b.blocks > 0:
+		b.blocks--
+	}
+}
+
+// separate records a semicolon, which ends a statement inside a body, so the
+// words on either side of it pair with nothing.
+func (b *yqlBodies) separate() {
+	b.previous = ""
+	b.named = false
+}
+
+// symbol records punctuation. It separates the words on either side of it as
+// a semicolon does: measured on YDB 26.2.1.14, SELECT do, begin FROM ... is
+// two columns, and SELECT end, define FROM ... inside an action closes
+// nothing.
+func (b *yqlBodies) symbol(value string) {
+	b.previous = ""
+	b.named = value == "."
+	switch value {
+	case "{":
+		b.braces++
+	case "}":
+		if b.braces > 0 {
+			b.braces--
+		}
+	}
+}
+
+func (b *yqlBodies) inside() bool {
+	return b.blocks > 0 || b.braces > 0
 }
 
 // New returns the state for a dialect. The dialect is normalized here, so a
@@ -67,6 +149,10 @@ func (s *State) Reset() {
 // Word feeds one identifier-like word, in the spelling it was written.
 func (s *State) Word(value string) {
 	value = strings.ToUpper(value)
+	if s.dialect == platform.YDB {
+		s.yql.word(value)
+		return
+	}
 	if !s.inCompoundCreate {
 		s.observeCreatePrefix(value)
 		return
@@ -98,6 +184,15 @@ func (s *State) Word(value string) {
 			s.pendingEndKeyword = false
 		}
 		s.pendingCaseEndKeyword = false
+	}
+}
+
+// Symbol feeds one punctuation token, such as `{` or `)`. Only YQL reads
+// punctuation, for the braces around a lambda's body; for every other dialect
+// it does nothing.
+func (s *State) Symbol(value string) {
+	if s.dialect == platform.YDB {
+		s.yql.symbol(value)
 	}
 }
 
@@ -235,6 +330,12 @@ func (s State) TerminatorBelongsToStatement() bool {
 // body text rather than a statement terminator. It advances the state, so it is
 // called once per semicolon.
 func (s *State) KeepSemicolonInsideStatement() bool {
+	if s.dialect == platform.YDB {
+		// A semicolon separates the words on either side of it as well, so
+		// END; DO is not END DO.
+		s.yql.separate()
+		return s.yql.inside()
+	}
 	if !s.inCompoundCreate {
 		return false
 	}

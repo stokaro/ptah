@@ -2,6 +2,7 @@ package planner_test
 
 import (
 	"fmt"
+	"regexp"
 	"sync/atomic"
 	"testing"
 
@@ -14,6 +15,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/planner/dialects/mysql"
+	"ptah.run/internal/ydbgap"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff"
@@ -175,6 +177,25 @@ func TestGenerateSchemaDiffSQL_UnsupportedDialectReturnsError(t *testing.T) {
 	var planErr *ptaherr.PlanError
 	c.Assert(err, qt.ErrorAs, &planErr)
 	c.Assert(planErr.Dialect, qt.Equals, "db2")
+}
+
+// YDB is a dialect name with no planner behind it. Every spelling of it is
+// refused in the words of the gap, with the sentinel an embedder branches on.
+func TestGenerateSchemaDiffSQL_RefusesYDB(t *testing.T) {
+	for _, dialect := range []string{"ydb", "ydbs"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			sql, err := planner.GenerateSchemaDiffSQL(&difftypes.SchemaDiff{}, dialect)
+
+			c.Assert(sql, qt.Equals, "")
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(ydbgap.Planning.Message()))
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
+			var planErr *ptaherr.PlanError
+			c.Assert(err, qt.ErrorAs, &planErr)
+			c.Assert(planErr.Dialect, qt.Equals, dialect)
+		})
+	}
 }
 
 func TestGenerateSchemaDiffAST_WrapsPlannerFailures(t *testing.T) {

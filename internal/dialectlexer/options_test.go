@@ -55,6 +55,12 @@ func TestOptions_HappyPath(t *testing.T) {
 			},
 		},
 		{
+			// Every YQL rule lives behind the one field; see lexer.Options.
+			name:    "ydb",
+			dialect: "ydbs",
+			want:    lexer.Options{YQL: true},
+		},
+		{
 			name:    "sql server",
 			dialect: "mssql",
 			want: lexer.Options{

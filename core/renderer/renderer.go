@@ -75,6 +75,7 @@ import (
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/usertypescope"
+	"ptah.run/internal/ydbgap"
 )
 
 // RenderVisitor defines the interface for rendering AST nodes to SQL statements.
@@ -175,6 +176,15 @@ func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (
 		raw = oracle.NewWithCapabilities(caps)
 	case platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
 		raw = postgres.NewWithCapabilities(caps, normalizedDialect)
+	case platform.YDB:
+		// YDB is a dialect name with no renderer behind it. The refusal names
+		// the canonical dialect rather than the spelling, so `ydbs` is refused
+		// in the words `ydb` is.
+		return nil, &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrUnsupportedDialect,
+			Message: ydbgap.Rendering.Message(),
+		}
 	default:
 		return nil, &ptaherr.RenderError{
 			Dialect: dialect,

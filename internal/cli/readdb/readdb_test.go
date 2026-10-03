@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 	_ "modernc.org/sqlite" // registers the SQLite driver for database/sql
 
 	"ptah.run/internal/cli/readdb"
+	"ptah.run/internal/ydbgap"
 )
 
 func TestReadDBCommand_StdoutIsExecutableSQL(t *testing.T) {
@@ -63,4 +65,23 @@ CREATE TABLE right_nodes (
 	c.Assert(err, qt.IsNil)
 	c.Assert(tableCount, qt.Equals, 2)
 	c.Assert(strings.Count(stdout.String(), "REFERENCES"), qt.Equals, 2)
+}
+
+// A YDB URL is refused with the gap before anything is opened, so the
+// command says what is missing rather than reporting an empty driver name.
+func TestReadDBCommand_RefusesYDB(t *testing.T) {
+	c := qt.New(t)
+
+	cmd := readdb.NewReadDBCommand()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"--db-url", "ydb://localhost:2136/local"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(ydbgap.Connecting.Message()))
+	c.Assert(stdout.String(), qt.Equals, "")
+	c.Assert(stderr.String(), qt.Contains, "Error connecting to database: "+ydbgap.Connecting.Message())
 }

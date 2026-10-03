@@ -21,6 +21,11 @@ const (
 	YugabyteDB  = "yugabytedb"
 	Spanner     = "spanner"
 	Oracle      = "oracle"
+	// YDB is the YDB database, read and written in its own query language,
+	// YQL, over gRPC. It is not in the PostgreSQL family: YDB serves no
+	// PostgreSQL wire protocol or syntax, and in YQL a double-quoted "x" is a
+	// string rather than a name.
+	YDB = "ydb"
 )
 
 // NormalizeDialect folds every spelling of a target onto the one constant the
@@ -68,6 +73,13 @@ func NormalizeDialect(dialect string) string {
 		return Spanner
 	case "oracle", "oracledb":
 		return Oracle
+	// ydbs is a transport, as libsql+ws is: the URL scheme of a YDB server
+	// reached over TLS, where ydb is the plaintext one. Neither grpc nor
+	// grpcs is a spelling, although the YDB SDK uses them: they name the
+	// protocol, and any gRPC URL would become a database URL
+	// (stokaro/ptah#4015).
+	case "ydb", "ydbs":
+		return YDB
 	default:
 		return ""
 	}

@@ -32,6 +32,7 @@ import (
 	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqlrunner"
+	"ptah.run/internal/ydbgap"
 )
 
 // ConnectToDatabase creates a database connection from a URL.
@@ -112,6 +113,11 @@ func connect(ctx context.Context, dbURL string, scope scopeRule) (*DatabaseConne
 		return nil, err
 	}
 
+	if dialect == platform.YDB {
+		// YDB is a dialect name with no driver behind it. The generic arm below
+		// would say Ptah renders and plans YDB schemas, which it does not.
+		return nil, errors.New(ydbgap.Connecting.Message())
+	}
 	dialectProtocol, connectionString := databaseDriverConfig(dialect, dbURL)
 	if dialectProtocol == "" {
 		// A dialect Ptah renders and plans for, and does not connect to yet.

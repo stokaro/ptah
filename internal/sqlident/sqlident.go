@@ -12,16 +12,19 @@ import (
 )
 
 // Quote returns name as a safely-quoted identifier for dialect. The dialect
-// selects the quote style: backticks for MySQL, MariaDB, and ClickHouse; square
-// brackets for SQL Server; and double quotes for the PostgreSQL family, SQLite,
-// and any unrecognized dialect. Embedded quote characters are doubled per the
-// SQL standard so the value cannot terminate the quoted identifier. The dialect
-// is resolved through platform.NormalizeDialect, so every documented spelling of
+// selects the quote style: backticks for MySQL, MariaDB, ClickHouse and YDB;
+// square brackets for SQL Server; and double quotes for the PostgreSQL family,
+// SQLite, and any unrecognized dialect. Embedded quote characters are doubled
+// per the SQL standard so the value cannot terminate the quoted identifier,
+// except on YDB, where a backslash escapes them; see [quoteYQL]. The dialect is
+// resolved through platform.NormalizeDialect, so every documented spelling of
 // an engine (`mssql`, `tsql`, `sql-server`, `sql_server`; `ch`) picks the same
 // quote style as its canonical name. name itself is quoted verbatim (it is not
 // trimmed).
 func Quote(dialect, name string) string {
 	switch platform.NormalizeDialect(dialect) {
+	case platform.YDB:
+		return quoteYQL(name)
 	case platform.MySQL, platform.MariaDB, platform.ClickHouse:
 		return "`" + strings.ReplaceAll(name, "`", "``") + "`"
 	case platform.SQLServer:
@@ -29,6 +32,20 @@ func Quote(dialect, name string) string {
 	default:
 		return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 	}
+}
+
+// yqlIdentifierEscaper escapes what would end or change a YQL backtick
+// identifier.
+var yqlIdentifierEscaper = strings.NewReplacer(`\`, `\\`, "`", "\\`")
+
+// quoteYQL quotes a YQL identifier. A backslash starts a C escape inside
+// backticks (the grammar's ID_QUOTED rule), so a backslash in the name is
+// doubled, and a backtick is escaped with one: measured on YDB 26.2.1.14,
+// CREATE TABLE `tick\`name` created a table named tick`name. The grammar
+// also reads a doubled backtick as one; the backslash form is used because a
+// backslash in the name has to be escaped either way.
+func quoteYQL(name string) string {
+	return "`" + yqlIdentifierEscaper.Replace(name) + "`"
 }
 
 // Ident returns the spelling that refers to name in dialect.
@@ -71,7 +88,14 @@ func Ident(dialect, name string) string {
 // followed by ASCII letters, digits or underscores. Anything else, including
 // the empty string, is quoted. SQLite keywords are also quoted because their
 // bare forms are parsed as syntax in the virtual-table module position.
+//
+// YDB is always quoted. A bare and a quoted YQL name are the same name, since
+// YQL compares names case-sensitively either way, so nothing is gained by the
+// bare form, and a keyword list would only have to be kept up to date.
 func BareOrQuoted(dialect, name string) string {
+	if platform.NormalizeDialect(dialect) == platform.YDB {
+		return Quote(dialect, name)
+	}
 	if !isPlainIdentifier(name) || isReservedKeyword(dialect, name) {
 		return Quote(dialect, name)
 	}
@@ -187,10 +211,14 @@ func isPlainIdentifier(name string) bool {
 // by schema when schema is not blank. Each part is spelled by [Ident], so a
 // statement that names a table this way names the table the DDL renderers
 // created: on Oracle `ora_flags` stays bare and folds to ORA_FLAGS, where
-// [Qualified] would write `"ora_flags"`, a different table.
+// [Qualified] would write `"ora_flags"`, a different table. On YDB the result
+// is one path, as [Qualified] writes it.
 func QualifiedIdent(dialect, schema, name string) string {
 	if strings.TrimSpace(schema) == "" {
 		return Ident(dialect, name)
+	}
+	if platform.NormalizeDialect(dialect) == platform.YDB {
+		return Qualified(dialect, schema, name)
 	}
 	return Ident(dialect, schema) + "." + Ident(dialect, name)
 }
@@ -198,9 +226,20 @@ func QualifiedIdent(dialect, schema, name string) string {
 // Qualified returns a dialect-quoted identifier optionally qualified by schema,
 // as in "schema"."name". A whitespace-only schema yields just the quoted name.
 // Otherwise, schema and name are quoted verbatim.
+//
+// YDB has no schemas: a table is a path, and Ptah's schema is the directory
+// that holds it (stokaro/ptah#4015, decision 2). So a qualified YDB name is
+// one quoted path, `dir/sub/t`, and never `dir`.`t`, which YQL reads as a
+// cluster and a table: measured on YDB 26.2.1.14, SELECT * FROM `dir`.`t`
+// answers `Unknown cluster: dir` while `dir/t` reads the table. The directory
+// is joined with one slash; a trailing slash on it names the same directory
+// and is dropped.
 func Qualified(dialect, schema, name string) string {
 	if strings.TrimSpace(schema) == "" {
 		return Quote(dialect, name)
+	}
+	if platform.NormalizeDialect(dialect) == platform.YDB {
+		return Quote(dialect, strings.TrimRight(schema, "/")+"/"+name)
 	}
 	return Quote(dialect, schema) + "." + Quote(dialect, name)
 }
