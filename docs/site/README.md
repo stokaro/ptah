@@ -567,12 +567,26 @@ Directions that were rendered and rejected, so they are not re-derived:
 ## Workflow diagrams
 
 The README and workflow pages share Mermaid sources in `diagrams/`.
-Run `npm run diagrams:write` to render their light and dark SVGs, or
+On Linux, run `npm run diagrams:write` to render their light and dark SVGs, or
 `npm run check:journey-diagrams` to check the committed renders. These commands
-use the installed Mermaid version and Playwright Chromium. SVG labels are text
-rather than HTML so they remain visible in GitHub image previews.
-After building the site, `npm run check:journey-themes` verifies theme switching
-and the full-size, download, and source links.
+use the installed Mermaid version, Playwright Chromium, and the committed font.
+Browser text widths differ between operating systems, so Linux is the rendering
+environment for the byte comparison in CI.
+
+On macOS, use the Linux renderer through an explicit Docker context:
+
+```bash
+PTAH_DOCKER_CONTEXT=remote-dev-container npm run diagrams:docker
+PTAH_DOCKER_CONTEXT=remote-dev-container npm run diagrams:docker -- --check
+```
+
+The wrapper copies the committed inputs to a temporary container. It removes
+that container and any image it pulled when the command finishes. It leaves
+images that were already present alone.
+
+SVG labels are text rather than HTML so they remain visible in GitHub image
+previews. After building the site, `npm run check:journey-themes` verifies theme
+switching and the full-size, download, and source links.
 
 The site selects each SVG through its `data-theme` attribute. The README uses
 `picture` sources to follow GitHub's color scheme.
