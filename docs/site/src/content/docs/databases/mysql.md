@@ -477,6 +477,12 @@ refuses the new body and takes no lock. A rename takes the lock there too.
   planned statements on a connection pool can leave a statement waiting behind
   the lock another connection holds.
 - The migration account needs the `LOCK TABLES` privilege.
+- `LOCK TABLES` waits for a metadata lock while another transaction still
+  holds the table, and later writes queue behind it. A migration's
+  `lock_timeout` bounds that wait, as it bounds every DDL statement's, and the
+  migration then stops before it touches a trigger. Without one the wait lasts
+  as long as the server's `lock_wait_timeout`: a year on MySQL and a day on
+  MariaDB.
 - The migrator refuses `CREATE TRIGGER` and `LOCK TABLES` inside a migration
   transaction, so a migration that changes triggers runs with `--tx-mode none`.
 - When MySQL refuses the new body of a trigger it replaces by name, the old

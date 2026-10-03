@@ -98,7 +98,7 @@ env:
 | `migration.revisions_schema` | Migration metadata schema |
 | `migration.revisions_table` | Migration metadata table |
 | `migration.revision_format` | Revision table layout: `ptah` or `atlas` |
-| `migration.lock_timeout` | Default per-migration lock timeout |
+| `migration.lock_timeout` | Default per-migration lock timeout; on MySQL and MariaDB it bounds row-lock and metadata-lock waits |
 | `migration.statement_timeout` | Default per-migration statement timeout |
 | `migration.connect_timeout` | Initial database connection timeout |
 | `migration.migration_lock_timeout` | Session-level migration advisory lock timeout |

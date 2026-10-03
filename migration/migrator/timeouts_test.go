@@ -67,11 +67,14 @@ func TestTimeoutStatements(t *testing.T) {
 			wantSetup: []string{
 				"SET @ptah_prev_innodb_lock_wait_timeout = @@SESSION.innodb_lock_wait_timeout",
 				"SET SESSION innodb_lock_wait_timeout = 2",
+				"SET @ptah_prev_lock_wait_timeout = @@SESSION.lock_wait_timeout",
+				"SET SESSION lock_wait_timeout = 2",
 				"SET @ptah_prev_max_execution_time = @@SESSION.max_execution_time",
 				"SET SESSION max_execution_time = 2500",
 			},
 			wantRestore: []string{
 				"SET SESSION max_execution_time = @ptah_prev_max_execution_time",
+				"SET SESSION lock_wait_timeout = @ptah_prev_lock_wait_timeout",
 				"SET SESSION innodb_lock_wait_timeout = @ptah_prev_innodb_lock_wait_timeout",
 			},
 		},
@@ -87,11 +90,14 @@ func TestTimeoutStatements(t *testing.T) {
 			wantSetup: []string{
 				"SET @ptah_prev_innodb_lock_wait_timeout = @@SESSION.innodb_lock_wait_timeout",
 				"SET SESSION innodb_lock_wait_timeout = 1",
+				"SET @ptah_prev_lock_wait_timeout = @@SESSION.lock_wait_timeout",
+				"SET SESSION lock_wait_timeout = 1",
 				"SET @ptah_prev_max_statement_time = @@SESSION.max_statement_time",
 				"SET SESSION max_statement_time = 1.5",
 			},
 			wantRestore: []string{
 				"SET SESSION max_statement_time = @ptah_prev_max_statement_time",
+				"SET SESSION lock_wait_timeout = @ptah_prev_lock_wait_timeout",
 				"SET SESSION innodb_lock_wait_timeout = @ptah_prev_innodb_lock_wait_timeout",
 			},
 		},

@@ -79,7 +79,9 @@ table waiting behind it, because the lock queue is first in, first out. A
 statement the mode calls online can therefore take an application down for as
 long as somebody else's `SELECT` runs. Set `--lock-timeout`, or
 `migration.lock_timeout` in the project config, and a wait becomes a failed
-statement somebody can retry.
+statement somebody can retry. MySQL and MariaDB queue writes the same way
+behind a DDL statement waiting for a metadata lock, and the same timeout bounds
+that wait there.
 
 The requirement holds in every transaction mode. A migration marked
 `no_transaction`, and every migration under `--tx-mode none`, takes the timeout

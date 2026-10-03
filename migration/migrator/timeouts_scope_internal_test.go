@@ -86,7 +86,7 @@ func TestTimeoutStatements_MySQLFamilySpellingDoesNotDependOnScope(t *testing.T)
 
 			c.Assert(sessionSetup, qt.DeepEquals, transactionSetup)
 			c.Assert(sessionRestore, qt.DeepEquals, transactionRestore)
-			c.Assert(sessionRestore, qt.HasLen, 2)
+			c.Assert(sessionRestore, qt.HasLen, 3)
 		})
 	}
 }
