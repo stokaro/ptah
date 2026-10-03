@@ -93,13 +93,22 @@ func Gates() []Gate {
 // where the cluster set one, and the default otherwise.
 type Flags map[string]bool
 
-// Refine returns caps with every gated capability set from the flags. A flag
-// the database does not list is a feature the line does not have, so its
-// capability is false. caps is not changed.
+// Refine returns caps with every gated capability the flags list set from its
+// flag. caps is not changed.
+//
+// A flag the database does not list leaves its capability as caps has it. A
+// line can lack a flag because it predates the feature, and then its preset
+// already says false (25.1 and 25.2 list no EnableAddUniqueIndex), or because
+// the feature graduated and the flag was removed, and then turning the key off
+// would narrow what Ptah writes: without wide_date_time_types a declared
+// TIMESTAMP becomes the narrow Timestamp. On the seven measured pages both
+// readings give the same set.
 func (f Flags) Refine(caps capability.Capabilities) capability.Capabilities {
 	refined := caps.Clone()
 	for _, gate := range gates {
-		refined = refined.With(gate.Key, f[gate.Flag])
+		if value, listed := f[gate.Flag]; listed {
+			refined = refined.With(gate.Key, value)
+		}
 	}
 	return refined
 }

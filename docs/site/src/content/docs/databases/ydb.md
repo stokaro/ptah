@@ -237,7 +237,8 @@ The flags decide these capabilities:
 | `EnableTableDatetime64` | `wide_date_time_types` |
 | `EnableParameterizedDecimal` | `parameterized_decimal` |
 
-A flag the cluster does not list means that it lacks the feature. Ptah sends no
+A flag the cluster does not list leaves the capability as the release line's
+preset has it. Ptah sends no
 credentials to the monitoring endpoint. A failed read fails the connection
 rather than planning without the flags. `ptah db capabilities` lists the keys
 the flags changed under `Set by this server rather than by its release line`.

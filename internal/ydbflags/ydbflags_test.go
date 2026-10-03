@@ -70,12 +70,6 @@ func TestRefine_HappyPath(t *testing.T) {
 			want:  false,
 		},
 		{
-			name:  "a flag the line does not list is a feature the line lacks",
-			flags: ydbflags.Flags{},
-			key:   capability.AlterColumnDefault,
-			want:  false,
-		},
-		{
 			name:  "the wide date and time types follow their flag",
 			flags: ydbflags.Flags{"EnableTableDatetime64": true},
 			key:   capability.WideDateTimeTypes,
@@ -98,6 +92,23 @@ func TestRefine_HappyPath(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A flag the database does not list leaves its key as the preset has it. A
+// line without a flag either predates the feature, where its preset says false
+// already, or graduated it and removed the flag, where turning the key off
+// would narrow what Ptah writes -- without wide_date_time_types a declared
+// TIMESTAMP is written as the narrow Timestamp.
+func TestRefine_AnAbsentFlagKeepsThePreset(t *testing.T) {
+	c := qt.New(t)
+	for _, preset := range []func() capability.Capabilities{capability.YDB251, capability.YDB262} {
+		c.Assert(ydbflags.Flags{}.Refine(preset()), qt.DeepEquals, preset())
+	}
+	graduated := ydbflags.Flags{
+		"EnableAddUniqueIndex": false, "EnableAddColumsWithDefaults": true,
+		"EnableSetDropDefaultValue": true, "EnableParameterizedDecimal": true,
+	}
+	c.Assert(graduated.Refine(capability.YDB262()).Has(capability.WideDateTimeTypes), qt.IsTrue)
 }
 
 // TestRefine_LeavesUngatedKeysAndItsInputAlone pins the rest of the set: a
