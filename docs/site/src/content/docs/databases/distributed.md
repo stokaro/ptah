@@ -29,7 +29,11 @@ matching preset automatically.
   A column declared `INT` or `INTEGER` without a width is compared at the
   width CockroachDB builds for it, which the session's `default_int_size`
   sets: `INT8` by default, `INT4` when the session sets 4. A declared width
-  such as `INT4` or `BIGINT` is compared as written.
+  such as `INT4` or `BIGINT` is compared as written. A column declared in
+  CockroachDB's own names, `STRING`, `BYTES` or `STRING[]`, is compared as the
+  `text`, `bytea` or `text[]` the catalog reports. A sized `STRING(10)` is a
+  `text` column with a width rather than a `VARCHAR(10)`, and it is read and
+  inspected as `STRING(10)`, so a width change is still a change.
 - **YugabyteDB**: the preset includes concurrent index creation, role
   management, row-level security, standalone sequences, `XML` columns, and
   advisory locks on the measured 2026.1 line. `DROP INDEX CONCURRENTLY`
