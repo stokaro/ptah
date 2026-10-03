@@ -1352,11 +1352,11 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 		}
 		mapped = append(quietingLogLevelArgs(verb, args), mapped...)
 		mapped = append(mapped, project.nativeArgs...)
-		forwarded := append(mapped, nativeTail...)
-		if err := refuseAtlasYDBForwardedURLs(verb, forwarded); err != nil {
+		mapped = append(mapped, nativeTail...)
+		if err := refuseAtlasYDBForwardedURLs(verb, mapped); err != nil {
 			return nil, nil, err
 		}
-		return forwarded, project.context, nil
+		return mapped, project.context, nil
 	}
 }
 

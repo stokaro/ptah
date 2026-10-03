@@ -99,6 +99,24 @@ func acceptServer(string, *url.URL) error {
 	return nil
 }
 
+// admittedDialect is the dialect of parsedURL once the caller's context and
+// scope both accept a connection to it. A surface that does not reach a
+// dialect yet refuses it through the context, for every path a URL can take
+// to a connection; see internal/connectgate.
+func admittedDialect(ctx context.Context, parsedURL *url.URL, scope scopeRule) (string, error) {
+	dialect, err := connectionDialect(parsedURL)
+	if err != nil {
+		return "", err
+	}
+	if err := connectgate.Check(ctx, dialect); err != nil {
+		return "", err
+	}
+	if err := scope(dialect, parsedURL); err != nil {
+		return "", err
+	}
+	return dialect, nil
+}
+
 // connect opens dbURL once scope accepts it.
 func connect(ctx context.Context, dbURL string, scope scopeRule) (*DatabaseConnection, error) {
 	parsedURL, err := parseDatabaseURL(dbURL)
@@ -106,16 +124,8 @@ func connect(ctx context.Context, dbURL string, scope scopeRule) (*DatabaseConne
 		return nil, fmt.Errorf("invalid database URL: %w", err)
 	}
 
-	dialect, err := connectionDialect(parsedURL)
+	dialect, err := admittedDialect(ctx, parsedURL, scope)
 	if err != nil {
-		return nil, err
-	}
-	// A surface that does not reach a dialect yet refuses it here, for every
-	// path a URL can take to a connection; see internal/connectgate.
-	if err := connectgate.Check(ctx, dialect); err != nil {
-		return nil, err
-	}
-	if err := scope(dialect, parsedURL); err != nil {
 		return nil, err
 	}
 

@@ -45,10 +45,8 @@ func refuseAtlasYDBURLFlags(cmd *cobra.Command) error {
 		if err != nil {
 			return fmt.Errorf("read --%s: %w", name, err)
 		}
-		for _, value := range values {
-			if isAtlasYDBURL(value) {
-				return fmt.Errorf("--%s names a YDB database: %s", name, ydbgap.Compatibility.Message())
-			}
+		if slices.ContainsFunc(values, isAtlasYDBURL) {
+			return fmt.Errorf("--%s names a YDB database: %s", name, ydbgap.Compatibility.Message())
 		}
 	}
 	return nil
@@ -68,11 +66,9 @@ func refuseAtlasYDBProjectURLs(path string, cfg projectconfig.Config) error {
 		{name: "src", values: cfg.SchemaSources},
 	}
 	for _, attribute := range attributes {
-		for _, value := range attribute.values {
-			if isAtlasYDBURL(value) {
-				return fmt.Errorf("%s env %q: %s names a YDB database: %s",
-					path, cfg.EnvName, attribute.name, ydbgap.Compatibility.Message())
-			}
+		if slices.ContainsFunc(attribute.values, isAtlasYDBURL) {
+			return fmt.Errorf("%s env %q: %s names a YDB database: %s",
+				path, cfg.EnvName, attribute.name, ydbgap.Compatibility.Message())
 		}
 	}
 	return nil
