@@ -1,11 +1,13 @@
 package planlint_test
 
 import (
+	"regexp"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/planlint"
+	"ptah.run/internal/ydbgap"
 	migrationlint "ptah.run/migration/lint"
 )
 
@@ -119,7 +121,12 @@ func TestAnalyze_FailurePath(t *testing.T) {
 		{
 			name:    "unknown dialect",
 			dialect: "frobnicate",
-			wantErr: `unsupported lint dialect "frobnicate"; expected one of .*`,
+			wantErr: `unsupported lint dialect "frobnicate"; expected postgres, .*`,
+		},
+		{
+			name:    "YDB, which lint does not read",
+			dialect: "ydb",
+			wantErr: `unsupported lint dialect "ydb"; ` + regexp.QuoteMeta(ydbgap.Linting.Message()),
 		},
 	}
 

@@ -427,7 +427,7 @@ func loadEffectiveConfig(
 	// here. Both spellings reach the same exact-comparison engine.
 	canonical, ok := lintdialect.Canonical(cfg.Dialect)
 	if !ok {
-		msg := fmt.Sprintf("invalid dialect %q in lint config: expected %s", cfg.Dialect, lintdialect.Expected)
+		msg := fmt.Sprintf("invalid dialect %q in lint config: %s", cfg.Dialect, lintdialect.Refusal(cfg.Dialect))
 		return nil, errors.New(msg)
 	}
 	cfg.Dialect = canonical

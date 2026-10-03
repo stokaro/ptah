@@ -158,7 +158,7 @@ func parseConfig(raw []byte, name string) (*Config, error) {
 func validateConfig(cfg *Config) error {
 	canonical, ok := lintdialect.Canonical(cfg.Dialect)
 	if !ok {
-		return fmt.Errorf("unsupported lint dialect %q: expected %s", cfg.Dialect, lintdialect.Expected)
+		return fmt.Errorf("unsupported lint dialect %q: %s", cfg.Dialect, lintdialect.Refusal(cfg.Dialect))
 	}
 	cfg.Dialect = canonical
 	// Only where the configuration names its own dialect. A policy may leave
