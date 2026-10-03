@@ -1,6 +1,7 @@
 package ydb_test
 
 import (
+	"context"
 	"regexp"
 	"testing"
 
@@ -175,6 +176,76 @@ func TestOpen_FailurePath_EnvironmentCredentials(t *testing.T) {
 			got, err := ydbschema.Open(t.Context(), "ydb://localhost:2136/local?use_env_credentials")
 
 			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(test.wantErr))
+			c.Assert(got, qt.IsNil)
+		})
+	}
+}
+
+// The control for the refusals above: each URL here passes every check Open
+// makes from the URL and the environment, so the error comes from the SDK,
+// which is handed a context that has already ended. A check that refused one
+// of them would answer `invalid YDB URL` instead.
+func TestOpen_FailurePath_AcceptedURLsReachTheDriver(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		env  map[string]string
+	}{
+		{name: "the database in the path", url: "ydb://localhost:2136/local"},
+		{name: "the database parameter", url: "ydbs://localhost?database=/ru-central1/b1g/etn"},
+		{name: "a disabled balancer", url: "ydb://localhost:2136/local?go_balancer=disable"},
+		{name: "the older balancer spelling", url: "ydb://localhost:2136/local?balancer=random_choice"},
+		{name: "the query service mode", url: "ydb://localhost:2136/local?go_query_mode=query"},
+		{name: "the older query mode spelling", url: "ydb://localhost:2136/local?query_mode=query"},
+		{name: "default idempotence", url: "ydb://localhost:2136/local?go_default_idempotent=true"},
+		{name: "no prefetch", url: "ydb://localhost:2136/local?prefetch_query_result_parts=0"},
+		{name: "a user and a password", url: "ydb://alice:secret@localhost:2136/local"},
+		{name: "a token", url: "ydb://localhost:2136/local?token=t1.abc"},
+		{
+			name: "a token and the environment switched off",
+			url:  "ydb://localhost:2136/local?token=t1.abc&use_env_credentials=false",
+		},
+		{
+			name: "the environment with an access token",
+			url:  "ydb://localhost:2136/local?use_env_credentials",
+			env:  map[string]string{"YDB_ACCESS_TOKEN_CREDENTIALS": "t1.abc"},
+		},
+		{
+			name: "the environment switched on by value",
+			url:  "ydb://localhost:2136/local?use_env_credentials=true",
+			env:  map[string]string{"YDB_ANONYMOUS_CREDENTIALS": "1"},
+		},
+		{
+			name: "the environment with a complete static user",
+			url:  "ydb://localhost:2136/local?use_env_credentials",
+			env: map[string]string{
+				"YDB_STATIC_CREDENTIALS_USER":     "alice",
+				"YDB_STATIC_CREDENTIALS_PASSWORD": "secret",
+				"YDB_STATIC_CREDENTIALS_ENDPOINT": "localhost:2136",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			for _, name := range []string{
+				"YDB_SERVICE_ACCOUNT_KEY_CREDENTIALS", "YDB_SERVICE_ACCOUNT_KEY_FILE_CREDENTIALS",
+				"YDB_METADATA_CREDENTIALS", "YDB_ACCESS_TOKEN_CREDENTIALS", "YDB_STATIC_CREDENTIALS_USER",
+				"YDB_STATIC_CREDENTIALS_PASSWORD", "YDB_STATIC_CREDENTIALS_ENDPOINT", "YDB_OAUTH2_KEY_FILE",
+				"YDB_ANONYMOUS_CREDENTIALS",
+			} {
+				c.Unsetenv(name)
+			}
+			for name, value := range test.env {
+				c.Setenv(name, value)
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+
+			got, err := ydbschema.Open(ctx, test.url)
+
+			c.Assert(err, qt.ErrorMatches, `(?s)open YDB driver: .*`)
 			c.Assert(got, qt.IsNil)
 		})
 	}

@@ -236,34 +236,32 @@ func (w *Writer) dropDirectory(ctx context.Context, dir string) (bool, error) {
 				continue
 			}
 			changed = true
-			removed, err := w.removeIfEmpty(ctx, child)
-			if err != nil {
+			if err := w.removeIfEmpty(ctx, child); err != nil {
 				return changed, err
 			}
-			changed = changed || removed
 		}
 	}
 	return changed, nil
 }
 
 // removeIfEmpty removes the directory dir when nothing is left in it.
-func (w *Writer) removeIfEmpty(ctx context.Context, dir string) (bool, error) {
+func (w *Writer) removeIfEmpty(ctx context.Context, dir string) error {
 	absolute := path.Join(w.database, dir)
 	if w.dryRun {
 		slog.Info("[DRY RUN] Would remove the directory if it is empty", "path", absolute)
-		return true, nil
+		return nil
 	}
 	left, err := w.scheme.ListDirectory(ctx, absolute)
 	if err != nil {
-		return false, err
+		return err
 	}
 	if len(left) > 0 {
-		return false, nil
+		return nil
 	}
 	if err := w.scheme.RemoveDirectory(ctx, absolute); err != nil {
-		return false, fmt.Errorf("ydb: remove directory %s: %w", absolute, err)
+		return fmt.Errorf("ydb: remove directory %s: %w", absolute, err)
 	}
-	return true, nil
+	return nil
 }
 
 // grpcScheme answers through raw scheme service calls.
