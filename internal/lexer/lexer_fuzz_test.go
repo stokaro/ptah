@@ -23,19 +23,28 @@ func FuzzLexer(f *testing.F) {
 		"CREATE TABLE таблица (ключ INT);",
 		"$тег$héllo$тег$",
 		"SELECT 'héllo 🚀';",
+		"--!syntax_v1\nSELECT @@a@@@@b@@j, \"x\\\"y\"u, `t\\`n`;",
 	} {
 		f.Add(seed)
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		l := lexer.NewLexer(input)
-		for tokens := 0; tokens <= len(input)+1; tokens++ {
-			if l.NextToken().Type == lexer.TokenEOF {
-				return
-			}
+		for _, options := range []lexer.Options{{}, {YQL: true}} {
+			assertReachesEOF(t, input, options)
 		}
-		t.Fatalf("lexer did not reach EOF after %d tokens", len(input)+1)
 	})
+}
+
+func assertReachesEOF(t *testing.T, input string, options lexer.Options) {
+	t.Helper()
+
+	l := lexer.NewLexerWithOptions(input, options)
+	for tokens := 0; tokens <= len(input)+1; tokens++ {
+		if l.NextToken().Type == lexer.TokenEOF {
+			return
+		}
+	}
+	t.Fatalf("lexer with options %+v did not reach EOF after %d tokens", options, len(input)+1)
 }
 
 func addLexerSeedFile(f *testing.F, path string) {
