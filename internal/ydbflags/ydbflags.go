@@ -42,9 +42,10 @@ type Gate struct {
 
 // gates are the measured flags. Each one's default on every YDB line agrees
 // with the line's preset, measured on local-ydb 25.1.4.7, 25.2.1.24,
-// 25.3.1.25, 25.4.1.15, 26.1.1.22 and 26.2.1.14, and each one was turned on
-// with YDB_FEATURE_FLAGS on a line where it is off by default and the
-// statement it gates was then accepted.
+// 25.3.1.25, 25.4.1.15, 26.1.1.22 and 26.2.1.14. Each one was then turned
+// on with YDB_FEATURE_FLAGS on every line where it is off by default, and the
+// statement it gates was accepted and did what it says on each of them, so
+// Refine claims no capability a line refuses with the flag on.
 var gates = []Gate{
 	{
 		// Off on every line that lists it (25.3 and later); 25.1 and 25.2 do
@@ -78,6 +79,7 @@ var gates = []Gate{
 		refusals: []string{"EnableTableDatetime64 feature flag is off"},
 	},
 	{
+		// Off on 25.1 and on from 25.2, like EnableTableDatetime64.
 		Key:      capability.ParameterizedDecimal,
 		Flag:     "EnableParameterizedDecimal",
 		refusals: []string{"EnableParameterizedDecimal feature flag is off"},
@@ -93,13 +95,22 @@ func Gates() []Gate {
 // where the cluster set one, and the default otherwise.
 type Flags map[string]bool
 
-// Refine returns caps with every gated capability set from the flags. A flag
-// the database does not list is a feature the line does not have, so its
-// capability is false. caps is not changed.
+// Refine returns caps with every gated capability the flags list set from its
+// flag. caps is not changed.
+//
+// A flag the database does not list leaves its capability as caps has it. A
+// line can lack a flag because it predates the feature, and then its preset
+// already says false (25.1 and 25.2 list no EnableAddUniqueIndex), or because
+// the feature graduated and the flag was removed, and then turning the key off
+// would narrow what Ptah writes: without wide_date_time_types a declared
+// TIMESTAMP becomes the narrow Timestamp. On the seven measured pages both
+// readings give the same set.
 func (f Flags) Refine(caps capability.Capabilities) capability.Capabilities {
 	refined := caps.Clone()
 	for _, gate := range gates {
-		refined = refined.With(gate.Key, f[gate.Flag])
+		if value, listed := f[gate.Flag]; listed {
+			refined = refined.With(gate.Key, value)
+		}
 	}
 	return refined
 }
@@ -107,14 +118,27 @@ func (f Flags) Refine(caps capability.Capabilities) capability.Capabilities {
 // Path is the monitoring page the flags are read from.
 const Path = "/viewer/json/feature_flags"
 
-// timeout bounds one read when the caller's context sets no deadline.
+// timeout bounds one read. The client applies it whatever the caller's
+// context says, and the earlier of the two ends the read.
 const timeout = 30 * time.Second
 
 // maxBody bounds the page Ptah reads. A database lists a few hundred flags,
 // about 15 KB measured.
 const maxBody = 4 << 20
 
-var client = &http.Client{Timeout: timeout}
+// maxEcho bounds how much of a refusing page an error repeats: enough for the
+// endpoint's own message, and not the whole of whatever answered.
+const maxEcho = 256
+
+// client follows no redirect. The page is read from the endpoint the operator
+// named, and a redirect to another host is answered as the status it is
+// rather than followed somewhere Ptah was not pointed at.
+var client = &http.Client{
+	Timeout: timeout,
+	CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
+}
 
 // Read asks the monitoring endpoint for the flags of database, an absolute
 // path such as /local. It sends no credentials: a cluster that requires a
@@ -142,13 +166,22 @@ func Read(ctx context.Context, monitoring *url.URL, database string) (Flags, err
 	}
 	if response.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("read YDB feature flags from %s: %s: %s",
-			page.Redacted(), response.Status, strings.TrimSpace(string(body)))
+			page.Redacted(), response.Status, echo(body))
 	}
 	flags, err := Decode(body, database)
 	if err != nil {
 		return nil, fmt.Errorf("read YDB feature flags from %s: %w", page.Redacted(), err)
 	}
 	return flags, nil
+}
+
+// echo is the start of a refusing page, as an error repeats it.
+func echo(body []byte) string {
+	text := strings.TrimSpace(string(body))
+	if len(text) <= maxEcho {
+		return text
+	}
+	return strings.ToValidUTF8(text[:maxEcho], "") + "..."
 }
 
 // pageVersion is the only page layout Ptah reads; measured on 25.1.4.7

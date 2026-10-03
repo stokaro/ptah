@@ -614,29 +614,40 @@ func (s *session) leave(ctx context.Context, statement string) []Attempt {
 }
 
 // leftovers asks the server whether anything the run created outlived the
-// teardown, and returns the reads it made and what each found left.
+// teardown, and returns the reads it made and what each found left. removal
+// is what leave returned.
 //
 // Only YDB is asked. Its namespace is a directory the scheme service removes,
 // rather than a statement whose acceptance says the namespace is gone, and
-// the group the role experiment creates is outside the directory. The tables
-// are read from the partition statistics, which list a row table under its
-// path the moment it exists; a read the server refuses is itself a leftover,
-// because the run cannot say the server is clean.
-func (s *session) leftovers(ctx context.Context) ([]Attempt, []string) {
+// the group the role experiment creates is outside the directory. A refused
+// removal is a leftover by itself: DropDirectory refuses a tree holding an
+// object it has no statement for, such as a topic, before it drops anything,
+// and the partition statistics list row tables only, so they would count no
+// table under a directory still standing. The tables are read from the
+// partition statistics, which list a row table under its path the moment it
+// exists; a read the server refuses is itself a leftover, because the run
+// cannot say the server is clean.
+func (s *session) leftovers(ctx context.Context, removal []Attempt) ([]Attempt, []string) {
 	if platform.NormalizeDialect(s.dialect) != platform.YDB {
 		return nil, nil
 	}
 	var reads []Attempt
-	var left []string
+	var remaining []string
 	directory := path.Join(s.database, s.namespace)
+	for _, attempt := range removal {
+		if !attempt.Accepted {
+			remaining = append(remaining, "the directory "+directory+", which the teardown did not remove: "+
+				attempt.ServerErr)
+		}
+	}
 	tables, read := s.query(ctx, fmt.Sprintf("SELECT COUNT(DISTINCT Path) FROM %s WHERE StartsWith(Path, %s)",
 		ydbSystemView(s.database, "partition_stats"), ydbString(directory+"/")))
 	reads = append(reads, read)
 	switch {
 	case !read.Accepted:
-		left = append(left, "the tables under "+directory+", which the server would not count")
+		remaining = append(remaining, "the tables under "+directory+", which the server would not count")
 	case tables > 0:
-		left = append(left, fmt.Sprintf("%d table(s) under %s", tables, directory))
+		remaining = append(remaining, fmt.Sprintf("%d table(s) under %s", tables, directory))
 	}
 	for _, group := range s.roles {
 		groups, read := s.query(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE Sid = %s",
@@ -644,12 +655,12 @@ func (s *session) leftovers(ctx context.Context) ([]Attempt, []string) {
 		reads = append(reads, read)
 		switch {
 		case !read.Accepted:
-			left = append(left, "group "+group+", which the server would not look up")
+			remaining = append(remaining, "group "+group+", which the server would not look up")
 		case groups > 0:
-			left = append(left, "group "+group)
+			remaining = append(remaining, "group "+group)
 		}
 	}
-	return reads, left
+	return reads, remaining
 }
 
 // directoryDropper is what the YDB teardown needs of the connection's schema

@@ -109,8 +109,8 @@ func TestOpen_FailurePath(t *testing.T) {
 		{
 			name: "a monitoring endpoint without a scheme",
 			url:  "ydb://localhost:2136/local?monitoring=localhost:8765",
-			wantErr: `invalid YDB URL: the monitoring parameter "localhost:8765" names no http:// or https:// ` +
-				"endpoint: write monitoring=http://host:8765",
+			wantErr: "invalid YDB URL: the monitoring parameter names no http:// or https:// endpoint: " +
+				"write monitoring=http://host:8765",
 		},
 	}
 

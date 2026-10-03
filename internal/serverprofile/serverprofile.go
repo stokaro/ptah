@@ -207,49 +207,50 @@ type Capability struct {
 	Doc       string `json:"doc"`
 }
 
-// For builds the profile for a server, from strings the caller has already
-// read from it.
-//
-// banner is the server's own version string — SELECT version(), @@VERSION, or
-// the dialect's equivalent. productVersion is the cleaner version surface a
-// dialect may offer instead; today only SQL Server has one, and
-// [capabilityprobe.ProductVersion] is what reads it. Both may be empty: a
-// profile for a server that answered nothing about itself is still a profile,
-// and it reports exactly that.
+// Reading is one capability set read from a live server: what the connection
+// read about the database or the cluster, or what a pinned session resolved
+// from its settings.
+type Reading struct {
+	// Capabilities is the set read. A key it leaves out is one this reading
+	// did not decide.
+	Capabilities capability.Capabilities
+
+	// Reason names where the set was read, in the server's own vocabulary. A
+	// reading without one is ignored: a refinement a reader cannot go and
+	// check is a claim, and this verb exists to replace claims with what a
+	// server said.
+	Reason string
+}
+
 // Refined returns the profile as this particular server answers it, given the
-// capability set a live session resolved.
+// readings taken from it, in the order they were taken.
 //
 // It stays a pure function, like [For]: the caller holds the connection and
-// does the asking, and this decides only what the two answers mean together.
-// Keys the session did not change are left exactly as the release line had
-// them, so a server whose configuration is ordinary renders byte-identical
-// output to before (stokaro/ptah#1230).
-//
-// reason is the configuration that did it, in the server's own vocabulary. It
-// is required: a refinement a reader cannot go and check is a claim, and this
-// verb exists to replace claims with what a server said.
-func (p Profile) Refined(effective capability.Capabilities, reason string) Profile {
-	if len(effective) == 0 || strings.TrimSpace(reason) == "" {
-		return p
-	}
-
+// does the asking, and this decides only what the answers mean together. Each
+// reading is compared with the answers of the readings before it, so a key's
+// reason names the last reading that changed it, and a key a later reading
+// sets back to the release line's answer is not a refinement. Keys no source
+// changed are left exactly as the release line had them, so a server whose
+// configuration is ordinary renders byte-identical output to before
+// (stokaro/ptah#1230).
+func (p Profile) Refined(readings ...Reading) Profile {
 	refined := make([]Capability, 0, len(p.Capabilities))
 	var refinements []Refinement
 	for _, row := range p.Capabilities {
-		key := capability.Capability(row.Key)
-		value, measured := effective[key]
-		if !measured || value == row.Supported {
-			refined = append(refined, row)
-			continue
+		value, reason := answer(capability.Capability(row.Key), row.Supported, readings)
+		if value != row.Supported {
+			refinements = append(refinements, Refinement{
+				Key:       row.Key,
+				Preset:    row.Supported,
+				Effective: value,
+				Reason:    reason,
+			})
+			row.Supported = value
 		}
-		refinements = append(refinements, Refinement{
-			Key:       row.Key,
-			Preset:    row.Supported,
-			Effective: value,
-			Reason:    reason,
-		})
-		row.Supported = value
 		refined = append(refined, row)
+	}
+	if len(refinements) == 0 {
+		return p
 	}
 
 	p.Capabilities = refined
@@ -276,6 +277,29 @@ func (p Profile) Refined(effective capability.Capabilities, reason string) Profi
 	return p
 }
 
+// answer is the value the readings give key, starting from the release line's
+// value preset, and the reason of the last reading that changed it.
+func answer(key capability.Capability, preset bool, readings []Reading) (value bool, reason string) {
+	value = preset
+	for _, reading := range readings {
+		said, decided := reading.Capabilities[key]
+		if strings.TrimSpace(reading.Reason) == "" || !decided || said == value {
+			continue
+		}
+		value, reason = said, reading.Reason
+	}
+	return value, reason
+}
+
+// For builds the profile for a server, from strings the caller has already
+// read from it.
+//
+// banner is the server's own version string — SELECT version(), @@VERSION, or
+// the dialect's equivalent. productVersion is the cleaner version surface a
+// dialect may offer instead; today only SQL Server has one, and
+// [capabilityprobe.ProductVersion] is what reads it. Both may be empty: a
+// profile for a server that answered nothing about itself is still a profile,
+// and it reports exactly that.
 func For(dialect, banner, productVersion string) Profile {
 	normalized := platform.NormalizeDialect(dialect)
 	resolution := capability.ResolveServerVersion(normalized, banner)

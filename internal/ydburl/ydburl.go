@@ -143,8 +143,12 @@ func FromURL(parsed *url.URL) (URL, error) {
 // The value is the endpoint and nothing more: Ptah adds the path of the page
 // it reads, so a path, a query or a fragment would be read as part of an
 // address they are not part of. A user in the value is refused rather than
-// sent, because nothing else in Ptah sends a credential to that endpoint and a
-// password in a query parameter reaches every log that prints the URL.
+// sent, because nothing else in Ptah sends a credential to that endpoint.
+//
+// A refusal never repeats the value. It can carry a password in its user part
+// or a token in a query, and the error reaches logs and terminals that a URL
+// redactor never sees: at most it names the scheme, and the host, which carry
+// no secret.
 func monitoringEndpoint(query url.Values) (*url.URL, error) {
 	values, named := query[MonitoringParameter]
 	if !named {
@@ -154,24 +158,28 @@ func monitoringEndpoint(query url.Values) (*url.URL, error) {
 		return nil, errors.New("the monitoring parameter is given more than once")
 	}
 	value := values[0]
-	parsed, err := url.Parse(value)
-	switch {
-	case value == "":
+	if value == "" {
 		return nil, errors.New("the monitoring parameter is empty: write monitoring=http://host:8765")
-	case err != nil:
-		return nil, fmt.Errorf("the monitoring parameter %q is not a URL: %w", value, err)
-	case parsed.Scheme != "http" && parsed.Scheme != "https":
-		return nil, fmt.Errorf("the monitoring parameter %q names no http:// or https:// endpoint: "+
-			"write monitoring=http://host:8765", value)
-	case parsed.Hostname() == "":
-		return nil, fmt.Errorf("the monitoring parameter %q names no host", value)
-	case parsed.User != nil:
-		return nil, fmt.Errorf("the monitoring parameter %q carries a user; Ptah sends no credentials there", value)
-	case strings.Trim(parsed.Path, "/") != "" || parsed.RawQuery != "" || parsed.Fragment != "":
-		return nil, fmt.Errorf("the monitoring parameter %q names a page; name the endpoint only, "+
-			"as monitoring=%s://%s", value, parsed.Scheme, parsed.Host)
 	}
-	return &url.URL{Scheme: parsed.Scheme, Host: parsed.Host}, nil
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return nil, errors.New("the monitoring parameter is not a URL: write monitoring=http://host:8765")
+	}
+	endpoint := &url.URL{Scheme: parsed.Scheme, Host: parsed.Host}
+	switch {
+	case parsed.Scheme != "http" && parsed.Scheme != "https":
+		return nil, errors.New("the monitoring parameter names no http:// or https:// endpoint: " +
+			"write monitoring=http://host:8765")
+	case parsed.Hostname() == "":
+		return nil, errors.New("the monitoring parameter names no host: write monitoring=http://host:8765")
+	case parsed.User != nil:
+		return nil, fmt.Errorf("the monitoring parameter for %s carries a user; Ptah sends no credentials there, "+
+			"so name the endpoint only, as monitoring=%s", endpoint, endpoint)
+	case strings.Trim(parsed.EscapedPath(), "/") != "" || parsed.RawQuery != "" || parsed.Fragment != "":
+		return nil, fmt.Errorf("the monitoring parameter for %s names a page; name the endpoint only, "+
+			"as monitoring=%s", endpoint, endpoint)
+	}
+	return endpoint, nil
 }
 
 // Endpoint is host:port, with an IPv6 address in brackets.

@@ -26,7 +26,8 @@ versioned migrations against it. The
 dialect name is `ydb`. YDB is its own dialect rather than a PostgreSQL-family
 one: Ptah writes YQL and talks to the server through the YDB Go SDK. A schema
 Ptah applies reads back as itself, which the integration suite checks against a
-live YDB 26.2 in CI.
+live YDB 26.2 in CI. The nightly capability matrix runs the same suite on each
+YDB line it probes.
 
 Data changes, lint, dev databases, `ptah-compat` and the YDB object families
 such as TTL, column families, changefeeds, views and vector indexes are not
@@ -237,9 +238,10 @@ The flags decide these capabilities:
 | `EnableTableDatetime64` | `wide_date_time_types` |
 | `EnableParameterizedDecimal` | `parameterized_decimal` |
 
-A flag the cluster does not list means that it lacks the feature. Ptah sends no
-credentials to the monitoring endpoint. A failed read fails the connection
-rather than planning without the flags. `ptah db capabilities` lists the keys
+A flag the cluster does not list leaves the capability as the release line's
+preset has it. Ptah sends no credentials to the monitoring endpoint and follows
+no redirect from it. A failed read fails the connection rather than planning
+without the flags. `ptah db capabilities` lists the keys
 the flags changed under `Set by this server rather than by its release line`.
 
 Without the parameter the line's preset stands. A statement the cluster

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -350,39 +351,59 @@ func TestWriter_DropDirectory(t *testing.T) {
 	c.Assert(fake.tree["/local/app"], qt.HasLen, 1)
 }
 
-// A kind the writer has no statement for stops the teardown before anything in
-// that directory is dropped, and the database root is never a directory to
-// drop.
+// A teardown that cannot finish drops nothing: a dir that names the root or
+// leaves it in any spelling, and a tree holding, at any depth, an entry of a
+// kind the writer has no statement for or one that belongs to the server.
 func TestWriter_DropDirectory_FailurePath(t *testing.T) {
+	const dotSegment = "ydb: directory %q has the segment %q; DropDirectory removes a directory below the " +
+		"database root /local, named without dot segments"
 	for _, test := range []struct {
-		name         string
-		dir          string
-		wantErr      string
-		wantExecuted []string
+		name    string
+		dir     string
+		wantErr string
 	}{
+		{name: "the root", dir: "/", wantErr: "ydb: the database root /local is not a directory DropDirectory removes"},
+		{name: "a dot", dir: ".", wantErr: fmt.Sprintf(dotSegment, ".", ".")},
+		{name: "a dot and a slash", dir: "./", wantErr: fmt.Sprintf(dotSegment, "./", ".")},
+		{name: "a dot between slashes", dir: "/./", wantErr: fmt.Sprintf(dotSegment, "/./", ".")},
+		{name: "a directory and its parent", dir: "x/..", wantErr: fmt.Sprintf(dotSegment, "x/..", "..")},
+		{name: "a real directory and its parent", dir: "app/../", wantErr: fmt.Sprintf(dotSegment, "app/../", "..")},
+		{name: "a server directory", dir: ".sys", wantErr: fmt.Sprintf(dotSegment, ".sys", ".sys")},
 		{
-			name: "a topic",
+			name: "a topic below a table the walk meets first",
 			dir:  "probe",
-			wantErr: "ydb: /local/probe holds events, a TOPIC, which Ptah has no statement to drop; " +
-				"nothing in /local/probe was dropped",
+			wantErr: "ydb: /local/probe/z holds events, a TOPIC, which Ptah has no statement to drop; " +
+				"nothing was dropped",
 		},
 		{
-			name:    "the root",
-			dir:     "/",
-			wantErr: "ydb: the database root /local is not a directory DropDirectory removes",
+			name: "a dot directory inside",
+			dir:  "scratch",
+			wantErr: "ydb: /local/scratch holds .tmp, whose name starts with a dot and so belongs to the server; " +
+				"nothing was dropped",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			fake := &fakeDatabase{tree: map[string][]*Ydb_Scheme.Entry{
-				"/local":       {entry("probe", Ydb_Scheme.Entry_DIRECTORY)},
-				"/local/probe": {entry("t", Ydb_Scheme.Entry_TABLE), entry("events", Ydb_Scheme.Entry_TOPIC)},
+				"/local": {
+					entry(".sys", Ydb_Scheme.Entry_DIRECTORY),
+					entry("app", Ydb_Scheme.Entry_DIRECTORY),
+					entry("orders", Ydb_Scheme.Entry_TABLE),
+					entry("probe", Ydb_Scheme.Entry_DIRECTORY),
+					entry("scratch", Ydb_Scheme.Entry_DIRECTORY),
+				},
+				"/local/.sys":         nil,
+				"/local/app":          {entry("users", Ydb_Scheme.Entry_TABLE)},
+				"/local/probe":        {entry("a", Ydb_Scheme.Entry_TABLE), entry("z", Ydb_Scheme.Entry_DIRECTORY)},
+				"/local/probe/z":      {entry("events", Ydb_Scheme.Entry_TOPIC)},
+				"/local/scratch":      {entry("t", Ydb_Scheme.Entry_TABLE), entry(".tmp", Ydb_Scheme.Entry_DIRECTORY)},
+				"/local/scratch/.tmp": {entry("x", Ydb_Scheme.Entry_TABLE)},
 			}}
 			writer := ydbschema.NewWriterFromScheme(fake, fake, "/local")
 
 			err := writer.DropDirectory(context.Background(), test.dir)
 
-			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(test.wantErr))
 			c.Assert(fake.executed, qt.HasLen, 0)
 			c.Assert(fake.removed, qt.HasLen, 0)
 		})

@@ -14,6 +14,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "modernc.org/sqlite" // registers the SQLite driver for database/sql
 
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/cli/dbcapabilities"
 	"ptah.run/internal/serverprofile"
@@ -781,6 +782,90 @@ func TestWriteProfile_FailurePath_WriterRefusesOneWrite(t *testing.T) {
 			err := dbcapabilities.WriteProfile(&refuseAt{marker: test.marker}, test.format, mariaDBProfile())
 
 			c.Assert(err, qt.ErrorIs, errRefusedWrite)
+		})
+	}
+}
+
+// refinementSection is the text form's refinement section, from its heading to
+// the blank line that ends it, or "" when the profile has none.
+func refinementSection(text string) string {
+	_, section, found := strings.Cut(text, "\nSet by this server rather than by its release line:\n")
+	if !found {
+		return ""
+	}
+	section, _, _ = strings.Cut(section, "\n\n")
+	return section
+}
+
+// Each refined key names where it was read. The connection reads TimescaleDB's
+// keys from pg_extension and a YDB cluster's flags from its monitoring
+// endpoint; only MySQL's foreign-key policy comes from a session setting. The
+// readings are the ones the command takes, so the reasons are the sentences an
+// operator is shown.
+func TestWriteProfile_RefinementsNameTheirSource(t *testing.T) {
+	timescale := capability.Postgres17().
+		With(capability.Hypertables, true).
+		With(capability.ContinuousAggregates, true)
+	flagged := capability.YDB262().With(capability.UniqueIndexOnExistingTable, true)
+	restricted := capability.MySQL84().
+		With(capability.ForeignKeysRequireUniqueReference, false).
+		With(capability.ForeignKeysRequireIndexedReference, true)
+	for _, tc := range []struct {
+		name       string
+		dialect    string
+		banner     string
+		connection capability.Capabilities
+		session    capability.Capabilities
+		want       string
+	}{{
+		name:       "a PostgreSQL database with TimescaleDB installed",
+		dialect:    platform.Postgres,
+		banner:     "PostgreSQL 17.4 on x86_64-pc-linux-gnu",
+		connection: timescale,
+		session:    timescale,
+		want: "  continuous_aggregates  supported  (the release line answers unsupported)\n" +
+			"  hypertables            supported  (the release line answers unsupported)\n" +
+			"  read from the extensions installed in this database (pg_extension), not from its release line",
+	}, {
+		name:       "a YDB cluster started with enable_add_unique_index",
+		dialect:    platform.YDB,
+		banner:     "26.2.1.14",
+		connection: flagged,
+		session:    flagged,
+		want: "  unique_index_on_existing_table  supported  (the release line answers unsupported)\n" +
+			"  read from this cluster's feature flags at its monitoring endpoint, not from its release line",
+	}, {
+		name:       "a MySQL 8.4 server started with restrict_fk_on_non_standard_key off",
+		dialect:    platform.MySQL,
+		banner:     "8.4.5",
+		connection: capability.MySQL84(),
+		session:    restricted,
+		want: "  foreign_keys_require_indexed_reference  supported    (the release line answers unsupported)\n" +
+			"  foreign_keys_require_unique_reference   unsupported  (the release line answers supported)\n" +
+			"  read from this server's session settings, not from its release line",
+	}, {
+		name:       "a connection and a session that each changed a key",
+		dialect:    platform.Postgres,
+		banner:     "PostgreSQL 17.4 on x86_64-pc-linux-gnu",
+		connection: capability.Postgres17().With(capability.Hypertables, true),
+		session:    capability.Postgres17().With(capability.Hypertables, true).With(capability.Views, false),
+		want: "  hypertables  supported  (the release line answers unsupported)\n" +
+			"  read from the extensions installed in this database (pg_extension), not from its release line\n" +
+			"  views  unsupported  (the release line answers supported)\n" +
+			"  read from this server's session settings, not from its release line",
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			profile := serverprofile.For(tc.dialect, tc.banner, "").Refined(
+				dbcapabilities.ConnectionReading(tc.dialect, tc.connection),
+				dbcapabilities.SessionReading(tc.session),
+			)
+
+			var out bytes.Buffer
+			err := dbcapabilities.WriteProfile(&out, "text", profile)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(refinementSection(out.String()), qt.Equals, tc.want)
 		})
 	}
 }

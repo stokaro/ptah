@@ -343,6 +343,20 @@ Set by this server rather than by its release line:
 Without the `monitoring` parameter Ptah does not read the flags, and the
 section is absent.
 
+A PostgreSQL database with the TimescaleDB extension installed reports
+`hypertables` and `continuous_aggregates` in the same section, read from
+`pg_extension` rather than from a session setting:
+
+```text
+Set by this server rather than by its release line:
+  continuous_aggregates  supported  (the release line answers unsupported)
+  hypertables            supported  (the release line answers unsupported)
+  read from the extensions installed in this database (pg_extension), not from its release line
+```
+
+Each key is listed under the source that decided it, so a server where two
+sources changed keys prints two groups, each followed by its own source.
+
 The section is absent when the version decided everything, which is the
 ordinary case: a server whose configuration matches its release line renders
 exactly what it rendered before the refinement existed. In `--format json` the
