@@ -118,7 +118,7 @@ var yqlSourceListEnds = []string{
 // `Unknown cluster: dir`, while a table in a directory is one path, `dir/t`.
 //
 // A source is anything at a source position: after one of
-// [yqlSourceAnchors], after ANY or STREAM there, and after a comma in a list
+// [yqlSourceAnchors], after STREAM there, and after a comma in a list
 // of sources, which the grammar reads as a join (join_op: COMMA). Default
 // deny: the name there is refused when a dot or a colon follows it, whatever
 // the name is.
@@ -155,11 +155,10 @@ func yqlDottedSource() tokenMatcher {
 
 // yqlDottedNameAt reports whether the source starting at i is a name, or the
 // asterisk the grammar allows for a cluster, followed by a dot or a colon.
-// ANY and STREAM in front of it are skipped, and so is the @ of an anonymous
-// table.
+// PROCESS STREAM puts STREAM in front of the source, and it is skipped; ANY
+// needs no skip, because it is an anchor of its own.
 func yqlDottedNameAt(tokens []lexer.Token, i int) bool {
-	for i < len(tokens) && (IsKeyword(tokens[i], "ANY") || IsKeyword(tokens[i], "STREAM") ||
-		tokens[i].MatchOperatorValue("@")) {
+	if i < len(tokens) && IsKeyword(tokens[i], "STREAM") {
 		i++
 	}
 	if i+1 >= len(tokens) {

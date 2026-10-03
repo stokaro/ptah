@@ -101,6 +101,9 @@ func TestScan_YDB_LeavesOrdinaryReadsAlone(t *testing.T) {
 		{name: "qualified columns after GROUP BY and ORDER BY", statement: "SELECT a.x FROM `t` AS a GROUP BY a.x, a.y ORDER BY a.x, a.y"},
 		{name: "a column named like a file function", statement: "SELECT 1 AS files, zipcode FROM `t`"},
 		{name: "an IN list", statement: "SELECT * FROM `t` AS a WHERE a.id IN (1, 2)"},
+		// The source list of the subquery ends with its parenthesis, so the
+		// comma in the call after it joins nothing.
+		{name: "a call after a subquery source", statement: "SELECT * FROM (SELECT * FROM `t`) AS s WHERE COALESCE(s.a, s.b) > 0"},
 	}
 
 	for _, test := range tests {
