@@ -2729,22 +2729,29 @@ func appendOrderedViewLikeStatements(
 // declaredRoutinePlacements places every declared routine against everything
 // the database declares, which is what a render creates; see
 // [deporder.PlaceRoutines].
+//
+// Each object is named by its QualifiedName, the spelling a migration plan
+// names it by, so the two paths ask PlaceRoutines the same question. A table,
+// domain, composite or range type keeps its schema in a field rather than in
+// Name. Named by Name alone, `CREATE TABLE app.t` is a bare `t`, which a
+// routine's `RETURNS SETOF app.t` does not reference, so the routine is created
+// first and refused with `type "app.t" does not exist` (stokaro/ptah#4039).
 func declaredRoutinePlacements(database schemamodel.Database, targetPlatform string) map[string]deporder.RoutinePlacement {
 	var created deporder.RoutineCreation
 	for _, enum := range database.Enums {
-		created.Types = append(created.Types, enum.Name)
+		created.Types = append(created.Types, enum.QualifiedName())
 	}
 	for _, domain := range database.Domains {
-		created.Types = append(created.Types, domain.Name)
+		created.Types = append(created.Types, domain.QualifiedName())
 	}
 	for _, composite := range database.CompositeTypes {
-		created.Types = append(created.Types, composite.Name)
+		created.Types = append(created.Types, composite.QualifiedName())
 	}
 	for _, rangeType := range database.Ranges {
-		created.Types = append(created.Types, rangeType.Name)
+		created.Types = append(created.Types, rangeType.QualifiedName())
 	}
 	for _, table := range database.Tables {
-		created.Relations = append(created.Relations, table.Name)
+		created.Relations = append(created.Relations, table.QualifiedName())
 	}
 	for _, view := range database.Views {
 		created.Relations = append(created.Relations, view.Name)

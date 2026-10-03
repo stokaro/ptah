@@ -4,7 +4,9 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/tableref"
 )
 
 // RoutinePlacement is where a routine a plan creates can go, relative to the
@@ -149,9 +151,35 @@ func RoutineOrderingBody(routine schemamodel.Function, dialect string) string {
 
 // namesObject reports whether text names object, in any of the spellings a view
 // body can use for it.
+//
+// An object declared without a schema is created in the dialect's default
+// schema, and a definition may name it there: `CREATE TABLE t` and
+// `RETURNS SETOF public.t` on PostgreSQL. Matched by its declared spelling
+// alone, `t` is not referenced by `public.t`, so the routine goes first and is
+// refused with `type "public.t" does not exist` (stokaro/ptah#4039).
 func namesObject(text, object, dialect string) bool {
 	if strings.TrimSpace(text) == "" {
 		return false
 	}
-	return referencesViewLikeIdentifier(text, object, dialect, map[string]int{strings.ToLower(viewLikeBareName(object)): 1})
+	bareNameCounts := map[string]int{strings.ToLower(viewLikeBareName(object)): 1}
+	if referencesViewLikeIdentifier(text, object, dialect, bareNameCounts) {
+		return true
+	}
+	inDefaultSchema, ok := defaultSchemaSpelling(object, dialect)
+	return ok && referencesViewLikeIdentifier(text, inDefaultSchema, dialect, bareNameCounts)
+}
+
+// defaultSchemaSpelling is object qualified with dialect's default schema, for
+// an object declared without one. It reports false for a qualified object and
+// for a dialect with no default schema.
+func defaultSchemaSpelling(object, dialect string) (string, bool) {
+	ref, ok := tableref.Parse(object)
+	if !ok || ref.Qualified {
+		return "", false
+	}
+	schema := identifier.ForDialect(dialect).DefaultSchema
+	if schema == "" {
+		return "", false
+	}
+	return tableref.Canonical(schema, ref.Name), true
 }

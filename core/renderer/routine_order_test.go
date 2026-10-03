@@ -79,6 +79,48 @@ CREATE VIEW summary AS SELECT big_count() AS n;`,
 			order: []string{`CREATE TABLE "orders"`, `CREATE VIEW "big"`, `FUNCTION "big_count"`, `CREATE VIEW "summary"`},
 		},
 		{
+			name: "a signature returns SETOF a table in a schema",
+			sql: `CREATE TABLE app.orders (id bigint PRIMARY KEY, total integer NOT NULL);
+CREATE FUNCTION app.big_orders() RETURNS SETOF app.orders LANGUAGE plpgsql STABLE AS $$ BEGIN RETURN; END $$;`,
+			order: []string{`CREATE TABLE "app"."orders"`, `FUNCTION "app"."big_orders"`},
+		},
+		{
+			name: "a parameter takes a table's row type in a schema",
+			sql: `CREATE TABLE app.orders (id bigint PRIMARY KEY, total integer NOT NULL);
+CREATE FUNCTION app.order_total(o app.orders) RETURNS integer LANGUAGE plpgsql IMMUTABLE AS $$ BEGIN RETURN o.total; END $$;`,
+			order: []string{`CREATE TABLE "app"."orders"`, `FUNCTION "app"."order_total"`},
+		},
+		{
+			name: "a LANGUAGE sql body reads a table in a schema",
+			sql: `CREATE TABLE app.orders (id bigint PRIMARY KEY, total integer NOT NULL);
+CREATE FUNCTION app.order_count() RETURNS bigint LANGUAGE sql STABLE AS $$ SELECT count(*) FROM app.orders $$;`,
+			order: []string{`CREATE TABLE "app"."orders"`, `FUNCTION "app"."order_count"`},
+		},
+		{
+			name: "a signature names a domain in a schema",
+			sql: `CREATE DOMAIN app.pct AS integer CHECK (VALUE >= 0);
+CREATE FUNCTION app.half(p app.pct) RETURNS integer LANGUAGE plpgsql IMMUTABLE AS $$ BEGIN RETURN p / 2; END $$;`,
+			order: []string{`CREATE DOMAIN "app"."pct"`, `FUNCTION "app"."half"`},
+		},
+		{
+			name: "a signature returns a composite type in a schema",
+			sql: `CREATE TYPE app.pair AS (x integer, y integer);
+CREATE FUNCTION app.origin() RETURNS app.pair LANGUAGE plpgsql IMMUTABLE AS $$ BEGIN RETURN ROW(0, 0); END $$;`,
+			order: []string{`CREATE TYPE "app"."pair"`, `FUNCTION "app"."origin"`},
+		},
+		{
+			name: "a signature returns a range type in a schema",
+			sql: `CREATE TYPE app.span AS RANGE (subtype = float8);
+CREATE FUNCTION app.unit() RETURNS app.span LANGUAGE plpgsql IMMUTABLE AS $$ BEGIN RETURN NULL; END $$;`,
+			order: []string{`CREATE TYPE "app"."span"`, `FUNCTION "app"."unit"`},
+		},
+		{
+			name: "a signature names a table declared without a schema in the default one",
+			sql: `CREATE TABLE orders (id bigint PRIMARY KEY, total integer NOT NULL);
+CREATE FUNCTION big_orders() RETURNS SETOF public.orders LANGUAGE plpgsql STABLE AS $$ BEGIN RETURN; END $$;`,
+			order: []string{`CREATE TABLE "orders"`, `FUNCTION "big_orders"`},
+		},
+		{
 			name: "a policy calls a routine reading another table",
 			sql: `CREATE TABLE members (user_name text PRIMARY KEY);
 CREATE TABLE docs (id bigint PRIMARY KEY, owner text NOT NULL);
