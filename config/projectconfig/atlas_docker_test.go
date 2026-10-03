@@ -121,6 +121,8 @@ func (r *dockerRecorder) Start(_ context.Context, _, image, _ string, env []stri
 
 func (r *dockerRecorder) Remove(context.Context, string) error { return nil }
 
+func (r *dockerRecorder) Stopped(context.Context, string) (string, error) { return "", nil }
+
 func (r *dockerRecorder) Build(_ context.Context, _ string, build devdocker.Build) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

@@ -865,12 +865,16 @@ URL:
   block that sets `schema` pins that schema, and the baseline's other schemas
   stay as they were, their grants included.
 - `env` is passed to the container. The password and database variables Ptah
-  sets come after it and win.
-- `timeout` bounds the readiness wait.
+  sets come after it and win. Ptah sets no `POSTGRES_USER`, so an image that
+  names its own user runs its init scripts as that user.
+- `timeout` bounds the readiness wait. A container that exits before its
+  server answers ends the wait at once, with its exit code and the end of its
+  log.
 - On PostgreSQL, `database` names the database and `schema` pins the
   `search_path`. Without `database` the block connects to `postgres`, which
-  cleanup refuses (stokaro/ptah#4035). On MySQL and MariaDB, `schema` is the
-  database, and without it the dev database is the whole server.
+  cleanup empties as it does any database on a server the run owns. On MySQL
+  and MariaDB, `schema` is the database, and without it the dev database is
+  the whole server.
 
 Ptah reads `postgres`, `mysql` and `mariadb` blocks with `image`, `schema`,
 `database` on PostgreSQL, `baseline`, `env`, `timeout`, and a `build` with

@@ -243,6 +243,11 @@ type fakeRunner struct {
 	removedImages []string
 	startedImages []string
 	startedEnv    [][]string
+
+	// stopped and stoppedErr are what every Stopped call answers: "" for a
+	// container that still runs.
+	stopped    string
+	stoppedErr error
 }
 
 // recordedBuild is one Build call a fakeRunner saw.
@@ -262,6 +267,10 @@ func (f *fakeRunner) Start(_ context.Context, name, image, _ string, env []strin
 	f.startedImages = append(f.startedImages, image)
 	f.startedEnv = append(f.startedEnv, env)
 	return f.hostPort, f.startErr
+}
+
+func (f *fakeRunner) Stopped(context.Context, string) (string, error) {
+	return f.stopped, f.stoppedErr
 }
 
 func (f *fakeRunner) Build(_ context.Context, image string, build devdocker.Build) error {
@@ -372,6 +381,71 @@ func TestResolveRemovesTheContainerWhenTheServerNeverBecomesReady(t *testing.T) 
 	// instance, so nothing else can remove it.
 	c.Assert(started, qt.HasLen, 1)
 	c.Check(removed, qt.DeepEquals, started)
+}
+
+// TestResolvePassesAPostgreSQLImageNoUser pins the environment a PostgreSQL
+// container starts with: the password and the database, as the pinned
+// community binary passes them, and no POSTGRES_USER, which belongs to the
+// image (stokaro/ptah#4053).
+func TestResolvePassesAPostgreSQLImageNoUser(t *testing.T) {
+	for _, rawURL := range []string{"docker://postgres/16/dev", "docker+postgres://_/supabase/postgres:17.6.1.011/dev"} {
+		t.Run(rawURL, func(t *testing.T) {
+			c := qt.New(t)
+			runner := &fakeRunner{hostPort: "127.0.0.1:15432"}
+
+			_, release, err := devdocker.Resolve(t.Context(), rawURL,
+				devdocker.Options{Runner: runner, Ready: alwaysReady, CreateDatabase: noDatabaseCreated})
+			c.Assert(err, qt.IsNil)
+			t.Cleanup(release)
+
+			c.Assert(runner.startedEnv, qt.HasLen, 1)
+			env := runner.startedEnv[0]
+			c.Assert(env, qt.HasLen, 2)
+			c.Assert(env[0], qt.Matches, `POSTGRES_PASSWORD=[0-9a-f]{48}`)
+			c.Assert(env[1], qt.Equals, "POSTGRES_DB=dev")
+		})
+	}
+}
+
+// TestResolveReportsAContainerThatStoppedBeforeTheServerAnswered gives the
+// wait a minute and a container that has already exited. The run ends with the
+// exit, not with a timeout, and the container is removed.
+func TestResolveReportsAContainerThatStoppedBeforeTheServerAnswered(t *testing.T) {
+	c := qt.New(t)
+	runner := &fakeRunner{
+		hostPort: "127.0.0.1:15432",
+		stopped:  "it exited with code 2; the end of its log:\nFATAL:  password authentication failed for user \"supabase_admin\"",
+	}
+	_, release, err := devdocker.Resolve(t.Context(), "docker+postgres://_/supabase/postgres:17.6.1.011/postgres", devdocker.Options{
+		Runner:       runner,
+		Ready:        neverReady,
+		ReadyTimeout: time.Minute,
+	})
+	c.Assert(err, qt.IsNotNil)
+	t.Cleanup(release)
+
+	c.Check(err, qt.ErrorMatches, `(?s)dev database supabase/postgres:17.6.1.011 did not become ready: the container stopped before the server answered: it exited with code 2; the end of its log:\nFATAL:  password authentication failed for user "supabase_admin"`)
+	started, removed := runner.calls()
+	c.Assert(started, qt.HasLen, 1)
+	c.Check(removed, qt.DeepEquals, started)
+}
+
+// TestResolveKeepsWaitingWhenTheRuntimeCannotSayWhetherTheContainerStopped is
+// the control: a runtime that fails to answer is not a stopped container, so
+// the wait runs to its deadline and reports the probe's error.
+func TestResolveKeepsWaitingWhenTheRuntimeCannotSayWhetherTheContainerStopped(t *testing.T) {
+	c := qt.New(t)
+	runner := &fakeRunner{hostPort: "127.0.0.1:15432", stoppedErr: errors.New("daemon busy")}
+	_, release, err := devdocker.Resolve(t.Context(), "docker://postgres/16/dev", devdocker.Options{
+		Runner:       runner,
+		Ready:        neverReady,
+		ReadyTimeout: 10 * time.Millisecond,
+	})
+	c.Assert(err, qt.IsNotNil)
+	t.Cleanup(release)
+
+	c.Check(err, qt.ErrorIs, errNotListening)
+	c.Check(err.Error(), qt.Contains, "timed out after 10ms")
 }
 
 func TestResolveRemovesTheContainerWhenTheRuntimeFailsToStartIt(t *testing.T) {
