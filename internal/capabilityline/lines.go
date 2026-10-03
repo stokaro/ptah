@@ -72,6 +72,21 @@ const (
 	// Oracle23 is the newest measured Oracle release line, and the first one
 	// carrying those guards.
 	Oracle23 = "23.26"
+	// YDB251 is the oldest measured YDB release line, and the only one without
+	// the 64-bit date and time types or a Decimal of any precision.
+	YDB251 = "25.1"
+	// YDB252 is the measured YDB 25.2 release line.
+	YDB252 = "25.2"
+	// YDB253 is the measured YDB 25.3 release line.
+	YDB253 = "25.3"
+	// YDB254 is the measured YDB 25.4 release line, which answers like 25.3.
+	YDB254 = "25.4"
+	// YDB261 is the measured YDB 26.1 release line, the first one that adds a
+	// column with a default to an existing table.
+	YDB261 = "26.1"
+	// YDB262 is the newest measured YDB release line, the first one that sets
+	// and drops a column default in place.
+	YDB262 = "26.2"
 )
 
 // YugabyteDBMeasured returns every YugabyteDB release line with direct matrix
@@ -105,6 +120,11 @@ func CockroachDBMeasured() []string {
 // evidence.
 func SQLServerMeasured() []string {
 	return []string{SQLServer2019, SQLServer2022, SQLServer2025}
+}
+
+// YDBMeasured returns every YDB release line with a measured preset.
+func YDBMeasured() []string {
+	return []string{YDB251, YDB252, YDB253, YDB254, YDB261, YDB262}
 }
 
 // OracleMeasured returns every Oracle release line with direct matrix evidence.

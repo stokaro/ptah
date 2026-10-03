@@ -1121,6 +1121,59 @@ const (
 	// is disabled`, while the same index declared in CREATE TABLE is
 	// accepted. ClickHouse is false because it has no unique index.
 	UniqueIndexOnExistingTable Capability = "unique_index_on_existing_table"
+
+	// WideDateTimeTypes marks a target with YDB's 64-bit date and time types:
+	// Date32, Datetime64, Timestamp64 and Interval64. They reach before 1970,
+	// which the narrow Date, Datetime, Timestamp and Interval cannot, so the
+	// YDB type map writes a declared TIMESTAMP, DATE or INTERVAL as the wide
+	// type where this key holds and as the narrow one where it does not.
+	//
+	// Measured: 25.1.4.7 refuses `Date32` with `support for new date/time 64
+	// types is disabled (EnableTableDatetime64 feature flag is off)`, and
+	// 25.2.1.24 through 26.2.1.14 take all four. No other engine has the
+	// types under these names.
+	WideDateTimeTypes Capability = "wide_date_time_types"
+
+	// ParameterizedDecimal marks a target whose DECIMAL takes the precision
+	// and scale the declaration names.
+	//
+	// It is a key because YDB 25.1 keeps it behind a flag that is off by
+	// default: measured on 25.1.4.7, `Decimal(10,2)` answers `support for
+	// parametrized decimal is disabled (EnableParameterizedDecimal feature
+	// flag is off)` while `Decimal(22,9)`, the one fixed decimal that line
+	// has, is accepted. 25.2.1.24 and newer take any precision from 1 to 35.
+	ParameterizedDecimal Capability = "parameterized_decimal"
+
+	// AsyncIndexes marks a target with an index the server maintains
+	// asynchronously, YDB's `GLOBAL ASYNC`: a write commits without waiting
+	// for the index, and a read through the index may trail the table.
+	// Measured inline in CREATE TABLE and through ALTER TABLE ... ADD INDEX
+	// on every YDB line from 25.1.4.7 to 26.2.1.14.
+	AsyncIndexes Capability = "async_indexes"
+
+	// SerialColumns marks a target whose SERIAL column types fill the column
+	// on insert without the application naming a value: PostgreSQL's serial
+	// pseudo-types and YDB's Serial, BigSerial and SmallSerial, each backed by
+	// an implicit sequence. The YDB type map writes a declared SERIAL as
+	// Serial only where this key holds.
+	SerialColumns Capability = "serial_columns"
+
+	// SmallIntegerDefaults marks a target on which a 16-bit integer column
+	// takes a literal default.
+	//
+	// Every engine has it but one line: measured on YDB 25.1.4.7, a CREATE
+	// TABLE with `Int16 DEFAULT 5s`, `Int16 DEFAULT 5` or `Uint16 DEFAULT 5us`
+	// fails with `INTERNAL_ERROR ... FillLiteralProto(): requirement false
+	// failed, message: Unexpected type slot Int16`, and 25.2.1.24 accepts all
+	// three.
+	SmallIntegerDefaults Capability = "small_integer_defaults"
+
+	// DocumentTypeDefaults marks a target on which YDB's JsonDocument and
+	// DyNumber columns take a literal default. Measured: 25.1.4.7 and
+	// 25.2.1.24 answer `Unsupported type of literal: JsonDocument` (and
+	// `DyNumber`), and 25.3.1.25 and newer take both. No other engine has the
+	// types.
+	DocumentTypeDefaults Capability = "document_type_defaults"
 )
 
 // spec documents a registry entry and its implication edges.
@@ -1424,6 +1477,24 @@ var registry = map[Capability]spec{
 	UniqueIndexOnExistingTable: {
 		doc: "a unique index can be added to a table that already holds rows (not ClickHouse; behind a flag on YDB)",
 	},
+	WideDateTimeTypes: {
+		doc: "YDB's 64-bit date and time types Date32, Datetime64, Timestamp64 and Interval64 (YDB 25.2 and later)",
+	},
+	ParameterizedDecimal: {
+		doc: "DECIMAL takes the precision and scale the declaration names (not YDB 25.1, which has Decimal(22,9) only)",
+	},
+	AsyncIndexes: {
+		doc: "an index the server maintains asynchronously, YDB's GLOBAL ASYNC",
+	},
+	SerialColumns: {
+		doc: "SERIAL column types fill the column from an implicit sequence (PostgreSQL serial, YDB Serial)",
+	},
+	SmallIntegerDefaults: {
+		doc: "a 16-bit integer column takes a literal default (not YDB 25.1)",
+	},
+	DocumentTypeDefaults: {
+		doc: "YDB's JsonDocument and DyNumber columns take a literal default (YDB 25.3 and later)",
+	},
 }
 
 // mutexGroups lists capability groups in which AT MOST ONE member may be
@@ -1672,6 +1743,16 @@ func MySQL84() Capabilities {
 		CheckConstraints:                true,
 		IndexCoveringColumns:            false,
 		UniqueIndexOnExistingTable:      true,
+		// The six keys below describe YDB's type system and SERIAL. MySQL has
+		// DECIMAL(p,s), a SERIAL alias for BIGINT UNSIGNED AUTO_INCREMENT, and
+		// SMALLINT defaults; it has none of YDB's wide date types, async
+		// indexes, JsonDocument or DyNumber.
+		WideDateTimeTypes:    false,
+		ParameterizedDecimal: true,
+		AsyncIndexes:         false,
+		SerialColumns:        true,
+		SmallIntegerDefaults: true,
+		DocumentTypeDefaults: false,
 	}
 }
 
@@ -1856,6 +1937,14 @@ func MariaDB1011() Capabilities {
 		CheckConstraints:                true,
 		IndexCoveringColumns:            false,
 		UniqueIndexOnExistingTable:      true,
+		// As MySQL84: DECIMAL(p,s), the SERIAL alias and SMALLINT defaults,
+		// and none of YDB's own types.
+		WideDateTimeTypes:    false,
+		ParameterizedDecimal: true,
+		AsyncIndexes:         false,
+		SerialColumns:        true,
+		SmallIntegerDefaults: true,
+		DocumentTypeDefaults: false,
 	}
 }
 
@@ -1981,6 +2070,15 @@ func Postgres16() Capabilities {
 		CheckConstraints:                true,
 		IndexCoveringColumns:            true,
 		UniqueIndexOnExistingTable:      true,
+		// numeric(p,s), the serial pseudo-types and smallint defaults are
+		// PostgreSQL's own; YDB's wide date types, async indexes, JsonDocument
+		// and DyNumber are not.
+		WideDateTimeTypes:    false,
+		ParameterizedDecimal: true,
+		AsyncIndexes:         false,
+		SerialColumns:        true,
+		SmallIntegerDefaults: true,
+		DocumentTypeDefaults: false,
 	}
 }
 
@@ -2234,6 +2332,15 @@ func ClickHouse24() Capabilities {
 		CheckConstraints:           true,
 		IndexCoveringColumns:       false,
 		UniqueIndexOnExistingTable: false,
+		// Decimal(P, S) and Int16 defaults exist; SERIAL does not, and neither
+		// do YDB's wide date types (ClickHouse spells its own DateTime64),
+		// async indexes, JsonDocument or DyNumber.
+		WideDateTimeTypes:    false,
+		ParameterizedDecimal: true,
+		AsyncIndexes:         false,
+		SerialColumns:        false,
+		SmallIntegerDefaults: true,
+		DocumentTypeDefaults: false,
 	}
 }
 
@@ -2374,6 +2481,17 @@ func SQLite3() Capabilities {
 		CheckConstraints:           true,
 		IndexCoveringColumns:       false,
 		UniqueIndexOnExistingTable: true,
+		// SQLite stores any declared type name and keeps only its affinity, so
+		// DECIMAL(10,2) is NUMERIC with the precision ignored and SERIAL is not
+		// a rowid alias: false for both, and the probe declares the type keys
+		// undecidable because acceptance shows nothing here. A SMALLINT
+		// default is an INTEGER default.
+		WideDateTimeTypes:    false,
+		ParameterizedDecimal: false,
+		AsyncIndexes:         false,
+		SerialColumns:        false,
+		SmallIntegerDefaults: true,
+		DocumentTypeDefaults: false,
 	}
 }
 
@@ -2597,6 +2715,14 @@ func SQLServer2022() Capabilities {
 		CheckConstraints:           true,
 		IndexCoveringColumns:       false,
 		UniqueIndexOnExistingTable: true,
+		// DECIMAL(p,s) and SMALLINT defaults exist; SERIAL does not (an
+		// identity column is IDENTITY), and none of YDB's own types do.
+		WideDateTimeTypes:    false,
+		ParameterizedDecimal: true,
+		AsyncIndexes:         false,
+		SerialColumns:        false,
+		SmallIntegerDefaults: true,
+		DocumentTypeDefaults: false,
 	}
 }
 
@@ -2993,6 +3119,12 @@ func SpannerPostgres() Capabilities {
 		With(DomainTypes, false).
 		With(CompositeTypes, false).
 		With(RangeTypes, false).
+		// Measured on the emulator behind PGAdapter 0.56.1: `DECIMAL(10,2)`
+		// answers `Type modifier is not supported for type <numeric>`, and
+		// `smallint` answers `Type <int2> is not supported; use bigint or int8
+		// instead`, so there is no 16-bit column to carry a default.
+		With(ParameterizedDecimal, false).
+		With(SmallIntegerDefaults, false).
 		// Measured on the same endpoint AND confirmed against the PostgreSQL
 		// dialect's own reference, which is what separates these three from the
 		// assumptions below them: `ALTER TABLE Concerts DROP CONSTRAINT
@@ -3253,6 +3385,15 @@ func Oracle23() Capabilities {
 		CheckConstraints:           true,
 		IndexCoveringColumns:       false,
 		UniqueIndexOnExistingTable: true,
+		// DECIMAL(p,s) is NUMBER(p,s) and SMALLINT defaults exist; SERIAL does
+		// not (an identity column is GENERATED ... AS IDENTITY), and none of
+		// YDB's own types do.
+		WideDateTimeTypes:    false,
+		ParameterizedDecimal: true,
+		AsyncIndexes:         false,
+		SerialColumns:        false,
+		SmallIntegerDefaults: true,
+		DocumentTypeDefaults: false,
 	}
 }
 
@@ -3284,6 +3425,224 @@ func Oracle21() Capabilities {
 		With(CatalogVectorInfo, false)
 }
 
+// YDB262 is the preset for YDB 26.2, the newest line Ptah measured.
+//
+// Every value below was measured on ydbplatform/local-ydb 26.2.1.14 through
+// the bundled CLI, a statement per query, with the table read back through
+// `scheme describe --format proto-json-base64`. The other YDB presets derive
+// from this one and differ only where a line answered differently. A preset
+// describes a server running with default feature flags; a cluster that turns
+// a flag on can do more than its line's preset says.
+//
+// A key is true only where Ptah's renderer and planner reach the feature. The
+// reader, the migrator and the object families arrive in later phases of
+// stokaro/ptah#4015, so views, roles and the TTL policy read false here
+// whatever the server can do.
+func YDB262() Capabilities {
+	return Capabilities{
+		// Constraints. The grammar has no CHECK, FOREIGN KEY, UNIQUE
+		// constraint or CONSTRAINT clause at all: each answers `no viable
+		// alternative at input` or `extraneous input`, and a named PRIMARY KEY
+		// (`CONSTRAINT pk PRIMARY KEY (id)`) is a parse error too.
+		DropConstraintGeneric:              false,
+		DropConstraintIfExists:             false,
+		CheckConstraintsEnforced:           false,
+		DropCheckClause:                    false,
+		CheckConstraints:                   false,
+		UniqueConstraints:                  false,
+		UniqueNullsDistinctClause:          false,
+		NamedNotNullConstraints:            false,
+		NotEnforcedChecks:                  false,
+		DeferrableConstraints:              false,
+		DeferrableKeys:                     false,
+		AddConstraintNotValid:              false,
+		ConstraintComments:                 false,
+		ForeignKeys:                        false,
+		ForeignKeysRequireUniqueReference:  false,
+		ForeignKeysRequireIndexedReference: false,
+		ForeignKeysCreateBackingIndex:      false,
+		NotEnforcedForeignKeys:             false,
+		ForeignKeyMatchFull:                false,
+		ForeignKeyMatchPartial:             false,
+		ForeignKeyDeleteColumnList:         false,
+
+		// Guards. `CREATE TABLE IF NOT EXISTS` and `DROP TABLE IF EXISTS` are
+		// accepted on every line from 25.1.4.7 to 26.2.1.14. On 26.2.1.14 the
+		// guard is a guard: a guarded CREATE of an existing table succeeds and
+		// leaves its columns alone, where the unguarded statement answers
+		// `path exist`, and an unguarded DROP of a missing table is refused
+		// while the guarded one is accepted. `ALTER TABLE ... DROP INDEX` has
+		// no IF EXISTS (`mismatched input 'EXISTS'`).
+		ObjectExistenceGuards: true,
+		DropIndexIfExists:     false,
+
+		// User types and routines. CREATE TYPE, DOMAIN, FUNCTION, PROCEDURE,
+		// TRIGGER and SEQUENCE are parse errors; an enum is neither a column
+		// type nor a named type.
+		EnumInlineColumn:               false,
+		EnumCustomType:                 false,
+		DomainTypes:                    false,
+		CompositeTypes:                 false,
+		RangeTypes:                     false,
+		Functions:                      false,
+		Procedures:                     false,
+		Triggers:                       false,
+		CreateOrReplaceTrigger:         false,
+		Sequences:                      false,
+		SequenceStartCounterOnly:       false,
+		XMLType:                        false,
+		GeneratedColumns:               false,
+		AlterGeneratedColumnExpression: false,
+
+		// Views exist on the server and are the views family's work in a later
+		// phase; until it lands the renderer refuses them, so the key is
+		// false. A materialized view does not exist (`CREATE MATERIALIZED
+		// VIEW` is a parse error).
+		Views:             false,
+		MaterializedViews: false,
+
+		// No COMMENT statement exists for any object. Comments are stored as
+		// table attributes by a later phase, through the scheme API.
+		SchemaComments:           false,
+		ViewComments:             false,
+		SequenceComments:         false,
+		TypeComments:             false,
+		DomainComments:           false,
+		ExtensionComments:        false,
+		FunctionComments:         false,
+		ProcedureComments:        false,
+		MaterializedViewComments: false,
+		TriggerComments:          false,
+		PolicyComments:           false,
+
+		// Access control is YDB's own model (users, groups, permissions) and
+		// is a later phase. Row-level security does not exist.
+		RoleManagement:      false,
+		RowLevelSecurity:    false,
+		CheckGrantStatement: false,
+
+		// The PostgreSQL catalog reads have no YDB counterpart: no
+		// information_schema, no pg_catalog. The reader decodes DescribeTable
+		// instead, so every key that names a PostgreSQL catalog is false.
+		PostgresCatalogFunctions:        false,
+		CatalogRowStatistics:            false,
+		CatalogVectorInfo:               false,
+		CatalogDependencies:             false,
+		CatalogDefaultPrivileges:        false,
+		CatalogTriggerDefinitions:       false,
+		CatalogViewDependencies:         false,
+		CatalogRecursiveCTE:             false,
+		CatalogPartitions:               false,
+		CatalogCheckConstraintTableName: false,
+		ShowRoutinePrivilege:            false,
+
+		// Indexes. There is no CREATE INDEX: an index is declared in CREATE
+		// TABLE or added with ALTER TABLE ... ADD INDEX, one per statement
+		// (`Only one index can be added by one operation`). COVER carries an
+		// index's payload columns. GLOBAL ASYNC is accepted inline and through
+		// ALTER. A unique index is accepted in CREATE TABLE and refused on an
+		// existing table, even an empty one: `Adding a unique index to an
+		// existing table is disabled`.
+		CreateIndexConcurrently:    false,
+		DropIndexConcurrently:      false,
+		IndexIncludeSPGiST:         false,
+		InvisibleIndexes:           false,
+		IndexCoveringColumns:       true,
+		AsyncIndexes:               true,
+		UniqueIndexOnExistingTable: false,
+
+		// Tables and their in-place changes. A table needs a key (`Primary
+		// key is required for ydb tables.`), and no ALTER changes it. A
+		// column's type never changes and a column is never renamed: `ALTER
+		// COLUMN ... SET DATA TYPE` and `RENAME COLUMN` are parse errors. DROP
+		// NOT NULL is accepted and reads back as an optional type; SET NOT
+		// NULL answers `SET NOT NULL is currently not supported.` SET DEFAULT
+		// and DROP DEFAULT are accepted on this line and refused on 26.1.
+		// ADD COLUMN with a default fills the default into existing rows.
+		// A default is a literal: `DEFAULT CurrentUtcTimestamp()` answers
+		// `Unsupported type of literal`.
+		PrimaryKeyRequired:      true,
+		PrimaryKeyAlterable:     false,
+		AlterColumnType:         false,
+		AlterColumnSetNotNull:   false,
+		AlterColumnDropNotNull:  true,
+		AlterColumnDefault:      true,
+		AddColumnWithDefault:    true,
+		ExpressionDefaults:      false,
+		RenameColumnClause:      false,
+		AlterTableAlgorithmLock: false,
+
+		// Types. The wide date and time types, Decimal(p,s) with p up to 35,
+		// Serial, BigSerial and SmallSerial, and a literal default on every
+		// column type are all accepted on this line.
+		WideDateTimeTypes:    true,
+		ParameterizedDecimal: true,
+		SerialColumns:        true,
+		SmallIntegerDefaults: true,
+		DocumentTypeDefaults: true,
+
+		// TTL is YDB's own (`TTL = Interval(...) ON col`) and is the TTL
+		// family's work in a later phase; CockroachDB's row-level TTL does not
+		// exist here.
+		RowLevelTTL:       false,
+		RowDeletionPolicy: false,
+
+		// Execution. DDL never runs inside a transaction: `Scheme operations
+		// cannot be executed inside transaction`. There is no advisory lock;
+		// the migration lock is a coordination-node semaphore in a later
+		// phase. Statement timeouts are the migrator's work in a later phase.
+		TransactionalDDL:     false,
+		DDLInsideTransaction: false,
+		AdvisoryLocks:        false,
+		MigrationTimeouts:    false,
+
+		// Extensions of other engines.
+		Hypertables:          false,
+		ContinuousAggregates: false,
+	}
+}
+
+// YDB261 is the preset for YDB 26.1. It differs from [YDB262] in one key:
+// measured on 26.1.1.22, `ALTER TABLE ... ALTER COLUMN b SET DEFAULT 2` and
+// `DROP DEFAULT` are both refused at type annotation, where 26.2.1.14 accepts
+// them.
+func YDB261() Capabilities {
+	return YDB262().With(AlterColumnDefault, false)
+}
+
+// YDB253 is the preset for YDB 25.3 and 25.4, which answered every measured
+// statement alike. It differs from [YDB261] in one key: ADD COLUMN with a
+// default is refused on an empty table and on one holding rows, as `Adding
+// columns with defaults is disabled` (measured on 25.3.1.25 and 25.4.1.15).
+func YDB253() Capabilities {
+	return YDB261().With(AddColumnWithDefault, false)
+}
+
+// YDB252 is the preset for YDB 25.2. It differs from [YDB253] in one key:
+// measured on 25.2.1.24, a JsonDocument or DyNumber column with a literal
+// default answers `Unsupported type of literal: JsonDocument` (and
+// `DyNumber`), where 25.3.1.25 accepts both.
+func YDB252() Capabilities {
+	return YDB253().With(DocumentTypeDefaults, false)
+}
+
+// YDB251 is the preset for YDB 25.1, the oldest line Ptah measured.
+//
+// It differs from [YDB252] in three keys, each measured on 25.1.4.7:
+//
+//   - the 64-bit date and time types are behind a flag that is off (`support
+//     for new date/time 64 types is disabled`);
+//   - Decimal takes no precision but (22,9) (`support for parametrized decimal
+//     is disabled`);
+//   - an Int16 or Uint16 column with a literal default fails the CREATE TABLE
+//     with `INTERNAL_ERROR ... Unexpected type slot Int16`.
+func YDB251() Capabilities {
+	return YDB252().
+		With(WideDateTimeTypes, false).
+		With(ParameterizedDecimal, false).
+		With(SmallIntegerDefaults, false)
+}
+
 var defaultDialectPresets = map[string]func() Capabilities{
 	platform.ClickHouse:  ClickHouse24,
 	platform.CockroachDB: CockroachDB26,
@@ -3295,6 +3654,7 @@ var defaultDialectPresets = map[string]func() Capabilities{
 	platform.SQLServer:   SQLServer2022,
 	platform.YugabyteDB:  YugabyteDB25,
 	platform.Oracle:      Oracle23,
+	platform.YDB:         YDB262,
 }
 
 // DefaultDialects returns the normalized dialect names for which [ForDialect]
@@ -3351,6 +3711,11 @@ func NamedPresets() []NamedPreset {
 		{"SpannerPostgres", SpannerPostgres()},
 		{"Oracle21", Oracle21()},
 		{"Oracle23", Oracle23()},
+		{"YDB251", YDB251()},
+		{"YDB252", YDB252()},
+		{"YDB253", YDB253()},
+		{"YDB261", YDB261()},
+		{"YDB262", YDB262()},
 	}
 }
 
@@ -3440,12 +3805,10 @@ const (
 // version could not be parsed, it fell between measured lines, or it ran off
 // the top of the ladder.
 //
-// Saturation is defined where this package has a version ladder: MySQL,
-// MariaDB, PostgreSQL, and CockroachDB. YugabyteDB and Spanner are resolved
-// from the banner without consulting a version at all, and ClickHouse, SQLite,
-// and SQL Server have no ladder to saturate; those five report Saturated=false
-// and an empty NewestMeasured. Refining those dialects is remaining scope of
-// issue #916 and is deliberately not answered here.
+// Saturation is defined where a dialect's ladder names a newest measured line.
+// SQLite's ladder is one step that names none, and Spanner is resolved from
+// the banner without consulting a version at all; both report Saturated=false
+// and an empty NewestMeasured.
 type VersionResolution struct {
 	// Capabilities is the resolved preset, never nil for a known dialect.
 	Capabilities Capabilities
@@ -3561,7 +3924,7 @@ func ForServerVersionResult(dialect, version string) (Capabilities, bool) {
 // Membership rule: a product belongs here when the SERVER's own version
 // surface names it. That is the string this function is handed, live or typed,
 // and it is the only evidence a mismatch guard can act on. Measured across the
-// nine dialects platform names:
+// dialects platform names:
 //
 //   - postgres, mariadb, cockroachdb, yugabytedb and spanner put the product in
 //     the version string itself, and are claimed above.
@@ -3582,6 +3945,11 @@ func ForServerVersionResult(dialect, version string) (Capabilities, bool) {
 //     correct one and any token would have to come from a client banner
 //     instead — and the MySQL client's is shared with MariaDB's
 //     ("mysql  Ver 15.1 Distrib 10.11.6-MariaDB"), so it names no server.
+//   - ydb is absent for the same reason. `SELECT Version()` answers a bare
+//     "26.2.1.14" on local-ydb 26.2.1.14 and the build branch "stable-25-4-1"
+//     on 25.4.1.15, and neither names the product. The dialect comes from the
+//     `ydb://` URL scheme or from --dialect, and ResolveServerVersion reads the
+//     YDB ladder from that declared dialect.
 func BannerPlatform(version string) string {
 	versionLower := strings.ToLower(version)
 	switch {
@@ -3678,13 +4046,28 @@ func ResolveServerVersion(dialect, version string) VersionResolution {
 		return resolvedAs(mariaDBResolution(version), platform.MariaDB)
 	}
 
+	if normalized == platform.YDB {
+		// YDB names no product in its version string, so BannerPlatform
+		// cannot recognize it and the dialect comes from the caller: the URL
+		// scheme on a live connection, --dialect offline. The arm sits ahead
+		// of the shared parse because one of the two shapes YDB reports is a
+		// branch name the shared parse misreads; see ydbServerVersion.
+		return resolvedAs(ydbResolution(version), platform.YDB)
+	}
+
 	v, ok := parseVersion(version)
 	if !ok {
 		// Recognized stays false: the preset below is ForDialect's, picked
 		// without reading anything out of the string.
 		return VersionResolution{Capabilities: ForDialect(dialect), ResolvedDialect: normalized}
 	}
+	return parsedResolution(dialect, normalized, version, v)
+}
 
+// parsedResolution climbs the ladder of the declared dialect for a version
+// string that named no product, so the banner switch in ResolveServerVersion
+// had nothing to read.
+func parsedResolution(dialect, normalized, version string, v serverVersion) VersionResolution {
 	switch normalized {
 	case platform.MySQL:
 		return resolvedAs(mysqlResolution(v), platform.MySQL)
@@ -3862,6 +4245,81 @@ func oracleForVersion(v serverVersion) Capabilities {
 		return Oracle23()
 	}
 	return Oracle21()
+}
+
+// ydbResolution refines a YDB version onto its ladder.
+//
+// A string this function cannot read selects no line, and the preset is the
+// dialect default with Recognized false, the shape every other ladder uses for
+// an unreadable version. A version below the oldest measured line takes that
+// line's preset: 24.4.4.12 starts and has no SHOW CREATE and no 2026 patch,
+// and nothing older was measured, so the oldest measured answer is the
+// conservative one. VersionSpecific stays false there, because no measured
+// line selected it.
+func ydbResolution(version string) VersionResolution {
+	v, ok := ydbServerVersion(version)
+	if !ok {
+		return VersionResolution{Capabilities: ForDialect(platform.YDB)}
+	}
+	return measuredMinorLineResolution(
+		ydbForVersion(v), v, capabilityline.YDBMeasured(), capabilityline.YDB262)
+}
+
+// ydbServerVersion reads the release out of what `SELECT Version()` returns.
+//
+// YDB reports two shapes, measured: the dotted release, `26.2.1.14` on
+// local-ydb 26.2.1.14 and likewise on 25.1, 25.2, 25.3 and 26.1, and the name of
+// the branch the build came from, `stable-25-4-1` on local-ydb 25.4.1.15. The
+// shared parse reads the second as 25.0 and would hand a 25.4 server the 25.1
+// preset, so the branch shape is read here first: `stable-<major>-<minor>`
+// with an optional patch.
+func ydbServerVersion(version string) (serverVersion, bool) {
+	trimmed := strings.TrimSpace(version)
+	if rest, ok := strings.CutPrefix(strings.ToLower(trimmed), "stable-"); ok {
+		parts := strings.Split(rest, "-")
+		if len(parts) < 2 || len(parts) > 3 {
+			return serverVersion{}, false
+		}
+		numbers := make([]int, 3)
+		for i, part := range parts {
+			number, err := strconv.Atoi(part)
+			if err != nil || number < 0 {
+				return serverVersion{}, false
+			}
+			numbers[i] = number
+		}
+		return serverVersion{major: numbers[0], minor: numbers[1], patch: numbers[2]}, true
+	}
+	if trimmed == "" || trimmed[0] < '0' || trimmed[0] > '9' {
+		// A string that does not open with the release names no YDB release:
+		// `trunk`, `main` and the other floating builds carry no number.
+		return serverVersion{}, false
+	}
+	return parseVersion(trimmed)
+}
+
+// ydbForVersion picks the arm. Each step is a line the measurement separated
+// from the one below it; 25.3 and 25.4 answered alike and share a preset.
+func ydbForVersion(v serverVersion) Capabilities {
+	switch {
+	case atLeastLine(v, capabilityline.YDB262):
+		return YDB262()
+	case atLeastLine(v, capabilityline.YDB261):
+		return YDB261()
+	case atLeastLine(v, capabilityline.YDB253):
+		return YDB253()
+	case atLeastLine(v, capabilityline.YDB252):
+		return YDB252()
+	default:
+		return YDB251()
+	}
+}
+
+// atLeastLine reports whether v is on line or a newer one, comparing major and
+// minor as the ladders do.
+func atLeastLine(v serverVersion, line string) bool {
+	measured, _ := parseVersion(line)
+	return compareServerVersion(v, measured) >= 0
 }
 
 // sqlServerResolution answers a SQL Server banner.

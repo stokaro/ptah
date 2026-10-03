@@ -108,10 +108,13 @@ func day(year int, month time.Month, dayOfMonth int) time.Time {
 //
 // SQLite publishes no end-of-life calendar at all and is compiled into the
 // binary rather than run as a server; Spanner is a managed service whose only
-// container is an emulator with no release line.
+// container is an emulator with no release line; YDB publishes no support
+// period for its lines, and endoflife.date has no product for it (the API
+// answers 404 for `ydb`).
 var Unlisted = map[string]string{
 	platform.SQLite:  "SQLite publishes no end-of-life calendar, and the engine is compiled in",
 	platform.Spanner: "a managed service; the cell names an emulator rather than a release line",
+	platform.YDB:     "YDB publishes no support period for its release lines, and endoflife.date has no entry for it",
 }
 
 // Cycle is one release line as endoflife.date reports it.

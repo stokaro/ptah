@@ -66,7 +66,8 @@
         "gvenzl/oracle-free",
         "gvenzl/oracle-xe",
         "mcr.microsoft.com/mssql/server",
-        "gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator"
+        "gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator",
+        "ydbplatform/local-ydb"
       ],
       "groupName": "database server images",
       "automerge": false,

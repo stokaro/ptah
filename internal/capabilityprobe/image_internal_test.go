@@ -84,3 +84,28 @@ func TestReplaceDockerImageReplacesOnlyTheImageSelector(t *testing.T) {
 	c.Assert(arguments[2], qt.Equals, "yugabytedb/yugabyte:2025.2",
 		qt.Commentf("resolution must not mutate the matrix declaration shared by other jobs"))
 }
+
+// A YDB line has no build suffix: its patch tags are the release alone, and the
+// line's own tag (`26.2`) is a stale build rather than the newest patch. The
+// tags here are the ones Docker Hub lists for ydbplatform/local-ydb, the
+// suffixed hotfix and per-customer builds included, which must not win.
+func TestResolveDockerHubImageSelectsNewestPlainNumericPatch(t *testing.T) {
+	c := qt.New(t)
+	body := `{"next":"","results":[` +
+		`{"name":"26.2"},{"name":"26.2.1"},{"name":"26.2.1.7"},{"name":"26.2.1.9"},` +
+		`{"name":"26.2.1.9.hotfix.1"},{"name":"26.2.1.11"},{"name":"26.2.1.14"},{"name":"26.2.1.14.ic2.1"},` +
+		`{"name":"26.2.1.13"},{"name":"26.3.1.18"}]}`
+
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		c.Check(request.URL.Path, qt.Equals, "/ydbplatform/local-ydb/tags")
+		c.Check(request.URL.Query().Get("name"), qt.Equals, "26.2.")
+		return jsonResponse(body), nil
+	})}
+
+	got, err := resolveDockerHubImage(
+		context.Background(), client, "https://hub.example.test",
+		"ydbplatform/local-ydb:26.2", "26.2",
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.Equals, "ydbplatform/local-ydb:26.2.1.14")
+}

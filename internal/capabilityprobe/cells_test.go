@@ -673,6 +673,16 @@ func TestCells_BestEffortLinesAreExactlyTheUnmeasuredOnes(t *testing.T) {
 	// (stokaro/ptah#3190).
 	c.Assert(bestEffort, qt.ContentEquals, []string{
 		"spanner-0",
+		// Every YDB line: the probe has no YDB statement table or launch
+		// recipe (stokaro/ptah#4015). The presets were measured by hand on
+		// local-ydb, and nothing in continuous integration starts a YDB
+		// server.
+		"ydb-26-2",
+		"ydb-26-1",
+		"ydb-25-4",
+		"ydb-25-3",
+		"ydb-25-2",
+		"ydb-25-1",
 		// ClickHouse 25.8 came back, and by the other route: not a line that
 		// lost a recipe, but one whose vendor stopped patching it. Upstream
 		// support ended on 2026-08-29, and end of life lowers what Ptah
