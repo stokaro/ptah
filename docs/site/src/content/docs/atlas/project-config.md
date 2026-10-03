@@ -285,12 +285,21 @@ one numeric Atlas file per changeset; direct apply retains its numbered-file
 requirement and source-file boundary. See
 [`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742).
 
-`env.src` and `env.schema.src` provide local schema-file defaults for
-`schema apply` and `schema diff`. `migrate diff` resolves the same defaults
-through its typed desired-state resolver, so they can contain local schema
-files or one directly connectable database URL. Plain local schema paths and
-relative `file://` schema URLs declared in `atlas.hcl` resolve relative to the
-directory containing that `atlas.hcl` file, not the process working directory.
+`env.src` and `env.schema.src` are the desired schema of `schema apply`,
+`schema diff` and `migrate diff` when `--to` is left out. Each verb reads them
+as `--to env://src` reads them, so a default can be anything that reference
+accepts:
+
+- a local schema file or directory, or a migration directory;
+- one directly connectable database URL;
+- a value that the `hcl_schema`, `external_schema`, `composite_schema` or
+  `remote_schema` data source mints.
+
+Plain local schema paths and relative `file://` schema URLs declared in
+`atlas.hcl` resolve relative to the directory containing that `atlas.hcl` file,
+not the process working directory. The pinned community binary requires
+`--to` on `schema diff` (`required flag(s) "to" not set`) and falls back to the
+env's source on `schema apply` only; Ptah reads the env's source on both.
 Explicit CLI `--to` and `--from` values keep CLI semantics and resolve relative
 to the process working directory unless they are absolute.
 
@@ -823,9 +832,11 @@ supported.
 
 Parent-relative paths that resolve outside the project root, absolute paths
 outside it, and symbolic links that leave it fail as `outside allowed root`.
-Non-local URI schemes in `migration.dir` and `schema.src` fail explicitly when
-a command needs that configured value; an explicit CLI path flag still wins
-before URI validation.
+Non-local URI schemes in `migration.dir` fail explicitly when a command needs
+that configured value; an explicit CLI path flag still wins before URI
+validation. A `schema.src` value with a scheme is classified as `--to
+env://src` classifies it, and a scheme that names no source kind fails
+explicitly.
 
 ## Docker dev database block
 

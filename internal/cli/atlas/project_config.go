@@ -1271,12 +1271,12 @@ func applyAtlasSchemaTestProjectConfig(
 	if atlasFlagValueSet(flags, args, "url") {
 		return args, nativeVars, nil
 	}
-	// The schema test verb consumes a single local schema file as --url; an
-	// external schema program has no file spelling to map onto it.
-	if expanded := atlasExpandedDesiredState(cfg); expanded != "" {
-		return nil, nil, fmt.Errorf(
-			"atlas schema test does not support atlas.hcl %s desired state yet; pass --url explicitly", expanded,
-		)
+	// The schema test verb consumes one local schema file or one database URL
+	// as --url. An external schema program, a composition and a registry
+	// artifact have no such spelling to map onto it.
+	expanded := atlasExpandedDesiredState(cfg)
+	if atlasExternalSchemaConfigured(cfg) {
+		return nil, nil, atlasSchemaTestExpandedRefusal(expanded)
 	}
 	sources := cfg.SchemaSourcesValue()
 	if !sources.Present {
@@ -1296,18 +1296,28 @@ func applyAtlasSchemaTestProjectConfig(
 		}
 	}
 	// A database desired-state source has no local path to resolve against the
-	// atlas.hcl directory, and the shared local-file resolver refuses it with
-	// "only local file:// schema files are supported". That resolver is left
-	// exactly as it is because `schema diff`'s env path pins its wording; the
-	// schema-test accommodation belongs here, on the one verb that wants it.
+	// atlas.hcl directory, so the local-file resolver below cannot take it. The
+	// verb reads a database URL as --url directly, which is why this comes
+	// before the refusal of every other non-file state.
 	if source, err := atlassource.Classify(sources.Value[0]); err == nil && source.Kind == atlassource.KindDatabase {
 		return append(args, "--url", strings.TrimSpace(sources.Value[0])), nativeVars, nil
+	}
+	if expanded != "" {
+		return nil, nil, atlasSchemaTestExpandedRefusal(expanded)
 	}
 	urls, err := atlasProjectConfigSchemaURLsFromFlags(projectFlags, sources.Value)
 	if err != nil {
 		return nil, nil, fmt.Errorf("atlas.hcl schema.src: %w", err)
 	}
 	return append(args, "--url", urls[0]), nativeVars, nil
+}
+
+// atlasSchemaTestExpandedRefusal refuses a desired state the schema test verb
+// cannot map onto --url, naming it.
+func atlasSchemaTestExpandedRefusal(expanded string) error {
+	return fmt.Errorf(
+		"atlas schema test does not support atlas.hcl %s desired state yet; pass --url explicitly", expanded,
+	)
 }
 
 func atlasSchemaTestNativeVarArgs(vars []string) []string {
@@ -1350,23 +1360,41 @@ func atlasExternalSchemaConfigured(cfg projectconfig.Config) bool {
 	return len(cfg.ExternalSchema.Program) > 0
 }
 
-// atlasExpandedDesiredState names the atlas.hcl data source the loaded env's
-// desired state is when that state is not a list of local schema files, and
-// is empty otherwise.
+// atlasExpandedDesiredState names the loaded env's desired state when it is
+// anything other than local schema files, and is empty otherwise.
 //
-// Either one is spelled env://src and expanded by the source resolver, which is
-// the only layer that classifies it; resolving it as file:// URLs here would
-// refuse it as "only local file:// schema files are supported". The commands
-// that substitute env://src and the commands that refuse it ask this one
-// question, so a data source added to the first cannot be missed by the second.
+// Such a state is spelled env://src and expanded by the source resolver, which
+// is the only layer that classifies it; resolving it as file:// URLs here
+// would refuse it as "only local file:// schema files are supported". Which
+// values those are is [atlassource.EnvSourceIsLocal]'s answer, the branch the
+// expansion itself takes, so every kind env://src accepts reaches it and none
+// is listed here. The commands that substitute env://src for an omitted --to
+// and the commands that refuse a non-file state ask this one question.
 func atlasExpandedDesiredState(cfg projectconfig.Config) string {
-	switch {
-	case atlasExternalSchemaConfigured(cfg):
+	if atlasExternalSchemaConfigured(cfg) {
 		return "data.external_schema"
-	case cfg.HasCompositeSchemaSource():
+	}
+	for _, value := range cfg.SchemaSources {
+		if !atlassource.EnvSourceIsLocal(value) {
+			return atlasEnvSourceName(value)
+		}
+	}
+	return ""
+}
+
+// atlasEnvSourceName names a non-file desired-state source for a refusal: the
+// data source that minted a marker, or the scheme of a URL the env names
+// directly. It words a message and decides nothing; which values are expanded
+// is [atlasExpandedDesiredState]'s question.
+func atlasEnvSourceName(value string) string {
+	scheme, _, _ := strings.Cut(strings.TrimSpace(value), "://")
+	switch scheme {
+	case projectconfig.CompositeSchemaMarkerScheme:
 		return "data.composite_schema"
+	case projectconfig.RemoteSchemaMarkerScheme:
+		return "data.remote_schema"
 	default:
-		return ""
+		return scheme + "://"
 	}
 }
 

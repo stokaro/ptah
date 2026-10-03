@@ -822,6 +822,23 @@ func classifyAtlasReference(trimmed string) (Source, error) {
 	return Source{Raw: trimmed, Kind: KindRemoteSchema, OCIReference: reference.OCI}, nil
 }
 
+// EnvSourceIsLocal reports whether value, one of the desired-state sources an
+// atlas.hcl env names, is a local path -- a plain path or a file:// URL,
+// resolved against the atlas.hcl directory -- rather than a URL whose scheme
+// [Classify] reads, or a marker a data source minted.
+//
+// It is the branch env://src expansion takes for each value, and the
+// commands that substitute an env's sources for an omitted --to ask it too: a
+// value it answers false for reaches them through env://src, the one place
+// that classifies every other kind. One predicate, because two lists would
+// agree when the second was written and disagree from the next source kind
+// on, and a value the second missed would be read as a local file and refused
+// as one (stokaro/ptah#4061).
+func EnvSourceIsLocal(value string) bool {
+	base, _, _ := strings.Cut(strings.TrimSpace(value), "?")
+	return !strings.Contains(base, "://") || strings.HasPrefix(base, "file://")
+}
+
 func classifyEnvValue(value, baseDir string) (Source, error) {
 	trimmed := strings.TrimSpace(value)
 	// A remote-schema marker is recognized HERE and nowhere else: this function
@@ -835,8 +852,7 @@ func classifyEnvValue(value, baseDir string) (Source, error) {
 		}
 		return Source{Raw: trimmed, Kind: KindRemoteSchema, OCIReference: reference}, nil
 	}
-	base, _, _ := strings.Cut(trimmed, "?")
-	if strings.Contains(base, "://") && !strings.HasPrefix(base, "file://") {
+	if !EnvSourceIsLocal(trimmed) {
 		source, err := Classify(trimmed)
 		if err != nil {
 			return Source{}, err
