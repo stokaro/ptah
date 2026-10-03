@@ -525,4 +525,3 @@ func TestYDBMigrator_RunsADataQueryWithItsCheckpoint(t *testing.T) {
 	})
 	c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+dir+"/h`"), qt.Equals, int64(1))
 }
-
