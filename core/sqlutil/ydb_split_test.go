@@ -132,6 +132,25 @@ func TestSplitSQLStatementsForDialect_YDBCompoundBodies(t *testing.T) {
 			},
 		},
 		{
+			// Measured: two columns, then a second statement. A comma
+			// separates DO and BEGIN, so they open no block.
+			name: "DO and BEGIN as columns",
+			sql:  "SELECT do, begin FROM (SELECT 1 AS do, 2 AS begin); SELECT 2 AS two;",
+			want: []string{"SELECT do, begin FROM (SELECT 1 AS do, 2 AS begin)", "SELECT 2 AS two"},
+		},
+		{
+			// Measured: the action answered both selects. A comma separates
+			// END and DEFINE, so they close nothing.
+			name: "END and DEFINE as columns inside an action",
+			sql: "DEFINE ACTION $a() AS SELECT end, define FROM (SELECT 1 AS end, 2 AS define); SELECT 2 AS two; " +
+				"END DEFINE; DO $a();",
+			want: []string{
+				"DEFINE ACTION $a() AS SELECT end, define FROM (SELECT 1 AS end, 2 AS define); SELECT 2 AS two; " +
+					"END DEFINE",
+				"DO $a()",
+			},
+		},
+		{
 			// A backticked word is a name, never the keyword.
 			name: "a quoted END is a name",
 			sql:  "DEFINE ACTION $a() AS SELECT 1 AS `END`; SELECT 2; END DEFINE; SELECT 3;",

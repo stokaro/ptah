@@ -113,7 +113,12 @@ func (b *yqlBodies) separate() {
 	b.named = false
 }
 
+// symbol records punctuation. It separates the words on either side of it as
+// a semicolon does: measured on YDB 26.2.1.14, SELECT do, begin FROM ... is
+// two columns, and SELECT end, define FROM ... inside an action closes
+// nothing.
 func (b *yqlBodies) symbol(value string) {
+	b.previous = ""
 	b.named = value == "."
 	switch value {
 	case "{":
