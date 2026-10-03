@@ -140,12 +140,10 @@ func atlasDatabaseURLDiagnostic(rawURL string) error {
 // edition has a YDB driver, and the verbs of this surface do not reach it yet:
 // the HCL a YDB schema inspects to, the Atlas-format revision table and the
 // verbs' own checks are planned together. Strict mode refuses the same URL
-// earlier, in the words of the pinned binary, so this answers the default mode
-// only.
+// earlier, in the words of the pinned binary, so in practice this answers the
+// default mode; it does not step aside in strict mode, because a URL strict
+// mode let through must not reach a verb that cannot serve it.
 func refuseAtlasYDBURLFlags(cmd *cobra.Command) error {
-	if atlasCompatibilityPolicy(cmd).IsStrictCE() {
-		return nil
-	}
 	for _, name := range []string{"url", "dev-url", "from", "to"} {
 		flag := cmd.Flags().Lookup(name)
 		if flag == nil || !flag.Changed {
