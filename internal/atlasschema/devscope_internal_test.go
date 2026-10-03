@@ -147,6 +147,56 @@ func TestRescopeStatementsForDevDatabaseRewritesTheTargetIntoTheDevDatabase(t *t
 			statements: []string{"CREATE TABLE `users` (`id` int)"},
 			want:       []string{"CREATE TABLE `users` (`id` int)"},
 		},
+		// A trigger body names its row as NEW.col and OLD.col, which are
+		// not databases (stokaro/ptah#4016).
+		{
+			name:    "mysql leaves the row references of a trigger body alone",
+			dialect: platform.MySQL,
+			target:  "app",
+			dev:     "appdev",
+			statements: []string{
+				"CREATE TRIGGER `audit` AFTER UPDATE ON `app`.`t` FOR EACH ROW " +
+					"INSERT INTO `app`.`log` (a, b) VALUES (NEW.a, OLD.b)",
+			},
+			want: []string{
+				"CREATE TRIGGER `audit` AFTER UPDATE ON `appdev`.`t` FOR EACH ROW " +
+					"INSERT INTO `appdev`.`log` (a, b) VALUES (NEW.a, OLD.b)",
+			},
+		},
+		{
+			name:       "mariadb leaves a quoted and a lowercase row reference alone",
+			dialect:    platform.MariaDB,
+			target:     "app",
+			dev:        "appdev",
+			statements: []string{"CREATE OR REPLACE TRIGGER t BEFORE INSERT ON t FOR EACH ROW SET `NEW`.b = new.a * 2"},
+			want:       []string{"CREATE OR REPLACE TRIGGER t BEFORE INSERT ON t FOR EACH ROW SET `NEW`.b = new.a * 2"},
+		},
+		{
+			name:    "mysql rewrites a target named new where a table is read and keeps the row",
+			dialect: platform.MySQL,
+			target:  "new",
+			dev:     "appdev",
+			statements: []string{
+				"CREATE TRIGGER t AFTER INSERT ON t FOR EACH ROW INSERT INTO new.audit (v) VALUES (NEW.a)",
+			},
+			want: []string{
+				"CREATE TRIGGER t AFTER INSERT ON t FOR EACH ROW INSERT INTO `appdev`.audit (v) VALUES (NEW.a)",
+			},
+		},
+		{
+			name:    "mysql reads a table list past a derived table in a compound body",
+			dialect: platform.MySQL,
+			target:  "app",
+			dev:     "appdev",
+			statements: []string{
+				"CREATE DEFINER = CURRENT_USER TRIGGER t AFTER INSERT ON t FOR EACH ROW FOLLOWS other BEGIN " +
+					"SET @c = (SELECT COUNT(*) FROM (SELECT 1 AS k FROM app.x) d, app.y WHERE k = NEW.k); END",
+			},
+			want: []string{
+				"CREATE DEFINER = CURRENT_USER TRIGGER t AFTER INSERT ON t FOR EACH ROW FOLLOWS other BEGIN " +
+					"SET @c = (SELECT COUNT(*) FROM (SELECT 1 AS k FROM `appdev`.x) d, `appdev`.y WHERE k = NEW.k); END",
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -210,6 +260,68 @@ func TestRescopeStatementsForDevDatabaseRefusesAThirdDatabase(t *testing.T) {
 			wantIndex:  2,
 			wantSchema: "elsewhere",
 			wantErr:    `dev database simulation refused: statement 2 names schema "elsewhere", but the dev database is "appdev"\..*`,
+		},
+		// Measured on MySQL 8.4.11 and MariaDB 11.8.9: where a table is read,
+		// NEW and OLD name a database, inside a trigger body too
+		// (stokaro/ptah#4016).
+		{
+			name:    "mysql refuses a trigger body that writes to a database named new",
+			dialect: platform.MySQL,
+			target:  "app",
+			dev:     "appdev",
+			statements: []string{
+				"CREATE TRIGGER t AFTER INSERT ON t FOR EACH ROW INSERT INTO new.audit (v) VALUES (NEW.a)",
+			},
+			wantIndex:  1,
+			wantSchema: "new",
+			wantErr:    `dev database simulation refused: statement 1 names schema "new", but the dev database is "appdev"\..*`,
+		},
+		{
+			name:    "mysql refuses new in the comma list of a multi-table update",
+			dialect: platform.MySQL,
+			target:  "app",
+			dev:     "appdev",
+			statements: []string{
+				"CREATE TRIGGER t AFTER INSERT ON t FOR EACH ROW UPDATE t2, new.audit SET t2.a = NEW.a",
+			},
+			wantIndex:  1,
+			wantSchema: "new",
+			wantErr:    `dev database simulation refused: statement 1 names schema "new", but the dev database is "appdev"\..*`,
+		},
+		{
+			name:    "mysql refuses new in a table list that continues past a derived table",
+			dialect: platform.MySQL,
+			target:  "app",
+			dev:     "appdev",
+			statements: []string{
+				"CREATE TRIGGER t AFTER INSERT ON t FOR EACH ROW " +
+					"SET @c = (SELECT COUNT(*) FROM (SELECT 1 FROM t) d, new.audit WHERE v = NEW.a)",
+			},
+			wantIndex:  1,
+			wantSchema: "new",
+			wantErr:    `dev database simulation refused: statement 1 names schema "new", but the dev database is "appdev"\..*`,
+		},
+		{
+			name:    "mysql refuses a three-part path headed by old",
+			dialect: platform.MySQL,
+			target:  "app",
+			dev:     "appdev",
+			statements: []string{
+				"CREATE TRIGGER t BEFORE DELETE ON t FOR EACH ROW SET @z = (SELECT 1 FROM t WHERE old.audit.v = OLD.a)",
+			},
+			wantIndex:  1,
+			wantSchema: "old",
+			wantErr:    `dev database simulation refused: statement 1 names schema "old", but the dev database is "appdev"\..*`,
+		},
+		{
+			name:       "mysql refuses new outside a trigger body",
+			dialect:    platform.MySQL,
+			target:     "app",
+			dev:        "appdev",
+			statements: []string{"INSERT INTO log (v) SELECT NEW.a FROM t"},
+			wantIndex:  1,
+			wantSchema: "NEW",
+			wantErr:    `dev database simulation refused: statement 1 names schema "NEW", but the dev database is "appdev"\..*`,
 		},
 		{
 			name:       "mysql refuses a double-quoted foreign schema rather than missing it",

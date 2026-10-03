@@ -91,6 +91,41 @@ func TestSchemaApplySwapsMySQLTriggersE2E(t *testing.T) {
 	}
 }
 
+// TestSchemaApplyRehearsesMySQLTriggerBodiesOnTheDevDatabaseE2E applies each
+// scenario with --dev-url, so the plan is rehearsed on the dev database before
+// it reaches the target. Every new body reads NEW.name, and the rehearsal reads
+// that NEW as the trigger's row rather than as a database (stokaro/ptah#4016).
+//
+// The dev database lives on a second server: the rehearsal empties it
+// afterwards, and that cleanup refuses while another database on its server
+// holds a trigger, which the target here does.
+func TestSchemaApplyRehearsesMySQLTriggerBodiesOnTheDevDatabaseE2E(t *testing.T) {
+	for _, engine := range mysqlDevServerEngines {
+		for _, scenario := range triggerSwapScenarios {
+			t.Run(engine.name+"/"+scenario.name, func(t *testing.T) {
+				c := qt.New(t)
+				scratch := newMySQLFamilyScratch(c, engine.admin)
+				name, target := scratch.builtFrom(c, scenario.current)
+				_, dev := newMySQLFamilyScratch(c, engine.dev).database(c, "rehearsal_dev")
+				file := filepath.Join(c.TempDir(), "schema.sql")
+				c.Assert(os.WriteFile(file, []byte(scenario.desired), 0o600), qt.IsNil)
+
+				out, err := runPtahNativeWithError("schema", "apply", "--db-url", target, "--schema-file", file,
+					"--dev-url", dev, "--auto-approve")
+				c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+				conn, err := sql.Open("mysql", mySQLDSNForDatabase(c, scratch.adminDSN, name))
+				c.Assert(err, qt.IsNil)
+				defer func() { c.Check(conn.Close(), qt.IsNil) }()
+				_, err = conn.ExecContext(c.Context(), "INSERT INTO mytable (name) VALUES ('after-apply')")
+				c.Assert(err, qt.IsNil)
+
+				c.Assert(out, qt.Contains, "Schema apply completed successfully.")
+				c.Assert(auditRows(c, conn, scenario.auditQuery), qt.DeepEquals, []string{"after-apply"})
+			})
+		}
+	}
+}
+
 // tablesIn counts the tables of database, read through the scratch's
 // administrative connection.
 func (s mysqlScratch) tablesIn(c *qt.C, database string) int {
