@@ -2,6 +2,7 @@
 package sqllint
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"slices"
@@ -9,12 +10,14 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/parser"
 	"ptah.run/internal/servertarget"
+	"ptah.run/internal/ydbgap"
 	"ptah.run/migration/risk"
 )
 
@@ -128,7 +131,22 @@ func DefaultRules() []Rule {
 	}
 }
 
+// ValidateDialect refuses a dialect Ptah accepts and these rules cannot read.
+// YDB is the one: YQL reads a double-quoted "x" as a string where every rule
+// here reads a name, and its statements reach a parser that has no YQL
+// grammar yet. [LintSource] refuses through it, and a command validating its
+// flags asks it first, so the two cannot disagree.
+func ValidateDialect(dialect string) error {
+	if platform.NormalizeDialect(dialect) == platform.YDB {
+		return errors.New(ydbgap.Linting.Message())
+	}
+	return nil
+}
+
 func LintSource(source Source, opts Options) ([]Finding, error) {
+	if err := ValidateDialect(opts.Dialect); err != nil {
+		return nil, err
+	}
 	if err := refuseUnsilenceable(opts.DisabledRules); err != nil {
 		return nil, err
 	}

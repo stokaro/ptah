@@ -18,7 +18,6 @@ import (
 	"ptah.run/internal/cli/internal/serverversion"
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqllint"
-	"ptah.run/internal/ydbgap"
 	migrationlint "ptah.run/migration/lint"
 )
 
@@ -210,11 +209,8 @@ func validateSQLLintOptions(opts sqlLintOptions) error {
 	if opts.dialect != "" && platform.NormalizeDialect(opts.dialect) == "" {
 		return fmt.Errorf("invalid --dialect value %q: expected %s", opts.dialect, sqlLintDialects)
 	}
-	if platform.NormalizeDialect(opts.dialect) == platform.YDB {
-		// Accepting every name platform resolves would lint YQL with the
-		// rules and parser of other dialects: a double-quoted "x" is a string
-		// in YQL and an identifier to those rules.
-		return fmt.Errorf("invalid --dialect value %q: %s", opts.dialect, ydbgap.Linting.Message())
+	if err := sqllint.ValidateDialect(opts.dialect); err != nil {
+		return fmt.Errorf("invalid --dialect value %q: %w", opts.dialect, err)
 	}
 	if opts.version != "" && opts.dialect == "" {
 		return fmt.Errorf("--%s requires --dialect", serverversion.FlagName)
