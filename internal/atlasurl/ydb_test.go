@@ -1,11 +1,13 @@
 package atlasurl_test
 
 import (
+	"regexp"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/ydbgap"
 )
 
 // A YDB database is a path, and the URL may carry it in its path or in a
@@ -152,7 +154,7 @@ func TestWithDatabaseName_RefusesYDB(t *testing.T) {
 
 			got, err := atlasurl.WithDatabaseName(rawURL, "scratch")
 
-			c.Assert(err, qt.ErrorMatches, `creating a YDB database is not implemented yet \(stokaro/ptah#4015, phase 9\)`)
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(ydbgap.CreatingDatabases.Message()))
 			c.Assert(got, qt.Equals, "")
 		})
 	}

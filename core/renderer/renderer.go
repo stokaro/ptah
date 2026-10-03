@@ -177,9 +177,9 @@ func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (
 	case platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
 		raw = postgres.NewWithCapabilities(caps, normalizedDialect)
 	case platform.YDB:
-		// A dialect name with no renderer behind it yet. The refusal names the
-		// canonical dialect rather than the spelling, so `ydbs` is refused in
-		// the words `ydb` is.
+		// YDB is a dialect name with no renderer behind it. The refusal names
+		// the canonical dialect rather than the spelling, so `ydbs` is refused
+		// in the words `ydb` is.
 		return nil, &ptaherr.RenderError{
 			Dialect: dialect,
 			Err:     ptaherr.ErrUnsupportedDialect,

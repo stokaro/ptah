@@ -63,7 +63,7 @@ func Canonical(dialect string) (string, bool) {
 // YDB is left out for the same reason. internal/dialectlexer reads YQL, but no
 // rule in migration/lint or internal/sqllint has been classified for it, and
 // a YQL file read by the hybrid rules would be judged by a grammar it does not
-// have. Lint support is phase 8 of stokaro/ptah#4015.
+// have. [Refusal] names the plan that adds it.
 var supported = []string{
 	platform.Postgres,
 	platform.MySQL,

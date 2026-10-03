@@ -12,6 +12,7 @@ import (
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/sql"
 	"ptah.run/internal/sqllint"
+	"ptah.run/internal/ydbgap"
 )
 
 func execute(args ...string) (stdout, stderr string, err error) {
@@ -158,7 +159,7 @@ func TestSQLLint_UsageErrorsExitTwo(t *testing.T) {
 // YDB is a dialect Ptah accepts and sql lint does not analyze yet. Linting
 // YQL with these rules would read "a;b" as a name and a statement boundary
 // where YDB reads a string, so the command refuses before reading anything.
-func TestSQLLint_RefusesYDBUntilLintReadsYQL(t *testing.T) {
+func TestSQLLint_RefusesYDB(t *testing.T) {
 	for _, dialect := range []string{"ydb", "ydbs"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
@@ -167,7 +168,7 @@ func TestSQLLint_RefusesYDBUntilLintReadsYQL(t *testing.T) {
 
 			c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 			c.Assert(stderr, qt.Contains,
-				`invalid --dialect value "`+dialect+`": linting YQL for YDB is not implemented yet (stokaro/ptah#4015, phase 8)`)
+				`invalid --dialect value "`+dialect+`": `+ydbgap.Linting.Message())
 			c.Assert(stdout, qt.Equals, "")
 		})
 	}

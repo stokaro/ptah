@@ -114,7 +114,7 @@ func connect(ctx context.Context, dbURL string, scope scopeRule) (*DatabaseConne
 	}
 
 	if dialect == platform.YDB {
-		// A dialect name with no driver behind it yet. The generic arm below
+		// YDB is a dialect name with no driver behind it. The generic arm below
 		// would say Ptah renders and plans YDB schemas, which it does not.
 		return nil, errors.New(ydbgap.Connecting.Message())
 	}

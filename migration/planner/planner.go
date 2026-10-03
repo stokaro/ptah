@@ -369,7 +369,7 @@ func getRegisteredPlanner(dialect string, opts Options) (Planner, error) {
 
 func unsupportedDialectPlanError(dialect string) error {
 	if platform.NormalizeDialect(dialect) == platform.YDB {
-		// A dialect name with no planner behind it yet, refused in the same
+		// YDB is a dialect name with no planner behind it, refused in the same
 		// words for every spelling of it.
 		return &ptaherr.PlanError{
 			Dialect: dialect,

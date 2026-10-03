@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 	_ "modernc.org/sqlite" // registers the SQLite driver for database/sql
 
 	"ptah.run/internal/cli/readdb"
+	"ptah.run/internal/ydbgap"
 )
 
 func TestReadDBCommand_StdoutIsExecutableSQL(t *testing.T) {
@@ -67,7 +69,7 @@ CREATE TABLE right_nodes (
 
 // A YDB URL is refused with the gap before anything is opened, so the
 // command says what is missing rather than reporting an empty driver name.
-func TestReadDBCommand_RefusesYDBUntilItsDriverLands(t *testing.T) {
+func TestReadDBCommand_RefusesYDB(t *testing.T) {
 	c := qt.New(t)
 
 	cmd := readdb.NewReadDBCommand()
@@ -79,7 +81,7 @@ func TestReadDBCommand_RefusesYDBUntilItsDriverLands(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `connecting to a YDB server is not implemented yet \(stokaro/ptah#4015, phase 4\)`)
+	c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(ydbgap.Connecting.Message()))
 	c.Assert(stdout.String(), qt.Equals, "")
-	c.Assert(stderr.String(), qt.Contains, "Error connecting to database: connecting to a YDB server is not implemented yet")
+	c.Assert(stderr.String(), qt.Contains, "Error connecting to database: "+ydbgap.Connecting.Message())
 }

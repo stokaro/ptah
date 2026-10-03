@@ -40,8 +40,9 @@ func VersionLiteral(dialect, value string) string {
 var yqlEscaper = strings.NewReplacer(`\`, `\\`, "'", `\'`)
 
 // yqlUtf8Literal renders value as a typed YQL Utf8 literal. The u suffix is
-// the type: decision 11 of stokaro/ptah#4015 types every YQL data literal. Measured on YDB 26.2.1.14, '20260103_a\\b\'c'u reads back as
-// 20260103_a\b'c of type Utf8.
+// the type: decision 11 of stokaro/ptah#4015 types every YQL data literal.
+// Measured on YDB 26.2.1.14, '20260103_a\\b\'c'u reads back as 20260103_a\b'c
+// of type Utf8.
 func yqlUtf8Literal(value string) string {
 	return "'" + yqlEscaper.Replace(value) + "'u"
 }

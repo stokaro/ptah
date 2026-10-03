@@ -14,6 +14,7 @@ import (
 
 	"ptah.run/internal/cli/internal/exitcode"
 	cmdlint "ptah.run/internal/cli/lint"
+	"ptah.run/internal/ydbgap"
 	migrationlint "ptah.run/migration/lint"
 )
 
@@ -1048,7 +1049,7 @@ func TestRunLint_FailOnThresholds(t *testing.T) {
 // YDB is a dialect Ptah accepts and lint does not analyze yet. The refusal
 // says so and names the plan, rather than listing the dialects as if ydb were
 // a typo.
-func TestRunLint_RefusesYDBUntilLintReadsYQL(t *testing.T) {
+func TestRunLint_RefusesYDB(t *testing.T) {
 	for _, dialect := range []string{"ydb", "ydbs"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
@@ -1057,7 +1058,7 @@ func TestRunLint_RefusesYDBUntilLintReadsYQL(t *testing.T) {
 
 			c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 			c.Assert(stderr, qt.Contains,
-				`invalid --dialect value "`+dialect+`": linting YQL for YDB is not implemented yet (stokaro/ptah#4015, phase 8)`)
+				`invalid --dialect value "`+dialect+`": `+ydbgap.Linting.Message())
 			c.Assert(stdout, qt.Equals, "")
 		})
 	}

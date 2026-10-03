@@ -1,6 +1,7 @@
 package renderer_test
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/ydbgap"
 )
 
 func TestSupportedDialects(t *testing.T) {
@@ -208,10 +210,10 @@ func TestRenderSQL_UnsupportedDialect(t *testing.T) {
 	c.Assert(renderErr.Dialect, qt.Equals, "db2")
 }
 
-// YDB is a dialect name before it has a renderer. Every spelling of it is
+// YDB is a dialect name with no renderer behind it. Every spelling of it is
 // refused in the words of the gap, with the sentinel an embedder branches on,
 // rather than in the words the default arm uses for a name nobody knows.
-func TestRenderSQL_RefusesYDBUntilItsRendererLands(t *testing.T) {
+func TestRenderSQL_RefusesYDB(t *testing.T) {
 	for _, dialect := range []string{"ydb", "ydbs", "YDB"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
@@ -219,7 +221,7 @@ func TestRenderSQL_RefusesYDBUntilItsRendererLands(t *testing.T) {
 			sql, err := renderer.RenderSQL(dialect, &ast.CommentNode{Text: "Test comment"})
 
 			c.Assert(sql, qt.Equals, "")
-			c.Assert(err, qt.ErrorMatches, `rendering a YDB schema is not implemented yet \(stokaro/ptah#4015, phase 3\)`)
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(ydbgap.Rendering.Message()))
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
 			var renderErr *ptaherr.RenderError
 			c.Assert(err, qt.ErrorAs, &renderErr)

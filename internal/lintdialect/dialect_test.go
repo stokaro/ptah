@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/internal/lintdialect"
+	"ptah.run/internal/ydbgap"
 	"ptah.run/migration/lint"
 )
 
@@ -148,8 +149,8 @@ func TestAcceptedSpellings_ExtractionControls(t *testing.T) {
 func TestCanonical_RefusesEveryEngineLintCannotAnalyzeYet(t *testing.T) {
 	c := qt.New(t)
 
-	// YDB stays here until migration/lint and internal/sqllint classify their
-	// rules for YQL, which is phase 8 of stokaro/ptah#4015.
+	// YDB is here because no rule in migration/lint or internal/sqllint has
+	// been classified for YQL.
 	unanalyzed := []string{platform.Oracle, platform.YDB}
 
 	for _, canonical := range unanalyzed {
@@ -243,8 +244,8 @@ func TestRefusal(t *testing.T) {
 		dialect string
 		want    string
 	}{
-		{dialect: "ydb", want: "linting YQL for YDB is not implemented yet (stokaro/ptah#4015, phase 8)"},
-		{dialect: "YDBS", want: "linting YQL for YDB is not implemented yet (stokaro/ptah#4015, phase 8)"},
+		{dialect: "ydb", want: ydbgap.Linting.Message()},
+		{dialect: "YDBS", want: ydbgap.Linting.Message()},
 		{dialect: "oracle", want: "expected " + lintdialect.Expected},
 		{dialect: "db2", want: "expected " + lintdialect.Expected},
 	}

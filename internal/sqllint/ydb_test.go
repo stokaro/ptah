@@ -1,11 +1,13 @@
 package sqllint_test
 
 import (
+	"regexp"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/sqllint"
+	"ptah.run/internal/ydbgap"
 )
 
 // Every caller of the rules is refused for YDB, the agent gate as well as
@@ -21,7 +23,7 @@ func TestLintSource_RefusesYDB(t *testing.T) {
 				sqllint.Options{Dialect: dialect},
 			)
 
-			c.Assert(err, qt.ErrorMatches, `linting YQL for YDB is not implemented yet \(stokaro/ptah#4015, phase 8\)`)
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(ydbgap.Linting.Message()))
 			c.Assert(findings, qt.IsNil)
 		})
 	}

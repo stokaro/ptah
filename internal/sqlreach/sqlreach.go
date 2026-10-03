@@ -88,9 +88,8 @@ type escapeRule struct {
 // MySQL/MariaDB, SQL Server, ClickHouse, Oracle and YDB constructs are
 // represented. A YDB external table is the known gap there: it is a catalog
 // object whose reads leave the database, and a statement names it exactly as
-// it names a table. It
-// catches honest mistakes and known tricks. It does not stop an author who is
-// trying to get past it.
+// it names a table. The lint catches honest mistakes and known tricks. It
+// does not stop an author who is trying to get past it.
 var escapeRules = []escapeRule{
 	{
 		construct: "ATTACH",
