@@ -76,6 +76,20 @@
       ]
     },
     {
+      "description": "A YDB release line waits for a human on the Dependency Dashboard instead of arriving as a pull request. Two properties of ydbplatform/local-ydb make a line change look like a patch. Its tags carry no pre-release marker: 26.3.1.18 was published as a plain tag while GitHub marked the 26.3 line Pre-release and the image's own `latest` tag still pointed at 26.2.1.14. And the integration workflow pins a four-part version, so moving to another line is a minor update, not a major one. stokaro/ptah#4076 is that shape: it moved the certified 26.2 service to 26.3 and was reverted. Approving a line on the dashboard is the moment to check that YDB has released it, not only tagged it, and to decide its cell in internal/capabilityprobe/cells.go. A patch inside the pinned line still opens an ordinary pull request. TestRenovate_HoldsANewYDBLineForApproval requires this rule to exist.",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "ydbplatform/local-ydb"
+      ],
+      "matchUpdateTypes": [
+        "major",
+        "minor"
+      ],
+      "dependencyDashboardApproval": true
+    },
+    {
       "description": "The clickhouse-legacy integration service is pinned below 24.11 deliberately: CHECK GRANT catalog visibility arrived in 24.11, and TestWriterDropDatabaseRealm_RejectsLegacyServerLive proves the realm-drop guard fails closed without it. Matching on the current value freezes only that pin and leaves the current clickhouse service free to update.",
       "matchDatasources": [
         "docker"
