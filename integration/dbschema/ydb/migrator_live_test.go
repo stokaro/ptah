@@ -279,7 +279,7 @@ func TestYDBMigrator_WaitsForTheMigrationLock(t *testing.T) {
 	started := time.Now()
 	go func() { done <- m.MigrateUp(context.Background()) }()
 	time.Sleep(2 * time.Second)
-	c.Assert(len(done), qt.Equals, 0)
+	c.Assert(done, qt.HasLen, 0)
 	c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.HasLen, 0)
 	c.Assert(lock.Release(context.Background()), qt.IsNil)
 
