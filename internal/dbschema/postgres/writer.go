@@ -2134,10 +2134,20 @@ func (w *PostgreSQLWriter) DatabaseScopedArtifacts(ctx context.Context) ([]dbres
 	if err != nil {
 		return nil, err
 	}
-	if !capabilities.inspectDatabaseArtifacts {
+	if !w.readsDatabaseArtifacts(capabilities) {
 		return nil, nil
 	}
 	return readDatabaseScopedArtifacts(ctx, w.db)
+}
+
+// readsDatabaseArtifacts reports whether the server answers
+// [databaseScopedArtifactsQuery]. The version string alone cannot say: Cloud
+// Spanner's PostgreSQL interface reports `PostgreSQL 14.1` and has neither
+// pg_publication nor pg_depend, which the query joins, so a claim on it failed
+// with `relation "pg_publication" does not exist`. Its capability set is the
+// one that knows, as it does for the cleanup query's other catalog joins.
+func (w *PostgreSQLWriter) readsDatabaseArtifacts(capabilities postgresCleanupCapabilities) bool {
+	return capabilities.inspectDatabaseArtifacts && w.caps.Has(capability.CatalogDependencies)
 }
 
 // readDatabaseScopedArtifacts runs [databaseScopedArtifactsQuery].
@@ -2378,7 +2388,7 @@ func (w *PostgreSQLWriter) dropDatabaseRealm(ctx context.Context, kept dbreset.K
 	if err := w.verifyKeptDefaultPrivileges(ctx, sqlTx, plan.keptDefaultPrivileges); err != nil {
 		return err
 	}
-	if plan.capabilities.inspectDatabaseArtifacts {
+	if w.readsDatabaseArtifacts(plan.capabilities) {
 		if err := verifyKeptDatabaseScopedArtifacts(ctx, sqlTx, kept.Artifacts); err != nil {
 			return err
 		}
@@ -2409,7 +2419,7 @@ func (w *PostgreSQLWriter) planDatabaseRealmCleanup(
 	if err := rejectProtectedPostgresDatabase(ctx, tx, capabilities.protectedDatabases, kept.Server); err != nil {
 		return postgresDatabaseCleanupPlan{}, err
 	}
-	if capabilities.inspectDatabaseArtifacts {
+	if w.readsDatabaseArtifacts(capabilities) {
 		if err := rejectPostgresDatabaseScopedArtifacts(ctx, tx, kept.Artifacts); err != nil {
 			return postgresDatabaseCleanupPlan{}, err
 		}
