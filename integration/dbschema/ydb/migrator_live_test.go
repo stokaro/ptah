@@ -714,3 +714,28 @@ func TestYDBMigrator_RunsBlocksAndBatchStatementsOutsideATransaction(t *testing.
 		[]string{dir + "|a", dir + "|b", dir + "|c", dir + "|d"})
 	c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+dir+"/a` WHERE n = 0l"), qt.Equals, int64(2))
 }
+
+// A dry run executes nothing, a data query included: the data query that
+// commits with its checkpoint is not run in a transaction of its own when the
+// writer only logs.
+func TestYDBMigrator_DryRunRunsNoDataQuery(t *testing.T) {
+	c := qt.New(t)
+	conn := openYDB(c)
+	const dir = "ptah_ydb_mig_dry"
+	dropDirectory(c, conn, dir, "q", "r")
+	c.Cleanup(func() { dropDirectory(c, conn, dir, "q", "r") })
+	c.Assert(conn.Writer().ExecuteSQL(c.Context(),
+		"CREATE TABLE `"+dir+"/q` (id Int64 NOT NULL, PRIMARY KEY (id))"), qt.IsNil)
+	dry := openYDB(c)
+	dry.SchemaWriter().SetDryRun(true)
+	m := newMigrator(c, dry, map[string]string{
+		"0000000001_q.up.sql": "INSERT INTO `" + dir + "/q` (id) VALUES (1l);\n" +
+			"CREATE TABLE `" + dir + "/r` (id Int64 NOT NULL, PRIMARY KEY (id));\n",
+		"0000000001_q.down.sql": "DROP TABLE `" + dir + "/r`;\n",
+	}, migrator.RevisionTableFormatPtah, dir)
+
+	c.Assert(m.MigrateUp(c.Context()), qt.IsNil)
+
+	c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+dir+"/q`"), qt.Equals, int64(0))
+	c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.DeepEquals, []string{dir + "|q"})
+}

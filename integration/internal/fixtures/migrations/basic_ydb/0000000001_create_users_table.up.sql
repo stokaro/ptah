@@ -10,3 +10,7 @@ CREATE TABLE users (
     PRIMARY KEY (id),
     INDEX idx_users_email GLOBAL UNIQUE SYNC ON (email)
 );
+
+-- A data query, which commits with its checkpoint in one transaction. A dry
+-- run executes it no more than it creates the table above.
+INSERT INTO users (email, name) VALUES ('admin@example.com'u, 'Admin'u);
