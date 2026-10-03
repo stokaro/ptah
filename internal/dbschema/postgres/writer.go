@@ -24,24 +24,55 @@ import (
 	"ptah.run/internal/sqlrunner"
 )
 
-var protectedPostgresDatabases = []string{
-	"postgres",
-	"template0",
-	"template1",
+// protectedDatabases are the databases a realm cleanup refuses, by lower-case
+// name.
+//
+// A system database is refused on every server: a template that every later
+// CREATE DATABASE copies, or one the server keeps for itself. A default
+// database is a user database the server is created with. On a server the
+// operator named it is where work that is not the run's tends to live, so it
+// is refused there; on a server the run owns it holds nothing else, and is
+// cleaned like any other.
+type protectedDatabases struct {
+	system   []string
+	defaults []string
 }
 
-var protectedCockroachDatabases = []string{
-	"defaultdb",
-	"postgres",
-	"system",
+// refusal returns why a realm cleanup of database on server is refused, or nil.
+func (p protectedDatabases) refusal(database string, server dbreset.Server) error {
+	name := strings.ToLower(database)
+	if slices.Contains(p.system, name) {
+		return fmt.Errorf("refusing to clean protected PostgreSQL-family database %q", database)
+	}
+	if server != dbreset.OwnedServer && slices.Contains(p.defaults, name) {
+		return fmt.Errorf(
+			"refusing to clean protected PostgreSQL-family database %q: %w",
+			database,
+			dbreset.ErrServerDefaultDatabase,
+		)
+	}
+	return nil
 }
 
-var protectedYugabyteDatabases = []string{
-	"postgres",
-	"system_platform",
-	"template0",
-	"template1",
-	"yugabyte",
+var protectedPostgresDatabases = protectedDatabases{
+	system:   []string{"template0", "template1"},
+	defaults: []string{"postgres"},
+}
+
+// protectedCockroachDatabases keeps system, which holds the cluster's own
+// catalog. defaultdb and postgres are the empty user databases every cluster
+// starts with.
+var protectedCockroachDatabases = protectedDatabases{
+	system:   []string{"system"},
+	defaults: []string{"defaultdb", "postgres"},
+}
+
+// protectedYugabyteDatabases keeps the templates and system_platform, which a
+// YugabyteDB cluster reserves for its own platform tables. yugabyte and
+// postgres are the user databases every cluster starts with.
+var protectedYugabyteDatabases = protectedDatabases{
+	system:   []string{"system_platform", "template0", "template1"},
+	defaults: []string{"postgres", "yugabyte"},
 }
 
 func quoteIdent(name string) string {
@@ -322,7 +353,7 @@ type postgresCleanupCapabilities struct {
 	// SHOW DEFAULT PRIVILEGES rather than pg_default_acl, which is what
 	// CockroachDB needs; see [pgdefaultacl.ReadRevokesFromShow].
 	showDefaultPrivileges bool
-	protectedDatabases    []string
+	protectedDatabases    protectedDatabases
 	systemExtensions      []string
 }
 
@@ -1630,7 +1661,7 @@ func (w *PostgreSQLWriter) DropDatabaseRealm(ctx context.Context) error {
 // the same session by the replay's first migration, answered `schema
 // "_timescaledb_functions" does not exist` (stokaro/ptah#3542).
 func (w *PostgreSQLWriter) DropDatabaseRealmKeeping(ctx context.Context, extensions []string) error {
-	return w.DropDatabaseRealmKeepingSchemas(ctx, extensions, nil)
+	return w.DropDatabaseRealmKeepingSchemas(ctx, extensions, nil, dbreset.NamedServer)
 }
 
 // DropDatabaseRealmKeepingSchemas is [PostgreSQLWriter.DropDatabaseRealmKeeping]
@@ -1643,7 +1674,16 @@ func (w *PostgreSQLWriter) DropDatabaseRealmKeeping(ctx context.Context, extensi
 // judges that schema alone, and the pinned community binary leaves the other
 // schemas of the database as they were, tables included; a cleanup of the
 // whole realm dropped them.
-func (w *PostgreSQLWriter) DropDatabaseRealmKeepingSchemas(ctx context.Context, extensions, schemas []string) error {
+//
+// server says whose server the database is on. The other realm cleanups pass
+// [dbreset.NamedServer], which refuses the server's default user database;
+// [dbreset.OwnedServer] cleans it too. A template or a system database is
+// refused on either.
+func (w *PostgreSQLWriter) DropDatabaseRealmKeepingSchemas(
+	ctx context.Context,
+	extensions, schemas []string,
+	server dbreset.Server,
+) error {
 	if w.dryRun {
 		return nil
 	}
@@ -1656,7 +1696,7 @@ func (w *PostgreSQLWriter) DropDatabaseRealmKeepingSchemas(ctx context.Context, 
 			w.schema,
 		)
 	}
-	return w.dropDatabaseRealm(ctx, extensions, schemas)
+	return w.dropDatabaseRealm(ctx, extensions, schemas, server)
 }
 
 // ResetObjects lists what a reset of schemas drops, keeping keptExtensions and
@@ -1770,19 +1810,14 @@ func (w *PostgreSQLWriter) InstalledExtensions(ctx context.Context) ([]string, e
 func rejectProtectedPostgresDatabase(
 	ctx context.Context,
 	tx *sql.Tx,
-	protectedDatabases []string,
+	protected protectedDatabases,
+	server dbreset.Server,
 ) error {
 	var database string
 	if err := tx.QueryRowContext(ctx, "SELECT current_database()").Scan(&database); err != nil {
 		return fmt.Errorf("failed to inspect current PostgreSQL database for cleanup: %w", err)
 	}
-	if slices.Contains(protectedDatabases, strings.ToLower(database)) {
-		return fmt.Errorf(
-			"refusing to clean protected PostgreSQL-family database %q",
-			database,
-		)
-	}
-	return nil
+	return protected.refusal(database, server)
 }
 
 // rejectPostgresDatabaseScopedArtifacts refuses a realm cleanup while the
@@ -2045,7 +2080,11 @@ func (w *PostgreSQLWriter) dropSchemaObjectsWithoutTransaction(ctx context.Conte
 	return nil
 }
 
-func (w *PostgreSQLWriter) dropDatabaseRealm(ctx context.Context, keep, untouched []string) (resultErr error) {
+func (w *PostgreSQLWriter) dropDatabaseRealm(
+	ctx context.Context,
+	keep, untouched []string,
+	server dbreset.Server,
+) (resultErr error) {
 	sqlTx, err := w.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
@@ -2054,7 +2093,7 @@ func (w *PostgreSQLWriter) dropDatabaseRealm(ctx context.Context, keep, untouche
 		finishPostgresCleanupTransaction(sqlTx, &resultErr)
 	}()
 
-	plan, err := w.planDatabaseRealmCleanup(ctx, sqlTx, keep, untouched)
+	plan, err := w.planDatabaseRealmCleanup(ctx, sqlTx, keep, untouched, server)
 	if err != nil {
 		return err
 	}
@@ -2082,12 +2121,13 @@ func (w *PostgreSQLWriter) planDatabaseRealmCleanup(
 	ctx context.Context,
 	tx *sql.Tx,
 	keep, untouched []string,
+	server dbreset.Server,
 ) (postgresDatabaseCleanupPlan, error) {
 	capabilities, err := inspectCleanupCapabilities(ctx, tx)
 	if err != nil {
 		return postgresDatabaseCleanupPlan{}, err
 	}
-	if err := rejectProtectedPostgresDatabase(ctx, tx, capabilities.protectedDatabases); err != nil {
+	if err := rejectProtectedPostgresDatabase(ctx, tx, capabilities.protectedDatabases, server); err != nil {
 		return postgresDatabaseCleanupPlan{}, err
 	}
 	if capabilities.inspectDatabaseArtifacts {

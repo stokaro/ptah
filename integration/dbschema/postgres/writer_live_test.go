@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
+	"ptah.run/internal/dbreset"
 	"ptah.run/internal/dbschema/postgres"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/sqlrunner"
@@ -448,10 +449,11 @@ func TestWriterDropDatabaseRealm_LiveRejectsProtectedDatabase(t *testing.T) {
 
 			err := writer.DropDatabaseRealm(c.Context())
 
+			c.Assert(err, qt.ErrorIs, dbreset.ErrServerDefaultDatabase)
 			c.Assert(
 				err,
 				qt.ErrorMatches,
-				`refusing to clean protected PostgreSQL-family database "`+test.database+`"`,
+				`refusing to clean protected PostgreSQL-family database "`+test.database+`": .*`,
 			)
 		})
 	}

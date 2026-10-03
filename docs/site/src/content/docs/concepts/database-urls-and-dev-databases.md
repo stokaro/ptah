@@ -116,8 +116,8 @@ exercise a real server dialect — see
   URL naming a database they read, by URL or by the realm each server reports.
   Equal network database names fail closed across different endpoints because
   DNS aliases and replicated members cannot be proven independent before
-  destructive cleanup. Cleanup rejects known system, template, metadata, and
-  administrative database names.
+  destructive cleanup. Cleanup rejects system, template and metadata databases,
+  and a server's default database unless the run owns it.
 - **Migration-diff scope does not reduce the replay realm.** Repeated
   `--schema` values select which schemas `migrate diff` compares and emits. They do not
   limit which schemas a migration may create or which user schemas final
@@ -283,16 +283,16 @@ above on it, as on a server Ptah provisions, and refuses the same rest.
 PTAH_DEV_SERVER_DISPOSABLE=1 ptah migrations validate --dir migrations --dev-url "$DEV_URL"
 ```
 
-The declaration covers the whole server, and Ptah cleans only the dev
-database after a replay. A role or database a replay creates stays on the
-server until the container is removed. A later command that replays the same
-directory on the same server meets it, so a migration that creates a role
-without checking for it first fails the second time. Declare only a server
-that nothing else uses.
+The declaration covers the whole server, its default database (`postgres`)
+included; Ptah cleans only the dev database after a replay. A role or
+database a replay creates stays on the server until the container is removed.
+A later command that replays the same directory on the same server meets it,
+so a migration that creates a role without checking for it first fails the
+second time. Declare only a server that nothing else uses.
 
 Every command that replays a migration directory on a dev database reads the
-variable, on both binaries. A value that is not a boolean fails the command
-before it does any work, whether or not that run replays. Strict Atlas
+variable, on both binaries, and refuses a non-boolean value before any work,
+whether or not it replays. Strict Atlas
 compatibility keeps the variable, because the pinned community binary runs
 these statements on any dev database.
 

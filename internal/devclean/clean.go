@@ -9,6 +9,8 @@ import (
 	"slices"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/dbreset"
+	"ptah.run/internal/devdocker"
 	"ptah.run/internal/migrateclean"
 )
 
@@ -57,6 +59,8 @@ type Baseline struct {
 	// realm records whether the claim judged the dev database's whole realm
 	// or only its connected schema; see [Reset].
 	realm bool
+	// server records whose server the dev database is on; see [Claim].
+	server dbreset.Server
 }
 
 // Extensions returns the extension names the baseline keeps, sorted.
@@ -80,7 +84,7 @@ type schemaLister interface {
 }
 
 type databaseRealmKeeper interface {
-	DropDatabaseRealmKeepingSchemas(context.Context, []string, []string) error
+	DropDatabaseRealmKeepingSchemas(context.Context, []string, []string, dbreset.Server) error
 }
 
 type schemaKeeper interface {
@@ -93,6 +97,12 @@ type schemaKeeper interface {
 // cleanup, and before the caller registers the cleanup that runs on its way
 // out: registered first, that cleanup would run on the refusal too. A dialect
 // without extensions captures an empty baseline.
+//
+// It also records whose server the database is on, from the record
+// [devdocker.RunOwned] reads, which a migration replay reads to choose its
+// realm too. On a server the run owns, a realm cleanup empties the server's
+// default user database, such as PostgreSQL's postgres, which it refuses on
+// any other server.
 func Claim(ctx context.Context, conn *dbschema.DatabaseConnection) (Baseline, error) {
 	if conn == nil {
 		return Baseline{}, fmt.Errorf("capture dev database baseline: nil database connection")
@@ -100,7 +110,10 @@ func Claim(ctx context.Context, conn *dbschema.DatabaseConnection) (Baseline, er
 	if err := EnsureClean(ctx, conn); err != nil {
 		return Baseline{}, err
 	}
-	baseline := Baseline{realm: migrateclean.RealmScoped(conn)}
+	baseline := Baseline{realm: migrateclean.RealmScoped(conn), server: dbreset.NamedServer}
+	if devdocker.RunOwned(conn.Info().URL) {
+		baseline.server = dbreset.OwnedServer
+	}
 	writer := conn.SchemaWriter()
 	if lister, ok := writer.(extensionLister); ok {
 		extensions, err := lister.InstalledExtensions(ctx)
@@ -180,12 +193,19 @@ func Reset(ctx context.Context, conn *dbschema.DatabaseConnection, baseline Base
 // A baseline that names extensions was captured through a writer that keeps
 // them, so a writer that cannot is refused rather than allowed to remove
 // them.
+//
+// A refusal of the server's default user database on a server the run does not
+// own ends with the two ways to make it the run's.
 func DatabaseRealmKeeping(ctx context.Context, conn *dbschema.DatabaseConnection, baseline Baseline) error {
 	if conn == nil {
 		return fmt.Errorf("clean dev database realm: nil database connection")
 	}
 	if keeper, ok := conn.SchemaWriter().(databaseRealmKeeper); ok {
-		return keeper.DropDatabaseRealmKeepingSchemas(ctx, baseline.extensions, baseline.schemas)
+		err := keeper.DropDatabaseRealmKeepingSchemas(ctx, baseline.extensions, baseline.schemas, baseline.server)
+		if errors.Is(err, dbreset.ErrServerDefaultDatabase) {
+			return fmt.Errorf("%w; %s", err, devdocker.OwnedServerRemedy)
+		}
+		return err
 	}
 	if len(baseline.extensions) > 0 || len(baseline.schemas) > 0 {
 		return fmt.Errorf("clean dev database realm: this writer cannot keep the extensions or schemas the database held before the run")
