@@ -54,7 +54,12 @@ sind auch als Go-Pakete verfügbar.
 
 ## Schemaänderungen
 
-<p align="center"><img src="docs/site/src/assets/product-journeys.svg" alt="Schemaquellen und eine laufende Datenbank ergeben einen prüfbaren Plan, der entweder zu versionierten Migrationsdateien wird oder direkt angewendet wird. Inferenzspezifikationen und Quelldaten ergeben eine Kandidatengeneration, die vor der Umschaltung geprüft wird. Die aktive Generation bleibt für einen Rollback verfügbar." width="1000"></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/site/src/assets/product-journeys-dark.svg">
+    <img src="docs/site/src/assets/product-journeys-light.svg" alt="Schemaquellen und eine laufende Datenbank ergeben einen prüfbaren Plan, der entweder zu versionierten Migrationsdateien wird oder direkt angewendet wird. Inferenzspezifikationen und Quelldaten ergeben eine Kandidatengeneration, die vor der Umschaltung geprüft wird. Die Vorgängergeneration bleibt erhalten; ein Rollback ist nur möglich, solange sie dafür geeignet ist." width="1000">
+  </picture>
+</p>
 
 Beide Abläufe verwenden dasselbe Vergleichs- und Planungsmodell. Der Unterschied
 liegt darin, ob das SQL vor der Ausführung als geprüftes Artefakt in der
@@ -66,7 +71,12 @@ Ptah orchestriert die Migration; es führt keine Inferenz aus. Es liest
 Quelldaten, ruft den externen Endpunkt auf und schreibt die Kandidatengeneration
 selbst. Die aktive Generation bleibt bis zur Prüfung und Umschaltung unverändert.
 
-<p align="center"><img src="docs/site/src/assets/inference-generation-lifecycle.svg" alt="Die aktive Inferenzgeneration beantwortet weiterhin Abfragen, während Ptah einen Kandidaten vorbereitet, befüllt, aktualisiert, indiziert und prüft. Die Umschaltung aktiviert den geprüften Kandidaten. Ein Rollback kann die aufbewahrte Vorgängergeneration wiederherstellen; ihre Entfernung erfolgt separat und ist destruktiv." width="1000"></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/site/src/assets/inference-generation-lifecycle-dark.svg">
+    <img src="docs/site/src/assets/inference-generation-lifecycle-light.svg" alt="Die aktive Inferenzgeneration beantwortet weiterhin Abfragen, während Ptah einen Kandidaten vorbereitet, befüllt, aktualisiert, indiziert und prüft. Die Umschaltung aktiviert den geprüften Kandidaten. Ein Rollback kann eine geeignete Vorgängergeneration wiederherstellen. Die separate, destruktive Entfernung ist nur für inaktive Generationen ohne geeignete Rollback-Abhängigkeit erlaubt." width="1000">
+  </picture>
+</p>
 
 Die [Anleitung zu Inferenzmigrationen](https://docs.ptah.run/edge/inference/overview/)
 behandelt Spezifikation, Übernahme gleichzeitiger Änderungen,

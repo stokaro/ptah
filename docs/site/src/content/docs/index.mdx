@@ -44,7 +44,9 @@ import { LinkCard, CardGrid } from '@astrojs/starlight/components';
 import OutputGallery from '../../components/OutputGallery.astro';
 import ProductPreview from '../../components/ProductPreview.astro';
 import migrationSafety from '../../assets/migration-safety-report.png';
-import productJourneys from '../../assets/product-journeys.svg';
+import productJourneys from '../../assets/product-journeys-light.svg';
+import productJourneysDark from '../../assets/product-journeys-dark.svg';
+import productJourneysSource from '../../../diagrams/product-journeys.mmd?url&no-inline';
 import schemaDocument from '../../assets/schema-document.png';
 import schemaServeDrift from '../../assets/schema-serve-drift.png';
 import schemaVizDark from '../../assets/schema-viz-relationships-dark.svg';
@@ -60,13 +62,16 @@ minutes. It needs no database server, Docker, or Go toolchain.
 
 <ProductPreview
   id="product-journeys"
+  label="Workflow diagram"
+  themeWithSite
+  darkSrc={productJourneysDark}
   src={productJourneys}
-  alt="Schema sources and a live database produce a reviewable plan that either becomes versioned migration files or is applied directly. Inference specifications and source rows produce a candidate generation that is verified before cutover while the active generation remains available for rollback."
+  alt="Schema sources and a live database produce a reviewable plan that either becomes versioned migration files or is applied directly. Inference specifications and source rows produce a candidate generation that is verified before cutover. Rollback switches the active pointer to an eligible previous generation."
   caption="Schema changes and persistent inference state use separate review and cutover paths."
   notice="Schema changes converge a desired schema and a database through versioned files or direct apply. Inference changes keep the active generation available until a candidate passes verification and cutover."
   fullSizeHref={productJourneys.src}
   downloadHref={productJourneys.src}
-  sourceHref={productJourneys.src}
+  sourceHref={productJourneysSource}
 />
 
 ## See what Ptah produces

@@ -563,3 +563,16 @@ Directions that were rendered and rejected, so they are not re-derived:
 - **A table grid**, header band over a 2×2 body: legible at 32 px and clearer
   about the subject matter, but its rows blur together at 16 px. This is the
   runner-up, and the one to revisit if the mark is ever reconsidered.
+
+## Workflow diagrams
+
+The README and workflow pages share Mermaid sources in `diagrams/`.
+Run `npm run diagrams:write` to render their light and dark SVGs, or
+`npm run check:journey-diagrams` to check the committed renders. These commands
+use the installed Mermaid version and Playwright Chromium. SVG labels are text
+rather than HTML so they remain visible in GitHub image previews.
+After building the site, `npm run check:journey-themes` verifies theme switching
+and the full-size, download, and source links.
+
+The site selects each SVG through its `data-theme` attribute. The README uses
+`picture` sources to follow GitHub's color scheme.

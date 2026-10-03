@@ -54,7 +54,12 @@ components are available as Go packages.
 
 ## Schema changes
 
-<p align="center"><img src="docs/site/src/assets/product-journeys.svg" alt="Schema sources and a live database produce a reviewable plan that either becomes versioned migration files or is applied directly. Inference specifications and source rows produce a candidate generation that is verified before cutover while the active generation remains available for rollback." width="1000"></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/site/src/assets/product-journeys-dark.svg">
+    <img src="docs/site/src/assets/product-journeys-light.svg" alt="Schema sources and the live database produce a reviewable plan for versioned migrations or direct apply. Inference builds and verifies a candidate before cutover; rollback restores an eligible previous generation." width="1000">
+  </picture>
+</p>
 
 Both workflows use the same comparison and planning model. The difference is
 whether SQL becomes a reviewed artifact in version control before it runs.
@@ -65,7 +70,12 @@ Ptah orchestrates the migration; it does not run inference. It reads source
 rows, calls the external endpoint, and writes the candidate generation itself,
 leaving the active generation untouched until verification and cutover.
 
-<p align="center"><img src="docs/site/src/assets/inference-generation-lifecycle.svg" alt="The active inference generation continues serving queries while Ptah prepares, backfills, catches up, indexes, and verifies a candidate. Cutover makes the verified candidate active; rollback can restore the retained previous generation, and retirement is separate and destructive." width="1000"></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/site/src/assets/inference-generation-lifecycle-dark.svg">
+    <img src="docs/site/src/assets/inference-generation-lifecycle-light.svg" alt="Prepare, backfill, catchup, index, and verify a candidate while the current generation serves queries. Cutover activates the candidate. Rollback restores an eligible previous generation. Retirement separately destroys an inactive generation with no eligible rollback dependency." width="1000">
+  </picture>
+</p>
 
 The [inference migrations guide](https://docs.ptah.run/edge/inference/overview/)
 covers the specification, concurrent-change catch-up, evaluation, approvals,

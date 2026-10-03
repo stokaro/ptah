@@ -1,7 +1,7 @@
 ---
 /**
- * A figure of real product output: the image on the code surface, a bar with
- * a "Product output" label and the actions, a caption, and the command that
+ * A figure with an image on the code surface, a bar with
+ * a label and the actions, a caption, and an optional command that
  * reproduces the image (stokaro/ptah#2893, concept 1a). The styles are in
  * src/styles/ptah/figures.css.
  *
@@ -16,6 +16,8 @@ import { Image } from 'astro:assets';
 
 interface Props {
   id: string;
+  label?: string;
+  themeWithSite?: boolean;
   src: ImageMetadata | string;
   darkSrc?: ImageMetadata | string;
   alt: string;
@@ -39,6 +41,8 @@ interface Props {
 
 const {
   id,
+  label = 'Product output',
+  themeWithSite = false,
   src,
   darkSrc,
   alt,
@@ -52,9 +56,16 @@ const {
 } = Astro.props;
 ---
 
-<figure class="ptah-product-preview" data-product-preview data-visual-id={id}>
+<figure
+  class="ptah-product-preview"
+  data-product-preview
+  data-visual-id={id}
+  data-site-themed={themeWithSite ? '' : undefined}
+  data-light-src={themeWithSite ? fullSizeHref : undefined}
+  data-dark-src={themeWithSite && darkSrc ? (typeof darkSrc === 'string' ? darkSrc : darkSrc.src) : undefined}
+>
   <div class="ptah-product-preview__bar">
-    <span class="ptah-product-preview__label">Product output</span>
+    <span class="ptah-product-preview__label">{label}</span>
     <nav class="ptah-product-preview__actions" aria-label={`${caption} actions`}>
       <a href={fullSizeHref} data-preview-action="full-size">Full size</a>
       {downloadHref && <a href={downloadHref} download data-preview-action="download">Download</a>}
@@ -68,7 +79,16 @@ const {
     data-preview-action="full-size-media"
     aria-label={`Open the full-size ${caption}`}
   >
-    {darkSrc ? (
+    {themeWithSite && darkSrc ? (
+      <img
+        data-themed-diagram
+        src={typeof src === 'string' ? src : src.src}
+        width={typeof src === 'string' ? undefined : src.width}
+        height={typeof src === 'string' ? undefined : src.height}
+        alt={alt}
+        loading="eager"
+      />
+    ) : darkSrc ? (
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset={typeof darkSrc === 'string' ? darkSrc : darkSrc.src} />
         <Image src={src} alt={alt} loading="eager" />
@@ -116,3 +136,22 @@ const {
     )}
   </figcaption>
 </figure>
+
+<script>
+  // Full-size previews and downloads follow the site's explicit theme too.
+  function syncDiagramLinks() {
+    const dark = document.documentElement.dataset.theme === 'dark';
+    document.querySelectorAll<HTMLElement>('[data-site-themed]').forEach((figure) => {
+      const href = dark ? figure.dataset.darkSrc : figure.dataset.lightSrc;
+      if (!href) return;
+      const image = figure.querySelector<HTMLImageElement>('[data-themed-diagram]');
+      if (image) image.src = href;
+      figure.querySelectorAll<HTMLAnchorElement>('a[data-preview-action]').forEach((link) => {
+        if (link.dataset.previewAction !== 'source') link.href = href;
+      });
+    });
+  }
+  syncDiagramLinks();
+  new MutationObserver(syncDiagramLinks).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  document.addEventListener('astro:page-load', syncDiagramLinks);
+</script>

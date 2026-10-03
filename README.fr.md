@@ -54,7 +54,12 @@ planification sont également disponibles sous forme de paquets Go.
 
 ## Modifications de schéma
 
-<p align="center"><img src="docs/site/src/assets/product-journeys.svg" alt="Les sources de schéma et une base existante produisent un plan à examiner, transformé en fichiers de migration versionnés ou appliqué directement. Les spécifications d’inférence et les lignes sources produisent une génération candidate, vérifiée avant la bascule. La génération active reste disponible pour un retour arrière." width="1000"></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/site/src/assets/product-journeys-dark.svg">
+    <img src="docs/site/src/assets/product-journeys-light.svg" alt="Les sources de schéma et une base existante produisent un plan à examiner, transformé en fichiers de migration versionnés ou appliqué directement. Les spécifications d’inférence et les lignes sources produisent une génération candidate, vérifiée avant la bascule. La génération précédente est conservée ; le retour arrière exige qu’elle reste admissible." width="1000">
+  </picture>
+</p>
 
 Les deux approches utilisent le même modèle de comparaison et de planification.
 La différence est de savoir si le SQL devient un artefact revu dans le système
@@ -66,7 +71,12 @@ Ptah orchestre la migration ; il n’exécute pas l’inférence. Il lit les lig
 sources, appelle le service externe et écrit lui-même la génération candidate.
 La génération active reste intacte jusqu’à la vérification et à la bascule.
 
-<p align="center"><img src="docs/site/src/assets/inference-generation-lifecycle.svg" alt="La génération d’inférence active continue de servir les requêtes pendant que Ptah prépare, remplit, synchronise, indexe et vérifie une candidate. La bascule active la candidate vérifiée. Un retour arrière peut rétablir la génération précédente conservée ; sa suppression est une opération distincte et destructive." width="1000"></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/site/src/assets/inference-generation-lifecycle-dark.svg">
+    <img src="docs/site/src/assets/inference-generation-lifecycle-light.svg" alt="La génération d’inférence active continue de servir les requêtes pendant que Ptah prépare, remplit, synchronise, indexe et vérifie une candidate. La bascule active la candidate vérifiée. Un retour arrière peut rétablir une génération précédente admissible. La suppression est une opération distincte et destructive, réservée aux générations inactives sans dépendance de retour arrière admissible." width="1000">
+  </picture>
+</p>
 
 Le [guide des migrations d’inférence](https://docs.ptah.run/edge/inference/overview/)
 couvre la spécification, le rattrapage des modifications concurrentes,

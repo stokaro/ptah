@@ -19,6 +19,11 @@ overlaps:
 disposition: keep
 ---
 
+import ProductPreview from '../../../components/ProductPreview.astro';
+import lifecycleLight from '../../../assets/inference-generation-lifecycle-light.svg';
+import lifecycleDark from '../../../assets/inference-generation-lifecycle-dark.svg';
+import lifecycleSource from '../../../../diagrams/inference-generation-lifecycle.mmd?url&no-inline';
+
 If your application stores embeddings in PostgreSQL and you need to change the
 model that produced them, this area is for you.
 
@@ -80,9 +85,22 @@ new vectors are correct. A passing verification does not move your queries. A
 completed cutover does not throw the old vectors away.
 
 Two commands exist for what comes after: `rollback` puts the previous vectors
-back, and `retire` destroys a set of vectors permanently.
+back if they remain eligible, and `retire` destroys an inactive generation
+when it is no longer an eligible rollback target.
 
-![The active generation continues serving queries while Ptah prepares, backfills, catches up, indexes, and verifies a candidate. Cutover makes the verified candidate active; rollback can restore the retained previous generation, and retirement is separate and destructive.](../../../assets/inference-generation-lifecycle.svg)
+<ProductPreview
+  id="inference-generation-lifecycle"
+  label="Workflow diagram"
+  themeWithSite
+  src={lifecycleLight}
+  darkSrc={lifecycleDark}
+  alt="Prepare, backfill, catchup, index, and verify a candidate while the current generation serves queries. Cutover activates the candidate. Rollback restores an eligible previous generation. Retirement separately destroys an inactive generation with no eligible rollback dependency."
+  caption="Build and verify a candidate before switching the active pointer."
+  notice="Rollback requires an eligible previous generation. Retirement is separate and refuses active generations and eligible rollback targets."
+  fullSizeHref={lifecycleLight.src}
+  downloadHref={lifecycleLight.src}
+  sourceHref={lifecycleSource}
+/>
 
 ## Where to go next
 
