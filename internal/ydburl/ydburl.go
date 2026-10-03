@@ -78,9 +78,8 @@ func FromURL(parsed *url.URL) (URL, error) {
 	default:
 		return URL{}, fmt.Errorf("%w: %q", ErrNotYDB, parsed.Scheme)
 	}
-	if parsed.Opaque != "" {
-		return URL{}, errors.New("a YDB URL needs a host: write ydb://host:2136/database")
-	}
+	// An opaque URL (ydb:host/database) has no host either, so this refuses
+	// it too.
 	if parsed.Hostname() == "" {
 		return URL{}, errors.New("a YDB URL needs a host: write ydb://host:2136/database")
 	}
