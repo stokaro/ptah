@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"path"
 	"slices"
 	"strings"
 
@@ -127,15 +128,27 @@ type Report struct {
 	// Control is the statement the server had to refuse for any acceptance in
 	// this run to be worth reading.
 	Control Attempt
-	// Namespace is the throwaway schema or database the run used.
+	// Namespace is the throwaway schema or database the run used. On YDB it is
+	// the absolute path of the directory the run worked in.
 	Namespace string
+	// StatementPrefix is the text sent ahead of every statement the evidence
+	// lists, empty where the namespace is session state the run set once. On
+	// YDB it is the pragma naming the namespace directory, so re-running a
+	// statement by hand means sending it after this.
+	StatementPrefix string
 	// Namespaced records the statements that proved the namespace applies.
 	// Entering one is not evidence that it governs where objects land, and a
 	// namespace that silently does not apply is how one run's leftovers become
 	// the next run's findings.
 	Namespaced []Attempt
-	// Cleanup records the teardown statements.
+	// Cleanup records the teardown statements, and on YDB the reads that
+	// confirm the teardown removed what the run created.
 	Cleanup []Attempt
+	// Leftovers names what the run created and the teardown did not remove,
+	// on a dialect the probe can ask; any entry fails the run. The nightly
+	// tier runs the integration suite on the server the probe used, and an
+	// object left here is one the suite's first cleanup meets.
+	Leftovers []string
 }
 
 // Count returns how many rows carry an outcome.
@@ -202,6 +215,11 @@ func (r *Report) Err() error {
 		problems = append(problems, fmt.Errorf(
 			"%s: preset says %t, server does %t", row.Capability, row.PresetSays, row.ServerDoes))
 	}
+	problems = append(problems, r.staleUnderstatements()...)
+	if len(r.Leftovers) > 0 {
+		problems = append(problems, fmt.Errorf(
+			"the run left objects it created on the server: %s", strings.Join(r.Leftovers, "; ")))
+	}
 	if r.Decided() < r.Floor() {
 		problems = append(problems, r.coverageProblem())
 	}
@@ -258,6 +276,28 @@ func (r *Report) cellProblems() []error {
 	return problems
 }
 
+// staleUnderstatements reports every key the cell declares its preset
+// understates on a server measured not to do it.
+//
+// An understatement is a claim about the server as well as about Ptah: that
+// the server does what the preset leaves out. Measured false, the reason it
+// carries is wrong, and a row that agrees with the preset is all that would
+// say so -- which is also what an experiment that stopped proving the object
+// was made would produce.
+func (r *Report) staleUnderstatements() []error {
+	var problems []error
+	for _, row := range r.Rows {
+		reason, declared := r.Cell.Understates[row.Capability]
+		if !declared || row.Outcome != Agrees || row.ServerDoes {
+			continue
+		}
+		problems = append(problems, fmt.Errorf(
+			"%s: matrix cell %s declares that its preset understates this key (%s), and the server was measured "+
+				"not to do it either, so the declaration is stale", row.Capability, r.Cell, reason))
+	}
+	return problems
+}
+
 // Run probes one live server and returns one row per registered capability.
 //
 // It never wraps the measurement in a transaction. PostgreSQL refuses CREATE
@@ -289,11 +329,29 @@ func Run(ctx context.Context, dbURL string) (*Report, error) {
 	if err := conn.WithSession(ctx, func(pinned *dbschema.DatabaseConnection) error {
 		report.SessionCapabilities = pinned.Info().Capabilities
 		report.SessionDeltas = deltas(report.Resolution.Capabilities, report.SessionCapabilities)
-		return measure(ctx, pinned, report)
+		return measure(ctx, measuredOn(report.Dialect, conn, pinned), report)
 	}); err != nil {
 		return nil, err
 	}
 	return report, nil
+}
+
+// measuredOn picks the connection the plan runs on: the pinned session, where
+// the namespace is session state, and the pool on YDB.
+//
+// A YDB namespace is a pragma every statement carries, so no statement there
+// depends on the session before it, and the run does depend on the pool to
+// survive a session the server ends. Measured on 25.1.4.7: the CREATE TABLE
+// the small_integer_defaults experiment sends fails with INTERNAL_ERROR and
+// ends the server session, every later statement on a pinned session answers
+// BAD_SESSION, and the run died with the namespace and its group left behind.
+// On the pool the driver drops the dead session and the next statement takes
+// a new one.
+func measuredOn(dialect string, pool, pinned *dbschema.DatabaseConnection) *dbschema.DatabaseConnection {
+	if dialect == platform.YDB {
+		return pool
+	}
+	return pinned
 }
 
 // ProductVersion asks the server for a version surface cleaner than its
@@ -344,21 +402,23 @@ func measure(ctx context.Context, pinned *dbschema.DatabaseConnection, report *R
 	}
 	report.Namespace = namespace
 	s := &session{conn: pinned, dialect: report.Dialect, namespace: namespace}
+	if report.Dialect == platform.YDB {
+		if err := s.enterYDBDirectory(); err != nil {
+			return err
+		}
+		report.Namespace = path.Join(s.database, namespace)
+		report.StatementPrefix = strings.TrimSpace(s.prefix)
+	}
 
 	enter, leave := namespaceSQL(report.Dialect, namespace)
 	if attempts, ok := s.runAll(ctx, enter); !ok {
 		return fmt.Errorf("create the throwaway probe namespace: %s", attempts[len(attempts)-1].ServerErr)
 	}
 	defer func() {
-		cleanup := s.dropRoles(ctx)
-		// A dialect whose namespace is the database the probe connected to has
-		// nothing to leave. Executing an empty statement there would record a
-		// refusal the run did not earn, in the one place a reader looks to see
-		// that the server was left as it was found.
-		if leave != "" {
-			cleanup = append(cleanup, s.exec(ctx, leave))
-		}
-		report.Cleanup = cleanup
+		report.Cleanup = append(s.dropRoles(ctx), s.leave(ctx, leave)...)
+		confirmed, left := s.leftovers(ctx)
+		report.Cleanup = append(report.Cleanup, confirmed...)
+		report.Leftovers = left
 	}()
 
 	confirmations, err := s.confirmNamespace(ctx)

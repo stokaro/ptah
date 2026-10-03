@@ -29,9 +29,10 @@ type Connection struct {
 	Driver *ydbsdk.Driver
 }
 
-// The parameters a YDB URL may carry besides database. Each is read by Ptah
-// or passed to ydb-go-sdk, which documents it; any other parameter is refused,
-// because the SDK ignores a parameter it does not know without a word.
+// The parameters a YDB URL may carry besides database and monitoring, which
+// internal/ydburl takes out of the query. Each is read by Ptah or passed to
+// ydb-go-sdk, which documents it; any other parameter is refused, because the
+// SDK ignores a parameter it does not know without a word.
 const (
 	paramToken             = "token"
 	paramUseEnvCredentials = "use_env_credentials" // #nosec G101 -- the name of a URL parameter, not a credential
@@ -48,8 +49,8 @@ const (
 // acceptedParameters lists, in the order a refusal names them, the parameters
 // a YDB URL may carry.
 var acceptedParameters = []string{
-	ydburl.DatabaseParameter, paramToken, paramUseEnvCredentials, paramBalancer, paramLegacyBalancer,
-	paramQueryMode, paramLegacyQueryMode, paramDefaultIdempotent, paramPrefetchParts,
+	ydburl.DatabaseParameter, ydburl.MonitoringParameter, paramToken, paramUseEnvCredentials, paramBalancer,
+	paramLegacyBalancer, paramQueryMode, paramLegacyQueryMode, paramDefaultIdempotent, paramPrefetchParts,
 }
 
 // Open connects to the YDB database a ydb:// or ydbs:// URL names.

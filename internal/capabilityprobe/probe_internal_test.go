@@ -31,6 +31,7 @@ var probedDialects = []string{
 	platform.Oracle,
 	platform.SQLServer,
 	platform.SQLite,
+	platform.YDB,
 }
 
 // TestPlans_AnswerEveryRegisteredCapabilityExactlyOnce is the guard that keeps
@@ -256,6 +257,21 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.TypeComments,
 			capability.ViewComments,
 		},
+	}, {
+		dialect: platform.YDB,
+		// The PostgreSQL set, for the PostgreSQL reasons: YDB is asked in its
+		// own spelling or in the standard one everywhere else, and what is
+		// left is a property of the probe, of the migrator or of an extension
+		// no YDB has.
+		want: []capability.Capability{
+			capability.CatalogVectorInfo,
+			capability.ContinuousAggregates,
+			capability.DDLInsideTransaction,
+			capability.Hypertables,
+			capability.MigrationTimeouts,
+			capability.ShowRoutinePrivilege,
+			capability.TransactionalDDL,
+		},
 	}} {
 		t.Run(tc.dialect, func(t *testing.T) {
 			c := qt.New(t)
@@ -409,6 +425,17 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		},
 		caps: capability.CockroachDB25(),
 		want: registered - 9,
+	}, {
+		name: "ydb 26.2 owes every row but the seven it declares and the seven whose prerequisite the preset lacks: " +
+			"guarded DROP CONSTRAINT, CREATE OR REPLACE TRIGGER, SET EXPRESSION, the three reference policies " +
+			"and the sequence grammar restriction",
+		cell: Cell{
+			Dialect: platform.YDB, Line: "26.2",
+			Preset: capability.YDB262, PresetName: "YDB262",
+			Refinement: RefinedByVersion,
+		},
+		caps: capability.YDB262(),
+		want: registered - 14,
 	}, {
 		name: "a banner-refined line owes nothing because no observation can be credited to it",
 		cell: Cell{
@@ -643,6 +670,15 @@ func TestReportErr(t *testing.T) {
 			return report
 		},
 		want: `(?s).*ACCEPTED the nonsense control.*`,
+	}, {
+		name: "a run that left what it created on the server fails",
+		build: func() *Report {
+			report := decidedReport(measuredCell, true)
+			report.Leftovers = []string{"group ptahcapprobe00", "2 table(s) under /local/ptah_capprobe_00"}
+			return report
+		},
+		want: `(?s).*the run left objects it created on the server: group ptahcapprobe00; ` +
+			`2 table\(s\) under /local/ptah_capprobe_00.*`,
 	}, {
 		name: "a dialect with no statement table fails rather than reporting agreement",
 		build: func() *Report {
@@ -1191,6 +1227,75 @@ func TestClickHousePlan_AsksTheShapeTheKeyNames(t *testing.T) {
 			for _, reject := range tt.rejects {
 				c.Assert(tt.statement, qt.Not(qt.Contains), reject)
 			}
+		})
+	}
+}
+
+// TestYDBNamespaceStatements pins the statements that locate the YDB
+// namespace: a key in a clause of its own, absolute paths into the system
+// views (a relative `.sys` would resolve inside the namespace the pragma
+// names), and an occupancy count that leaves out only the server's
+// dot-directories. Nothing is executed to enter the namespace or to leave it:
+// the pragma travels with every statement and the scheme service removes the
+// directory.
+func TestYDBNamespaceStatements(t *testing.T) {
+	c := qt.New(t)
+
+	enter, leave := namespaceSQL(platform.YDB, "ptah_capprobe_ab")
+
+	c.Assert(enter, qt.HasLen, 0)
+	c.Assert(leave, qt.Equals, "")
+	c.Assert(sentinelTableSQL(platform.YDB), qt.Equals,
+		"CREATE TABLE ptah_capprobe_sentinel (n Int64 NOT NULL, PRIMARY KEY (n))")
+	c.Assert(sentinelLocationSQL(platform.YDB, "/local", "ptah_capprobe_ab"), qt.Equals,
+		"SELECT COUNT(DISTINCT Path) FROM `/local/.sys/partition_stats` "+
+			"WHERE Path = '/local/ptah_capprobe_ab/ptah_capprobe_sentinel'")
+	c.Assert(occupancySQLFor(platform.YDB, "/local"), qt.Equals,
+		"SELECT COUNT(DISTINCT Path) FROM `/local/.sys/partition_stats` WHERE NOT StartsWith(Path, '/local/.')")
+}
+
+// TestReportErr_AnUnderstatementIsAClaimAboutTheServerToo pins both readings of
+// a declared understatement: the server doing the key is the decision the cell
+// recorded and passes, and the server not doing it makes the declaration's
+// reason false and fails the run -- which is also what an experiment that
+// stopped proving the object exists would produce.
+func TestReportErr_AnUnderstatementIsAClaimAboutTheServerToo(t *testing.T) {
+	const key = capability.Hypertables // Postgres17 says false.
+	cell := measuredCell
+	cell.Understates = map[capability.Capability]string{key: "the server has it and Ptah does not plan it yet"}
+	for _, tc := range []struct {
+		name        string
+		serverDoes  bool
+		wantOutcome Outcome
+		wantErr     string
+	}{{
+		name:        "the server does the understated key",
+		serverDoes:  true,
+		wantOutcome: Conservative,
+	}, {
+		name:        "the server does not do it either",
+		serverDoes:  false,
+		wantOutcome: Agrees,
+		wantErr: `(?s).*hypertables: matrix cell postgres 17 declares that its preset understates this key ` +
+			`\(the server has it and Ptah does not plan it yet\), and the server was measured not to do it ` +
+			`either, so the declaration is stale.*`,
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			preset := capability.Postgres17()
+			report := reportOn(cell, true, preset)
+			report.Planned = true
+			report.Control = Attempt{Statement: nonsenseControl}
+			report.Resolution.Capabilities = preset
+			observations := make(map[capability.Capability]observation)
+			for _, registered := range capability.All() {
+				observations[registered] = decided(preset.Has(registered))
+			}
+			observations[key] = decided(tc.serverDoes)
+			report.Rows = assemble(report, observations, nil)
+
+			c.Assert(rowFor(c, report.Rows, key).Outcome, qt.Equals, tc.wantOutcome)
+			assertErrMatches(c, report.Err(), tc.wantErr)
 		})
 	}
 }

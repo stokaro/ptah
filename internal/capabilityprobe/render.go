@@ -82,6 +82,9 @@ func writeHeader(w io.Writer, r *Report) {
 	if r.Namespace != "" {
 		fmt.Fprintf(w, "  namespace    %s\n", r.Namespace)
 	}
+	if r.StatementPrefix != "" {
+		fmt.Fprintf(w, "  prefix       every statement below was sent after %s\n", r.StatementPrefix)
+	}
 	if r.Control.Statement == "" {
 		fmt.Fprintf(w, "  control      NOT RUN — nothing was executed against this server\n")
 		return
@@ -117,13 +120,15 @@ func writeSessionDeltas(w io.Writer, r *Report) {
 // belongs on the same line as the count it is compared against: a reader who
 // sees "decided 22" cannot tell an intact run from an eroded one without it.
 func writeSummary(w io.Writer, r *Report) {
-	fmt.Fprintf(w, "\nsummary: %d rows — %d AGREES, %d DISAGREES, %d UNDECIDABLE; decided %d, floor %d\n",
-		len(r.Rows), r.Count(Agrees), r.Count(Disagrees), r.Count(Undecidable), r.Decided(), r.Floor())
+	fmt.Fprintf(w, "\nsummary: %d rows — %d AGREES, %d DISAGREES, %d CONSERVATIVE, %d UNDECIDABLE; decided %d, floor %d\n",
+		len(r.Rows), r.Count(Agrees), r.Count(Disagrees), r.Count(Conservative), r.Count(Undecidable),
+		r.Decided(), r.Floor())
 }
 
 func writeAnnotations(w io.Writer, r *Report) {
 	writeUndecidable(w, r)
 	writeMismatches(w, r)
+	writeUnderstated(w, r)
 	noted := rowsWith(r, func(row Row) bool { return row.Note != "" })
 	if len(noted) > 0 {
 		fmt.Fprintf(w, "\nnotes:\n")
@@ -177,6 +182,20 @@ func writeMismatches(w io.Writer, r *Report) {
 	for _, row := range mismatches {
 		fmt.Fprintf(w, "  %-38s preset says %-5t server does %-5t [%s]\n",
 			row.Capability, row.PresetSays, row.ServerDoes, row.Outcome)
+	}
+}
+
+// writeUnderstated prints every row the cell declares its preset understates,
+// with the decision the declaration records. Without it a CONSERVATIVE row
+// says that the server does more and not why Ptah claims less.
+func writeUnderstated(w io.Writer, r *Report) {
+	understated := rowsWith(r, func(row Row) bool { return row.Outcome == Conservative })
+	if len(understated) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "\nunderstated on purpose:\n")
+	for _, row := range understated {
+		fmt.Fprintf(w, "  %s\n      %s\n", row.Capability, row.Reason)
 	}
 }
 

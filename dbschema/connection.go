@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -34,6 +35,8 @@ import (
 	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqlrunner"
+	"ptah.run/internal/ydbflags"
+	"ptah.run/internal/ydburl"
 )
 
 // ConnectToDatabase creates a database connection from a URL.
@@ -361,6 +364,10 @@ func getDatabaseInfoWithCapabilities(
 	}
 	resolution := resolveDatabaseCapabilities(info)
 	info.Capabilities = refineExtensionCapabilities(ctx, db, info.Dialect, resolution.Capabilities)
+	info.Capabilities, err = refineFeatureFlagCapabilities(ctx, info.Dialect, dbURL, info.Capabilities)
+	if err != nil {
+		return catalog.ServerInfo{}, capability.VersionResolution{}, err
+	}
 	// The same sentence the typed --server-version path renders, from the same
 	// function. A second wording here would be a second answer to "what was
 	// actually planned", and the two would drift on the first edit --
@@ -408,6 +415,57 @@ func refineExtensionCapabilities(
 		return caps
 	}
 	return caps.With(capability.Hypertables, true).With(capability.ContinuousAggregates, true)
+}
+
+// refineFeatureFlagCapabilities decides the keys a YDB cluster's feature flags
+// gate, when the URL names the cluster's monitoring endpoint.
+//
+// A preset describes a release line with its default flags, and a cluster an
+// operator configured can do more or less than that: measured on 26.2.1.14
+// started with enable_add_unique_index, a unique index is added to a table
+// holding rows, which the line's preset says is refused. The flags are read
+// once, here, because they belong to the cluster rather than to a session.
+//
+// Without the monitoring parameter the preset stands. A failed read fails the
+// connection rather than falling back to the preset: the operator asked for
+// the cluster's answer, and planning without it would be planning with an
+// answer nobody asked for.
+func refineFeatureFlagCapabilities(
+	ctx context.Context,
+	dialect, dbURL string,
+	caps capability.Capabilities,
+) (capability.Capabilities, error) {
+	if platform.NormalizeDialect(dialect) != platform.YDB {
+		return caps, nil
+	}
+	parsed, err := ydburl.Parse(dbURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid YDB URL: %w", err)
+	}
+	if parsed.Monitoring == nil {
+		return caps, nil
+	}
+	flags, err := ydbflags.Read(ctx, parsed.Monitoring, parsed.Database)
+	if err != nil {
+		return nil, err
+	}
+	refined := flags.Refine(caps)
+	if changed := deltaKeys(caps, refined); len(changed) > 0 {
+		slog.Debug("YDB feature flags changed the capability set", "keys", changed)
+	}
+	return refined, nil
+}
+
+// deltaKeys names, sorted, the keys two capability sets disagree on.
+func deltaKeys(before, after capability.Capabilities) []capability.Capability {
+	var changed []capability.Capability
+	for _, key := range capability.All() {
+		if before.Has(key) != after.Has(key) {
+			changed = append(changed, key)
+		}
+	}
+	slices.Sort(changed)
+	return changed
 }
 
 // reportCapabilityResolution says what a non-version-specific resolution
@@ -945,7 +1003,7 @@ func (dc *DatabaseConnection) WithSession(
 	baselineCapabilities := capability.ForServerVersion(dc.info.Dialect, dc.info.Version)
 	sessionCapabilities, err := refineMySQLForeignKeyCapabilities(
 		dc.info.Dialect,
-		baselineCapabilities,
+		connectionCapabilities(dc.info.Capabilities, baselineCapabilities),
 		baselineCapabilities,
 		func(destination ...any) error {
 			return session.QueryRowContext(
@@ -988,6 +1046,18 @@ func (dc *DatabaseConnection) WithSessionOrCurrent(
 		return use(dc)
 	}
 	return dc.WithSession(ctx, use)
+}
+
+// connectionCapabilities is the set a pinned session starts from: what the
+// connection established for every session -- the release line, an extension
+// it found, a cluster's feature flags -- or the release line's preset where a
+// connection assembled without one carries none. A session refines it further
+// only with what the session itself can change.
+func connectionCapabilities(connection, baseline capability.Capabilities) capability.Capabilities {
+	if len(connection) == 0 {
+		return baseline
+	}
+	return connection.Clone()
 }
 
 func refineMySQLForeignKeyCapabilities(

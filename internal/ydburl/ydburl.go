@@ -34,6 +34,11 @@ const (
 // path does not.
 const DatabaseParameter = "database"
 
+// MonitoringParameter is the query parameter that names the cluster's
+// monitoring endpoint, such as http://host:8765. Ptah reads the cluster's
+// feature flags there; the YDB SDK never sees it.
+const MonitoringParameter = "monitoring"
+
 // URL is a parsed YDB database URL.
 type URL struct {
 	// Secure reports TLS: the ydbs scheme.
@@ -47,7 +52,11 @@ type URL struct {
 	Database string
 	// User is the URL's user information, nil when it carries none.
 	User *url.Userinfo
-	// Query is the query string without the database parameter.
+	// Monitoring is the cluster's monitoring endpoint, an http:// or https://
+	// address with no path, nil when the URL names none.
+	Monitoring *url.URL
+	// Query is the query string without the database and monitoring
+	// parameters.
 	Query url.Values
 }
 
@@ -64,7 +73,8 @@ func Parse(raw string) (URL, error) {
 }
 
 // FromURL reads an already parsed URL. The database comes from the path or
-// from the database parameter. A URL naming it in both places is refused when
+// from the database parameter, and the monitoring endpoint from the monitoring
+// parameter; a malformed one is refused. A URL naming it in both places is refused when
 // the two differ, because the YDB SDK silently takes the parameter, and a
 // reader of the path would then describe a database the command does not
 // open. Spellings that differ only in their slashes (`local`, `/local`,
@@ -110,14 +120,58 @@ func FromURL(parsed *url.URL) (URL, error) {
 		delete(query, DatabaseParameter)
 	}
 
+	monitoring, err := monitoringEndpoint(query)
+	if err != nil {
+		return URL{}, err
+	}
+	delete(query, MonitoringParameter)
+
 	return URL{
-		Secure:   secure,
-		Host:     parsed.Hostname(),
-		Port:     port,
-		Database: database,
-		User:     parsed.User,
-		Query:    query,
+		Secure:     secure,
+		Host:       parsed.Hostname(),
+		Port:       port,
+		Database:   database,
+		User:       parsed.User,
+		Monitoring: monitoring,
+		Query:      query,
 	}, nil
+}
+
+// monitoringEndpoint reads the monitoring parameter, or returns nil when the
+// query has none.
+//
+// The value is the endpoint and nothing more: Ptah adds the path of the page
+// it reads, so a path, a query or a fragment would be read as part of an
+// address they are not part of. A user in the value is refused rather than
+// sent, because nothing else in Ptah sends a credential to that endpoint and a
+// password in a query parameter reaches every log that prints the URL.
+func monitoringEndpoint(query url.Values) (*url.URL, error) {
+	values, named := query[MonitoringParameter]
+	if !named {
+		return nil, nil
+	}
+	if len(values) != 1 {
+		return nil, errors.New("the monitoring parameter is given more than once")
+	}
+	value := values[0]
+	parsed, err := url.Parse(value)
+	switch {
+	case value == "":
+		return nil, errors.New("the monitoring parameter is empty: write monitoring=http://host:8765")
+	case err != nil:
+		return nil, fmt.Errorf("the monitoring parameter %q is not a URL: %w", value, err)
+	case parsed.Scheme != "http" && parsed.Scheme != "https":
+		return nil, fmt.Errorf("the monitoring parameter %q names no http:// or https:// endpoint: "+
+			"write monitoring=http://host:8765", value)
+	case parsed.Hostname() == "":
+		return nil, fmt.Errorf("the monitoring parameter %q names no host", value)
+	case parsed.User != nil:
+		return nil, fmt.Errorf("the monitoring parameter %q carries a user; Ptah sends no credentials there", value)
+	case strings.Trim(parsed.Path, "/") != "" || parsed.RawQuery != "" || parsed.Fragment != "":
+		return nil, fmt.Errorf("the monitoring parameter %q names a page; name the endpoint only, "+
+			"as monitoring=%s://%s", value, parsed.Scheme, parsed.Host)
+	}
+	return &url.URL{Scheme: parsed.Scheme, Host: parsed.Host}, nil
 }
 
 // Endpoint is host:port, with an IPv6 address in brackets.

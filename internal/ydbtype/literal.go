@@ -423,6 +423,13 @@ func valueRefusal(ydbType, value string) *Refusal {
 	return &Refusal{Declared: fmt.Sprintf("default %q", value), Reason: "it is not a " + ydbType + " value"}
 }
 
+// StringLiteral writes value as a YQL String literal, the spelling [Literal]
+// gives a String value. A caller that builds a query rather than a default
+// takes it here, so the two cannot escape differently.
+func StringLiteral(value string) string {
+	return quote(value)
+}
+
 // quote writes value as a single-quoted YQL string. YQL reads backslash
 // escapes in a string and does not read a quote written twice: measured, the
 // SQL spelling of "it's" with a doubled quote is a parse error. So a quote and

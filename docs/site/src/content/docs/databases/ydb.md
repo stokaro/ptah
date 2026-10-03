@@ -56,8 +56,9 @@ Credentials come from exactly one source:
 
 Besides `database`, `token` and `use_env_credentials`, a URL may carry the SDK
 parameters `go_balancer`, `go_default_idempotent` and
-`prefetch_query_result_parts`. Any other parameter is refused with the list of
-the accepted ones.
+`prefetch_query_result_parts`, and `monitoring`, which names the cluster's
+monitoring endpoint (see [Feature flags](#feature-flags)). Any other parameter
+is refused with the list of the accepted ones.
 
 A server in a container on another host advertises its node through discovery
 as `localhost:2136`, which the client cannot reach. Connect to such a server
@@ -166,7 +167,8 @@ does by default.
 The indexes of a new table are written inside its `CREATE TABLE`. YDB keeps
 adding a unique index to a table that already exists behind a feature flag that
 is off by default, so Ptah refuses that change and declares a unique index with
-the table instead. Other indexes added to an existing table get one
+the table instead. A cluster that turns the flag on takes the change when the
+URL names its monitoring endpoint (see [Feature flags](#feature-flags)). Other indexes added to an existing table get one
 `ALTER TABLE ... ADD INDEX` each, because YDB adds one index per statement.
 
 A foreign key, a `CHECK` constraint and a `UNIQUE` constraint are refused. A
@@ -209,7 +211,40 @@ or `stable-25-4-1`:
 | `YDB251` | 25.1 | the 64-bit date and time types, `Decimal` precision other than 22,9, an `Int16` or `Uint16` default |
 
 `ptah schema render --dialect ydb --server-version 25.1.4.7` renders for a line
-without a server. Which lines are declared, and at what support level, is on
+without a server. The capability probe measures 26.2, the current release, and
+25.1, the one line with a published support date, against a server of its own on
+each run of the capability matrix. The other lines keep the presets measured on
+them and are best-effort.
+
+### Feature flags
+
+A preset describes a release line running with its default feature flags. A
+cluster that turns a flag on or off can do more or less than that. Name the
+cluster's monitoring endpoint in the URL, and Ptah reads the flags from
+`/viewer/json/feature_flags` there when it connects:
+
+```text
+ydb://localhost:2136/local?monitoring=http://localhost:8765
+```
+
+The flags decide these capabilities:
+
+| Feature flag | Capability |
+| --- | --- |
+| `EnableAddUniqueIndex` | `unique_index_on_existing_table` |
+| `EnableAddColumsWithDefaults` | `add_column_with_default` |
+| `EnableSetDropDefaultValue` | `alter_column_default` |
+| `EnableTableDatetime64` | `wide_date_time_types` |
+| `EnableParameterizedDecimal` | `parameterized_decimal` |
+
+A flag the cluster does not list means that it lacks the feature. Ptah sends no
+credentials to the monitoring endpoint. A failed read fails the connection
+rather than planning without the flags. `ptah db capabilities` lists the keys
+the flags changed under `Set by this server rather than by its release line`.
+
+Without the parameter the line's preset stands. A statement the cluster
+refuses because a flag is off then fails with an error that names the
+capability and the flag. Which lines are declared, and at what support level, is on
 the [support matrix](../support-matrix/).
 
 ## Reading a live database

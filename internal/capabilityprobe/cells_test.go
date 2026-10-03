@@ -230,6 +230,14 @@ func TestCells_CoverEveryVersionMeasuredFromALiveServer(t *testing.T) {
 		{platform.CockroachDB, "26.2.5"},
 		{platform.YugabyteDB, "2026.1.0.0"},
 		{platform.SQLServer, "17.0.4065.4"},
+		// What `SELECT Version()` answered on each local-ydb image the YDB
+		// cells start; 25.4.1.15 answers with its branch name.
+		{platform.YDB, "26.2.1.14"},
+		{platform.YDB, "26.1.1.22"},
+		{platform.YDB, "stable-25-4-1"},
+		{platform.YDB, "25.3.1.25"},
+		{platform.YDB, "25.2.1.24"},
+		{platform.YDB, "25.1.4.7"},
 	} {
 		t.Run(fmt.Sprintf("%s %s", tc.dialect, tc.version), func(t *testing.T) {
 			c := qt.New(t)
@@ -676,15 +684,15 @@ func TestCells_BestEffortLinesAreExactlyTheUnmeasuredOnes(t *testing.T) {
 	// (stokaro/ptah#3190).
 	c.Assert(bestEffort, qt.ContentEquals, []string{
 		"spanner-0",
-		// Every YDB line but 26.2: the probe has no YDB statement table or
-		// launch recipe (stokaro/ptah#4015), the presets were measured by hand
-		// on local-ydb, and continuous integration starts a YDB server of the
-		// newest line only, for the integration contour.
+		// The YDB lines between 25.1 and 26.2. Each has a preset, a launch
+		// recipe and a statement table, and declares in Unprobed why no job
+		// runs it: YDB publishes no support period for its open-source lines,
+		// so the matrix probes the current release and 25.1, the one line
+		// with a published support date.
 		"ydb-26-1",
 		"ydb-25-4",
 		"ydb-25-3",
 		"ydb-25-2",
-		"ydb-25-1",
 		// ClickHouse 25.8 came back, and by the other route: not a line that
 		// lost a recipe, but one whose vendor stopped patching it. Upstream
 		// support ended on 2026-08-29, and end of life lowers what Ptah
@@ -1238,15 +1246,14 @@ func TestCells_EveryDeclaredUnderstatementIsStillOne(t *testing.T) {
 		}
 	}
 
-	// Nothing declares an understatement today. Spanner's was the only one and
-	// it was earned away rather than deleted: the endpoint's sequences turned
-	// out to be readable through the quoted spelling of the catalog view, so
-	// the preset claims the key now (stokaro/ptah#1856).
+	// The YDB cells declare the understatements today: views, roles and the
+	// TTL policy exist on the server and not yet in Ptah's YDB renderer and
+	// reader. Spanner declared one once and earned it away: the endpoint's
+	// sequences turned out to be readable through the quoted spelling of the
+	// catalog view, so the preset claims the key now (stokaro/ptah#1856).
 	//
-	// An empty list must not be the same thing as a rule that stopped working,
-	// so the rule is exercised on a declaration built here. Without this, the
-	// day someone declares the next understatement they would inherit checks
-	// nothing had run in a long time.
+	// The rule is also exercised on a declaration built here, so it is seen to
+	// catch a stale one whatever the cells declare.
 	t.Run("the rule still catches a stale declaration", func(t *testing.T) {
 		c := qt.New(t)
 		stale := capabilityprobe.Cell{
@@ -1264,8 +1271,11 @@ func TestCells_EveryDeclaredUnderstatementIsStillOne(t *testing.T) {
 		}
 	})
 
+	c := qt.New(t)
+	c.Assert(declarations, qt.Not(qt.HasLen), 0,
+		qt.Commentf("the YDB cells declare understatements; an empty list means the read below stopped seeing them"))
 	for _, d := range declarations {
-		t.Run(d.cell.Dialect+" "+string(d.key), func(t *testing.T) {
+		t.Run(capabilityprobe.CellID(d.cell)+" "+string(d.key), func(t *testing.T) {
 			c := qt.New(t)
 
 			c.Assert(strings.TrimSpace(d.reason), qt.Not(qt.Equals), "",

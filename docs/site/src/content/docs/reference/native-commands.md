@@ -328,6 +328,21 @@ That is the same MySQL 8.4 release as the profile above, started with
 those keys, so it moves with them — `unique` on a default server, `indexed`
 here.
 
+A YDB cluster's feature flags decide some keys the same way. When the `ydb://`
+URL names the cluster's monitoring endpoint, the connection reads the flags
+([YDB feature flags](../../databases/ydb/#feature-flags) list the keys
+they decide). A 26.2 server started with the `enable_add_unique_index` flag
+reports:
+
+```text
+Set by this server rather than by its release line:
+  unique_index_on_existing_table  supported  (the release line answers unsupported)
+  read from this cluster's feature flags at its monitoring endpoint, not from its release line
+```
+
+Without the `monitoring` parameter Ptah does not read the flags, and the
+section is absent.
+
 The section is absent when the version decided everything, which is the
 ordinary case: a server whose configuration matches its release line renders
 exactly what it rendered before the refinement existed. In `--format json` the

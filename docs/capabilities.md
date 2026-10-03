@@ -405,9 +405,10 @@ for SQL Server-specific view, trigger, and index metadata is outside it.
 
 The YDB presets were measured by hand on `ydbplatform/local-ydb` 25.1.4.7,
 25.2.1.24, 25.3.1.25, 25.4.1.15, 26.1.1.22 and 26.2.1.14, a statement per query,
-each table read back with `scheme describe`. `YDB262()` covers 26.2 and is the
-base the others derive from; each line below it turns off what it was measured
-without:
+each table read back with `scheme describe`. The capability probe measured each
+line once more and agreed with every preset; it measures 26.2 and 25.1 on every
+run of the tiered workflows. `YDB262()` covers 26.2 and is the base the others
+derive from; each line below it turns off what it was measured without:
 
 | Preset | Lines | Differs from the line above it |
 | --- | --- | --- |
@@ -421,9 +422,16 @@ without:
 names no product in `SELECT Version()`, so the dialect comes from the `ydb://`
 URL scheme or `--dialect`, and the ladder reads both version shapes YDB
 reports: the dotted `26.2.1.14` and the branch name `stable-25-4-1`, which
-25.4.1.15 answers with. A preset describes a server with default feature flags.
-The keys that name an object family YDB has and Ptah does not carry yet --
-views, access control, TTL -- are false whatever the server can do.
+25.4.1.15 answers with.
+
+A preset describes a server with default feature flags. A `ydb://` URL that
+names the cluster's monitoring endpoint refines the keys the flags decide
+(`unique_index_on_existing_table`, `add_column_with_default`,
+`alter_column_default`, `wide_date_time_types`, `parameterized_decimal`), and
+the capability probe measures its lines with that refinement in place. The
+keys that name an object family YDB has and Ptah does not carry yet -- views,
+access control, TTL -- are false whatever the server can do, and each YDB cell
+declares them understated on purpose.
 
 ### Saturation: servers newer than the newest measured line
 
@@ -851,13 +859,13 @@ nightly, from the workflow's Run button, or when somebody comments
 | `yugabytedb` | 2024.2 | certified | `YugabyteDB24` | version-ladder | `yugabytedb/yugabyte:2024.2` | yes | yes |
 | `sqlite` | 3 | certified | `SQLite3` | version-ladder | none | n/a | yes |
 | `spanner` | 0 | best-effort | `SpannerPostgres` | banner-substring | `gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.56.1` | no | yes |
+| `ydb` | 26.2 | certified | `YDB262` | version-ladder | `ydbplatform/local-ydb:26.2` | yes | yes |
+| `ydb` | 25.1 | certified | `YDB251` | version-ladder | `ydbplatform/local-ydb:25.1` | yes | yes |
 | `clickhouse` | 25.8 | best-effort | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:25.8` | yes | no: upstream support ended on 2026-08-29 (endoflife.date/clickhouse) |
-| `ydb` | 26.2 | certified | `YDB262` | version-ladder | `ydbplatform/local-ydb:26.2` | yes | no: the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing |
-| `ydb` | 26.1 | best-effort | `YDB261` | version-ladder | `ydbplatform/local-ydb:26.1` | yes | no: the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing |
-| `ydb` | 25.4 | best-effort | `YDB253` | version-ladder | `ydbplatform/local-ydb:25.4` | yes | no: the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing |
-| `ydb` | 25.3 | best-effort | `YDB253` | version-ladder | `ydbplatform/local-ydb:25.3` | yes | no: the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing |
-| `ydb` | 25.2 | best-effort | `YDB252` | version-ladder | `ydbplatform/local-ydb:25.2` | yes | no: the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing |
-| `ydb` | 25.1 | best-effort | `YDB251` | version-ladder | `ydbplatform/local-ydb:25.1` | yes | no: the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing |
+| `ydb` | 26.1 | best-effort | `YDB261` | version-ladder | `ydbplatform/local-ydb:26.1` | yes | no: YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date |
+| `ydb` | 25.4 | best-effort | `YDB253` | version-ladder | `ydbplatform/local-ydb:25.4` | yes | no: YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date |
+| `ydb` | 25.3 | best-effort | `YDB253` | version-ladder | `ydbplatform/local-ydb:25.3` | yes | no: YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date |
+| `ydb` | 25.2 | best-effort | `YDB252` | version-ladder | `ydbplatform/local-ydb:25.2` | yes | no: YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date |
 <!-- END GENERATED VERSION MATRIX -->
 
 Which versions are supported is the vendors' answer, not Ptah's, and the

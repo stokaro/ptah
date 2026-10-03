@@ -16,7 +16,9 @@ func TestParse_HappyPath(t *testing.T) {
 		wantSecure   bool
 		wantEndpoint string
 		wantDatabase string
-		wantQuery    url.Values
+		// wantMonitoring is the monitoring endpoint, empty for none.
+		wantMonitoring string
+		wantQuery      url.Values
 	}{
 		{
 			name:         "plaintext defaults to 2136",
@@ -61,6 +63,23 @@ func TestParse_HappyPath(t *testing.T) {
 			wantDatabase: "",
 			wantQuery:    url.Values{},
 		},
+		{
+			name:           "the monitoring endpoint is taken out of the query",
+			raw:            "ydb://h:2136/local?monitoring=http://h:8765&go_balancer=disable",
+			wantEndpoint:   "h:2136",
+			wantDatabase:   "/local",
+			wantMonitoring: "http://h:8765",
+			wantQuery:      url.Values{"go_balancer": {"disable"}},
+		},
+		{
+			name:           "a TLS monitoring endpoint keeps its scheme and drops a trailing slash",
+			raw:            "ydbs://h/local?monitoring=https://mon.example:8765/",
+			wantSecure:     true,
+			wantEndpoint:   "h:2135",
+			wantDatabase:   "/local",
+			wantMonitoring: "https://mon.example:8765",
+			wantQuery:      url.Values{},
+		},
 	}
 
 	for _, test := range tests {
@@ -73,9 +92,18 @@ func TestParse_HappyPath(t *testing.T) {
 			c.Assert(got.Secure, qt.Equals, test.wantSecure)
 			c.Assert(got.Endpoint(), qt.Equals, test.wantEndpoint)
 			c.Assert(got.Database, qt.Equals, test.wantDatabase)
+			c.Assert(monitoring(got), qt.Equals, test.wantMonitoring)
 			c.Assert(got.Query, qt.DeepEquals, test.wantQuery)
 		})
 	}
+}
+
+// monitoring spells the parsed monitoring endpoint, or "" for none.
+func monitoring(u ydburl.URL) string {
+	if u.Monitoring == nil {
+		return ""
+	}
+	return u.Monitoring.String()
 }
 
 func TestParse_KeepsTheUser(t *testing.T) {
@@ -125,6 +153,50 @@ func TestParse_FailurePath(t *testing.T) {
 			name:    "the parameter is empty",
 			raw:     "ydb://h/?database=/",
 			wantErr: `the database parameter is empty`,
+		},
+		{
+			name:    "the monitoring parameter is empty",
+			raw:     "ydb://h/local?monitoring=",
+			wantErr: `the monitoring parameter is empty: write monitoring=http://host:8765`,
+		},
+		{
+			name:    "the monitoring parameter is given twice",
+			raw:     "ydb://h/local?monitoring=http://h:8765&monitoring=http://h:8765",
+			wantErr: `the monitoring parameter is given more than once`,
+		},
+		{
+			name: "the monitoring parameter names no scheme",
+			raw:  "ydb://h/local?monitoring=h:8765",
+			wantErr: `the monitoring parameter "h:8765" names no http:// or https:// endpoint: ` +
+				`write monitoring=http://host:8765`,
+		},
+		{
+			name: "the monitoring parameter names the gRPC endpoint",
+			raw:  "ydb://h/local?monitoring=grpc://h:2136",
+			wantErr: `the monitoring parameter "grpc://h:2136" names no http:// or https:// endpoint: ` +
+				`write monitoring=http://host:8765`,
+		},
+		{
+			name:    "the monitoring parameter names no host",
+			raw:     "ydb://h/local?monitoring=http:///viewer",
+			wantErr: `the monitoring parameter "http:///viewer" names no host`,
+		},
+		// #nosec G101 -- a fixture with a made-up password, not a credential
+		{
+			name:    "the monitoring parameter carries a user",
+			raw:     "ydb://h/local?monitoring=http://viewer:pw@h:8765",
+			wantErr: `the monitoring parameter "http://viewer:pw@h:8765" carries a user; Ptah sends no credentials there`,
+		},
+		{
+			name: "the monitoring parameter names the page rather than the endpoint",
+			raw:  "ydb://h/local?monitoring=http://h:8765/viewer/json/feature_flags",
+			wantErr: `the monitoring parameter "http://h:8765/viewer/json/feature_flags" names a page; ` +
+				`name the endpoint only, as monitoring=http://h:8765`,
+		},
+		{
+			name:    "the monitoring parameter is not a URL",
+			raw:     "ydb://h/local?monitoring=http://h:87%2565",
+			wantErr: `the monitoring parameter "http://h:87%65" is not a URL: .*`,
 		},
 	}
 

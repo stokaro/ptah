@@ -15,7 +15,7 @@ generator: internal/cmd/capmatrix
 editSource: internal/capabilityprobe/cells.go
 lastVerified: "2026-10-03"
 evidence:
-  - "https://github.com/stokaro/ptah/actions/runs/37123727811"
+  - "https://github.com/stokaro/ptah/actions/runs/37150149037"
 searchAliases:
   - database capability status
   - which database versions pass
@@ -31,11 +31,11 @@ What the tier 2 capability matrix measured, one row per declared
 release line, in the run named below. Regenerate it with `capmatrix status`
 over that run's cell results.
 
-- Measured: 2026-10-03T12:42:14Z
-- Commit: `4de2bb6088f36973292ad5174ab9b3f0582a5325`
-- Run: [37123727811](https://github.com/stokaro/ptah/actions/runs/37123727811)
-- Declared release lines: 38. Runnable cells: 31. Results received: 31.
-- 31 passed, 0 capability disagreements, 0 suite failures, 0 missing.
+- Measured: 2026-10-03T20:03:29Z
+- Commit: `7b6afe0a087e8d8575946fa6b7061139db8de488`
+- Run: [37150149037](https://github.com/stokaro/ptah/actions/runs/37150149037)
+- Declared release lines: 38. Runnable cells: 33. Results received: 33.
+- 33 passed, 0 capability disagreements, 0 suite failures, 0 missing.
 
 | Cell | Engine | Line | Verdict |
 | --- | --- | --- | --- |
@@ -70,13 +70,13 @@ over that run's cell results.
 | `yugabytedb-2024-2` | yugabytedb | 2024.2 | PASS |
 | `sqlite-3` | sqlite | 3 | PASS |
 | `spanner-0` | spanner | 0 | PASS |
+| `ydb-26-2` | ydb | 26.2 | PASS |
+| `ydb-25-1` | ydb | 25.1 | PASS |
 
 ## Declared lines this tier cannot run
 
 - `clickhouse-25-8` (clickhouse 25.8) — upstream support ended on 2026-08-29 (endoflife.date/clickhouse)
-- `ydb-26-2` (ydb 26.2) — the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing
-- `ydb-26-1` (ydb 26.1) — the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing
-- `ydb-25-4` (ydb 25.4) — the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing
-- `ydb-25-3` (ydb 25.3) — the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing
-- `ydb-25-2` (ydb 25.2) — the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing
-- `ydb-25-1` (ydb 25.1) — the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing
+- `ydb-26-1` (ydb 26.1) — YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date
+- `ydb-25-4` (ydb 25.4) — YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date
+- `ydb-25-3` (ydb 25.3) — YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date
+- `ydb-25-2` (ydb 25.2) — YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date

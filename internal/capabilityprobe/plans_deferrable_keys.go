@@ -24,6 +24,8 @@ func withDeferrableKeys(p plan, dialect string) plan {
 		table = clickHouseSpelling.table("dkt", "n Int64, id Int64", "n")
 	case platform.Oracle:
 		table = "CREATE TABLE dkt (n NUMBER(10), id NUMBER(10))"
+	case platform.YDB:
+		table = ydbSpelling.table("dkt", "n Int64 NOT NULL, id Int64", "n")
 	case platform.SQLite:
 		// SQLite adds no constraint to a table that exists, so the key is
 		// asked in the CREATE TABLE.

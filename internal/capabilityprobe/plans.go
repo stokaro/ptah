@@ -41,6 +41,8 @@ func familyPlan(dialect string) (plan, bool) {
 		return sqlServerPlan(), true
 	case platform.SQLite:
 		return sqlitePlan(), true
+	case platform.YDB:
+		return ydbPlan(), true
 	default:
 		return plan{}, false
 	}

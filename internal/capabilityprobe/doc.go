@@ -68,7 +68,8 @@
 // PostgreSQL refuses CREATE INDEX CONCURRENTLY inside an explicit transaction
 // block, so transaction-based isolation would report two true capabilities as
 // false. Each run creates a throwaway namespace (a schema on the PostgreSQL
-// family, a database on the MySQL family) and drops it at the end.
+// family, a database on the MySQL family, a directory on YDB) and drops it at
+// the end.
 //
 // # Scope
 //

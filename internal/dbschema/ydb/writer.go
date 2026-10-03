@@ -15,9 +15,11 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/internal/atlasretry"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlrunner"
+	"ptah.run/internal/ydbflags"
 	"ptah.run/internal/yqlquery"
 )
 
@@ -123,13 +125,32 @@ func (w *Writer) execute(ctx context.Context, query yqlquery.Query, args []any) 
 			return nil
 		}
 		if attempt == attempts-1 || !atlasretry.IsRetryable(err) {
-			return fmt.Errorf("ydb: SQL execution failed: %w\nSQL: %s", err, query.Text)
+			return executionError(err, query.Text)
 		}
 		if err := w.pause(ctx, attempt); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// executionError names the statement a failure belongs to. Where the server's
+// refusal says a feature flag is off, the error also names the capability the
+// flag decides, because the plan that sent the statement took it from the
+// release line's preset, and this cluster runs with the flag off.
+func executionError(err error, statement string) error {
+	if gate, off := ydbflags.Refused(err.Error()); off {
+		err = &ptaherr.CapabilityError{
+			Dialect: platform.YDB,
+			Feature: string(gate.Key),
+			Err:     fmt.Errorf("%w: %w", ptaherr.ErrUnsupportedFeature, err),
+			Message: fmt.Sprintf("capability %s is off on this YDB cluster, which runs with feature flag %s off: %v. "+
+				"Turn the flag on, or name the cluster's monitoring endpoint in the URL "+
+				"(monitoring=http://host:8765) so Ptah reads the flags before it plans",
+				gate.Key, gate.Flag, err),
+		}
+	}
+	return fmt.Errorf("ydb: SQL execution failed: %w\nSQL: %s", err, statement)
 }
 
 // maxDataAttempts bounds how often a data query YDB aborted is run.
@@ -224,6 +245,74 @@ func (w *Writer) dropDirectory(ctx context.Context, dir string) (bool, error) {
 		}
 	}
 	return changed, nil
+}
+
+// DropDirectory drops dir, a directory relative to the database root, together
+// with everything in it: row and column tables, views and the directories
+// below, deepest first. It is the teardown of a directory a caller created for
+// itself, such as the capability probe's namespace; DropAllTables is the
+// cleanup that keeps what the reader does not describe.
+//
+// Every entry is checked before any is dropped, and an entry of a kind it has
+// no measured statement for -- a topic, a coordination node -- stops it with
+// the entry named, so nothing is half removed for a reason known in advance.
+// The database root is refused: there is no directory to remove there.
+func (w *Writer) DropDirectory(ctx context.Context, dir string) error {
+	dir = strings.Trim(dir, "/")
+	if dir == "" {
+		return fmt.Errorf("ydb: the database root %s is not a directory DropDirectory removes", w.database)
+	}
+	if w.scheme == nil {
+		return fmt.Errorf("no YDB scheme connection")
+	}
+	return w.dropTree(ctx, dir)
+}
+
+// treeStatements is the statement that drops each kind of entry dropTree
+// removes, with the path in place of %s. A directory has none: the scheme
+// service removes it once it is empty.
+var treeStatements = map[Ydb_Scheme.Entry_Type]string{
+	Ydb_Scheme.Entry_TABLE:        "DROP TABLE %s",
+	Ydb_Scheme.Entry_COLUMN_TABLE: "DROP TABLE %s",
+	Ydb_Scheme.Entry_VIEW:         "DROP VIEW %s",
+}
+
+// dropTree drops what dir holds and then dir itself.
+func (w *Writer) dropTree(ctx context.Context, dir string) error {
+	absolute := path.Join(w.database, dir)
+	entries, err := w.scheme.ListDirectory(ctx, absolute)
+	if err != nil {
+		return err
+	}
+	slices.SortFunc(entries, func(a, b *Ydb_Scheme.Entry) int { return strings.Compare(a.GetName(), b.GetName()) })
+	for _, entry := range entries {
+		_, droppable := treeStatements[entry.GetType()]
+		if !droppable && entry.GetType() != Ydb_Scheme.Entry_DIRECTORY {
+			return fmt.Errorf("ydb: %s holds %s, a %s, which Ptah has no statement to drop; nothing in %s was dropped",
+				absolute, entry.GetName(), entryTypeName(entry.GetType()), absolute)
+		}
+	}
+	for _, entry := range entries {
+		child := path.Join(dir, entry.GetName())
+		if entry.GetType() == Ydb_Scheme.Entry_DIRECTORY {
+			if err := w.dropTree(ctx, child); err != nil {
+				return err
+			}
+			continue
+		}
+		statement := fmt.Sprintf(treeStatements[entry.GetType()], sqlident.Quote(platform.YDB, child))
+		if err := w.ExecuteSQL(ctx, statement); err != nil {
+			return err
+		}
+	}
+	if w.dryRun {
+		slog.Info("[DRY RUN] Would remove the directory", "path", absolute)
+		return nil
+	}
+	if err := w.scheme.RemoveDirectory(ctx, absolute); err != nil {
+		return fmt.Errorf("ydb: remove directory %s: %w", absolute, err)
+	}
+	return nil
 }
 
 // removeIfEmpty removes the directory dir when nothing is left in it.

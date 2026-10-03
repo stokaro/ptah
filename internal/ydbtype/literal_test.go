@@ -115,6 +115,24 @@ func TestLiteral_WritesOneLiteralPerValue(t *testing.T) {
 	}
 }
 
+// TestStringLiteral_IsTheSpellingLiteralGivesAString pins the one escaping a
+// query and a default share: a path the probe compares against a catalog
+// column is written the way a String default is.
+func TestStringLiteral_IsTheSpellingLiteralGivesAString(t *testing.T) {
+	for _, value := range []string{"/local/ptah_capprobe_0a/t", "it's", `back\slash`, "line\nbreak", ""} {
+		t.Run(value, func(t *testing.T) {
+			c := qt.New(t)
+			want, err := ydbtype.Literal(ydbtype.String, value, capability.YDB262())
+			c.Assert(err, qt.IsNil)
+			c.Assert(ydbtype.StringLiteral(value), qt.Equals, want)
+		})
+	}
+	t.Run("a quote and a backslash are escaped", func(t *testing.T) {
+		c := qt.New(t)
+		c.Assert(ydbtype.StringLiteral(`a'b\c`), qt.Equals, `'a\'b\\c'`)
+	})
+}
+
 // TestIntervalText writes a stored duration the way Literal writes one, which
 // is how the schema reader spells the default YDB keeps in microseconds.
 func TestIntervalText(t *testing.T) {

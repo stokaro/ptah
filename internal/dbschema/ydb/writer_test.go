@@ -13,6 +13,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Scheme"
 
+	"ptah.run/core/ptaherr"
 	ydbschema "ptah.run/internal/dbschema/ydb"
 )
 
@@ -316,4 +317,99 @@ func TestWriter_DropAllTables_FailurePath(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, "ydb: SQL execution failed: SCHEME_ERROR: path is locked\nSQL: DROP TABLE `t`")
 	c.Assert(fake.removed, qt.HasLen, 0)
+}
+
+// DropDirectory removes a directory a caller made for itself with everything
+// in it, deepest first: tables of both kinds, views, and the directories below.
+// What sits beside the directory is not touched.
+func TestWriter_DropDirectory(t *testing.T) {
+	c := qt.New(t)
+	fake := &fakeDatabase{tree: map[string][]*Ydb_Scheme.Entry{
+		"/local": {entry("probe", Ydb_Scheme.Entry_DIRECTORY), entry("app", Ydb_Scheme.Entry_DIRECTORY)},
+		"/local/probe": {
+			entry("t", Ydb_Scheme.Entry_TABLE),
+			entry("olap", Ydb_Scheme.Entry_COLUMN_TABLE),
+			entry("v", Ydb_Scheme.Entry_VIEW),
+			entry("rb", Ydb_Scheme.Entry_DIRECTORY),
+		},
+		"/local/probe/rb": {entry("t`2", Ydb_Scheme.Entry_TABLE)},
+		"/local/app":      {entry("keep", Ydb_Scheme.Entry_TABLE)},
+	}}
+	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local")
+
+	err := writer.DropDirectory(context.Background(), "/probe/")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(fake.executed, qt.DeepEquals, []string{
+		"DROP TABLE `probe/olap`",
+		"DROP TABLE `probe/rb/t\\`2`",
+		"DROP TABLE `probe/t`",
+		"DROP VIEW `probe/v`",
+	})
+	c.Assert(fake.removed, qt.DeepEquals, []string{"/local/probe/rb", "/local/probe"})
+	c.Assert(fake.tree["/local/app"], qt.HasLen, 1)
+}
+
+// A kind the writer has no statement for stops the teardown before anything in
+// that directory is dropped, and the database root is never a directory to
+// drop.
+func TestWriter_DropDirectory_FailurePath(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		dir          string
+		wantErr      string
+		wantExecuted []string
+	}{
+		{
+			name: "a topic",
+			dir:  "probe",
+			wantErr: "ydb: /local/probe holds events, a TOPIC, which Ptah has no statement to drop; " +
+				"nothing in /local/probe was dropped",
+		},
+		{
+			name:    "the root",
+			dir:     "/",
+			wantErr: "ydb: the database root /local is not a directory DropDirectory removes",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fake := &fakeDatabase{tree: map[string][]*Ydb_Scheme.Entry{
+				"/local":       {entry("probe", Ydb_Scheme.Entry_DIRECTORY)},
+				"/local/probe": {entry("t", Ydb_Scheme.Entry_TABLE), entry("events", Ydb_Scheme.Entry_TOPIC)},
+			}}
+			writer := ydbschema.NewWriterFromScheme(fake, fake, "/local")
+
+			err := writer.DropDirectory(context.Background(), test.dir)
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(fake.executed, qt.HasLen, 0)
+			c.Assert(fake.removed, qt.HasLen, 0)
+		})
+	}
+}
+
+// A refusal that says a feature flag is off names the capability the flag
+// decides, so the operator learns which key the cluster turned off and how to
+// let Ptah read it. The server's own text stays in the message.
+func TestWriter_ExecuteSQL_FailurePath_NamesTheCapabilityAFlagTurnedOff(t *testing.T) {
+	c := qt.New(t)
+	fake := newFake()
+	refusal := errors.New("Status: BAD_REQUEST Issues: <main>: Error: Failed item check: " +
+		"Adding a unique index to an existing table is disabled")
+	fake.failures = []error{refusal}
+	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local")
+
+	err := writer.ExecuteSQL(context.Background(), "ALTER TABLE `t` ADD INDEX `u` GLOBAL UNIQUE SYNC ON (`n`)")
+
+	c.Assert(err, qt.ErrorMatches, "ydb: SQL execution failed: capability unique_index_on_existing_table is off "+
+		"on this YDB cluster, which runs with feature flag EnableAddUniqueIndex off: Status: BAD_REQUEST .*"+
+		"Adding a unique index to an existing table is disabled. Turn the flag on, or name the cluster's "+
+		"monitoring endpoint in the URL \\(monitoring=http://host:8765\\) so Ptah reads the flags before it plans\n"+
+		"SQL: ALTER TABLE `t` ADD INDEX `u` GLOBAL UNIQUE SYNC ON \\(`n`\\)")
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorIs, refusal)
+	var capabilityErr *ptaherr.CapabilityError
+	c.Assert(err, qt.ErrorAs, &capabilityErr)
+	c.Assert(capabilityErr.Feature, qt.Equals, "unique_index_on_existing_table")
 }
