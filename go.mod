@@ -145,7 +145,7 @@ require (
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/stokaro/teststyle v0.2.0 // indirect
 	github.com/xo/terminfo v1.2.0 // indirect
-	github.com/yandex-cloud/go-genproto v0.0.0-20240819112322-98a264d392f6 // indirect
+	github.com/yandex-cloud/go-genproto v0.125.0 // indirect
 	github.com/ydb-platform/ydb-go-yc v0.12.5 // indirect
 	github.com/ydb-platform/ydb-go-yc-metadata v0.6.2 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
