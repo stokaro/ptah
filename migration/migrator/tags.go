@@ -47,12 +47,7 @@ func (m *Migrator) migrationTagsTableName() string {
 }
 
 func (m *Migrator) qualifiedMigrationTagsTable() string {
-	table := m.migrationTagsTableName()
-	schema := m.metadataTableSchemaName()
-	if schema == "" {
-		return m.quoteIdentifier(table)
-	}
-	return m.quoteIdentifier(schema) + "." + m.quoteIdentifier(table)
+	return m.qualifiedMetadataTable(m.migrationTagsTableName())
 }
 
 // createMigrationTagsTableSQL renders the tag table for the connected dialect.
@@ -79,6 +74,8 @@ END`, sqlStringLiteral(m.sqlServerTagsObjectName()), qualifiedTable)
     version BIGINT NOT NULL,
     recorded_at TIMESTAMPTZ NOT NULL
 )`, qualifiedTable)
+	case platform.YDB:
+		return ydbMigrationTagsTableDDL(qualifiedTable)
 	}
 	engineClause := ""
 	if implicitCommitDialect(m.connectionDialect()) {
@@ -104,9 +101,6 @@ func (m *Migrator) ensureMigrationTagsTable(ctx context.Context) error {
 	if m.conn == nil {
 		return errors.New("ensure migration tags table: no database connection")
 	}
-	if err := m.refuseUnimplementedDialect(); err != nil {
-		return err
-	}
 	if statement := m.migrationsSchemaStatement(); statement != "" {
 		if _, err := m.conn.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("ensure migration tags schema: %w", err)
@@ -123,22 +117,7 @@ func (m *Migrator) migrationTagsTableExists(ctx context.Context) (bool, error) {
 	if m.conn == nil {
 		return false, errors.New("migration tags table: no database connection")
 	}
-	query, args, err := migrationTablePresenceQuery(
-		m.connectionDialect(),
-		m.metadataTableSchemaName(),
-		m.connectionSchemaName(),
-		m.migrationTagsTableName(),
-		m.quoteIdentifier,
-	)
-	if err != nil {
-		return false, err
-	}
-	var count int64
-	query = sqlutil.Rebind(m.connectionDialect(), query)
-	if err := m.conn.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
-		return false, err
-	}
-	return count > 0, nil
+	return m.metadataTableExists(ctx, m.migrationTagsTableName())
 }
 
 // RecordMigrationTag points tag at version, creating the tag or moving it.
@@ -171,6 +150,10 @@ func (m *Migrator) upsertMigrationTagSQL() string {
 				" ON CONFLICT (tag) DO UPDATE SET version = EXCLUDED.version,"+
 				" recorded_at = EXCLUDED.recorded_at",
 			table)
+	case platform.YDB:
+		// UPSERT writes the row whether or not the tag exists; it is YQL's
+		// own statement for this, and YQL has no ON DUPLICATE KEY.
+		return fmt.Sprintf("UPSERT INTO %s (tag, version, recorded_at) VALUES (?, ?, ?)", table)
 	case platform.SQLServer:
 		return fmt.Sprintf(
 			"MERGE %s AS target USING (SELECT ? AS tag, ? AS version, ? AS recorded_at) AS source"+
