@@ -653,3 +653,33 @@ func TestYDBMigrator_RepairRunsADataQueryWithItsCheckpoint(t *testing.T) {
 	c.Assert(text(c, conn, "SELECT note FROM `"+dir+"/r` WHERE id = 1l"), qt.Equals, failedStatement)
 	c.Assert(revisionProgress(c, repaired), qt.DeepEquals, []progress{{Version: 1, State: "applied", Applied: 2, Total: 2}})
 }
+
+// A repair that resumes the body refuses what a run refuses, before any of the
+// resumed statements runs: the CREATE TABLE after the client delimiter, which
+// a splitter honoring the directive would run, is not run.
+func TestYDBMigrator_RepairRefusesWhatItCannotSplit(t *testing.T) {
+	c := qt.New(t)
+	conn := openYDB(c)
+	const dir = "ptah_ydb_mig_repair_refused"
+	dropDirectory(c, conn, dir, "r", "s")
+	c.Cleanup(func() { dropDirectory(c, conn, dir, "r", "s") })
+	head := "CREATE TABLE `" + dir + "/r` (id Int64 NOT NULL, PRIMARY KEY (id));\n"
+	broken := map[string]string{
+		"0000000001_r.up.sql":   head + "CREATE TABLE `" + dir + "/bad` (id NoSuchType NOT NULL, PRIMARY KEY (id));\n",
+		"0000000001_r.down.sql": "DROP TABLE `" + dir + "/r`;\n",
+	}
+	delimited := map[string]string{
+		"0000000001_r.up.sql": head + "DELIMITER //\n" +
+			"CREATE TABLE `" + dir + "/s` (id Int64 NOT NULL, PRIMARY KEY (id))//\n",
+		"0000000001_r.down.sql": broken["0000000001_r.down.sql"],
+	}
+	c.Assert(newMigrator(c, conn, broken, migrator.RevisionTableFormatPtah, dir).MigrateUp(c.Context()), qt.IsNotNil)
+
+	repaired := newMigrator(c, conn, delimited, migrator.RevisionTableFormatPtah, dir)
+	err := repaired.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 2})
+
+	c.Assert(err, qt.ErrorMatches,
+		`(?s)migration 1 cannot run up on ydb: client delimiter directive in YQL: "DELIMITER //".*`)
+	c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.DeepEquals, []string{dir + "|r"})
+	c.Assert(revisionProgress(c, repaired), qt.DeepEquals, []progress{{Version: 1, State: "failed", Applied: 1, Total: 2}})
+}

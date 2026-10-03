@@ -3581,6 +3581,12 @@ func (m *Migrator) resumeMigrationDirectionOnSession(
 	resumeFrom int,
 	direction MigrationDirection,
 ) error {
+	// A body a run would refuse before its first statement is refused here
+	// too, before the resumed statements run: the split below counts the
+	// statements of a body it cannot split, but never runs them correctly.
+	if err := m.refuseUnsplittableMigrations([]*Migration{migration}, direction); err != nil {
+		return err
+	}
 	sqlText := migrationSQLForDirection(migration, direction)
 	executionConn := m.noTransactionConnection()
 	statements := splitSQLStatementsForConnection(executionConn, sqlText)
