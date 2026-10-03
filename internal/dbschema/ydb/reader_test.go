@@ -779,7 +779,7 @@ func TestReader_TableColumns_FailurePath(t *testing.T) {
 		directories: map[string][]*Ydb_Scheme.Entry{
 			"/local": {entry("schema_migrations", Ydb_Scheme.Entry_VIEW), entry("broken", Ydb_Scheme.Entry_TABLE)},
 		},
-		tables: map[string]*Ydb_Table.DescribeTableResult{},
+		tables: make(map[string]*Ydb_Table.DescribeTableResult),
 	}
 	tests := []struct {
 		name    string

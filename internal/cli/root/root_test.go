@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -299,11 +300,11 @@ func TestNewRootCommand_TypedMigrationTimeoutsRefuseATargetWithoutThem(t *testin
 			migrationsDir := filepath.Join(dir, "migrations")
 			c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
 
-			args := append(append([]string{}, test.verb...),
+			args := slices.Concat(test.verb, []string{
 				"--db-url", atlasurl.SQLiteURLFromPath(filepath.Join(dir, "versioned.db")),
 				"--migrations-dir", migrationsDir,
 				"--statement-timeout", "30s",
-			)
+			})
 			_, _, err := executeRootCommand(args...)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)

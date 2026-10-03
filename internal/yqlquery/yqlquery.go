@@ -184,7 +184,7 @@ func (s *splitter) add(statement, source string) {
 // start opens a query of kind, headed by the definitions made before it, and
 // holding the pending definitions' source as the start of its own.
 func (s *splitter) start(kind Kind) draft {
-	query := draft{kind: kind, prefix: s.carried[:len(s.carried):len(s.carried)],
+	query := draft{kind: kind, prefix: slices.Clip(s.carried),
 		source: strings.Join(s.pendingSources, "\n")}
 	s.pendingSources = nil
 	s.pendingCount = 0
@@ -261,15 +261,11 @@ func classify(statement string) Kind {
 		// has no other statement that opens with one.
 		return definition
 	}
-	for _, verb := range definitionVerbs {
-		if first.MatchIdentifierValue(verb) {
-			return definition
-		}
+	if slices.ContainsFunc(definitionVerbs, first.MatchIdentifierValue) {
+		return definition
 	}
-	for _, verb := range schemeVerbs {
-		if first.MatchIdentifierValue(verb) {
-			return Scheme
-		}
+	if slices.ContainsFunc(schemeVerbs, first.MatchIdentifierValue) {
+		return Scheme
 	}
 	if (first.MatchIdentifierValue("UPSERT") || first.MatchIdentifierValue("REPLACE")) &&
 		len(tokens) > 1 && tokens[1].MatchIdentifierValue("OBJECT") {

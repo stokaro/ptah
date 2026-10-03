@@ -140,7 +140,7 @@ func TestSplit_HappyPath(t *testing.T) {
 		{
 			name: "no statement is no query",
 			text: "-- nothing here\n;\n",
-			want: []shape{},
+			want: make([]shape, 0),
 		},
 	}
 	for _, test := range tests {

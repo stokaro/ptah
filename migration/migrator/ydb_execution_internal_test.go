@@ -209,7 +209,7 @@ type fakeTxDriver struct {
 }
 
 func (d *fakeTxDriver) Connect(context.Context) (driver.Conn, error) { return fakeTxConn{d: d}, nil }
-func (d *fakeTxDriver) Driver() driver.Driver                       { return nil }
+func (d *fakeTxDriver) Driver() driver.Driver                        { return nil }
 
 type fakeTxConn struct{ d *fakeTxDriver }
 
