@@ -872,9 +872,10 @@ its reset would drop, not only a table. Each writer lists what its reset drops
 through the query the reset runs, and the check reads that list:
 
 - PostgreSQL, CockroachDB, YugabyteDB and Spanner: a view, a materialized view,
-  a function, a procedure, an aggregate, a sequence, a type, a collation, a
-  default privilege it would revoke, a global default privilege it would
-  return to the built-in default, or on PostgreSQL a large object.
+  a function, a procedure, an aggregate, a sequence, a type, a collation, on
+  PostgreSQL a large object, and a default privilege the reset would take
+  away: one set in a schema when the URL pins no `search_path`, and on
+  CockroachDB every default privilege, global ones included.
 - MySQL and MariaDB: a view, a procedure, a function, an event, a sequence, or
   a system-versioned table.
 - SQLite: a view.
@@ -890,7 +891,11 @@ does not, and `found view "v" in schema "dev"` on the other engines, which name
 the database or the account. SQLite has one schema, so it prints
 `found view "v"`. Native `ptah` refuses the same databases. Objects an
 installed extension owns are kept, and so is every PostgreSQL schema outside a
-pinned `search_path`; neither refuses.
+pinned `search_path`; neither refuses. So are the PostgreSQL and YugabyteDB
+default privileges set in the schema a `search_path` pins, and the global
+ones in either scope: each reset returns them to what they were when the run
+took the dev database. An image that grants its roles through them, such as
+Supabase's, can be the dev database.
 
 Measured on 2026-09-27 against PostgreSQL 18.6, with each object alone in the
 dev database and `migrate validate` and `schema apply` run against it:
@@ -900,8 +905,8 @@ dev database and `migrate validate` and `schema apply` run against it:
 | `?search_path=public`, a view, function, sequence, enum, domain, composite type or collation | exit `0`, the object kept | exit `0`, the object dropped | exit `1`, names the object, kept |
 | no `search_path`, the same objects | exit `0`, every object dropped but the enum | exit `0`, the object dropped | exit `1`, names the object, kept |
 | a large object, either scope | exit `0`, kept | `migrate validate` exit `0`, dropped | exit `1`, names it, kept |
-| `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES`, `migrate validate` | exit `0`, kept with a `search_path`, revoked without one | exit `0`, revoked | exit `1`, names it, kept |
-| `ALTER DEFAULT PRIVILEGES FOR ROLE app_owner REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC`, either scope, `migrate validate` | exit `0`, kept | exit `0`, returned to the built-in default | exit `1`, names it, kept |
+| `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES`, `migrate validate` | exit `0`, kept with a `search_path`, revoked without one | exit `0`, revoked | exit `0`, kept with a `search_path`; exit `1` without one, names it, kept |
+| `ALTER DEFAULT PRIVILEGES FOR ROLE app_owner REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC`, either scope, `migrate validate` | exit `0`, kept | exit `0`, returned to the built-in default | exit `0`, kept |
 
 Measured the same day on the other engines, with the same verbs:
 
@@ -926,6 +931,15 @@ then pass against the kept object instead of creating its own. Refusing loses
 nothing and proves as much as before. Where the binary drops an object in
 silence, as it does on SQLite and on PostgreSQL with no `search_path`, that is
 the defect this refusal does not copy.
+
+Default privileges are the exception, and are kept where the binary keeps
+them. The comparison leaves alone a default whose grantor the desired schema
+does not manage, so keeping one hides nothing from a read, and a migration
+that sets the same default runs as it would on the target. Each reset returns
+the kept ones to what they were when the run took the dev database. A default
+the run set survives the binary's cleanup, measured on 2026-10-03 with
+`migrate diff`; Ptah's reset takes it back
+([`stokaro/ptah#4034`](https://github.com/stokaro/ptah/issues/4034)).
 
 A PostgreSQL text search configuration or dictionary is not refused, because
 the reset never drops it. The realm cleanup drops a schema with `RESTRICT`, so

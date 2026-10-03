@@ -140,41 +140,41 @@ func TestDevDatabaseClaimRefusesALargeObjectLive(t *testing.T) {
 }
 
 // TestDevDatabaseClaimRefusesADefaultPrivilegeLive is a setting rather than
-// an object: the reset revokes the default privileges of the schemas it
-// empties, so a dev database carrying one is refused and names it by owner,
-// object type and grantee. The role is created before the database, so it is
-// dropped after the database that refers to it.
+// an object. With no search_path the reset drops public with every default set
+// in it, as the pinned community binary does, so a dev database carrying one
+// is refused and names it by owner, object type and grantee. A URL pinning
+// public keeps it; see [TestDevDatabaseClaimTakesWhatTheResetKeepsLive]. The
+// role is created before the database, so it is dropped after the database
+// that refers to it.
 func TestDevDatabaseClaimRefusesADefaultPrivilegeLive(t *testing.T) {
-	for _, scope := range droppedObjectScopes {
-		t.Run(scope.name, func(t *testing.T) {
-			c := qt.New(t)
-			role := fmt.Sprintf("ptah_dp_%d", time.Now().UnixNano()%1_000_000_000_000)
-			admin, err := dbschema.ConnectToDatabase(c.Context(), dbtarget.URL(c, dbtarget.PostgreSQL))
-			c.Assert(err, qt.IsNil)
-			_, err = admin.ExecContext(c.Context(), "CREATE ROLE "+role)
-			c.Assert(err, qt.IsNil)
-			c.Cleanup(func() {
-				_, dropErr := admin.ExecContext(context.Background(), "DROP ROLE IF EXISTS "+role)
-				c.Check(dropErr, qt.IsNil)
-				dbschema.CloseAndWarn(admin)
-			})
-			_, dev := droppedObjectDev(c, scope.searchPath)
-			_, err = dev.ExecContext(c.Context(), "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO "+role)
-			c.Assert(err, qt.IsNil)
+	c := qt.New(t)
+	role := fmt.Sprintf("ptah_dp_%d", time.Now().UnixNano()%1_000_000_000_000)
+	admin, err := dbschema.ConnectToDatabase(c.Context(), dbtarget.URL(c, dbtarget.PostgreSQL))
+	c.Assert(err, qt.IsNil)
+	_, err = admin.ExecContext(c.Context(), "CREATE ROLE "+role)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		_, dropErr := admin.ExecContext(context.Background(), "DROP ROLE IF EXISTS "+role)
+		c.Check(dropErr, qt.IsNil)
+		dbschema.CloseAndWarn(admin)
+	})
+	_, dev := droppedObjectDev(c, "")
+	_, err = dev.ExecContext(c.Context(), "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO "+role)
+	c.Assert(err, qt.IsNil)
 
-			_, err = devclean.Claim(c.Context(), dev)
+	_, err = devclean.Claim(c.Context(), dev)
 
-			c.Assert(err, qt.ErrorMatches, `connected database is not clean: found default privilege "[^"]+/r/`+role+`" `+
-				scope.where+`; Ptah resets a dev database .*`)
-			c.Assert(countOf(c, dev, "SELECT count(*) FROM pg_default_acl"), qt.Equals, 1)
-		})
-	}
+	c.Assert(err, qt.ErrorMatches, `connected database is not clean: found default privilege "[^"]+/r/`+role+
+		`" in schema "public"; Ptah resets a dev database .*`)
+	c.Assert(countOf(c, dev, "SELECT count(*) FROM pg_default_acl"), qt.Equals, 1)
 }
 
 // TestDevDatabaseClaimTakesWhatTheResetKeepsLive is the control: what a reset
 // keeps does not refuse the database. An extension the database holds is kept
 // with the types and functions it owns, and with search_path=public another
-// schema is kept whole, a view in it included.
+// schema is kept whole, a view in it included. A default privilege set in
+// public is kept with search_path=public, and a global one in either scope
+// (stokaro/ptah#4034).
 func TestDevDatabaseClaimTakesWhatTheResetKeepsLive(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -184,6 +184,12 @@ func TestDevDatabaseClaimTakesWhatTheResetKeepsLive(t *testing.T) {
 		{name: "an extension at realm scope", ddl: "CREATE EXTENSION citext SCHEMA public"},
 		{name: "an extension pinned to public", searchPath: "public", ddl: "CREATE EXTENSION citext SCHEMA public"},
 		{name: "a view in another schema", searchPath: "public", ddl: "CREATE SCHEMA other; CREATE VIEW other.keep_v AS SELECT 1 AS x"},
+		{name: "a default privilege pinned to public", searchPath: "public",
+			ddl: "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO PUBLIC"},
+		{name: "a global default privilege at realm scope",
+			ddl: "ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC"},
+		{name: "a global default privilege pinned to public", searchPath: "public",
+			ddl: "ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC"},
 	}
 
 	for _, test := range tests {

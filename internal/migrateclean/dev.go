@@ -109,7 +109,59 @@ func resetObjects(ctx context.Context, conn *dbschema.DatabaseConnection, scope 
 			schemas = append(schemas, schema.Name)
 		}
 	}
-	return lister.ResetObjects(ctx, dbreset.Scope{Schemas: schemas, KeptExtensions: kept})
+	return lister.ResetObjects(ctx, dbreset.Scope{
+		Schemas:               schemas,
+		KeptExtensions:        kept,
+		KeptDefaultPrivileges: keptDefaultPrivileges(scope.pinnedSchema()),
+	})
+}
+
+// pinnedSchema is the schema the URL pinned, or the empty string at realm
+// scope.
+func (s Scope) pinnedSchema() string {
+	if s.Realm {
+		return ""
+	}
+	return s.Schema
+}
+
+// KeptDefaultPrivileges names the PostgreSQL default privileges a dev database
+// keeps across its resets, as it keeps its extensions: they are the dev
+// database's environment, not something a run put there.
+//
+// With a URL that pins a schema, that is the defaults set in the schema and
+// the global ones, which apply in every schema. With none, it is the global
+// ones alone. Measured against the pinned community binary v1.3.0 on
+// PostgreSQL 18 on 2026-10-03, with `ALTER DEFAULT PRIVILEGES FOR ROLE postgres
+// IN SCHEMA public GRANT SELECT ON TABLES TO app` and `ALTER DEFAULT PRIVILEGES
+// FOR ROLE postgres GRANT USAGE ON SEQUENCES TO app` in the dev database,
+// `migrate diff` exits 0 in both scopes and keeps the global default in both.
+// It keeps the one set in public with `?search_path=public`, and drops it with
+// no search_path, since its realm cleanup drops public with everything set in
+// it. A default the run added survives the binary's cleanup; Ptah's reset
+// removes it.
+//
+// So the claim keeps what the binary keeps, and the clean check still refuses
+// a default set in a schema of a URL that pins none, where the binary drops it
+// in silence; see [Scope.DevRefusal]. The check and the claim both ask this
+// function, so a default the check lets through is one the reset keeps.
+func KeptDefaultPrivileges(conn *dbschema.DatabaseConnection) dbreset.DefaultPrivilegeScope {
+	if conn == nil {
+		return dbreset.DefaultPrivilegeScope{}
+	}
+	if RealmScoped(conn) {
+		return keptDefaultPrivileges("")
+	}
+	return keptDefaultPrivileges(strings.TrimSpace(conn.Info().Schema))
+}
+
+// keptDefaultPrivileges is [KeptDefaultPrivileges] for a URL that pinned
+// schema, or none when schema is empty.
+func keptDefaultPrivileges(schema string) dbreset.DefaultPrivilegeScope {
+	if schema == "" {
+		return dbreset.DefaultPrivilegeScope{Global: true}
+	}
+	return dbreset.DefaultPrivilegeScope{Schemas: []string{schema}, Global: true}
 }
 
 // GovernsDev reports whether a dev database of the dialect is checked before
@@ -197,6 +249,9 @@ func RealmScoped(conn *dbschema.DatabaseConnection) bool {
 // it does not model those kinds; with none it accepts the database and drops
 // every one of them but the enum. Ptah's reset drops all of them in both
 // scopes, and a replay drops a large object too, where the binary leaves it.
+// The default privileges [KeptDefaultPrivileges] names are the exception: the
+// reset returns them to what they were, so they are not in Dropped and do not
+// refuse.
 // On MySQL 26.7 and MariaDB 12.3 the binary keeps a view, a routine, an event,
 // a MariaDB sequence and a system-versioned table, and Ptah's reset dropped
 // each; on SQLite both drop a view. SQL Server, ClickHouse and Oracle have no

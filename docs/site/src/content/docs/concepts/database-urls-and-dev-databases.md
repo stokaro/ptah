@@ -135,6 +135,9 @@ exercise a real server dialect — see
   schema with `search_path` also keeps the database's other schemas as they
   were, `public` included. An extension the run created is dropped with the
   schemas and tables it owns; TimescaleDB's catalog schemas are this shape.
+  So are PostgreSQL and YugabyteDB default privileges: the global ones, and
+  with `search_path` those set in the selected schema. A default the run set is
+  taken back, so a Supabase image works as a dev database.
   MySQL, MariaDB, and ClickHouse cleanup owns the selected database. SQL
   Server cleanup owns all supported user schemas in the selected database.
   SQLite cleanup owns `main` on one pinned session.

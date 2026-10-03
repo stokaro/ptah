@@ -106,14 +106,44 @@ func TestGlobalDefaultPrivilegeE2E_ReplayResetsTheDevDatabase(t *testing.T) {
 	}
 }
 
-// TestGlobalDefaultPrivilegeE2E_ADevDatabaseHoldingOneIsRefused is the claim
-// on a dev database: the reset would return a global default somebody set to
-// the built-in one, so a dev database holding one is refused and left as it
-// was, as a table is. The pinned community binary v1.3.0 accepts it and keeps
-// it, measured on PostgreSQL 18.6; Ptah is stricter because its reset does not
-// keep it.
-func TestGlobalDefaultPrivilegeE2E_ADevDatabaseHoldingOneIsRefused(t *testing.T) {
-	for _, test := range globalDefaultEngines {
+// TestGlobalDefaultPrivilegeE2E_ADevDatabaseKeepsOne is the claim on a dev
+// database holding a global default somebody set: it is the dev database's
+// environment, so the claim keeps it and every reset returns it to what it
+// was, as the pinned community binary v1.3.0 keeps it, measured on PostgreSQL
+// 18.6 (stokaro/ptah#4034).
+func TestGlobalDefaultPrivilegeE2E_ADevDatabaseKeepsOne(t *testing.T) {
+	for _, test := range keptDefaultEngines {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ctx, cancel := context.WithTimeout(c.Context(), 5*time.Minute)
+			defer cancel()
+			fixture := newGlobalDefaultFixture(c, ctx, test.engine, "dev")
+			revoke := "ALTER DEFAULT PRIVILEGES FOR ROLE " + quoteE2EIdent(fixture.owner) +
+				" REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;"
+			fixture.exec(c, ctx, fixture.urls["dev"], []string{revoke})
+			held := fixture.globalDefaults(c, ctx, fixture.urls["dev"])
+			migrations := fixture.migrationDir(c, ctx, []string{`CREATE TABLE "replayed" ("id" bigint PRIMARY KEY);`})
+
+			stdout, stderr, err := runCompat(ctx, "migrate", "validate",
+				"--dir", "file://"+filepath.ToSlash(migrations), "--dev-url", fixture.urls["dev"])
+
+			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+			c.Assert(fixture.globalDefaults(c, ctx, fixture.urls["dev"]), qt.DeepEquals, held)
+			c.Assert(held, qt.Not(qt.HasLen), 0)
+		})
+	}
+}
+
+// TestGlobalDefaultPrivilegeE2E_CockroachDBRefusesADevDatabaseHoldingOne is the
+// claim on a CockroachDB dev database: its catalog cannot be read back into
+// the statements that would return a global default to what it was, so the
+// reset would return it to the built-in one, and a dev database holding one is
+// refused and left as it was, as a table is.
+func TestGlobalDefaultPrivilegeE2E_CockroachDBRefusesADevDatabaseHoldingOne(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		engine dbtarget.Engine
+	}{{name: "CockroachDB", engine: dbtarget.CockroachDB}} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			ctx, cancel := context.WithTimeout(c.Context(), 5*time.Minute)

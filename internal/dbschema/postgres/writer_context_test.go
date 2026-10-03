@@ -342,7 +342,7 @@ func TestWriterDropDatabaseRealmKeeping_PassesTheKeptExtensions(t *testing.T) {
 		return driver.RowsAffected(0), nil
 	})
 
-	err := postgres.NewPostgreSQLWriter(db.SQL, "public").DropDatabaseRealmKeeping(t.Context(), []string{"vector", "hstore"})
+	err := postgres.NewPostgreSQLWriter(db.SQL, "public").DropDatabaseRealmKeeping(t.Context(), dbreset.Kept{Extensions: []string{"vector", "hstore"}})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(catalogQueries, qt.HasLen, 14)
@@ -551,7 +551,7 @@ func TestWriterDropDatabaseRealm_RejectsSystemDatabasesBeforeMutation(t *testing
 				db := dbtest.Open(t, queryHandler.query)
 				writer := postgres.NewPostgreSQLWriter(db.SQL, "public")
 
-				err := writer.DropDatabaseRealmKeepingSchemas(t.Context(), nil, nil, owner.server)
+				err := writer.DropDatabaseRealmKeeping(t.Context(), dbreset.Kept{Server: owner.server})
 
 				c.Assert(err, qt.ErrorMatches, `refusing to clean protected PostgreSQL-family database "`+test.database+`"`)
 				c.Assert(db.QueryCount(), qt.Equals, 2)
@@ -605,7 +605,7 @@ func TestWriterDropDatabaseRealm_CleansTheDefaultDatabaseOfAnOwnedServer(t *test
 			db := dbtest.OpenWithExec(t, queryHandler.query, nil)
 			writer := postgres.NewPostgreSQLWriter(db.SQL, "public")
 
-			err := writer.DropDatabaseRealmKeepingSchemas(t.Context(), nil, nil, dbreset.OwnedServer)
+			err := writer.DropDatabaseRealmKeeping(t.Context(), dbreset.Kept{Server: dbreset.OwnedServer})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.CommitCount(), qt.Equals, 1)
