@@ -3194,11 +3194,17 @@ func (r *Reader) readSequencesFromPgCatalog(ctx context.Context, schemaName stri
 	return sequences, nil
 }
 
-// readSequenceGrantsForSchema reads GRANTs on standalone sequences. standalone
-// holds the qualified names (schema.name, as introspected) of sequences that
-// readSequences classified as standalone, so grants on implicit serial/identity
-// sequences are not surfaced as spurious diffs.
-func (r *Reader) readSequenceGrantsForSchema(ctx context.Context, schemaName string, standalone map[string]bool) ([]catalog.Grant, error) {
+// readSequenceGrantsForSchema reads the GRANTs on every sequence of one
+// schema: a standalone one, and the one a serial or identity column owns.
+//
+// A sequence a column owns is not described as an object of its own --
+// readSequences leaves it to the column -- but a grant on it is a grant like
+// any other, and a declaration names it as one: `GRANT USAGE ON SEQUENCE
+// items_id_seq`. Without it in this read, a declared grant on such a sequence
+// is never seen held and is planned again on every run, and a missing or an
+// extra one is not seen at all (stokaro/ptah#4037). The grant names the
+// sequence as the catalog does, which is the name a declaration uses too.
+func (r *Reader) readSequenceGrantsForSchema(ctx context.Context, schemaName string) ([]catalog.Grant, error) {
 	const query = `
 		SELECT
 			COALESCE(grantee.rolname, 'PUBLIC') AS grantee,
@@ -3230,9 +3236,6 @@ func (r *Reader) readSequenceGrantsForSchema(ctx context.Context, schemaName str
 		var rawSchema string
 		if err := rows.Scan(&grant.Role, &grant.Privilege, &rawSchema, &grant.ObjectName, &grant.WithOption, &grant.GrantedBy); err != nil {
 			return nil, fmt.Errorf("failed to scan sequence grant for schema %s: %w", schemaName, err)
-		}
-		if !standalone[catalog.QualifyTableName(r.outputSchema(rawSchema), grant.ObjectName)] {
-			continue
 		}
 		grant.Schema = r.outputSchema(rawSchema)
 		grants = append(grants, grant)
@@ -4354,9 +4357,9 @@ func (r *Reader) readRoleMemberships(ctx context.Context) ([]catalog.RoleMembers
 	return memberships, nil
 }
 
-func (r *Reader) readGrants(ctx context.Context, standaloneSequences map[string]bool) ([]catalog.Grant, error) {
+func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 	if r.dialect == platform.CockroachDB {
-		return r.readCockroachGrants(ctx, standaloneSequences)
+		return r.readCockroachGrants(ctx)
 	}
 	var grants []catalog.Grant
 	for _, schemaName := range r.schemasToRead() {
@@ -4379,7 +4382,7 @@ func (r *Reader) readGrants(ctx context.Context, standaloneSequences map[string]
 		grants = append(grants, schemaGrants...)
 
 		if r.caps.Has(capability.Sequences) {
-			sequenceGrants, err := r.readSequenceGrantsForSchema(ctx, schemaName, standaloneSequences)
+			sequenceGrants, err := r.readSequenceGrantsForSchema(ctx, schemaName)
 			if err != nil {
 				return nil, err
 			}
@@ -4466,17 +4469,6 @@ func (r *Reader) readRoutineGrantsForSchema(ctx context.Context, schemaName stri
 		return nil, fmt.Errorf("failed to read routine grants for schema %s: %w", schemaName, err)
 	}
 	return grants, nil
-}
-
-// standaloneSequenceSet returns a lookup keyed by each sequence's qualified
-// name, used to keep sequence-grant introspection scoped to standalone
-// sequences (excluding implicit serial/identity sequences).
-func standaloneSequenceSet(sequences []catalog.Sequence) map[string]bool {
-	set := make(map[string]bool, len(sequences))
-	for _, sequence := range sequences {
-		set[sequence.QualifiedName()] = true
-	}
-	return set
 }
 
 // columnGrantPredicate says which rows of pg_attribute carry a column grant
@@ -4908,7 +4900,7 @@ func (r *Reader) readRoleManagedObjects(ctx context.Context, schema *catalog.Dat
 		return err
 	}
 
-	grants, err := r.readGrants(ctx, standaloneSequenceSet(schema.Sequences))
+	grants, err := r.readGrants(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to read grants: %w", err)
 	}

@@ -678,8 +678,12 @@ privileges next to your entities. Ptah emits `CREATE ROLE` for new roles,
 change. Grants target a table, a schema, a sequence, a function or a
 procedure, and grants are compared per individual privilege, so a
 `privilege="SELECT,INSERT"` list round-trips cleanly through introspection. A
-grant on a standalone sequence is described with `on_sequence`, so the
-description compares equal to the database it was read from.
+grant on a sequence is described with `on_sequence`, so the description
+compares equal to the database it was read from. That holds for the sequence a
+`SERIAL` or identity column owns too: write it under the name the server gave
+it, such as `GRANT USAGE ON SEQUENCE items_id_seq TO app`, and Ptah reads it
+back, plans it only when the database lacks it, and revokes it from a role the
+schema manages when the declaration leaves it out.
 
 A function or procedure is named with its argument types, because PostgreSQL
 tells overloads apart by them: `on_function="purge_workspace(uuid)"` in Go,
@@ -1144,6 +1148,8 @@ type PostgreSQLExtensions struct{}
 PostgreSQL creates an implicit sequence for every `SERIAL` column and identity
 column; you do not declare those, and Ptah's introspection deliberately
 excludes them, so a plain `SERIAL` column never produces a spurious diff. A
+grant on one is still read and compared; see [Roles and
+grants](#roles-and-grants). A
 *standalone* sequence — declared with `//ptah:schema:sequence`, typically
 to share one number generator across tables — is a first-class object with the
 full lifecycle.
