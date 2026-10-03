@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -274,7 +275,7 @@ func withGeneratedTimeoutDirectivesForOptions(sql, dialect string, opts generate
 }
 
 func withGeneratedTimeoutDirectives(sql, dialect string) string {
-	if !containsAlterTable(sql) || !supportsGeneratedTimeoutDirectives(dialect) {
+	if !waitsForTableLock(sql) || !supportsGeneratedTimeoutDirectives(dialect) {
 		return sql
 	}
 
@@ -286,9 +287,17 @@ func withGeneratedTimeoutDirectives(sql, dialect string) string {
 	return directives + sql
 }
 
-func containsAlterTable(sql string) bool {
-	stripped := sqlutil.StripComments(sql)
-	return strings.Contains(strings.ToUpper(stripped), "ALTER TABLE")
+// tableLockWaiter matches a statement that waits for a lock on a table that
+// already exists: ALTER TABLE, and the LOCK TABLES, CREATE TRIGGER and DROP
+// TRIGGER of a trigger change. On MySQL and MariaDB each waits for the table's
+// metadata lock, and every later write to the table queues behind it, so the
+// generated lock timeout is what bounds the wait (stokaro/ptah#4012).
+var tableLockWaiter = regexp.MustCompile(
+	`(?im)^\s*(ALTER\s+TABLE|LOCK\s+TABLES?|DROP\s+TRIGGER|CREATE\s+(OR\s+REPLACE\s+)?(DEFINER\s*=\s*\S+\s+)?TRIGGER)\b`,
+)
+
+func waitsForTableLock(sql string) bool {
+	return tableLockWaiter.MatchString(sqlutil.StripComments(sql))
 }
 
 func supportsGeneratedTimeoutDirectives(dialect string) bool {

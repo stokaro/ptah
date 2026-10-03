@@ -1096,6 +1096,13 @@ followed by a `<name>_concurrent_indexes` file tagged `-- atlas:txmode none`;
 mixes that cannot be split automatically (for example enum value additions
 alongside table changes) are refused.
 
+On MySQL and MariaDB, a file `migrate apply` would refuse to run inside a
+transaction is tagged the same way: one that defines a trigger, view or
+routine, takes `LOCK TABLES`, or changes a table a trigger fires on. The check
+is the one `migrate apply` runs, against the replayed directory on the dev
+database. The community binary plans no triggers and writes no such tag;
+`PTAH_ATLAS_STRICT_COMPAT=1` leaves the tag out.
+
 The rollback is planned through the same dialect and capability set. Each
 reverse index operation selects concurrency independently. A concurrent create
 becomes the exact table-qualified concurrent drop when supported and a blocking

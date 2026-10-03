@@ -319,7 +319,7 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 		return nil, err
 	}
 
-	specs, assessments, err := planGeneratedMigrationSpecs(diff, desired, dbSchema, info, version, opts.MigrationName, opts.DiffPolicy, qualifier)
+	specs, assessments, err := planMigrationFiles(ctx, conn, diff, desired, dbSchema, version, opts, qualifier)
 	if err != nil {
 		return nil, err
 	}

@@ -109,6 +109,12 @@ type DiffOptions struct {
 	// [ptah.run/migration/planner.Options]. The caller selects it from its
 	// compatibility policy.
 	OmitNullBackfill bool
+	// MarkFileModeRefusals tags `-- atlas:txmode none` on each Atlas-layout
+	// file the migrator would refuse to run in transaction mode file, the
+	// default of `migrate apply`; see [markFileModeRefusals]. The caller
+	// selects it from its compatibility policy, because the community binary
+	// writes no such tag.
+	MarkFileModeRefusals bool
 	// ValidateDesiredSchema applies a caller-selected policy after the desired
 	// source is resolved and before migration-directory planning. Nil accepts
 	// every modeled object.
@@ -300,9 +306,12 @@ func generateDiff(
 	if err != nil {
 		return DiffResult{}, err
 	}
+	// The files are planned while the replayed directory is still on the dev
+	// database: whether the migrator would run a file in a transaction depends
+	// on that catalog, and the replay is reset when the callback returns.
 	var (
-		diff    *difftypes.SchemaDiff
-		current *catalog.Database
+		contents []MigrationFileContent
+		synced   bool
 	)
 	if err := runtime.withReplayedSnapshot(
 		ctx,
@@ -310,15 +319,24 @@ func generateDiff(
 		replaySource,
 		migrationfile.DirFormatAtlas,
 		func(replayConn *dbschema.DatabaseConnection) error {
-			replayed, compared, err := compareReplayedState(
+			current, diff, err := compareReplayedState(
 				ctx, replayConn, runtime, schemas, devDefaultSchema, desired,
 				opts.Diagnostics, opts.ValidateLiveObject, opts.Policy,
 			)
 			if err != nil {
 				return err
 			}
-			current, diff = replayed, compared
-			return nil
+			diff = atlasschema.ApplyDiffPolicy(diff, opts.Policy)
+			if !diff.HasChanges() {
+				synced = true
+				return nil
+			}
+			planned, err := planDiffFileContents(diff, desired, current, info, format, opts)
+			if err != nil {
+				return err
+			}
+			contents, err = markFileModeRefusals(ctx, replayConn, opts, planned)
+			return err
 		},
 	); err != nil {
 		return DiffResult{}, err
@@ -326,17 +344,8 @@ func generateDiff(
 	if err := ctx.Err(); err != nil {
 		return DiffResult{}, err
 	}
-	diff = atlasschema.ApplyDiffPolicy(diff, opts.Policy)
-	if !diff.HasChanges() {
+	if synced {
 		return DiffResult{Synced: true}, nil
-	}
-
-	contents, err := planDiffFileContents(diff, desired, current, info, format, opts)
-	if err != nil {
-		return DiffResult{}, err
-	}
-	if err := ctx.Err(); err != nil {
-		return DiffResult{}, err
 	}
 	if err := verifyMigrationDirUnchanged(openedDir.writer, openedDir.snapshots.publication); err != nil {
 		return DiffResult{}, err
