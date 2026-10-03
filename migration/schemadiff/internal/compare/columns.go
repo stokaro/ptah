@@ -1126,9 +1126,10 @@ func ydbColumnTypeChange(genCol schemamodel.Field, dbCol catalog.Column, dbRawTy
 // function in the type the column has, so `5`, `+5` and `05` on an Int8 column
 // all compare as `5t`, and a declared TIMESTAMP default compares in the
 // Timestamp64 or Timestamp spelling the server built. A Serial column takes
-// its value from its sequence and carries no default to compare.
+// its value from its sequence, so the reader reports no default for one and
+// there is nothing to compare.
 func ydbDefaultChange(genCol schemamodel.Field, dbCol catalog.Column, declared, current string) (key, change string) {
-	if strings.TrimSpace(declared) == "" && (current == "" || dbCol.IsAutoIncrement) {
+	if strings.TrimSpace(declared) == "" && current == "" {
 		return "", ""
 	}
 	if ydbDeclaredDefault(genCol, dbCol.RawType(), declared) == current {

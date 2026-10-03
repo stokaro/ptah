@@ -1414,10 +1414,9 @@ func getDatabaseInfo(
 			return info, fmt.Errorf("failed to get YDB version: %w", err)
 		}
 		info.Version = version
-		// A schema is a directory, and the database root is the one an
-		// unqualified name means.
-		info.Schema = ""
-		info.IdentifierSemantics.DefaultSchema = info.Schema
+		// Schema stays empty, as does the default schema identifier.ForDialect
+		// gives YDB: a schema is a directory, and the database root is the one
+		// an unqualified name means.
 	}
 
 	return info, nil
