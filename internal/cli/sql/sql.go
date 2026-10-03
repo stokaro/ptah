@@ -18,6 +18,7 @@ import (
 	"ptah.run/internal/cli/internal/serverversion"
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqllint"
+	"ptah.run/internal/ydbgap"
 	migrationlint "ptah.run/migration/lint"
 )
 
@@ -32,10 +33,12 @@ const (
 //
 // It is deliberately NOT capability.DefaultDialects, which "ptah schema render"
 // uses and which names ten. validateSQLLintOptions accepts whatever
-// platform.NormalizeDialect resolves, so `--dialect oracle` is accepted here
-// and exits 0, while nothing in internal/sqllint has been measured to analyze
-// Oracle. Naming a tenth dialect would claim coverage nobody established, and
-// refusing it is a behavior change this help-text change does not get to make.
+// platform.NormalizeDialect resolves except YDB, so `--dialect oracle` is
+// accepted here and exits 0, while nothing in internal/sqllint has been
+// measured to analyze Oracle. Naming a tenth dialect would claim coverage
+// nobody established, and refusing it is a behavior change this help-text
+// change does not get to make. YDB is refused by name, because its lexer reads
+// a double-quoted "x" as a string where every rule here reads a name.
 const sqlLintDialects = "postgres, mysql, mariadb, sqlite, sqlserver, clickhouse, cockroachdb, yugabytedb, or spanner"
 
 var errSQLLintFindings = errors.New("sql lint findings found")
@@ -206,6 +209,12 @@ func validateSQLLintOptions(opts sqlLintOptions) error {
 	}
 	if opts.dialect != "" && platform.NormalizeDialect(opts.dialect) == "" {
 		return fmt.Errorf("invalid --dialect value %q: expected %s", opts.dialect, sqlLintDialects)
+	}
+	if platform.NormalizeDialect(opts.dialect) == platform.YDB {
+		// Accepting every name platform resolves would lint YQL with the
+		// rules and parser of other dialects: a double-quoted "x" is a string
+		// in YQL and an identifier to those rules.
+		return fmt.Errorf("invalid --dialect value %q: %s", opts.dialect, ydbgap.Linting.Message())
 	}
 	if opts.version != "" && opts.dialect == "" {
 		return fmt.Errorf("--%s requires --dialect", serverversion.FlagName)

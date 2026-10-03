@@ -1783,7 +1783,7 @@ func ValidateFailOn(failOn string) error {
 func canonicalDialect(dialect string) (string, error) {
 	canonical, ok := lintdialect.Canonical(dialect)
 	if !ok {
-		return "", fmt.Errorf("invalid --dialect value %q: expected %s", dialect, lintdialect.Expected)
+		return "", fmt.Errorf("invalid --dialect value %q: %s", dialect, lintdialect.Refusal(dialect))
 	}
 	return canonical, nil
 }

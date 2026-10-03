@@ -10,6 +10,13 @@ import (
 // Options returns the lexer behavior for dialect-sensitive SQL tokenization.
 func Options(dialect string) lexer.Options {
 	dialect = platform.NormalizeDialect(dialect)
+	if dialect == platform.YDB {
+		// YQL is a lexer mode of its own, and it reads none of the fields
+		// the other dialects set, so it sets none of them either: a field
+		// that looked as if it applied would say something false about how
+		// YDB text is read.
+		return lexer.Options{YQL: true}
+	}
 	options := lexer.Options{
 		StandardStrings:     true,
 		BackslashEscapes:    usesBackslashEscapes(dialect),

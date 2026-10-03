@@ -177,6 +177,25 @@ func TestGenerateSchemaDiffSQL_UnsupportedDialectReturnsError(t *testing.T) {
 	c.Assert(planErr.Dialect, qt.Equals, "db2")
 }
 
+// YDB is a dialect name before it has a planner. Every spelling of it is
+// refused in the words of the gap, with the sentinel an embedder branches on.
+func TestGenerateSchemaDiffSQL_RefusesYDBUntilItsPlannerLands(t *testing.T) {
+	for _, dialect := range []string{"ydb", "ydbs"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			sql, err := planner.GenerateSchemaDiffSQL(&difftypes.SchemaDiff{}, dialect)
+
+			c.Assert(sql, qt.Equals, "")
+			c.Assert(err, qt.ErrorMatches, `planning a YDB migration is not implemented yet \(stokaro/ptah#4015, phase 3\)`)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
+			var planErr *ptaherr.PlanError
+			c.Assert(err, qt.ErrorAs, &planErr)
+			c.Assert(planErr.Dialect, qt.Equals, dialect)
+		})
+	}
+}
+
 func TestGenerateSchemaDiffAST_WrapsPlannerFailures(t *testing.T) {
 	c := qt.New(t)
 

@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"ptah.run/core/platform"
+	"ptah.run/internal/ydbgap"
 )
 
 // Expected is the user-facing list of supported lint dialects.
@@ -58,6 +59,11 @@ func Canonical(dialect string) (string, bool) {
 // lexer, which is the exact failure the comment on Canonical describes for
 // aliases. A new engine has to be added here deliberately, when lint can
 // actually analyze it (stokaro/ptah#1875).
+//
+// YDB is left out for the same reason. internal/dialectlexer reads YQL, but no
+// rule in migration/lint or internal/sqllint has been classified for it, and
+// a YQL file read by the hybrid rules would be judged by a grammar it does not
+// have. Lint support is phase 8 of stokaro/ptah#4015.
 var supported = []string{
 	platform.Postgres,
 	platform.MySQL,
@@ -68,6 +74,17 @@ var supported = []string{
 	platform.CockroachDB,
 	platform.YugabyteDB,
 	platform.Spanner,
+}
+
+// Refusal says why [Canonical] refuses dialect, in words a flag's error can
+// print after the value: the plan that adds lint support for a dialect Ptah
+// accepts and lint does not analyze yet, and the [Expected] list for any other
+// value.
+func Refusal(dialect string) string {
+	if platform.NormalizeDialect(dialect) == platform.YDB {
+		return ydbgap.Linting.Message()
+	}
+	return "expected " + Expected
 }
 
 // Valid reports whether dialect is supported. The empty value means that the

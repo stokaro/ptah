@@ -155,6 +155,24 @@ func TestSQLLint_UsageErrorsExitTwo(t *testing.T) {
 	}
 }
 
+// YDB is a dialect Ptah accepts and sql lint does not analyze yet. Linting
+// YQL with these rules would read "a;b" as a name and a statement boundary
+// where YDB reads a string, so the command refuses before reading anything.
+func TestSQLLint_RefusesYDBUntilLintReadsYQL(t *testing.T) {
+	for _, dialect := range []string{"ydb", "ydbs"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			stdout, stderr, err := executeWithStdin(`SELECT "a;b" FROM t;`, "lint", "--dialect", dialect, "--stdin")
+
+			c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+			c.Assert(stderr, qt.Contains,
+				`invalid --dialect value "`+dialect+`": linting YQL for YDB is not implemented yet (stokaro/ptah#4015, phase 8)`)
+			c.Assert(stdout, qt.Equals, "")
+		})
+	}
+}
+
 // TestSQLLint_VersionThatNamesNoServerExitsTwo is the defect of issue #916
 // this command owned: `--version not-a-version` exited 0, linted against the
 // dialect default, and printed that string back as the version it had used.
