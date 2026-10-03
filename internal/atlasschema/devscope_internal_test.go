@@ -183,6 +183,60 @@ func TestRescopeStatementsForDevDatabaseRewritesTheTargetIntoTheDevDatabase(t *t
 				"CREATE TRIGGER t AFTER INSERT ON t FOR EACH ROW INSERT INTO `appdev`.audit (v) VALUES (NEW.a)",
 			},
 		},
+		// A view or trigger body qualifies a column with a table or alias it
+		// reads, which is not a database (stokaro/ptah#4027).
+		{
+			name:    "mysql leaves the alias-qualified columns of a view alone",
+			dialect: platform.MySQL,
+			target:  "app",
+			dev:     "appdev",
+			statements: []string{
+				"CREATE VIEW `app`.`active_users` AS SELECT u.id, u.* FROM `app`.`users` u WHERE u.active = 1",
+			},
+			want: []string{
+				"CREATE VIEW `appdev`.`active_users` AS SELECT u.id, u.* FROM `appdev`.`users` u WHERE u.active = 1",
+			},
+		},
+		{
+			name:    "mysql leaves a column qualified with its table name alone",
+			dialect: platform.MySQL,
+			target:  "app",
+			dev:     "appdev",
+			statements: []string{
+				"CREATE OR REPLACE ALGORITHM = MERGE SQL SECURITY INVOKER VIEW v AS " +
+					"SELECT users.id FROM users JOIN orders AS o ON o.user_id = users.id",
+			},
+			want: []string{
+				"CREATE OR REPLACE ALGORITHM = MERGE SQL SECURITY INVOKER VIEW v AS " +
+					"SELECT users.id FROM users JOIN orders AS o ON o.user_id = users.id",
+			},
+		},
+		{
+			name:    "mysql leaves a derived table's alias alone and moves the table inside it",
+			dialect: platform.MySQL,
+			target:  "app",
+			dev:     "appdev",
+			statements: []string{
+				"CREATE VIEW v AS SELECT d.n FROM (SELECT COUNT(*) AS n FROM app.users) d",
+			},
+			want: []string{
+				"CREATE VIEW v AS SELECT d.n FROM (SELECT COUNT(*) AS n FROM `appdev`.users) d",
+			},
+		},
+		{
+			name:    "mariadb leaves an alias in a trigger body alone",
+			dialect: platform.MariaDB,
+			target:  "app",
+			dev:     "appdev",
+			statements: []string{
+				"CREATE TRIGGER t AFTER INSERT ON t FOR EACH ROW " +
+					"INSERT INTO log (v) SELECT s.v FROM secondtable s WHERE s.id = NEW.id",
+			},
+			want: []string{
+				"CREATE TRIGGER t AFTER INSERT ON t FOR EACH ROW " +
+					"INSERT INTO log (v) SELECT s.v FROM secondtable s WHERE s.id = NEW.id",
+			},
+		},
 		{
 			name:    "mysql reads a table list past a derived table in a compound body",
 			dialect: platform.MySQL,
@@ -300,6 +354,79 @@ func TestRescopeStatementsForDevDatabaseRefusesAThirdDatabase(t *testing.T) {
 			wantIndex:  1,
 			wantSchema: "new",
 			wantErr:    `dev database simulation refused: statement 1 names schema "new", but the dev database is "appdev"\..*`,
+		},
+		// Measured on MySQL 8.4.11 and MariaDB 11.8.9: a routine call, a
+		// sequence and a three-part path reach another database whatever
+		// the body binds (stokaro/ptah#4027).
+		{
+			name:       "mysql refuses a view whose name an alias of its body shadows",
+			dialect:    platform.MySQL,
+			target:     "app",
+			dev:        "appdev",
+			statements: []string{"CREATE VIEW u.v AS SELECT u.id FROM users u"},
+			wantIndex:  1,
+			wantSchema: "u",
+			wantErr:    `dev database simulation refused: statement 1 names schema "u", but the dev database is "appdev"\..*`,
+		},
+		{
+			name:       "mysql refuses a routine called through a bound name",
+			dialect:    platform.MySQL,
+			target:     "app",
+			dev:        "appdev",
+			statements: []string{"CREATE VIEW v AS SELECT u.f() FROM users u"},
+			wantIndex:  1,
+			wantSchema: "u",
+			wantErr:    `dev database simulation refused: statement 1 names schema "u", but the dev database is "appdev"\..*`,
+		},
+		{
+			name:       "mariadb refuses a sequence read through NEXTVAL",
+			dialect:    platform.MariaDB,
+			target:     "app",
+			dev:        "appdev",
+			statements: []string{"CREATE VIEW v AS SELECT NEXTVAL(u.s) FROM users u"},
+			wantIndex:  1,
+			wantSchema: "u",
+			wantErr:    `dev database simulation refused: statement 1 names schema "u", but the dev database is "appdev"\..*`,
+		},
+		{
+			name:       "mariadb refuses a sequence read through NEXT VALUE FOR",
+			dialect:    platform.MariaDB,
+			target:     "app",
+			dev:        "appdev",
+			statements: []string{"CREATE VIEW v AS SELECT NEXT VALUE FOR u.s FROM users u"},
+			wantIndex:  1,
+			wantSchema: "u",
+			wantErr:    `dev database simulation refused: statement 1 names schema "u", but the dev database is "appdev"\..*`,
+		},
+		{
+			name:       "mysql refuses a three-part path headed by an alias",
+			dialect:    platform.MySQL,
+			target:     "app",
+			dev:        "appdev",
+			statements: []string{"CREATE VIEW v AS SELECT u.t.v FROM users u"},
+			wantIndex:  1,
+			wantSchema: "u",
+			wantErr:    `dev database simulation refused: statement 1 names schema "u", but the dev database is "appdev"\..*`,
+		},
+		{
+			name:       "mysql refuses a qualifier the view does not bind",
+			dialect:    platform.MySQL,
+			target:     "app",
+			dev:        "appdev",
+			statements: []string{"CREATE VIEW v AS SELECT x.id FROM users u"},
+			wantIndex:  1,
+			wantSchema: "x",
+			wantErr:    `dev database simulation refused: statement 1 names schema "x", but the dev database is "appdev"\..*`,
+		},
+		{
+			name:       "mysql refuses a routine a trigger body calls through a bound name",
+			dialect:    platform.MySQL,
+			target:     "app",
+			dev:        "appdev",
+			statements: []string{"CREATE TRIGGER t AFTER INSERT ON t FOR EACH ROW BEGIN INSERT INTO log SELECT s.v FROM secondtable s; CALL s.p; END"},
+			wantIndex:  1,
+			wantSchema: "s",
+			wantErr:    `dev database simulation refused: statement 1 names schema "s", but the dev database is "appdev"\..*`,
 		},
 		{
 			name:    "mysql refuses a three-part path headed by old",
