@@ -167,8 +167,10 @@ func refuseAtlasYDBForwardedURLs(verb atlasVerb, args []string) error {
 			refusal = fmt.Errorf("%s names a YDB database: %s", envName, ydbgap.Compatibility.Message())
 		}
 	}
+	// The native flags a command defines itself. No forwarded target binds a
+	// URL to a persistent flag, and a connection one carried would still meet
+	// the refusal installAtlasConnectGate puts on the context.
 	target.Flags().VisitAll(visit)
-	target.InheritedFlags().VisitAll(visit)
 	return refusal
 }
 
