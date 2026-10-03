@@ -100,11 +100,12 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database)
 		}
 		return generatedTableNameKept(out.Tables, sequenceOwnerReference(sequence.OwnedBy))
 	})
+	columnSequences := s.generatedColumnSequences(db, out)
 	out.Grants = keep(db.Grants, func(grant schemamodel.Grant) bool {
-		return s.generatedGrantSelected(out, grant)
+		return s.generatedGrantSelected(out, columnSequences, grant)
 	})
 	out.RevokedGrants = keep(db.RevokedGrants, func(grant schemamodel.Grant) bool {
-		return s.generatedGrantSelected(out, grant)
+		return s.generatedGrantSelected(out, columnSequences, grant)
 	})
 	// Same order and the same reason as the database side: the roles below keep
 	// a role a surviving statement names, and a default privilege names two.
@@ -194,15 +195,24 @@ func keepTypeObjects[T any](
 }
 
 // generatedGrantSelected keeps grants whose target survives the selection.
-// Table and sequence grants ride along with their kept target. Schema-level
-// grants ride along with the schema universe; when include selectors narrow
-// the selection they are kept only for schemas named by --schema.
-func (s *scopeSelection) generatedGrantSelected(out *schemamodel.Database, grant schemamodel.Grant) bool {
+// Table and sequence grants ride along with their kept target, and a grant on
+// the sequence that is part of a column with the column's table, as
+// columnSequences answers; see [scopeSelection.generatedColumnSequences].
+// Schema-level grants ride along with the schema universe; when include
+// selectors narrow the selection they are kept only for schemas named by
+// --schema.
+func (s *scopeSelection) generatedGrantSelected(
+	out *schemamodel.Database,
+	columnSequences map[tableIdentity]struct{},
+	grant schemamodel.Grant,
+) bool {
 	switch {
 	case grant.OnTable != "":
 		return generatedTableNameKept(out.Tables, grant.OnTable)
 	case grant.OnSequence != "":
-		return generatedSequenceNameKept(out.Sequences, grant.OnSequence)
+		schema, name := splitQualified(grant.OnSequence)
+		return generatedSequenceNameKept(out.Sequences, grant.OnSequence) ||
+			s.columnSequenceKept(columnSequences, schema, name)
 	case grant.OnRoutine != "":
 		// A routine grant rides its routine, which the projection keeps by
 		// name, every overload together.

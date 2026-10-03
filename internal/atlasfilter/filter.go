@@ -101,6 +101,7 @@ func excludeDatabase(
 	// left, and that answer has to exist before the first object is judged.
 	filtered.Schemas = state.filterSchemas(filtered.Schemas)
 	filtered.Tables = state.filterTables(filtered.Tables)
+	state.excludeColumnSequences(schema.Tables)
 	filtered.Enums = state.filterEnums(filtered.Enums)
 	filtered.Sequences = state.filterSequences(filtered.Sequences)
 	filtered.Domains = state.filterDomains(filtered.Domains)
@@ -202,6 +203,7 @@ func excludeGenerated(
 	filtered.Tables = state.filterGeneratedTables(filtered.Tables)
 	tableByStruct := generatedTableByStruct(filtered.Tables)
 	filtered.Fields = state.filterGeneratedFields(tableByStruct, filtered.Fields)
+	state.excludeGeneratedColumnSequences(schema.Tables, schema.Fields)
 	filtered.Tables = state.stripGeneratedTableColumnReferences(filtered.Tables)
 	filtered.Indexes = state.filterGeneratedIndexes(tableByStruct, filtered.Indexes)
 	filtered.Constraints = state.filterGeneratedConstraints(tableByStruct, filtered.Constraints)
@@ -934,7 +936,7 @@ func (s *exclusionState) filterEnums(enums []catalog.Enum) []catalog.Enum {
 func (s *exclusionState) filterSequences(sequences []catalog.Sequence) []catalog.Sequence {
 	return keep(sequences, func(sequence catalog.Sequence) bool {
 		excluded := s.matches("sequence", s.nameCandidates(sequence.Schema, sequence.Name)...) ||
-			s.schemaExcluded(sequence.Schema)
+			s.schemaExcluded(sequence.Schema) || s.ownerExcluded(sequence.Schema, sequence.OwnedBy)
 		if excluded {
 			s.excludeSequence(sequence.Schema, sequence.Name)
 		}
@@ -1490,7 +1492,7 @@ func (s *exclusionState) filterGeneratedEnums(enums []schemamodel.Enum) []schema
 func (s *exclusionState) filterGeneratedSequences(sequences []schemamodel.Sequence) []schemamodel.Sequence {
 	return keep(sequences, func(sequence schemamodel.Sequence) bool {
 		excluded := s.matches("sequence", s.nameCandidates(sequence.Schema, sequence.Name)...) ||
-			s.schemaExcluded(sequence.Schema)
+			s.schemaExcluded(sequence.Schema) || s.ownerExcluded(sequence.Schema, sequence.OwnedBy)
 		if excluded {
 			s.excludeSequence(sequence.Schema, sequence.Name)
 		}
@@ -1635,7 +1637,8 @@ func (s *exclusionState) filterGeneratedGrants(grants []schemamodel.Grant) []sch
 		if grant.OnTable != "" && s.qualifiedSchemaExcluded(grant.OnTable) {
 			return false
 		}
-		if grant.OnSequence != "" && s.qualifiedSchemaExcluded(grant.OnSequence) {
+		if grant.OnSequence != "" && (s.qualifiedSchemaExcluded(grant.OnSequence) ||
+			generatedSequenceKeyExcluded(s, grant.OnSequence)) {
 			return false
 		}
 		if grant.OnRoutine != "" && (s.qualifiedSchemaExcluded(grant.OnRoutine) ||
@@ -1740,14 +1743,17 @@ func (s *exclusionState) tableExcluded(schema, table string) bool {
 	return excluded
 }
 
+// excludeSequence and sequenceExcluded key a sequence in its effective schema:
+// a grant can name the sequence with or without the schema its column's table
+// is written in.
 func (s *exclusionState) excludeSequence(schema, name string) {
-	if key, ok := sequenceIdentityKey(schema, name); ok {
+	if key, ok := sequenceIdentityKey(s.effectiveSchema(schema), name); ok {
 		s.excludedSequences[key] = struct{}{}
 	}
 }
 
 func (s *exclusionState) sequenceExcluded(schema, name string) bool {
-	key, ok := sequenceIdentityKey(schema, name)
+	key, ok := sequenceIdentityKey(s.effectiveSchema(schema), name)
 	if !ok {
 		return false
 	}
@@ -2060,6 +2066,8 @@ func generatedGrantTargets(grant schemamodel.Grant) []string {
 		return []string{grant.OnSchema, grant.Role + "." + grant.OnSchema}
 	case grant.OnTable != "":
 		return []string{grant.OnTable, grant.Role + "." + grant.OnTable}
+	case grant.OnSequence != "":
+		return []string{grant.OnSequence, grant.Role + "." + grant.OnSequence}
 	case grant.OnRoutine != "":
 		return []string{grant.OnRoutine, grant.Role + "." + grant.OnRoutine}
 	default:

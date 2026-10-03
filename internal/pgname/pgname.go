@@ -131,6 +131,24 @@ func ColumnKey(table, column string) string {
 	return Constraint(table, []string{column}, "key", nil)
 }
 
+// Sequence answers the name PostgreSQL gives the sequence it creates for a
+// serial or an identity column of table: `<table>_<column>_seq`, fitted into 63
+// bytes as [Object] fits it. The table is the bare relation name, without its
+// schema.
+//
+// The server numbers the name, `<table>_<column>_seq1` and on, when a relation
+// of the schema already holds it. That is not repeated here, for the reason
+// [Object] gives. Measured on PostgreSQL 18.6:
+//
+//	"MixedCase" ("Id" serial)                  MixedCase_Id_seq
+//	61-byte table, 53-byte bigserial column    a_table_name_that_is_quite_lo_a_column_name_that_is_also_ra_seq
+//	the same table, identity column b          a_table_name_that_is_quite_long_for_testing_purposes_only_b_seq
+//	"ünï", a 51-byte column                    ünï_ñameß×23_seq, 61 bytes, uncut
+//	"tä", a 59-byte column of ß×29 then a      tä_ß×27_seq, 62 bytes: the cut falls inside a ß
+func Sequence(table, column string) string {
+	return Object(table, column, "seq")
+}
+
 // clip returns the longest prefix of value that is at most maxBytes long and
 // ends on a character boundary, as pg_mbcliplen does for UTF-8.
 func clip(value string, maxBytes int) string {
