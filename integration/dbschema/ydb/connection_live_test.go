@@ -63,6 +63,56 @@ func TestYDBConnection_BindsPositionalArguments(t *testing.T) {
 	c.Assert(widened, qt.Equals, "Int64")
 }
 
+// liveID and liveCount are named integers, which the SDK reads by their kind.
+type (
+	liveID    int
+	liveCount uint
+)
+
+// Every shape a Go int or uint reaches the connection in is bound at 64 bits.
+// The SDK binds an int or a uint as a 32-bit value, so without the widening
+// 5000000000 would reach the server as 705032704; the type the server reports
+// and the value it reads back are what show it did not.
+func TestYDBConnection_BindsEachIntegerShapeAt64Bits(t *testing.T) {
+	const wide = 5000000000
+	tests := []struct {
+		name      string
+		arg       any
+		valueExpr string
+		wantType  string
+	}{
+		{name: "uint", arg: uint(wide), valueExpr: "CAST(? AS Utf8)", wantType: "Uint64"},
+		{name: "a pointer to uint", arg: new(uint(wide)), valueExpr: "CAST(? AS Utf8)", wantType: "Optional<Uint64>"},
+		{name: "a slice of uint", arg: []uint{wide}, valueExpr: "CAST(ListHead(?) AS Utf8)", wantType: "List<Uint64>"},
+		{name: "a nullable uint", arg: sql.Null[uint]{V: wide, Valid: true}, valueExpr: "CAST(? AS Utf8)",
+			wantType: "Optional<Uint64>"},
+		{name: "a named uint", arg: liveCount(wide), valueExpr: "CAST(? AS Utf8)", wantType: "Uint64"},
+		{name: "a pointer to int", arg: new(int(wide)), valueExpr: "CAST(? AS Utf8)", wantType: "Optional<Int64>"},
+		{name: "a slice of int", arg: []int{wide}, valueExpr: "CAST(ListHead(?) AS Utf8)", wantType: "List<Int64>"},
+		{name: "a nullable int", arg: sql.Null[int]{V: wide, Valid: true}, valueExpr: "CAST(? AS Utf8)",
+			wantType: "Optional<Int64>"},
+		{name: "a named int", arg: liveID(wide), valueExpr: "CAST(? AS Utf8)", wantType: "Int64"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c)
+
+			var bound string
+			var value sql.NullString
+			err := conn.QueryRowContext(c.Context(),
+				sqlutil.Rebind(platform.YDB, "SELECT FormatType(TypeOf(?)) AS bound, "+test.valueExpr+" AS value"),
+				test.arg, test.arg,
+			).Scan(&bound, &value)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(bound, qt.Equals, test.wantType)
+			c.Assert(value, qt.Equals, sql.NullString{String: "5000000000", Valid: true})
+		})
+	}
+}
+
 // An Int64 argument bound to a narrower column is refused by the server
 // rather than converted, and the same value written with the column's own
 // width is accepted. Ptah widens a Go int to 64 bits so that a value too wide
