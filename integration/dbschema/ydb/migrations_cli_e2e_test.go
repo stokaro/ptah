@@ -125,10 +125,10 @@ func TestYDBBinary_MigrationsUpWaitsForTheLock(t *testing.T) {
 	exited := make(chan error, 1)
 	go func() { exited <- waiting.Wait() }()
 	time.Sleep(3 * time.Second)
-	c.Assert(exited, qt.HasLen, 0, qt.Commentf("output:\n%s", waitingOutput.String()))
+	c.Assert(exited, qt.HasLen, 0, qt.Commentf("output:\n%s", &waitingOutput))
 	c.Assert(tableNames(readScoped(c, conn, []string{cliMigrationsDir})), qt.HasLen, 0)
 	c.Assert(lock.Release(context.Background()), qt.IsNil)
-	c.Assert(<-exited, qt.IsNil, qt.Commentf("output:\n%s", waitingOutput.String()))
+	c.Assert(<-exited, qt.IsNil, qt.Commentf("output:\n%s", &waitingOutput))
 	c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+cliMigrationsDir+"/users`"), qt.Equals, int64(1))
 
 	down := []string{"migrations", "down", "--target", "0", "--confirm", "--db-url", url,
