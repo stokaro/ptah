@@ -328,6 +328,11 @@ func grantAllowed(
 		// A routine is kept by its schema, and its grants ride it.
 		return schemaAllowed(allowed, effectiveSchema(schemaFromQualifiedName(grant.OnRoutine), defaultSchema))
 	}
+	if grant.OnSequence != "" {
+		// So is a sequence, standalone or owned by a column; see
+		// [dbGrantAllowed] for the other side.
+		return schemaAllowed(allowed, effectiveSchema(schemaFromQualifiedName(grant.OnSequence), defaultSchema))
+	}
 	return false
 }
 
@@ -360,7 +365,13 @@ func dbGrantAllowed(
 	if strings.EqualFold(grant.ObjectType, "SCHEMA") {
 		return schemaAllowed(allowed, effectiveSchema(grant.ObjectName, defaultSchema))
 	}
-	if strings.EqualFold(grant.ObjectType, "FUNCTION") || strings.EqualFold(grant.ObjectType, "PROCEDURE") {
+	// A routine and a sequence are kept by their schema, as the generated
+	// side keeps them. A sequence is not a table, so the table check below
+	// dropped every grant on one from the current side, and a comparison with
+	// a desired schema that grants on it planned the grant on every run
+	// (stokaro/ptah#4085).
+	if strings.EqualFold(grant.ObjectType, "FUNCTION") || strings.EqualFold(grant.ObjectType, "PROCEDURE") ||
+		strings.EqualFold(grant.ObjectType, "SEQUENCE") {
 		return schemaAllowed(allowed, effectiveSchema(grant.Schema, defaultSchema))
 	}
 	return schemaAllowed(allowed, effectiveSchema(grant.Schema, defaultSchema)) &&
