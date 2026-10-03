@@ -303,7 +303,7 @@ jobs:
       # the scheme and creates and drops a table; measured, a container
       # started this way reports healthy about six seconds after it starts.
       ydb:
-        image: ydbplatform/local-ydb:26.3.1.18
+        image: ydbplatform/local-ydb:26.2.1.14
         env:
           YDB_USE_IN_MEMORY_PDISKS: "true"
         options: >-
