@@ -181,12 +181,12 @@ func (m *Migrator) commitYDBDataQuery(
 	event StatementEvent,
 	direction MigrationDirection,
 ) error {
-	checkpoint, args := m.checkpointMigrationRevisionStatement(migration, startedAt, event, direction)
 	return dataQueryCommit{
-		begin:      m.conn.BeginTx,
-		query:      event.Statement,
-		checkpoint: checkpoint,
-		args:       args,
+		begin: m.conn.BeginTx,
+		query: event.Statement,
+		checkpoint: func() (string, []any) {
+			return m.checkpointMigrationRevisionStatement(migration, startedAt, event, direction)
+		},
 		recorded: func(ctx context.Context) (bool, error) {
 			revision, err := m.getMigrationRevision(ctx, migration)
 			if err != nil {
@@ -211,10 +211,13 @@ func (m *Migrator) commitYDBDataQuery(
 // recorded, which reads the revision back: the checkpoint commits with the
 // query, so a recorded checkpoint is the proof that the query did too.
 type dataQueryCommit struct {
-	begin      func(context.Context, *sql.TxOptions) (*sql.Tx, error)
-	query      string
-	checkpoint string
-	args       []any
+	begin func(context.Context, *sql.TxOptions) (*sql.Tx, error)
+	query string
+	// checkpoint is the statement that records the query, and its arguments.
+	// It is built after the query ran in each attempt, so the execution time
+	// it records includes the query and is not carried over from an attempt
+	// YDB aborted.
+	checkpoint func() (string, []any)
 	recorded   func(context.Context) (bool, error)
 	wait       func(context.Context, int) error
 }
@@ -254,7 +257,8 @@ func (d dataQueryCommit) try(ctx context.Context) (committing bool, err error) {
 		_ = tx.Rollback()
 		return false, err
 	}
-	if _, err := tx.ExecContext(ctx, d.checkpoint, d.args...); err != nil {
+	checkpoint, args := d.checkpoint()
+	if _, err := tx.ExecContext(ctx, checkpoint, args...); err != nil {
 		_ = tx.Rollback()
 		return false, fmt.Errorf("record the query in the revision table: %w", err)
 	}
