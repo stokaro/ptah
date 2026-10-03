@@ -22,7 +22,9 @@ func TestRoutineArguments_OneListIsOneKey(t *testing.T) {
 // them under different rules: a procedure refuses an OUT argument after one
 // with a default, and a function does not. Two lists that differ only in a
 // literal's case are two keys too, and so are two results, since the server
-// spells each result.
+// spells each result. Two bodies and two languages are two keys, because a
+// server that rewrites a body when it stores it answers for the body too
+// (stokaro/ptah#4058).
 func TestRoutineArguments_DifferentListsAreDifferentKeys(t *testing.T) {
 	procedure := schemamodel.FunctionKindProcedure
 	tests := []struct {
@@ -35,6 +37,9 @@ func TestRoutineArguments_DifferentListsAreDifferentKeys(t *testing.T) {
 		{name: "a kind word inside the list", left: schemamodel.Function{Parameters: "procedure"}, right: schemamodel.Function{Kind: procedure}},
 		{name: "two results", left: schemamodel.Function{Returns: "SETOF public.a"}, right: schemamodel.Function{Returns: "SETOF public.b"}},
 		{name: "a result written into the list", left: schemamodel.Function{Parameters: "a integer", Returns: "integer"}, right: schemamodel.Function{Parameters: "a integerinteger"}},
+		{name: "two bodies", left: schemamodel.Function{Returns: "bigint", Body: "SELECT 1"}, right: schemamodel.Function{Returns: "bigint", Body: "SELECT 2"}},
+		{name: "two languages", left: schemamodel.Function{Returns: "bigint", Language: "sql"}, right: schemamodel.Function{Returns: "bigint", Language: "plpgsql"}},
+		{name: "a body written into the language", left: schemamodel.Function{Language: "sql", Body: "x"}, right: schemamodel.Function{Language: "sqlx"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

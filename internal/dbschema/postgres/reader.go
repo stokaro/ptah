@@ -21,6 +21,7 @@ import (
 	"ptah.run/internal/pgindexstorage"
 	"ptah.run/internal/reservedrole"
 	"ptah.run/internal/rolescope"
+	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/sqlrunner"
 	"ptah.run/internal/tableref"
@@ -3623,6 +3624,9 @@ func (r *Reader) readFunctionsForSchema(ctx context.Context, schemaName string) 
 			-- which is the currentCatalog stating the property that separates the two
 			-- kinds (stokaro/ptah#1722).
 			COALESCE(pg_get_function_result(p.oid), '') AS returns,
+			-- Whether the function returns a set. CockroachDB leaves SETOF out of
+			-- pg_get_function_result; see [routineargs.AsSet].
+			p.proretset AS returns_set,
 			l.lanname AS language,
 			CASE p.prosecdef WHEN true THEN 'DEFINER' ELSE 'INVOKER' END AS security,
 			CASE p.provolatile
@@ -3661,11 +3665,13 @@ func (r *Reader) readFunctionsForSchema(ctx context.Context, schemaName string) 
 		var fn catalog.Function
 		var identityArguments string
 		var settings string
+		var returnsSet bool
 		err := rows.Scan(
 			&fn.Name,
 			&fn.Parameters,
 			&identityArguments,
 			&fn.Returns,
+			&returnsSet,
 			&fn.Language,
 			&fn.Security,
 			&fn.Volatility,
@@ -3681,6 +3687,9 @@ func (r *Reader) readFunctionsForSchema(ctx context.Context, schemaName string) 
 			return nil, fmt.Errorf("failed to scan function: %w", err)
 		}
 		fn.Settings = routinesetting.Split(settings)
+		if returnsSet {
+			fn.Returns = routineargs.AsSet(fn.Returns)
+		}
 
 		// Same convention as tables, views and domains: blank for the
 		// connection's own schema, named otherwise, so `--exclude app.fn_app`

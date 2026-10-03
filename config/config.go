@@ -315,7 +315,7 @@ type CompareOptions struct {
 
 	// RoutineArguments carries each declared routine's argument list and
 	// result as the target server itself spells them, keyed by the routine's
-	// kind, argument list and result as declared.
+	// kind, argument list, result, language and body as declared.
 	//
 	// PostgreSQL stores the arguments, not the text that declared them, and
 	// pg_get_function_arguments prints them back: a default gains a cast, a
@@ -379,6 +379,16 @@ type RoutineArguments struct {
 	Result string
 	// Resolved reports that a server answered for this declaration.
 	Resolved bool
+	// Body is the body as the server stored it for the declaration, where the
+	// probe carried the declared body: on a server that rewrites a body when it
+	// stores it, which is CockroachDB, the declared text never equals the
+	// stored one. Measured on v26.3.2, `SELECT * FROM public.items` is stored
+	// as `SELECT public.items.id, public.items.title FROM f1.public.items;`
+	// (stokaro/ptah#4058).
+	Body string
+	// BodyResolved reports that Body is the server's answer. It is false on a
+	// server that stores a body as written, which is never asked.
+	BodyResolved bool
 }
 
 // PolicyExpression is one RLS policy's expressions in the target server's own

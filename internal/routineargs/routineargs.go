@@ -335,6 +335,31 @@ func ImpliedResult(arguments string) string {
 	}
 }
 
+// AsSet answers the result of a function that returns a set, with SETOF in
+// front of it when the result as reported does not already say so. A caller
+// asks it for a function whose pg_proc.proretset is true, and keeps the
+// reported result otherwise.
+//
+// reported is what pg_get_function_result printed. PostgreSQL 18.6 prints the
+// set itself, `SETOF items` or `TABLE(r items)`, and the answer is reported
+// unchanged. CockroachDB v26.3.2 leaves it out: a function declared `RETURNS
+// SETOF items` reads back as `items`, and one declared `RETURNS TABLE (a INT8,
+// b STRING)` as `record`, while proretset is true for both. Read as printed,
+// the result loses the SETOF, a declaration that keeps it differs from its own
+// read-back, and every plan drops the function and creates it again
+// (stokaro/ptah#4058).
+func AsSet(reported string) string {
+	trimmed := strings.TrimSpace(reported)
+	if trimmed == "" {
+		return reported
+	}
+	lowered := strings.ToLower(trimmed)
+	if strings.HasPrefix(lowered, "setof ") || strings.HasPrefix(lowered, "table(") || strings.HasPrefix(lowered, "table (") {
+		return reported
+	}
+	return "SETOF " + trimmed
+}
+
 // splitArgumentMode takes a leading argument mode off an argument.
 func splitArgumentMode(text string) (mode, rest string) {
 	lowered := strings.ToLower(text)

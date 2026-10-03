@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/config"
 	"ptah.run/dbschema"
+	"ptah.run/internal/routineargs"
 )
 
 // RoutineArgumentsProbe is one declared routine whose argument list and result
@@ -28,6 +29,15 @@ type RoutineArgumentsProbe struct {
 	// the session, and a result type that names a table keeps that table
 	// from being dropped by anyone.
 	Drop string
+	// InCurrentSchema reports that Statement creates the probe routine in the
+	// session's current schema rather than in pg_temp. CockroachDB refuses a
+	// routine in pg_temp, so its probe goes where its view probe goes; see
+	// [ResolveViewBodies]. The rollback to the probe's savepoint takes it back.
+	InCurrentSchema bool
+	// ReadsBody reports that Statement carries the declared language and body,
+	// so the body the server stored is part of the answer. See
+	// [config.RoutineArguments.Body].
+	ReadsBody bool
 }
 
 // ResolveRoutineArguments asks the connected server to spell each declared
@@ -51,6 +61,15 @@ type RoutineArgumentsProbe struct {
 // for one -- is returned with Resolved false. Other dialects, and a connection
 // pinned to a session with a transaction open, return nil, for the reasons
 // [ResolveCheckExpressions] gives.
+//
+// A probe that reads its body creates the routine with the declared language
+// and body, for a server that rewrites a body when it stores it: measured on
+// CockroachDB v26.3.2, `SELECT * FROM public.items` is stored as `SELECT
+// public.items.id, public.items.title FROM f1.public.items;`, the database
+// named and the star expanded. Only the server can produce that from the
+// declaration, so the body it stores for the probe is the declaration's form,
+// and a body naming something the server does not hold refuses the probe, which
+// then compares as text (stokaro/ptah#4058).
 func ResolveRoutineArguments(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -80,16 +99,23 @@ func resolveOneRoutineArguments(
 	_ int,
 	probe RoutineArgumentsProbe,
 ) (config.RoutineArguments, error) {
-	// COALESCE for the reason the catalog read gives: pg_get_function_result
-	// is NULL for a procedure.
-	const query = `
-		SELECT pg_get_function_arguments(p.oid), COALESCE(pg_get_function_result(p.oid), '')
-		FROM pg_proc p
-		WHERE p.pronamespace = pg_my_temp_schema() AND p.proname = $1`
 	var answer config.RoutineArguments
 	read := func(ctx context.Context, tx *sql.Tx) error {
-		if err := tx.QueryRowContext(ctx, query, probe.Name).Scan(&answer.Arguments, &answer.Result); err != nil {
+		var result, body string
+		var returnsSet bool
+		if err := tx.QueryRowContext(ctx, routineProbeQuery, probe.Name, probe.InCurrentSchema).
+			Scan(&answer.Arguments, &result, &returnsSet, &body); err != nil {
 			return err
+		}
+		// The catalog read restores the set the same way, so the two sides
+		// agree on CockroachDB, which leaves SETOF out of the result.
+		answer.Result = result
+		if returnsSet {
+			answer.Result = routineargs.AsSet(result)
+		}
+		if probe.ReadsBody {
+			answer.Body = body
+			answer.BodyResolved = true
 		}
 		_, err := tx.ExecContext(ctx, probe.Drop)
 		return err
@@ -102,3 +128,17 @@ func resolveOneRoutineArguments(
 	answer.Resolved = true
 	return answer, nil
 }
+
+// routineProbeQuery reads a probe routine back from the schema it was created
+// in: the session's current schema when $2 is true, pg_temp otherwise.
+// COALESCE for the reason the catalog read gives: pg_get_function_result is
+// NULL for a procedure.
+const routineProbeQuery = `
+		SELECT pg_get_function_arguments(p.oid), COALESCE(pg_get_function_result(p.oid), ''),
+			p.proretset, p.prosrc
+		FROM pg_proc p
+		WHERE p.proname = $1
+		AND p.pronamespace = CASE
+			WHEN $2::bool THEN (SELECT n.oid FROM pg_namespace n WHERE n.nspname = current_schema())
+			ELSE pg_my_temp_schema()
+		END`

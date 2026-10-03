@@ -132,6 +132,25 @@ path does not reach it: `SETOF public.items` reads back as `SETOF items`, and
 `SETOF other.items` keeps `other.`. Only the server knows which applies, so a
 result is not folded by removing its schema.
 
+CockroachDB needs more than the signature, because it rewrites a routine when it
+stores it:
+
+| Declared | CockroachDB v26.3.2 stores |
+| --- | --- |
+| result `SETOF public.items` | `pg_get_function_result` `items`, with `proretset` true |
+| result `TABLE (a INT8, b STRING)` | `record`, with `proretset` true |
+| body `SELECT * FROM public.items` | `SELECT public.items.id, public.items.title FROM f1.public.items;` |
+
+Ptah reads `SETOF` back from `proretset` where the result leaves it out.
+CockroachDB refuses routines in `pg_temp`, so there the probe creates the declared
+routine itself, language and body included, in the current schema inside the
+rolled-back transaction, as the view probe does, and every routine the database
+holds by name is asked. The stored body can only match the catalog's, never
+make a body that matched as written differ. A body that selects `*` is answered
+only while no table the database holds gains or loses a column: the stored
+expansion lists the columns the table had, and a routine over a table the plan
+widens is replaced so that its `*` covers the new column.
+
 Ptah lowercases the words of an argument list and a return clause that are not
 quoted, as the server does. A string literal, a quoted name and a dollar-quoted
 string keep their case: an argument declared `DEFAULT 'X'` is created with

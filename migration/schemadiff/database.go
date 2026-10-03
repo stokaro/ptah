@@ -3,12 +3,14 @@ package schemadiff
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
@@ -107,7 +109,7 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	if err != nil {
 		return nil, nil, err
 	}
-	arguments, err := resolveRoutineArguments(ctx, conn, desired, database)
+	arguments, err := resolveRoutineArguments(ctx, conn, desired, database, semantics)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -269,15 +271,31 @@ func resolveTriggerConditions(
 // arguments and return type, in pg_temp and with a body nobody reads: the
 // server spells both the way it would for the plan's own statement. A routine
 // that declares neither, a procedure without arguments, has nothing to spell.
+//
+// CockroachDB refuses a routine in pg_temp and rewrites a body when it stores
+// one, so there the probe is the declared routine itself, language and body
+// included, in the session's current schema as its view probe is; see
+// [routineArgumentsProbe]. Its body is the declaration's stored form, so on
+// CockroachDB every declared routine the database holds is probed, whatever it
+// declares.
+//
+// A body that selects `*`, see [dbexprprobe.SelectsStar], is stored with the
+// star expanded against the columns its tables hold when the routine is
+// created. The probe expands it against the columns they hold now, so its body
+// is used only while no table the database shares with the declaration gains
+// or loses a column: an answer from today's columns would hide a column the
+// plan adds, as it would for a view. Its signature is used either way.
 func resolveRoutineArguments(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	desired *schemamodel.Database,
 	database *catalog.Database,
+	semantics identifier.Semantics,
 ) (map[string]config.RoutineArguments, error) {
 	if desired == nil || database == nil {
 		return nil, nil
 	}
+	starsAnswerable := !columnListsChange(desired, database, semantics)
 	held := make(map[string]bool, len(database.Functions))
 	for _, function := range database.Functions {
 		held[strings.ToLower(function.Name)] = true
@@ -287,11 +305,12 @@ func resolveRoutineArguments(
 	var probes []dbexprprobe.RoutineArgumentsProbe
 	for _, function := range desired.Functions {
 		key := exprkey.RoutineArguments(function)
-		if strings.TrimSpace(function.Parameters+function.Returns) == "" || seen[key] || !held[strings.ToLower(bareName(function.Name))] {
+		spellsNothing := strings.TrimSpace(function.Parameters+function.Returns) == "" && !rewritesStoredBodies(dialect)
+		if spellsNothing || seen[key] || !held[strings.ToLower(bareName(function.Name))] {
 			continue
 		}
 		seen[key] = true
-		if probe, ok := routineArgumentsProbe(function, key, len(probes), dialect); ok {
+		if probe, ok := routineArgumentsProbe(function, key, len(probes), dialect, starsAnswerable); ok {
 			probes = append(probes, probe)
 		}
 	}
@@ -369,29 +388,87 @@ func bareName(name string) string {
 
 // routineArgumentsProbe renders the probe for one declared routine, or reports
 // that the renderer refused it, in which case the arguments stay unresolved.
+// starsAnswerable says whether a body selecting `*` may be answered; see
+// [resolveRoutineArguments].
 func routineArgumentsProbe(
 	function schemamodel.Function,
 	key string,
 	index int,
 	dialect string,
+	starsAnswerable bool,
 ) (dbexprprobe.RoutineArgumentsProbe, bool) {
 	name := fmt.Sprintf("ptah_routine_probe_%d", index)
-	statement, err := renderer.RenderSQL(dialect, modelast.FromFunction(schemamodel.Function{
+	probe := dbexprprobe.RoutineArgumentsProbe{Key: key, Name: name}
+	declared := schemamodel.Function{
 		Name:       "pg_temp." + name,
 		Kind:       function.Kind,
 		Parameters: function.Parameters,
 		Returns:    function.Returns,
 		Language:   "sql",
 		Body:       "SELECT NULL",
-	}))
+	}
+	if rewritesStoredBodies(dialect) {
+		probe.InCurrentSchema = true
+		probe.ReadsBody = starsAnswerable || !dbexprprobe.SelectsStar(function.Body)
+		declared.Name = name
+		declared.Language = function.Language
+		declared.Body = function.Body
+	}
+	statement, err := renderer.RenderSQL(dialect, modelast.FromFunction(declared))
 	if err != nil {
 		return dbexprprobe.RoutineArgumentsProbe{}, false
 	}
-	drop, err := renderer.RenderSQL(dialect, ast.NewDropFunction("pg_temp."+name).SetKind(function.Kind))
+	drop, err := renderer.RenderSQL(dialect, ast.NewDropFunction(declared.Name).SetKind(function.Kind))
 	if err != nil {
 		return dbexprprobe.RoutineArgumentsProbe{}, false
 	}
-	return dbexprprobe.RoutineArgumentsProbe{Key: key, Name: name, Statement: statement, Drop: drop}, true
+	probe.Statement = statement
+	probe.Drop = drop
+	return probe, true
+}
+
+// columnListsChange reports whether a table the database shares with the
+// declaration gains or loses a column under it, which is when a stored star
+// expansion and the declared one can differ. Columns are matched by identity
+// key; a type change keeps the list, and the star with it.
+func columnListsChange(
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	semantics identifier.Semantics,
+) bool {
+	live := make(map[string]map[string]bool, len(database.Tables))
+	for _, table := range database.Tables {
+		columns := make(map[string]bool, len(table.Columns))
+		for _, column := range table.Columns {
+			columns[semantics.ColumnIdentityKey(column.Name)] = true
+		}
+		live[exprkey.TableParts(semantics, table.Schema, table.Name)] = columns
+	}
+	for _, table := range desired.Tables {
+		columns, held := live[exprkey.TableParts(semantics, table.Schema, table.Name)]
+		if !held {
+			continue
+		}
+		declared := make(map[string]bool, len(columns))
+		for _, field := range generatedschema.FieldsForTable(desired, table) {
+			declared[semantics.ColumnIdentityKey(field.Name)] = true
+		}
+		if !maps.Equal(declared, columns) {
+			return true
+		}
+	}
+	return false
+}
+
+// rewritesStoredBodies reports whether the dialect stores a routine body in a
+// form of its own rather than as written, so that only the server can say
+// what a declared body becomes. Measured on CockroachDB v26.3.2, `SELECT *
+// FROM public.items` is stored as `SELECT public.items.id,
+// public.items.title FROM f1.public.items;`, and a PL/pgSQL body is reflowed
+// and qualified the same way. PostgreSQL stores prosrc as written
+// (stokaro/ptah#4058).
+func rewritesStoredBodies(dialect string) bool {
+	return platform.NormalizeDialect(dialect) == platform.CockroachDB
 }
 
 // resolveColumnSpellings asks the server to spell the type and default of

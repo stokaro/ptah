@@ -134,20 +134,22 @@ func TableParts(semantics identifier.Semantics, schema, table string) string {
 }
 
 // RoutineArguments is the key [config.CompareOptions.RoutineArguments] is held
-// under for a declared routine: whether it is a procedure, and its argument
-// list and result exactly as declared.
+// under for a declared routine: whether it is a procedure, its argument list
+// and result, and its language and body, all exactly as declared.
 //
 // It names no routine. What the server prints for an argument list and a
 // result depends on them and on the kind of routine they are declared on, not
-// on the routine's name, so two routines declaring one signature share one
-// answer, and a key built from the declaration finds it without knowing which
-// catalog routine the declaration was paired with.
+// on the routine's name, so a key built from the declaration finds the answer
+// without knowing which catalog routine the declaration was paired with. The
+// language and body are in the key because a server that rewrites a body when
+// it stores it answers for the body too, and two routines declaring one
+// signature with two bodies need two answers (stokaro/ptah#4058).
 func RoutineArguments(routine schemamodel.Function) string {
 	kind := schemamodel.FunctionKindFunction
 	if routine.IsProcedure() {
 		kind = schemamodel.FunctionKindProcedure
 	}
-	return lengthPrefixed(kind, routine.Parameters, routine.Returns)
+	return lengthPrefixed(kind, routine.Parameters, routine.Returns, routine.Language, routine.Body)
 }
 
 // ViewBody is the key [config.CompareOptions.ViewBodies] is held under for a
