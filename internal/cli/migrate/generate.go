@@ -20,6 +20,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/dburldisplay"
+	"ptah.run/internal/devclean"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/migrationintegrity"
 	"ptah.run/internal/migrationreplay"
@@ -303,8 +304,9 @@ func planGeneratedMigrationByReplay(
 				devConn,
 				priorMigrations,
 				opts.dirFormat,
-				func(replayConn *dbschema.DatabaseConnection) error {
+				func(replayConn *dbschema.DatabaseConnection, baseline devclean.Baseline) error {
 					replayOpts := generateOpts
+					replayOpts.EnvironmentExtensions = baseline.Extensions()
 					desired, err := opts.loadDesired(replayConn.Info().Dialect)
 					if err != nil {
 						return err

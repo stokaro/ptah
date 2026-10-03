@@ -21,6 +21,7 @@ import (
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/devclean"
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/fsnapshot"
 	"ptah.run/internal/migratesum"
@@ -217,7 +218,7 @@ type replaySnapshotConsumer func(
 	*dbschema.DatabaseConnection,
 	fs.FS,
 	migrationfile.DirFormat,
-	func(*dbschema.DatabaseConnection) error,
+	migrationreplay.Consumer,
 ) error
 
 type diffRuntime struct {
@@ -318,9 +319,9 @@ func generateDiff(
 		conn,
 		replaySource,
 		migrationfile.DirFormatAtlas,
-		func(replayConn *dbschema.DatabaseConnection) error {
+		func(replayConn *dbschema.DatabaseConnection, baseline devclean.Baseline) error {
 			current, diff, err := compareReplayedState(
-				ctx, replayConn, runtime, schemas, devDefaultSchema, desired,
+				ctx, replayConn, runtime, schemas, devDefaultSchema, desired, baseline,
 				opts.Diagnostics, opts.ValidateLiveObject, opts.Policy,
 			)
 			if err != nil {
@@ -684,6 +685,7 @@ func compareReplayedState(
 	schemas []string,
 	defaultSchema string,
 	desired *schemamodel.Database,
+	baseline devclean.Baseline,
 	diagnostics io.Writer,
 	validateLiveObject func(atlasschema.LiveSchemaObject) error,
 	policy atlasschema.DiffPolicy,
@@ -696,6 +698,10 @@ func compareReplayedState(
 	if err != nil {
 		return nil, nil, err
 	}
+	// The extensions the dev database held before the replay are its
+	// environment, not something the directory built; see
+	// [devclean.Baseline.WithoutEnvironment].
+	replayed = baseline.WithoutEnvironment(replayed, desiredExtensionNames(desired))
 	if err := atlasschema.ValidateLiveObjects(replayConn, readNames, validateLiveObject); err != nil {
 		return nil, nil, err
 	}
@@ -818,4 +824,16 @@ func filterByTable[T any](values []T, keep func(T) bool) []T {
 		}
 	}
 	return out
+}
+
+// desiredExtensionNames is the set of extensions a desired schema declares.
+func desiredExtensionNames(desired *schemamodel.Database) map[string]bool {
+	names := make(map[string]bool)
+	if desired == nil {
+		return names
+	}
+	for _, extension := range desired.Extensions {
+		names[extension.Name] = true
+	}
+	return names
 }

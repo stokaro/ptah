@@ -15,6 +15,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/internal/devclean"
 	"ptah.run/internal/migrationreplay"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/migrationfile"
@@ -38,7 +39,7 @@ CREATE MATERIALIZED VIEW event_rollup ENGINE = MergeTree ORDER BY id AS SELECT i
 		realm,
 		snapshot,
 		migrationfile.DirFormatAtlas,
-		func(conn *dbschema.DatabaseConnection) error {
+		func(conn *dbschema.DatabaseConnection, _ devclean.Baseline) error {
 			var objectCount uint64
 			queryErr := conn.QueryRowContext(
 				t.Context(),
@@ -79,7 +80,7 @@ CREATE MATERIALIZED VIEW event_rollup ENGINE = MergeTree ORDER BY id AS SELECT i
 		realm,
 		unsafeSnapshot,
 		migrationfile.DirFormatAtlas,
-		func(*dbschema.DatabaseConnection) error {
+		func(*dbschema.DatabaseConnection, devclean.Baseline) error {
 			return nil
 		},
 	)
@@ -126,7 +127,7 @@ CREATE SEQUENCE app.event_sequence AS BIGINT START WITH 1;
 		realm,
 		snapshot,
 		migrationfile.DirFormatAtlas,
-		func(conn *dbschema.DatabaseConnection) error {
+		func(conn *dbschema.DatabaseConnection, _ devclean.Baseline) error {
 			var objectCount int
 			queryErr := conn.QueryRowContext(t.Context(), `
 SELECT COUNT(*)
@@ -166,7 +167,7 @@ WHERE is_ms_shipped = 0
 		realm,
 		unsafeSnapshot,
 		migrationfile.DirFormatAtlas,
-		func(*dbschema.DatabaseConnection) error {
+		func(*dbschema.DatabaseConnection, devclean.Baseline) error {
 			return nil
 		},
 	)

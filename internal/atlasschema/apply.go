@@ -20,6 +20,7 @@ import (
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/devclean"
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/protectedtable"
 	"ptah.run/internal/schemafile"
@@ -366,7 +367,7 @@ func computeApplyPlan(
 	if err != nil {
 		return applyComputation{}, err
 	}
-	current := withoutKeptExtensions(read.current, opts.keptExtensions, declaredExtensionNames(desired))
+	current := devclean.WithoutKeptExtensions(read.current, opts.keptExtensions, declaredExtensionNames(desired))
 	if err := validateCurrentApplyState(conn, current, read.readScope, opts); err != nil {
 		return applyComputation{}, err
 	}
@@ -742,7 +743,41 @@ func loadDesiredApplySchema(
 	if err := refuseServerScopeMismatch(connectionSide(conn.Info()), stateSide(state)); err != nil {
 		return nil, err
 	}
+	if len(state.EnvironmentExtensions) > 0 {
+		installed, err := installedExtensionNames(ctx, conn)
+		if err != nil {
+			return nil, err
+		}
+		// A directory replayed on the dev database reads back that
+		// database's own extensions too. One the target lacks is not the
+		// directory's to create there.
+		state = state.WithoutEnvironment(installed)
+	}
 	return state.Schema, nil
+}
+
+// extensionInstaller is the writer that names the extensions its database
+// holds.
+type extensionInstaller interface {
+	InstalledExtensions(context.Context) ([]string, error)
+}
+
+// installedExtensionNames is the set of extensions conn's database holds, or
+// none on a dialect without extensions.
+func installedExtensionNames(ctx context.Context, conn *dbschema.DatabaseConnection) (map[string]bool, error) {
+	names := make(map[string]bool)
+	lister, ok := conn.SchemaWriter().(extensionInstaller)
+	if !ok {
+		return names, nil
+	}
+	installed, err := lister.InstalledExtensions(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read the target's extensions: %w", err)
+	}
+	for _, name := range installed {
+		names[name] = true
+	}
+	return names, nil
 }
 
 // localApplySources is the desired state of the LocalFilesOnly path, as

@@ -115,7 +115,7 @@ func Replay(ctx context.Context, opts Options) error {
 		opts.DirFormat,
 		opts.AtlasTemplateData,
 		opts.RevisionVersions,
-		replayHooks{observeVersion: opts.ObserveVersion, consume: opts.ObserveReplayed},
+		replayHooks{observeVersion: opts.ObserveVersion, consume: observerConsumer(opts.ObserveReplayed)},
 	)
 }
 
@@ -142,7 +142,7 @@ func WithReplayedDirectory(
 	conn *dbschema.DatabaseConnection,
 	dir string,
 	dirFormat migrationfile.DirFormat,
-	consume func(*dbschema.DatabaseConnection) error,
+	consume Consumer,
 ) error {
 	snapshot, err := migrationsnapshot.Capture(os.DirFS(dir))
 	if err != nil {
@@ -166,6 +166,15 @@ func ReplaySnapshotOnConnection(
 	return replayOnConnection(ctx, conn, snapshot, dirFormat, nil, nil, replayHooks{})
 }
 
+// Consumer reads a dev database a replay left, on the replay's session.
+//
+// baseline is what the replay claimed the dev database with: the environment
+// the database held before the replay, which every reset keeps. A consumer
+// that compares the replayed state with another side leaves that environment
+// out of the comparison with [devclean.Baseline.WithoutEnvironment], so a
+// migration planned from the comparison does not remove it.
+type Consumer func(conn *dbschema.DatabaseConnection, baseline devclean.Baseline) error
+
 // WithReplayedSnapshot replays one immutable migration filesystem, invokes
 // consume while the replayed database is bound to the same physical session,
 // and cleans the database realm before returning.
@@ -174,7 +183,7 @@ func WithReplayedSnapshot(
 	conn *dbschema.DatabaseConnection,
 	snapshot fs.FS,
 	dirFormat migrationfile.DirFormat,
-	consume func(*dbschema.DatabaseConnection) error,
+	consume Consumer,
 ) error {
 	if consume == nil {
 		return fmt.Errorf("consume replayed database callback is nil")
@@ -194,7 +203,7 @@ func WithReplayedSnapshotLocked(
 	conn *dbschema.DatabaseConnection,
 	snapshot fs.FS,
 	dirFormat migrationfile.DirFormat,
-	consume func(*dbschema.DatabaseConnection) error,
+	consume Consumer,
 ) error {
 	if consume == nil {
 		return fmt.Errorf("consume replayed database callback is nil")
@@ -213,7 +222,7 @@ type replayHooks struct {
 	// the state that migration starts from.
 	observeVersion func(context.Context, *migrator.Migration, *dbschema.DatabaseConnection) error
 	// consume runs once after every migration, before the realm is cleaned.
-	consume func(*dbschema.DatabaseConnection) error
+	consume Consumer
 }
 
 func replayOnConnection(
@@ -320,7 +329,7 @@ func replayMigrations(
 		}
 	}
 	if hooks.consume != nil {
-		if err := hooks.consume(conn); err != nil {
+		if err := hooks.consume(conn, baseline); err != nil {
 			return err
 		}
 	}
@@ -357,4 +366,16 @@ func captureReplaySessionState(
 		}
 		return nil
 	}, nil
+}
+
+// observerConsumer adapts an [Options.ObserveReplayed] observer, which reads
+// the replayed state for itself and compares it with nothing, to the
+// [Consumer] a replay runs, or returns nil for none.
+func observerConsumer(observe func(*dbschema.DatabaseConnection) error) Consumer {
+	if observe == nil {
+		return nil
+	}
+	return func(conn *dbschema.DatabaseConnection, _ devclean.Baseline) error {
+		return observe(conn)
+	}
 }
