@@ -70,6 +70,12 @@ type SimulateOptions struct {
 	// prepared plan. `schema apply --edit` passes the edited statements so the
 	// simulation covers exactly what would be applied.
 	Statements []string
+	// DevServerDisposable is the operator's declaration that the server
+	// DevURL names is the run's own, as
+	// [ptah.run/internal/devdocker.DisposableServerDeclared] resolved it. The
+	// rehearsal then takes the realm a migration replay takes there; see
+	// [ptah.run/internal/devclean.DevReplayRealm].
+	DevServerDisposable bool
 }
 
 // SimulateOnDev rehearses the exact ordered apply plan on the --dev-url dev
@@ -94,7 +100,7 @@ func (p ApplyRuntimePlan) SimulateOnDev(ctx context.Context, opts SimulateOption
 		return errors.New("schema apply simulation requires database connection")
 	}
 
-	dev, err := connectSimulationDev(ctx, opts.DevURL, p.conn, opts.TargetURL, opts.DesiredURLs)
+	dev, err := connectSimulationDev(ctx, opts.DevURL, opts.DevServerDisposable, p.conn, opts.TargetURL, opts.DesiredURLs)
 	if err != nil {
 		return err
 	}
@@ -153,6 +159,8 @@ type simulationDev struct {
 // a `docker://` URL at all is decided from those bytes, and normalizing first
 // promotes a value the pinned binary cannot parse into a started container.
 // See [devdocker.Parse]. The callers have already answered an empty one.
+// disposable is the operator's declaration that the server it names is the
+// run's own, which [devdocker.Resolve] records for the realm decision.
 //
 // The caller owns the returned [simulationDev]: its connection must be closed,
 // and its release called to remove a container this call may have started.
@@ -160,6 +168,7 @@ type simulationDev struct {
 func connectSimulationDev(
 	ctx context.Context,
 	devURL string,
+	disposable bool,
 	targetConn *dbschema.DatabaseConnection,
 	targetURL string,
 	desiredURLs []string,
@@ -209,7 +218,7 @@ func connectSimulationDev(
 		}
 	}
 
-	resolved, release, err := devdocker.Resolve(ctx, devURL, devdocker.Options{})
+	resolved, release, err := devdocker.Resolve(ctx, devURL, devdocker.Options{DeclaredDisposable: disposable})
 	if err != nil {
 		return simulationDev{}, err
 	}

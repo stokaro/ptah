@@ -517,10 +517,11 @@ func runSchemaApplyOnLockedSession(
 	// applied — including edited SQL — and a failed rehearsal refuses the
 	// apply before the target is touched.
 	if err := plan.SimulateOnDev(cmd.Context(), atlasschema.SimulateOptions{
-		DevURL:      opts.devURL,
-		TargetURL:   opts.dbURL,
-		DesiredURLs: opts.toURLs,
-		Statements:  statements,
+		DevURL:              opts.devURL,
+		TargetURL:           opts.dbURL,
+		DesiredURLs:         opts.toURLs,
+		Statements:          statements,
+		DevServerDisposable: opts.devServerDisposable,
 	}); err != nil {
 		return "", err
 	}

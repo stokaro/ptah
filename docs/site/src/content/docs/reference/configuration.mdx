@@ -197,8 +197,9 @@ whole MySQL or MariaDB server, which the pinned community binary does without
 asking; Ptah refuses it by default.
 
 `PTAH_DEV_SERVER_DISPOSABLE` declares the `--dev-url` server the run's own, so
-replay runs a `DO` block, a routine or a role on it; the pinned community binary
-runs those on any dev database. See
+replay, and the rehearsal of `schema apply` and of a plan file, run a `DO`
+block, a routine or a role on it; the pinned community binary runs those on any
+dev database. See
 [a server declared disposable](../../concepts/database-urls-and-dev-databases/#a-server-declared-disposable).
 
 `PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP` restores the `DROP TABLE` the pinned

@@ -49,11 +49,15 @@ type verifiedAtlasSchemaPlan struct {
 // transition. It reads transition.fromURLs[0] directly, because "exactly one
 // --from database URL" is that validator's answer and re-deriving it here would
 // be a second sentence with the same job.
+//
+// devServerDisposable is the operator's declaration that the dev server is the
+// run's own, which the verb resolves before its first early return.
 func verifyAtlasSchemaPlanFile(
 	cmd *cobra.Command,
 	verb,
 	file string,
 	transition atlasSchemaPlanTransitionFlags,
+	devServerDisposable bool,
 ) (verifiedAtlasSchemaPlan, error) {
 	planPath, err := atlasSchemaPlanFilePath(verb, file)
 	if err != nil {
@@ -134,8 +138,9 @@ func verifyAtlasSchemaPlanFile(
 		// schema files here and a dev URL is a database URL. It is passed anyway
 		// so the guard already holds if --to ever accepts a database URL; that
 		// is why there is no mutation for it — nothing could kill one.
-		targetURL:   transition.fromURLs[0],
-		desiredURLs: transition.toURLs,
+		targetURL:           transition.fromURLs[0],
+		desiredURLs:         transition.toURLs,
+		devServerDisposable: devServerDisposable,
 	}); err != nil {
 		return verifiedAtlasSchemaPlan{}, err
 	}

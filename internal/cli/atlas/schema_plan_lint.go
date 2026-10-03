@@ -9,6 +9,7 @@ import (
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/exitcode"
+	"ptah.run/internal/devdocker"
 	"ptah.run/internal/envbool"
 	"ptah.run/internal/planlint"
 )
@@ -155,6 +156,10 @@ func runAtlasSchemaPlanLint(cmd *cobra.Command, opts atlasSchemaPlanLintOptions)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	devServerDisposable, err := devdocker.DisposableServerDeclared()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	transition, _, err := resolveAtlasSchemaPlanTransitionConfig(
 		cmd, atlasSchemaPlanLintVerb, opts.atlasSchemaPlanTransitionFlags)
 	if err != nil {
@@ -166,7 +171,7 @@ func runAtlasSchemaPlanLint(cmd *cobra.Command, opts atlasSchemaPlanLintOptions)
 	}
 
 	verified, err := verifyAtlasSchemaPlanFile(
-		cmd, atlasSchemaPlanLintVerb, opts.file, opts.atlasSchemaPlanTransitionFlags)
+		cmd, atlasSchemaPlanLintVerb, opts.file, opts.atlasSchemaPlanTransitionFlags, devServerDisposable)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
