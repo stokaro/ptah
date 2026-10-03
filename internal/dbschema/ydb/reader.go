@@ -13,6 +13,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/tableref"
 )
 
@@ -139,7 +140,9 @@ func (r *Reader) entry(
 		}
 		return r.walk(ctx, source, path.Join(schema, name), db)
 	case Ydb_Scheme.Entry_TABLE:
-		if !r.inScope(schema) {
+		if !r.inScope(schema) || slices.Contains(revisiontable.DefaultNames(), name) {
+			// The migrator's own tables are its bookkeeping, not the
+			// schema, as every other reader treats them.
 			return nil
 		}
 		described, err := source.DescribeTable(ctx, r.absolute(schema, name))
@@ -203,6 +206,47 @@ func unmodeled(kind coverage.Kind, schema, name string) coverage.Object {
 		Reason:     coverage.Unsupported,
 		Provenance: coverage.Observed,
 	}
+}
+
+// TableColumns describes the row table name in the directory schema, relative
+// to the database root, and returns its columns in the order the table
+// declares them.
+//
+// It is the migrator's question about its own tables, which [Reader.ReadSchema]
+// leaves out, and it reads only the one path. exists is false when nothing
+// holds the name, including when the directory that would hold it does not
+// exist; an object of another kind under the name is an error, because a
+// table cannot be created there.
+func (r *Reader) TableColumns(ctx context.Context, schema, name string) (columns []string, exists bool, err error) {
+	source, end, err := r.open(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	defer end()
+
+	entries, err := source.ListDirectory(ctx, r.absolute(schema, ""))
+	if isSchemeError(err) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	index := slices.IndexFunc(entries, func(entry *Ydb_Scheme.Entry) bool { return entry.GetName() == name })
+	if index < 0 {
+		return nil, false, nil
+	}
+	if entryType := entries[index].GetType(); entryType != Ydb_Scheme.Entry_TABLE {
+		return nil, false, fmt.Errorf("YDB object %s is a %s, not a row table", r.absolute(schema, name),
+			entryTypeName(entryType))
+	}
+	described, err := source.DescribeTable(ctx, r.absolute(schema, name))
+	if err != nil {
+		return nil, false, err
+	}
+	for _, column := range described.GetColumns() {
+		columns = append(columns, column.GetName())
+	}
+	return columns, true, nil
 }
 
 // inScope reports whether the read covers the directory schema.

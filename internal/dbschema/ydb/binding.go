@@ -9,12 +9,17 @@ import (
 	"io"
 	"reflect"
 	"strconv"
+
+	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
 )
 
 // connector hands database/sql the SDK's connections with Ptah's argument
 // binding in front of them, and runs onClose after the SDK connector closes.
+// sdk is the driver the connections belong to, which [DriverOf] hands back;
+// it is nil for a connector [NewBindingConnector] built.
 type connector struct {
 	inner   driver.Connector
+	sdk     *ydbsdk.Driver
 	onClose func() error
 }
 
@@ -54,7 +59,7 @@ func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
 		_ = opened.Close()
 		return nil, fmt.Errorf("the YDB driver's connection %T no longer offers what Ptah binds through", opened)
 	}
-	return conn{sdkConn: sdk}, nil
+	return conn{sdkConn: sdk, driver: c.sdk}, nil
 }
 
 // Driver returns the SDK's driver.
@@ -79,6 +84,28 @@ func (c *connector) Close() error {
 // SDK binds them.
 type conn struct {
 	sdkConn
+	driver *ydbsdk.Driver
+}
+
+// DriverOf returns the SDK driver behind session, a connection from a pool
+// [Open] made. The scheme, table and coordination services are reached
+// through the driver, not through SQL, and a caller that holds only a pooled
+// connection reaches them this way. A connection from any other pool is an
+// error.
+func DriverOf(session *sql.Conn) (*ydbsdk.Driver, error) {
+	var sdk *ydbsdk.Driver
+	err := session.Raw(func(raw any) error {
+		bound, ok := raw.(conn)
+		if !ok || bound.driver == nil {
+			return fmt.Errorf("%T is not a connection to a YDB database Ptah opened", raw)
+		}
+		sdk = bound.driver
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return sdk, nil
 }
 
 // CheckNamedValue names a positional argument after its position, and widens a

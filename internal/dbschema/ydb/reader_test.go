@@ -712,3 +712,98 @@ func TestReader_ScopedReadPassesAnObjectOutsideIt(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
 }
+
+// The migrator's own tables are its bookkeeping: the reader leaves them out of
+// the schema in every directory, as every other dialect's reader does, so a
+// plan never drops them.
+func TestReader_LeavesTheMigratorsTablesOut(t *testing.T) {
+	c := qt.New(t)
+	source := fakeSource{
+		directories: map[string][]*Ydb_Scheme.Entry{
+			"/local": {
+				entry("users", Ydb_Scheme.Entry_TABLE),
+				entry("schema_migrations", Ydb_Scheme.Entry_TABLE),
+				entry("schema_migrations_log", Ydb_Scheme.Entry_TABLE),
+				entry("app", Ydb_Scheme.Entry_DIRECTORY),
+			},
+			"/local/app": {entry("atlas_schema_revisions", Ydb_Scheme.Entry_TABLE)},
+		},
+		tables: map[string]*Ydb_Table.DescribeTableResult{"/local/users": plainTable()},
+	}
+
+	db := readFrom(c, source)
+
+	c.Assert(db.Tables, qt.HasLen, 1)
+	c.Assert(db.Tables[0].Name, qt.Equals, "users")
+}
+
+func TestReader_TableColumns_HappyPath(t *testing.T) {
+	source := fakeSource{
+		directories: map[string][]*Ydb_Scheme.Entry{
+			"/local":     {entry("app", Ydb_Scheme.Entry_DIRECTORY), entry("schema_migrations", Ydb_Scheme.Entry_TABLE)},
+			"/local/app": {entry("other", Ydb_Scheme.Entry_TABLE)},
+		},
+		tables: map[string]*Ydb_Table.DescribeTableResult{
+			"/local/schema_migrations": plainTable(
+				&Ydb_Table.ColumnMeta{Name: "version", Type: primitive(Ydb.Type_INT64)},
+				&Ydb_Table.ColumnMeta{Name: "state", Type: optional(primitive(Ydb.Type_UTF8))},
+			),
+		},
+	}
+	tests := []struct {
+		name        string
+		schema      string
+		table       string
+		wantColumns []string
+		wantExists  bool
+	}{
+		{name: "a table at the root", table: "schema_migrations", wantColumns: []string{"id", "version", "state"}, wantExists: true},
+		{name: "a name nothing holds", schema: "app", table: "schema_migrations", wantExists: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			reader := ydbschema.NewReaderFromSource(source, "/local", capability.YDB262())
+
+			columns, exists, err := reader.TableColumns(context.Background(), test.schema, test.table)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(exists, qt.Equals, test.wantExists)
+			c.Assert(columns, qt.DeepEquals, test.wantColumns)
+		})
+	}
+}
+
+func TestReader_TableColumns_FailurePath(t *testing.T) {
+	source := fakeSource{
+		directories: map[string][]*Ydb_Scheme.Entry{
+			"/local": {entry("schema_migrations", Ydb_Scheme.Entry_VIEW), entry("broken", Ydb_Scheme.Entry_TABLE)},
+		},
+		tables: map[string]*Ydb_Table.DescribeTableResult{},
+	}
+	tests := []struct {
+		name    string
+		schema  string
+		table   string
+		wantErr string
+	}{
+		{name: "another kind of object under the name", table: "schema_migrations",
+			wantErr: "YDB object /local/schema_migrations is a VIEW, not a row table"},
+		{name: "a table the server cannot describe", table: "broken",
+			wantErr: "described /local/broken, which the fixture does not hold"},
+		{name: "a directory the server cannot list", schema: "elsewhere", table: "schema_migrations",
+			wantErr: "listed /local/elsewhere, which the fixture does not hold"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			reader := ydbschema.NewReaderFromSource(source, "/local", capability.YDB262())
+
+			columns, exists, err := reader.TableColumns(context.Background(), test.schema, test.table)
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(exists, qt.IsFalse)
+			c.Assert(columns, qt.IsNil)
+		})
+	}
+}
