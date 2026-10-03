@@ -85,7 +85,10 @@ type escapeRule struct {
 //     against.
 //
 // Coverage is deliberately partial and dialect-specific: SQLite, PostgreSQL,
-// MySQL/MariaDB, SQL Server, and ClickHouse constructs are represented. It
+// MySQL/MariaDB, SQL Server, ClickHouse, Oracle and YDB constructs are
+// represented. A YDB external table is the known gap there: it is a catalog
+// object whose reads leave the database, and a statement names it exactly as
+// it names a table. It
 // catches honest mistakes and known tricks. It does not stop an author who is
 // trying to get past it.
 var escapeRules = []escapeRule{
@@ -340,6 +343,62 @@ var escapeRules = []escapeRule{
 		construct: "OPENDATASOURCE",
 		reach:     "reads from another data source reached over the network",
 		match:     calledFunction("OPENDATASOURCE"),
+	},
+	{
+		// YQL reads translation settings from the head of the query, and
+		// --!ansi_lexer changes how every string, name and comment after it
+		// is read: a doubled quote becomes an escape and a backslash stops
+		// being one, so `'a\'; DELETE ...` is a string to this scanner and
+		// two statements to the server. The lexer models the default mode
+		// only, so a setting is refused rather than read past.
+		construct: "YQL translation setting",
+		reach:     "changes how the server reads the text after it, so what the statement runs cannot be judged",
+		match:     yqlTranslationSetting(),
+		dialects:  []string{platform.YDB},
+	},
+	{
+		// File, Folder, Library, Package and Udf fetch code or data from a
+		// URL, and every other pragma changes how the rest of the query
+		// resolves names or runs. A pragma is refused by name wherever it
+		// appears, including inside an action body, where it starts no
+		// statement this scanner would see.
+		construct: "PRAGMA",
+		reach:     "changes how the server resolves or runs the query, and several pragmas fetch code or data from a URL",
+		match:     containsKeyword("PRAGMA"),
+		dialects:  []string{platform.YDB},
+	},
+	{
+		// Module::Function is how YQL calls a UDF, and the module may be a
+		// script UDF (Python, JavaScript) or a native one that reaches the
+		// network. The name of a module says nothing reliable about what it
+		// does, so every call is refused: measured on YDB 26.2.1.14, the
+		// module may also be written `String`::Contains.
+		construct: "YQL UDF call",
+		reach:     "runs a user-defined function module, which may execute a script or reach outside the database",
+		match:     yqlNamespaceCall(),
+		dialects:  []string{platform.YDB},
+	},
+	{
+		// These read files attached to the query or evaluate generated code;
+		// PRAGMA File and PRAGMA Library are how a file is attached from a
+		// URL.
+		construct: "YQL file or code function",
+		reach:     "reads a file attached to the query or evaluates code built at run time",
+		match: calledFunctionAnyOf(
+			"FILECONTENT", "FILEPATH", "FOLDERPATH", "PARSEFILE", "EVALUATECODE",
+		),
+		dialects: []string{platform.YDB},
+	},
+	{
+		// A dotted source is a cluster or an external data source, never a
+		// table of this database: measured on YDB 26.2.1.14, FROM `dir`.`t`
+		// answers `Unknown cluster: dir`, while a table in a directory is
+		// one path, `dir/t`. An external data source reads object storage
+		// or another database over the network.
+		construct: "YQL external source",
+		reach:     "reads a cluster or an external data source, which reaches object storage or another database",
+		match:     yqlDottedSource(),
+		dialects:  []string{platform.YDB},
 	},
 }
 
@@ -886,6 +945,52 @@ func clickHouseRemoteTableFunctions() []string {
 	return names
 }
 
+// yqlTranslationSetting matches a --! comment at the head of a YQL text, which
+// the YQL lexer emits as one TokenUnknown so it survives as a significant
+// token.
+func yqlTranslationSetting() tokenMatcher {
+	return func(ctx scanContext) bool {
+		for _, token := range ctx.tokens {
+			if token.Type == lexer.TokenUnknown && strings.HasPrefix(token.Value, "--!") {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+// yqlNamespaceCall matches `::`, which in YQL only ever separates a UDF
+// module from its function. Two colons with only whitespace or a comment
+// between them are matched too: no YQL construct writes them, so refusing
+// them costs nothing and asks no question of the grammar.
+func yqlNamespaceCall() tokenMatcher {
+	return func(ctx scanContext) bool {
+		for i := 0; i+1 < len(ctx.tokens); i++ {
+			if ctx.tokens[i].MatchOperatorValue(":") && ctx.tokens[i+1].MatchOperatorValue(":") {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+// yqlDottedSource matches FROM or JOIN followed by a dotted name, the
+// `cluster.table` and `source.path` forms YQL reads as something other than a
+// table of this database.
+func yqlDottedSource() tokenMatcher {
+	return func(ctx scanContext) bool {
+		for i := 0; i+3 < len(ctx.tokens); i++ {
+			if !IsKeyword(ctx.tokens[i], "FROM") && !IsKeyword(ctx.tokens[i], "JOIN") {
+				continue
+			}
+			if ctx.tokens[i+1].Type == lexer.TokenIdentifier && ctx.tokens[i+2].MatchOperatorValue(".") {
+				return true
+			}
+		}
+		return false
+	}
+}
+
 // alternativeQuotedLiteral matches Oracle's `q'...'` and `nq'...'` spellings.
 //
 // The introducer sits directly against the quote, which is what separates it
@@ -1037,10 +1142,13 @@ func IsKeyword(token lexer.Token, keyword string) bool {
 //
 // A default is all it can be: MySQL reads the rule from sql_mode, which is
 // session state, which is why [Scan] reads a statement under both
-// interpretations rather than trusting this one.
+// interpretations rather than trusting this one. YQL reads backslash escapes
+// in every string; its one switch is a --!ansi_lexer translation setting,
+// which [Scan] refuses, and its lexer mode ignores the interpretation the
+// caller asks for.
 func DialectUsesBackslashEscapes(dialect string) bool {
 	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB, platform.ClickHouse:
+	case platform.MySQL, platform.MariaDB, platform.ClickHouse, platform.YDB:
 		return true
 	default:
 		return false

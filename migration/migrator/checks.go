@@ -469,6 +469,13 @@ func validateEffectiveCheckAssertion(effective, dialect string) error {
 		)
 	}
 	switch platform.NormalizeDialect(dialect) {
+	case platform.YDB:
+		// Starting with SELECT proves less in YQL: an action, a lambda or a
+		// subquery carries a statement no semicolon precedes, and no
+		// read-only session backs the text up yet.
+		if err := sqlreach.YQLReadOnly(effective); err != nil {
+			return fmt.Errorf("check assertion must be one read-only SELECT statement: %w", err)
+		}
 	case platform.SQLServer:
 		if containsIdentifierSequence(effective, dialect, "NEXT", "VALUE", "FOR") {
 			return fmt.Errorf("check assertion must not advance a SQL Server sequence with NEXT VALUE FOR")
