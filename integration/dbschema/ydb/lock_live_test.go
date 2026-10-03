@@ -14,6 +14,7 @@ import (
 	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/dblock"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/migrator"
@@ -154,4 +155,25 @@ func TestYDBLock_TellsAUserWhatRightIsMissing(t *testing.T) {
 		`Ptah's locks: the server opened none within 10s\. .*`)
 	c.Assert(takenErr, qt.IsNil)
 	c.Assert(taken.Release(context.Background()), qt.IsNil)
+}
+
+// A schema apply whose lock is lost fails with the loss even when everything
+// it ran succeeded, and the work it ran under the lock saw its context end.
+func TestYDBSchemaApplyLock_ReportsALoss(t *testing.T) {
+	c := qt.New(t)
+	var cause error
+
+	runErr, releaseErr := atlasschema.WithApplyLockSession(c.Context(), openYDB(c), "ptah_ydb_apply_lost", 0,
+		func(ctx context.Context, _ *dbschema.DatabaseConnection, _ *atlasschema.ApplyLock) error {
+			dropLockNode(c)
+			closedWithin(ctx.Done(), 15*time.Second)
+			cause = context.Cause(ctx)
+			return nil
+		},
+	)
+
+	c.Assert(runErr, qt.ErrorMatches, `schema apply lock: advisory lock "ptah_ydb_apply_lost" on ydb was lost `+
+		`while it was held: .*; the apply stopped there`)
+	c.Assert(releaseErr, qt.IsNil)
+	c.Assert(dblock.IsLost(cause), qt.IsTrue, qt.Commentf("the apply's context ended with %v", cause))
 }

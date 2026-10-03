@@ -182,6 +182,29 @@ func TestYDBHold_EndedLeaseIsALoss(t *testing.T) {
 	c.Assert(closed(hold.lost()), qt.IsTrue)
 }
 
+// releaseWithin releases hold on ctx and reports what it answered, and
+// whether it answered within limit at all.
+func releaseWithin(ctx context.Context, hold *ydbHold, limit time.Duration) (returned bool, err error) {
+	released := make(chan error, 1)
+	go func() { released <- hold.release(ctx) }()
+	select {
+	case err := <-released:
+		return true, err
+	case <-time.After(limit):
+		return false, nil
+	}
+}
+
+// closesWithin reports whether ch closes within limit.
+func closesWithin(ch <-chan struct{}, limit time.Duration) bool {
+	select {
+	case <-ch:
+		return true
+	case <-time.After(limit):
+		return false
+	}
+}
+
 // closed reports whether ch is closed.
 func closed(ch <-chan struct{}) bool {
 	select {
@@ -234,8 +257,9 @@ func TestYDBHold_Release(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), test.timeout)
 			c.Cleanup(cancel)
 
-			err := hold.release(ctx)
+			returned, err := releaseWithin(ctx, hold, 5*time.Second)
 
+			c.Assert(returned, qt.IsTrue)
 			c.Assert(fmt.Sprint(err), qt.Equals, test.wantErr)
 			c.Assert(closed(session.closed), qt.IsTrue)
 			clock.advance(time.Hour)
@@ -257,11 +281,11 @@ func TestYDBHold_ReleaseOfALostLockEndsTheSession(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	c.Cleanup(cancel)
 
-	err := hold.release(ctx)
+	returned, err := releaseWithin(ctx, hold, 5*time.Second)
 
+	c.Assert(returned, qt.IsTrue)
 	c.Assert(err, qt.IsNil)
 	c.Assert(closed(session.closed), qt.IsTrue)
-	c.Assert(ctx.Err(), qt.IsNil)
 }
 
 // A lock reports its loss through Err, Done and the context Guard returns,
@@ -280,7 +304,7 @@ func TestLock_ReportsALoss(t *testing.T) {
 	c.Assert(lock.Err(), qt.ErrorMatches, `advisory lock "ptah_migrate" on ydb was lost while it was held: .*`)
 	c.Assert(IsLost(lock.Err()), qt.IsTrue)
 	c.Assert(closed(lock.Done()), qt.IsTrue)
-	<-guarded.Done()
+	c.Assert(closesWithin(guarded.Done(), 5*time.Second), qt.IsTrue)
 	c.Assert(IsLost(context.Cause(guarded)), qt.IsTrue)
 }
 

@@ -315,9 +315,8 @@ func startKind(tokens []lexer.Token) Kind {
 // blockKind is the kind of the statements a block or an action body holds:
 // Scheme when any of them is a scheme statement or runs an action that holds
 // one, else Batch when any is a BATCH statement or runs an action that holds
-// one, else Data. A statement starts the body, follows a semicolon, follows
-// BEGIN, or follows the DO that runs it; an action is run by the name that
-// follows DO.
+// one, else Data. A statement starts the body, follows a semicolon, or
+// follows BEGIN; an action is run by the name that follows DO.
 //
 // A block that holds a scheme statement and a data statement is a Scheme
 // query, which YDB then refuses whole before running any of it (`Queries with
@@ -329,8 +328,7 @@ func (s *splitter) blockKind(tokens []lexer.Token) Kind {
 		if starts {
 			kind = strongerKind(kind, startKind(tokens[i:]))
 		}
-		starts = token.Type == lexer.TokenSemicolon || token.MatchIdentifierValue("BEGIN") ||
-			token.MatchIdentifierValue("DO")
+		starts = token.Type == lexer.TokenSemicolon || token.MatchIdentifierValue("BEGIN")
 		if i > 0 && tokens[i-1].MatchIdentifierValue("DO") && isNamedExpression(token) {
 			kind = strongerKind(kind, s.actions[token.Value])
 		}
@@ -339,19 +337,14 @@ func (s *splitter) blockKind(tokens []lexer.Token) Kind {
 }
 
 // defineAction records the kind of the body of a DEFINE ACTION statement,
-// which starts after the AS that ends its parameter list.
+// which starts after the AS that ends its parameter list; a parameter list
+// holds names and nothing else.
 func (s *splitter) defineAction(tokens []lexer.Token) {
 	if len(tokens) < 3 || !tokens[1].MatchIdentifierValue("ACTION") || !isNamedExpression(tokens[2]) {
 		return
 	}
-	depth := 0
 	for i := 3; i < len(tokens); i++ {
-		switch {
-		case tokens[i].MatchOperatorValue("("):
-			depth++
-		case tokens[i].MatchOperatorValue(")"):
-			depth--
-		case depth == 0 && tokens[i].MatchIdentifierValue("AS"):
+		if tokens[i].MatchIdentifierValue("AS") {
 			if s.actions == nil {
 				s.actions = map[string]Kind{}
 			}
