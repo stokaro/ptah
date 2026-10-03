@@ -988,9 +988,9 @@ WHERE table_schema = current_schema() AND table_name = ? AND table_type = 'BASE 
 			configuredOrConnectionSchema(configuredSchema, connectionSchema),
 			table,
 		}, nil
-	case platform.YDB:
-		return "", nil, errors.New(ydbgap.Migrating.Message())
 	default:
+		// YDB never reaches here: refuseUnimplementedDialect refuses it at
+		// every entry point first.
 		return "", nil, fmt.Errorf("unsupported migration metadata dialect %q", dialect)
 	}
 }
