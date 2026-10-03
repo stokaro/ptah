@@ -1065,10 +1065,6 @@ const (
 	// the two halves do not travel together: measured on YDB 25.4 through
 	// 26.2, DROP NOT NULL is accepted and SET NOT NULL answers `SET NOT NULL
 	// is currently not supported.`
-	//
-	// The ClickHouse renderer reads it. Where it is false, a nullable column
-	// made NOT NULL needs a declared default for MODIFY COLUMN to name, and is
-	// refused without one (stokaro/ptah#4020).
 	AlterColumnSetNotNull Capability = "alter_column_set_not_null"
 
 	// AlterColumnDropNotNull marks a target that removes NOT NULL from an
