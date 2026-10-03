@@ -686,14 +686,18 @@ version ladder and is accepted.
 Timeouts themselves are not tied to that capability and reach every target whose
 server takes a session or transaction timeout. On a target that takes none,
 `migrations up` and `migrations down` refuse `--lock-timeout` and
-`--statement-timeout` once connected, naming the flag or the `ptah.yaml` key
-that set them and the engine, before anything is read or written. A value from
-`PTAH_LOCK_TIMEOUT` or `PTAH_STATEMENT_TIMEOUT` is refused by the migrator
-instead, on the first migration that would run under it: `ptah schema apply`
-reads `PTAH_LOCK_TIMEOUT` as a lock wait, so an exported value is not taken as
-addressed to the versioned commands alone. YDB takes none: it has no lock wait
-to bound, and a timeout that gives up on a schema statement cannot promise the
-statement did not commit.
+`--statement-timeout`, naming the flag or the `ptah.yaml` key that set them and
+the engine, even when no migration is pending. Where the URL settles the answer
+the refusal comes before the command connects, so a `sqlite://` file is not
+created; a `postgres://` URL can reach Spanner, which takes none, and is
+refused once connected, before anything is read or written. YDB takes none: it
+has no lock wait to bound, and a timeout that gives up on a schema statement
+cannot promise the statement did not commit.
+
+A value from `PTAH_LOCK_TIMEOUT` or `PTAH_STATEMENT_TIMEOUT` is refused by the
+migrator instead, on the first migration that would run under it:
+`ptah schema apply` reads `PTAH_LOCK_TIMEOUT` as a lock wait, so an exported
+value is not taken as addressed to the versioned commands alone.
 
 - **Run logging** (`--log-level`, `--log-format`): `--log-level`
   debug\|info\|warn\|error selects how much of the run is narrated —

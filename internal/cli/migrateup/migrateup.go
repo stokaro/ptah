@@ -519,6 +519,10 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
+	// Before connecting, which is what creates a sqlite:// target's file.
+	if err := newTimeoutRequest(cmd, projectCfg, dbURL).DecideFromURL(timeouts); err != nil {
+		return err
+	}
 	connectCtx, cancelConnect := dbcli.ConnectContext(cmd.Context(), settings.connectTimeout)
 	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
 	cancelConnect()
@@ -700,14 +704,20 @@ func decideConnected(
 	if err := lockRequest.DecideConnected(server.Dialect); err != nil {
 		return err
 	}
-	timeoutRequest := migratetimeout.Request{
+	return newTimeoutRequest(cmd, projectCfg, lockRequest.DBURL).Decide(server.Dialect, server.Capabilities, timeouts)
+}
+
+// newTimeoutRequest is the run-wide timeout input of this command against
+// dbURL.
+func newTimeoutRequest(cmd *cobra.Command, projectCfg projectconfig.Config, dbURL string) migratetimeout.Request {
+	return migratetimeout.Request{
 		Cmd:                 cmd,
 		LockFlag:            lockTimeoutFlag,
 		StatementFlag:       statementTimeoutFlag,
 		LockFromConfig:      projectCfg.StringValue(projectconfig.StringMigrationLockTimeout).Present,
 		StatementFromConfig: projectCfg.StringValue(projectconfig.StringMigrationStatementTimeout).Present,
+		DBURL:               dbURL,
 	}
-	return timeoutRequest.Decide(server.Dialect, server.Capabilities, timeouts)
 }
 
 // planReport is the block a run prints about the work it is about to do: where

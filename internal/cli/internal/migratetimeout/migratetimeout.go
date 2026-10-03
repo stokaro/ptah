@@ -8,8 +8,9 @@
 // refuses the first migration that would run under them, and a run that
 // selects no migration accepts them in silence. Neither tells the operator
 // that the values they passed are what the target cannot take, so the
-// command refuses them by name once it has connected, before the migrator
-// reads or writes anything.
+// command refuses them by name: before it connects where the dialect the URL
+// names settles the answer, and otherwise once it has connected, before the
+// migrator reads or writes anything.
 package migratetimeout
 
 import (
@@ -19,6 +20,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/cmdadapter"
 	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/migration/migrationfile"
@@ -62,6 +64,28 @@ type Request struct {
 	// carries [LockConfigKey] and [StatementConfigKey].
 	LockFromConfig      bool
 	StatementFromConfig bool
+	// DBURL is the target URL the command was given, read by
+	// [Request.DecideFromURL].
+	DBURL string
+}
+
+// DecideFromURL decides from the dialect [Request.DBURL] names, before the
+// command opens anything, wherever that dialect settles the answer: a
+// `sqlite://` target is refused without creating its file.
+//
+// The dialect settles it where its preset has no capability.MigrationTimeouts.
+// The migrator spells timeouts for the PostgreSQL and MySQL families alone,
+// and a URL of any other dialect reaches a server of that dialect. A
+// PostgreSQL-wire URL does not settle it, since `postgres://` may reach
+// Spanner, which takes none; its preset carries the key, so it passes here
+// and [Request.Decide] answers it against the connected server. A URL Ptah
+// cannot classify makes no claim here.
+func (r Request) DecideFromURL(timeouts migrationfile.Timeouts) error {
+	dialect, err := atlasurl.DialectFromURL(r.DBURL)
+	if err != nil {
+		return nil
+	}
+	return r.Decide(dialect, capability.ForDialect(dialect), timeouts)
 }
 
 // Decide refuses timeouts when caps, the connected server's capabilities, has
