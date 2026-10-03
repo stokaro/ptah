@@ -13,11 +13,16 @@
 //	UPSERT ...; TRUNCATE TABLE t;             Queries with mixed data and scheme operations are not supported
 //	$t = "dir/x"; CREATE TABLE $t (...);      accepted, as one query
 //
-// So [Split] makes each scheme statement a query of its own and each run of
-// consecutive data statements one query, and it carries every definition --
-// PRAGMA, DECLARE, a named expression, DEFINE ACTION and DEFINE SUBQUERY -- into
-// every query that follows it in the text, which then sees what the text
-// declared above it, as it would if the whole text were one query. A
+// So [Split] makes each scheme statement a query of its own, and so is a block
+// or an action call that runs one. Each BATCH UPDATE and BATCH DELETE is a
+// query of its own too, since YDB runs one only outside a transaction and
+// alone in its query. Each run of consecutive data statements is one query.
+// Every definition -- PRAGMA, DECLARE, a named expression, DEFINE ACTION and
+// DEFINE SUBQUERY -- is carried into every query that follows it in the text,
+// which then sees what the text declared above it, as it would if the whole
+// text were one query. Measured on 26.2.1.14, a carried named expression a
+// query does not use is dropped from it, so `$x = SELECT ... FROM t;` carried
+// into `DROP TABLE t` is accepted rather than refused as a mixed query. A
 // translation setting at the head of the text (`--!syntax_v1`) is honored by
 // YDB only at the head of a query, so it heads every query.
 //
@@ -47,8 +52,18 @@ const (
 	// commits whole or not at all.
 	Data Kind = iota + 1
 	// Scheme is a query of one scheme statement, which YDB runs outside any
-	// transaction.
+	// transaction. A block or an action call that runs a scheme statement --
+	// `DO BEGIN CREATE TABLE ...; END DO`, or `DO $a()` and `EVALUATE FOR ...
+	// DO $a($i)` over an action that does -- is one too: YDB refuses it inside
+	// a transaction (`Scheme operations cannot be executed inside
+	// transaction`) and runs it outside one, measured on 26.2.1.14.
 	Scheme
+	// Batch is a query of one BATCH UPDATE or BATCH DELETE. YDB runs one only
+	// in the implicit transaction mode (`BATCH operation can be executed only
+	// in the implicit transaction mode`), as the only write or read of its
+	// query (`BATCH can't be used with multiple writes or reads`), and applies
+	// it in batches rather than atomically, measured on 26.2.1.14.
+	Batch
 )
 
 // String names the kind for a message.
@@ -58,6 +73,8 @@ func (k Kind) String() string {
 		return "data"
 	case Scheme:
 		return "scheme"
+	case Batch:
+		return "batch"
 	default:
 		return "unknown"
 	}
@@ -143,6 +160,9 @@ type splitter struct {
 	// open is the run of data statements being collected, if any.
 	open   *draft
 	drafts []draft
+	// actions are the kinds of the actions the text defined so far, by
+	// name: what a statement that runs one runs as.
+	actions map[string]Kind
 }
 
 // draft is a query being assembled: the definitions that head it, its own
@@ -155,7 +175,7 @@ type draft struct {
 }
 
 func (s *splitter) add(statement, source string) {
-	switch classify(statement) {
+	switch kind := s.classify(statement); kind {
 	case definition:
 		s.carried = append(s.carried, statement)
 		if s.open != nil {
@@ -165,9 +185,9 @@ func (s *splitter) add(statement, source string) {
 		}
 		s.pendingSources = append(s.pendingSources, source)
 		s.pendingCount++
-	case Scheme:
+	case Scheme, Batch:
 		s.close()
-		query := s.start(Scheme)
+		query := s.start(kind)
 		query.statements = append(query.statements, statement)
 		query.source = joinSource(query.source, source)
 		s.drafts = append(s.drafts, query)
@@ -249,30 +269,115 @@ var schemeVerbs = []string{
 // a setting for the rest of its query.
 var definitionVerbs = []string{"PRAGMA", "DECLARE", "DEFINE", "IMPORT"}
 
-// classify reads a statement's kind from its leading tokens.
-func classify(statement string) Kind {
-	tokens := significantTokens(statement, 2)
+// classify reads a statement's kind. A definition of an action records what
+// running the action runs as.
+func (s *splitter) classify(statement string) Kind {
+	tokens := significantTokens(statement)
 	if len(tokens) == 0 {
 		return Data
 	}
 	first := tokens[0]
-	if first.Type == lexer.TokenIdentifier && strings.HasPrefix(first.Value, "$") {
+	switch {
+	case isNamedExpression(first):
 		// A statement that starts with a named expression assigns it; YQL
 		// has no other statement that opens with one.
 		return definition
-	}
-	if slices.ContainsFunc(definitionVerbs, first.MatchIdentifierValue) {
+	case first.MatchIdentifierValue("DEFINE"):
+		s.defineAction(tokens)
 		return definition
+	case slices.ContainsFunc(definitionVerbs, first.MatchIdentifierValue):
+		return definition
+	case first.MatchIdentifierValue("DO") || first.MatchIdentifierValue("EVALUATE"):
+		return s.blockKind(tokens)
+	default:
+		return startKind(tokens)
 	}
-	if slices.ContainsFunc(schemeVerbs, first.MatchIdentifierValue) {
+}
+
+// startKind is the kind of the statement tokens start: Scheme for a scheme
+// statement, Batch for a BATCH statement, and Data for any other.
+func startKind(tokens []lexer.Token) Kind {
+	first := tokens[0]
+	switch {
+	case slices.ContainsFunc(schemeVerbs, first.MatchIdentifierValue):
 		return Scheme
-	}
-	if (first.MatchIdentifierValue("UPSERT") || first.MatchIdentifierValue("REPLACE")) &&
-		len(tokens) > 1 && tokens[1].MatchIdentifierValue("OBJECT") {
+	case (first.MatchIdentifierValue("UPSERT") || first.MatchIdentifierValue("REPLACE")) &&
+		len(tokens) > 1 && tokens[1].MatchIdentifierValue("OBJECT"):
 		// UPSERT OBJECT writes a scheme object, not a row.
 		return Scheme
+	case first.MatchIdentifierValue("BATCH"):
+		return Batch
+	default:
+		return Data
 	}
-	return Data
+}
+
+// blockKind is the kind of the statements a block or an action body holds:
+// Scheme when any of them is a scheme statement or runs an action that holds
+// one, else Batch when any is a BATCH statement or runs an action that holds
+// one, else Data. A statement starts the body, follows a semicolon, follows
+// BEGIN, or follows the DO that runs it; an action is run by the name that
+// follows DO.
+//
+// A block that holds a scheme statement and a data statement is a Scheme
+// query, which YDB then refuses whole before running any of it (`Queries with
+// mixed data and scheme operations are not supported`).
+func (s *splitter) blockKind(tokens []lexer.Token) Kind {
+	kind := Data
+	starts := true
+	for i, token := range tokens {
+		if starts {
+			kind = strongerKind(kind, startKind(tokens[i:]))
+		}
+		starts = token.Type == lexer.TokenSemicolon || token.MatchIdentifierValue("BEGIN") ||
+			token.MatchIdentifierValue("DO")
+		if i > 0 && tokens[i-1].MatchIdentifierValue("DO") && isNamedExpression(token) {
+			kind = strongerKind(kind, s.actions[token.Value])
+		}
+	}
+	return kind
+}
+
+// defineAction records the kind of the body of a DEFINE ACTION statement,
+// which starts after the AS that ends its parameter list.
+func (s *splitter) defineAction(tokens []lexer.Token) {
+	if len(tokens) < 3 || !tokens[1].MatchIdentifierValue("ACTION") || !isNamedExpression(tokens[2]) {
+		return
+	}
+	depth := 0
+	for i := 3; i < len(tokens); i++ {
+		switch {
+		case tokens[i].MatchOperatorValue("("):
+			depth++
+		case tokens[i].MatchOperatorValue(")"):
+			depth--
+		case depth == 0 && tokens[i].MatchIdentifierValue("AS"):
+			if s.actions == nil {
+				s.actions = map[string]Kind{}
+			}
+			s.actions[tokens[2].Value] = s.blockKind(tokens[i+1:])
+			return
+		}
+	}
+}
+
+// strongerKind is the kind of a query holding statements of kinds a and b:
+// a scheme statement decides it, then a BATCH statement. An action the text
+// did not define reads as no kind, and decides nothing.
+func strongerKind(a, b Kind) Kind {
+	switch {
+	case a == Scheme || b == Scheme:
+		return Scheme
+	case a == Batch || b == Batch:
+		return Batch
+	default:
+		return Data
+	}
+}
+
+// isNamedExpression reports whether token is a `$name`.
+func isNamedExpression(token lexer.Token) bool {
+	return token.Type == lexer.TokenIdentifier && strings.HasPrefix(token.Value, "$")
 }
 
 // KindOf returns the kind of query text runs as. It reports false when text
@@ -365,12 +470,12 @@ func lineAt(text string, offset int) string {
 	return text[start : offset+end]
 }
 
-// significantTokens returns up to limit tokens of statement that are not
-// whitespace or comments.
-func significantTokens(statement string, limit int) []lexer.Token {
+// significantTokens returns the tokens of statement that are not whitespace
+// or comments.
+func significantTokens(statement string) []lexer.Token {
 	lexr := lexer.NewLexerWithOptions(statement, dialectlexer.Options(platform.YDB))
 	var tokens []lexer.Token
-	for len(tokens) < limit {
+	for {
 		token := lexr.NextToken()
 		switch token.Type {
 		case lexer.TokenEOF:
@@ -381,5 +486,4 @@ func significantTokens(statement string, limit int) []lexer.Token {
 			tokens = append(tokens, token)
 		}
 	}
-	return tokens
 }

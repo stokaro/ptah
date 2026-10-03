@@ -740,7 +740,14 @@ as a data statement, and a named expression, an action, a `DECLARE` or a
 migration as a sequence of queries:
 
 - Each schema statement — `CREATE`, `ALTER`, `DROP`, `GRANT`, `REVOKE`,
-  `TRUNCATE` and the rest — is a query of its own, in file order.
+  `TRUNCATE` and the rest — is a query of its own, in file order. So is a block
+  or an action call that runs one: `DO BEGIN ... END DO` holding a schema
+  statement, or `DO $action()` and `EVALUATE FOR ... DO $action($x)` over an
+  action whose body holds one.
+- Each `BATCH UPDATE` and `BATCH DELETE` is a query of its own, outside any
+  transaction, which is the only way YDB runs one. YDB applies it in batches
+  rather than atomically, so an interrupted one leaves its outcome unknown, as
+  an interrupted schema query does.
 - Consecutive data statements are one query. It runs in a serializable
   transaction together with the revision checkpoint that records it, and a
   transaction YDB aborts for a conflict runs again.

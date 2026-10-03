@@ -24,9 +24,10 @@ import (
 // those queries are the units it counts, records progress over and resumes
 // from, in place of statements.
 //
-// A scheme query is marked in flight before it runs and checkpointed after,
-// as every statement outside a transaction is: an interruption between the
-// two leaves an outcome nobody knows, and a resume refuses to guess it. A data
+// A scheme query, and a BATCH query, which YDB runs only outside a
+// transaction, is marked in flight before it runs and checkpointed after, as
+// every statement outside a transaction is: an interruption between the two
+// leaves an outcome nobody knows, and a resume refuses to guess it. A data
 // query runs in one serializable transaction together with the checkpoint that
 // records it, so the two commit together or not at all.
 //

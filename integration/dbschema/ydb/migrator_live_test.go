@@ -683,3 +683,34 @@ func TestYDBMigrator_RepairRefusesWhatItCannotSplit(t *testing.T) {
 	c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.DeepEquals, []string{dir + "|r"})
 	c.Assert(revisionProgress(c, repaired), qt.DeepEquals, []progress{{Version: 1, State: "failed", Applied: 1, Total: 2}})
 }
+
+// A block or an action that runs a scheme statement, and a BATCH statement,
+// run outside a transaction, as YDB requires of each: inside the transaction a
+// data query runs in, YDB refuses the first with `Scheme operations cannot be
+// executed inside transaction` and the second with `BATCH operation can be
+// executed only in the implicit transaction mode`.
+func TestYDBMigrator_RunsBlocksAndBatchStatementsOutsideATransaction(t *testing.T) {
+	c := qt.New(t)
+	conn := openYDB(c)
+	const dir = "ptah_ydb_mig_blocks"
+	dropDirectory(c, conn, dir, "a", "b", "c", "d")
+	c.Cleanup(func() { dropDirectory(c, conn, dir, "a", "b", "c", "d") })
+	m := newMigrator(c, conn, map[string]string{
+		"0000000001_blocks.up.sql": "DO BEGIN\n  CREATE TABLE `" + dir + "/a` (id Int64 NOT NULL, n Int64, PRIMARY KEY (id));\nEND DO;\n" +
+			"DEFINE ACTION $make($name) AS\n  CREATE TABLE $name (id Int64 NOT NULL, PRIMARY KEY (id));\nEND DEFINE;\n" +
+			"EVALUATE FOR $table IN AsList('" + dir + "/b', '" + dir + "/c') DO $make($table);\n" +
+			"UPSERT INTO `" + dir + "/a` (id, n) VALUES (1l, 1l), (2l, 2l), (3l, 3l);\n" +
+			"BATCH DELETE FROM `" + dir + "/a` WHERE id = 2l;\n" +
+			"BATCH UPDATE `" + dir + "/a` SET n = 0l WHERE id > 0l;\n" +
+			"DO $make('" + dir + "/d');\n",
+		"0000000001_blocks.down.sql": "DROP TABLE `" + dir + "/d`;\nDROP TABLE `" + dir + "/c`;\nDROP TABLE `" + dir +
+			"/b`;\nDROP TABLE `" + dir + "/a`;\n",
+	}, migrator.RevisionTableFormatPtah, dir)
+
+	c.Assert(m.MigrateUp(c.Context()), qt.IsNil)
+
+	c.Assert(revisionProgress(c, m), qt.DeepEquals, []progress{{Version: 1, State: "applied", Applied: 6, Total: 6}})
+	c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.DeepEquals,
+		[]string{dir + "|a", dir + "|b", dir + "|c", dir + "|d"})
+	c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+dir+"/a` WHERE n = 0l"), qt.Equals, int64(2))
+}
