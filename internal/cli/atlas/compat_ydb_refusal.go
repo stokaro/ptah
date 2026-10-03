@@ -94,16 +94,15 @@ func refuseAtlasYDBConnection(dialect string) error {
 // connects to while it is parsed -- because dbschema asks it about every
 // connection, whichever path the URL took.
 //
-// It runs before each command's own pre-run, and sets the root's context too,
-// since the forwarding and project-flag hooks refresh a command's context
-// from the root's.
+// It runs before each command's own pre-run. cobra validates arguments
+// before any pre-run, and that is where the forwarding and project-flag hooks
+// refresh a command's context from the root's, so the refusal set here is the
+// context the command's work and a forwarded native command run under.
 func installAtlasConnectGate(cmd *cobra.Command) {
 	preRunE := cmd.PreRunE
 	preRun := cmd.PreRun
 	cmd.PreRun = nil
 	cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
-		root := cmd.Root()
-		root.SetContext(connectgate.With(contextOrBackground(root), refuseAtlasYDBConnection))
 		cmd.SetContext(connectgate.With(contextOrBackground(cmd), refuseAtlasYDBConnection))
 		switch {
 		case preRunE != nil:
