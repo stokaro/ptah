@@ -196,7 +196,7 @@ ptah migrations up --db-url "sqlite://app.db" --migrations-dir ./migrations --mi
 Expected output on standard error:
 
 ```text
-error: --migration-lock-timeout requested the migration advisory lock, and dialect "sqlite" has none: only postgres, yugabytedb, mysql, mariadb, sqlserver take a session advisory lock. Remove --migration-lock-timeout to run without a lock
+error: --migration-lock-timeout requested the migration advisory lock, and dialect "sqlite" has none: only postgres, yugabytedb, mysql, mariadb, sqlserver, ydb take a session advisory lock. Remove --migration-lock-timeout to run without a lock
 ```
 
 Nothing is applied and the revision table is untouched. A URL that names its
