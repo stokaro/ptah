@@ -90,7 +90,10 @@ repository alone.`,
 	flags.String(dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
 	flags.String(dbcli.ConnectTimeoutFlagName, dbcli.DefaultConnectTimeout.String(), "Initial database connection timeout")
 	dbcli.RegisterProjectEnvFlag(flags)
-	flags.String(dbcli.SchemasFlagName, "", "Comma-separated schemas to introspect when supported")
+	flags.String(dbcli.SchemasFlagName, "",
+		"Comma-separated schemas to introspect where the engine has them, or YDB directories relative to the database root. "+
+			"Empty uses the project's schemas, else the connection default schema, and on YDB every directory.",
+	)
 	flags.StringArray(dbcli.IgnoreExtensionFlagName, nil,
 		"Database extension the comparison must leave alone, neither created nor dropped (repeatable; adds to the defaults)")
 	dbcli.RegisterExternalSchemaOptInFlag(flags)
