@@ -2992,6 +2992,9 @@ func (m *Migrator) runBatchPreMigrationChecks(ctx context.Context, migrations []
 }
 
 func (m *Migrator) validateUpTransactionMode(migrations []*Migration) error {
+	if err := m.refuseUnsplittableMigrations(migrations, MigrationDirectionUp); err != nil {
+		return err
+	}
 	resolvedTimeouts := make(map[*Migration]migrationfile.Timeouts, len(migrations))
 	for _, migration := range migrations {
 		timeouts, err := m.effectiveUpTimeouts(migration)
@@ -3552,15 +3555,7 @@ func (m *Migrator) applyUpMigrationNoTransactionOnSession(
 	executionConn := m.noTransactionConnection()
 	// Pre-migration checks already ran in runPreMigrationChecks, before this
 	// migration had any revision row.
-	executionCtx := withStatementProgressRecorder(
-		ctx,
-		func(ctx context.Context, event StatementEvent) error {
-			return m.markMigrationStatementInFlight(ctx, migration, startedAt, event, MigrationDirectionUp)
-		},
-		func(ctx context.Context, event StatementEvent) error {
-			return m.checkpointMigrationRevision(ctx, migration, startedAt, event, MigrationDirectionUp)
-		},
-	)
+	executionCtx := m.withRecordedStatementProgress(ctx, migration, startedAt, MigrationDirectionUp)
 	executionCtx = m.withPostgresIndexObservation(executionCtx, executionConn)
 	if err := migration.executeUp(executionCtx, executionConn, migrationExecutionNoTransaction); err != nil {
 		failure := m.failMigrationWithDirtyStateWithMode(
@@ -3885,15 +3880,7 @@ func (m *Migrator) rollbackMigrationNoTransactionOnSession(
 ) error {
 	executionConn := m.noTransactionConnection()
 	m.startPostgresIndexObservation()
-	executionCtx := withStatementProgressRecorder(
-		ctx,
-		func(ctx context.Context, event StatementEvent) error {
-			return m.markMigrationStatementInFlight(ctx, migration, startedAt, event, MigrationDirectionDown)
-		},
-		func(ctx context.Context, event StatementEvent) error {
-			return m.checkpointMigrationRevision(ctx, migration, startedAt, event, MigrationDirectionDown)
-		},
-	)
+	executionCtx := m.withRecordedStatementProgress(ctx, migration, startedAt, MigrationDirectionDown)
 	executionCtx = m.withPostgresIndexObservation(executionCtx, executionConn)
 	if err := migration.executeDown(executionCtx, executionConn, migrationExecutionNoTransaction); err != nil {
 		failure := m.failRollbackWithDirtyStateWithMode(
@@ -4259,6 +4246,9 @@ func migrationsToRollback(migrationsByVersion map[int64]*Migration, applied []in
 
 func (m *Migrator) validateDownMigrations(migrations []*Migration) error {
 	if err := m.reportMisplacedDirectives(migrations, MigrationDirectionDown); err != nil {
+		return err
+	}
+	if err := m.refuseUnsplittableMigrations(migrations, MigrationDirectionDown); err != nil {
 		return err
 	}
 	for _, migration := range migrations {

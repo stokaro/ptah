@@ -92,11 +92,15 @@ func (m *Migrator) resolveUpMigrationTxMode(migration *Migration) (MigrationTxMo
 			fileMode.Mode,
 		)
 	}
-	return ResolveAtlasDirectiveTxMode(
+	mode, err := ResolveAtlasDirectiveTxMode(
 		m.txMode,
 		fileMode.Mode,
 		migrationTxModeSourceName(migration.upSourcePath, migration.Description),
 	)
+	if err != nil {
+		return "", err
+	}
+	return m.effectiveTxMode(mode), nil
 }
 
 func (m *Migrator) resolveDownMigrationTxMode(migration *Migration) (MigrationTxMode, error) {
@@ -104,7 +108,11 @@ func (m *Migrator) resolveDownMigrationTxMode(migration *Migration) (MigrationTx
 	if fileMode.Err != nil {
 		return "", fileMode.Err
 	}
-	return resolveMigrationFileTxMode(MigrationTxModeFile, fileMode.Mode)
+	mode, err := resolveMigrationFileTxMode(MigrationTxModeFile, fileMode.Mode)
+	if err != nil {
+		return "", err
+	}
+	return m.effectiveTxMode(mode), nil
 }
 
 func migrationTxModeSourceName(sourcePath, description string) string {

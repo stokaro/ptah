@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/sqliterebuild"
@@ -32,7 +33,14 @@ func splitSQLStatementsForConnection(conn *dbschema.DatabaseConnection, sql stri
 	return splitSQLStatementsForDialect(sql, conn.Info().Dialect)
 }
 
+// splitSQLStatementsForDialect splits a migration body into the units the
+// migrator runs, counts and records progress over: statements on every
+// dialect but YDB, and on YDB the queries YDB runs the body as (see
+// ydbQueryTexts).
 func splitSQLStatementsForDialect(sql, dialect string) []string {
+	if platform.NormalizeDialect(dialect) == platform.YDB {
+		return ydbQueryTexts(sql)
+	}
 	return sqlutil.SplitStatementsForDialect(dialect, sql)
 }
 
@@ -133,6 +141,36 @@ type statementProgressRecorder func(context.Context, StatementEvent) error
 type statementProgressHooks struct {
 	before statementProgressRecorder
 	after  statementProgressRecorder
+	// commit, when set, runs a statement it claims and records its progress
+	// in one transaction, in place of before, the execution and after; see
+	// [Migrator.ydbDataQueryCommitter].
+	commit statementCommitter
+}
+
+// statementCommitter runs a statement together with the record of its
+// progress. claims reports whether it takes the statement at all.
+type statementCommitter struct {
+	claims func(statement string) bool
+	run    func(ctx context.Context, event StatementEvent) error
+}
+
+// withStatementCommitter installs committer beside the progress recorders
+// already in ctx.
+func withStatementCommitter(ctx context.Context, committer statementCommitter) context.Context {
+	hooks, _ := ctx.Value(statementProgressRecorderContextKey{}).(statementProgressHooks)
+	hooks.commit = committer
+	return context.WithValue(ctx, statementProgressRecorderContextKey{}, hooks)
+}
+
+// commitStatement runs event's statement through the committer in ctx when one
+// is installed and claims it, and reports whether it did. A statement it
+// claims is not run or recorded by anything else.
+func commitStatement(ctx context.Context, event StatementEvent) (bool, error) {
+	hooks, _ := ctx.Value(statementProgressRecorderContextKey{}).(statementProgressHooks)
+	if hooks.commit.run == nil || !hooks.commit.claims(event.Statement) {
+		return false, nil
+	}
+	return true, hooks.commit.run(ctx, event)
 }
 
 type statementProgressRecorderContextKey struct{}
@@ -798,6 +836,9 @@ func CreateMigrationFromSQL(version int64, description, upSQL, downSQL string) *
 
 // executeSQLStatements splits SQL into individual statements and executes them
 func executeSQLStatements(ctx context.Context, conn *dbschema.DatabaseConnection, sql string, mode migrationExecutionMode) error {
+	if err := refuseUnsplittableSQL(databaseConnectionDialect(conn), sql); err != nil {
+		return err
+	}
 	statements := splitSQLStatementsForConnection(conn, sql)
 
 	for i, stmt := range statements {
@@ -812,6 +853,21 @@ func executeSQLStatements(ctx context.Context, conn *dbschema.DatabaseConnection
 			Total:     len(statements),
 		}
 		if migrationStatementAlreadyApplied(ctx, event.Index) {
+			continue
+		}
+		committed, err := commitStatement(ctx, event)
+		if err != nil {
+			return &MigrationExecutionError{
+				Err:            fmt.Errorf("failed to execute SQL statement: %w", err),
+				Statement:      stmt,
+				StatementIndex: i + 1,
+				Total:          len(statements),
+			}
+		}
+		if committed {
+			if err := observeExecutedStatement(ctx, event); err != nil {
+				return err
+			}
 			continue
 		}
 		if err := recordStatementProgressBefore(ctx, event); err != nil {
@@ -871,6 +927,9 @@ func executeMigrationFileSQL(
 		}
 	}
 
+	if err := refuseUnsplittableSQL(databaseConnectionDialect(conn), sql); err != nil {
+		return fmt.Errorf("%s: %w", filename, err)
+	}
 	statements := splitSQLStatementsForConnection(conn, sql)
 	if err := validateMigrationStatements(filename, statements, hooks.validator); err != nil {
 		return err
@@ -892,6 +951,29 @@ func executeMigrationFileSQL(
 			Directives: maps.Clone(fileDirectives),
 		}
 		if migrationStatementAlreadyApplied(ctx, event.Index) {
+			continue
+		}
+		// The committer is installed only on YDB, where no interceptor
+		// routes a statement, so a statement it claims has nothing to ask
+		// one about.
+		committed, err := commitStatement(ctx, event)
+		if err != nil {
+			return &MigrationExecutionError{
+				Err:            fmt.Errorf("failed to execute migration SQL: %w", err),
+				Statement:      stmt,
+				StatementIndex: i + 1,
+				Total:          len(statements),
+			}
+		}
+		if committed {
+			if err := observeExecutedStatement(ctx, event); err != nil {
+				return err
+			}
+			if hooks.observer != nil {
+				if err := hooks.observer.ObserveStatement(ctx, event); err != nil {
+					return &StatementObservationError{Err: err, Event: event}
+				}
+			}
 			continue
 		}
 		if err := recordStatementProgressBefore(ctx, event); err != nil {

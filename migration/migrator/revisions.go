@@ -1094,12 +1094,19 @@ func (m *Migrator) atlasDistinctRevisionIdentityCount(ctx context.Context, ident
 	// 23.26.3.0.0 it answers ORA-03048, and the same query without AS is
 	// accepted. Oracle 21 also takes no SELECT without FROM, so every literal
 	// row selects from dual.
-	rowSource, aliasKeyword := "", " AS"
-	if platform.NormalizeDialect(m.connectionDialect()) == platform.Oracle {
+	rowSource, aliasKeyword, column := "", " AS", ""
+	switch platform.NormalizeDialect(m.connectionDialect()) {
+	case platform.Oracle:
 		rowSource, aliasKeyword = " FROM dual", ""
+	case platform.YDB:
+		// YQL's UNION ALL pairs columns by name rather than by position, so
+		// an unnamed literal lands in a column of its own and COUNT(DISTINCT
+		// version) counts none of them.
+		column = " AS version"
 	}
 	for _, version := range identities {
-		fmt.Fprintf(&query, " UNION ALL SELECT %s%s", atlasRevisionStringLiteral(m.connectionDialect(), version), rowSource)
+		fmt.Fprintf(&query, " UNION ALL SELECT %s%s%s",
+			atlasRevisionStringLiteral(m.connectionDialect(), version), column, rowSource)
 	}
 	query.WriteString(")" + aliasKeyword + " ptah_revision_identities")
 	var distinct int
@@ -2080,8 +2087,8 @@ func (m *Migrator) beginMigrationRevisionOn(
 		migrationStatePending,
 		0,
 		m.migrationStatementCount(migration.UpSQL),
-		nil,
-		nil,
+		m.nullableText(""),
+		m.nullableText(""),
 		0,
 		migrationRevisionHash(migration),
 	)
@@ -2188,32 +2195,39 @@ func (m *Migrator) checkpointMigrationRevisionOn(
 	event StatementEvent,
 	direction MigrationDirection,
 ) error {
+	query, args := m.checkpointMigrationRevisionStatement(migration, startedAt, event, direction)
+	return executeSQLOn(ctx, conn, query, args...)
+}
+
+// checkpointMigrationRevisionStatement is the statement that records event's
+// statement as executed, and its arguments, so a caller can run it inside a
+// transaction of its own.
+func (m *Migrator) checkpointMigrationRevisionStatement(
+	migration *Migration,
+	startedAt time.Time,
+	event StatementEvent,
+	direction MigrationDirection,
+) (string, []any) {
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.checkpointMigrationSQL())
 	if m.revisionTableFormat.isAtlas() {
 		sqlText := migrationSQLForDirection(migration, direction)
-		return executeSQLOn(
-			ctx,
-			conn,
-			query,
+		return query, []any{
 			event.Index,
 			event.Total,
 			time.Since(startedAt).Nanoseconds(),
 			m.atlasDirtyPartialHashes(sqlText, direction, event.Index, event.Total),
 			atlasOperatorVersionForMigration(migration, direction),
 			migration.RevisionVersion(),
-		)
+		}
 	}
-	return executeSQLOn(
-		ctx,
-		conn,
-		query,
+	return query, []any{
 		encodeRevisionState(migrationStatePending, direction),
 		event.Index,
 		event.Total,
 		time.Since(startedAt).Milliseconds(),
 		m.dirtyRevisionChecksum(migration, direction, event.Index),
 		migration.Version,
-	)
+	}
 }
 
 func (m *Migrator) markMigrationStatementInFlight(
@@ -3301,8 +3315,8 @@ func (m *Migrator) writePtahSetRevisionRows(
 			migrationStateApplied,
 			total,
 			total,
-			nil,
-			nil,
+			m.nullableText(""),
+			m.nullableText(""),
 			0,
 			migrationRevisionHash(migration),
 		); err != nil {
@@ -3595,6 +3609,12 @@ func (m *Migrator) resumeStatementsOnSession(
 			continue
 		}
 		event := StatementEvent{Statement: stmt, Index: i + 1, Total: len(statements)}
+		if m.runsQueriesOnTheirOwn() && !m.conn.Writer().IsDryRun() && isYDBDataQuery(stmt) {
+			if err := m.commitYDBDataQuery(ctx, migration, startedAt, event, direction); err != nil {
+				return m.failResumedMigrationDirection(ctx, migration, startedAt, err, event, direction)
+			}
+			continue
+		}
 		if err := m.markMigrationStatementInFlight(ctx, migration, startedAt, event, direction); err != nil {
 			return fmt.Errorf("failed to record resumed %s %d at statement %d: %w", operation, migration.Version, event.Index, err)
 		}
