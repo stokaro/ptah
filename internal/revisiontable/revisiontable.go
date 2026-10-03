@@ -33,6 +33,11 @@ const (
 	// nothing beside it.
 	PtahLog = Ptah + "_log"
 
+	// Tags is the table the migrator records directory tags in, beside the
+	// revision table in either layout. [DefaultNames] leaves it out: it holds
+	// no revision, and of the readers only YDB's hides it.
+	Tags = "ptah_migration_tags"
+
 	// PtahOperatorVersion is the generic operator marker for migrations without
 	// a mapped source identity. Current mapped writes use the source-identity
 	// marker instead, so a Flyway row with this generic value is eligible for

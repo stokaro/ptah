@@ -724,6 +724,7 @@ func TestReader_LeavesTheMigratorsTablesOut(t *testing.T) {
 				entry("users", Ydb_Scheme.Entry_TABLE),
 				entry("schema_migrations", Ydb_Scheme.Entry_TABLE),
 				entry("schema_migrations_log", Ydb_Scheme.Entry_TABLE),
+				entry("ptah_migration_tags", Ydb_Scheme.Entry_TABLE),
 				entry("app", Ydb_Scheme.Entry_DIRECTORY),
 			},
 			"/local/app": {entry("atlas_schema_revisions", Ydb_Scheme.Entry_TABLE)},
@@ -735,6 +736,31 @@ func TestReader_LeavesTheMigratorsTablesOut(t *testing.T) {
 
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].Name, qt.Equals, "users")
+}
+
+// Ptah's lock node at the database root is Ptah's bookkeeping too, and the
+// reader leaves it out; a coordination node of the same name in a directory
+// below the root is not Ptah's, and is recorded as any other.
+func TestReader_LeavesPtahsLockNodeOut(t *testing.T) {
+	c := qt.New(t)
+	source := fakeSource{
+		directories: map[string][]*Ydb_Scheme.Entry{
+			"/local": {
+				entry(ydbschema.LockNode, Ydb_Scheme.Entry_COORDINATION_NODE),
+				entry("app", Ydb_Scheme.Entry_DIRECTORY),
+			},
+			"/local/app": {entry(ydbschema.LockNode, Ydb_Scheme.Entry_COORDINATION_NODE)},
+		},
+	}
+
+	db := readFrom(c, source)
+
+	c.Assert(db.NotDescribed, qt.DeepEquals, coverage.Set{}.With(
+		coverage.Object{Kind: coverage.CoordinationNode, Name: "app.ptah_locks", Reason: coverage.Unsupported,
+			Provenance: coverage.Observed},
+		coverage.Object{Kind: coverage.Role, Reason: coverage.Unsupported, Provenance: coverage.DerivedFromTarget},
+		coverage.Object{Kind: coverage.Grant, Reason: coverage.Unsupported, Provenance: coverage.DerivedFromTarget},
+	))
 }
 
 func TestReader_TableColumns_HappyPath(t *testing.T) {

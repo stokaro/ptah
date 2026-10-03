@@ -371,6 +371,8 @@ func TestYDBMigrator_RecordsTagsAndTheLog(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(attempts, qt.HasLen, 1)
 	c.Assert(string(attempts[0].Outcome.State), qt.Equals, "applied")
+	c.Assert(directoryNames(c, c.Context(), dir), qt.Contains, "ptah_migration_tags")
+	c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.DeepEquals, []string{dir + "|t"})
 }
 
 // Progress is recorded after each query rather than once the file is done:
