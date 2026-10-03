@@ -111,6 +111,10 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	if err != nil {
 		return nil, nil, err
 	}
+	views, err := resolveViewBodies(ctx, conn, desired, database)
+	if err != nil {
+		return nil, nil, err
+	}
 	// Every resolver's answer reaches the comparison the same way: a copy of
 	// the options carrying the maps that have something in them. The copy is
 	// what keeps the caller's options untouched, which matters because a
@@ -125,6 +129,7 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 		columns:    columns,
 		triggers:   triggers,
 		arguments:  arguments,
+		views:      views,
 	})
 
 	return compareWithDatabaseInfoReportingUndecidedAdditions(
@@ -144,6 +149,7 @@ type resolvedExpressions struct {
 	columns    map[string]config.ColumnSpelling
 	triggers   map[string]config.TriggerCondition
 	arguments  map[string]config.RoutineArguments
+	views      map[string]config.ViewBody
 }
 
 // empty reports that no server answered for anything, which is every offline
@@ -151,7 +157,7 @@ type resolvedExpressions struct {
 func (r resolvedExpressions) empty() bool {
 	return len(r.domains) == 0 && len(r.aggregates) == 0 && len(r.checks) == 0 &&
 		len(r.policies) == 0 && len(r.indexes) == 0 && len(r.excludes) == 0 && len(r.columns) == 0 &&
-		len(r.triggers) == 0 && len(r.arguments) == 0
+		len(r.triggers) == 0 && len(r.arguments) == 0 && len(r.views) == 0
 }
 
 // withResolvedExpressions returns the options the comparison should run under.
@@ -196,6 +202,9 @@ func withResolvedExpressions(
 	}
 	if len(resolved.arguments) > 0 {
 		merged.RoutineArguments = resolved.arguments
+	}
+	if len(resolved.views) > 0 {
+		merged.ViewBodies = resolved.views
 	}
 	return merged
 }
@@ -278,7 +287,7 @@ func resolveRoutineArguments(
 	var probes []dbexprprobe.RoutineArgumentsProbe
 	for _, function := range desired.Functions {
 		key := exprkey.RoutineArguments(function)
-		if strings.TrimSpace(function.Parameters+function.Returns) == "" || seen[key] || !held[strings.ToLower(routineName(function.Name))] {
+		if strings.TrimSpace(function.Parameters+function.Returns) == "" || seen[key] || !held[strings.ToLower(bareName(function.Name))] {
 			continue
 		}
 		seen[key] = true
@@ -296,9 +305,62 @@ func resolveRoutineArguments(
 	return arguments, nil
 }
 
-// routineName is a declared routine's own name, without the schema a
-// declaration may qualify it with.
-func routineName(name string) string {
+// resolveViewBodies asks the server to spell the body of every declared view
+// and materialized view whose name the database also holds.
+//
+// Only those, for the reason [resolveDomainExpressions] gives: a view being
+// created carries its declaration into the CREATE unchanged. The name is
+// matched loosely, on the view's own name in any schema and case, as
+// [resolveRoutineArguments] matches a routine, because a probe too many costs
+// one CREATE in a rolled-back transaction and a probe too few is a view dropped
+// and created on every plan. A view and a materialized view share the
+// relation namespace, so either kind in the database makes a declaration of
+// either kind worth asking about.
+func resolveViewBodies(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	desired *schemamodel.Database,
+	database *catalog.Database,
+) (map[string]config.ViewBody, error) {
+	if desired == nil || database == nil {
+		return nil, nil
+	}
+	held := make(map[string]bool, len(database.Views)+len(database.MatViews))
+	for _, view := range database.Views {
+		held[strings.ToLower(view.Name)] = true
+	}
+	for _, view := range database.MatViews {
+		held[strings.ToLower(view.Name)] = true
+	}
+	seen := make(map[string]bool)
+	var probes []dbexprprobe.ViewBodyProbe
+	ask := func(name, body string) {
+		key := exprkey.ViewBody(body)
+		if seen[key] || !held[strings.ToLower(bareName(name))] {
+			return
+		}
+		seen[key] = true
+		probes = append(probes, dbexprprobe.ViewBodyProbe{Key: key, Body: body})
+	}
+	for _, view := range desired.Views {
+		ask(view.Name, view.Body)
+	}
+	for _, view := range desired.MaterializedViews {
+		ask(view.Name, view.Body)
+	}
+	if len(probes) == 0 {
+		return nil, nil
+	}
+	bodies, err := dbexprprobe.ResolveViewBodies(ctx, conn, probes)
+	if err != nil {
+		return nil, fmt.Errorf("compare schemas: %w", err)
+	}
+	return bodies, nil
+}
+
+// bareName is a declared object's own name, without the schema a declaration
+// may qualify it with.
+func bareName(name string) string {
 	if ref, ok := tableref.Parse(name); ok {
 		return ref.Name
 	}
