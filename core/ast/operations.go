@@ -73,8 +73,11 @@ type ModifyColumnOperation struct {
 	// distinguish narrowing changes from other column modifications.
 	PreviousType string
 	// PreviousNullable is the best-known existing database nullability before
-	// the modification. Renderers ignore this metadata; safety analysis uses it
-	// to distinguish DROP NOT NULL from SET NOT NULL.
+	// the modification. Safety analysis uses it to distinguish DROP NOT NULL
+	// from SET NOT NULL. Most renderers ignore it. Oracle's MODIFY repeats a
+	// nullability clause only when this says it changed, and the ClickHouse
+	// renderer refuses a nullable column made non-nullable without a default
+	// where the target refuses that statement.
 	PreviousNullable bool
 	// HasPreviousNullable reports whether PreviousNullable was populated.
 	HasPreviousNullable bool
@@ -108,7 +111,9 @@ type ModifyColumnOperation struct {
 	// NULL row as it does when the column declares no default.
 	//
 	// It is read only by a renderer that fills those rows, which the
-	// PostgreSQL family does; the zero value keeps the fill.
+	// PostgreSQL family does; the zero value keeps the fill. ClickHouse does
+	// not read it: its MODIFY COLUMN states the column's default, and there is
+	// no separate fill statement to leave out.
 	OmitNullBackfill bool
 }
 

@@ -1065,6 +1065,10 @@ const (
 	// the two halves do not travel together: measured on YDB 25.4 through
 	// 26.2, DROP NOT NULL is accepted and SET NOT NULL answers `SET NOT NULL
 	// is currently not supported.`
+	//
+	// The ClickHouse renderer reads it. Where it is false, a nullable column
+	// made NOT NULL needs a declared default for MODIFY COLUMN to name, and is
+	// refused without one (stokaro/ptah#4020).
 	AlterColumnSetNotNull Capability = "alter_column_set_not_null"
 
 	// AlterColumnDropNotNull marks a target that removes NOT NULL from an
@@ -1401,7 +1405,7 @@ var registry = map[Capability]spec{
 		doc: "ALTER TABLE changes a column's type in place (not SQLite or YDB)",
 	},
 	AlterColumnSetNotNull: {
-		doc: "ALTER TABLE adds NOT NULL to an existing column in place (not SQLite or YDB)",
+		doc: "ALTER TABLE adds NOT NULL to an existing column in place (not SQLite before 3.53, ClickHouse 24.11+ without a DEFAULT, or YDB)",
 	},
 	AlterColumnDropNotNull: {
 		doc: "ALTER TABLE removes NOT NULL from an existing column in place (not SQLite)",

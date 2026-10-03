@@ -92,7 +92,7 @@ so typos fail fast. Current registry:
 | `advisory_locks` | PostgreSQL advisory lock functions |
 | `alter_column_default` | ALTER TABLE sets and removes a column default in place (not SQLite; YDB 26.2+) |
 | `alter_column_drop_not_null` | ALTER TABLE removes NOT NULL from an existing column in place (not SQLite) |
-| `alter_column_set_not_null` | ALTER TABLE adds NOT NULL to an existing column in place (not SQLite or YDB) |
+| `alter_column_set_not_null` | ALTER TABLE adds NOT NULL to an existing column in place (not SQLite before 3.53, ClickHouse 24.11+ without a DEFAULT, or YDB) |
 | `alter_column_type` | ALTER TABLE changes a column's type in place (not SQLite or YDB) |
 | `alter_generated_column_expression` | in-place ALTER COLUMN SET EXPRESSION for generated columns (PostgreSQL 17+) |
 | `alter_table_algorithm_lock` | ALGORITHM= and LOCK= clauses on ALTER TABLE, which the server refuses when it cannot honor them (MySQL, MariaDB) |

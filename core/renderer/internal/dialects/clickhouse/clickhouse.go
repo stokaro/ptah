@@ -334,7 +334,7 @@ func renderColumnType(col *ast.ColumnNode, opts columnTypeOptions) (typeMapping,
 	if err != nil {
 		return typeMapping{}, err
 	}
-	if col.Nullable && !col.Primary && !opts.forceNotNull {
+	if rendersNullable(col) && !opts.forceNotNull {
 		// Don't wrap if already wrapped (e.g. user supplied native CH type).
 		if !strings.HasPrefix(mapping.mapped, "Nullable(") {
 			mapping.mapped = "Nullable(" + mapping.mapped + ")"
@@ -344,6 +344,27 @@ func renderColumnType(col *ast.ColumnNode, opts columnTypeOptions) (typeMapping,
 		mapping.notice = fmt.Sprintf("mapped JSON → %s; override via platform.clickhouse.type=JSON if you want experimental native JSON", mapping.mapped)
 	}
 	return mapping, nil
+}
+
+// rendersNullable reports whether a column's type is wrapped in Nullable(): it
+// is declared nullable and is not a key column.
+func rendersNullable(col *ast.ColumnNode) bool {
+	return col.Nullable && !col.Primary
+}
+
+// defaultClause is the DEFAULT clause of a column that declares a default, or
+// empty. A computed column has none: MATERIALIZED or ALIAS stands where DEFAULT
+// would, and ClickHouse refuses a column that carries both.
+func defaultClause(col *ast.ColumnNode) string {
+	switch {
+	case col.GeneratedExpression != "":
+		return ""
+	case col.Default != nil && col.Default.Expression != "":
+		return "DEFAULT " + col.Default.Expression
+	case col.Default != nil && col.Default.HasLiteral():
+		return "DEFAULT " + defaultlit.Render(col.Default.Value, escapeStringLiteral)
+	}
+	return ""
 }
 
 // renderColumn renders a single column definition for use inside a
@@ -371,13 +392,11 @@ func (r *Renderer) renderColumn(col *ast.ColumnNode) (string, error) {
 
 	parts := []string{fmt.Sprintf("  %s %s", col.Name, mapping.mapped)}
 
-	switch {
+	switch clause := defaultClause(col); {
 	case col.GeneratedExpression != "":
 		parts = append(parts, computedColumnClause(col))
-	case col.Default != nil && col.Default.Expression != "":
-		parts = append(parts, "DEFAULT "+col.Default.Expression)
-	case col.Default != nil && col.Default.HasLiteral():
-		parts = append(parts, "DEFAULT "+defaultlit.Render(col.Default.Value, escapeStringLiteral))
+	case clause != "":
+		parts = append(parts, clause)
 	}
 
 	if col.Comment != "" {
@@ -1052,14 +1071,9 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 		case *ast.DropColumnOperation:
 			r.w.WriteLinef("ALTER TABLE %s DROP COLUMN %s;", node.Name, op.ColumnName)
 		case *ast.ModifyColumnOperation:
-			mapping, err := renderColumnType(op.Column, columnTypeOptions{})
-			if err != nil {
-				return fmt.Errorf("clickhouse: modify column on %q: %w", node.Name, err)
+			if err := r.renderModifyColumn(node.Name, op); err != nil {
+				return err
 			}
-			if mapping.notice != "" {
-				r.w.WriteLinef("-- CLICKHOUSE: column %q %s", op.Column.Name, mapping.notice)
-			}
-			r.w.WriteLinef("ALTER TABLE %s MODIFY COLUMN %s %s;", node.Name, op.Column.Name, mapping.mapped)
 		case *ast.AddConstraintOperation:
 			if op.Constraint.Type != ast.CheckConstraint {
 				r.notSupported(fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT (non-CHECK)", node.Name), op.Constraint.Name)
@@ -1093,6 +1107,62 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 			return fmt.Errorf("clickhouse: unknown ALTER TABLE operation %T", op)
 		}
 	}
+	return nil
+}
+
+// renderModifyColumn writes MODIFY COLUMN with the column's type and, when the
+// column declares one, its default.
+//
+// A MODIFY COLUMN that names only a type keeps the default the column already
+// had, so it cannot set a default the declaration changed. A nullable column
+// made non-nullable needs the default too: measured on 26.3 and 26.9, MODIFY
+// COLUMN from Nullable(Int32) to Int32 answers `Cannot convert column 'n' from
+// nullable type Nullable(Int32) to non-nullable type Int32. Please specify
+// DEFAULT expression in ALTER MODIFY COLUMN statement` even on an empty table.
+// With a DEFAULT the statement is accepted, and every NULL row takes the
+// default: the value the author declared for a row that states none, the same
+// value the PostgreSQL plan fills NULL rows with before SET NOT NULL.
+//
+// A column that declares no default is refused on a target without
+// [capability.AlterColumnSetNotNull], before any statement runs, because the
+// server will refuse the statement. A value the type suggests, such as 0, is
+// not written in its place: it is data nobody wrote, which is why the
+// PostgreSQL plan does not fill a column without a default either
+// (stokaro/ptah#3648, stokaro/ptah#4020).
+//
+// A computed column is not refused here, because the server does not refuse
+// the statement: MATERIALIZED and ALIAS are default kinds to it, and 26.9
+// accepts MODIFY COLUMN to a non-nullable type for one. Where the key holds,
+// as on 24.10, the statement without a DEFAULT is accepted too. Neither is a
+// promise about the rows: see stokaro/ptah#4025.
+func (r *Renderer) renderModifyColumn(table string, op *ast.ModifyColumnOperation) error {
+	mapping, err := renderColumnType(op.Column, columnTypeOptions{})
+	if err != nil {
+		return fmt.Errorf("clickhouse: modify column on %q: %w", table, err)
+	}
+	clause := defaultClause(op.Column)
+	setsNotNull := op.HasPreviousNullable && op.PreviousNullable && !rendersNullable(op.Column)
+	if setsNotNull && clause == "" && op.Column.GeneratedExpression == "" &&
+		!r.capabilities().Has(capability.AlterColumnSetNotNull) {
+		return &ptaherr.CapabilityError{
+			Dialect: platform.ClickHouse,
+			Feature: "NOT NULL on an existing column",
+			Err:     ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf(
+				"column %s.%s cannot be made NOT NULL here: this target refuses MODIFY COLUMN to %s"+
+					" unless the statement names a DEFAULT for the NULL rows to take, and the column"+
+					" has no default to name; give the column a default",
+				table, op.Column.Name, mapping.mapped),
+		}
+	}
+	if mapping.notice != "" {
+		r.w.WriteLinef("-- CLICKHOUSE: column %q %s", op.Column.Name, mapping.notice)
+	}
+	statement := fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s %s", table, op.Column.Name, mapping.mapped)
+	if clause != "" {
+		statement += " " + clause
+	}
+	r.w.WriteLinef("%s;", statement)
 	return nil
 }
 
