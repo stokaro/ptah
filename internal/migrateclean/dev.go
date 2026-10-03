@@ -2,12 +2,14 @@ package migrateclean
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dbreset"
+	"ptah.run/internal/ydbgap"
 )
 
 // NotCleanError is the refusal of a dev database that already holds objects,
@@ -50,7 +52,13 @@ func (e *NotCleanError) Error() string {
 //
 // An error that is not a *NotCleanError means the catalog could not be read,
 // and the caller must not treat the database as clean.
+//
+// A YDB database is refused outright: the reset, the clean check and the
+// realm identity a dev run needs are not implemented for it yet.
 func DevRefusal(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+	if conn != nil && platform.NormalizeDialect(conn.Info().Dialect) == platform.YDB {
+		return errors.New(ydbgap.DevDatabases.Message())
+	}
 	scope, err := inspect(ctx, conn, GovernsDev)
 	if err != nil {
 		return err

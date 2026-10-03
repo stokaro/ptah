@@ -2,12 +2,14 @@ package schema
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
@@ -15,6 +17,7 @@ import (
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/schemalineage"
 	"ptah.run/internal/schemaload"
+	"ptah.run/internal/ydbgap"
 )
 
 const (
@@ -191,6 +194,11 @@ func runSchemaLineageLive(cmd *cobra.Command, opts schemaLineageOptions) error {
 		return cmdutil.Fail(cmd, fmt.Errorf("connect to database: %w", err))
 	}
 	defer dbschema.CloseAndWarn(conn)
+	// The YDB reader does not read views, so a lineage of its description
+	// would report no view where the database has some.
+	if platform.NormalizeDialect(conn.Info().Dialect) == platform.YDB {
+		return cmdutil.Fail(cmd, errors.New(ydbgap.OtherSurfaces.Message()))
+	}
 
 	live, err := dbschema.ReadSchemaWithSchemasContext(
 		cmd.Context(), conn, dbcli.ParseSchemas(opts.schemas),

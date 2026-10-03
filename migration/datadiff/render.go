@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/oracletype"
 	"ptah.run/internal/sqlident"
+	"ptah.run/internal/ydbgap"
 )
 
 // Render renders diff into a pair of SQL scripts: up applies the desired state
@@ -89,9 +90,15 @@ func Render(diff *DataDiff, dialect string) (up, down string, err error) {
 //
 // Both slices are nil when diff carries no changes. On error both are nil and
 // the error is the one [Render] returns for the same diff.
+//
+// A YDB dialect is refused: YQL needs every data literal typed, and the
+// typed literals and the reads they compare against are not implemented yet.
 func RenderStatements(diff *DataDiff, dialect string) (up, down []string, err error) {
 	if diff == nil {
 		return nil, nil, errors.New("datadiff: nil diff")
+	}
+	if platform.NormalizeDialect(dialect) == platform.YDB {
+		return nil, nil, fmt.Errorf("datadiff: %s", ydbgap.DataChanges.Message())
 	}
 
 	if len(diff.Inserts) == 0 && len(diff.Updates) == 0 && len(diff.Deletes) == 0 {

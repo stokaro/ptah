@@ -37,6 +37,7 @@ import (
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/protectedtable"
+	"ptah.run/internal/ydbgap"
 )
 
 const (
@@ -260,6 +261,11 @@ func Apply(ctx context.Context, conn *dbschema.DatabaseConnection, fsys fs.FS, o
 	}
 	if err := ValidateOptions(opts); err != nil {
 		return nil, err
+	}
+	if platform.NormalizeDialect(conn.Info().Dialect) == platform.YDB {
+		// The tracker table, the existing-table check and the savepoints a
+		// seed runs with are another dialect's SQL on YDB.
+		return nil, errors.New(ydbgap.DataChanges.Message())
 	}
 	if opts.Idempotent && platform.NormalizeDialect(conn.Info().Dialect) == platform.ClickHouse {
 		return nil, fmt.Errorf("--idempotent is not supported for clickhouse seeds because transactions and savepoints are unavailable")

@@ -19,6 +19,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/dblock"
+	"ptah.run/internal/ydbgap"
 )
 
 const (
@@ -180,6 +181,8 @@ func realmIdentity(
 		return selectedDatabase(ctx, conn, dialect, "SELECT currentDatabase()")
 	case platform.SQLite:
 		return sqliteIdentity(ctx, conn)
+	case platform.YDB:
+		return "", errors.New(ydbgap.DevDatabases.Message())
 	default:
 		return "", fmt.Errorf("unsupported dev database lock dialect %q", dialect)
 	}

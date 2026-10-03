@@ -902,6 +902,10 @@ func wrapAtlasProjectFlagReset(cmd, group *cobra.Command) {
 			// the one line the pinned binary prints.
 			return cmdutil.Fail(cmd, err)
 		}
+		if err := refuseAtlasYDBURLFlags(cmd); err != nil {
+			resetAtlasExecutionFlags(cmd, group)
+			return cmdutil.Fail(cmd, err)
+		}
 		if preRunE != nil {
 			if err := preRunE(cmd, args); err != nil {
 				resetAtlasExecutionFlags(cmd, group)
