@@ -71,6 +71,11 @@ func splitSQLStatementsPreservingCommentsForDialect(sql, dialect string) []strin
 // migrationfile.ParseDirectives). It returns handled=true when it fully executed the
 // statement itself; on handled=false the migrator executes the statement
 // normally. A non-nil error aborts the migration.
+//
+// On YDB the unit offered is a query rather than a statement, and only a
+// schema query is offered: a run of data statements commits in one
+// transaction together with the record of its progress, which no other
+// executor could join.
 type StatementInterceptor interface {
 	ValidateDirectives(directives map[string]string) error
 	ExecuteStatement(ctx context.Context, conn *dbschema.DatabaseConnection, stmt string, directives map[string]string) (handled bool, err error)

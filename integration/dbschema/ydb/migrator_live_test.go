@@ -485,3 +485,44 @@ func TestYDBMigrator_AsksAboutADirectoryThatDoesNotExist(t *testing.T) {
 	c.Assert(directoryNames(c, c.Context()), qt.Not(qt.Contains), dir)
 }
 
+// offeredStatements is an interceptor that takes over nothing and records each
+// statement the migrator offered it before running the statement itself.
+type offeredStatements struct{ offered []string }
+
+func (o *offeredStatements) ValidateDirectives(map[string]string) error { return nil }
+
+func (o *offeredStatements) ExecuteStatement(
+	_ context.Context, _ *dbschema.DatabaseConnection, statement string, _ map[string]string,
+) (bool, error) {
+	o.offered = append(o.offered, statement)
+	return false, nil
+}
+
+// A data query is not run the way a scheme query is -- marked in flight,
+// executed, then checkpointed -- but in one transaction with its checkpoint,
+// so the steps a scheme query passes through, an interceptor among them, never
+// see it.
+func TestYDBMigrator_RunsADataQueryWithItsCheckpoint(t *testing.T) {
+	c := qt.New(t)
+	conn := openYDB(c)
+	const dir = "ptah_ydb_mig_commit"
+	dropDirectory(c, conn, dir, "h")
+	c.Cleanup(func() { dropDirectory(c, conn, dir, "h") })
+	files := migrationFiles(map[string]string{
+		"0000000001_h.up.sql": "CREATE TABLE `" + dir + "/h` (id Int64 NOT NULL, PRIMARY KEY (id));\n" +
+			"INSERT INTO `" + dir + "/h` (id) VALUES (1l);\n" +
+			"ALTER TABLE `" + dir + "/h` ADD COLUMN note Utf8;\n",
+		"0000000001_h.down.sql": "DROP TABLE `" + dir + "/h`;\n",
+	})
+	interceptor := &offeredStatements{}
+	m, err := migrator.NewFSMigrator(conn, files, migrator.WithStatementInterceptor(interceptor))
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(m.WithMigrationsTable(dir, "").MigrateUp(c.Context()), qt.IsNil)
+	c.Assert(interceptor.offered, qt.DeepEquals, []string{
+		"CREATE TABLE `" + dir + "/h` (id Int64 NOT NULL, PRIMARY KEY (id))",
+		"ALTER TABLE `" + dir + "/h` ADD COLUMN note Utf8",
+	})
+	c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+dir+"/h`"), qt.Equals, int64(1))
+}
+
