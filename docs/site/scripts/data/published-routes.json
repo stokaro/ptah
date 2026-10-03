@@ -29,6 +29,7 @@
   "/databases/support-evidence/",
   "/databases/support-matrix/",
   "/databases/support-policy/",
+  "/databases/ydb/",
   "/direct/apply/",
   "/direct/compare-and-drift/",
   "/direct/inspect/",

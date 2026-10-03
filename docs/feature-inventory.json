@@ -13,7 +13,7 @@
   ],
   "generator": "scripts/check-feature-inventory.sh --write",
   "claimed_floor": 79,
-  "claimed": 94,
+  "claimed": 95,
   "rows": [
     {
       "id": "cli-ptah-assist-context",
@@ -895,7 +895,7 @@
       "id": "dialect-ydb",
       "kind": "dialect",
       "surface": "ydb",
-      "claimed_by": null
+      "claimed_by": "docs/site/src/content/docs/databases/ydb.md"
     },
     {
       "id": "dialect-yugabytedb",
