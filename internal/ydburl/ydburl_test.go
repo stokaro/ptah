@@ -165,38 +165,42 @@ func TestParse_FailurePath(t *testing.T) {
 			wantErr: `the monitoring parameter is given more than once`,
 		},
 		{
-			name: "the monitoring parameter names no scheme",
-			raw:  "ydb://h/local?monitoring=h:8765",
-			wantErr: `the monitoring parameter "h:8765" names no http:// or https:// endpoint: ` +
-				`write monitoring=http://host:8765`,
+			name:    "the monitoring parameter names no scheme",
+			raw:     "ydb://h/local?monitoring=h:8765",
+			wantErr: `the monitoring parameter names no http:// or https:// endpoint: write monitoring=http://host:8765`,
 		},
 		{
-			name: "the monitoring parameter names the gRPC endpoint",
-			raw:  "ydb://h/local?monitoring=grpc://h:2136",
-			wantErr: `the monitoring parameter "grpc://h:2136" names no http:// or https:// endpoint: ` +
-				`write monitoring=http://host:8765`,
+			name:    "the monitoring parameter names the gRPC endpoint",
+			raw:     "ydb://h/local?monitoring=grpc://h:2136",
+			wantErr: `the monitoring parameter names no http:// or https:// endpoint: write monitoring=http://host:8765`,
 		},
 		{
 			name:    "the monitoring parameter names no host",
 			raw:     "ydb://h/local?monitoring=http:///viewer",
-			wantErr: `the monitoring parameter "http:///viewer" names no host`,
+			wantErr: `the monitoring parameter names no host: write monitoring=http://host:8765`,
 		},
-		// #nosec G101 -- a fixture with a made-up password, not a credential
 		{
-			name:    "the monitoring parameter carries a user",
-			raw:     "ydb://h/local?monitoring=http://viewer:pw@h:8765",
-			wantErr: `the monitoring parameter "http://viewer:pw@h:8765" carries a user; Ptah sends no credentials there`,
+			name: "the monitoring parameter carries a user",
+			raw:  "ydb://h/local?monitoring=http://viewer@h:8765",
+			wantErr: `the monitoring parameter for http://h:8765 carries a user; Ptah sends no credentials there, ` +
+				`so name the endpoint only, as monitoring=http://h:8765`,
 		},
 		{
 			name: "the monitoring parameter names the page rather than the endpoint",
 			raw:  "ydb://h/local?monitoring=http://h:8765/viewer/json/feature_flags",
-			wantErr: `the monitoring parameter "http://h:8765/viewer/json/feature_flags" names a page; ` +
+			wantErr: `the monitoring parameter for http://h:8765 names a page; ` +
+				`name the endpoint only, as monitoring=http://h:8765`,
+		},
+		{
+			name: "the monitoring parameter names an escaped slash as its page",
+			raw:  "ydb://h/local?monitoring=http://h:8765/%252F",
+			wantErr: `the monitoring parameter for http://h:8765 names a page; ` +
 				`name the endpoint only, as monitoring=http://h:8765`,
 		},
 		{
 			name:    "the monitoring parameter is not a URL",
 			raw:     "ydb://h/local?monitoring=http://h:87%2565",
-			wantErr: `the monitoring parameter "http://h:87%65" is not a URL: .*`,
+			wantErr: `the monitoring parameter is not a URL: write monitoring=http://host:8765`,
 		},
 	}
 
@@ -207,6 +211,56 @@ func TestParse_FailurePath(t *testing.T) {
 			got, err := ydburl.Parse(test.raw)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(got, qt.DeepEquals, ydburl.URL{})
+		})
+	}
+}
+
+// A monitoring value can carry a password in its user part or a token in its
+// query, and a refusal reaches logs and terminals no URL redactor reads. No
+// refusal repeats the secret, whichever check refused the value; each row
+// reaches a different one.
+func TestParse_FailurePath_NeverRepeatsTheMonitoringSecret(t *testing.T) {
+	const secret = "s3cret"
+	for _, test := range []struct {
+		name    string
+		raw     string
+		wantErr string
+	}{
+		// #nosec G101 -- fixtures with a made-up password, not credentials
+		{
+			name:    "not a URL",
+			raw:     "ydb://h/local?monitoring=http://viewer:" + secret + "@h:87%2565",
+			wantErr: `the monitoring parameter is not a URL: .*`,
+		},
+		{
+			name:    "another scheme",
+			raw:     "ydb://h/local?monitoring=ftp://viewer:" + secret + "@h:8765",
+			wantErr: `the monitoring parameter names no http:// or https:// endpoint: .*`,
+		},
+		{
+			name:    "no host",
+			raw:     "ydb://h/local?monitoring=http://viewer:" + secret + "@/viewer",
+			wantErr: `the monitoring parameter names no host: .*`,
+		},
+		{
+			name:    "a user",
+			raw:     "ydb://h/local?monitoring=http://viewer:" + secret + "@h:8765",
+			wantErr: `the monitoring parameter for http://h:8765 carries a user; .*`,
+		},
+		{
+			name:    "a page",
+			raw:     "ydb://h/local?monitoring=http://h:8765/viewer%3Ftoken%3D" + secret,
+			wantErr: `the monitoring parameter for http://h:8765 names a page; .*`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := ydburl.Parse(test.raw)
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(err.Error(), qt.Not(qt.Contains), secret)
 			c.Assert(got, qt.DeepEquals, ydburl.URL{})
 		})
 	}
