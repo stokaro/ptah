@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/sqlident"
 )
@@ -59,4 +60,21 @@ func CreateDatabase(ctx context.Context, serverURL, dialect, database string) (e
 	// #nosec G202 -- the database name is quoted through sqlident.
 	_, err = conn.ExecContext(ctx, "CREATE DATABASE "+quoted)
 	return err
+}
+
+// RunBaseline is the default [BaselineRunner]. It splits baseline into
+// statements for dialect and runs them in order on one connection, stopping at
+// the first the server refuses. A baseline holding only comments runs nothing.
+func RunBaseline(ctx context.Context, rawURL, dialect, baseline string) (err error) {
+	conn, err := dbschema.ConnectToServer(ctx, rawURL)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, conn.Close()) }()
+	for i, statement := range sqlutil.SplitStatementsForDialect(dialect, baseline) {
+		if _, err := conn.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("baseline statement %d: %w", i+1, err)
+		}
+	}
+	return nil
 }

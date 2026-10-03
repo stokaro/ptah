@@ -416,6 +416,9 @@ func atlasProjectLoadOptions(
 		// The pinned community binary has no handler for this data source and
 		// refuses a project that declares one, referenced or not.
 		RejectCompositeSchema: policy.IsStrictCE(),
+		// The community binary reads no docker block; the default surface
+		// starts the one a selected env references (stokaro/ptah#4041).
+		IgnoreDockerBlocks: policy.IsStrictCE(),
 		// So a refusal about a for_each env names the command the operator
 		// ran (stokaro/ptah#1696). Empty where no command is in scope, which
 		// leaves the sentence general rather than wrong.

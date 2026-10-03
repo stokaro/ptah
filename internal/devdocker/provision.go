@@ -7,8 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"os/exec"
+	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -51,6 +54,11 @@ type Runner interface {
 	// Remove deletes the container, whether or not it is still running. It must
 	// succeed when the container is already gone.
 	Remove(ctx context.Context, name string) error
+	// Build builds image from build, tagging it with image.
+	Build(ctx context.Context, image string, build Build) error
+	// RemoveImage deletes the image tag. It must succeed when the image is
+	// already gone.
+	RemoveImage(ctx context.Context, image string) error
 }
 
 // ReadyFunc reports whether a provisioned database is accepting connections.
@@ -59,6 +67,10 @@ type ReadyFunc func(ctx context.Context, rawURL string) error
 // DatabaseCreator creates database on the server serverURL connects to, unless
 // it exists already. dialect is the server's.
 type DatabaseCreator func(ctx context.Context, serverURL, dialect, database string) error
+
+// BaselineRunner runs a docker block's baseline SQL on the database rawURL
+// connects to. dialect is the server's.
+type BaselineRunner func(ctx context.Context, rawURL, dialect, baseline string) error
 
 // Options configures [Provision]. The zero value drives the `docker` CLI and
 // probes readiness with a real connection.
@@ -71,6 +83,9 @@ type Options struct {
 	// once the server is ready; see [Spec.CreatesDatabase]. Defaults to
 	// [CreateDatabase].
 	CreateDatabase DatabaseCreator
+	// RunBaseline runs a docker block's baseline once the database exists;
+	// see [Declaration.Baseline]. Defaults to [RunBaseline].
+	RunBaseline BaselineRunner
 	// ReadyTimeout bounds the readiness wait. Defaults to two minutes.
 	ReadyTimeout time.Duration
 	// ReleaseAttempts bounds how many times the release function returned by
@@ -122,6 +137,13 @@ func (o Options) createDatabase() DatabaseCreator {
 	return CreateDatabase
 }
 
+func (o Options) runBaseline() BaselineRunner {
+	if o.RunBaseline != nil {
+		return o.RunBaseline
+	}
+	return RunBaseline
+}
+
 func (o Options) readyTimeout() time.Duration {
 	if o.ReadyTimeout > 0 {
 		return o.ReadyTimeout
@@ -135,8 +157,11 @@ func (o Options) readyTimeout() time.Duration {
 type Instance struct {
 	url       string
 	container string
-	runner    Runner
-	closed    bool
+	// image is the image tag this run built, removed with the container. It is
+	// empty when the run started an image it did not build.
+	image  string
+	runner Runner
+	closed bool
 }
 
 // URL is the directly connectable URL of the provisioned database.
@@ -178,6 +203,14 @@ func (i *Instance) Close() error {
 	defer cancel()
 	if err := i.runner.Remove(ctx, i.container); err != nil {
 		return fmt.Errorf("remove dev database container %s: %w", i.container, err)
+	}
+	// After the container, which holds the image while it exists. A removal
+	// refused here leaves the instance open, so a retry removes the image;
+	// removing the container again then finds nothing and succeeds.
+	if i.image != "" {
+		if err := i.runner.RemoveImage(ctx, i.image); err != nil {
+			return fmt.Errorf("remove dev database image %s: %w", i.image, err)
+		}
 	}
 	i.closed = true
 	forgetRunOwned(i.url)
@@ -248,9 +281,21 @@ func Provision(ctx context.Context, rawURL string, opts Options) (*Instance, err
 	if err := runner.Available(ctx); err != nil {
 		return nil, err
 	}
+	if spec.declaration.ReadyTimeout > 0 {
+		opts.ReadyTimeout = spec.declaration.ReadyTimeout
+	}
 	name, err := containerName()
 	if err != nil {
 		return nil, err
+	}
+	var built string
+	if build := spec.declaration.Build; build != nil {
+		if err := runner.Build(ctx, spec.Image, *build); err != nil {
+			// Nothing is removed: a build that fails tags nothing, and a tag
+			// of the same name that exists is not this run's to remove.
+			return nil, fmt.Errorf("build dev database image %s: %w", spec.Image, err)
+		}
+		built = spec.Image
 	}
 	// Generated per instance rather than fixed. A remote daemon publishes on
 	// every interface of its host, so a known superuser password on the
@@ -268,12 +313,13 @@ func Provision(ctx context.Context, rawURL string, opts Options) (*Instance, err
 		// it stopped, and with the same bounded retry every other exit path
 		// uses. This is the third branch of the same question, and the answer
 		// is spelled once so a fourth cannot get a weaker one.
-		releaseInstance(&Instance{container: name, runner: runner}, opts)
+		releaseInstance(&Instance{container: name, image: built, runner: runner}, opts)
 		return nil, err
 	}
 	instance := &Instance{
 		url:       spec.URL(hostPort, password),
 		container: name,
+		image:     built,
 		runner:    runner,
 	}
 	// The wait probes the server, not the operator's parameters; see
@@ -293,6 +339,12 @@ func Provision(ctx context.Context, rawURL string, opts Options) (*Instance, err
 		if err := opts.createDatabase()(ctx, readyURL, spec.Dialect, spec.Database); err != nil {
 			releaseInstance(instance, opts)
 			return nil, fmt.Errorf("create database %q in dev database %s: %w", spec.Database, spec.Image, err)
+		}
+	}
+	if baseline := spec.declaration.Baseline; baseline != "" {
+		if err := opts.runBaseline()(ctx, spec.BaselineURL(hostPort, password), spec.Dialect, baseline); err != nil {
+			releaseInstance(instance, opts)
+			return nil, fmt.Errorf("run the baseline on dev database %s: %w", spec.Image, err)
 		}
 	}
 	recordRunOwned(instance.url)
@@ -530,6 +582,47 @@ func (DockerCLI) Remove(ctx context.Context, name string) error {
 		return nil
 	}
 	if strings.Contains(string(out), "No such container") {
+		return nil
+	}
+	return fmt.Errorf("%s: %w", trimDockerOutput(out), err)
+}
+
+// Build runs `docker build`, tagging the result with image. An inline
+// Dockerfile is passed on standard input.
+func (DockerCLI) Build(ctx context.Context, image string, build Build) error {
+	args := []string{"build", "--quiet", "--tag", image}
+	switch {
+	case build.DockerfileInline != "":
+		args = append(args, "--file", "-")
+	case build.Dockerfile != "":
+		args = append(args, "--file", filepath.Join(build.Context, build.Dockerfile))
+	}
+	if build.Target != "" {
+		args = append(args, "--target", build.Target)
+	}
+	if build.Platform != "" {
+		args = append(args, "--platform", build.Platform)
+	}
+	for _, name := range slices.Sorted(maps.Keys(build.Args)) {
+		args = append(args, "--build-arg", name+"="+build.Args[name])
+	}
+	args = append(args, build.Context)
+	// #nosec G204 -- docker is invoked with an argument list, never a shell.
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	if build.DockerfileInline != "" {
+		cmd.Stdin = strings.NewReader(build.DockerfileInline)
+	}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("%s: %w", trimDockerOutput(out), err)
+	}
+	return nil
+}
+
+// RemoveImage deletes the image tag and treats an absent one as success.
+func (DockerCLI) RemoveImage(ctx context.Context, image string) error {
+	// #nosec G204 -- docker is invoked with an argument list, never a shell.
+	out, err := exec.CommandContext(ctx, "docker", "image", "rm", image).CombinedOutput()
+	if err == nil || strings.Contains(string(out), "No such image") {
 		return nil
 	}
 	return fmt.Errorf("%s: %w", trimDockerOutput(out), err)

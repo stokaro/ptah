@@ -48,18 +48,26 @@ type atlasEvaluator struct {
 	dataOrder   []atlasDataSourceKey
 	dataValues  map[string]map[string]cty.Value
 	dataState   map[atlasDataSourceKey]atlasEvalState
+	// The docker blocks, addressed by their two labels, and the ones that do
+	// not carry two; see atlas_docker.go.
+	dockerBlocks      map[atlasDockerBlockKey]*hclsyntax.Block
+	dockerOrder       []atlasDockerBlockKey
+	dockerUnaddressed []*hclsyntax.Block
+	dockerValues      map[string]map[string]cty.Value
+	dockerState       map[atlasDockerBlockKey]atlasEvalState
 }
 
 func (p atlasParser) configureEvalContext(
 	variableBlocks,
 	localBlocks,
-	dataBlocks []*hclsyntax.Block,
+	dataBlocks,
+	dockerBlocks []*hclsyntax.Block,
 	roots []hclsyntax.Expression,
 ) error {
 	if err := p.configureVariables(variableBlocks); err != nil {
 		return err
 	}
-	evaluator, err := newAtlasEvaluator(&p, localBlocks, dataBlocks)
+	evaluator, err := newAtlasEvaluator(&p, localBlocks, dataBlocks, dockerBlocks)
 	if err != nil {
 		return err
 	}
@@ -76,28 +84,35 @@ func (p atlasParser) configureEvalContext(
 			return err
 		}
 	}
-	return nil
+	return evaluator.ignoreUnresolvedDockerBlocks()
 }
 
 func newAtlasEvaluator(
 	parser *atlasParser,
 	localBlocks,
-	dataBlocks []*hclsyntax.Block,
+	dataBlocks,
+	dockerBlocks []*hclsyntax.Block,
 ) (*atlasEvaluator, error) {
 	evaluator := &atlasEvaluator{
-		parser:      parser,
-		localAttrs:  hclsyntax.Attributes{},
-		localValues: make(map[string]cty.Value),
-		localState:  make(map[string]atlasEvalState),
-		dataBlocks:  make(map[atlasDataSourceKey]*hclsyntax.Block),
-		dataOrder:   make([]atlasDataSourceKey, 0, len(dataBlocks)),
-		dataValues:  make(map[string]map[string]cty.Value),
-		dataState:   make(map[atlasDataSourceKey]atlasEvalState),
+		parser:       parser,
+		localAttrs:   hclsyntax.Attributes{},
+		localValues:  make(map[string]cty.Value),
+		localState:   make(map[string]atlasEvalState),
+		dataBlocks:   make(map[atlasDataSourceKey]*hclsyntax.Block),
+		dataOrder:    make([]atlasDataSourceKey, 0, len(dataBlocks)),
+		dataValues:   make(map[string]map[string]cty.Value),
+		dataState:    make(map[atlasDataSourceKey]atlasEvalState),
+		dockerBlocks: make(map[atlasDockerBlockKey]*hclsyntax.Block),
+		dockerValues: make(map[string]map[string]cty.Value),
+		dockerState:  make(map[atlasDockerBlockKey]atlasEvalState),
 	}
 	if err := evaluator.collectLocals(localBlocks); err != nil {
 		return nil, err
 	}
 	if err := evaluator.collectDataSources(dataBlocks); err != nil {
+		return nil, err
+	}
+	if err := evaluator.collectDockerBlocks(dockerBlocks); err != nil {
 		return nil, err
 	}
 	return evaluator, nil
@@ -195,6 +210,12 @@ func (e *atlasEvaluator) resolveExpressionDependencies(expr hclsyntax.Expression
 			name, nameOK := atlasTraversalAttribute(traversal, 2)
 			if typeOK && nameOK {
 				if err := e.resolveDataSource(atlasDataSourceKey{typ: typ, name: name}); err != nil {
+					return err
+				}
+			}
+		case "docker":
+			if key, ok := atlasDockerReference(traversal); ok {
+				if err := e.resolveDockerBlock(key); err != nil {
 					return err
 				}
 			}
