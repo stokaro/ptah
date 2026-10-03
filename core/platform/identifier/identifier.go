@@ -129,6 +129,20 @@ func ForDialect(dialect string) Semantics {
 			TableNames:     ComparisonExact,
 			ColumnNames:    ComparisonExact,
 		}
+	// CockroachDB resolves an unqualified name in `public`, as PostgreSQL does:
+	// measured on v26.3.2, search_path is `"$user", public` and a table created
+	// as `t` is read as `public.t`. Without the default, `t` and `public.t` are
+	// two names offline, and a render creates a routine returning
+	// `SETOF public.t` before the table `t` (stokaro/ptah#4065). Index names
+	// stay table-scoped: the same server accepts one index name on two tables.
+	case platform.CockroachDB:
+		return Semantics{
+			DefaultSchema:  "public",
+			IndexNamespace: IndexNamespaceTable,
+			IndexNames:     ComparisonExact,
+			TableNames:     ComparisonExact,
+			ColumnNames:    ComparisonExact,
+		}
 	case platform.SQLite:
 		return Semantics{
 			DefaultSchema:  "main",

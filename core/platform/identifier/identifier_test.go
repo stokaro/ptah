@@ -26,6 +26,17 @@ func TestForDialect(t *testing.T) {
 			},
 		},
 		{
+			name:    "cockroachdb resolves in public and scopes index names to a table",
+			dialect: "cockroachdb",
+			want: identifier.Semantics{
+				DefaultSchema:  "public",
+				IndexNamespace: identifier.IndexNamespaceTable,
+				IndexNames:     identifier.ComparisonExact,
+				TableNames:     identifier.ComparisonExact,
+				ColumnNames:    identifier.ComparisonExact,
+			},
+		},
+		{
 			name:    "sqlite",
 			dialect: "sqlite",
 			want: identifier.Semantics{
@@ -64,6 +75,22 @@ func TestForDialect(t *testing.T) {
 			c := qt.New(t)
 			got := identifier.ForDialect(test.dialect)
 			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestForDialect_ABareTableIsTheDefaultSchemasTable pins that a table named
+// without a schema and the same table named in the default schema are one
+// table offline, on every PostgreSQL-family dialect whose server resolves a
+// bare name in `public` (stokaro/ptah#4065).
+func TestForDialect_ABareTableIsTheDefaultSchemasTable(t *testing.T) {
+	for _, dialect := range []string{"postgres", "cockroachdb", "yugabytedb"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			semantics := identifier.ForDialect(dialect)
+
+			c.Assert(semantics.QualifiedTableIdentityKey("t"), qt.Equals, semantics.QualifiedTableIdentityKey("public.t"))
+			c.Assert(semantics.QualifiedTableIdentityKey("t"), qt.Not(qt.Equals), semantics.QualifiedTableIdentityKey("app.t"))
 		})
 	}
 }

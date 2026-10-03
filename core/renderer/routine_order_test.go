@@ -151,6 +151,31 @@ CREATE POLICY docs_member ON docs USING (is_member(owner));`,
 	}
 }
 
+// TestGetOrderedCreateStatements_PlacesARoutineAfterABareTableOnEachPostgresFamilyDialect
+// renders a routine returning `SETOF public.t` and the table `t` it names,
+// declared in that order. Each dialect resolves a bare name in `public`, so the
+// table comes first on all of them (stokaro/ptah#4065).
+func TestGetOrderedCreateStatements_PlacesARoutineAfterABareTableOnEachPostgresFamilyDialect(t *testing.T) {
+	const schema = `CREATE FUNCTION public.all_t() RETURNS SETOF public.t LANGUAGE SQL STABLE AS $$ SELECT * FROM public.t $$;
+CREATE TABLE t (id INT8 PRIMARY KEY);`
+	for _, dialect := range []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			database, _, err := sqlschema.Read([]byte(schema), dialect)
+			c.Assert(err, qt.IsNil)
+
+			statements, err := renderer.GetOrderedCreateStatements(&database, dialect)
+
+			c.Assert(err, qt.IsNil)
+			sql := strings.Join(statements, "\n")
+			table := strings.Index(sql, `CREATE TABLE "t"`)
+			routine := strings.Index(sql, `FUNCTION "public"."all_t"`)
+			c.Assert([]int{table, routine}, qt.Not(qt.Contains), -1, qt.Commentf("%s", sql))
+			c.Assert(table < routine, qt.IsTrue, qt.Commentf("%s", sql))
+		})
+	}
+}
+
 // TestGetOrderedCreateStatements_CreatesATableCalledRoutineOnce pins that a
 // routine the render creates between the tables is not created again among the
 // views.
