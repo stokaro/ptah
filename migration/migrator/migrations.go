@@ -148,7 +148,7 @@ type statementProgressHooks struct {
 	after  statementProgressRecorder
 	// commit, when set, runs a statement it claims and records its progress
 	// in one transaction, in place of before, the execution and after; see
-	// [Migrator.ydbDataQueryCommitter].
+	// [Migrator.withRecordedStatementProgress].
 	commit statementCommitter
 }
 
@@ -958,67 +958,77 @@ func executeMigrationFileSQL(
 		if migrationStatementAlreadyApplied(ctx, event.Index) {
 			continue
 		}
-		// The committer is installed only on YDB, where no interceptor
-		// routes a statement, so a statement it claims has nothing to ask
-		// one about.
-		committed, err := commitStatement(ctx, event)
+		if err := runMigrationFileStatement(ctx, conn, event, hooks, interceptorDirectives, mode); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// runMigrationFileStatement runs one statement of a migration file, records
+// that it ran and reports it to the observer.
+func runMigrationFileStatement(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	event StatementEvent,
+	hooks statementExecutionHooks,
+	interceptorDirectives map[string]string,
+	mode migrationExecutionMode,
+) error {
+	// The committer is installed only on YDB, where no interceptor routes a
+	// statement, so a statement it claims has nothing to ask one about.
+	committed, err := commitStatement(ctx, event)
+	if err != nil {
+		return migrationFileStatementError(err, event)
+	}
+	if committed {
+		if err := observeExecutedStatement(ctx, event); err != nil {
+			return err
+		}
+		return observeMigrationFileStatement(ctx, hooks.observer, event)
+	}
+	if err := recordStatementProgressBefore(ctx, event); err != nil {
+		return err
+	}
+
+	handled := false
+	if hooks.interceptor != nil {
+		handled, err = hooks.interceptor.ExecuteStatement(ctx, conn, event.Statement, interceptorDirectives)
 		if err != nil {
-			return &MigrationExecutionError{
-				Err:            fmt.Errorf("failed to execute migration SQL: %w", err),
-				Statement:      stmt,
-				StatementIndex: i + 1,
-				Total:          len(statements),
-			}
+			return migrationFileStatementError(err, event)
 		}
-		if committed {
-			if err := observeExecutedStatement(ctx, event); err != nil {
-				return err
-			}
-			if hooks.observer != nil {
-				if err := hooks.observer.ObserveStatement(ctx, event); err != nil {
-					return &StatementObservationError{Err: err, Event: event}
-				}
-			}
-			continue
+	}
+	if !handled {
+		if err := executeMigrationStatement(ctx, conn, event.Statement, mode); err != nil {
+			return migrationFileStatementError(err, event)
 		}
-		if err := recordStatementProgressBefore(ctx, event); err != nil {
-			return err
-		}
+	}
+	if err := recordAndObserveExecutedStatement(ctx, event); err != nil {
+		return err
+	}
+	return observeMigrationFileStatement(ctx, hooks.observer, event)
+}
 
-		handled := false
-		if hooks.interceptor != nil {
-			var err error
-			handled, err = hooks.interceptor.ExecuteStatement(ctx, conn, stmt, interceptorDirectives)
-			if err != nil {
-				return &MigrationExecutionError{
-					Err:            fmt.Errorf("failed to execute migration SQL: %w", err),
-					Statement:      stmt,
-					StatementIndex: i + 1,
-					Total:          len(statements),
-				}
-			}
-		}
+// migrationFileStatementError reports that event's statement failed.
+func migrationFileStatementError(err error, event StatementEvent) error {
+	return &MigrationExecutionError{
+		Err:            fmt.Errorf("failed to execute migration SQL: %w", err),
+		Statement:      event.Statement,
+		StatementIndex: event.Index,
+		Total:          event.Total,
+	}
+}
 
-		if !handled {
-			if err := executeMigrationStatement(ctx, conn, stmt, mode); err != nil {
-				return &MigrationExecutionError{
-					Err:            fmt.Errorf("failed to execute migration SQL: %w", err),
-					Statement:      stmt,
-					StatementIndex: i + 1,
-					Total:          len(statements),
-				}
-			}
-		}
-		if err := recordAndObserveExecutedStatement(ctx, event); err != nil {
-			return err
-		}
-		if hooks.observer != nil {
-			if err := hooks.observer.ObserveStatement(ctx, event); err != nil {
-				return &StatementObservationError{
-					Err:   err,
-					Event: event,
-				}
-			}
+// observeMigrationFileStatement reports a statement that ran to observer, when
+// there is one.
+func observeMigrationFileStatement(ctx context.Context, observer StatementObserver, event StatementEvent) error {
+	if observer == nil {
+		return nil
+	}
+	if err := observer.ObserveStatement(ctx, event); err != nil {
+		return &StatementObservationError{
+			Err:   err,
+			Event: event,
 		}
 	}
 	return nil
