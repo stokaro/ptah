@@ -180,6 +180,15 @@ it would refuse with `-- +ptah no_transaction`. The down file of a refused up
 file gets the directive too, because it runs after the up file has changed the
 catalog. Such a file keeps its lock and statement timeouts.
 
+The comparison leaves out the tables `migrations up` keeps its history in, so a
+generated file never drops them. Ptah's own `schema_migrations` and
+`schema_migrations_log` are left out on every dialect. A revision table under
+another name, or in the Atlas format, is left out when `generate` and
+`migrations plan` get the same `--migrations-table` and `--revision-format` that
+`migrations up` uses, or read them from `migration.revisions_table` and
+`migration.revision_format` in `ptah.yaml`. Without them, such a table is compared as an ordinary table and the
+plan drops it.
+
 Pass `--report json` to publish a machine-readable safety artifact with each
 generated pair. `generate` writes
 `<version>_<name>.safety.json` beside the up and down files and prints its path

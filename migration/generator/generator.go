@@ -15,6 +15,7 @@ import (
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/fsnapshot"
+	"ptah.run/internal/revisiontable"
 	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/schemadiff"
@@ -59,6 +60,15 @@ type GenerateMigrationOptions struct {
 	// Schemas restricts database introspection to the listed schemas when the
 	// connected dialect supports schema scoping.
 	Schemas []string
+	// RevisionTables names the migrator's bookkeeping tables in the database
+	// the plan reads: the revision table and, for Ptah's native format, the
+	// operation log beside it. They are left out of the comparison, so a plan
+	// never drops the record of the migrations already applied. Names compare
+	// without regard to case. Empty leaves out only what the dialect's reader
+	// leaves out by default, Ptah's native tables under their default names; a
+	// custom revision table or the Atlas-format one is then compared as an
+	// ordinary table.
+	RevisionTables []string
 	// EnvironmentExtensions names extensions the database held before the
 	// current state was built and that the desired schema does not own: a dev
 	// database's own, which the replay that built the current state kept. The
@@ -265,6 +275,7 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 		return nil, fmt.Errorf("error reading database schema: %w", err)
 	}
 	dbSchema = devclean.WithoutKeptExtensions(dbSchema, opts.EnvironmentExtensions, declaredExtensions(desired))
+	dbSchema = revisiontable.Without(dbSchema, opts.RevisionTables)
 	if err := recoverMigrationPublication(ctx, opts.AllowedOutputRoot, opts.OutputDir); err != nil {
 		return nil, err
 	}

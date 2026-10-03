@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devdocker"
@@ -26,6 +27,7 @@ import (
 	"ptah.run/internal/migrationreplay"
 	"ptah.run/internal/migrationsnapshot"
 	"ptah.run/internal/pathguard"
+	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/undecidednote"
@@ -98,9 +100,38 @@ repository alone.`,
 	flags.StringArray(dbcli.IgnoreExtensionFlagName, nil,
 		"Database extension the comparison must leave alone, neither created nor dropped (repeatable; adds to the defaults)")
 	dbcli.RegisterExternalSchemaOptInFlag(flags)
+	dbcli.RegisterMigrationsTableFlag(flags, new(string))
+	dbcli.RegisterRevisionTableFormatFlag(flags, new(string))
 
 	cmdutil.ConfigureCommand(cmd)
 	return cmd
+}
+
+// revisionTables names the bookkeeping tables `migrations up` writes under the
+// same settings, so `generate` and its `plan` preview leave them out of the
+// comparison. The
+// flags and the project file resolve exactly as they do for `migrations up`:
+// a plan that read a custom or Atlas-format revision table as an ordinary one
+// dropped it, measured on SQLite with `--migrations-table custom_revs` and with
+// `--revision-format atlas` (stokaro/ptah#4029).
+func revisionTables(cmd *cobra.Command, projectCfg projectconfig.Config) ([]string, error) {
+	table, err := cmd.Flags().GetString(dbcli.MigrationsTableFlagName)
+	if err != nil {
+		return nil, err
+	}
+	format, err := cmd.Flags().GetString(dbcli.RevisionTableFormatFlagName)
+	if err != nil {
+		return nil, err
+	}
+	table = dbcli.EffectiveString(cmd, dbcli.MigrationsTableFlagName, table,
+		projectCfg.StringValue(projectconfig.StringMigrationRevisionsTable))
+	format = dbcli.EffectiveString(cmd, dbcli.RevisionTableFormatFlagName, format,
+		projectCfg.StringValue(projectconfig.StringMigrationRevisionFormat))
+	parsed, err := migrateflags.ParseRevisionTableFormat(format)
+	if err != nil {
+		return nil, err
+	}
+	return revisiontable.Configured(string(parsed), table), nil
 }
 
 // validateGenerateReplayMode rejects the target database URL in --replay mode,
@@ -452,6 +483,10 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	dbURL = dbcli.EffectiveString(cmd, generateDBURLFlag, dbURL, projectCfg.StringValue(projectconfig.StringDatabaseURL))
 	migrationsDir = dbcli.EffectiveString(cmd, generateMigrationsDirFlag, migrationsDir, projectCfg.StringValue(projectconfig.StringMigrationDir))
 	shadowDB = dbcli.EffectiveString(cmd, generateShadowDBFlag, shadowDB, projectCfg.StringValue(projectconfig.StringDevURL))
+	revisionTables, err := revisionTables(cmd, projectCfg)
+	if err != nil {
+		return err
+	}
 	reportFormat, err := cmd.Flags().GetString(generateReportFormatFlag)
 	if err != nil {
 		return err
@@ -592,6 +627,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		MigrationName:     name,
 		OutputDir:         migrationsDir,
 		Schemas:           dbcli.ParseSchemas(schemasValue),
+		RevisionTables:    revisionTables,
 		CheckDestructive:  checkDestructive,
 		AllowDestructive:  allowDestructive,
 		ReportFormat:      reportFormat,

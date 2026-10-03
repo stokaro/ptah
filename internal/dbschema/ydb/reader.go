@@ -140,7 +140,7 @@ func (r *Reader) entry(
 		}
 		return r.walk(ctx, source, path.Join(schema, name), db)
 	case Ydb_Scheme.Entry_TABLE:
-		if !r.inScope(schema) || slices.Contains(revisiontable.DefaultNames(), name) {
+		if !r.inScope(schema) || revisiontable.IsDefault(name) {
 			// The migrator's own tables are its bookkeeping, not the
 			// schema, as every other reader treats them.
 			return nil

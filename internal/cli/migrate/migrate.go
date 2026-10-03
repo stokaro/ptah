@@ -21,6 +21,7 @@ import (
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/planartifact"
+	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/undecidednote"
@@ -96,6 +97,8 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
 	dbcli.RegisterIgnoreExtensionFlag(flags, &opts.ignoreExtensions)
+	dbcli.RegisterMigrationsTableFlag(flags, new(string))
+	dbcli.RegisterRevisionTableFormatFlag(flags, new(string))
 }
 
 func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
@@ -178,6 +181,11 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 		fmt.Fprintln(out)
 	}
 
+	bookkeeping, err := revisionTables(cmd, projectCfg)
+	if err != nil {
+		return err
+	}
+
 	// 1. Connect first: the server names the dialect a SQL schema file is read
 	// in, because a postgres:// URL reaches CockroachDB too (stokaro/ptah#3952).
 	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
@@ -205,6 +213,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return fmt.Errorf("error reading database schema: %w", err)
 	}
+	dbSchema = revisiontable.Without(dbSchema, bookkeeping)
 
 	// 3. Compare schemas (dialect-aware: MySQL/MariaDB RESTRICT == NO ACTION)
 	info := conn.Info()

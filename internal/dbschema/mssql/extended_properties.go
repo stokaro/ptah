@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/internal/revisiontable"
 )
 
 // extendedPropertyQuery reads the SQL Server extended properties Ptah
@@ -93,7 +94,7 @@ const extendedPropertyQuery = `
 	WHERE ep.class = 1
 	  AND ep.name <> N'MS_Description'
 	  AND t.is_ms_shipped = 0
-	  AND t.name NOT IN ('schema_migrations', 'schema_migrations_log', 'atlas_schema_revisions')
+	  AND t.name NOT IN (` + revisiontable.DefaultSQLNames + `)
 	  AND (` + schemaPredicatePlaceholder + `)
 
 	ORDER BY 1, 2, 3, 4`
