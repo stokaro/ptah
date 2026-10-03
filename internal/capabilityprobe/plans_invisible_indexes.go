@@ -14,7 +14,8 @@ import (
 // CockroachDB lists one statistics row per column of an index, the implicit
 // key included, so its read-back counts index names. PostgreSQL, YugabyteDB,
 // Spanner, SQLite, ClickHouse and SQL Server are asked MySQL's spelling, which
-// each refuses, so a refusal is a measured answer. Oracle declares the key
+// each refuses, so a refusal is a measured answer; YDB is asked the word on
+// its own ADD INDEX and refuses it the same way. Oracle declares the key
 // instead: it takes `CREATE INDEX ... INVISIBLE` with a meaning of its own,
 // which Ptah neither renders nor reads, so its acceptance would answer a
 // different question.
@@ -49,6 +50,12 @@ func withInvisibleIndexes(p plan, dialect string) plan {
 	case platform.ClickHouse:
 		table := clickHouseSpelling.table("ivx", "n Int64", "n")
 		p.experiments = append(p.experiments, acceptance(capability.InvisibleIndexes, []string{table}, create))
+	case platform.YDB:
+		// YDB has no CREATE INDEX, so MySQL's word goes on YDB's own ADD
+		// INDEX, where a refusal is the word's rather than the statement's.
+		table := ydbSpelling.table("ivx", "id Int64 NOT NULL, n Int64", "id")
+		p.experiments = append(p.experiments, acceptance(capability.InvisibleIndexes, []string{table},
+			"ALTER TABLE ivx ADD INDEX ivx_k GLOBAL ON (n) INVISIBLE"))
 	default:
 		p.experiments = append(p.experiments, acceptance(capability.InvisibleIndexes, setup, create))
 	}

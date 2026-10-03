@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"path"
 	"slices"
 	"strings"
 
@@ -127,8 +128,14 @@ type Report struct {
 	// Control is the statement the server had to refuse for any acceptance in
 	// this run to be worth reading.
 	Control Attempt
-	// Namespace is the throwaway schema or database the run used.
+	// Namespace is the throwaway schema or database the run used. On YDB it is
+	// the absolute path of the directory the run worked in.
 	Namespace string
+	// StatementPrefix is the text sent ahead of every statement the evidence
+	// lists, empty where the namespace is session state the run set once. On
+	// YDB it is the pragma naming the namespace directory, so re-running a
+	// statement by hand means sending it after this.
+	StatementPrefix string
 	// Namespaced records the statements that proved the namespace applies.
 	// Entering one is not evidence that it governs where objects land, and a
 	// namespace that silently does not apply is how one run's leftovers become
@@ -289,11 +296,29 @@ func Run(ctx context.Context, dbURL string) (*Report, error) {
 	if err := conn.WithSession(ctx, func(pinned *dbschema.DatabaseConnection) error {
 		report.SessionCapabilities = pinned.Info().Capabilities
 		report.SessionDeltas = deltas(report.Resolution.Capabilities, report.SessionCapabilities)
-		return measure(ctx, pinned, report)
+		return measure(ctx, measuredOn(report.Dialect, conn, pinned), report)
 	}); err != nil {
 		return nil, err
 	}
 	return report, nil
+}
+
+// measuredOn picks the connection the plan runs on: the pinned session, where
+// the namespace is session state, and the pool on YDB.
+//
+// A YDB namespace is a pragma every statement carries, so no statement there
+// depends on the session before it, and the run does depend on the pool to
+// survive a session the server ends. Measured on 25.1.4.7: the CREATE TABLE
+// the small_integer_defaults experiment sends fails with INTERNAL_ERROR and
+// ends the server session, every later statement on a pinned session answers
+// BAD_SESSION, and the run died with the namespace and its group left behind.
+// On the pool the driver drops the dead session and the next statement takes
+// a new one.
+func measuredOn(dialect string, pool, pinned *dbschema.DatabaseConnection) *dbschema.DatabaseConnection {
+	if dialect == platform.YDB {
+		return pool
+	}
+	return pinned
 }
 
 // ProductVersion asks the server for a version surface cleaner than its
@@ -344,21 +369,20 @@ func measure(ctx context.Context, pinned *dbschema.DatabaseConnection, report *R
 	}
 	report.Namespace = namespace
 	s := &session{conn: pinned, dialect: report.Dialect, namespace: namespace}
+	if report.Dialect == platform.YDB {
+		if err := s.enterYDBDirectory(); err != nil {
+			return err
+		}
+		report.Namespace = path.Join(s.database, namespace)
+		report.StatementPrefix = strings.TrimSpace(s.prefix)
+	}
 
 	enter, leave := namespaceSQL(report.Dialect, namespace)
 	if attempts, ok := s.runAll(ctx, enter); !ok {
 		return fmt.Errorf("create the throwaway probe namespace: %s", attempts[len(attempts)-1].ServerErr)
 	}
 	defer func() {
-		cleanup := s.dropRoles(ctx)
-		// A dialect whose namespace is the database the probe connected to has
-		// nothing to leave. Executing an empty statement there would record a
-		// refusal the run did not earn, in the one place a reader looks to see
-		// that the server was left as it was found.
-		if leave != "" {
-			cleanup = append(cleanup, s.exec(ctx, leave))
-		}
-		report.Cleanup = cleanup
+		report.Cleanup = append(s.dropRoles(ctx), s.leave(ctx, leave)...)
 	}()
 
 	confirmations, err := s.confirmNamespace(ctx)

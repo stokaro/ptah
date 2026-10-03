@@ -28,6 +28,9 @@ func withConstraintComments(p plan, dialect string) plan {
 	case platform.Oracle:
 		p.experiments = append(p.experiments, constraintCommentRefusal("Oracle comments a table, a column and a "+
 			"few other objects, and has no COMMENT ON CONSTRAINT"))
+	case platform.YDB:
+		p.experiments = append(p.experiments, constraintCommentRefusal("YQL has no COMMENT statement and no "+
+			"constraint to carry one"))
 	}
 	return p
 }

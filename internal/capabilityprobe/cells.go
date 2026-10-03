@@ -703,15 +703,12 @@ var Cells = []Cell{
 		Note:       "measured against the Cloud Spanner emulator behind PGAdapter, which is the only Spanner endpoint a container can provide; the managed service is not what runs here",
 	},
 
-	// YDB: six release lines, measured by hand on ydbplatform/local-ydb
-	// 25.1.4.7, 25.2.1.24, 25.3.1.25, 25.4.1.15, 26.1.1.22 and 26.2.1.14
-	// through the bundled CLI, each statement read back with `scheme
-	// describe`. The probe has no YDB statement table or launch recipe yet
-	// (stokaro/ptah#4015). The integration workflow starts a 26.2 server and
-	// the YDB live tests run against it, so that line is certified; the
-	// others are best-effort, since nothing in continuous integration starts
-	// them. YDB publishes no support period, so the upstream half of the
-	// rubric has nothing to read.
+	// YDB: six release lines, each started from its newest local-ydb patch and
+	// probed by the YDB statement table on every run of the tiered workflows,
+	// which is what certifies them; the integration workflow also runs the YDB
+	// live tests against 26.2. YDB publishes no support period, so the
+	// upstream half of the rubric has nothing to read, and the odd lines stay
+	// beside the even ones because a cluster can run either.
 	//
 	// The image tags name the line and resolve to its newest patch, because
 	// local-ydb's own line tags are stale builds: `26.2` is a June build
@@ -721,51 +718,70 @@ var Cells = []Cell{
 		Preset: capability.YDB262, PresetName: "YDB262",
 		Refinement: RefinedByVersion, Support: capability.Certified,
 		Image: "ydbplatform/local-ydb:26.2", ResolveNewestPatch: true,
-		Note: "certified: the integration workflow starts local-ydb 26.2 and runs the YDB live tests against it; " +
-			"the probe has no YDB statement table, so the preset itself was measured by hand. " +
-			"The first line that sets and drops a column default in place.",
+		Understates: ydbUnderstates,
+		Note:        ydbMeasuredNote("26.2.1.14") + " The first line that sets and drops a column default in place.",
 	},
 	{
 		Dialect: platform.YDB, Line: capabilityline.YDB261,
 		Preset: capability.YDB261, PresetName: "YDB261",
-		Refinement: RefinedByVersion, Support: capability.BestEffort,
+		Refinement: RefinedByVersion, Support: capability.Certified,
 		Image: "ydbplatform/local-ydb:26.1", ResolveNewestPatch: true,
-		Note: ydbBestEffortNote + " The first line that adds a column with a default to a table holding rows.",
+		Understates: ydbUnderstates,
+		Note:        ydbMeasuredNote("26.1.1.22") + " The first line that adds a column with a default to a table holding rows.",
 	},
 	{
 		Dialect: platform.YDB, Line: capabilityline.YDB254,
 		Preset: capability.YDB253, PresetName: "YDB253",
-		Refinement: RefinedByVersion, Support: capability.BestEffort,
+		Refinement: RefinedByVersion, Support: capability.Certified,
 		Image: "ydbplatform/local-ydb:25.4", ResolveNewestPatch: true,
-		Note: ydbBestEffortNote + " Answered every measured statement as 25.3 did, and reports its version as `stable-25-4-1`.",
+		Understates: ydbUnderstates,
+		Note:        ydbMeasuredNote("25.4.1.15") + " It answers every statement as 25.3 does, and reports its version as `stable-25-4-1`.",
 	},
 	{
 		Dialect: platform.YDB, Line: capabilityline.YDB253,
 		Preset: capability.YDB253, PresetName: "YDB253",
-		Refinement: RefinedByVersion, Support: capability.BestEffort,
+		Refinement: RefinedByVersion, Support: capability.Certified,
 		Image: "ydbplatform/local-ydb:25.3", ResolveNewestPatch: true,
-		Note: ydbBestEffortNote + " The first line that takes a literal default on JsonDocument and DyNumber.",
+		Understates: ydbUnderstates,
+		Note:        ydbMeasuredNote("25.3.1.25") + " The first line that takes a literal default on JsonDocument and DyNumber.",
 	},
 	{
 		Dialect: platform.YDB, Line: capabilityline.YDB252,
 		Preset: capability.YDB252, PresetName: "YDB252",
-		Refinement: RefinedByVersion, Support: capability.BestEffort,
+		Refinement: RefinedByVersion, Support: capability.Certified,
 		Image: "ydbplatform/local-ydb:25.2", ResolveNewestPatch: true,
-		Note: ydbBestEffortNote + " The first line with the 64-bit date and time types and a Decimal of any precision.",
+		Understates: ydbUnderstates,
+		Note:        ydbMeasuredNote("25.2.1.24") + " The first line with the 64-bit date and time types and a Decimal of any precision.",
 	},
 	{
 		Dialect: platform.YDB, Line: capabilityline.YDB251,
 		Preset: capability.YDB251, PresetName: "YDB251",
-		Refinement: RefinedByVersion, Support: capability.BestEffort,
+		Refinement: RefinedByVersion, Support: capability.Certified,
 		Image: "ydbplatform/local-ydb:25.1", ResolveNewestPatch: true,
-		Note: ydbBestEffortNote + " The oldest measured line: no 64-bit date types, Decimal(22,9) only, and no default on a 16-bit integer.",
+		Understates: ydbUnderstates,
+		Note:        ydbMeasuredNote("25.1.4.7") + " The oldest measured line: no 64-bit date types, Decimal(22,9) only, and no default on a 16-bit integer.",
 	},
 }
 
-// ydbBestEffortNote opens every YDB cell's note with why the line is
-// best-effort.
-const ydbBestEffortNote = "best-effort: measured by hand on local-ydb; the probe has no YDB statement table, " +
-	"so CI starts no server for this line."
+// ydbMeasuredNote opens a YDB cell's note with the probe run that measured it.
+func ydbMeasuredNote(version string) string {
+	return "probed on every run of the tiered workflows. Measured on " + version + " through this cell's " +
+		"launch recipe: 94 rows, 77 agree, 3 are understated on purpose, 14 are undecidable and none disagrees."
+}
+
+// ydbUnderstates are the keys every YDB preset claims less than the server
+// does, on purpose. YDB has each object, the probe creates one and uses it,
+// and the key stays false because a key names what Ptah renders, reads and
+// plans: until the YDB object family lands, Ptah refuses the declaration
+// rather than emitting a statement its reader would never see again.
+var ydbUnderstates = map[capability.Capability]string{
+	capability.Views: "YDB creates and reads a view; Ptah's YDB renderer refuses one, and the views family " +
+		"is open work in stokaro/ptah#4015",
+	capability.RoleManagement: "YDB creates a group and stores a GRANT; Ptah does not read or plan YDB's " +
+		"access model, which is open work in stokaro/ptah#4015",
+	capability.RowDeletionPolicy: "YDB stores a TTL on a table; Ptah does not render, read or plan a YDB TTL, " +
+		"which is open work in stokaro/ptah#4015",
+}
 
 // PresetsWithoutCell names every capability preset Ptah ships that no cell
 // claims, and why that absence is deliberate.

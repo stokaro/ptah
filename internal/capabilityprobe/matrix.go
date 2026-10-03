@@ -482,6 +482,32 @@ var launchers = map[string]launcher{
 			"runs in the tagged integration contour against the same image, and this cell adds the " +
 			"capability-probe half (stokaro/ptah#1875)",
 	},
+	platform.YDB: {
+		// The recipe go-integration-tests.yml uses for its YDB service, with
+		// the monitoring port published too. local-ydb advertises its node
+		// through discovery under the container's host name, so the container
+		// is named localhost and the runner reaches the advertised address
+		// through the published port. Measured on every line from 25.1.4.7 to
+		// 26.2.1.14: the server answers a query and takes a CREATE TABLE in
+		// about five seconds, which the probe's wait covers.
+		flags: []string{
+			"--publish", "2136:2136",
+			"--publish", "8765:8765",
+			"--hostname", "localhost",
+			"--env", "GRPC_PORT=2136",
+			"--env", "MON_PORT=8765",
+			"--env", "YDB_USE_IN_MEMORY_PDISKS=true",
+		},
+		// local-ydb serves the one database /local. The monitoring parameter
+		// makes the connection read the cluster's feature flags, so every run
+		// compares the server with the set those flags refine the preset
+		// into, and a flag whose default stopped agreeing with the line's
+		// preset turns the cell red.
+		url: "ydb://localhost:2136/local?monitoring=http://localhost:8765",
+		suiteSkip: "the integration runner has no YDB target yet; the YDB live tests run in the tagged " +
+			"integration contour against a 26.2 server, and this cell adds the capability-probe half " +
+			"(stokaro/ptah#4015)",
+	},
 }
 
 // CIMatrix derives the pipeline's fan-out from the declared matrix.

@@ -28,6 +28,9 @@ func withObjectComments(p plan, dialect string) plan {
 			"SQL Server carries a comment as an extended property, which this key does not name")...)
 	case platform.SQLite:
 		p.experiments = append(p.experiments, objectCommentRefusals("SQLite has no COMMENT ON statement at all")...)
+	case platform.YDB:
+		p.experiments = append(p.experiments, objectCommentRefusals("YQL has no COMMENT statement for any object; "+
+			"a comment on a YDB table is a table attribute, which this key does not name")...)
 	case platform.MySQL, platform.MariaDB:
 		p.undecided = withObjectCommentsUndecided(p.undecided, "MySQL and MariaDB have no COMMENT ON statement; "+
 			"a comment lives in a table or column clause, and neither renderer writes one for these "+

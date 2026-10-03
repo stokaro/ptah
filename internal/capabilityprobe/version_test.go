@@ -96,6 +96,21 @@ func TestParseVersion_CorrectsTheBannersOneParserCannotRead(t *testing.T) {
 		dialect: platform.CockroachDB,
 		banner:  "CockroachDB CCL v26.2.5 (aarch64-unknown-linux-gnu, built 2026/07/28 18:55:27, go1.25.5)",
 		want:    "26.2.5",
+	}, {
+		name:    "a YDB release",
+		dialect: platform.YDB,
+		banner:  "26.2.1.14",
+		want:    "26.2.1.14",
+	}, {
+		name:    "the shared rule reads YDB's branch name as one number",
+		dialect: platform.Postgres,
+		banner:  "stable-25-4-1",
+		want:    "25",
+	}, {
+		name:    "the ydb rule reads the branch name local-ydb 25.4.1.15 reports",
+		dialect: platform.YDB,
+		banner:  "stable-25-4-1",
+		want:    "25.4.1",
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)

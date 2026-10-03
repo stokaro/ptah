@@ -105,27 +105,21 @@ the declared set cannot say one thing here and another in a workflow file.
 | `yugabytedb` | 2024.2 | certified | `YugabyteDB24` | yes |
 | `sqlite` | 3 | certified | `SQLite3` | yes |
 | `spanner` | 0 | best-effort | `SpannerPostgres` | yes |
+| `ydb` | 26.2 | certified | `YDB262` | yes |
+| `ydb` | 26.1 | certified | `YDB261` | yes |
+| `ydb` | 25.4 | certified | `YDB253` | yes |
+| `ydb` | 25.3 | certified | `YDB253` | yes |
+| `ydb` | 25.2 | certified | `YDB252` | yes |
+| `ydb` | 25.1 | certified | `YDB251` | yes |
 | `clickhouse` | 25.8 | best-effort | `ClickHouse2411` | no |
-| `ydb` | 26.2 | certified | `YDB262` | no |
-| `ydb` | 26.1 | best-effort | `YDB261` | no |
-| `ydb` | 25.4 | best-effort | `YDB253` | no |
-| `ydb` | 25.3 | best-effort | `YDB253` | no |
-| `ydb` | 25.2 | best-effort | `YDB252` | no |
-| `ydb` | 25.1 | best-effort | `YDB251` | no |
 
-Declared release lines: 38. Probed on every pull request: 31.
+Declared release lines: 38. Probed on every pull request: 37.
 
-Support levels across the 38 declared lines: 29 certified, 2 legacy-tested, 7 best-effort.
+Support levels across the 38 declared lines: 34 certified, 2 legacy-tested, 2 best-effort.
 
 Lines that are declared and not probed, and why:
 
 - `clickhouse` 25.8 — upstream support ended on 2026-08-29 (endoflife.date/clickhouse).
-- `ydb` 26.2 — the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing.
-- `ydb` 26.1 — the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing.
-- `ydb` 25.4 — the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing.
-- `ydb` 25.3 — the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing.
-- `ydb` 25.2 — the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing.
-- `ydb` 25.1 — the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing.
 
 Lines whose container tag does not name the line, so which patch it resolves to has to be read off the tag:
 

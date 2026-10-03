@@ -60,6 +60,10 @@ func enforcementTables(dialect string) enforcementTableSpelling {
 		return enforcementTableSpelling{
 			parentColumns: "id NUMBER(10) PRIMARY KEY", childColumns: "n NUMBER(10), a NUMBER(10)",
 		}
+	case platform.YDB:
+		return enforcementTableSpelling{
+			parentColumns: "id Int64 NOT NULL", childColumns: "n Int64 NOT NULL, a Int64", spelling: ydbSpelling,
+		}
 	default:
 		return enforcementTableSpelling{parentColumns: "id int PRIMARY KEY", childColumns: "n int, a int"}
 	}

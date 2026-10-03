@@ -307,6 +307,76 @@ func TestWriter_DropAllTables_FailurePath(t *testing.T) {
 	c.Assert(fake.removed, qt.HasLen, 0)
 }
 
+// DropDirectory removes a directory a caller made for itself with everything
+// in it, deepest first: tables of both kinds, views, and the directories below.
+// What sits beside the directory is not touched.
+func TestWriter_DropDirectory(t *testing.T) {
+	c := qt.New(t)
+	fake := &fakeDatabase{tree: map[string][]*Ydb_Scheme.Entry{
+		"/local": {entry("probe", Ydb_Scheme.Entry_DIRECTORY), entry("app", Ydb_Scheme.Entry_DIRECTORY)},
+		"/local/probe": {
+			entry("t", Ydb_Scheme.Entry_TABLE),
+			entry("olap", Ydb_Scheme.Entry_COLUMN_TABLE),
+			entry("v", Ydb_Scheme.Entry_VIEW),
+			entry("rb", Ydb_Scheme.Entry_DIRECTORY),
+		},
+		"/local/probe/rb": {entry("t`2", Ydb_Scheme.Entry_TABLE)},
+		"/local/app":      {entry("keep", Ydb_Scheme.Entry_TABLE)},
+	}}
+	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local")
+
+	err := writer.DropDirectory(context.Background(), "/probe/")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(fake.executed, qt.DeepEquals, []string{
+		"DROP TABLE `probe/olap`",
+		"DROP TABLE `probe/rb/t\\`2`",
+		"DROP TABLE `probe/t`",
+		"DROP VIEW `probe/v`",
+	})
+	c.Assert(fake.removed, qt.DeepEquals, []string{"/local/probe/rb", "/local/probe"})
+	c.Assert(fake.tree["/local/app"], qt.HasLen, 1)
+}
+
+// A kind the writer has no statement for stops the teardown before anything in
+// that directory is dropped, and the database root is never a directory to
+// drop.
+func TestWriter_DropDirectory_FailurePath(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		dir          string
+		wantErr      string
+		wantExecuted []string
+	}{
+		{
+			name: "a topic",
+			dir:  "probe",
+			wantErr: "ydb: /local/probe holds events, a TOPIC, which Ptah has no statement to drop; " +
+				"nothing in /local/probe was dropped",
+		},
+		{
+			name:    "the root",
+			dir:     "/",
+			wantErr: "ydb: the database root /local is not a directory DropDirectory removes",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fake := &fakeDatabase{tree: map[string][]*Ydb_Scheme.Entry{
+				"/local":       {entry("probe", Ydb_Scheme.Entry_DIRECTORY)},
+				"/local/probe": {entry("t", Ydb_Scheme.Entry_TABLE), entry("events", Ydb_Scheme.Entry_TOPIC)},
+			}}
+			writer := ydbschema.NewWriterFromScheme(fake, fake, "/local")
+
+			err := writer.DropDirectory(context.Background(), test.dir)
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(fake.executed, qt.HasLen, 0)
+			c.Assert(fake.removed, qt.HasLen, 0)
+		})
+	}
+}
+
 // A refusal that says a feature flag is off names the capability the flag
 // decides, so the operator learns which key the cluster turned off and how to
 // let Ptah read it. The server's own text stays in the message.

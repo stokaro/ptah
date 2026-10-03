@@ -3,7 +3,9 @@ package capabilityprobe
 import (
 	"context"
 	"fmt"
+	"slices"
 
+	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 )
@@ -54,6 +56,8 @@ func schemaChangesFor(dialect string) (schemaChanges, map[capability.Capability]
 		return oracleSchemaChanges(), nil
 	case platform.Spanner:
 		return spannerSchemaChanges(), nil
+	case platform.YDB:
+		return ydbSchemaChanges(), nil
 	default:
 		return postgresSchemaChanges(), nil
 	}
@@ -82,6 +86,10 @@ type schemaChanges struct {
 
 	coverSetup []string
 	cover      string
+	// coverRead proves the payload columns the cover statement asked for are
+	// the index's, where acceptance alone could hide a dropped clause. Nil
+	// leaves the key to acceptance.
+	coverRead []check
 
 	uniqueIndex schemaChange
 }
@@ -109,6 +117,12 @@ type check struct {
 	// either runs the statement for its effect and reads neither outcome as
 	// evidence; the check after it says what the effect was.
 	either bool
+	// inspect, when set, is the whole check: a read the session makes some
+	// other way than one statement -- through Ptah's own schema reader, where
+	// no SQL describes the object -- with whether it held and what it found.
+	inspect func(ctx context.Context, s *session) (attempt Attempt, held bool, did string)
+	// describes says what inspect expects, for the note when it does not hold.
+	describes string
 }
 
 func accepts(statement string) check  { return check{statement: statement} }
@@ -121,6 +135,9 @@ func counts(query string, want int64) check {
 // run executes the check and says whether it held, and what the server did in
 // words a note can quote.
 func (c check) run(ctx context.Context, s *session) (attempt Attempt, held bool, did string) {
+	if c.inspect != nil {
+		return c.inspect(ctx, s)
+	}
 	if c.counted {
 		value, attempt := s.query(ctx, c.statement)
 		if !attempt.Accepted {
@@ -134,6 +151,8 @@ func (c check) run(ctx context.Context, s *session) (attempt Attempt, held bool,
 
 func (c check) expectation() string {
 	switch {
+	case c.inspect != nil:
+		return c.describes
 	case c.either:
 		return fmt.Sprintf("%q to run", collapse(c.statement))
 	case c.counted:
@@ -163,7 +182,11 @@ func (sc schemaChanges) experiments() []experiment {
 		proven(capability.UniqueIndexOnExistingTable, sc.uniqueIndex),
 	}
 	if sc.cover != "" {
-		out = append(out, acceptance(capability.IndexCoveringColumns, sc.coverSetup, sc.cover))
+		out = append(out, proven(capability.IndexCoveringColumns, schemaChange{
+			setup:  sc.coverSetup,
+			change: []string{sc.cover},
+			after:  sc.coverRead,
+		}))
 	}
 	return out
 }
@@ -428,6 +451,75 @@ func oracleSchemaChanges() schemaChanges {
 		uniqueIndex: uniqueIndexChange(
 			"CREATE TABLE sc_uix (id NUMBER(10) NOT NULL, n NUMBER(10), PRIMARY KEY (id))",
 		),
+	}
+}
+
+// ydbSchemaChanges is YDB's spelling. Every key is declared in its own clause,
+// an index is added through ALTER TABLE, and a default is a typed literal.
+//
+// Three experiments differ in shape from the PostgreSQL ones, each for a
+// measured reason. YDB has no length on a string type, so the type change is
+// asked of an integer, and a value only Int64 holds is the evidence: an Int32
+// column refuses 5000000000 as a type mismatch. YDB folds a constant
+// expression into a literal at CREATE TABLE from 26.1 (`DEFAULT 1 + 1` and
+// `DEFAULT Unicode::ToLower("X"u)` are accepted there and refused on 25.x), so
+// a deterministic default cannot tell an evaluated expression from a folded
+// literal; the expression is the per-row function the key's own documentation
+// names, `CurrentUtcTimestamp()`, which every line refuses with `Unsupported
+// type of literal`. And no SQL describes an index, so the covering index is
+// read back through Ptah's own reader.
+func ydbSchemaChanges() schemaChanges {
+	table := func(name, columns string) string {
+		return fmt.Sprintf("CREATE TABLE %s (%s, PRIMARY KEY (id))", name, columns)
+	}
+	return schemaChanges{
+		keyed:   "CREATE TABLE sc_pk (n Int32 NOT NULL, PRIMARY KEY (n))",
+		keyless: "CREATE TABLE sc_nopk (n Int32)",
+		keyChange: schemaChange{
+			setup: []string{
+				"CREATE TABLE sc_pka (a Int32 NOT NULL, b Int32 NOT NULL, PRIMARY KEY (a))",
+				"INSERT INTO sc_pka (a, b) VALUES (1, 1)",
+			},
+			before: []check{refuses("INSERT INTO sc_pka (a, b) VALUES (1, 2)")},
+			change: []string{"ALTER TABLE sc_pka DROP PRIMARY KEY, ADD PRIMARY KEY (a, b)"},
+			after:  []check{accepts("INSERT INTO sc_pka (a, b) VALUES (1, 2)")},
+		},
+		retype: schemaChange{
+			setup:  []string{table("sc_typ", "id Int32 NOT NULL, n Int32")},
+			before: []check{refuses("INSERT INTO sc_typ (id, n) VALUES (1, 5000000000)")},
+			change: []string{"ALTER TABLE sc_typ ALTER COLUMN n SET DATA TYPE Int64"},
+			after:  []check{accepts("INSERT INTO sc_typ (id, n) VALUES (2, 5000000000)")},
+		},
+		setNull: setNotNullChange(table("sc_snn", "id Int32 NOT NULL, n Int32"),
+			"ALTER TABLE sc_snn ALTER COLUMN n SET NOT NULL"),
+		dropNull: dropNotNullChange(table("sc_dnn", "id Int32 NOT NULL, n Int32 NOT NULL"),
+			"ALTER TABLE sc_dnn ALTER COLUMN n DROP NOT NULL"),
+		defaults: defaultChange(table("sc_def", "id Int32 NOT NULL, n Int32"),
+			"ALTER TABLE sc_def ALTER COLUMN n SET DEFAULT 7",
+			"ALTER TABLE sc_def ALTER COLUMN n DROP DEFAULT"),
+		addColumn: addColumnChange(table("sc_add", "id Int32 NOT NULL"),
+			"ALTER TABLE sc_add ADD COLUMN n Int32 NOT NULL DEFAULT 7"),
+		literalDefault: table("sc_exl", `id Int32 NOT NULL, t Timestamp DEFAULT Timestamp("2026-01-01T00:00:00Z")`),
+		exprDefault: schemaChange{
+			change: []string{table("sc_exe", "id Int32 NOT NULL, t Timestamp DEFAULT CurrentUtcTimestamp()")},
+			after: []check{
+				accepts("INSERT INTO sc_exe (id) VALUES (1)"),
+				counts("SELECT COUNT(*) FROM sc_exe WHERE id = 1 AND t IS NOT NULL", 1),
+			},
+		},
+		check:      table("sc_chk", "id Int32 NOT NULL, n Int32 CHECK (n > 0)"),
+		coverSetup: []string{table("sc_cov", "id Int32 NOT NULL, a Int32, b Int32")},
+		cover:      "ALTER TABLE sc_cov ADD INDEX sc_cov_ix GLOBAL ON (a) COVER (b)",
+		coverRead: []check{ydbDescribedIndex("sc_cov", "sc_cov_ix", "the index to cover b",
+			func(index catalog.Index) bool { return slices.Equal(index.IncludeColumns, []string{"b"}) })},
+		uniqueIndex: schemaChange{
+			setup:  []string{table("sc_uix", "id Int32 NOT NULL, n Int32"), "INSERT INTO sc_uix (id, n) VALUES (1, 10)"},
+			change: []string{"ALTER TABLE sc_uix ADD INDEX sc_uix_n GLOBAL UNIQUE SYNC ON (n)"},
+			after: []check{
+				accepts("INSERT INTO sc_uix (id, n) VALUES (2, 20)"),
+				refuses("INSERT INTO sc_uix (id, n) VALUES (3, 10)"),
+			},
+		},
 	}
 }
 

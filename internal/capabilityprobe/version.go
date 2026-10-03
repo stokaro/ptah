@@ -107,6 +107,15 @@ func versionText(dialect, banner string) (text, source string) {
 		return banner, "banner (no \"-YB-\" marker found)"
 	case platform.MariaDB:
 		return strings.TrimPrefix(banner, mariaDBReplicationPrefix), "banner with the 5.5.5- replication prefix trimmed"
+	case platform.YDB:
+		// `SELECT Version()` answers the release, `26.2.1.14`, on every line
+		// but 25.4, where local-ydb 25.4.1.15 answers the branch it was built
+		// from, `stable-25-4-1`. Read as it stands the branch name parses as
+		// 25, which falls on no line.
+		if branch, found := strings.CutPrefix(strings.TrimSpace(banner), "stable-"); found {
+			return strings.ReplaceAll(branch, "-", "."), "branch name stable-<major>-<minor>-<patch> read as a version"
+		}
+		return banner, "banner"
 	default:
 		return banner, "banner"
 	}

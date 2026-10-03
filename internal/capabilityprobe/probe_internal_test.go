@@ -31,6 +31,7 @@ var probedDialects = []string{
 	platform.Oracle,
 	platform.SQLServer,
 	platform.SQLite,
+	platform.YDB,
 }
 
 // TestPlans_AnswerEveryRegisteredCapabilityExactlyOnce is the guard that keeps
@@ -256,6 +257,21 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.TypeComments,
 			capability.ViewComments,
 		},
+	}, {
+		dialect: platform.YDB,
+		// The PostgreSQL set, for the PostgreSQL reasons: YDB is asked in its
+		// own spelling or in the standard one everywhere else, and what is
+		// left is a property of the probe, of the migrator or of an extension
+		// no YDB has.
+		want: []capability.Capability{
+			capability.CatalogVectorInfo,
+			capability.ContinuousAggregates,
+			capability.DDLInsideTransaction,
+			capability.Hypertables,
+			capability.MigrationTimeouts,
+			capability.ShowRoutinePrivilege,
+			capability.TransactionalDDL,
+		},
 	}} {
 		t.Run(tc.dialect, func(t *testing.T) {
 			c := qt.New(t)
@@ -409,6 +425,17 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		},
 		caps: capability.CockroachDB25(),
 		want: registered - 9,
+	}, {
+		name: "ydb 26.2 owes every row but the seven it declares and the seven whose prerequisite the preset lacks: " +
+			"guarded DROP CONSTRAINT, CREATE OR REPLACE TRIGGER, SET EXPRESSION, the three reference policies " +
+			"and the sequence grammar restriction",
+		cell: Cell{
+			Dialect: platform.YDB, Line: "26.2",
+			Preset: capability.YDB262, PresetName: "YDB262",
+			Refinement: RefinedByVersion,
+		},
+		caps: capability.YDB262(),
+		want: registered - 14,
 	}, {
 		name: "a banner-refined line owes nothing because no observation can be credited to it",
 		cell: Cell{
@@ -1193,4 +1220,27 @@ func TestClickHousePlan_AsksTheShapeTheKeyNames(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestYDBNamespaceStatements pins the statements that locate the YDB
+// namespace: a key in a clause of its own, absolute paths into the system
+// views (a relative `.sys` would resolve inside the namespace the pragma
+// names), and an occupancy count that leaves out only the server's
+// dot-directories. Nothing is executed to enter the namespace or to leave it:
+// the pragma travels with every statement and the scheme service removes the
+// directory.
+func TestYDBNamespaceStatements(t *testing.T) {
+	c := qt.New(t)
+
+	enter, leave := namespaceSQL(platform.YDB, "ptah_capprobe_ab")
+
+	c.Assert(enter, qt.HasLen, 0)
+	c.Assert(leave, qt.Equals, "")
+	c.Assert(sentinelTableSQL(platform.YDB), qt.Equals,
+		"CREATE TABLE ptah_capprobe_sentinel (n Int64 NOT NULL, PRIMARY KEY (n))")
+	c.Assert(sentinelLocationSQL(platform.YDB, "/local", "ptah_capprobe_ab"), qt.Equals,
+		"SELECT COUNT(DISTINCT Path) FROM `/local/.sys/partition_stats` "+
+			"WHERE Path = '/local/ptah_capprobe_ab/ptah_capprobe_sentinel'")
+	c.Assert(occupancySQLFor(platform.YDB, "/local"), qt.Equals,
+		"SELECT COUNT(DISTINCT Path) FROM `/local/.sys/partition_stats` WHERE NOT StartsWith(Path, '/local/.')")
 }

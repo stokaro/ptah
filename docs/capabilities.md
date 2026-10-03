@@ -851,13 +851,13 @@ nightly, from the workflow's Run button, or when somebody comments
 | `yugabytedb` | 2024.2 | certified | `YugabyteDB24` | version-ladder | `yugabytedb/yugabyte:2024.2` | yes | yes |
 | `sqlite` | 3 | certified | `SQLite3` | version-ladder | none | n/a | yes |
 | `spanner` | 0 | best-effort | `SpannerPostgres` | banner-substring | `gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.56.1` | no | yes |
+| `ydb` | 26.2 | certified | `YDB262` | version-ladder | `ydbplatform/local-ydb:26.2` | yes | yes |
+| `ydb` | 26.1 | certified | `YDB261` | version-ladder | `ydbplatform/local-ydb:26.1` | yes | yes |
+| `ydb` | 25.4 | certified | `YDB253` | version-ladder | `ydbplatform/local-ydb:25.4` | yes | yes |
+| `ydb` | 25.3 | certified | `YDB253` | version-ladder | `ydbplatform/local-ydb:25.3` | yes | yes |
+| `ydb` | 25.2 | certified | `YDB252` | version-ladder | `ydbplatform/local-ydb:25.2` | yes | yes |
+| `ydb` | 25.1 | certified | `YDB251` | version-ladder | `ydbplatform/local-ydb:25.1` | yes | yes |
 | `clickhouse` | 25.8 | best-effort | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:25.8` | yes | no: upstream support ended on 2026-08-29 (endoflife.date/clickhouse) |
-| `ydb` | 26.2 | certified | `YDB262` | version-ladder | `ydbplatform/local-ydb:26.2` | yes | no: the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing |
-| `ydb` | 26.1 | best-effort | `YDB261` | version-ladder | `ydbplatform/local-ydb:26.1` | yes | no: the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing |
-| `ydb` | 25.4 | best-effort | `YDB253` | version-ladder | `ydbplatform/local-ydb:25.4` | yes | no: the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing |
-| `ydb` | 25.3 | best-effort | `YDB253` | version-ladder | `ydbplatform/local-ydb:25.3` | yes | no: the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing |
-| `ydb` | 25.2 | best-effort | `YDB252` | version-ladder | `ydbplatform/local-ydb:25.2` | yes | no: the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing |
-| `ydb` | 25.1 | best-effort | `YDB251` | version-ladder | `ydbplatform/local-ydb:25.1` | yes | no: the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing |
 <!-- END GENERATED VERSION MATRIX -->
 
 Which versions are supported is the vendors' answer, not Ptah's, and the
