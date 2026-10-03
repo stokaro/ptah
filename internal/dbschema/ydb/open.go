@@ -34,7 +34,7 @@ type Connection struct {
 // because the SDK ignores a parameter it does not know without a word.
 const (
 	paramToken             = "token"
-	paramUseEnvCredentials = "use_env_credentials"
+	paramUseEnvCredentials = "use_env_credentials" // #nosec G101 -- the name of a URL parameter, not a credential
 	paramBalancer          = "go_balancer"
 	paramLegacyBalancer    = "balancer"
 	paramQueryMode         = "go_query_mode"

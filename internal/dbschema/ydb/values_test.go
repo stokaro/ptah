@@ -2,6 +2,7 @@ package ydb_test
 
 import (
 	"context"
+	"math"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -110,6 +111,14 @@ func TestReader_DefaultLiterals_FailurePath(t *testing.T) {
 			typ:     decimal(10, 2),
 			value:   &Ydb.Value{Value: &Ydb.Value_Low_128{Low_128: 100000000000000000}, High_128: 0},
 			wantErr: `YDB table /local/t: column "c": its default: a Decimal\(10,2\) value that is not a finite number`,
+		},
+		{
+			// A YDB Timestamp stops before 2106, so a value past what int64
+			// microseconds hold is not one YDB wrote.
+			name:    "a Timestamp past any YDB stores",
+			typ:     primitive(Ydb.Type_TIMESTAMP),
+			value:   &Ydb.Value{Value: &Ydb.Value_Uint64Value{Uint64Value: math.MaxUint64}},
+			wantErr: `YDB table /local/t: column "c": its default: a Timestamp 18446744073709551615 microseconds after 1970, which is past any Timestamp YDB stores`,
 		},
 		{
 			name:    "a NULL default",

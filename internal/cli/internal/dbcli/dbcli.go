@@ -49,7 +49,10 @@ func RegisterConnectTimeoutFlag(flags *pflag.FlagSet, target *string) {
 // verb whose empty value leaves the read at the schema the connection landed
 // in.
 func RegisterSchemasFlag(flags *pflag.FlagSet, target *string) {
-	flags.StringVar(target, SchemasFlagName, "", "Comma-separated database schemas to introspect: PostgreSQL-family and SQL Server schemas, or YDB directories relative to the database root. Empty uses the connection default schema, and on YDB every directory.")
+	flags.StringVar(target, SchemasFlagName, "",
+		"Comma-separated database schemas to introspect: PostgreSQL-family and SQL Server schemas, "+
+			"or YDB directories relative to the database root. Empty uses the connection default schema, and on YDB every directory.",
+	)
 }
 
 // RegisterURLScopedSchemasFlag registers the same flag for the verbs whose

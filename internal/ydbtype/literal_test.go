@@ -140,27 +140,28 @@ func TestIntervalText(t *testing.T) {
 	}
 }
 
-// TestDecimalText writes a decimal from its sign and digits without the zeros
-// that do not change its value.
+// TestDecimalText writes a decimal without the signs and zeros that do not
+// change its value.
 func TestDecimalText(t *testing.T) {
 	tests := []struct {
-		name     string
-		negative bool
-		integer  string
-		fraction string
-		want     string
+		name  string
+		value string
+		want  string
 	}{
-		{name: "both parts", integer: "12", fraction: "34", want: "12.34"},
-		{name: "zeros on both ends", negative: true, integer: "0012", fraction: "340", want: "-12.34"},
-		{name: "no fraction", integer: "7", fraction: "000", want: "7"},
-		{name: "no integer part", integer: "", fraction: "5", want: "0.5"},
-		{name: "a negative zero", negative: true, integer: "0", fraction: "0", want: "0"},
+		{name: "both parts", value: "12.34", want: "12.34"},
+		{name: "zeros on both ends", value: "-0012.340", want: "-12.34"},
+		{name: "no fraction left", value: "7.000", want: "7"},
+		{name: "no fraction at all", value: "7", want: "7"},
+		{name: "an empty fraction", value: "7.", want: "7"},
+		{name: "no integer part left", value: "00.5", want: "0.5"},
+		{name: "a plus sign", value: "+3.10", want: "3.1"},
+		{name: "a negative zero", value: "-0.0", want: "0"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(ydbtype.DecimalText(test.negative, test.integer, test.fraction), qt.Equals, test.want)
+			c.Assert(ydbtype.DecimalText(test.value), qt.Equals, test.want)
 		})
 	}
 }

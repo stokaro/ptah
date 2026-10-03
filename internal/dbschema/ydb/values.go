@@ -1,8 +1,10 @@
 package ydb
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"math/big"
 	"strconv"
 	"strings"
@@ -73,7 +75,7 @@ func valueText(ydbType string, value *Ydb.Value) (string, error) {
 	case ydbtype.Datetime64:
 		return instantText(time.Unix(value.GetInt64Value(), 0)), nil
 	case ydbtype.Timestamp:
-		return instantText(time.UnixMicro(int64(value.GetUint64Value()))), nil
+		return timestampText(value.GetUint64Value())
 	case ydbtype.Timestamp64:
 		return instantText(time.UnixMicro(value.GetInt64Value())), nil
 	case ydbtype.Interval, ydbtype.Interval64:
@@ -91,10 +93,8 @@ func valueText(ydbType string, value *Ydb.Value) (string, error) {
 // 0x41d4e29b550e8400 and high 0x4455664416a7.
 func uuidText(low, high uint64) string {
 	var raw [16]byte
-	for i := range 8 {
-		raw[i] = byte(low >> (8 * i))
-		raw[8+i] = byte(high >> (8 * i))
-	}
+	binary.LittleEndian.PutUint64(raw[:8], low)
+	binary.LittleEndian.PutUint64(raw[8:], high)
 	ordered := []byte{
 		raw[3], raw[2], raw[1], raw[0],
 		raw[5], raw[4],
@@ -109,6 +109,15 @@ func uuidText(low, high uint64) string {
 // dayText writes the date days after 1970-01-01.
 func dayText(days int64) string {
 	return time.Unix(days*86400, 0).UTC().Format(time.DateOnly)
+}
+
+// timestampText writes a Timestamp, stored as unsigned microseconds since
+// 1970. A value past what int64 microseconds hold is not one YDB wrote.
+func timestampText(micros uint64) (string, error) {
+	if micros > math.MaxInt64 {
+		return "", fmt.Errorf("a Timestamp %d microseconds after 1970, which is past any Timestamp YDB stores", micros)
+	}
+	return instantText(time.UnixMicro(int64(micros))), nil
 }
 
 // instantText writes an instant in UTC with as many fractional digits as it
@@ -127,7 +136,6 @@ func decimalText(low, high uint64, precision, scale int) (string, error) {
 	if high>>63 == 1 {
 		scaled.Sub(scaled, new(big.Int).Lsh(big.NewInt(1), 128))
 	}
-	negative := scaled.Sign() < 0
 	digits := new(big.Int).Abs(scaled).String()
 	if len(digits) > precision {
 		return "", fmt.Errorf("a Decimal(%d,%d) value that is not a finite number", precision, scale)
@@ -136,5 +144,9 @@ func decimalText(low, high uint64, precision, scale int) (string, error) {
 		digits = strings.Repeat("0", scale-len(digits)+1) + digits
 	}
 	split := len(digits) - scale
-	return ydbtype.DecimalText(negative, digits[:split], digits[split:]), nil
+	text := digits[:split] + "." + digits[split:]
+	if scaled.Sign() < 0 {
+		text = "-" + text
+	}
+	return ydbtype.DecimalText(text), nil
 }

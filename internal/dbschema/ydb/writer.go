@@ -27,8 +27,8 @@ import (
 // directory, and the removal of an empty one. There is no SQL that drops a
 // directory. Both take an absolute path.
 type Scheme interface {
-	ListDirectory(ctx context.Context, path string) ([]*Ydb_Scheme.Entry, error)
-	RemoveDirectory(ctx context.Context, path string) error
+	ListDirectory(ctx context.Context, absolute string) ([]*Ydb_Scheme.Entry, error)
+	RemoveDirectory(ctx context.Context, absolute string) error
 }
 
 // Writer applies schema changes to a YDB database.
@@ -269,12 +269,12 @@ type grpcScheme struct {
 	client Ydb_Scheme_V1.SchemeServiceClient
 }
 
-func (s grpcScheme) ListDirectory(ctx context.Context, path string) ([]*Ydb_Scheme.Entry, error) {
-	return (&grpcSource{scheme: s.client}).ListDirectory(ctx, path)
+func (s grpcScheme) ListDirectory(ctx context.Context, absolute string) ([]*Ydb_Scheme.Entry, error) {
+	return (&grpcSource{scheme: s.client}).ListDirectory(ctx, absolute)
 }
 
-func (s grpcScheme) RemoveDirectory(ctx context.Context, path string) error {
-	response, err := s.client.RemoveDirectory(ctx, &Ydb_Scheme.RemoveDirectoryRequest{Path: path})
+func (s grpcScheme) RemoveDirectory(ctx context.Context, absolute string) error {
+	response, err := s.client.RemoveDirectory(ctx, &Ydb_Scheme.RemoveDirectoryRequest{Path: absolute})
 	if err != nil {
 		return err
 	}

@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"errors"
 	"regexp"
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -114,7 +113,7 @@ func TestYDBConnection_IsolatedReadSessionIsReadOnly(t *testing.T) {
 	// The failed write ended the transaction on the server, so the rollback
 	// that follows finds none; that is not reported over the refusal.
 	c.Assert(writeErr, qt.ErrorMatches, `(?s).*can't be performed in read only transaction.*`)
-	c.Assert(strings.Contains(writeErr.Error(), "roll back transaction"), qt.IsFalse)
+	c.Assert(writeErr.Error(), qt.Not(qt.Contains), "roll back transaction")
 }
 
 // db verify evaluates its assertions in the isolated session above. One that

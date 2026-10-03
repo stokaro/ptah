@@ -87,7 +87,10 @@ func NewDriftCommand() *cobra.Command {
 	cmd.Flags().StringVar(&format, "format", formatText, "Output format: text, json, github-actions")
 	cmd.Flags().StringVar(&severity, "severity", severityAll, "Failing drift threshold: all or destructive")
 	cmd.Flags().StringArrayVar(&ignored, "ignore", nil, "Ignore drift for a scope, for example tables=audit_log,auth.users")
-	cmd.Flags().StringVar(&schemasRaw, dbcli.SchemasFlagName, "", "Comma-separated database schemas to introspect: PostgreSQL-family and SQL Server schemas, or YDB directories relative to the database root. Empty uses the connection default schema, and on YDB every directory.")
+	cmd.Flags().StringVar(&schemasRaw, dbcli.SchemasFlagName, "",
+		"Comma-separated database schemas to introspect: PostgreSQL-family and SQL Server schemas, "+
+			"or YDB directories relative to the database root. Empty uses the connection default schema, and on YDB every directory.",
+	)
 	cmd.Flags().BoolVar(&useExitCode, "exit-code", true, "Return 1 when drift exceeds --severity; errors still return 2")
 	cmd.Flags().StringVar(
 		&connectTimeoutRaw,

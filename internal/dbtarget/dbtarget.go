@@ -352,49 +352,34 @@ func checkScheme(src source, name, value string) error {
 
 // engineName renders an engine for a human-facing message.
 func engineName(engine Engine) string {
-	switch engine {
-	case PostgreSQL:
-		return "PostgreSQL"
-	case MySQL:
-		return "MySQL"
-	case MySQLAdmin:
-		return "MySQL with an administrative account"
-	case PostgreSQLPooled:
-		return "PostgreSQL behind a transaction-pooling proxy"
-	case TimescaleDB:
-		return "PostgreSQL with the TimescaleDB extension"
-	case MariaDB:
-		return "MariaDB"
-	case MariaDBAdmin:
-		return "MariaDB with an administrative account"
-	case ClickHouse:
-		return "ClickHouse"
-	case SQLServer:
-		return "SQL Server"
-	case CockroachDB:
-		return "CockroachDB"
-	case YugabyteDB:
-		return "YugabyteDB"
-	case Oracle:
-		return "Oracle"
-	case OracleAdmin:
-		return "Oracle with an administrative account"
-	case MySQLSocket:
-		return "MySQL through its Unix socket"
-	case MariaDBSocket:
-		return "MariaDB through its Unix socket"
-	case PostgreSQLAliased:
-		return "PostgreSQL database that the pooler also serves under another name"
-	case PostgreSQLAlias:
-		return "PostgreSQL database reached through the pooler under another name"
-	case MySQLDevServer:
-		return "second MySQL server"
-	case MariaDBDevServer:
-		return "second MariaDB server"
-	case YDB:
-		return "YDB"
+	if name, ok := engineNames[engine]; ok {
+		return name
 	}
 	return engine.String()
+}
+
+// engineNames are the names engineName gives each engine.
+var engineNames = map[Engine]string{
+	PostgreSQL:        "PostgreSQL",
+	MySQL:             "MySQL",
+	MySQLAdmin:        "MySQL with an administrative account",
+	PostgreSQLPooled:  "PostgreSQL behind a transaction-pooling proxy",
+	TimescaleDB:       "PostgreSQL with the TimescaleDB extension",
+	MariaDB:           "MariaDB",
+	MariaDBAdmin:      "MariaDB with an administrative account",
+	ClickHouse:        "ClickHouse",
+	SQLServer:         "SQL Server",
+	CockroachDB:       "CockroachDB",
+	YugabyteDB:        "YugabyteDB",
+	Oracle:            "Oracle",
+	OracleAdmin:       "Oracle with an administrative account",
+	MySQLSocket:       "MySQL through its Unix socket",
+	MariaDBSocket:     "MariaDB through its Unix socket",
+	PostgreSQLAliased: "PostgreSQL database that the pooler also serves under another name",
+	PostgreSQLAlias:   "PostgreSQL database reached through the pooler under another name",
+	MySQLDevServer:    "second MySQL server",
+	MariaDBDevServer:  "second MariaDB server",
+	YDB:               "YDB",
 }
 
 // DriverDSN returns the address in the form a raw database/sql driver parses,

@@ -83,6 +83,7 @@ func TestOpen_FailurePath(t *testing.T) {
 			url:     "ydb://localhost:2136/local?prefetch_query_result_parts=-1",
 			wantErr: `invalid YDB URL: parameter prefetch_query_result_parts="-1" is not a non-negative integer`,
 		},
+		// #nosec G101 -- a fixture with a made-up password, not a credential
 		{
 			name: "a password and a token",
 			url:  "ydb://alice:secret@localhost:2136/local?token=t",
@@ -130,7 +131,6 @@ func TestOpen_FailurePath_EnvironmentCredentials(t *testing.T) {
 	}{
 		{
 			name: "no credential variable",
-			env:  map[string]string{},
 			wantErr: "invalid YDB URL: use_env_credentials is set and no credential variable is: set one of " +
 				"YDB_SERVICE_ACCOUNT_KEY_CREDENTIALS, YDB_SERVICE_ACCOUNT_KEY_FILE_CREDENTIALS, " +
 				"YDB_METADATA_CREDENTIALS, YDB_ACCESS_TOKEN_CREDENTIALS, YDB_STATIC_CREDENTIALS_USER, " +
@@ -199,6 +199,7 @@ func TestOpen_FailurePath_AcceptedURLsReachTheDriver(t *testing.T) {
 		{name: "the older query mode spelling", url: "ydb://localhost:2136/local?query_mode=query"},
 		{name: "default idempotence", url: "ydb://localhost:2136/local?go_default_idempotent=true"},
 		{name: "no prefetch", url: "ydb://localhost:2136/local?prefetch_query_result_parts=0"},
+		// #nosec G101 -- a fixture with a made-up password, not a credential
 		{name: "a user and a password", url: "ydb://alice:secret@localhost:2136/local"},
 		{name: "a token", url: "ydb://localhost:2136/local?token=t1.abc"},
 		{
@@ -218,6 +219,7 @@ func TestOpen_FailurePath_AcceptedURLsReachTheDriver(t *testing.T) {
 		{
 			name: "the environment with a complete static user",
 			url:  "ydb://localhost:2136/local?use_env_credentials",
+			// #nosec G101 -- a fixture with a made-up password, not a credential
 			env: map[string]string{
 				"YDB_STATIC_CREDENTIALS_USER":     "alice",
 				"YDB_STATIC_CREDENTIALS_PASSWORD": "secret",

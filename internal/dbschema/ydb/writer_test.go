@@ -176,9 +176,9 @@ func TestWriter_ExecuteSQL_FailurePath(t *testing.T) {
 		{
 			name:         "a failure that is not a conflict",
 			statement:    "INSERT INTO `t` (`id`) VALUES (1)",
-			failures:     []error{errors.New("Conflict with existing key.")},
+			failures:     []error{errors.New("conflict with an existing key")},
 			wantExecuted: 1,
-			wantErr:      "ydb: SQL execution failed: Conflict with existing key.\nSQL: INSERT INTO `t` \\(`id`\\) VALUES \\(1\\)",
+			wantErr:      "ydb: SQL execution failed: conflict with an existing key\nSQL: INSERT INTO `t` \\(`id`\\) VALUES \\(1\\)",
 		},
 		{
 			name:         "arguments for several statements",

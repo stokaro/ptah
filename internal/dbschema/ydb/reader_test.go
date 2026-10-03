@@ -131,7 +131,7 @@ func TestReader_SetSchemas(t *testing.T) {
 		{name: "the root alone", schemas: []string{""}, want: []string{"|users"}},
 		{name: "a directory without its subdirectory", schemas: []string{"app"}, want: []string{"app|orders"}},
 		{name: "slashes around a name", schemas: []string{"/app/sub/"}, want: []string{"app/sub|items"}},
-		{name: "an empty list reads everything", schemas: []string{}, want: []string{"app|orders", "app/sub|items", "|users"}},
+		{name: "an empty list reads everything", schemas: make([]string, 0), want: []string{"app|orders", "app/sub|items", "|users"}},
 	}
 
 	for _, test := range tests {

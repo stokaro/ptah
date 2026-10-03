@@ -195,20 +195,22 @@ func decimalLiteral(value string, precision, scale int) (string, error) {
 	if !decimalPattern.MatchString(text) {
 		return "", valueRefusal(declared, value)
 	}
-	negative := strings.HasPrefix(text, "-")
-	integerPart, fraction, _ := strings.Cut(strings.TrimLeft(text, "+-"), ".")
-	integerPart = strings.TrimLeft(integerPart, "0")
-	fraction = strings.TrimRight(fraction, "0")
-	if len(fraction) > scale || len(integerPart) > precision-scale {
+	canonical := DecimalText(text)
+	integerPart, fraction, _ := strings.Cut(strings.TrimPrefix(canonical, "-"), ".")
+	if len(fraction) > scale || len(strings.TrimLeft(integerPart, "0")) > precision-scale {
 		return "", valueRefusal(declared, value)
 	}
-	return fmt.Sprintf("Decimal(%s, %d, %d)", quote(DecimalText(negative, integerPart, fraction)), precision, scale), nil
+	return fmt.Sprintf("Decimal(%s, %d, %d)", quote(canonical), precision, scale), nil
 }
 
-// DecimalText writes a decimal value from its sign and its digits, with no
-// leading zero in the integer part, no trailing zero in the fraction, and no
-// sign on zero: `-0012.340` is -, 0012 and 340, and writes as -12.34.
-func DecimalText(negative bool, integerDigits, fractionDigits string) string {
+// DecimalText writes a decimal value, an optional sign and digits with an
+// optional fraction, in its shortest form: no plus sign, no leading zero in
+// the integer part, no trailing zero in the fraction, and no sign on zero.
+// `-0012.340` writes as -12.34 and `-0.0` as 0. Text of any other shape comes
+// back with only its sign and zeros changed.
+func DecimalText(value string) string {
+	unsigned := strings.TrimLeft(value, "+-")
+	integerDigits, fractionDigits, _ := strings.Cut(unsigned, ".")
 	integerDigits = strings.TrimLeft(integerDigits, "0")
 	fractionDigits = strings.TrimRight(fractionDigits, "0")
 	if integerDigits == "" {
@@ -218,7 +220,7 @@ func DecimalText(negative bool, integerDigits, fractionDigits string) string {
 	if fractionDigits != "" {
 		text += "." + fractionDigits
 	}
-	if negative && text != "0" {
+	if strings.HasPrefix(value, "-") && text != "0" {
 		text = "-" + text
 	}
 	return text
@@ -372,18 +374,20 @@ func parseDuration(text string) (int64, bool) {
 // PT0S.
 func IntervalText(micros int64) string {
 	var b strings.Builder
-	magnitude := uint64(micros)
-	if micros < 0 {
-		b.WriteByte('-')
-		magnitude = uint64(-(micros + 1)) + 1
-	}
 	const (
-		second = uint64(1_000_000)
+		second = int64(1_000_000)
 		minute = 60 * second
 		hour   = 60 * minute
 		day    = 24 * hour
 	)
-	days, rest := magnitude/day, magnitude%day
+	// Go's division truncates toward zero, so on a negative duration both
+	// parts are negative and each is small enough to negate, math.MinInt64
+	// included.
+	days, rest := micros/day, micros%day
+	if micros < 0 {
+		b.WriteByte('-')
+		days, rest = -days, -rest
+	}
 	hours, rest := rest/hour, rest%hour
 	minutes, rest := rest/minute, rest%minute
 	seconds, fraction := rest/second, rest%second
