@@ -253,22 +253,50 @@ func (w *Writer) dropDirectory(ctx context.Context, dir string) (bool, error) {
 // itself, such as the capability probe's namespace; DropAllTables is the
 // cleanup that keeps what the reader does not describe.
 //
-// Every entry is checked before any is dropped, and an entry of a kind it has
-// no measured statement for -- a topic, a coordination node -- stops it with
-// the entry named, so nothing is half removed for a reason known in advance.
-// The database root is refused: there is no directory to remove there.
+// dir names a directory below the root and nothing else: a segment that
+// starts with a dot -- `.`, `..`, or a server directory such as `.sys` -- is
+// refused, so no spelling of dir reaches the root or leaves it. The whole tree
+// is read and checked before anything is dropped. An entry of a kind there is
+// no measured statement for, such as a topic or a coordination node, and an
+// entry whose name starts with a dot, which belongs to the server, stop it
+// with the entry named and nothing dropped.
 func (w *Writer) DropDirectory(ctx context.Context, dir string) error {
-	dir = strings.Trim(dir, "/")
-	if dir == "" {
-		return fmt.Errorf("ydb: the database root %s is not a directory DropDirectory removes", w.database)
+	relative, err := w.droppableDirectory(dir)
+	if err != nil {
+		return err
 	}
 	if w.scheme == nil {
 		return fmt.Errorf("no YDB scheme connection")
 	}
-	return w.dropTree(ctx, dir)
+	var steps []treeStep
+	if err := w.planTree(ctx, relative, &steps); err != nil {
+		return err
+	}
+	for _, step := range steps {
+		if err := w.runTreeStep(ctx, step); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-// treeStatements is the statement that drops each kind of entry dropTree
+// droppableDirectory reads dir as a directory below the database root, or
+// refuses it.
+func (w *Writer) droppableDirectory(dir string) (string, error) {
+	for segment := range strings.SplitSeq(dir, "/") {
+		if strings.HasPrefix(segment, ".") {
+			return "", fmt.Errorf("ydb: directory %q has the segment %q; DropDirectory removes a directory "+
+				"below the database root %s, named without dot segments", dir, segment, w.database)
+		}
+	}
+	relative := strings.Trim(path.Clean("/"+dir), "/")
+	if relative == "" {
+		return "", fmt.Errorf("ydb: the database root %s is not a directory DropDirectory removes", w.database)
+	}
+	return relative, nil
+}
+
+// treeStatements is the statement that drops each kind of entry the teardown
 // removes, with the path in place of %s. A directory has none: the scheme
 // service removes it once it is empty.
 var treeStatements = map[Ydb_Scheme.Entry_Type]string{
@@ -277,8 +305,17 @@ var treeStatements = map[Ydb_Scheme.Entry_Type]string{
 	Ydb_Scheme.Entry_VIEW:         "DROP VIEW %s",
 }
 
-// dropTree drops what dir holds and then dir itself.
-func (w *Writer) dropTree(ctx context.Context, dir string) error {
+// treeStep is one step of a directory teardown: a statement that drops an
+// object, or the removal of a directory, by its absolute path, once it is
+// empty.
+type treeStep struct {
+	statement string
+	directory string
+}
+
+// planTree appends the steps that drop what dir holds and then dir itself,
+// and refuses the whole tree at the first entry it cannot drop.
+func (w *Writer) planTree(ctx context.Context, dir string, steps *[]treeStep) error {
 	absolute := path.Join(w.database, dir)
 	entries, err := w.scheme.ListDirectory(ctx, absolute)
 	if err != nil {
@@ -286,31 +323,39 @@ func (w *Writer) dropTree(ctx context.Context, dir string) error {
 	}
 	slices.SortFunc(entries, func(a, b *Ydb_Scheme.Entry) int { return strings.Compare(a.GetName(), b.GetName()) })
 	for _, entry := range entries {
-		_, droppable := treeStatements[entry.GetType()]
-		if !droppable && entry.GetType() != Ydb_Scheme.Entry_DIRECTORY {
-			return fmt.Errorf("ydb: %s holds %s, a %s, which Ptah has no statement to drop; nothing in %s was dropped",
-				absolute, entry.GetName(), entryTypeName(entry.GetType()), absolute)
-		}
-	}
-	for _, entry := range entries {
-		child := path.Join(dir, entry.GetName())
-		if entry.GetType() == Ydb_Scheme.Entry_DIRECTORY {
-			if err := w.dropTree(ctx, child); err != nil {
+		name := entry.GetName()
+		child := path.Join(dir, name)
+		statement, droppable := treeStatements[entry.GetType()]
+		switch {
+		case strings.HasPrefix(name, "."):
+			return fmt.Errorf("ydb: %s holds %s, whose name starts with a dot and so belongs to the server; "+
+				"nothing was dropped", absolute, name)
+		case entry.GetType() == Ydb_Scheme.Entry_DIRECTORY:
+			if err := w.planTree(ctx, child, steps); err != nil {
 				return err
 			}
-			continue
+		case droppable:
+			*steps = append(*steps, treeStep{statement: fmt.Sprintf(statement, sqlident.Quote(platform.YDB, child))})
+		default:
+			return fmt.Errorf("ydb: %s holds %s, a %s, which Ptah has no statement to drop; nothing was dropped",
+				absolute, name, entryTypeName(entry.GetType()))
 		}
-		statement := fmt.Sprintf(treeStatements[entry.GetType()], sqlident.Quote(platform.YDB, child))
-		if err := w.ExecuteSQL(ctx, statement); err != nil {
-			return err
-		}
+	}
+	*steps = append(*steps, treeStep{directory: absolute})
+	return nil
+}
+
+// runTreeStep runs one step of a teardown.
+func (w *Writer) runTreeStep(ctx context.Context, step treeStep) error {
+	if step.statement != "" {
+		return w.ExecuteSQL(ctx, step.statement)
 	}
 	if w.dryRun {
-		slog.Info("[DRY RUN] Would remove the directory", "path", absolute)
+		slog.Info("[DRY RUN] Would remove the directory", "path", step.directory)
 		return nil
 	}
-	if err := w.scheme.RemoveDirectory(ctx, absolute); err != nil {
-		return fmt.Errorf("ydb: remove directory %s: %w", absolute, err)
+	if err := w.scheme.RemoveDirectory(ctx, step.directory); err != nil {
+		return fmt.Errorf("ydb: remove directory %s: %w", step.directory, err)
 	}
 	return nil
 }
