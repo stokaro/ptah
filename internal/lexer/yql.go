@@ -55,11 +55,128 @@ func (l *Lexer) scanYQLToken() Token {
 		return l.scanOperator()
 	case isIdentifierStart(ch):
 		return l.scanIdentifier()
-	case unicode.IsDigit(ch):
-		return l.scanNumber()
+	case ch >= '0' && ch <= '9':
+		l.pos = yqlNumberEnd(l.input, l.pos)
+		return l.emit(TokenIdentifier)
 	default:
 		return l.scanOperator()
 	}
+}
+
+// yqlNumberEnd returns where the YQL number starting at start ends, by the
+// grammar's DIGITS, INTEGER_VALUE and REAL rules (SQLv1Antlr4.g.in), taking
+// the longest match as the grammar's lexer does:
+//
+//   - 0x, 0o and 0b introduce hexadecimal, octal (digits 0 to 8, as the
+//     grammar writes it) and binary digits, and need at least one;
+//   - an integer may carry p or u and then one of l, s, t, i, b, n;
+//   - a real has a fraction, an exponent or both, and may carry f, or p
+//     followed by f4, f8 or n.
+//
+// A number is one token with its suffix, so the word after it starts where
+// the server starts it: measured on YDB 26.2.1.14, SELECT 1uFROM `dir/t`
+// reads `1u FROM`, 0x1fAS is 0x1fa with the suffix s, and 1.foo is 1.f
+// followed by oo.
+func yqlNumberEnd(input string, start int) int {
+	if end, ok := yqlPrefixedNumberEnd(input, start); ok {
+		return end
+	}
+	digits := asciiRunEnd(input, start, isDecimalDigit)
+	end := yqlIntegerSuffixEnd(input, digits)
+	real := -1
+	switch {
+	case digits < len(input) && input[digits] == '.':
+		fraction := asciiRunEnd(input, digits+1, isDecimalDigit)
+		real = yqlRealSuffixEnd(input, yqlExponentEnd(input, fraction))
+	case yqlExponentEnd(input, digits) > digits:
+		real = yqlRealSuffixEnd(input, yqlExponentEnd(input, digits))
+	}
+	return max(end, real)
+}
+
+// yqlPrefixedNumberEnd reads 0x, 0o or 0b and the digits after it, and
+// reports false when no digit of the base follows, which leaves a decimal 0.
+func yqlPrefixedNumberEnd(input string, start int) (int, bool) {
+	if input[start] != '0' || start+1 >= len(input) {
+		return 0, false
+	}
+	var digit func(byte) bool
+	switch input[start+1] {
+	case 'x', 'X':
+		digit = isHexDigit
+	case 'o', 'O':
+		digit = func(c byte) bool { return c >= '0' && c <= '8' }
+	case 'b', 'B':
+		digit = func(c byte) bool { return c == '0' || c == '1' }
+	default:
+		return 0, false
+	}
+	end := asciiRunEnd(input, start+2, digit)
+	if end == start+2 {
+		return 0, false
+	}
+	return yqlIntegerSuffixEnd(input, end), true
+}
+
+// yqlIntegerSuffixEnd reads the integer type suffix (p|u)?(l|s|t|i|b|n)?.
+func yqlIntegerSuffixEnd(input string, pos int) int {
+	if pos < len(input) && strings.ContainsRune("pPuU", rune(input[pos])) {
+		pos++
+	}
+	if pos < len(input) && strings.ContainsRune("lLsStTiIbBnN", rune(input[pos])) {
+		pos++
+	}
+	return pos
+}
+
+// yqlExponentEnd reads e, an optional sign and at least one digit, and
+// returns pos unchanged when they are not all there.
+func yqlExponentEnd(input string, pos int) int {
+	if pos >= len(input) || (input[pos] != 'e' && input[pos] != 'E') {
+		return pos
+	}
+	digits := pos + 1
+	if digits < len(input) && (input[digits] == '+' || input[digits] == '-') {
+		digits++
+	}
+	end := asciiRunEnd(input, digits, isDecimalDigit)
+	if end == digits {
+		return pos
+	}
+	return end
+}
+
+// yqlRealSuffixEnd reads the real type suffix: f, or p followed by an
+// optional f4, f8 or n.
+func yqlRealSuffixEnd(input string, pos int) int {
+	switch {
+	case pos >= len(input):
+		return pos
+	case input[pos] == 'f' || input[pos] == 'F':
+		return pos + 1
+	case input[pos] != 'p' && input[pos] != 'P':
+		return pos
+	}
+	pos++
+	switch {
+	case pos+1 < len(input) && (input[pos] == 'f' || input[pos] == 'F') && (input[pos+1] == '4' || input[pos+1] == '8'):
+		return pos + 2
+	case pos < len(input) && (input[pos] == 'n' || input[pos] == 'N'):
+		return pos + 1
+	default:
+		return pos
+	}
+}
+
+func asciiRunEnd(input string, pos int, accept func(byte) bool) int {
+	for pos < len(input) && accept(input[pos]) {
+		pos++
+	}
+	return pos
+}
+
+func isDecimalDigit(c byte) bool {
+	return c >= '0' && c <= '9'
 }
 
 // isTranslationSetting reports whether token is a --! comment the head of a

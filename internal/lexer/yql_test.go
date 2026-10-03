@@ -199,6 +199,40 @@ func TestLexer_YQL_HappyPath(t *testing.T) {
 			want:  []yqlToken{{lexer.TokenOperator, "$"}, {lexer.TokenWhitespace, " "}},
 		},
 		{
+			// SELECT 1uAS a, 0o7AS b, 0x1fAS c, 0b1uAS d, 1e0AS e, 1.5fAS f,
+			// 2.5pf8AS g, 3pnAS h answered 1, 7, 506, 1, 1, 1.5, "2.5" and
+			// "3": a number takes its suffix, and the word after it starts
+			// where the suffix ends. 0x1fAS is the hex digits 1fA and the
+			// suffix S.
+			name:  "a number carries its type suffix and stops there",
+			input: "1uFROM 0o7AS 0x1fAS 0b1uAS 1e0INTO 1.5fAS 2.5pf8AS 3pnAS",
+			want: []yqlToken{
+				{lexer.TokenIdentifier, "1u"}, {lexer.TokenIdentifier, "FROM"}, {lexer.TokenWhitespace, " "},
+				{lexer.TokenIdentifier, "0o7"}, {lexer.TokenIdentifier, "AS"}, {lexer.TokenWhitespace, " "},
+				{lexer.TokenIdentifier, "0x1fAS"}, {lexer.TokenWhitespace, " "},
+				{lexer.TokenIdentifier, "0b1u"}, {lexer.TokenIdentifier, "AS"}, {lexer.TokenWhitespace, " "},
+				{lexer.TokenIdentifier, "1e0"}, {lexer.TokenIdentifier, "INTO"}, {lexer.TokenWhitespace, " "},
+				{lexer.TokenIdentifier, "1.5f"}, {lexer.TokenIdentifier, "AS"}, {lexer.TokenWhitespace, " "},
+				{lexer.TokenIdentifier, "2.5pf8"}, {lexer.TokenIdentifier, "AS"}, {lexer.TokenWhitespace, " "},
+				{lexer.TokenIdentifier, "3pn"}, {lexer.TokenIdentifier, "AS"},
+			},
+		},
+		{
+			// Each answered a parse error at the token after the one shown:
+			// a prefix with no digit of its base, an exponent with no digit,
+			// and an f directly after a decimal point end the number early.
+			name:  "a number stops where the grammar stops it",
+			input: "0x 1e 1.foo 0b2 0o9 1e+",
+			want: []yqlToken{
+				{lexer.TokenIdentifier, "0"}, {lexer.TokenIdentifier, "x"}, {lexer.TokenWhitespace, " "},
+				{lexer.TokenIdentifier, "1"}, {lexer.TokenIdentifier, "e"}, {lexer.TokenWhitespace, " "},
+				{lexer.TokenIdentifier, "1.f"}, {lexer.TokenIdentifier, "oo"}, {lexer.TokenWhitespace, " "},
+				{lexer.TokenIdentifier, "0b"}, {lexer.TokenIdentifier, "2"}, {lexer.TokenWhitespace, " "},
+				{lexer.TokenIdentifier, "0"}, {lexer.TokenIdentifier, "o9"}, {lexer.TokenWhitespace, " "},
+				{lexer.TokenIdentifier, "1"}, {lexer.TokenIdentifier, "e"}, {lexer.TokenOperator, "+"},
+			},
+		},
+		{
 			name:  "a named expression is one identifier",
 			input: "$rows = 1;",
 			want: []yqlToken{
