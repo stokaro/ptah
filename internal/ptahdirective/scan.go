@@ -114,6 +114,13 @@ func ConservativeBodies(sql string) iter.Seq[string] {
 // directive lies inside the region where directives are significant needs to
 // know where it is, and it must ask that question of the same marker set the
 // directive parser used or the two answers can disagree.
+//
+// YDB is not among the readers, deliberately. YQL reads @@...@@ as one string,
+// so two MySQL system variables such as @@session.sql_mode on either side of
+// a directive line would hide the directive from the intersection, and a
+// MySQL file imported with no target dialect would lose a directive every
+// other reader sees. A YDB file is read by its own rules wherever its dialect
+// is known, through [Markers] with the YQL lexer options.
 func ConservativeMarkers(sql string) iter.Seq[Marker] {
 	return func(yield func(Marker) bool) {
 		dialects := []string{

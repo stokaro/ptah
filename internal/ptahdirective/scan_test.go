@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/ptahdirective"
 )
@@ -66,4 +67,39 @@ func TestConservativeBodiesKeepsOnlyCrossDialectMarkers(t *testing.T) {
 	got := slices.Collect(ptahdirective.ConservativeBodies(sql))
 
 	c.Assert(got, qt.HasLen, 0)
+}
+
+// A YDB file is read by YQL's rules: a marker-looking line inside a
+// multiline @@...@@ string, or inside a double-quoted string, is string
+// content, and a real directive line is a directive.
+func TestBodies_YDBReadsYQLStrings(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+		want []string
+	}{
+		{name: "a directive", sql: "-- +ptah no_transaction\nSELECT 1;\n", want: []string{" no_transaction"}},
+		{name: "inside a multiline string", sql: "SELECT @@runbook\n-- +ptah no_transaction\n@@;\n"},
+		{name: "inside a double-quoted string", sql: "SELECT \"a\\\"\n-- +ptah no_transaction\n\";\n"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			got := slices.Collect(ptahdirective.Bodies(test.sql, dialectlexer.Options("ydb")))
+
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// The conservative reading leaves YQL out, so MySQL system variables on either
+// side of a directive line do not hide it. Read by YQL, the two @@ open and
+// close one string around the line.
+func TestConservativeBodies_KeepsADirectiveBetweenMySQLSystemVariables(t *testing.T) {
+	c := qt.New(t)
+	sql := "SELECT @@session.sql_mode;\n-- +ptah no_transaction\nSELECT @@session.time_zone;\n"
+
+	c.Assert(slices.Collect(ptahdirective.ConservativeBodies(sql)), qt.DeepEquals, []string{" no_transaction"})
+	c.Assert(slices.Collect(ptahdirective.Bodies(sql, dialectlexer.Options("ydb"))), qt.HasLen, 0)
 }

@@ -12,6 +12,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/lexer"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableref"
 )
@@ -1019,8 +1020,12 @@ func sqlCodeMask(body string) []bool {
 
 // sqlCodeMaskForDialect adds the target's nonstandard comment forms without
 // changing the generic PostgreSQL-oriented scanner. ClickHouse recognizes #,
-// #!, and // line comments in addition to -- and /* ... */.
+// #!, and // line comments in addition to -- and /* ... */. YDB is read by
+// the YQL lexer instead; see [yqlMasks].
 func sqlMasksForDialect(body, dialect string) sqlMasks {
+	if platform.NormalizeDialect(dialect) == platform.YDB {
+		return yqlMasks(body)
+	}
 	masks := sqlMasks{
 		code:             make([]bool, len(body)),
 		quotedIdentifier: make([]bool, len(body)),
@@ -1071,6 +1076,45 @@ type sqlMasks struct {
 	quotedIdentifier []bool
 	quoteOpen        []bool
 	quoteClose       []bool
+}
+
+// yqlMasks marks a YQL body by the YQL lexer's tokens rather than by the
+// scanner above, whose rules are PostgreSQL's where YQL's differ: in YQL a
+// double-quoted "x" is a string rather than a name, a backslash escapes a
+// quote in every string, a doubled quote is two literals, @@...@@ is a
+// string, $name is never a dollar quote, and block comments do not nest.
+// Reading the body with the lexer the splitter uses keeps the two in
+// agreement about where a string ends.
+//
+// A string, a comment and a leading translation setting are not code. A
+// backtick identifier is code and a quoted identifier, opened at its first
+// byte and closed at its last. An unterminated one runs to the end of the
+// body, and a quoted spelling cannot end at a byte it does not hold, so its
+// last byte needs no separate test.
+func yqlMasks(body string) sqlMasks {
+	masks := sqlMasks{
+		code:             make([]bool, len(body)),
+		quotedIdentifier: make([]bool, len(body)),
+		quoteOpen:        make([]bool, len(body)),
+		quoteClose:       make([]bool, len(body)),
+	}
+	l := lexer.NewLexerWithOptions(body, lexer.Options{YQL: true})
+	for token := l.NextToken(); token.Type != lexer.TokenEOF; token = l.NextToken() {
+		switch {
+		case token.Type == lexer.TokenString, token.Type == lexer.TokenComment, token.Type == lexer.TokenUnknown:
+			continue
+		case token.Type == lexer.TokenIdentifier && strings.HasPrefix(token.Value, "`"):
+			masks.quoteOpen[token.Start] = true
+			masks.quoteClose[token.End-1] = true
+			for i := token.Start; i < token.End; i++ {
+				masks.quotedIdentifier[i] = true
+			}
+		}
+		for i := token.Start; i < token.End; i++ {
+			masks.code[i] = true
+		}
+	}
+	return masks
 }
 
 func skipLineComment(body string, start int) int {
