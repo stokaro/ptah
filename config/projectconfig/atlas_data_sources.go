@@ -56,6 +56,8 @@ func (p atlasParser) resolveAtlasDataSource(block *hclsyntax.Block) (cty.Value, 
 		return p.templateDirectoryDataSource(block)
 	case "aws_rds_token":
 		return p.awsRDSTokenDataSource(block)
+	case "composite_schema":
+		return p.compositeSchemaDataSource(block)
 	case "gcp_cloudsql_token":
 		return p.gcpCloudSQLTokenDataSource(block)
 	case "remote_dir":
@@ -652,6 +654,8 @@ func validateAtlasDataSourceShape(block *hclsyntax.Block) error {
 		return validateRequiredAtlasDataSourceAttrs(block, []string{"path"}, "path", "vars")
 	case "aws_rds_token":
 		return validateAWSRDSTokenShape(block)
+	case "composite_schema":
+		return validateCompositeSchemaShape(block)
 	case "gcp_cloudsql_token":
 		// No body schema, and none required: the pinned community binary
 		// v1.3.0 decodes a block carrying an unrecognized attribute and goes

@@ -62,7 +62,8 @@ discarding it:
 - Pro-only authored or live schema objects;
 - YAML desired-schema sources;
 - an authored `schema apply` lint policy the CE execution path cannot enforce;
-- extended `atlas.hcl` evaluation outside the supported CE subset;
+- extended `atlas.hcl` evaluation outside the supported CE subset, including a
+  `data "composite_schema"` block, declared or referenced;
 - Atlas txtar, Ptah directives, and SQL templates for commands that execute,
   convert, or replay migration bodies.
 

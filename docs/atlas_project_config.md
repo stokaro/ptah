@@ -9,7 +9,7 @@ invocations in this document run the separate `ptah-compat` drop-in binary.
 ## Supported subset
 
 Ptah accepts top-level `variable`, `locals`, `data "hcl_schema"`,
-`data "external_schema"`, `data "sql"`, `data "external"`,
+`data "external_schema"`, `data "composite_schema"`, `data "sql"`, `data "external"`,
 `data "runtimevar"`, `data "template_dir"`, `env`, `lint`, and `diff`
 blocks. `env` blocks may have either one label or no label:
 
@@ -471,9 +471,14 @@ first. A declared but unreferenced recognized source is not opened or executed.
 This lazy behavior also applies to `hcl_schema`, `external_schema`,
 `remote_dir`, `remote_schema`, `aws_rds_token`, and `gcp_cloudsql_token`;
 `aws_rds_token` and `gcp_cloudsql_token` still fail explicitly when a selected
-expression references them. An unknown source type,
-including `composite_schema`, fails during structural validation even when
-unreferenced.
+expression references them. An unknown source type fails during structural
+validation even when unreferenced.
+
+A referenced `composite_schema` merges its parts as repeated `--schema-file`
+sources merge, with each labeled part checked against the schema its label
+names. Strict CE mode refuses the block, referenced or not, as the community
+binary does. The site page `atlas/project-config.md#composite-schema-data-source`
+describes it.
 
 A referenced `remote_schema` names the OCI artifact holding a desired schema.
 `name` is required; `tag` selects a moving tag and defaults to `latest`, and

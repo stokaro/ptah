@@ -385,3 +385,18 @@ func isMySQLFamily(dialect string) bool {
 		return false
 	}
 }
+
+// DialectDefault is the schema that owns an unqualified object when no URL
+// pins one: "public" on the PostgreSQL family and "main" on SQLite. It is
+// empty for the MySQL family, whose schemas are databases, so only a URL can
+// name the default there.
+func DialectDefault(dialect string) string {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
+		return "public"
+	case platform.SQLite:
+		return "main"
+	default:
+		return ""
+	}
+}

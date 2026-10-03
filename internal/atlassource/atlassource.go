@@ -19,6 +19,10 @@
 //   - A local file:// or plain-path directory that contains an atlas.sum file
 //     is a migration directory; any other directory keeps the pre-resolver
 //     local-file behavior.
+//   - An env whose desired state is a declared atlas.hcl data.composite_schema
+//     source expands to one composite source whose parts are classified by
+//     these rules; a part is a schema file or directory, an external schema
+//     program, or a registry artifact.
 //   - An atlas:// reference resolves against the OCI namespace
 //     PTAH_ATLAS_REGISTRY names, and is refused when that variable is unset.
 //   - Unsupported schemes (docker://-as-state and anything else) fail during
@@ -75,6 +79,11 @@ const (
 	// expansion of a selected env whose desired-state source is a declared
 	// external schema data source.
 	KindExternalSchema Kind = "external schema program"
+	// KindCompositeSchema is an atlas.hcl `data "composite_schema"` block: an
+	// ordered list of parts, each a desired state of its own, merged into one.
+	// Like the external-schema kind it only appears through env expansion of
+	// a selected env whose desired-state source names the block.
+	KindCompositeSchema Kind = "composite schema"
 )
 
 // AllowExternalSchemaEnvVar gates executing an atlas.hcl
@@ -119,6 +128,9 @@ type Source struct {
 	// [ptah.run/internal/schemafile.Source].
 	VarValues  map[string]string
 	VarsScoped bool
+	// Composite holds the parts of a [KindCompositeSchema] source, in the
+	// order the block declares them, and is nil for every other kind.
+	Composite []CompositePart
 }
 
 // ProjectEnv carries the evaluated atlas.hcl environment used to expand env://
@@ -216,13 +228,28 @@ func (s Set) captureMigrationSource() (fs.FS, error) {
 // the already-classified set. It is deliberately separate from Resolve so a
 // caller can enforce a source policy before opening an unrelated database or
 // acquiring a lock. Nil and non-local sets are no-ops.
+//
+// The local-file parts of a composite schema are local sources too, and meet
+// the same policy.
 func (s Set) ValidateLocalSchemaSources(validate func(string) error) error {
-	if s.Kind != KindLocalFile || validate == nil {
+	if validate == nil {
 		return nil
 	}
 	for _, source := range s.Sources {
-		if err := validate(source.Path); err != nil {
-			return err
+		switch source.Kind {
+		case KindLocalFile:
+			if err := validate(source.Path); err != nil {
+				return err
+			}
+		case KindCompositeSchema:
+			for _, part := range source.Composite {
+				if part.Source.Kind != KindLocalFile {
+					continue
+				}
+				if err := validate(part.Source.Path); err != nil {
+					return err
+				}
+			}
 		}
 	}
 	return nil
@@ -275,6 +302,12 @@ func Classify(rawURL string) (Source, error) {
 		return Source{}, errors.New(
 			projectconfig.RemoteSchemaMarkerScheme + ":// is a reserved internal marker scheme; " +
 				"reference data.remote_schema.<name>.url from an atlas.hcl env src instead")
+	case scheme == projectconfig.CompositeSchemaMarkerScheme:
+		// Reserved like the other two markers: only a declared data source
+		// mints it, and only a project file's own sources may carry it.
+		return Source{}, errors.New(
+			projectconfig.CompositeSchemaMarkerScheme + ":// is a reserved internal marker scheme; " +
+				"reference data.composite_schema.<name>.url from an atlas.hcl env src instead")
 	case scheme == "ptah-external-schema":
 		// The marker is minted internally when an atlas.hcl env src selects a
 		// data "external_schema" source; spelled directly it must never reach
@@ -662,6 +695,14 @@ func expandEnvSchemaSources(source Source, env ProjectEnv) ([]Source, error) {
 	}
 	sources := make([]Source, 0, len(env.Config.SchemaSources))
 	for _, value := range env.Config.SchemaSources {
+		if composite, ok := env.Config.CompositeSchema(value); ok {
+			source, err := classifyCompositeSchema(value, composite, env)
+			if err != nil {
+				return nil, fmt.Errorf("atlas.hcl schema source: %w", err)
+			}
+			sources = append(sources, source)
+			continue
+		}
 		source, err := classifyEnvValue(value, env.BaseDir)
 		if err != nil {
 			return nil, fmt.Errorf("atlas.hcl schema source %q: %w", value, err)

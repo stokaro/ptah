@@ -7,9 +7,9 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
-	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlasfilter"
+	"ptah.run/internal/schemaselection"
 )
 
 // scopeGeneratedSide filters one generated-schema comparison side. Positive
@@ -162,16 +162,8 @@ func refuseUnmatchedExclude(selectors []string) error {
 }
 
 // dialectDefaultSchema is the schema that owns unqualified objects when no
-// database-backed side pins one: "public" for PostgreSQL-family dialects and
-// "main" for SQLite. MySQL-family schemas are databases, so only a
-// database-backed side can name the default.
+// database-backed side pins one. See [schemaselection.DialectDefault], which a
+// composite desired state's placement check reads too.
 func dialectDefaultSchema(dialect string) string {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
-		return "public"
-	case platform.SQLite:
-		return "main"
-	default:
-		return ""
-	}
+	return schemaselection.DialectDefault(dialect)
 }

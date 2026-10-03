@@ -179,14 +179,15 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 	// project's schema sources, and stays nil when --to supplied it. See
 	// [atlasProjectSourceURLs].
 	var projectToURLs []string
-	if loaded && !cmd.Flags().Changed("to") && len(projectCfg.SchemaSources) > 0 {
+	if loaded && !cmd.Flags().Changed("to") && len(projectCfg.SchemaSources) > 0 &&
+		atlasExpandedDesiredState(projectCfg) == "" {
 		opts.toURLs, err = atlasProjectConfigSchemaURLs(cmd, opts.toURLs)
 		if err != nil {
 			return cmdutil.Fail(cmd, fmt.Errorf("atlas.hcl schema.src: %w", err))
 		}
 		projectToURLs = opts.toURLs
 	}
-	if loaded && !cmd.Flags().Changed("to") && atlasExternalSchemaConfigured(projectCfg) {
+	if loaded && !cmd.Flags().Changed("to") && atlasExpandedDesiredState(projectCfg) != "" {
 		opts.toURLs = []string{"env://src"}
 	}
 	if formatConfigured && strings.TrimSpace(opts.format) == "" {

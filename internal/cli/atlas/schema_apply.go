@@ -493,7 +493,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		return runAtlasSchemaApplyPlanFile(cmd, opts)
 	}
 	if loaded && !cmd.Flags().Changed("to") && !cmd.Flags().Changed(atlasFileFlagName) &&
-		atlasExternalSchemaConfigured(projectCfg) {
+		atlasExpandedDesiredState(projectCfg) != "" {
 		opts.toURLs = []string{"env://src"}
 	}
 	if cmd.Flags().Changed(atlasFileFlagName) {
@@ -764,6 +764,16 @@ func atlasSchemaApplyProjectFileSources(
 		return opts.toURLs, nil, nil
 	}
 	if len(projectCfg.SchemaSources) == 0 {
+		return opts.toURLs, nil, nil
+	}
+	if expanded := atlasExpandedDesiredState(projectCfg); expanded != "" {
+		// A saved plan verifies against local schema files only, so it cannot
+		// take a composition; refusing names the construct, where passing the
+		// marker on would refuse it as a reserved scheme.
+		if strings.TrimSpace(opts.planURL) != "" {
+			return nil, nil, fmt.Errorf(
+				"schema apply --plan does not support atlas.hcl %s desired state yet; pass --to explicitly", expanded)
+		}
 		return opts.toURLs, nil, nil
 	}
 	urls, err := atlasProjectConfigSchemaURLs(cmd, opts.toURLs)
