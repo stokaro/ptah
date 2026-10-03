@@ -23,6 +23,24 @@ import (
 // `docker rm -f $(docker ps -aq --filter label=ptah-dev)`.
 const ContainerLabel = "ptah-dev"
 
+// runLabel is the label every container this process starts carries: the
+// [ContainerLabel] key with a value no other process draws. A daemon is often
+// shared, by several runs on one machine or by several machines, so the key
+// alone cannot say which of its containers this process started; see
+// [RunLabel].
+var runLabel = sync.OnceValue(func() string {
+	return ContainerLabel + "=" + strings.ToLower(rand.Text())
+})
+
+// RunLabel returns the `key=value` label of the containers this process
+// starts. Filtering on it -- `docker ps --filter label=<RunLabel>` -- finds
+// this process's containers and no other's, so a container this process left
+// behind can be removed without touching a dev database another run is using.
+// The value is the same for the life of the process.
+func RunLabel() string {
+	return runLabel()
+}
+
 // containerNamePrefix begins every container name. The remainder is random, so
 // two invocations running at the same time cannot collide on a name -- which
 // they would, deterministically, if the name were derived from the URL.
@@ -420,7 +438,7 @@ func releaseInstance(instance *Instance, opts Options) {
 	slog.Warn("failed to remove the provisioned dev database container; remove it by hand",
 		"container", instance.Container(),
 		"attempts", attempts,
-		"sweep", "docker rm -f $(docker ps -aq --filter label="+ContainerLabel+")",
+		"sweep", "docker rm -f $(docker ps -aq --filter label="+RunLabel()+")",
 		"error", err)
 }
 
@@ -563,7 +581,7 @@ func (d DockerCLI) Start(ctx context.Context, name, image, containerPort string,
 		// path removes the container already; see [releaseInstance].
 		"run", "--detach",
 		"--name", name,
-		"--label", ContainerLabel + "=1",
+		"--label", RunLabel(),
 		// `<bind>::<container>` — the empty middle field is what asks the
 		// daemon to choose the host port. `<bind>:<container>` reads the bind
 		// address as the host port and is refused: `invalid hostPort: 0.0.0.0`.

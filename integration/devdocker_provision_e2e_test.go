@@ -38,18 +38,25 @@ import (
 // through [devdocker.Parse] exactly as `16` would.
 const devDockerTestURL = "docker://postgres/16-alpine/ptahdev"
 
-// devDockerCensus lists the containers this package has running, by the label
-// it stamps on every one of them.
+// devDockerCensus lists the containers this test process has running, by the
+// label the package stamps on every one of them.
 //
 // The census is taken from `docker ps`, not from the package's own bookkeeping,
 // because the question being asked is whether the RUNTIME still holds a
 // container -- a leak is precisely the case where the package believes it does
 // not.
+//
+// It filters on this process's label value rather than on the label key. Every
+// Ptah process stamps the key, so a census by the key alone counts the
+// containers of every run on the daemon, and fails these tests whenever another
+// run starts or removes one (stokaro/ptah#4062). The tests in this package
+// that provision do not run in parallel, so the process's containers are the
+// test's.
 func devDockerCensus(c *qt.C) []string {
 	c.Helper()
-	// #nosec G204 -- every argument is a constant; the label is devdocker.ContainerLabel.
+	// #nosec G204 -- every argument is a constant or devdocker.RunLabel.
 	out, err := exec.Command(
-		"docker", "ps", "--all", "--quiet", "--filter", "label="+devdocker.ContainerLabel,
+		"docker", "ps", "--all", "--quiet", "--filter", "label="+devdocker.RunLabel(),
 	).Output()
 	c.Assert(err, qt.IsNil)
 	trimmed := strings.TrimSpace(string(out))

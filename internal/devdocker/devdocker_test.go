@@ -1057,3 +1057,14 @@ func TestRunOwnedIgnoresADeclarationForADockerURL(t *testing.T) {
 	release()
 	c.Assert(devdocker.RunOwned(resolved), qt.IsFalse)
 }
+
+// TestRunLabelNamesThisProcessAlone pins the label every container this
+// process starts carries: the shared key, so a sweep by key still finds every
+// Ptah container, with a value that stays the same for the life of the process
+// and that no other process draws.
+func TestRunLabelNamesThisProcessAlone(t *testing.T) {
+	c := qt.New(t)
+	label := devdocker.RunLabel()
+	c.Assert(label, qt.Matches, `ptah-dev=[a-z2-7]{26}`)
+	c.Assert(devdocker.RunLabel(), qt.Equals, label)
+}
