@@ -920,9 +920,12 @@ the routine follows it. A PL/pgSQL body is read when the routine first runs,
 so it does not hold the routine back. A routine that names nothing the plan
 creates comes first, where a domain, a column default, a policy or a trigger
 can call it. `ptah schema render` places routines by the same rule, treating
-everything it declares as created. A name counts with or without its schema: a
-table declared as `app.orders` is named by `app.orders` and by `orders`, and one
-declared without a schema is also named by `public.orders`.
+everything it declares as created.
+
+A name counts with or without its schema: a table declared as `app.orders` is
+named by `app.orders` and by `orders`, and one declared without a schema is also
+named by `public.orders`. CockroachDB and YugabyteDB resolve a bare name in
+`public` too, and the same rule holds there.
 
 A column default or a `CHECK` that calls a `LANGUAGE sql` routine reading
 another new table gets the one order PostgreSQL accepts: the table the routine
