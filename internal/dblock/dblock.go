@@ -1,7 +1,8 @@
 // Package dblock acquires dialect-aware, session-scoped database advisory
 // locks used to serialize schema-mutating operations such as migration runs
-// and Atlas schema apply. Dialects without advisory-lock semantics acquire an
-// explicit no-op lock, so callers make a capability decision through
+// and Atlas schema apply. On YDB, which has no SQL advisory lock, the lock is a
+// semaphore on a coordination node; see [YDBLockNode]. Dialects without either
+// acquire an explicit no-op lock, so callers make a capability decision through
 // [Lock.Supported] instead of failing or silently diverging per dialect.
 package dblock
 
@@ -70,12 +71,18 @@ func IsTimeout(err error) bool {
 // and [SupportedDialects] asks which targets do, so a caller refusing a lock
 // request can name the alternatives. Written twice, the second copy stops
 // agreeing the moment an engine is added to the first.
+//
+// It is a list of dialects rather than a capability because what it selects
+// is code: each entry has an arm in [acquireOnSession] that takes its lock
+// the way that engine offers one. YDB's arm takes a coordination-node
+// semaphore rather than an SQL lock.
 var supportedDialects = []string{
 	platform.Postgres,
 	platform.YugabyteDB,
 	platform.MySQL,
 	platform.MariaDB,
 	platform.SQLServer,
+	platform.YDB,
 }
 
 // Supported reports whether dialect has session-scoped advisory-lock
@@ -128,8 +135,8 @@ func (l *Lock) Supported() bool {
 // would have taken. A nil lock reports the empty string.
 //
 // This is the value the dialect-specific acquisition actually used: the
-// PostgreSQL-family key is [PostgresKey] of it, and MySQL, MariaDB and
-// SQL Server pass it to the server verbatim.
+// PostgreSQL-family key is [PostgresKey] of it, MySQL, MariaDB and SQL Server
+// pass it to the server verbatim, and YDB names the semaphore with it.
 func (l *Lock) Name() string {
 	if l == nil {
 		return ""
@@ -263,6 +270,11 @@ func Acquire(
 	if !Supported(dialect) {
 		return &Lock{name: name}, nil
 	}
+	if dialect == platform.YDB {
+		// The semaphore belongs to a coordination session of its own, so
+		// the lock holds no SQL session from the pool.
+		return acquireOnSession(ctx, nil, conn, dialect, name, timeout)
+	}
 
 	session, err := conn.Conn(ctx)
 	if err != nil {
@@ -306,6 +318,8 @@ func acquireOnSession(
 	case platform.SQLServer:
 		lock.release = releaseSQLServerLock(session, name)
 		acquireErr = acquireSQLServerLock(ctx, session, name, timeout)
+	case platform.YDB:
+		lock.release, acquireErr = acquireYDBLock(ctx, witness, name, timeout)
 	}
 	if acquireErr != nil {
 		return nil, acquireErr

@@ -28,6 +28,8 @@ func TestSupported(t *testing.T) {
 		{name: "cockroachdb", dialect: "cockroachdb", want: false},
 		{name: "yugabytedb", dialect: "yugabytedb", want: true},
 		{name: "spanner", dialect: "spanner", want: false},
+		{name: "ydb", dialect: "ydb", want: true},
+		{name: "ydbs alias", dialect: "ydbs", want: true},
 		{name: "unknown", dialect: "not-a-dialect", want: false},
 	}
 

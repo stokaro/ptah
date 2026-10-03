@@ -46,6 +46,7 @@ func Test_metadataTableOwnerQuery_Coverage(t *testing.T) {
 		{name: "sqlite has no roles", dialect: platform.SQLite, wantOK: false},
 		{name: "clickhouse has no table owner", dialect: platform.ClickHouse, wantOK: false},
 		{name: "spanner has no table owner", dialect: platform.Spanner, wantOK: false},
+		{name: "a ydb table can carry no code to run", dialect: platform.YDB, wantOK: false},
 		{name: "an unknown dialect answers nothing", dialect: "nonesuch", wantOK: false},
 	}
 

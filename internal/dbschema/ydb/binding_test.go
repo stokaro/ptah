@@ -160,3 +160,22 @@ func TestBindingConnector_FailurePath_RefusesAnUnknownConnection(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `the YDB driver's connection ydb_test.bareConn no longer offers what Ptah binds through`)
 }
+
+// A connection from a pool Open did not build carries no SDK driver, so
+// DriverOf refuses it rather than hand back nothing. The driver a connection
+// from Open's pool carries is measured live.
+func TestDriverOf_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	var got []driver.NamedValue
+	closed := 0
+	db := sql.OpenDB(ydbschema.NewBindingConnector(recordingConnector{got: &got, closed: &closed}, nil))
+	c.Cleanup(func() { _ = db.Close() })
+	session, err := db.Conn(context.Background())
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { _ = session.Close() })
+
+	sdk, err := ydbschema.DriverOf(session)
+
+	c.Assert(err, qt.ErrorMatches, `ydb\.conn is not a connection to a YDB database Ptah opened`)
+	c.Assert(sdk, qt.IsNil)
+}

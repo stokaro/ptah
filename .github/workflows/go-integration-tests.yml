@@ -700,6 +700,15 @@ jobs:
           # arriving red.
           ./integration-test --databases=spanner --scenarios=dynamic_circular_dependencies,dynamic_cockroachdb_common_subset,dynamic_yugabytedb_common_subset --report=stdout,txt,json,html --verbose --output=./reports
 
+      - name: Run YDB live smoke tests
+        env:
+          YDB_URL: "ydb://localhost:2136/local"
+        run: |
+          # The scenarios that run are the ones opted in through
+          # YDBCompatible, which a unit test pins; the runner skips every
+          # other one on YDB.
+          ./integration-test --databases=ydb --report=stdout,txt,json,html --verbose --output=./reports
+
       - name: Upload integration test reports
         uses: actions/upload-artifact@v7
         if: always()

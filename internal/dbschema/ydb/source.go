@@ -133,7 +133,27 @@ func operationStatus(operation *Ydb_Operations.Operation) error {
 		return errors.New("the server answered with an operation that has not finished")
 	}
 	if status := operation.GetStatus(); status != Ydb.StatusIds_SUCCESS {
-		return fmt.Errorf("%s: %s", status, issueText(operation.GetIssues()))
+		return &statusError{status: status, issues: issueText(operation.GetIssues())}
 	}
 	return nil
+}
+
+// statusError is an operation the server finished with a status other than
+// success.
+type statusError struct {
+	status Ydb.StatusIds_StatusCode
+	issues string
+}
+
+func (e *statusError) Error() string {
+	return fmt.Sprintf("%s: %s", e.status, e.issues)
+}
+
+// isSchemeError reports a SCHEME_ERROR, which is how YDB answers a path that
+// does not exist -- or one the account may not see, which it does not tell
+// apart: measured on 26.2.1.14, `Cannot find table ... because it does not
+// exist or you do not have access permissions`.
+func isSchemeError(err error) bool {
+	status, ok := errors.AsType[*statusError](err)
+	return ok && status.status == Ydb.StatusIds_SCHEME_ERROR
 }

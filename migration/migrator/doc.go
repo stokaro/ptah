@@ -92,11 +92,12 @@
 // WithMigrationsTable(schema, table) to store migration history in a custom
 // schema or table, for example an `infra.ptah_migrations` table in PostgreSQL.
 //
-// PostgreSQL, YugabyteDB, MySQL, MariaDB, and SQL Server migrations acquire a
-// session-level advisory lock around the planning and apply window; the
-// remaining dialects get a no-op lock because their servers have no
-// session-scoped advisory-lock semantics to take (see internal/dblock.Supported
-// for the list this follows). Use WithMigrationLockName to coordinate on a
+// PostgreSQL, YugabyteDB, MySQL, MariaDB, SQL Server and YDB migrations
+// acquire a session-level lock around the planning and apply window -- on YDB
+// a coordination-node semaphore, which YDB offers in place of an advisory
+// lock; the remaining dialects get a no-op lock because their servers have no
+// session-scoped lock to take (see internal/dblock.Supported for the list this
+// follows). Use WithMigrationLockName to coordinate on a
 // custom lock name, and use WithMigrationLockTimeout to bound the wait for that
 // lock. Callers can detect acquisition timeouts with IsMigrationLockTimeout.
 // WithoutMigrationLock turns the lock off entirely for callers that serialize

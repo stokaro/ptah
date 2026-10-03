@@ -178,6 +178,6 @@ func baselineRecordedVersion(c *qt.C, dbPath string) int64 {
 func fmtBaselineLockRefusal(request, dialect string) string {
 	return regexp.QuoteMeta(
 		request + ` requested the migration advisory lock, and dialect "` + dialect + `" has none: ` +
-			`only postgres, yugabytedb, mysql, mariadb, sqlserver take a session advisory lock. ` +
+			`only postgres, yugabytedb, mysql, mariadb, sqlserver, ydb take a session advisory lock. ` +
 			`Remove ` + request + ` to run without a lock`)
 }

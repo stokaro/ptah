@@ -274,6 +274,6 @@ func TestSchemaApplyKeepsLockTimeoutOnLockingDialect(t *testing.T) {
 // typed --lock-timeout with.
 func fmtLockRefusal(dialect string) string {
 	return `--lock-timeout requested a schema apply lock, and dialect "` + dialect + `" has none: ` +
-		`only postgres, yugabytedb, mysql, mariadb, sqlserver take a session advisory lock. ` +
+		`only postgres, yugabytedb, mysql, mariadb, sqlserver, ydb take a session advisory lock. ` +
 		`Remove --lock-timeout to apply without a lock`
 }

@@ -3439,9 +3439,8 @@ func Oracle21() Capabilities {
 // a flag on can do more than its line's preset says.
 //
 // A key is true only where Ptah's renderer and planner reach the feature. The
-// reader, the migrator and the object families arrive in later phases of
-// stokaro/ptah#4015, so views, roles and the TTL policy read false here
-// whatever the server can do.
+// object families arrive in later phases of stokaro/ptah#4015, so views, roles
+// and the TTL policy read false here whatever the server can do.
 func YDB262() Capabilities {
 	return Capabilities{
 		// Constraints. The grammar has no CHECK, FOREIGN KEY, UNIQUE
@@ -3593,8 +3592,10 @@ func YDB262() Capabilities {
 
 		// Execution. DDL never runs inside a transaction: `Scheme operations
 		// cannot be executed inside transaction`. There is no advisory lock;
-		// the migration lock is a coordination-node semaphore in a later
-		// phase. Statement timeouts are the migrator's work in a later phase.
+		// internal/dblock locks YDB through a coordination-node semaphore
+		// instead. There is no lock wait for a timeout to bound, and a client
+		// that gives up on a scheme statement cannot say it did not commit,
+		// so the migrator sets no timeout.
 		TransactionalDDL:     false,
 		DDLInsideTransaction: false,
 		AdvisoryLocks:        false,

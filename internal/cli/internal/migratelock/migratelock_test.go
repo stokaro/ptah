@@ -44,35 +44,35 @@ func TestEnsure_FailurePath(t *testing.T) {
 			name:    "sqlite",
 			dialect: "sqlite",
 			wantErr: `--migration-lock-timeout requested the migration advisory lock, and dialect "sqlite" has none: ` +
-				`only postgres, yugabytedb, mysql, mariadb, sqlserver take a session advisory lock. ` +
+				`only postgres, yugabytedb, mysql, mariadb, sqlserver, ydb take a session advisory lock. ` +
 				`Remove --migration-lock-timeout to run without a lock`,
 		},
 		{
 			name:    "clickhouse",
 			dialect: "clickhouse",
 			wantErr: `--migration-lock-timeout requested the migration advisory lock, and dialect "clickhouse" has none: ` +
-				`only postgres, yugabytedb, mysql, mariadb, sqlserver take a session advisory lock. ` +
+				`only postgres, yugabytedb, mysql, mariadb, sqlserver, ydb take a session advisory lock. ` +
 				`Remove --migration-lock-timeout to run without a lock`,
 		},
 		{
 			name:    "cockroachdb",
 			dialect: "cockroachdb",
 			wantErr: `--migration-lock-timeout requested the migration advisory lock, and dialect "cockroachdb" has none: ` +
-				`only postgres, yugabytedb, mysql, mariadb, sqlserver take a session advisory lock. ` +
+				`only postgres, yugabytedb, mysql, mariadb, sqlserver, ydb take a session advisory lock. ` +
 				`Remove --migration-lock-timeout to run without a lock`,
 		},
 		{
 			name:    "spanner",
 			dialect: "spanner",
 			wantErr: `--migration-lock-timeout requested the migration advisory lock, and dialect "spanner" has none: ` +
-				`only postgres, yugabytedb, mysql, mariadb, sqlserver take a session advisory lock. ` +
+				`only postgres, yugabytedb, mysql, mariadb, sqlserver, ydb take a session advisory lock. ` +
 				`Remove --migration-lock-timeout to run without a lock`,
 		},
 		{
 			name:    "oracle",
 			dialect: "oracle",
 			wantErr: `--migration-lock-timeout requested the migration advisory lock, and dialect "oracle" has none: ` +
-				`only postgres, yugabytedb, mysql, mariadb, sqlserver take a session advisory lock. ` +
+				`only postgres, yugabytedb, mysql, mariadb, sqlserver, ydb take a session advisory lock. ` +
 				`Remove --migration-lock-timeout to run without a lock`,
 		},
 	}

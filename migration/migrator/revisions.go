@@ -623,6 +623,12 @@ func (m *Migrator) ptahRevisionProjection() string {
 
 func (m *Migrator) getRevisionsForUpdateSQL() string {
 	switch platform.NormalizeDialect(m.conn.Info().Dialect) {
+	case platform.YDB:
+		// YQL has no FOR UPDATE. The read runs in a serializable
+		// transaction, and YDB aborts the one of two conflicting
+		// transactions that commits second with `Transaction locks
+		// invalidated`, which the caller retries.
+		return m.getRevisionsSQL()
 	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.MySQL, platform.MariaDB:
 		return m.getRevisionsSQL() + " FOR UPDATE"
 	case platform.SQLServer:
@@ -756,14 +762,32 @@ WHERE version = ?`, table, assignments)
 }
 
 func (m *Migrator) forceAppliedMigrationSQL() string {
-	if m.revisionTableFormat.isAtlas() {
-		return fmt.Sprintf(`INSERT INTO %s (version, description, type, applied, total, executed_at, execution_time, error, error_stmt, hash, partial_hashes, operator_version)
-VALUES (?, ?, ?, ?, ?, ?, ?, '', '', ?, ?, ?)
-%s`, m.qualifiedMigrationsTable(), m.forceAppliedConflictClause())
+	verb := "INSERT"
+	if m.forceAppliedUpserts() {
+		verb = "UPSERT"
 	}
-	return fmt.Sprintf(`INSERT INTO %s (version, description, applied_at, state, applied, total, error, error_stmt, execution_time_ms, checksum)
+	if m.revisionTableFormat.isAtlas() {
+		return fmt.Sprintf(`%s INTO %s (version, description, type, applied, total, executed_at, execution_time, error, error_stmt, hash, partial_hashes, operator_version)
+VALUES (?, ?, ?, ?, ?, ?, ?, '', '', ?, ?, ?)
+%s`, verb, m.qualifiedMigrationsTable(), m.forceAppliedConflictClause())
+	}
+	return fmt.Sprintf(`%s INTO %s (version, description, applied_at, state, applied, total, error, error_stmt, execution_time_ms, checksum)
 VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
-%s`, m.qualifiedMigrationsTable(), m.forceAppliedConflictClause())
+%s`, verb, m.qualifiedMigrationsTable(), m.forceAppliedConflictClause())
+}
+
+// forceAppliedUpserts reports whether the target writes a forced revision
+// with YQL's UPSERT, which replaces the row a version already has. YQL has
+// no ON CONFLICT and no ON DUPLICATE KEY, and UPSERT is the statement it
+// has for this instead.
+func (m *Migrator) forceAppliedUpserts() bool {
+	return platform.NormalizeDialect(m.connectionDialect()) == platform.YDB
+}
+
+// forceAppliedReplacesRow reports whether the forced-revision write itself
+// replaces an existing row, so no DELETE has to clear the way for it.
+func (m *Migrator) forceAppliedReplacesRow() bool {
+	return m.forceAppliedUpserts() || m.forceAppliedConflictClause() != ""
 }
 
 func (m *Migrator) insertAtlasRevisionSQL() string {
@@ -1070,12 +1094,19 @@ func (m *Migrator) atlasDistinctRevisionIdentityCount(ctx context.Context, ident
 	// 23.26.3.0.0 it answers ORA-03048, and the same query without AS is
 	// accepted. Oracle 21 also takes no SELECT without FROM, so every literal
 	// row selects from dual.
-	rowSource, aliasKeyword := "", " AS"
-	if platform.NormalizeDialect(m.connectionDialect()) == platform.Oracle {
+	rowSource, aliasKeyword, column := "", " AS", ""
+	switch platform.NormalizeDialect(m.connectionDialect()) {
+	case platform.Oracle:
 		rowSource, aliasKeyword = " FROM dual", ""
+	case platform.YDB:
+		// YQL's UNION ALL pairs columns by name rather than by position, so
+		// an unnamed literal lands in a column of its own and COUNT(DISTINCT
+		// version) counts none of them.
+		column = " AS version"
 	}
 	for _, version := range identities {
-		fmt.Fprintf(&query, " UNION ALL SELECT %s%s", atlasRevisionStringLiteral(m.connectionDialect(), version), rowSource)
+		fmt.Fprintf(&query, " UNION ALL SELECT %s%s%s",
+			atlasRevisionStringLiteral(m.connectionDialect(), version), column, rowSource)
 	}
 	query.WriteString(")" + aliasKeyword + " ptah_revision_identities")
 	var distinct int
@@ -1169,6 +1200,12 @@ func atlasVersionNumberExpressionFor(dialect string) string {
 		// Oracle has no BIGINT: measured on Oracle Free 23.26.3.0.0,
 		// `CAST('12' AS BIGINT)` answers ORA-00902, invalid datatype.
 		return "CAST(" + atlasMetadataVersionNullGuard + " AS NUMBER(19))"
+	case platform.YDB:
+		// YQL's own name for the type. A cast of a column is safe here, unlike
+		// a cast of a parameter: the guard has already turned every token that
+		// is not a number into NULL, and NULL is what YQL's cast answers for
+		// text it cannot read as one.
+		return "CAST(" + atlasMetadataVersionNullGuard + " AS Int64)"
 	default:
 		return "CAST(" + atlasMetadataVersionNullGuard + " AS BIGINT)"
 	}
@@ -1275,6 +1312,8 @@ END`, sqlServerObjectLiteral, qualifiedTable)
     partial_hashes CLOB NULL,
     operator_version VARCHAR2(255) NULL
 )`, qualifiedTable))
+	case platform.YDB:
+		return ydbAtlasRevisionsTableDDL(qualifiedTable)
 	case platform.ClickHouse:
 		// The engine is named here for the same reason the native DDL names
 		// one: ClickHouse gives a table no engine unless asked, and whether an
@@ -2048,8 +2087,8 @@ func (m *Migrator) beginMigrationRevisionOn(
 		migrationStatePending,
 		0,
 		m.migrationStatementCount(migration.UpSQL),
-		nil,
-		nil,
+		m.nullableText(""),
+		m.nullableText(""),
 		0,
 		migrationRevisionHash(migration),
 	)
@@ -2156,32 +2195,39 @@ func (m *Migrator) checkpointMigrationRevisionOn(
 	event StatementEvent,
 	direction MigrationDirection,
 ) error {
+	query, args := m.checkpointMigrationRevisionStatement(migration, startedAt, event, direction)
+	return executeSQLOn(ctx, conn, query, args...)
+}
+
+// checkpointMigrationRevisionStatement is the statement that records event's
+// statement as executed, and its arguments, so a caller can run it inside a
+// transaction of its own.
+func (m *Migrator) checkpointMigrationRevisionStatement(
+	migration *Migration,
+	startedAt time.Time,
+	event StatementEvent,
+	direction MigrationDirection,
+) (string, []any) {
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.checkpointMigrationSQL())
 	if m.revisionTableFormat.isAtlas() {
 		sqlText := migrationSQLForDirection(migration, direction)
-		return executeSQLOn(
-			ctx,
-			conn,
-			query,
+		return query, []any{
 			event.Index,
 			event.Total,
 			time.Since(startedAt).Nanoseconds(),
 			m.atlasDirtyPartialHashes(sqlText, direction, event.Index, event.Total),
 			atlasOperatorVersionForMigration(migration, direction),
 			migration.RevisionVersion(),
-		)
+		}
 	}
-	return executeSQLOn(
-		ctx,
-		conn,
-		query,
+	return query, []any{
 		encodeRevisionState(migrationStatePending, direction),
 		event.Index,
 		event.Total,
 		time.Since(startedAt).Milliseconds(),
 		m.dirtyRevisionChecksum(migration, direction, event.Index),
 		migration.Version,
-	)
+	}
 }
 
 func (m *Migrator) markMigrationStatementInFlight(
@@ -2643,7 +2689,7 @@ func (m *Migrator) failIfRevisionAboveBaseline(ctx context.Context, version int6
 func (m *Migrator) writeBaselineMigrationRows(ctx context.Context, conn *dbschema.DatabaseConnection, migrations []*Migration) error {
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.forceAppliedMigrationSQL())
 	for _, migration := range migrations {
-		if m.forceAppliedConflictClause() == "" {
+		if !m.forceAppliedReplacesRow() {
 			deleteSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.deleteMigrationSQL())
 			if err := conn.Writer().ExecuteSQL(ctx, deleteSQL, m.migrationRevisionVersionArg(migration)); err != nil {
 				return fmt.Errorf("failed to prepare baseline revision %d: %w", migration.Version, err)
@@ -3269,8 +3315,8 @@ func (m *Migrator) writePtahSetRevisionRows(
 			migrationStateApplied,
 			total,
 			total,
-			nil,
-			nil,
+			m.nullableText(""),
+			m.nullableText(""),
 			0,
 			migrationRevisionHash(migration),
 		); err != nil {
@@ -3388,9 +3434,17 @@ func (m *Migrator) validateRepairMigrationSQL(
 // and loses its DML on a rollback, which is why that class carries a witness
 // statement by statement and is not exempt here: zero there means the
 // transaction took the body back with it.
+//
+// YDB is of the durable class and still carries a witness: every body runs the
+// way `none` runs it there, a scheme query marked in flight before it runs and
+// a data query committed together with its checkpoint, so zero with no marker
+// is the witness speaking. See runsQueriesOnTheirOwn.
 func revisionProvesNothingRan(revision *MigrationRevision, dialect string) bool {
 	if revision == nil || !revision.Dirty || !isZeroProgressUpFailure(*revision) {
 		return false
+	}
+	if platform.NormalizeDialect(dialect) == platform.YDB {
+		return true
 	}
 	return !ddltx.AllStatementsDurable(ddltx.ClassOf(dialect))
 }
@@ -3563,6 +3617,12 @@ func (m *Migrator) resumeStatementsOnSession(
 			continue
 		}
 		event := StatementEvent{Statement: stmt, Index: i + 1, Total: len(statements)}
+		if m.runsQueriesOnTheirOwn() && !m.conn.Writer().IsDryRun() && isYDBDataQuery(stmt) {
+			if err := m.commitYDBDataQuery(ctx, migration, startedAt, event, direction); err != nil {
+				return m.failResumedMigrationDirection(ctx, migration, startedAt, err, event, direction)
+			}
+			continue
+		}
 		if err := m.markMigrationStatementInFlight(ctx, migration, startedAt, event, direction); err != nil {
 			return fmt.Errorf("failed to record resumed %s %d at statement %d: %w", operation, migration.Version, event.Index, err)
 		}
@@ -3660,7 +3720,7 @@ func (m *Migrator) forceAppliedMigration(ctx context.Context, migration *Migrati
 			return m.forceAppliedMigrationClickHouse(ctx, migration)
 		}
 	}
-	if m.forceAppliedConflictClause() == "" {
+	if !m.forceAppliedReplacesRow() {
 		deleteSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.deleteMigrationSQL())
 		if err := executeSQLOutsideTransaction(ctx, m.conn, deleteSQL, m.migrationRevisionVersionArg(migration)); err != nil {
 			return err
@@ -3743,10 +3803,10 @@ func (m *Migrator) atlasNullJSONValue() any {
 }
 
 // atlasJSONValue binds one JSON document the way the column that holds it was
-// declared: a plain string where the column is text (SQL Server, ClickHouse),
-// and a []byte JSON document everywhere the dialect has a real JSON type.
+// declared: a plain string where the column is text (SQL Server, ClickHouse,
+// YDB), and a []byte JSON document everywhere the dialect has a real JSON type.
 func (m *Migrator) atlasJSONValue(document string) any {
-	if m.isSQLServer() || m.isClickHouse() {
+	if m.isSQLServer() || m.isClickHouse() || platform.NormalizeDialect(m.connectionDialect()) == platform.YDB {
 		return document
 	}
 	return []byte(document)

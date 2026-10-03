@@ -99,11 +99,27 @@ func Test_metadataInformationSchemaName_SpannerUsesConnectionSchema(t *testing.T
 }
 
 func Test_migrationTablePresenceQuery_FailurePath(t *testing.T) {
-	c := qt.New(t)
-	query, args, err := migrationTablePresenceQuery("unsupported", "", "", "schema_migrations", func(value string) string {
-		return value
-	})
-	c.Assert(err, qt.ErrorMatches, `unsupported migration metadata dialect "unsupported"`)
-	c.Assert(query, qt.Equals, "")
-	c.Assert(args, qt.IsNil)
+	tests := []struct {
+		name    string
+		dialect string
+		wantErr string
+	}{
+		{name: "a dialect it does not know", dialect: "unsupported",
+			wantErr: `unsupported migration metadata dialect "unsupported"`},
+		// YDB has no catalog SQL could ask, and its tables are described
+		// instead; a query for it would be another dialect's.
+		{name: "ydb is described, not queried", dialect: platform.YDB,
+			wantErr: `YDB migration metadata is described through the scheme service, not queried`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			query, args, err := migrationTablePresenceQuery(test.dialect, "", "", "schema_migrations", func(value string) string {
+				return value
+			})
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(query, qt.Equals, "")
+			c.Assert(args, qt.IsNil)
+		})
+	}
 }

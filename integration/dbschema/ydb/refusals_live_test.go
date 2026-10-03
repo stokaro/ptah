@@ -17,7 +17,6 @@ import (
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/migrateclean"
 	"ptah.run/internal/ydbgap"
-	"ptah.run/migration/migrator"
 	"ptah.run/migration/seeder"
 )
 
@@ -30,16 +29,10 @@ func TestYDBConnectedLayersRefuse(t *testing.T) {
 	conn := openYDB(c)
 	ctx := c.Context()
 
-	migrationErr := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider()).Initialize(ctx)
-	_, presenceErr := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider()).MetadataPresent(ctx)
-	tagErr := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider()).RecordMigrationTag(ctx, "v1", 1)
 	_, seedErr := seeder.Apply(ctx, conn, fstest.MapFS{}, seeder.Options{Env: "dev"})
 	devErr := migrateclean.DevRefusal(ctx, conn)
 	_, realmErr := devlock.SameRealm(ctx, conn, conn)
 
-	c.Assert(migrationErr, qt.ErrorMatches, `(?s).*`+regexp.QuoteMeta(ydbgap.Migrating.Message()))
-	c.Assert(presenceErr, qt.ErrorMatches, `(?s).*`+regexp.QuoteMeta(ydbgap.Migrating.Message()))
-	c.Assert(tagErr, qt.ErrorMatches, `(?s).*`+regexp.QuoteMeta(ydbgap.Migrating.Message()))
 	c.Assert(seedErr, qt.ErrorMatches, `(?s).*`+regexp.QuoteMeta(ydbgap.DataChanges.Message()))
 	c.Assert(devErr, qt.ErrorMatches, `(?s).*`+regexp.QuoteMeta(ydbgap.DevDatabases.Message()))
 	c.Assert(realmErr, qt.ErrorMatches, `(?s).*`+regexp.QuoteMeta(ydbgap.DevDatabases.Message()))

@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/dbschema"
+	"ptah.run/internal/integrationfixture"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/schemadiff"
@@ -354,6 +355,69 @@ func testPartialFailureRecovery(ctx context.Context, conn *dbschema.DatabaseConn
 		return fmt.Errorf("users table should exist after partial failure")
 	}
 
+	return nil
+}
+
+// testPartialFailureResume fails a migration partway, fixes the failing
+// statement and resumes with AllowDirty: the statements that committed before
+// the failure are skipped, so the INSERT among them -- which would conflict on
+// its key if it ran again -- leaves one row.
+//
+// Its fixtures exist only where a failed migration keeps the statements that
+// ran before the failure, which is YDB's partial_failure_resume_ydb pair; a
+// target without them cannot ask the question.
+func testPartialFailureResume(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS) error {
+	brokenPath := integrationfixture.MigrationPath(conn.Info().Dialect, "partial_failure_resume")
+	fixedPath := integrationfixture.MigrationPath(conn.Info().Dialect, "partial_failure_resume_fixed")
+	if _, err := fs.Stat(fixtures, brokenPath); err != nil {
+		return fmt.Errorf("%w: no %s fixture for %s", ErrPreconditionUnavailable, brokenPath, conn.Info().Dialect)
+	}
+	brokenFS, err := fs.Sub(fixtures, brokenPath)
+	if err != nil {
+		return err
+	}
+	fixedFS, err := fs.Sub(fixtures, fixedPath)
+	if err != nil {
+		return err
+	}
+
+	broken, err := migrator.NewFSMigrator(conn, brokenFS)
+	if err != nil {
+		return fmt.Errorf("failed to create migrator: %w", err)
+	}
+	if err := broken.MigrateUp(ctx); err == nil {
+		return fmt.Errorf("expected the first migration to fail, but it succeeded")
+	}
+	status, err := broken.GetMigrationStatus(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to read status after the failure: %w", err)
+	}
+	if status.DirtyRevision == nil || status.DirtyRevision.Applied != 2 || status.DirtyRevision.Total != 3 {
+		return fmt.Errorf("expected a dirty revision with 2 of 3 statements applied, got %+v", status.DirtyRevision)
+	}
+
+	fixed, err := migrator.NewFSMigrator(conn, fixedFS)
+	if err != nil {
+		return fmt.Errorf("failed to create migrator: %w", err)
+	}
+	if err := fixed.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{AllowDirty: true}); err != nil {
+		return fmt.Errorf("failed to resume the fixed migration: %w", err)
+	}
+	var rows int64
+	if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM accounts").Scan(&rows); err != nil {
+		return fmt.Errorf("failed to count accounts: %w", err)
+	}
+	if rows != 1 {
+		return fmt.Errorf("expected the committed INSERT to run once, found %d rows", rows)
+	}
+	helper := NewDatabaseHelper(conn)
+	exists, err := helper.TableExists(ctx, "ledger")
+	if err != nil {
+		return fmt.Errorf("failed to check the resumed table: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("ledger should exist after the resume")
+	}
 	return nil
 }
 

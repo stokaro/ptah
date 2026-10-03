@@ -20,6 +20,7 @@ import (
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/revisiontable"
+	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqliterebuild"
 	"ptah.run/migration/migrationfile"
 )
@@ -805,10 +806,10 @@ func (m *Migrator) revisionEngineClause() string {
 // every later verb fails until an operator drops it by hand. Refusing first
 // leaves the database as it was.
 //
-// On SQL Server and Oracle the statement has no engine clause at all: both DDL
-// builders take a branch of their own for each, so a named engine is dropped in
-// silence while revisionEngineClause still reports one -- and an unrelated
-// create failure would then name a clause the server never saw.
+// On SQL Server, Oracle and YDB the statement has no engine clause at all: both
+// DDL builders take a branch of their own for each, so a named engine is
+// dropped in silence while revisionEngineClause still reports one -- and an
+// unrelated create failure would then name a clause the server never saw.
 //
 // ClickHouse is deliberately not in this list. Which engines a revision table
 // can be is the server's judgment there, it answers with its own message, and
@@ -845,7 +846,7 @@ func revisionEngineRefusal(dialect, engine string) error {
 // TestRevisionTableHasNoEngineClause_AgreesWithBothBuilders holds the pair.
 func revisionTableHasNoEngineClause(dialect string) bool {
 	switch platform.NormalizeDialect(dialect) {
-	case platform.SQLServer, platform.Oracle:
+	case platform.SQLServer, platform.Oracle, platform.YDB:
 		return true
 	default:
 		return false
@@ -951,12 +952,7 @@ func (m *Migrator) defaultMigrationsTable() string {
 }
 
 func (m *Migrator) qualifiedMigrationsTable() string {
-	table := m.migrationsTableName()
-	schema := m.metadataTableSchemaName()
-	if schema == "" {
-		return m.quoteIdentifier(table)
-	}
-	return m.quoteIdentifier(schema) + "." + m.quoteIdentifier(table)
+	return m.qualifiedMetadataTable(m.migrationsTableName())
 }
 
 // MigrationsTableIdentifier returns the dialect-quoted metadata table name.
@@ -976,6 +972,11 @@ func (m *Migrator) migrationsSchemaStatement() string {
 		return ""
 	}
 	if platform.NormalizeDialect(m.connectionDialect()) == platform.SQLite {
+		return ""
+	}
+	if platform.NormalizeDialect(m.connectionDialect()) == platform.YDB {
+		// A YDB schema is a directory, and CREATE TABLE creates the
+		// directories its path names; YQL has no statement that creates one.
 		return ""
 	}
 	if platform.NormalizeDialect(m.connectionDialect()) == platform.Oracle {
@@ -1005,6 +1006,10 @@ func (m *Migrator) quoteIdentifier(identifier string) string {
 		return "`" + strings.ReplaceAll(identifier, "`", "``") + "`"
 	case platform.SQLServer:
 		return "[" + strings.ReplaceAll(identifier, "]", "]]") + "]"
+	case platform.YDB:
+		// Backticks, where a backslash and not a doubled backtick escapes;
+		// see sqlident.
+		return sqlident.Quote(platform.YDB, identifier)
 	default:
 		return `"` + strings.ReplaceAll(identifier, `"`, `""`) + `"`
 	}
@@ -1091,6 +1096,9 @@ END`, sqlServerObjectLiteral, qualifiedTable)
     execution_time_ms NUMBER(19) DEFAULT 0 NOT NULL,
     checksum VARCHAR2(64) NULL
 )`, qualifiedTable))
+	}
+	if platform.NormalizeDialect(dialect) == platform.YDB {
+		return ydbRevisionsTableDDL(qualifiedTable)
 	}
 	engineClause := revisionEngineClauseFor(dialect, engine)
 	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
@@ -1337,6 +1345,9 @@ func (m *Migrator) inspectDryRunMetadata(ctx context.Context) (available, legacy
 }
 
 func (m *Migrator) ensureMigrationsRevisionColumns(ctx context.Context) error {
+	if m.usesDescribedMetadata() {
+		return m.requireYDBRevisionColumns(ctx)
+	}
 	columns := []struct {
 		name       string
 		definition string
@@ -1395,6 +1406,12 @@ func (m *Migrator) migrationsRevisionColumnDefinition(name, fallback string) str
 
 func (m *Migrator) migrationsColumnExists(ctx context.Context, name string) (bool, error) {
 	switch m.conn.Info().Dialect {
+	case platform.YDB:
+		columns, _, err := m.describeMetadataTable(ctx, m.migrationsTableName())
+		if err != nil {
+			return false, err
+		}
+		return slices.Contains(columns, name), nil
 	case platform.ClickHouse:
 		return m.clickHouseMigrationsColumnExists(ctx, name)
 	case platform.SQLite:
@@ -2975,6 +2992,9 @@ func (m *Migrator) runBatchPreMigrationChecks(ctx context.Context, migrations []
 }
 
 func (m *Migrator) validateUpTransactionMode(migrations []*Migration) error {
+	if err := m.refuseUnsplittableMigrations(migrations, MigrationDirectionUp); err != nil {
+		return err
+	}
 	resolvedTimeouts := make(map[*Migration]migrationfile.Timeouts, len(migrations))
 	for _, migration := range migrations {
 		timeouts, err := m.effectiveUpTimeouts(migration)
@@ -3535,15 +3555,7 @@ func (m *Migrator) applyUpMigrationNoTransactionOnSession(
 	executionConn := m.noTransactionConnection()
 	// Pre-migration checks already ran in runPreMigrationChecks, before this
 	// migration had any revision row.
-	executionCtx := withStatementProgressRecorder(
-		ctx,
-		func(ctx context.Context, event StatementEvent) error {
-			return m.markMigrationStatementInFlight(ctx, migration, startedAt, event, MigrationDirectionUp)
-		},
-		func(ctx context.Context, event StatementEvent) error {
-			return m.checkpointMigrationRevision(ctx, migration, startedAt, event, MigrationDirectionUp)
-		},
-	)
+	executionCtx := m.withRecordedStatementProgress(ctx, migration, startedAt, MigrationDirectionUp)
 	executionCtx = m.withPostgresIndexObservation(executionCtx, executionConn)
 	if err := migration.executeUp(executionCtx, executionConn, migrationExecutionNoTransaction); err != nil {
 		failure := m.failMigrationWithDirtyStateWithMode(
@@ -3868,15 +3880,7 @@ func (m *Migrator) rollbackMigrationNoTransactionOnSession(
 ) error {
 	executionConn := m.noTransactionConnection()
 	m.startPostgresIndexObservation()
-	executionCtx := withStatementProgressRecorder(
-		ctx,
-		func(ctx context.Context, event StatementEvent) error {
-			return m.markMigrationStatementInFlight(ctx, migration, startedAt, event, MigrationDirectionDown)
-		},
-		func(ctx context.Context, event StatementEvent) error {
-			return m.checkpointMigrationRevision(ctx, migration, startedAt, event, MigrationDirectionDown)
-		},
-	)
+	executionCtx := m.withRecordedStatementProgress(ctx, migration, startedAt, MigrationDirectionDown)
 	executionCtx = m.withPostgresIndexObservation(executionCtx, executionConn)
 	if err := migration.executeDown(executionCtx, executionConn, migrationExecutionNoTransaction); err != nil {
 		failure := m.failRollbackWithDirtyStateWithMode(
@@ -4242,6 +4246,9 @@ func migrationsToRollback(migrationsByVersion map[int64]*Migration, applied []in
 
 func (m *Migrator) validateDownMigrations(migrations []*Migration) error {
 	if err := m.reportMisplacedDirectives(migrations, MigrationDirectionDown); err != nil {
+		return err
+	}
+	if err := m.refuseUnsplittableMigrations(migrations, MigrationDirectionDown); err != nil {
 		return err
 	}
 	for _, migration := range migrations {

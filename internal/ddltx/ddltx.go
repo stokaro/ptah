@@ -131,9 +131,9 @@ func ClassOf(dialect string) Class {
 	// DML cannot share one query (`Queries with mixed data and scheme
 	// operations are not supported`). A query holding several DDL statements
 	// is not atomic either: everything before a failing statement stays
-	// applied. So every statement commits on its own, body and revision write
-	// alike. No YDB writer exists, so this is the contract the writer has to
-	// keep rather than a measurement of one.
+	// applied. So every query commits on its own, body and revision write
+	// alike. TestYDBMigrator_ResumesWhereAFailedMigrationStopped finds the
+	// table and the row that ran before a failing statement still there.
 	case platform.YDB:
 		return NoTransaction
 

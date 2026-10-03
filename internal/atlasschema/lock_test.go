@@ -178,37 +178,37 @@ func TestEnsureApplyLockSupported_FailurePath(t *testing.T) {
 		{
 			name: "sqlite", request: "--lock-timeout", dialect: "sqlite",
 			wantErr: `--lock-timeout requested a schema apply lock, and dialect "sqlite" has none: ` +
-				`only postgres, yugabytedb, mysql, mariadb, sqlserver take a session advisory lock. ` +
+				`only postgres, yugabytedb, mysql, mariadb, sqlserver, ydb take a session advisory lock. ` +
 				`Remove --lock-timeout to apply without a lock`,
 		},
 		{
 			name: "clickhouse", request: "--lock-timeout", dialect: "clickhouse",
 			wantErr: `--lock-timeout requested a schema apply lock, and dialect "clickhouse" has none: ` +
-				`only postgres, yugabytedb, mysql, mariadb, sqlserver take a session advisory lock. ` +
+				`only postgres, yugabytedb, mysql, mariadb, sqlserver, ydb take a session advisory lock. ` +
 				`Remove --lock-timeout to apply without a lock`,
 		},
 		{
 			name: "cockroachdb", request: "--lock-timeout", dialect: "cockroachdb",
 			wantErr: `--lock-timeout requested a schema apply lock, and dialect "cockroachdb" has none: ` +
-				`only postgres, yugabytedb, mysql, mariadb, sqlserver take a session advisory lock. ` +
+				`only postgres, yugabytedb, mysql, mariadb, sqlserver, ydb take a session advisory lock. ` +
 				`Remove --lock-timeout to apply without a lock`,
 		},
 		{
 			name: "spanner", request: "--lock-timeout", dialect: "spanner",
 			wantErr: `--lock-timeout requested a schema apply lock, and dialect "spanner" has none: ` +
-				`only postgres, yugabytedb, mysql, mariadb, sqlserver take a session advisory lock. ` +
+				`only postgres, yugabytedb, mysql, mariadb, sqlserver, ydb take a session advisory lock. ` +
 				`Remove --lock-timeout to apply without a lock`,
 		},
 		{
 			name: "oracle", request: "--lock-timeout", dialect: "oracle",
 			wantErr: `--lock-timeout requested a schema apply lock, and dialect "oracle" has none: ` +
-				`only postgres, yugabytedb, mysql, mariadb, sqlserver take a session advisory lock. ` +
+				`only postgres, yugabytedb, mysql, mariadb, sqlserver, ydb take a session advisory lock. ` +
 				`Remove --lock-timeout to apply without a lock`,
 		},
 		{
 			name: "environment variable names itself", request: "PTAH_LOCK_TIMEOUT", dialect: "sqlite",
 			wantErr: `PTAH_LOCK_TIMEOUT requested a schema apply lock, and dialect "sqlite" has none: ` +
-				`only postgres, yugabytedb, mysql, mariadb, sqlserver take a session advisory lock. ` +
+				`only postgres, yugabytedb, mysql, mariadb, sqlserver, ydb take a session advisory lock. ` +
 				`Remove PTAH_LOCK_TIMEOUT to apply without a lock`,
 		},
 	}

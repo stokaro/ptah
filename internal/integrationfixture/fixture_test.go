@@ -60,6 +60,8 @@ func TestMigrationPath(t *testing.T) {
 		{name: "clickhouse", dialect: "clickhouse", migrationType: "basic", want: "migrations/basic_clickhouse"},
 		{name: "sqlserver", dialect: "sqlserver", migrationType: "basic", want: "migrations/basic_sqlserver"},
 		{name: "mssql", dialect: "mssql", migrationType: "failing", want: "migrations/failing_sqlserver"},
+		{name: "ydb", dialect: "ydb", migrationType: "partial_failure", want: "migrations/partial_failure_ydb"},
+		{name: "ydbs", dialect: "ydbs", migrationType: "basic", want: "migrations/basic_ydb"},
 	}
 
 	for _, test := range tests {

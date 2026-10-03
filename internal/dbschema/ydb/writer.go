@@ -15,12 +15,10 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
-	"ptah.run/core/sqlutil"
 	"ptah.run/internal/atlasretry"
-	"ptah.run/internal/dialectlexer"
-	"ptah.run/internal/lexer"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlrunner"
+	"ptah.run/internal/yqlquery"
 )
 
 // Scheme is what the writer asks of YDB's scheme service: the entries of a
@@ -33,11 +31,12 @@ type Scheme interface {
 
 // Writer applies schema changes to a YDB database.
 //
-// Each statement runs as a query of its own. A YDB query that carries several
-// DDL statements is not atomic -- whatever ran before a failure stays applied
-// -- and it compiles every statement against the schema as it stood before the
-// query, so `ALTER TABLE t ADD COLUMN v` and `ALTER TABLE t ADD INDEX i ON (v)`
-// fail as one query and succeed as two (measured on 26.2.1.14). Success is the
+// Each scheme statement runs as a query of its own. A YDB query that carries
+// several DDL statements is not atomic -- whatever ran before a failure stays
+// applied -- and it compiles every statement against the schema as it stood
+// before the query, so `ALTER TABLE t ADD COLUMN v` and `ALTER TABLE t ADD
+// INDEX i ON (v)` fail as one query and succeed as two (measured on
+// 26.2.1.14). Data statements run together; see [Writer.ExecuteSQL]. Success is the
 // driver's answer: YDB reports some successful statements with issue text that
 // begins with `Error:`, and the driver returns no error for them.
 //
@@ -78,48 +77,53 @@ func (w *Writer) SetDryRun(dryRun bool) { w.dryRun = dryRun }
 // IsDryRun reports whether the writer only logs.
 func (w *Writer) IsDryRun() bool { return w.dryRun }
 
-// ExecuteSQL runs each statement of sqlExpr as a query of its own, in order,
-// and stops at the first that fails. Arguments are passed to every statement,
-// so a text with arguments holds one statement.
+// ExecuteSQL runs sqlExpr as the queries internal/yqlquery splits it into, in
+// order, and stops at the first that fails. Each scheme statement is a query
+// of its own; consecutive data statements are one query, so a named
+// expression or an action they define reaches the statements that use it.
+// Arguments are passed to every query, so a text with arguments runs as one.
 //
-// A data statement -- INSERT, UPSERT, REPLACE, UPDATE or DELETE -- commits on
-// its own and is run again when YDB aborts it for a conflicting transaction
-// (`Transaction locks invalidated`), since an aborted statement changed
-// nothing. A scheme statement is run once.
+// A data query -- INSERT, UPSERT, REPLACE, UPDATE, DELETE and the rest --
+// commits on its own and is run again when YDB aborts it for a conflicting
+// transaction (`Transaction locks invalidated`), since an aborted query
+// changed nothing. A scheme query is run once.
 func (w *Writer) ExecuteSQL(ctx context.Context, sqlExpr string, args ...any) error {
-	statements := sqlutil.SplitSQLStatementsForDialect(sqlExpr, platform.YDB)
-	if len(statements) > 1 && len(args) > 0 {
-		return fmt.Errorf("ydb: %d statements were given one argument list; pass one statement with its arguments",
-			len(statements))
+	queries, err := yqlquery.Split(sqlExpr)
+	if err != nil {
+		return fmt.Errorf("ydb: %w", err)
 	}
-	for _, statement := range statements {
-		if err := w.execute(ctx, statement, args); err != nil {
+	if len(queries) > 1 && len(args) > 0 {
+		return fmt.Errorf("ydb: %d queries were given one argument list; pass one query with its arguments",
+			len(queries))
+	}
+	for _, query := range queries {
+		if err := w.execute(ctx, query, args); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// execute runs one statement.
-func (w *Writer) execute(ctx context.Context, statement string, args []any) error {
+// execute runs one query.
+func (w *Writer) execute(ctx context.Context, query yqlquery.Query, args []any) error {
 	if w.dryRun {
-		slog.Info("[DRY RUN] Would execute SQL", "sql", statement, "args", args)
+		slog.Info("[DRY RUN] Would execute SQL", "sql", query.Text, "args", args)
 		return nil
 	}
 	if w.runner == nil {
 		return fmt.Errorf("no database connection")
 	}
 	attempts := 1
-	if isDataStatement(statement) {
+	if query.Kind == yqlquery.Data {
 		attempts = maxDataAttempts
 	}
 	for attempt := range attempts {
-		_, err := w.runner.ExecContext(ctx, statement, args...)
+		_, err := w.runner.ExecContext(ctx, query.Text, args...)
 		if err == nil {
 			return nil
 		}
 		if attempt == attempts-1 || !atlasretry.IsRetryable(err) {
-			return fmt.Errorf("ydb: SQL execution failed: %w\nSQL: %s", err, statement)
+			return fmt.Errorf("ydb: SQL execution failed: %w\nSQL: %s", err, query.Text)
 		}
 		if err := w.pause(ctx, attempt); err != nil {
 			return err
@@ -128,7 +132,7 @@ func (w *Writer) execute(ctx context.Context, statement string, args []any) erro
 	return nil
 }
 
-// maxDataAttempts bounds how often a data statement YDB aborted is run.
+// maxDataAttempts bounds how often a data query YDB aborted is run.
 const maxDataAttempts = 5
 
 // retryPause waits longer after each aborted attempt, and stops waiting when
@@ -141,28 +145,6 @@ func retryPause(ctx context.Context, attempt int) error {
 		return ctx.Err()
 	case <-timer.C:
 		return nil
-	}
-}
-
-// dataStatements are the first keywords of a YQL statement that changes rows.
-var dataStatements = []string{"INSERT", "UPSERT", "REPLACE", "UPDATE", "DELETE"}
-
-// isDataStatement reports whether statement changes rows, by its first
-// keyword, read with the YQL lexer so a leading comment is skipped.
-func isDataStatement(statement string) bool {
-	lexr := lexer.NewLexerWithOptions(statement, dialectlexer.Options(platform.YDB))
-	for {
-		token := lexr.NextToken()
-		switch token.Type {
-		case lexer.TokenEOF:
-			return false
-		case lexer.TokenWhitespace, lexer.TokenComment:
-			continue
-		case lexer.TokenIdentifier:
-			return slices.Contains(dataStatements, strings.ToUpper(token.Value))
-		default:
-			return false
-		}
 	}
 }
 

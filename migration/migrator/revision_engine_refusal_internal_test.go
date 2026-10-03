@@ -61,6 +61,14 @@ func TestRevisionEngineRefusal_TurnsDownAnEngineTheTableCannotBe(t *testing.T) {
 			engine:  "MergeTree",
 			want:    `migrations engine "MergeTree" cannot be named on oracle: the revision table there has no engine clause .*`,
 		},
+		{
+			// YQL has no engine clause; a YDB table's storage is chosen by
+			// STORE, which the revision table does not take.
+			name:    "ydb refuses any engine at all",
+			dialect: platform.YDB,
+			engine:  "column",
+			want:    `migrations engine "column" cannot be named on ydb: the revision table there has no engine clause .*`,
+		},
 	}
 
 	for _, test := range tests {
@@ -90,6 +98,7 @@ func TestRevisionEngineRefusal_AcceptsWhatTheTableCanBe(t *testing.T) {
 		{name: "an unset engine is what every other target uses", dialect: platform.MySQL, engine: ""},
 		{name: "sqlserver with no engine is untouched", dialect: platform.SQLServer, engine: ""},
 		{name: "oracle with no engine is untouched", dialect: platform.Oracle, engine: ""},
+		{name: "ydb with no engine is untouched", dialect: platform.YDB, engine: ""},
 		{name: "postgres names none and is asked for none", dialect: platform.Postgres, engine: ""},
 	}
 
@@ -122,7 +131,7 @@ func TestRevisionTableHasNoEngineClause_AgreesWithBothBuilders(t *testing.T) {
 			c.Assert(strings.Contains(ddl, engine), qt.Equals, !revisionTableHasNoEngineClause(dialect))
 		})
 	}
-	for _, dialect := range []string{platform.SQLServer, platform.Oracle} {
+	for _, dialect := range []string{platform.SQLServer, platform.Oracle, platform.YDB} {
 		t.Run("atlas "+dialect, func(t *testing.T) {
 			c := qt.New(t)
 

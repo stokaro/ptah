@@ -160,6 +160,7 @@ func TestAtlasVersionNumberExpression_GuardsEveryDialectBranch(t *testing.T) {
 		{name: "sqlite", dialect: "sqlite", wantCast: "BIGINT"},
 		{name: "sqlserver", dialect: "sqlserver", wantCast: "BIGINT"},
 		{name: "oracle has no BIGINT", dialect: "oracle", wantCast: "NUMBER(19)"},
+		{name: "ydb names the type as YQL does", dialect: "ydb", wantCast: "Int64"},
 		{name: "unset dialect falls back to the default branch", dialect: "", wantCast: "BIGINT"},
 	}
 
@@ -620,6 +621,21 @@ func TestAtlasRevisionsTableDDL_GuardsEveryDialectBranch(t *testing.T) {
 			dialect:           platform.ClickHouse,
 			wantPartialHashes: "partial_hashes TEXT NULL",
 			wantAbsent:        []string{"JSON"},
+		},
+		{
+			// A Utf8 value cannot be written to a Json or JsonDocument column,
+			// so the document is text, and YQL has no inline PRIMARY KEY.
+			name:              "ydb stores the JSON document as text and declares the key on the table",
+			dialect:           platform.YDB,
+			wantPartialHashes: "partial_hashes Utf8,",
+			wantContains: []string{
+				"CREATE TABLE IF NOT EXISTS " + atlasRevisionsGuardTable,
+				"version Utf8 NOT NULL",
+				"type Int64 NOT NULL",
+				"executed_at Timestamp NOT NULL",
+				"PRIMARY KEY (version)",
+			},
+			wantAbsent: []string{"JSON", "VARCHAR", "BIGINT", "DEFAULT", "ENGINE", "version Utf8 NOT NULL PRIMARY KEY"},
 		},
 		{
 			name:              "unset dialect falls back to the default branch",
