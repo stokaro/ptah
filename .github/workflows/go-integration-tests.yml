@@ -302,6 +302,8 @@ jobs:
       # The health check is the image's own script, which runs a query, lists
       # the scheme and creates and drops a table; measured, a container
       # started this way reports healthy about six seconds after it starts.
+      # 8765 is the monitoring endpoint, where the feature-flag tests read the
+      # cluster's flags.
       ydb:
         image: ydbplatform/local-ydb:26.2.1.14
         env:
@@ -314,6 +316,7 @@ jobs:
           --health-retries 30
         ports:
           - 2136:2136
+          - 8765:8765
 
       registry:
         image: registry:3
