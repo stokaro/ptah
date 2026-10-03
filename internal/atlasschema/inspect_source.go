@@ -16,6 +16,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlassource"
+	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devlock"
@@ -443,6 +444,7 @@ func inspectOnDev(
 				// it creates IF NOT EXISTS is a no-op beside a kept one, so the
 				// dev database's own are left out of what the directory built.
 				schema = baseline.WithoutEnvironment(schema, nil)
+				schema = baseline.WithoutStartingPoint(schema, nil, defaultSchemaOf(replayConn.Info()))
 				rendered, err = renderInspectSchema(
 					schema,
 					replayConn.Info(),
@@ -471,6 +473,9 @@ func inspectOnDev(
 					return err
 				}
 				schema = baseline.WithoutEnvironment(schema, declaredExtensionNames(desired))
+				schema = baseline.WithoutStartingPoint(schema,
+					goschematodb.ToDBSchema(desired, materializedConn.Info().Dialect),
+					defaultSchemaOf(materializedConn.Info()))
 				rendered, err = renderInspectSchema(schema, materializedConn.Info(), validatedOpts)
 				return err
 			},

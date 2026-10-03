@@ -245,6 +245,7 @@ func (i *Instance) Close() error {
 	}
 	i.closed = true
 	forgetRunOwned(i.url)
+	forgetStartingPoint(i.url)
 	return nil
 }
 
@@ -380,6 +381,9 @@ func Provision(ctx context.Context, rawURL string, opts Options) (*Instance, err
 		}
 	}
 	recordRunOwned(instance.url)
+	if spec.fromBlock {
+		recordStartingPoint(instance.url)
+	}
 	return instance, nil
 }
 

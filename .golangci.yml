@@ -248,6 +248,7 @@ linters:
         - ptah.run/internal/dbschema/ydb
         - ptah.run/internal/embedpg
         - ptah.run/internal/pgdefaultacl
+        - ptah.run/internal/pgsnapshot
         - ptah.run/internal/schemaselection
         - ptah.run/internal/sqlitemodule
         - ptah.run/internal/sqlrunner

@@ -872,9 +872,21 @@ URL:
 - `build` runs `docker build` for `image` first, from a `context` relative to
   `atlas.hcl`, and the image is removed with the container.
 - `baseline` runs on the dev database once the server answers, before the
-  command claims the database, so the claim judges what the baseline left. A
-  block that sets `schema` pins that schema, and the baseline's other schemas
-  stay as they were, their grants included.
+  command claims the database. A block that sets `schema` pins that schema,
+  and the baseline's other schemas stay as they were, their grants included.
+- On PostgreSQL, what the image and `baseline` leave is the dev database's
+  starting point, in realm scope too. The claim records it rather than
+  refusing a database that is not empty, so a Supabase image works as a
+  realm-scoped dev database. Every reset returns the database to it: it drops
+  what the run added in any schema, a trigger on `auth.users` included, and
+  restores the defaults, nullability, row security, trigger states, owners,
+  comments, routine and view definitions and privileges the run changed.
+  A reset refuses, and the command fails, when the run dropped part of the
+  starting point or changed what no statement restores, such as a column's
+  type. Rows are not part of the starting point. A comparison leaves the
+  starting point out unless the other side declares it. A dev URL that names
+  no block, and a MySQL or MariaDB block, keep Atlas CE's rule that a dev
+  database is clean.
 - `env` is passed to the container. The password and database variables Ptah
   sets come after it and win. Ptah sets no `POSTGRES_USER`, so an image that
   names its own user runs its init scripts as that user.

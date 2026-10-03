@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dbreset"
+	"ptah.run/internal/devdocker"
 	"ptah.run/internal/ydbgap"
 )
 
@@ -59,6 +60,9 @@ func DevRefusal(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 	if conn != nil && platform.NormalizeDialect(conn.Info().Dialect) == platform.YDB {
 		return errors.New(ydbgap.DevDatabases.Message())
 	}
+	if StartsFromDeclaredState(conn) {
+		return nil
+	}
 	scope, err := inspect(ctx, conn, GovernsDev)
 	if err != nil {
 		return err
@@ -76,6 +80,27 @@ func DevRefusal(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 		return fmt.Errorf("clean check: %w", err)
 	}
 	return scope.DevRefusal()
+}
+
+// StartsFromDeclaredState reports whether conn is a PostgreSQL dev database an
+// atlas.hcl docker block provisioned, whose state after the image and the
+// block's baseline is its starting point (stokaro/ptah#4056). Such a database
+// is not judged clean: whatever the starting point holds is the environment
+// the run works in, and every reset returns the database to it. The claim asks
+// the same question, so a database this lets through is one the claim records
+// whole.
+//
+// The block's semantics come from the report it answers, ariga/atlas#3807, and
+// from the block's name; the community binary does not run the block. A dev
+// URL that names no block, a `docker+postgres://` image included, keeps the
+// binary's rule, and so does a MySQL or MariaDB block, whose reset has no
+// starting point to return to.
+func StartsFromDeclaredState(conn *dbschema.DatabaseConnection) bool {
+	if conn == nil {
+		return false
+	}
+	info := conn.Info()
+	return platform.NormalizeDialect(info.Dialect) == platform.Postgres && devdocker.StartingPointDeclared(info.URL)
 }
 
 // resetObjectLister is the writer that says what a reset of its database

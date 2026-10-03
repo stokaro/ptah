@@ -424,7 +424,7 @@ func rehearseOnPreparedDev(
 	if err := devclean.Reset(ctx, devConn, baseline); err != nil {
 		return &SimulationError{Stage: "reset", Err: err}
 	}
-	if err := recreateCurrentSchema(ctx, devConn, current, baseline.Extensions()); err != nil {
+	if err := recreateCurrentSchema(ctx, devConn, current, baseline); err != nil {
 		return &SimulationError{Stage: "baseline", Err: err}
 	}
 	if err := applyStatements(ctx, devConn, txMode, statements); err != nil {
@@ -455,28 +455,30 @@ func checkSimulationSchemaScope(devInfo, targetInfo catalog.ServerInfo) error {
 // target's introspected (and scope/exclude-filtered) current schema, so the plan is
 // rehearsed against the same starting state it was computed for.
 //
-// keptExtensions are the extensions the dev database held before the run. The
-// reset left them in place, and the comparison below does not plan to drop the
-// ones the target lacks: they are the dev database's environment, not a
-// difference from the target. See [devclean.Baseline].
+// baseline is what the dev database held before the run: its extensions, and
+// for a dev database an atlas.hcl docker block provisioned its whole starting
+// point. The reset left them in place, and the comparison below does not plan
+// to drop the ones the target lacks: they are the dev database's environment,
+// not a difference from the target. See [devclean.Baseline].
 func recreateCurrentSchema(
 	ctx context.Context,
 	devConn *dbschema.DatabaseConnection,
 	current *catalog.Database,
-	keptExtensions []string,
+	baseline devclean.Baseline,
 ) error {
 	if current == nil {
 		return nil
 	}
-	baseline := dbschematogo.ConvertDBSchemaToGoSchema(current, devConn.Info().Dialect)
-	normalizeBaselineSerialColumns(baseline, devConn.Info().Dialect)
+	target := dbschematogo.ConvertDBSchemaToGoSchema(current, devConn.Info().Dialect)
+	normalizeBaselineSerialColumns(target, devConn.Info().Dialect)
 	devCurrent, err := dbschema.ReadSchemaWithSchemasContext(ctx, devConn, nil)
 	if err != nil {
 		return fmt.Errorf("read dev database schema: %w", err)
 	}
-	devCurrent = devclean.WithoutKeptExtensions(devCurrent, keptExtensions, catalogExtensionNames(current))
+	devCurrent = baseline.WithoutEnvironment(devCurrent, catalogExtensionNames(current))
+	devCurrent = baseline.WithoutStartingPoint(devCurrent, current, defaultSchemaOf(devConn.Info()))
 	info := devConn.Info()
-	diff, err := schemadiff.CompareWithDatabase(ctx, devConn, baseline, devCurrent, nil)
+	diff, err := schemadiff.CompareWithDatabase(ctx, devConn, target, devCurrent, nil)
 	if err != nil {
 		return fmt.Errorf("compare current schema with dev database: %w", err)
 	}
@@ -553,6 +555,16 @@ func nameColumnSequencesAsTarget(
 // database's, which name the same schema the same way.
 func columnSequenceKey(schema, table, column string) string {
 	return catalog.QualifyTableName(schema, table) + "." + column
+}
+
+// defaultSchemaOf is the schema an object a read over info leaves
+// unqualified is in: the connected schema, or in realm scope the dialect's
+// default.
+func defaultSchemaOf(info catalog.ServerInfo) string {
+	if info.Schema != "" {
+		return info.Schema
+	}
+	return dialectDefaultSchema(info.Dialect)
 }
 
 // catalogExtensionNames is the set of extensions a read database holds.

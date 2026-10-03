@@ -177,6 +177,13 @@ exercise a real server dialect — see
   it, and the extensions it depends on, in place. PostgreSQL also removes and
   verifies database large objects transactionally. YugabyteDB does not run
   that PostgreSQL-specific large-object operation.
+- **A docker block's starting point is kept whole.** A PostgreSQL dev
+  database an `atlas.hcl`
+  [`docker` block](../../atlas/project-config/#docker-dev-database-block)
+  provisions starts from what its image and baseline leave. Cleanup returns
+  that database to the starting point instead of emptying the realm, and
+  refuses when the run dropped part of it or changed what no statement
+  restores.
 - **SQL Server cleanup rejects replication state.** A replication-enabled
   database or replicated table fails before DDL, along with other unsupported
   database-scoped artifacts. Remove replication configuration or use a

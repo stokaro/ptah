@@ -210,9 +210,12 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 	err = withResolvedDiffSources(ctx, fromSet, toSet, resolveOpts,
 		func(fromState, toState atlassource.State, conn *dbschema.DatabaseConnection) error {
 			// A side read from the dev database holds that database's own
-			// extensions, which neither source declared.
+			// extensions, which neither source declared, and the starting
+			// point a docker block gave it.
 			fromState, toState = fromState.WithoutEnvironment(toState.ExtensionNames()),
 				toState.WithoutEnvironment(fromState.ExtensionNames())
+			fromState, toState = fromState.WithoutStartingPoint(toState, dialect),
+				toState.WithoutStartingPoint(fromState, dialect)
 			var diffErr error
 			report, changes, diffErr = diffResolvedStates(ctx, conn, fromState, toState, dialect,
 				diffCapabilities(target, opts.ServerVersion, conn, documentCaps), devServerSidesOf(opts.DevURL, fromSet, toSet), opts)
@@ -702,6 +705,7 @@ func materializedState(
 				return err
 			}
 			read.EnvironmentExtensions = baseline.Extensions()
+			read.EnvironmentState = baseline.StartingPoint()
 			read.DB.NotDescribed = declared.Schema.NotDescribed
 			read.Schema.NotDescribed = declared.Schema.NotDescribed
 			if opts.ValidateInspectedSchema != nil {
