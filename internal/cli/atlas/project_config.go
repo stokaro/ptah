@@ -367,6 +367,9 @@ func openAtlasProjectWithPolicy(
 	if err != nil {
 		return atlasProject{}, false, errors.Join(err, source.Close())
 	}
+	if err := refuseAtlasYDBProjectURLs(source.path, cfg); err != nil {
+		return atlasProject{}, false, errors.Join(err, source.Close())
+	}
 	root := source.root
 	source.root = nil
 	return newAtlasProject(cfg, root), true, nil
@@ -392,6 +395,11 @@ func openAtlasProjectsWithPolicy(
 	)
 	if err != nil {
 		return atlasProjectSet{}, false, errors.Join(err, source.Close())
+	}
+	for _, cfg := range configs {
+		if err := refuseAtlasYDBProjectURLs(source.path, cfg); err != nil {
+			return atlasProjectSet{}, false, errors.Join(err, source.Close())
+		}
 	}
 	projects := make([]atlasProject, 0, len(configs))
 	for _, cfg := range configs {

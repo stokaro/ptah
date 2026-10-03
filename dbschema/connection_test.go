@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/connectgate"
 )
 
 func TestDatabaseConnectionWithSession_DiscardsSessionState(t *testing.T) {
@@ -176,6 +178,47 @@ func TestConnectToDatabase_InvalidURL(t *testing.T) {
 }
 
 // TestPostgreSQLConnection tests PostgreSQL connection (will fail if no server running)
+// A refusal the caller's context carries is asked about every connection
+// before anything is dialed, whichever connector opens it: these URLs name
+// ports nothing listens on, so a connector that skipped the question would
+// answer with a dial error instead.
+func TestConnect_FailurePath_RefusedByTheContext(t *testing.T) {
+	refuse := refuseDialects("postgres", "ydb")
+	tests := []struct {
+		name    string
+		connect func(context.Context, string) (*dbschema.DatabaseConnection, error)
+		dbURL   string
+	}{
+		{name: "a database", connect: dbschema.ConnectToDatabase, dbURL: "postgres://127.0.0.1:1/app?connect_timeout=1"},
+		{name: "a server", connect: dbschema.ConnectToServer, dbURL: "postgresql://127.0.0.1:1/app?connect_timeout=1"},
+		{name: "a YDB database", connect: dbschema.ConnectToDatabase, dbURL: "ydbs://127.0.0.1:1/local"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			conn, err := test.connect(connectgate.With(t.Context(), refuse), test.dbURL)
+
+			c.Assert(err, qt.ErrorIs, errDialectRefused)
+			c.Assert(conn, qt.IsNil)
+		})
+	}
+}
+
+// errDialectRefused is the error refuseDialects answers with.
+var errDialectRefused = errors.New("the surface does not reach this dialect")
+
+// refuseDialects refuses a connection to any of the dialects it names.
+func refuseDialects(dialects ...string) connectgate.Refusal {
+	return func(dialect string) error {
+		if slices.Contains(dialects, dialect) {
+			return errDialectRefused
+		}
+		return nil
+	}
+}
+
 // A YDB URL is opened by the YDB connection, which checks the URL before it
 // dials, so these refusals need no server. internal/dbschema/ydb holds the
 // whole set; these rows pin that both schemes reach it.

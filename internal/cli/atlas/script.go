@@ -88,6 +88,9 @@ func runAtlasScript(cmd *cobra.Command, kind atlasscript.Kind, opts *scriptOptio
 	if opts.url == "" {
 		return failAtlasCommand(cmd, fmt.Errorf(`required flag(s) "url" not set`))
 	}
+	if err := refuseAtlasYDBURLFlags(cmd); err != nil {
+		return failAtlasCommand(cmd, err)
+	}
 
 	data, err := os.ReadFile(opts.file) // #nosec G304 -- the operator named this file
 	if err != nil {

@@ -6,11 +6,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/spf13/cobra"
-
 	"ptah.run/core/platform"
 	"ptah.run/internal/atlassource"
-	"ptah.run/internal/ydbgap"
 )
 
 // This file owns the Atlas-compatible surface's `--url` error boundary: the
@@ -133,33 +130,6 @@ func atlasDatabaseURLDiagnostic(rawURL string) error {
 		return nil
 	}
 	return atlasUnknownDriverError(scheme)
-}
-
-// refuseAtlasYDBURLFlags refuses a ydb:// or ydbs:// URL in a URL flag of the
-// default compatibility mode. YDB is a Ptah extension here, as no Atlas
-// edition has a YDB driver, and the verbs of this surface do not reach it yet:
-// the HCL a YDB schema inspects to, the Atlas-format revision table and the
-// verbs' own checks are planned together. Strict mode refuses the same URL
-// earlier, in the words of the pinned binary, so in practice this answers the
-// default mode; it does not step aside in strict mode, because a URL strict
-// mode let through must not reach a verb that cannot serve it.
-func refuseAtlasYDBURLFlags(cmd *cobra.Command) error {
-	for _, name := range []string{"url", "dev-url", "from", "to"} {
-		flag := cmd.Flags().Lookup(name)
-		if flag == nil || !flag.Changed {
-			continue
-		}
-		values, err := atlasFlagStringValues(cmd, name, flag.Value.Type())
-		if err != nil {
-			return fmt.Errorf("read --%s: %w", name, err)
-		}
-		for _, value := range values {
-			if scheme, ok := atlasURLScheme(value); ok && platform.NormalizeDialect(scheme) == platform.YDB {
-				return fmt.Errorf("--%s names a YDB database: %s", name, ydbgap.Compatibility.Message())
-			}
-		}
-	}
-	return nil
 }
 
 // atlasDesiredStateURLDiagnostic reports how this surface refuses rawURL as

@@ -68,6 +68,11 @@ func runAtlasMigrateValidate(
 	policy atlascompatpolicy.Policy,
 	source atlasMigrateSource,
 ) error {
+	// Before the directory is read: a dev URL naming YDB is refused however
+	// little this run would do with it, and an empty directory does nothing.
+	if err := refuseAtlasYDBDirectURLs("", source.devURL); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	// Resolved before the integrity gate, whose clean and unhashed answers
 	// return before any replay, so a malformed declaration fails every run of
 	// this branch. The forwarding branch reaches `ptah migrations validate`,

@@ -22,6 +22,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/connectgate"
 	"ptah.run/internal/dbschema/clickhouse"
 	"ptah.run/internal/dbschema/mssql"
 	"ptah.run/internal/dbschema/mysql"
@@ -107,6 +108,11 @@ func connect(ctx context.Context, dbURL string, scope scopeRule) (*DatabaseConne
 
 	dialect, err := connectionDialect(parsedURL)
 	if err != nil {
+		return nil, err
+	}
+	// A surface that does not reach a dialect yet refuses it here, for every
+	// path a URL can take to a connection; see internal/connectgate.
+	if err := connectgate.Check(ctx, dialect); err != nil {
 		return nil, err
 	}
 	if err := scope(dialect, parsedURL); err != nil {
