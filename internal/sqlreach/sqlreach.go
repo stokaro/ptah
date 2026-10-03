@@ -374,20 +374,35 @@ var escapeRules = []escapeRule{
 		// does, so every call is refused: measured on YDB 26.2.1.14, the
 		// module may also be written `String`::Contains.
 		construct: "YQL UDF call",
-		reach:     "runs a user-defined function module, which may execute a script or reach outside the database",
+		reach:     "runs a user-defined function module, and a module may execute a script or reach outside the database",
 		match:     yqlNamespaceCall(),
 		dialects:  []string{platform.YDB},
 	},
 	{
-		// These read files attached to the query or evaluate generated code;
-		// PRAGMA File and PRAGMA Library are how a file is attached from a
-		// URL.
-		construct: "YQL file or code function",
-		reach:     "reads a file attached to the query or evaluates code built at run time",
-		match: calledFunctionAnyOf(
-			"FILECONTENT", "FILEPATH", "FOLDERPATH", "PARSEFILE", "EVALUATECODE",
-		),
-		dialects: []string{platform.YDB},
+		// These read files attached to the query, list folders, or read a
+		// secret; PRAGMA File and PRAGMA Library are how a file is attached
+		// from a URL. See yqlFileFunctions for the list and its source.
+		construct: "YQL file or secret function",
+		reach:     "reads a file attached to the query, a folder listing or a secret",
+		match:     yqlCallAnyOf(yqlFileFunctions()),
+		dialects:  []string{platform.YDB},
+	},
+	{
+		construct: "YQL code or UDF function",
+		reach:     "evaluates code built at run time or calls a user-defined function by name",
+		match:     yqlCodeCall(),
+		dialects:  []string{platform.YDB},
+	},
+	{
+		// PgCall runs a PostgreSQL function inside YDB: measured on 26.2.1.14,
+		// PgCall('version') answers `PostgreSQL 16.10 ...`, and
+		// PgCall('pg_read_file', ...) answers `No access to proc:
+		// pg_read_file`. Which functions the server allows is its decision,
+		// so every Pg call is refused rather than a list of the dangerous ones.
+		construct: "YQL PostgreSQL function",
+		reach:     "runs a PostgreSQL function inside YDB, and the server alone decides which functions may run",
+		match:     yqlCallWithPrefix("PG"),
+		dialects:  []string{platform.YDB},
 	},
 	{
 		// A dotted source is a cluster or an external data source, never a
@@ -396,7 +411,7 @@ var escapeRules = []escapeRule{
 		// one path, `dir/t`. An external data source reads object storage
 		// or another database over the network.
 		construct: "YQL external source",
-		reach:     "reads a cluster or an external data source, which reaches object storage or another database",
+		reach:     "reads a cluster or an external data source: object storage or another database",
 		match:     yqlDottedSource(),
 		dialects:  []string{platform.YDB},
 	},
@@ -943,52 +958,6 @@ func clickHouseRemoteTableFunctions() []string {
 		names = append(names, base, base+"CLUSTER")
 	}
 	return names
-}
-
-// yqlTranslationSetting matches a --! comment at the head of a YQL text, which
-// the YQL lexer emits as one TokenUnknown so it survives as a significant
-// token.
-func yqlTranslationSetting() tokenMatcher {
-	return func(ctx scanContext) bool {
-		for _, token := range ctx.tokens {
-			if token.Type == lexer.TokenUnknown && strings.HasPrefix(token.Value, "--!") {
-				return true
-			}
-		}
-		return false
-	}
-}
-
-// yqlNamespaceCall matches `::`, which in YQL only ever separates a UDF
-// module from its function. Two colons with only whitespace or a comment
-// between them are matched too: no YQL construct writes them, so refusing
-// them costs nothing and asks no question of the grammar.
-func yqlNamespaceCall() tokenMatcher {
-	return func(ctx scanContext) bool {
-		for i := 0; i+1 < len(ctx.tokens); i++ {
-			if ctx.tokens[i].MatchOperatorValue(":") && ctx.tokens[i+1].MatchOperatorValue(":") {
-				return true
-			}
-		}
-		return false
-	}
-}
-
-// yqlDottedSource matches FROM or JOIN followed by a dotted name, the
-// `cluster.table` and `source.path` forms YQL reads as something other than a
-// table of this database.
-func yqlDottedSource() tokenMatcher {
-	return func(ctx scanContext) bool {
-		for i := 0; i+3 < len(ctx.tokens); i++ {
-			if !IsKeyword(ctx.tokens[i], "FROM") && !IsKeyword(ctx.tokens[i], "JOIN") {
-				continue
-			}
-			if ctx.tokens[i+1].Type == lexer.TokenIdentifier && ctx.tokens[i+2].MatchOperatorValue(".") {
-				return true
-			}
-		}
-		return false
-	}
 }
 
 // alternativeQuotedLiteral matches Oracle's `q'...'` and `nq'...'` spellings.
