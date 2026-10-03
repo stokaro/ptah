@@ -325,7 +325,11 @@ func TestYDBLock_ExcludesASecondSession(t *testing.T) {
 
 	held, err := dblock.Acquire(c.Context(), first, "ptah_ydb_lock_probe", dblock.NoWait)
 	c.Assert(err, qt.IsNil)
+	asked := time.Now()
 	refused, refusal := dblock.Acquire(c.Context(), second, "ptah_ydb_lock_probe", dblock.NoWait)
+	// NoWait asks the server not to queue the request: measured, it answers
+	// within milliseconds rather than after a wait.
+	c.Assert(time.Since(asked) < 10*time.Second, qt.IsTrue, qt.Commentf("waited %s", time.Since(asked)))
 	c.Assert(refusal, qt.ErrorMatches, `advisory lock "ptah_ydb_lock_probe" on ydb is held by another session`)
 	c.Assert(dblock.IsTimeout(refusal), qt.IsTrue)
 	c.Assert(refused, qt.IsNil)
@@ -460,5 +464,24 @@ func TestYDBMigrator_RefusesARevisionTableItDidNotCreate(t *testing.T) {
 		dir+"/schema_migrations` has no column state, applied, total, error, error_stmt, execution_time_ms, "+
 		"checksum, so Ptah did not create it; drop it and let Ptah create it, or configure another migrations table")
 	c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.HasLen, 0)
+}
+
+// The migrations directory need not exist: a revision table there is absent
+// until the first run creates the directory along with it, and asking about
+// it creates nothing.
+func TestYDBMigrator_AsksAboutADirectoryThatDoesNotExist(t *testing.T) {
+	c := qt.New(t)
+	conn := openYDB(c)
+	dir := fmt.Sprintf("ptah_ydb_mig_absent_%d", time.Now().UnixNano())
+	m := newMigrator(c, conn, map[string]string{
+		"0000000001_a.up.sql":   "CREATE TABLE `" + dir + "/a` (id Int64 NOT NULL, PRIMARY KEY (id));\n",
+		"0000000001_a.down.sql": "DROP TABLE `" + dir + "/a`;\n",
+	}, migrator.RevisionTableFormatPtah, dir)
+
+	present, err := m.MetadataPresent(c.Context())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(present, qt.IsFalse)
+	c.Assert(directoryNames(c, c.Context()), qt.Not(qt.Contains), dir)
 }
 
