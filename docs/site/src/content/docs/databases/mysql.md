@@ -494,10 +494,13 @@ refuses the new body and takes no lock. A rename takes the lock there too.
   it retries the failed statement.
 - A dev-database replay runs the lock too, and refuses a lock on a table in
   another database unless the dev server belongs to the run.
-- `schema apply --dev-url` rehearses a trigger body that reads `NEW.col` or
-  `OLD.col`: there `NEW` and `OLD` name the trigger's row. Where a table name
-  is read, as in `INSERT INTO new.audit`, they name a database, and a database
-  other than the target's refuses the rehearsal as any other would.
+- `schema apply --dev-url` rehearses a view or trigger body whose columns are
+  qualified with a table or alias the body reads, as in
+  `SELECT u.id FROM users u`, and a trigger body's `NEW.col` and `OLD.col`.
+  Where a table name is read, as in `INSERT INTO new.audit`, a qualifier names
+  a database, and one other than the target's refuses the rehearsal. So do a
+  routine call such as `other.f()`, a sequence such as `NEXTVAL(other.s)` and
+  a three-part path such as `other.t.v`.
 
 ## Making a column NOT NULL
 
