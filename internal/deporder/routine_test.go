@@ -70,6 +70,30 @@ func TestPlaceRoutines_OneRoutine(t *testing.T) {
 			want:    deporder.RoutineAfterTypes,
 		},
 		{
+			name:    "a created type named in the default schema waits for the type",
+			routine: schemamodel.Function{Name: "default_mood", Language: "plpgsql", Returns: "public.mood", Body: "BEGIN RETURN 'happy'; END"},
+			dialect: platform.Postgres,
+			want:    deporder.RoutineAfterTypes,
+		},
+		{
+			name:    "a created view named in the default schema waits for the view",
+			routine: schemamodel.Function{Name: "recent", Language: "plpgsql", Returns: `SETOF "public"."recent_orders"`, Body: "BEGIN RETURN; END"},
+			dialect: platform.Postgres,
+			want:    deporder.RoutineWithRelations,
+		},
+		{
+			name:    "an unqualified type named in another schema names nothing",
+			routine: schemamodel.Function{Name: "other_mood", Language: "plpgsql", Returns: "other.mood", Body: "BEGIN RETURN 'happy'; END"},
+			dialect: platform.Postgres,
+			want:    deporder.RoutineBeforeTypes,
+		},
+		{
+			name:    "a qualified table is not named in the default schema",
+			routine: schemamodel.Function{Name: "public_orders", Language: "plpgsql", Returns: "SETOF public.orders", Body: "BEGIN RETURN; END"},
+			dialect: platform.Postgres,
+			want:    deporder.RoutineBeforeTypes,
+		},
+		{
 			name:    "a table the plan does not create names nothing",
 			routine: schemamodel.Function{Name: "user_count", Language: "sql", Returns: "bigint", Body: "SELECT count(*) FROM users"},
 			dialect: platform.Postgres,

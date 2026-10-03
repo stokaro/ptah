@@ -39,6 +39,14 @@ CREATE VIEW big AS SELECT id, total FROM orders WHERE total > 100;
 CREATE FUNCTION big_count() RETURNS bigint LANGUAGE sql STABLE AS $$ SELECT count(*) FROM big $$;
 CREATE VIEW summary AS SELECT big_count() AS n;`
 
+// routineReturningASchemaTable returns SETOF a table in a schema of its own,
+// the shape stokaro/ptah#4039 was filed with. The table keeps its schema in a
+// field rather than in its name, so a render that names it by Name alone
+// creates the routine first.
+const routineReturningASchemaTable = `CREATE SCHEMA app;
+CREATE TABLE app.orders (id bigint PRIMARY KEY, total integer NOT NULL);
+CREATE FUNCTION app.big_orders() RETURNS SETOF app.orders LANGUAGE plpgsql STABLE AS $$ BEGIN RETURN QUERY SELECT * FROM app.orders WHERE total > 100; END $$;`
+
 // routineOrderSchemas are applied to an empty database and must converge.
 var routineOrderSchemas = []struct {
 	name string
@@ -112,6 +120,37 @@ CREATE TABLE invoices (id bigint PRIMARY KEY, code text NOT NULL, CONSTRAINT inv
 	{
 		name: "a routine reads a view another view reads it through",
 		sql:  routineBetweenTwoViews,
+	},
+	{
+		name: "a signature returns SETOF a table in a schema",
+		sql:  routineReturningASchemaTable,
+	},
+	{
+		name: "a parameter takes a table's row type in a schema",
+		sql: `CREATE SCHEMA app;
+CREATE TABLE app.orders (id bigint PRIMARY KEY, total integer NOT NULL);
+CREATE FUNCTION app.order_total(o app.orders) RETURNS integer LANGUAGE plpgsql IMMUTABLE AS $$ BEGIN RETURN o.total; END $$;`,
+	},
+	{
+		name: "a LANGUAGE sql body reads a table in a schema",
+		sql: `CREATE SCHEMA app;
+CREATE TABLE app.orders (id bigint PRIMARY KEY, total integer NOT NULL);
+CREATE FUNCTION app.order_count() RETURNS bigint LANGUAGE sql STABLE AS $$ SELECT count(*) FROM app.orders $$;`,
+	},
+	{
+		name: "signatures name a domain, a composite and a range type in a schema",
+		sql: `CREATE SCHEMA app;
+CREATE DOMAIN app.pct AS integer CHECK (VALUE >= 0);
+CREATE TYPE app.pair AS (x integer, y integer);
+CREATE TYPE app.span AS RANGE (subtype = float8);
+CREATE FUNCTION app.half(p app.pct) RETURNS integer LANGUAGE plpgsql IMMUTABLE AS $$ BEGIN RETURN p / 2; END $$;
+CREATE FUNCTION app.origin() RETURNS app.pair LANGUAGE plpgsql IMMUTABLE AS $$ BEGIN RETURN ROW(0, 0); END $$;
+CREATE FUNCTION app.unit() RETURNS app.span LANGUAGE plpgsql IMMUTABLE AS $$ BEGIN RETURN NULL; END $$;`,
+	},
+	{
+		name: "a parameter names a table declared without a schema in the default one",
+		sql: `CREATE TABLE orders (id bigint PRIMARY KEY, total integer NOT NULL);
+CREATE FUNCTION order_total(o public.orders) RETURNS integer LANGUAGE plpgsql IMMUTABLE AS $$ BEGIN RETURN o.total; END $$;`,
 	},
 	{
 		name: "a policy calls a routine reading another table",
@@ -249,4 +288,38 @@ CREATE FUNCTION default_pct() RETURNS integer LANGUAGE sql STABLE AS $$ SELECT c
 
 	out := runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", grown, "--dry-run")
 	c.Assert(out, qt.Contains, "Schema is synced")
+}
+
+// TestSchemaInspectLoadsARoutineAfterTheTableItReturnsE2E loads a schema file on
+// the dev database, which creates what it declares in the render's order, so
+// the routine has to follow the table whatever order the file declares them in.
+// Created first, the routine is refused with `type "app.orders" does not
+// exist` (stokaro/ptah#4039).
+func TestSchemaInspectLoadsARoutineAfterTheTableItReturnsE2E(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+	}{
+		{name: "table declared first", sql: routineReturningASchemaTable},
+		{
+			name: "routine declared first",
+			sql: `CREATE SCHEMA app;
+CREATE FUNCTION app.big_orders() RETURNS SETOF app.orders LANGUAGE plpgsql STABLE AS $$ BEGIN RETURN QUERY SELECT * FROM app.orders WHERE total > 100; END $$;
+CREATE TABLE app.orders (id bigint PRIMARY KEY, total integer NOT NULL);`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dev, _ := scratchReplayDatabase(c)
+			schema := writeRoutineOrderSchema(c, test.sql)
+
+			out, err := runCompatVerb("schema", "inspect", "-u", "file://"+schema, "--dev-url", dev, "--format", "{{ sql . }}")
+
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+			c.Assert(out, qt.Contains, `CREATE TABLE "app"."orders"`)
+			c.Assert(out, qt.Contains, `"app"."big_orders"`)
+		})
+	}
 }
