@@ -125,7 +125,7 @@ var yqlSourceListEnds = []string{
 func yqlDottedSource() tokenMatcher {
 	return func(ctx scanContext) bool {
 		depth := 0
-		lists := map[int]bool{}
+		lists := make(map[int]bool)
 		for i, token := range ctx.tokens {
 			switch {
 			case token.MatchOperatorValue("("):

@@ -82,16 +82,16 @@ func yqlNumberEnd(input string, start int) int {
 		return end
 	}
 	digits := asciiRunEnd(input, start, isDecimalDigit)
-	end := yqlIntegerSuffixEnd(input, digits)
-	real := -1
+	integerEnd := yqlIntegerSuffixEnd(input, digits)
+	realEnd := -1
 	switch {
 	case digits < len(input) && input[digits] == '.':
 		fraction := asciiRunEnd(input, digits+1, isDecimalDigit)
-		real = yqlRealSuffixEnd(input, yqlExponentEnd(input, fraction))
+		realEnd = yqlRealSuffixEnd(input, yqlExponentEnd(input, fraction))
 	case yqlExponentEnd(input, digits) > digits:
-		real = yqlRealSuffixEnd(input, yqlExponentEnd(input, digits))
+		realEnd = yqlRealSuffixEnd(input, yqlExponentEnd(input, digits))
 	}
-	return max(end, real)
+	return max(integerEnd, realEnd)
 }
 
 // yqlPrefixedNumberEnd reads 0x, 0o or 0b and the digits after it, and
