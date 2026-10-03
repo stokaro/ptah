@@ -9,14 +9,14 @@
 // through [Layer.Message] instead, and the phase that implements a layer
 // removes its constant together with every refusal that names it.
 //
-// The renderer, the planner, the connection, the schema reader and the schema
-// writer exist. The object families they do not carry yet -- comments, views,
-// access control, table settings, the index kinds beyond global ones -- are
-// layers here too, because a declaration of one reaches the renderer by name,
-// and a database holding one reaches the reader, and each has to be refused
-// there rather than handled as something else. So are the commands that
-// connect and then need a layer that does not exist yet: the migrator, the
-// compatibility surface and the surfaces planned last.
+// The renderer, the planner, the connection, the schema reader, the schema
+// writer and the versioned migrator exist. The object families they do not
+// carry yet -- comments, views, access control, table settings, the index kinds
+// beyond global ones -- are layers here too, because a declaration of one
+// reaches the renderer by name, and a database holding one reaches the reader,
+// and each has to be refused there rather than handled as something else. So
+// are the commands that connect and then need a layer that does not exist yet:
+// data changes, the compatibility surface and the surfaces planned last.
 package ydbgap
 
 import "fmt"
@@ -35,9 +35,6 @@ const (
 	// dialect has. It lands with the object families, because each family
 	// brings the clauses the parser has to read.
 	SchemaFiles Layer = iota + 1
-	// Migrating is the versioned migrator: its revision, log and tag tables,
-	// its lock, and every command that applies or records a migration file.
-	Migrating
 	// QueryBuilding is the query builder writing YQL.
 	QueryBuilding
 	// DataChanges is writing rows: an upsert, a data diff, a seed.
@@ -78,8 +75,6 @@ func (l Layer) work() string {
 	switch l {
 	case SchemaFiles:
 		return "reading a YDB schema file"
-	case Migrating:
-		return "running versioned migrations against YDB"
 	case QueryBuilding:
 		return "building a YQL query"
 	case DataChanges:
@@ -113,8 +108,6 @@ func (l Layer) work() string {
 // that names no layer.
 func (l Layer) Phase() int {
 	switch l {
-	case Migrating:
-		return 6
 	case QueryBuilding, DataChanges:
 		return 7
 	case Linting:

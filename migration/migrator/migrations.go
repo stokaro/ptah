@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/sqliterebuild"
@@ -32,7 +33,14 @@ func splitSQLStatementsForConnection(conn *dbschema.DatabaseConnection, sql stri
 	return splitSQLStatementsForDialect(sql, conn.Info().Dialect)
 }
 
+// splitSQLStatementsForDialect splits a migration body into the units the
+// migrator runs, counts and records progress over: statements on every
+// dialect but YDB, and on YDB the queries YDB runs the body as (see
+// ydbQueryTexts).
 func splitSQLStatementsForDialect(sql, dialect string) []string {
+	if platform.NormalizeDialect(dialect) == platform.YDB {
+		return ydbQueryTexts(sql)
+	}
 	return sqlutil.SplitStatementsForDialect(dialect, sql)
 }
 
@@ -63,6 +71,11 @@ func splitSQLStatementsPreservingCommentsForDialect(sql, dialect string) []strin
 // migrationfile.ParseDirectives). It returns handled=true when it fully executed the
 // statement itself; on handled=false the migrator executes the statement
 // normally. A non-nil error aborts the migration.
+//
+// On YDB the unit offered is a query rather than a statement, and only a
+// schema query is offered: a run of data statements commits in one
+// transaction together with the record of its progress, which no other
+// executor could join.
 type StatementInterceptor interface {
 	ValidateDirectives(directives map[string]string) error
 	ExecuteStatement(ctx context.Context, conn *dbschema.DatabaseConnection, stmt string, directives map[string]string) (handled bool, err error)
@@ -133,6 +146,36 @@ type statementProgressRecorder func(context.Context, StatementEvent) error
 type statementProgressHooks struct {
 	before statementProgressRecorder
 	after  statementProgressRecorder
+	// commit, when set, runs a statement it claims and records its progress
+	// in one transaction, in place of before, the execution and after; see
+	// [Migrator.withRecordedStatementProgress].
+	commit statementCommitter
+}
+
+// statementCommitter runs a statement together with the record of its
+// progress. claims reports whether it takes the statement at all.
+type statementCommitter struct {
+	claims func(statement string) bool
+	run    func(ctx context.Context, event StatementEvent) error
+}
+
+// withStatementCommitter installs committer beside the progress recorders
+// already in ctx.
+func withStatementCommitter(ctx context.Context, committer statementCommitter) context.Context {
+	hooks, _ := ctx.Value(statementProgressRecorderContextKey{}).(statementProgressHooks)
+	hooks.commit = committer
+	return context.WithValue(ctx, statementProgressRecorderContextKey{}, hooks)
+}
+
+// commitStatement runs event's statement through the committer in ctx when one
+// is installed and claims it, and reports whether it did. A statement it
+// claims is not run or recorded by anything else.
+func commitStatement(ctx context.Context, event StatementEvent) (bool, error) {
+	hooks, _ := ctx.Value(statementProgressRecorderContextKey{}).(statementProgressHooks)
+	if hooks.commit.run == nil || !hooks.commit.claims(event.Statement) {
+		return false, nil
+	}
+	return true, hooks.commit.run(ctx, event)
 }
 
 type statementProgressRecorderContextKey struct{}
@@ -798,6 +841,9 @@ func CreateMigrationFromSQL(version int64, description, upSQL, downSQL string) *
 
 // executeSQLStatements splits SQL into individual statements and executes them
 func executeSQLStatements(ctx context.Context, conn *dbschema.DatabaseConnection, sql string, mode migrationExecutionMode) error {
+	if err := refuseUnsplittableSQL(databaseConnectionDialect(conn), sql); err != nil {
+		return err
+	}
 	statements := splitSQLStatementsForConnection(conn, sql)
 
 	for i, stmt := range statements {
@@ -812,6 +858,21 @@ func executeSQLStatements(ctx context.Context, conn *dbschema.DatabaseConnection
 			Total:     len(statements),
 		}
 		if migrationStatementAlreadyApplied(ctx, event.Index) {
+			continue
+		}
+		committed, err := commitStatement(ctx, event)
+		if err != nil {
+			return &MigrationExecutionError{
+				Err:            fmt.Errorf("failed to execute SQL statement: %w", err),
+				Statement:      stmt,
+				StatementIndex: i + 1,
+				Total:          len(statements),
+			}
+		}
+		if committed {
+			if err := observeExecutedStatement(ctx, event); err != nil {
+				return err
+			}
 			continue
 		}
 		if err := recordStatementProgressBefore(ctx, event); err != nil {
@@ -871,6 +932,9 @@ func executeMigrationFileSQL(
 		}
 	}
 
+	if err := refuseUnsplittableSQL(databaseConnectionDialect(conn), sql); err != nil {
+		return fmt.Errorf("%s: %w", filename, err)
+	}
 	statements := splitSQLStatementsForConnection(conn, sql)
 	if err := validateMigrationStatements(filename, statements, hooks.validator); err != nil {
 		return err
@@ -894,44 +958,77 @@ func executeMigrationFileSQL(
 		if migrationStatementAlreadyApplied(ctx, event.Index) {
 			continue
 		}
-		if err := recordStatementProgressBefore(ctx, event); err != nil {
+		if err := runMigrationFileStatement(ctx, conn, event, hooks, interceptorDirectives, mode); err != nil {
 			return err
 		}
+	}
+	return nil
+}
 
-		handled := false
-		if hooks.interceptor != nil {
-			var err error
-			handled, err = hooks.interceptor.ExecuteStatement(ctx, conn, stmt, interceptorDirectives)
-			if err != nil {
-				return &MigrationExecutionError{
-					Err:            fmt.Errorf("failed to execute migration SQL: %w", err),
-					Statement:      stmt,
-					StatementIndex: i + 1,
-					Total:          len(statements),
-				}
-			}
-		}
-
-		if !handled {
-			if err := executeMigrationStatement(ctx, conn, stmt, mode); err != nil {
-				return &MigrationExecutionError{
-					Err:            fmt.Errorf("failed to execute migration SQL: %w", err),
-					Statement:      stmt,
-					StatementIndex: i + 1,
-					Total:          len(statements),
-				}
-			}
-		}
-		if err := recordAndObserveExecutedStatement(ctx, event); err != nil {
+// runMigrationFileStatement runs one statement of a migration file, records
+// that it ran and reports it to the observer.
+func runMigrationFileStatement(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	event StatementEvent,
+	hooks statementExecutionHooks,
+	interceptorDirectives map[string]string,
+	mode migrationExecutionMode,
+) error {
+	// The committer is installed only on YDB, where no interceptor routes a
+	// statement, so a statement it claims has nothing to ask one about.
+	committed, err := commitStatement(ctx, event)
+	if err != nil {
+		return migrationFileStatementError(err, event)
+	}
+	if committed {
+		if err := observeExecutedStatement(ctx, event); err != nil {
 			return err
 		}
-		if hooks.observer != nil {
-			if err := hooks.observer.ObserveStatement(ctx, event); err != nil {
-				return &StatementObservationError{
-					Err:   err,
-					Event: event,
-				}
-			}
+		return observeMigrationFileStatement(ctx, hooks.observer, event)
+	}
+	if err := recordStatementProgressBefore(ctx, event); err != nil {
+		return err
+	}
+
+	handled := false
+	if hooks.interceptor != nil {
+		handled, err = hooks.interceptor.ExecuteStatement(ctx, conn, event.Statement, interceptorDirectives)
+		if err != nil {
+			return migrationFileStatementError(err, event)
+		}
+	}
+	if !handled {
+		if err := executeMigrationStatement(ctx, conn, event.Statement, mode); err != nil {
+			return migrationFileStatementError(err, event)
+		}
+	}
+	if err := recordAndObserveExecutedStatement(ctx, event); err != nil {
+		return err
+	}
+	return observeMigrationFileStatement(ctx, hooks.observer, event)
+}
+
+// migrationFileStatementError reports that event's statement failed.
+func migrationFileStatementError(err error, event StatementEvent) error {
+	return &MigrationExecutionError{
+		Err:            fmt.Errorf("failed to execute migration SQL: %w", err),
+		Statement:      event.Statement,
+		StatementIndex: event.Index,
+		Total:          event.Total,
+	}
+}
+
+// observeMigrationFileStatement reports a statement that ran to observer, when
+// there is one.
+func observeMigrationFileStatement(ctx context.Context, observer StatementObserver, event StatementEvent) error {
+	if observer == nil {
+		return nil
+	}
+	if err := observer.ObserveStatement(ctx, event); err != nil {
+		return &StatementObservationError{
+			Err:   err,
+			Event: event,
 		}
 	}
 	return nil

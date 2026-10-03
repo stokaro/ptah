@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-
-	"ptah.run/core/sqlutil"
 )
 
 // partialHashPrefix is the tag Atlas puts on every digest it records, the same
@@ -98,7 +96,7 @@ func cumulativePartialHashValues(sqlText, dialect string, applied int) ([]string
 	if applied <= 0 {
 		return nil, false
 	}
-	statements := sqlutil.SplitSourceStatements(sqlText, dialect)
+	statements := sourceStatementsForDialect(sqlText, dialect)
 	if len(statements) < applied {
 		// The executor counted more statements than the source split finds.
 		// Recording a prefix shorter than the one that ran would tell a resume

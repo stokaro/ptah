@@ -160,12 +160,7 @@ func (m *Migrator) refuseUnloggedRead() error {
 // round: appending to the quoted form would put the suffix outside the quotes
 // and every engine would read two tokens.
 func (m *Migrator) migrationLogTable() string {
-	table := m.quoteIdentifier(m.migrationsTableName() + migrationLogTableSuffix)
-	schema := m.metadataTableSchemaName()
-	if schema == "" {
-		return table
-	}
-	return m.quoteIdentifier(schema) + "." + table
+	return m.qualifiedMetadataTable(m.migrationsTableName() + migrationLogTableSuffix)
 }
 
 // migrationLogTableSuffix is what separates the log's name from the revision
@@ -245,6 +240,8 @@ END`, sqlServerObjectLiteral, qualifiedTable)
     error CLOB NULL,
     PRIMARY KEY (run_id, seq)
 )`, qualifiedTable))
+	case platform.YDB:
+		return ydbMigrationLogDDL(qualifiedTable)
 	default:
 		return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
     run_id VARCHAR(64) NOT NULL,
@@ -338,22 +335,11 @@ func (m *Migrator) logMigrationEvent(
 // two answer through one grammar and a dialect whose catalog needs a special
 // spelling needs it written once.
 func (m *Migrator) migrationLogTableExists(ctx context.Context) (bool, error) {
-	query, args, err := migrationTablePresenceQuery(
-		m.connectionDialect(),
-		m.metadataTableSchemaName(),
-		m.connectionSchemaName(),
-		m.migrationsTableName()+migrationLogTableSuffix,
-		m.quoteIdentifier,
-	)
+	exists, err := m.metadataTableExists(ctx, m.migrationsTableName()+migrationLogTableSuffix)
 	if err != nil {
-		return false, err
-	}
-	var count int64
-	query = sqlutil.Rebind(m.connectionDialect(), query)
-	if err := m.conn.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
 		return false, fmt.Errorf("read the migration log: %w", err)
 	}
-	return count > 0, nil
+	return exists, nil
 }
 
 // ensureMigrationLogTable creates the log table if it is not there yet.
@@ -423,18 +409,26 @@ func (m *Migrator) writeMigrationLogEntry(ctx context.Context, entry MigrationLo
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, m.migrationLogTable()))
 	return executeSQLOn(ctx, m.conn, query,
 		entry.RunID, entry.Seq, entry.Operation, entry.Version, string(entry.State),
-		nullableText(entry.Actor), string(entry.ActorSource), nullableText(entry.Checksum),
-		entry.At, nullableText(entry.Error))
+		m.nullableText(entry.Actor), string(entry.ActorSource), m.nullableText(entry.Checksum),
+		entry.At, m.nullableText(entry.Error))
 }
 
 // nullableText writes an empty string as NULL, because Oracle reads one back
 // that way whatever was sent and a column that means "nothing here" should not
 // mean two different things depending on the engine.
-func nullableText(value string) any {
-	if value == "" {
-		return nil
+//
+// The NULL carries its type on YDB, which binds every value with a type and
+// refuses an untyped one: measured on 26.2.1.14, a nil argument for a Utf8
+// column answers `Failed to convert 'txt': Void to Optional<Utf8>`, and a nil
+// *string is accepted.
+func (m *Migrator) nullableText(value string) any {
+	if value != "" {
+		return value
 	}
-	return value
+	if platform.NormalizeDialect(m.connectionDialect()) == platform.YDB {
+		return (*string)(nil)
+	}
+	return nil
 }
 
 func (m *Migrator) nextMigrationLogSeq() int64 {

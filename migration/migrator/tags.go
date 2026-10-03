@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
+	"ptah.run/internal/atlasretry"
 )
 
 // defaultMigrationTagsTable is where the tag namespace lives.
@@ -47,12 +48,7 @@ func (m *Migrator) migrationTagsTableName() string {
 }
 
 func (m *Migrator) qualifiedMigrationTagsTable() string {
-	table := m.migrationTagsTableName()
-	schema := m.metadataTableSchemaName()
-	if schema == "" {
-		return m.quoteIdentifier(table)
-	}
-	return m.quoteIdentifier(schema) + "." + m.quoteIdentifier(table)
+	return m.qualifiedMetadataTable(m.migrationTagsTableName())
 }
 
 // createMigrationTagsTableSQL renders the tag table for the connected dialect.
@@ -79,6 +75,8 @@ END`, sqlStringLiteral(m.sqlServerTagsObjectName()), qualifiedTable)
     version BIGINT NOT NULL,
     recorded_at TIMESTAMPTZ NOT NULL
 )`, qualifiedTable)
+	case platform.YDB:
+		return ydbMigrationTagsTableDDL(qualifiedTable)
 	}
 	engineClause := ""
 	if implicitCommitDialect(m.connectionDialect()) {
@@ -104,9 +102,6 @@ func (m *Migrator) ensureMigrationTagsTable(ctx context.Context) error {
 	if m.conn == nil {
 		return errors.New("ensure migration tags table: no database connection")
 	}
-	if err := m.refuseUnimplementedDialect(); err != nil {
-		return err
-	}
 	if statement := m.migrationsSchemaStatement(); statement != "" {
 		if _, err := m.conn.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("ensure migration tags schema: %w", err)
@@ -123,22 +118,7 @@ func (m *Migrator) migrationTagsTableExists(ctx context.Context) (bool, error) {
 	if m.conn == nil {
 		return false, errors.New("migration tags table: no database connection")
 	}
-	query, args, err := migrationTablePresenceQuery(
-		m.connectionDialect(),
-		m.metadataTableSchemaName(),
-		m.connectionSchemaName(),
-		m.migrationTagsTableName(),
-		m.quoteIdentifier,
-	)
-	if err != nil {
-		return false, err
-	}
-	var count int64
-	query = sqlutil.Rebind(m.connectionDialect(), query)
-	if err := m.conn.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
-		return false, err
-	}
-	return count > 0, nil
+	return m.metadataTableExists(ctx, m.migrationTagsTableName())
 }
 
 // RecordMigrationTag points tag at version, creating the tag or moving it.
@@ -171,6 +151,10 @@ func (m *Migrator) upsertMigrationTagSQL() string {
 				" ON CONFLICT (tag) DO UPDATE SET version = EXCLUDED.version,"+
 				" recorded_at = EXCLUDED.recorded_at",
 			table)
+	case platform.YDB:
+		// UPSERT writes the row whether or not the tag exists; it is YQL's
+		// own statement for this, and YQL has no ON DUPLICATE KEY.
+		return fmt.Sprintf("UPSERT INTO %s (tag, version, recorded_at) VALUES (?, ?, ?)", table)
 	case platform.SQLServer:
 		return fmt.Sprintf(
 			"MERGE %s AS target USING (SELECT ? AS tag, ? AS version, ? AS recorded_at) AS source"+
@@ -264,6 +248,9 @@ func (m *Migrator) DeleteMigrationTag(ctx context.Context, tag string) error {
 	if !exists {
 		return fmt.Errorf("%w: %q", ErrMigrationTagNotFound, normalized)
 	}
+	if m.usesDescribedMetadata() {
+		return m.deleteYDBMigrationTag(ctx, normalized)
+	}
 	query := sqlutil.Rebind(m.connectionDialect(),
 		fmt.Sprintf("DELETE FROM %s WHERE tag = ?", m.qualifiedMigrationTagsTable()))
 	result, err := m.conn.ExecContext(ctx, query, normalized)
@@ -311,3 +298,54 @@ func normalizeMigrationTag(tag string) (string, error) {
 // refused where it can be explained instead of truncated by the database into
 // a tag that silently collides with another.
 const migrationTagMaxLength = 255
+
+// deleteYDBMigrationTag removes a tag on YDB, where the count of rows a DELETE
+// affected cannot say whether the tag existed: ydb-go-sdk counts the rows the
+// statement's plan deleted, and a DELETE by key counts its key whether a row
+// held it or not. Measured on 26.2.1.14, deleting a tag that was already gone
+// reported one row affected. So the tag is counted and deleted in one
+// serializable transaction, which YDB aborts rather than let a concurrent
+// write change what the count saw.
+func (m *Migrator) deleteYDBMigrationTag(ctx context.Context, tag string) error {
+	table := m.qualifiedMigrationTagsTable()
+	for attempt := range ydbDataQueryAttempts {
+		found, err := m.tryDeleteYDBMigrationTag(ctx, table, tag)
+		if err == nil && !found {
+			return fmt.Errorf("%w: %q", ErrMigrationTagNotFound, tag)
+		}
+		if err == nil {
+			return nil
+		}
+		if !atlasretry.IsRetryable(err) || attempt == ydbDataQueryAttempts-1 {
+			return fmt.Errorf("delete migration tag %q: %w", tag, err)
+		}
+		if err := waitForYDBDataQueryRetry(ctx, attempt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *Migrator) tryDeleteYDBMigrationTag(ctx context.Context, table, tag string) (bool, error) {
+	tx, err := m.conn.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return false, err
+	}
+	var count int64
+	if err := tx.QueryRowContext(ctx,
+		sqlutil.Rebind(platform.YDB, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE tag = ?", table)), tag,
+	).Scan(&count); err != nil {
+		_ = tx.Rollback()
+		return false, err
+	}
+	if count == 0 {
+		return false, tx.Rollback()
+	}
+	if _, err := tx.ExecContext(ctx,
+		sqlutil.Rebind(platform.YDB, fmt.Sprintf("DELETE FROM %s WHERE tag = ?", table)), tag,
+	); err != nil {
+		_ = tx.Rollback()
+		return false, err
+	}
+	return true, tx.Commit()
+}

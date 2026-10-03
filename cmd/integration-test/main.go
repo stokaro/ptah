@@ -56,7 +56,7 @@ func newRootCommand() *cobra.Command {
 		Long: `Run comprehensive integration tests for the Ptah migration library.
 
 This tool tests migration functionality across multiple database backends
-including PostgreSQL, MySQL, MariaDB, and opt-in SQL Server. It validates basic
+including PostgreSQL, MySQL, MariaDB, and opt-in SQL Server and YDB. It validates basic
 functionality, idempotency, concurrency, failure recovery, and more.
 
 The tests use Docker containers for database backends and generate detailed
@@ -74,7 +74,7 @@ func registerRootFlags(cmd *cobra.Command, opts *rootOptions) {
 	flags := cmd.Flags()
 	flags.StringVar(&opts.reportFormat, reportFormatFlag, "stdout", "Report format: stdout, txt, json, or html (can be multiple separated by comma)")
 	flags.StringVar(&opts.outputDir, outputDirFlag, "/app/reports", "Output directory for reports")
-	flags.StringSliceVar(&opts.databases, databasesFlag, []string{"postgres", "mysql", "mariadb", "cockroachdb", "yugabytedb"}, "Databases to test against; SQL Server is opt-in via sqlserver")
+	flags.StringSliceVar(&opts.databases, databasesFlag, []string{"postgres", "mysql", "mariadb", "cockroachdb", "yugabytedb"}, "Databases to test against; SQL Server and YDB are opt-in via sqlserver and ydb")
 	flags.StringSliceVar(&opts.scenarios, scenariosFlag, make([]string, 0), "Specific scenarios to run (empty = all)")
 	flags.BoolVar(&opts.verbose, verboseFlag, false, "Enable verbose output")
 }
@@ -288,6 +288,12 @@ func configuredDatabaseConnections() map[string]databaseTarget {
 		"spanner": databaseTargetFromEnvironment(
 			"SPANNER_URL",
 			"SPANNER_CLEANUP_URL",
+		),
+		// Opt-in like SQL Server: a YDB server runs only the scenarios that
+		// opted in through YDBCompatible.
+		"ydb": databaseTargetFromEnvironment(
+			"YDB_URL",
+			"YDB_CLEANUP_URL",
 		),
 	}
 }

@@ -147,7 +147,7 @@ func parseCheckArgs(args, dialect string) (Check, error) {
 	if check.Phase != CheckPhaseBefore && check.Phase != CheckPhaseAfter {
 		return Check{}, fmt.Errorf("unsupported +ptah check phase=%q (want before or after)", check.Phase)
 	}
-	if statements := splitSQLStatementsForDialect(check.Assert, dialect); len(statements) > 1 {
+	if statements := sqlutil.SplitStatementsForDialect(dialect, check.Assert); len(statements) > 1 {
 		return Check{}, fmt.Errorf("+ptah check assert must be a single statement, got %d", len(statements))
 	}
 	// Drop any trailing statement terminator(s) and whitespace so drivers that

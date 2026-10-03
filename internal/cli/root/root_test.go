@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -266,6 +267,96 @@ func TestNewRootCommand_PTAHLockTimeoutKeepsMigrationsUpWorking(t *testing.T) {
 	c.Assert(stderr, qt.Not(qt.Contains), "schema apply lock")
 }
 
+// TestNewRootCommand_TypedMigrationTimeoutsRefuseATargetWithoutThem is the
+// versioned commands' answer to a run-wide timeout the target cannot carry:
+// typed, it is refused by name once the command has connected, even when no
+// migration is pending, where the migrator alone would accept it in silence.
+// The exported variable keeps the run working, which the test above holds.
+func TestNewRootCommand_TypedMigrationTimeoutsRefuseATargetWithoutThem(t *testing.T) {
+	tests := []struct {
+		name    string
+		verb    []string
+		wantErr string
+	}{
+		{
+			name: "up",
+			verb: []string{"migrations", "up", "--dry-run"},
+			wantErr: `--statement-timeout sets a timeout for every migration, and dialect "sqlite" has no lock or ` +
+				`statement timeout Ptah can set and restore around a migration. Remove --statement-timeout to run without one`,
+		},
+		{
+			name: "down",
+			verb: []string{"migrations", "down", "--dry-run", "--confirm"},
+			wantErr: `--statement-timeout sets a timeout for every migration, and dialect "sqlite" has no lock or ` +
+				`statement timeout Ptah can set and restore around a migration. Remove --statement-timeout to run without one`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			t.Setenv("PTAH_LOCK_TIMEOUT", "")
+			t.Setenv("PTAH_STATEMENT_TIMEOUT", "")
+			dir := t.TempDir()
+			migrationsDir := filepath.Join(dir, "migrations")
+			c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
+
+			args := slices.Concat(test.verb, []string{
+				"--db-url", atlasurl.SQLiteURLFromPath(filepath.Join(dir, "versioned.db")),
+				"--migrations-dir", migrationsDir,
+				"--statement-timeout", "30s",
+			})
+			_, _, err := executeRootCommand(args...)
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+		})
+	}
+}
+
+// TestNewRootCommand_ConfiguredMigrationTimeoutsRefuseATargetWithoutThem is
+// the ptah.yaml half: a key in the project config is addressed to the command
+// and is refused by its name, unless an exported variable carries the value
+// instead, which is then the effective one and is not addressed to this
+// command alone.
+func TestNewRootCommand_ConfiguredMigrationTimeoutsRefuseATargetWithoutThem(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_LOCK_TIMEOUT", "")
+	t.Setenv("PTAH_STATEMENT_TIMEOUT", "")
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
+	config := filepath.Join(dir, "ptah.yaml")
+	c.Assert(os.WriteFile(config, []byte("migration:\n  lock_timeout: 5s\n"), 0o600), qt.IsNil)
+
+	_, _, err := executeRootCommand("migrations", "up", "--dry-run", "--config", config,
+		"--db-url", atlasurl.SQLiteURLFromPath(filepath.Join(dir, "versioned.db")),
+		"--migrations-dir", migrationsDir)
+
+	c.Assert(err, qt.ErrorMatches,
+		`migration.lock_timeout sets a timeout for every migration, and dialect "sqlite" has no lock or `+
+			`statement timeout Ptah can set and restore around a migration. Remove migration.lock_timeout to run without one`)
+}
+
+// TestNewRootCommand_ExportedTimeoutOverridesTheConfiguredOne is the control:
+// with PTAH_LOCK_TIMEOUT exported, the configured key is not the value in
+// effect, so it is not refused by name, and the dry run goes ahead.
+func TestNewRootCommand_ExportedTimeoutOverridesTheConfiguredOne(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_LOCK_TIMEOUT", "5s")
+	t.Setenv("PTAH_STATEMENT_TIMEOUT", "")
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
+	config := filepath.Join(dir, "ptah.yaml")
+	c.Assert(os.WriteFile(config, []byte("migration:\n  lock_timeout: 5s\n"), 0o600), qt.IsNil)
+
+	stdout, stderr, err := executeRootCommand("migrations", "up", "--dry-run", "--config", config,
+		"--db-url", atlasurl.SQLiteURLFromPath(filepath.Join(dir, "versioned.db")),
+		"--migrations-dir", migrationsDir)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s\n%s", stdout, stderr))
+	c.Assert(stdout, qt.Contains, "DRY RUN MODE")
+}
+
 // TestNewRootCommand_TypedLockTimeoutRefusesUnlockedDialect is the refusal seen
 // through the tree that installs the environment binding: a flag the operator
 // typed still refuses there, so scoping the rule to the command line did not
@@ -289,7 +380,7 @@ func TestNewRootCommand_TypedLockTimeoutRefusesUnlockedDialect(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches,
 		`--lock-timeout requested a schema apply lock, and dialect "sqlite" has none: `+
-			`only postgres, yugabytedb, mysql, mariadb, sqlserver take a session advisory lock. `+
+			`only postgres, yugabytedb, mysql, mariadb, sqlserver, ydb take a session advisory lock. `+
 			`Remove --lock-timeout to apply without a lock`)
 	_, statErr := os.Stat(dbPath)
 	c.Assert(statErr, qt.ErrorIs, os.ErrNotExist)

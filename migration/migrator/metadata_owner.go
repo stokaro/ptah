@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/envbool"
+	"ptah.run/internal/sqlident"
 )
 
 // AllowForeignMetadataTableEnvVar accepts a metadata table this connection
@@ -78,7 +79,8 @@ func (e *ForeignMetadataTableError) Is(target error) bool {
 // both "nothing to refuse". The MySQL family is the second: it has no table
 // owner, and a trigger there runs as its definer rather than as the connected
 // account, so the same squat gains the squatter a hook and not the migration
-// role's privileges. Measured on MySQL 8.4.11 and MariaDB 12.3.3.
+// role's privileges. Measured on MySQL 8.4.11 and MariaDB 12.3.3. YDB is
+// asked nothing for a stronger reason: a table there can carry no code at all.
 func (m *Migrator) refuseForeignMetadataTable(ctx context.Context, table string) error {
 	allowed, err := allowForeignMetadataTableVar.Resolve()
 	if err != nil {
@@ -122,8 +124,16 @@ func (m *Migrator) refuseForeignMetadataTable(ctx context.Context, table string)
 // one an operator would type: an unqualified ALTER TABLE resolves through
 // search_path and could rename a different table, or fail while leaving the
 // refused one exactly as it was.
+//
+// Every metadata table is named through it. On YDB the schema is a directory,
+// so the qualified name is one quoted path rather than two quoted parts, which
+// YQL would read as a cluster and a table.
 func (m *Migrator) qualifiedMetadataTable(table string) string {
-	if schema := m.metadataTableSchemaName(); schema != "" {
+	schema := m.metadataTableSchemaName()
+	if platform.NormalizeDialect(m.connectionDialect()) == platform.YDB {
+		return sqlident.Qualified(platform.YDB, schema, table)
+	}
+	if schema != "" {
 		return m.quoteIdentifier(schema) + "." + m.quoteIdentifier(table)
 	}
 	return m.quoteIdentifier(table)
@@ -228,6 +238,13 @@ func metadataTableOwnerQuery(dialect, configuredSchema, connectionSchema, table 
 		return oracleTableOwnerQuery,
 			[]any{configuredOrConnectionSchema(configuredSchema, connectionSchema), table},
 			true
+	case platform.YDB:
+		// A YDB table has an owner, which the scheme service reports, and
+		// nothing a squatter could attach to it runs as the migrating
+		// account: YDB has no trigger, rule, policy or default expression,
+		// only literal defaults. So there is no question for this check to
+		// ask, as on the MySQL family.
+		return "", nil, false
 	default:
 		return "", nil, false
 	}

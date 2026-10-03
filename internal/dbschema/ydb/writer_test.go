@@ -86,21 +86,27 @@ func newFake() *fakeDatabase {
 	return &fakeDatabase{tree: map[string][]*Ydb_Scheme.Entry{"/local": nil}}
 }
 
-// Each statement of a text runs as a query of its own, since a YDB query of
-// several DDL statements is not atomic and compiles each against the schema
-// as it was before the query.
-func TestWriter_ExecuteSQL_OneStatementPerQuery(t *testing.T) {
+// Each scheme statement of a text runs as a query of its own, since a YDB
+// query of several DDL statements is not atomic and compiles each against the
+// schema as it was before the query. Consecutive data statements run as one
+// query, so a named expression reaches the statement that uses it, and a
+// definition reaches every query after it.
+func TestWriter_ExecuteSQL_RunsTheQueriesOfTheSplit(t *testing.T) {
 	c := qt.New(t)
 	fake := newFake()
 	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local")
 
 	err := writer.ExecuteSQL(context.Background(),
-		"ALTER TABLE `t` ADD COLUMN `v` Utf8;\nALTER TABLE `t` ADD INDEX `i` GLOBAL SYNC ON (`v`);")
+		"ALTER TABLE `t` ADD COLUMN `v` Utf8;\nALTER TABLE `t` ADD INDEX `i` GLOBAL SYNC ON (`v`);\n"+
+			"$v = 'x'u;\nUPSERT INTO `t` (`id`, `v`) VALUES (1l, $v);\nUPDATE `t` SET `v` = $v WHERE `id` = 2l;\n"+
+			"DROP TABLE `u`;")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(fake.executed, qt.DeepEquals, []string{
 		"ALTER TABLE `t` ADD COLUMN `v` Utf8",
 		"ALTER TABLE `t` ADD INDEX `i` GLOBAL SYNC ON (`v`)",
+		"$v = 'x'u;\nUPSERT INTO `t` (`id`, `v`) VALUES (1l, $v);\nUPDATE `t` SET `v` = $v WHERE `id` = 2l",
+		"$v = 'x'u;\nDROP TABLE `u`",
 	})
 }
 
@@ -111,8 +117,8 @@ type conflictError struct{}
 func (conflictError) Error() string    { return "Transaction locks invalidated" }
 func (conflictError) SQLState() string { return "40001" }
 
-// A data statement that a conflicting transaction aborted changed nothing, so
-// it runs again; a scheme statement runs once, whatever it answers.
+// A data query that a conflicting transaction aborted changed nothing, so it
+// runs again; a scheme query runs once, whatever it answers.
 func TestWriter_ExecuteSQL_RetriesAnAbortedDataStatement(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -182,11 +188,17 @@ func TestWriter_ExecuteSQL_FailurePath(t *testing.T) {
 			wantErr:      "ydb: SQL execution failed: conflict with an existing key\nSQL: INSERT INTO `t` \\(`id`\\) VALUES \\(1\\)",
 		},
 		{
-			name:         "arguments for several statements",
-			statement:    "UPSERT INTO `a` (`id`) VALUES ($p1); UPSERT INTO `b` (`id`) VALUES ($p1);",
+			name:         "arguments for several queries",
+			statement:    "UPSERT INTO `a` (`id`) VALUES ($p1); DROP TABLE `b`;",
 			args:         []any{1},
 			wantExecuted: 0,
-			wantErr:      "ydb: 2 statements were given one argument list; pass one statement with its arguments",
+			wantErr:      "ydb: 2 queries were given one argument list; pass one query with its arguments",
+		},
+		{
+			name:         "a text the split refuses",
+			statement:    "--!ansi_lexer\nDROP TABLE `b`;",
+			wantExecuted: 0,
+			wantErr:      `ydb: unsupported YQL translation setting "--!ansi_lexer": .*`,
 		},
 	}
 

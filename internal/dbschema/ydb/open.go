@@ -97,7 +97,11 @@ func Open(ctx context.Context, rawURL string) (*Connection, error) {
 		return nil, errors.Join(fmt.Errorf("create YDB connector: %w", err), closeDriver(driver))
 	}
 	return &Connection{
-		DB:     sql.OpenDB(NewBindingConnector(inner, func() error { return closeDriver(driver) })),
+		DB: sql.OpenDB(&connector{
+			inner:   inner,
+			sdk:     driver,
+			onClose: func() error { return closeDriver(driver) },
+		}),
 		Driver: driver,
 	}, nil
 }

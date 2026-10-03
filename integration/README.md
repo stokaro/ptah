@@ -1,6 +1,6 @@
 # Ptah Migration Library Integration Tests
 
-This directory contains the integration tests for the Ptah migration library. The tests validate migration functionality across PostgreSQL-family targets, MySQL, MariaDB, ClickHouse, and SQL Server.
+This directory contains the integration tests for the Ptah migration library. The tests validate migration functionality across PostgreSQL-family targets, MySQL, MariaDB, ClickHouse, SQL Server and YDB.
 
 ## Overview
 
@@ -26,11 +26,12 @@ The integration test suite covers all aspects of the migration system as outline
 - Launch two migrate up processes in parallel
 - Verify at least one runner succeeds and the final migration state is consistent
 - `migrate up` runs under a session-scoped advisory lock named `ptah_migrate`, so a second runner waits rather than interleaving; `--lock-timeout` bounds that wait
-- The lock is real on PostgreSQL, YugabyteDB, MySQL, MariaDB and SQL Server (`internal/dblock.Supported`); every other dialect takes a no-op lock, so a deployment there still enforces a single runner outside Ptah
+- The lock is real on PostgreSQL, YugabyteDB, MySQL, MariaDB, SQL Server and YDB, where it is a coordination-node semaphore (`internal/dblock.Supported`); every other dialect takes a no-op lock, so a deployment there still enforces a single runner outside Ptah
 
 ### 🧪 Partial Failure Recovery
 - Handle multi-step migrations with intentional failures
 - Validate recovery and rollback capabilities
+- Resume a migration that failed partway without running its committed statements again (`partial_failure_resume`, with fixtures for YDB, where a failed migration keeps the statements that ran before the failure)
 
 ### ⏱ Timestamp Verification
 - Check that `applied_at` timestamps are stored correctly
@@ -136,6 +137,8 @@ role, user and table a name unique to the run and drop it in a cleanup.
 - **`fixtures/migrations/partial_failure/`** - Multi-step migrations with failures
 - **`fixtures/migrations/partial_failure_mysql/`** - MySQL and MariaDB partial failure set
 - **`fixtures/migrations/partial_failure_sqlserver/`** - SQL Server variant of the partial failure set
+- **`fixtures/migrations/basic_ydb/`**, **`failing_ydb/`**, **`partial_failure_ydb/`** - YQL variants of the three sets
+- **`fixtures/migrations/partial_failure_resume_ydb/`** and **`partial_failure_resume_fixed_ydb/`** - A YDB migration that fails partway, and the same file with the failing statement fixed
 - **`internal/fixtures/entities/`** - Go entity definitions for schema generation tests
 
 ## Running Tests
@@ -258,6 +261,9 @@ make integration-test-sqlserver
 # Or run the SQL Server acceptance scenario directly
 docker compose --profile sqlserver up -d --wait sqlserver
 docker compose --profile test --profile sqlserver run --rm ptah-tester --databases=sqlserver --scenarios=dynamic_sqlserver_identity_schema_bracket_reserved_words
+
+# Test YDB's opt-in migration subset
+make integration-test-ydb
 ```
 
 ### Combined Options
@@ -278,7 +284,7 @@ docker compose --profile test run --rm ptah-tester --report=json --databases=pos
 ### Main Test Command
 
 - `--report` - Report format: `txt`, `json`, or `html` (default: `txt`)
-- `--databases` - Comma-separated list of databases to test (default: `postgres,mysql,mariadb,cockroachdb,yugabytedb`; SQL Server is opt-in via `sqlserver` or `mssql`)
+- `--databases` - Comma-separated list of databases to test (default: `postgres,mysql,mariadb,cockroachdb,yugabytedb`; SQL Server is opt-in via `sqlserver` or `mssql`, and YDB via `ydb`)
 - `--scenarios` - Comma-separated list of specific scenarios to run (default: all)
 - `--verbose` - Enable verbose output
 
@@ -352,6 +358,12 @@ Rich, interactive report with:
 - Authentication: `github.com/microsoft/go-mssqldb` with `sqlserver://` URLs
 - Coverage: opt-in migration fixtures plus `dynamic_sqlserver_identity_schema_bracket_reserved_words`
 - Limitations: only scenarios marked `SQLServerCompatible` execute; PostgreSQL-only RLS/functions/roles and unsupported schema-evolution scenarios are skipped before database cleanup
+
+### YDB
+- Version: the `ydbplatform/local-ydb` lines Ptah declares; the suite is run against 26.2.1.14 and 25.1.4.7
+- URL: `YDB_URL`, for example `ydb://ydb:2136/local?go_balancer=disable`; a server in a container behind another host advertises an address the runner cannot reach, so the balancer is disabled
+- Coverage: the migration scenarios marked `YDBCompatible`, which read the `*_ydb` fixtures, plus `partial_failure_resume`
+- Limitations: only scenarios marked `YDBCompatible` execute; the versioned-entity scenarios use objects YDB has no counterpart for, and are skipped before database cleanup
 
 ## Test Data
 

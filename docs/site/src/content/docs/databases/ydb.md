@@ -21,15 +21,16 @@ owns:
 ---
 
 Ptah renders YQL for YDB row tables, plans a migration between two schemas,
-connects to a live database, reads its tables back and applies DDL to it. The
+connects to a live database, reads its tables back, applies DDL to it and runs
+versioned migrations against it. The
 dialect name is `ydb`. YDB is its own dialect rather than a PostgreSQL-family
 one: Ptah writes YQL and talks to the server through the YDB Go SDK. A schema
 Ptah applies reads back as itself, which the integration suite checks against a
 live YDB 26.2 in CI.
 
-Versioned migrations, data changes, lint, dev databases, `ptah-compat` and the
-YDB object families such as TTL, column families, changefeeds, views and vector
-indexes are not supported yet. See [What is not supported yet](#what-is-not-supported-yet).
+Data changes, lint, dev databases, `ptah-compat` and the YDB object families
+such as TTL, column families, changefeeds, views and vector indexes are not
+supported yet. See [What is not supported yet](#what-is-not-supported-yet).
 
 ## Connecting
 
@@ -260,11 +261,28 @@ changefeeds. A command reports them, and a plan neither drops nor changes them.
 An index kind Ptah cannot read, such as a vector or a full-text index, is
 refused by name rather than read as a plain index.
 
+## Versioned migrations
+
+`ptah migrations up`, `down`, `status`, `baseline`, `set`, `repair`, `tag`,
+`log` and `test` run against YDB, with the revision table in either format.
+YDB runs a schema statement only outside a transaction and never in the same
+query as a data statement, so a migration file runs as a sequence of queries:
+each schema statement on its own, and each run of data statements as one
+transaction together with the revision checkpoint that records it. A
+definition such as `$name = ...` or a `PRAGMA` reaches every query after it.
+`--tx-mode file` therefore runs a file the way `none` does, and `all` is
+refused. [Migrations on YDB](../../versioned/apply/#migrations-on-ydb) has the
+details, including the files refused before a run writes anything.
+
+The migration lock is a semaphore on the coordination node `ptah_locks` at the
+database root, which Ptah creates on first use and keeps. `--lock-timeout` and
+`--statement-timeout` are refused: YDB has no lock wait to bound, and a client
+timeout cannot promise a schema statement did not commit.
+
 ## What is not supported yet
 
 These are refused with a message that names what is missing:
 
-- versioned migrations (`ptah migrations up` and the commands around it);
 - the query builder and data changes: seeds, data plans and declared rows;
 - `ptah sql lint` and `ptah migrations lint` over YQL;
 - a YDB database as a dev or shadow database;

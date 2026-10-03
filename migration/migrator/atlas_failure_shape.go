@@ -4,7 +4,6 @@ import (
 	"errors"
 	"strings"
 
-	"ptah.run/core/sqlutil"
 	"ptah.run/internal/revisiontext"
 )
 
@@ -63,7 +62,7 @@ func atlasFailureError(failure error) string {
 // source that splits differently, or a failure with no statement — reporting
 // the statement it always did rather than nothing at all.
 func atlasFailureStatement(sqlText, dialect string, failedIndex int, stmt string) string {
-	statements := sqlutil.SplitSourceStatements(sqlText, dialect)
+	statements := sourceStatementsForDialect(sqlText, dialect)
 	if failedIndex < 1 || failedIndex > len(statements) {
 		return revisiontext.ValidUTF8(stmt)
 	}

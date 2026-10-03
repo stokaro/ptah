@@ -1,6 +1,10 @@
 package sqlutil
 
-import "strings"
+import (
+	"strings"
+
+	"ptah.run/internal/clientdelimiter"
+)
 
 // NormalizeClientDelimiters rewrites MySQL DELIMITER and Atlas delimiter
 // directives into regular semicolon-terminated SQL: the directive lines are
@@ -45,70 +49,11 @@ func NormalizeClientDelimiters(input string) string {
 }
 
 func parseDelimiterDirective(line string) (delimiter string, allowCommentDelimiter, ok bool) {
-	if delimiter, ok := parseClientDelimiterDirective(line); ok {
-		return delimiter, false, true
+	delimiter, form, ok := clientdelimiter.Parse(line)
+	if !ok {
+		return "", false, false
 	}
-	if delimiter, ok := parseAtlasDelimiterDirective(line); ok {
-		return delimiter, true, true
-	}
-	return "", false, false
-}
-
-func parseClientDelimiterDirective(line string) (string, bool) {
-	trimmed := strings.TrimSpace(line)
-	if len(trimmed) < len("DELIMITER") || !strings.EqualFold(trimmed[:len("DELIMITER")], "DELIMITER") {
-		return "", false
-	}
-	if len(trimmed) > len("DELIMITER") && !isClientDelimiterBoundary(trimmed[len("DELIMITER")]) {
-		return "", false
-	}
-
-	delimiter := strings.TrimSpace(trimmed[len("DELIMITER"):])
-	if delimiter == "" {
-		return "", false
-	}
-	delimiter = stripClientDelimiterQuotes(delimiter)
-	delimiter = strings.NewReplacer(`\n`, "\n", `\r`, "\r", `\t`, "\t").Replace(delimiter)
-	return delimiter, true
-}
-
-func parseAtlasDelimiterDirective(line string) (string, bool) {
-	const prefix = "-- atlas:delimiter"
-
-	trimmed := strings.TrimSpace(line)
-	if len(trimmed) < len(prefix) || !strings.EqualFold(trimmed[:len(prefix)], prefix) {
-		return "", false
-	}
-	if len(trimmed) > len(prefix) && !isClientDelimiterBoundary(trimmed[len(prefix)]) {
-		return "", false
-	}
-
-	delimiter := strings.TrimSpace(trimmed[len(prefix):])
-	if delimiter == "" {
-		return "", false
-	}
-	delimiter = stripClientDelimiterQuotes(delimiter)
-	delimiter = strings.NewReplacer(`\n`, "\n", `\r`, "\r", `\t`, "\t").Replace(delimiter)
-	return delimiter, true
-}
-
-func isClientDelimiterBoundary(ch byte) bool {
-	switch ch {
-	case ' ', '\t', '\n', '\r':
-		return true
-	default:
-		return false
-	}
-}
-
-func stripClientDelimiterQuotes(delimiter string) string {
-	if len(delimiter) < 2 {
-		return delimiter
-	}
-	if delimiter[0] == delimiter[len(delimiter)-1] && (delimiter[0] == '\'' || delimiter[0] == '"') {
-		return delimiter[1 : len(delimiter)-1]
-	}
-	return delimiter
+	return delimiter, form == clientdelimiter.Atlas, true
 }
 
 func rewriteClientDelimitedStatements(input, delimiter string, allowCommentDelimiter bool) string {

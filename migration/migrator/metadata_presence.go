@@ -9,30 +9,11 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/sqlutil"
 	"ptah.run/internal/lexer"
-	"ptah.run/internal/ydbgap"
 )
 
 func (m *Migrator) migrationsTableExists(ctx context.Context) (bool, error) {
-	table := m.migrationsTableName()
-	query, args, err := migrationTablePresenceQuery(
-		m.connectionDialect(),
-		m.metadataTableSchemaName(),
-		m.connectionSchemaName(),
-		table,
-		m.quoteIdentifier,
-	)
-	if err != nil {
-		return false, err
-	}
-
-	var count int64
-	query = sqlutil.Rebind(m.connectionDialect(), query)
-	if err := m.conn.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
-		return false, err
-	}
-	return count > 0, nil
+	return m.metadataTableExists(ctx, m.migrationsTableName())
 }
 
 // MetadataPresent reports whether the revision table this migrator is
@@ -63,25 +44,10 @@ func (m *Migrator) MetadataPresent(ctx context.Context) (bool, error) {
 // to catch would reach the database before the value that was already wrong
 // was read at all.
 func (m *Migrator) validateMetadataInputs() error {
-	if err := m.refuseUnimplementedDialect(); err != nil {
-		return err
-	}
 	if _, err := allowForeignMetadataTableVar.Resolve(); err != nil {
 		return err
 	}
 	return m.refuseUnaddressableMetadata()
-}
-
-// refuseUnimplementedDialect refuses a connection whose dialect the migrator
-// has no revision, log or tag table for. Every public entry point that reads
-// or writes the metadata reaches it before its first statement, so a YDB
-// connection is refused in the words of the gap instead of being sent another
-// dialect's DDL.
-func (m *Migrator) refuseUnimplementedDialect() error {
-	if platform.NormalizeDialect(m.connectionDialect()) == platform.YDB {
-		return errors.New(ydbgap.Migrating.Message())
-	}
-	return nil
 }
 
 // RevisionLayoutBase reports whether an existing native revision table carries
@@ -115,27 +81,9 @@ func (m *Migrator) RevisionLayoutBase(ctx context.Context) (bool, error) {
 }
 
 func (m *Migrator) migrationsTableUsesLegacyRevisionLayout(ctx context.Context) (bool, error) {
-	rows, err := m.conn.QueryContext(
-		ctx,
-		fmt.Sprintf("SELECT * FROM %s WHERE 1 = 0", m.qualifiedMigrationsTable()),
-	)
+	columns, err := m.migrationsTableColumns(ctx)
 	if err != nil {
-		return false, fmt.Errorf("failed to inspect migrations metadata columns: %w", err)
-	}
-	defer rows.Close()
-	columns, err := rows.Columns()
-	if err != nil {
-		return false, fmt.Errorf("failed to read migrations metadata columns: %w", err)
-	}
-	// The result set is empty by construction -- `WHERE 1 = 0` -- and only the
-	// column list is wanted, but the set still has to be DRIVEN before its
-	// terminal error means anything: Rows.Err returns a field Rows.Next is the
-	// only writer of, so reading it off an unadvanced result set answers nil
-	// however the statement fared. One Next exhausts a set with no rows, which
-	// also closes it, so the deferred Close becomes the no-op it should be.
-	rows.Next()
-	if err := rows.Err(); err != nil {
-		return false, fmt.Errorf("failed to read migrations metadata columns: %w", err)
+		return false, err
 	}
 	present := make(map[string]struct{}, len(columns))
 	for _, column := range columns {
@@ -154,6 +102,40 @@ func (m *Migrator) migrationsTableUsesLegacyRevisionLayout(ctx context.Context) 
 		return false, fmt.Errorf("incomplete migrations metadata layout: missing columns %s", strings.Join(missing, ", "))
 	}
 	return false, nil
+}
+
+// migrationsTableColumns returns the names of the revision table's columns.
+//
+// On YDB they come from describing the table: YDB has no catalog SQL could
+// read, and `SELECT *` would answer with its columns sorted by name.
+func (m *Migrator) migrationsTableColumns(ctx context.Context) ([]string, error) {
+	if m.usesDescribedMetadata() {
+		columns, _, err := m.describeMetadataTable(ctx, m.migrationsTableName())
+		return columns, err
+	}
+	rows, err := m.conn.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT * FROM %s WHERE 1 = 0", m.qualifiedMigrationsTable()),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect migrations metadata columns: %w", err)
+	}
+	defer rows.Close()
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read migrations metadata columns: %w", err)
+	}
+	// The result set is empty by construction -- `WHERE 1 = 0` -- and only the
+	// column list is wanted, but the set still has to be DRIVEN before its
+	// terminal error means anything: Rows.Err returns a field Rows.Next is the
+	// only writer of, so reading it off an unadvanced result set answers nil
+	// however the statement fared. One Next exhausts a set with no rows, which
+	// also closes it, so the deferred Close becomes the no-op it should be.
+	rows.Next()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read migrations metadata columns: %w", err)
+	}
+	return columns, nil
 }
 
 func (m *Migrator) requireTransactionalMetadataEngine(ctx context.Context) error {
@@ -988,9 +970,11 @@ WHERE table_schema = current_schema() AND table_name = ? AND table_type = 'BASE 
 			configuredOrConnectionSchema(configuredSchema, connectionSchema),
 			table,
 		}, nil
+	case platform.YDB:
+		// YDB has no catalog SQL could ask; metadataTableExists describes
+		// the table instead and never asks for a query.
+		return "", nil, errors.New("YDB migration metadata is described through the scheme service, not queried")
 	default:
-		// YDB never reaches here: refuseUnimplementedDialect refuses it at
-		// every entry point first.
 		return "", nil, fmt.Errorf("unsupported migration metadata dialect %q", dialect)
 	}
 }

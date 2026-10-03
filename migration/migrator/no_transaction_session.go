@@ -169,6 +169,13 @@ func postgresSearchPathReplayState(statement string) (changed, known bool) {
 }
 
 func noTransactionResumeAction(statement, dialect string) noTransactionPrefixAction {
+	if platform.NormalizeDialect(dialect) == platform.YDB {
+		// A YDB query carries every definition and setting it needs (see
+		// internal/yqlquery), and YDB keeps no session state between
+		// queries, so a committed one leaves nothing a resumed session has
+		// to replay.
+		return noTransactionPrefixDurable
+	}
 	tokens := significantSQLTokens(statement, dialect)
 	if len(tokens) == 0 {
 		return noTransactionPrefixDurable
