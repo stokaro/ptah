@@ -114,17 +114,23 @@ keyword expression, and `DEFAULT CURRENT_TIMESTAMP(3)` keeps its precision.
 | `CHECK (price >= 0)` on a numeric column | `(price >= (0)::numeric)` |
 | routine argument `b text DEFAULT 'X'` | `b text DEFAULT 'X'::text` |
 | routine argument `c numeric(10,2) = 1.5` | `c numeric DEFAULT 1.5` |
+| routine result `SETOF public.items`, with `public` on the search path | `SETOF items` |
 
 When a comparison has a connection, Ptah asks that server to spell each declared
 column type and default, CHECK, `EXCLUDE` element list and predicate, policy
 clause, index expression and predicate, trigger WHEN condition, domain, and
-routine argument list the way its catalog does. It creates a temporary object inside a transaction that is rolled back,
+routine argument list and result the way its catalog does. It creates a temporary object inside a transaction that is rolled back,
 reads the stored form, and compares like with like. A column is asked only when
 its default is declared or its type is not written the way the catalog reports
-it. A routine is asked only when it takes arguments and the database holds a
-routine of that name. Its temporary copy has the declared arguments and return
-type, and a body the server does not check, because the arguments do not depend
-on the body.
+it. A routine is asked when it declares arguments or a result and the database
+holds a routine of that name. Its temporary copy has the declared arguments and
+return type, and a body the server does not check, because the signature does
+not depend on the body.
+
+A result type keeps its schema in the read-back only where the session's search
+path does not reach it: `SETOF public.items` reads back as `SETOF items`, and
+`SETOF other.items` keeps `other.`. Only the server knows which applies, so a
+result is not folded by removing its schema.
 
 Ptah lowercases the words of an argument list and a return clause that are not
 quoted, as the server does. A string literal, a quoted name and a dollar-quoted

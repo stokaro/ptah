@@ -103,7 +103,7 @@ func TestFunctionsWithSemantics_ComparesTheServersSpellingOfTheArguments(t *test
 	c := qt.New(t)
 	declared := "A VARCHAR(50), B TEXT DEFAULT 'X'"
 	spellings := map[string]config.RoutineArguments{
-		exprkey.RoutineArguments(schemamodel.Function{Parameters: declared}): {Arguments: "a character varying, b text DEFAULT 'X'::text", Resolved: true},
+		exprkey.RoutineArguments(schemamodel.Function{Parameters: declared, Returns: "integer"}): {Arguments: "a character varying, b text DEFAULT 'X'::text", Result: "integer", Resolved: true},
 	}
 
 	diff := routineWithArguments(declared, "a character varying, b text DEFAULT 'X'::text", spellings)
@@ -118,7 +118,7 @@ func TestFunctionsWithSemantics_ComparesTheServersSpellingOfTheArguments(t *test
 func TestFunctionsWithSemantics_AnUnresolvedSpellingFallsBackToTheText(t *testing.T) {
 	c := qt.New(t)
 	declared := "b text DEFAULT 'x'::text"
-	spellings := map[string]config.RoutineArguments{exprkey.RoutineArguments(schemamodel.Function{Parameters: declared}): {}}
+	spellings := map[string]config.RoutineArguments{exprkey.RoutineArguments(schemamodel.Function{Parameters: declared, Returns: "integer"}): {}}
 
 	diff := routineWithArguments(declared, "b text DEFAULT 'x'::text", spellings)
 
@@ -137,15 +137,15 @@ func TestFunctionsWithSemantics_TheServersSpellingStillSeesAChange(t *testing.T)
 	}{
 		{
 			name:      "a resolved spelling",
-			spellings: map[string]config.RoutineArguments{exprkey.RoutineArguments(schemamodel.Function{Parameters: declared}): {Arguments: "b text DEFAULT 'X'::text", Resolved: true}},
+			spellings: map[string]config.RoutineArguments{exprkey.RoutineArguments(schemamodel.Function{Parameters: declared, Returns: "integer"}): {Arguments: "b text DEFAULT 'X'::text", Result: "integer", Resolved: true}},
 		},
 		{
 			name:      "an unresolved spelling",
-			spellings: map[string]config.RoutineArguments{exprkey.RoutineArguments(schemamodel.Function{Parameters: declared}): {}},
+			spellings: map[string]config.RoutineArguments{exprkey.RoutineArguments(schemamodel.Function{Parameters: declared, Returns: "integer"}): {}},
 		},
 		{
 			name:      "a spelling of a procedure's arguments",
-			spellings: map[string]config.RoutineArguments{exprkey.RoutineArguments(schemamodel.Function{Kind: schemamodel.FunctionKindProcedure, Parameters: declared}): {Arguments: "b text DEFAULT 'x'::text", Resolved: true}},
+			spellings: map[string]config.RoutineArguments{exprkey.RoutineArguments(schemamodel.Function{Kind: schemamodel.FunctionKindProcedure, Parameters: declared, Returns: "integer"}): {Arguments: "b text DEFAULT 'x'::text", Result: "integer", Resolved: true}},
 		},
 		{
 			name: "no server",

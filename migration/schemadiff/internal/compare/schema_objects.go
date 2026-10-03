@@ -763,12 +763,16 @@ func functionDefinitions(
 	// so we only normalize the gen side.
 	genFunction.Canonicalize()
 
-	// The server's spelling of the declared arguments, where one answered,
-	// replaces the declaration, and after Canonicalize: the server prints NULL,
-	// ARRAY and DEFAULT upper case, as the catalog does, and the fold must not
-	// reach them (stokaro/ptah#3673).
+	// The server's spelling of the declared arguments and result, where one
+	// answered, replaces the declaration, and after Canonicalize: the server
+	// prints NULL, ARRAY and DEFAULT upper case, as the catalog does, and the
+	// fold must not reach them (stokaro/ptah#3673). The result is spelled for
+	// its schema: the catalog prints one only where the search path does not
+	// reach the type, so `SETOF public.items` and `SETOF items` are one result
+	// or two depending on the session (stokaro/ptah#4038).
 	if spelled.Resolved {
 		genFunction.Parameters = spelled.Arguments
+		genFunction.Returns = spelled.Result
 	}
 
 	// After Canonicalize, not before: it lowercases Returns and Parameters, and

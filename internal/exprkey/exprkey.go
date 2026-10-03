@@ -135,19 +135,19 @@ func TableParts(semantics identifier.Semantics, schema, table string) string {
 
 // RoutineArguments is the key [config.CompareOptions.RoutineArguments] is held
 // under for a declared routine: whether it is a procedure, and its argument
-// list exactly as declared.
+// list and result exactly as declared.
 //
-// It names no routine. What the server prints for an argument list depends on
-// the list and on the kind of routine it is declared on, not on the routine's
-// name, so two routines declaring one list share one answer, and a key built
-// from the declaration finds it without knowing which catalog routine the
-// declaration was paired with.
+// It names no routine. What the server prints for an argument list and a
+// result depends on them and on the kind of routine they are declared on, not
+// on the routine's name, so two routines declaring one signature share one
+// answer, and a key built from the declaration finds it without knowing which
+// catalog routine the declaration was paired with.
 func RoutineArguments(routine schemamodel.Function) string {
 	kind := schemamodel.FunctionKindFunction
 	if routine.IsProcedure() {
 		kind = schemamodel.FunctionKindProcedure
 	}
-	return lengthPrefixed(kind, routine.Parameters)
+	return lengthPrefixed(kind, routine.Parameters, routine.Returns)
 }
 
 // encode renders an identity as an opaque string whose component boundaries

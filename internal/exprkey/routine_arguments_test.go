@@ -21,7 +21,8 @@ func TestRoutineArguments_OneListIsOneKey(t *testing.T) {
 // A procedure's list and a function's are two keys, because the server takes
 // them under different rules: a procedure refuses an OUT argument after one
 // with a default, and a function does not. Two lists that differ only in a
-// literal's case are two keys too.
+// literal's case are two keys too, and so are two results, since the server
+// spells each result.
 func TestRoutineArguments_DifferentListsAreDifferentKeys(t *testing.T) {
 	procedure := schemamodel.FunctionKindProcedure
 	tests := []struct {
@@ -32,6 +33,8 @@ func TestRoutineArguments_DifferentListsAreDifferentKeys(t *testing.T) {
 		{name: "a function and a procedure", left: schemamodel.Function{Parameters: "b text"}, right: schemamodel.Function{Kind: procedure, Parameters: "b text"}},
 		{name: "the case of a literal", left: schemamodel.Function{Parameters: "b text DEFAULT 'X'"}, right: schemamodel.Function{Parameters: "b text DEFAULT 'x'"}},
 		{name: "a kind word inside the list", left: schemamodel.Function{Parameters: "procedure"}, right: schemamodel.Function{Kind: procedure}},
+		{name: "two results", left: schemamodel.Function{Returns: "SETOF public.a"}, right: schemamodel.Function{Returns: "SETOF public.b"}},
+		{name: "a result written into the list", left: schemamodel.Function{Parameters: "a integer", Returns: "integer"}, right: schemamodel.Function{Parameters: "a integerinteger"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
