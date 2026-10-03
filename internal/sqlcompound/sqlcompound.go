@@ -103,20 +103,17 @@ func (b *yqlBodies) word(word string) {
 		b.blocks++
 	case previous == "END" && (word == "DEFINE" || word == "DO") && b.blocks > 0:
 		b.blocks--
-		// A closed END DO is not the DO of a DO BEGIN.
-		b.previous = ""
 	}
 }
 
-// separate records a token that stands between two words, so the words on
-// either side of it pair with nothing.
+// separate records a semicolon, which ends a statement inside a body, so the
+// words on either side of it pair with nothing.
 func (b *yqlBodies) separate() {
 	b.previous = ""
 	b.named = false
 }
 
 func (b *yqlBodies) symbol(value string) {
-	b.separate()
 	b.named = value == "."
 	switch value {
 	case "{":

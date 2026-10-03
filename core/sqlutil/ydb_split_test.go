@@ -123,6 +123,15 @@ func TestSplitSQLStatementsForDialect_YDBCompoundBodies(t *testing.T) {
 			},
 		},
 		{
+			name: "a field named end before an IF's DO, inside a body",
+			sql: "DEFINE ACTION $a($s) AS EVALUATE IF $s.end DO BEGIN SELECT 1 AS x; SELECT 2 AS y; END DO; END DEFINE; " +
+				"DO $a(AsStruct(true AS end));",
+			want: []string{
+				"DEFINE ACTION $a($s) AS EVALUATE IF $s.end DO BEGIN SELECT 1 AS x; SELECT 2 AS y; END DO; END DEFINE",
+				"DO $a(AsStruct(true AS end))",
+			},
+		},
+		{
 			// A backticked word is a name, never the keyword.
 			name: "a quoted END is a name",
 			sql:  "DEFINE ACTION $a() AS SELECT 1 AS `END`; SELECT 2; END DEFINE; SELECT 3;",
