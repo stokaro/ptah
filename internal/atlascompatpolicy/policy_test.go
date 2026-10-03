@@ -551,6 +551,9 @@ func TestStrictCEDatabaseDialectPolicy(t *testing.T) {
 		"yugabytedb://localhost/app",
 		"sqlserver://localhost/app",
 		"spanner://localhost/app",
+		// A docker URL is judged by the engine it would start.
+		"docker+sqlserver://_/mssql:2022/dev",
+		"docker+clickhouse://_/clickhouse:24/dev",
 	} {
 		t.Run(rawURL, func(t *testing.T) {
 			c := qt.New(t)
@@ -569,6 +572,7 @@ func TestStrictCEDatabaseDialectPolicy(t *testing.T) {
 		"sqlite://app.db",
 		"file://schema.hcl",
 		"env://schema.src",
+		"docker+postgres://_/postgres:17/dev",
 	} {
 		t.Run(rawURL, func(t *testing.T) {
 			c := qt.New(t)

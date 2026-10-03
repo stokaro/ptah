@@ -23,8 +23,44 @@ import (
 	"ptah.run/internal/ydbgap"
 )
 
-// dockerScheme is the URL scheme that asks Ptah to start a dev database.
+// dockerScheme is the URL scheme that asks Ptah to start a dev database from
+// an engine's own image: `docker://postgres/16/dev`.
 const dockerScheme = "docker"
+
+// dockerImageSchemePrefix begins the scheme that asks Ptah to start a dev
+// database from the image the URL names: `docker+postgres://_/postgres:17/dev`.
+const dockerImageSchemePrefix = "docker+"
+
+// dockerImageDrivers are the drivers the pinned community binary v1.3.0 accepts
+// after [dockerImageSchemePrefix]. It registers exactly these, so any other
+// `docker+` scheme is a driver it does not know: measured, `docker+sqlite`,
+// `docker+postgis` and `docker+nosuch` all answer `sql/sqlclient: unknown
+// driver` at exit 1.
+var dockerImageDrivers = []string{"postgres", "mysql", "maria", "mariadb", "clickhouse", "sqlserver"}
+
+// DockerImageDriver returns the driver a `docker+<driver>` scheme names, and
+// whether scheme is one of the `docker+` schemes the pinned community binary
+// registers. scheme is compared as written; [url.Parse] already lowercases it.
+func DockerImageDriver(scheme string) (string, bool) {
+	driver, found := strings.CutPrefix(scheme, dockerImageSchemePrefix)
+	if !found || !slices.Contains(dockerImageDrivers, driver) {
+		return "", false
+	}
+	return driver, true
+}
+
+// IsDockerScheme reports whether scheme asks Ptah to start a dev database:
+// `docker`, or one of the `docker+<driver>` schemes [DockerImageDriver]
+// recognizes. Every boundary that treats a docker dev URL differently from a
+// database URL asks this, so the two spellings cannot be recognized in one
+// place and missed in another.
+func IsDockerScheme(scheme string) bool {
+	if scheme == dockerScheme {
+		return true
+	}
+	_, ok := DockerImageDriver(scheme)
+	return ok
+}
 
 var defaultPorts = map[string]string{
 	platform.Postgres:    "5432",
@@ -146,8 +182,9 @@ func IsWindowsPath(rest string) bool {
 	return rest[2] == '\\' || rest[2] == '/'
 }
 
-// IsDockerURL reports whether rawURL is a `docker://` URL, the spelling that
-// asks Ptah to start a dev database rather than naming one that exists.
+// IsDockerURL reports whether rawURL is a `docker://` or `docker+<driver>://`
+// URL, a spelling that asks Ptah to start a dev database rather than naming one
+// that exists.
 //
 // [DialectFromURL] answers such a URL with the engine it would start, which is
 // the right answer for a dev URL and the wrong one for a target: no database is
@@ -159,7 +196,7 @@ func IsDockerURL(rawURL string) bool {
 	if err != nil {
 		return false
 	}
-	return parsed.Scheme == dockerScheme
+	return IsDockerScheme(parsed.Scheme)
 }
 
 func DialectFromURL(rawURL string) (string, error) {
@@ -178,6 +215,9 @@ func DialectFromURL(rawURL string) (string, error) {
 	}
 	if parsed.Scheme == dockerScheme {
 		return dialectFromDockerURL(parsed)
+	}
+	if driver, ok := DockerImageDriver(parsed.Scheme); ok {
+		return platform.NormalizeDialect(driver), nil
 	}
 	// Every spelling platform.NormalizeDialect accepts, rather than a list
 	// copied from it.

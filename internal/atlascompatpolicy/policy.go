@@ -417,7 +417,7 @@ func (p Policy) ValidateURL(rawURL string) error {
 		return nil
 	}
 	dialect := platform.NormalizeDialect(parsed.Scheme)
-	if parsed.Scheme == "docker" {
+	if atlasurl.IsDockerScheme(parsed.Scheme) {
 		dialect, err = atlasurl.DialectFromURL(rawURL)
 		if err != nil {
 			return nil

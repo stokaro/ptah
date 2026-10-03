@@ -99,8 +99,9 @@ the same directive. atlas.sum is updated only after every migration file
 was written. With --edit the generated migration files open in $VISUAL or
 $EDITOR before the directory checksum is finalized. A docker:// --dev-url
 starts a throwaway PostgreSQL, MySQL or MariaDB container for the run and
-removes it afterwards; it needs a reachable container runtime, and it is
-refused for an engine the Atlas community CLI does not start either.
+removes it afterwards, from the engine's own image, or from the image a
+docker+<driver>:// URL names; it needs a reachable container runtime, and it
+is refused for any other engine.
 When --env is set, the selected atlas.hcl env
 can provide schema.src, dev, migration.dir, format.migrate.diff, and supported
 diff policy values.`,

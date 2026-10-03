@@ -107,15 +107,15 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 193 capabilities below:
+Across the 194 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 181 |
+| Ptah supports it fully | 182 |
 | Ptah supports it with a stated limitation | 1 |
 | Ptah does not implement it | 0 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 11 |
-| Ptah and Atlas CE both support it | 63 |
+| Ptah and Atlas CE both support it | 64 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 53 |
 | Ptah has it and neither Atlas edition does | 27 |
 | Atlas CE has it and Ptah does not, or only in part | 0 |
@@ -315,6 +315,7 @@ seven of them as open capabilities regardless.
 | AWS RDS token project data source (data "aws_rds_token") | ✅ | ✅ | ✅ | Resolves to a SigV4 `rds-db` connect token, matching the pinned community binary parameter for parameter. `endpoint` and `username` required; `region` and `profile` optional. |
 | data "hcl_schema" reference | ✅ | ✅ | ✅ | Takes path, paths and vars, and exports .url. `vars` is scoped to the files that data source selects and `--var` does not cross that boundary, as on CE. A bad path or scheme names its rule. |
 | Docker dev databases (`docker://` `--dev-url`) | ✅ | ✅ | ✅ | Every verb taking a dev or shadow URL provisions and removes a container. `schema plan` starts none on purpose: a saved plan reads local files and has nothing to replay. |
+| Docker dev databases from a named image (`docker+<driver>://` `--dev-url`) | ✅ | ✅ | ✅ | Starts the image the URL names on PostgreSQL, MySQL and MariaDB, and creates the database when the image did not. ClickHouse and SQL Server images are refused by name. |
 | env:// desired-state references | ✅ | ✅ | ✅ | Resolves on `--to`/`--from`/`--url`, on `--schema-file` and on `schema test`'s `-u` when a run selects an env. Refusing on `--exclude`/`--include` is deliberate. |
 | External program project data source (data "external") | ✅ | ✅ | ✅ | Runs argv directly without a shell and returns untrimmed stdout. Caller cancellation, a 60-second timeout, bounded output, process-tree termination, and sanitized errors define the boundary. |
 | GCP Cloud SQL token project data source (data "gcp_cloudsql_token") | ✅ | ✅ | ✅ | Resolves to an OAuth2 access token from application default credentials under the sqlservice.admin scope. The block takes no required attribute. |

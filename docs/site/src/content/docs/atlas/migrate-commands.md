@@ -1122,8 +1122,10 @@ no-transaction execution because their safe transaction metadata has not been
 proven. The native Atlas layout remains forward-only and carries `--
 atlas:txmode none` on its own file when required.
 
-A `docker://` dev database is provisioned on the verbs that take one: the
-container is started, used and removed by the command. Because the whole server
+A `docker://` or `docker+<driver>://` dev database is provisioned on the verbs
+that take one: the container is started, used and removed by the command. A
+`docker+<driver>://` URL names the image to start; see
+[a dev database from a named image](#a-dev-database-from-a-named-image). Because the whole server
 is the run's own, replay on it also runs a `DO` block, a routine definition, a
 role and a privilege on a schema or database, which a server URL refuses; see
 [a server Ptah provisions](../../concepts/database-urls-and-dev-databases/#a-server-ptah-provisions).
@@ -1135,6 +1137,33 @@ Desired SQL uses a separate, non-executing reader. It supports
 [bounded conditional role-bootstrap blocks](../../schema/postgres-role-bootstrap/)
 and includes their selected roles in the diff. This does not relax the
 server-level authorization required to replay migration history.
+
+### A dev database from a named image
+
+`docker://postgres/18/dev` starts an engine's own image. A
+`docker+<driver>://` URL starts the image it names instead, such as an image
+with an extension installed, or one that carries a provider's roles and
+schemas:
+
+```bash
+ptah-compat migrate diff --dev-url "docker+postgres://_/pgvector/pgvector:pg18/dev" ...
+```
+
+The form is `docker+<driver>://[<host>/]<image>[:<tag>][/<database>]`, read as
+Atlas reads it, and native `ptah` verbs take it too:
+
+- The drivers are `postgres`, `mysql`, `maria` and `mariadb`. Ptah starts no
+  ClickHouse or SQL Server from a docker URL, so `docker+clickhouse://` and
+  `docker+sqlserver://` are refused by name.
+- `_` stands for no host. A host names a registry and leads the image:
+  `docker+postgres://ghcr.io/acme/pg:17/dev` starts `ghcr.io/acme/pg:17`.
+- The last path segment is the database when it holds no colon. Without one, a
+  PostgreSQL URL connects to `postgres` and a MySQL or MariaDB URL to the whole
+  server. Cleanup refuses the `postgres` database, so on PostgreSQL name the
+  database (stokaro/ptah#4035).
+- An image may ignore `POSTGRES_DB` or `MYSQL_DATABASE`, the variables that
+  name its database. Ptah creates the database once the server answers when
+  the image did not. Atlas exits 1 on such a PostgreSQL image.
 
 ### A whole dev server
 

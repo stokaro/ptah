@@ -958,6 +958,51 @@ a `docker://` value to the database connector. Atlas CE v1.3.0 answers
 `unknown flag: --dev-url` on all six — measured — so no parity cell is open on
 them and there is no wording to copy.
 
+### `docker+<driver>://` dev databases start the image the URL names
+
+`docker+<driver>://[<host>/]<image>[:<tag>][/<database>]` names the image to
+start, where `docker://` starts an engine's own
+([`stokaro/ptah#4040`](https://github.com/stokaro/ptah/issues/4040)). Measured
+2026-10-03 on a Linux host with a local daemon, with every exit status read from
+an unpiped `schema inspect -u file://schema.sql --dev-url <value>`. Two images
+were built for it: `ignores-db` starts from `postgres:17` with an entrypoint
+that unsets `POSTGRES_DB`, and `local` is `postgres:17` tagged `local:latest`,
+named in the URL with no tag:
+
+| `--dev-url` | Atlas CE v1.3.0 | Ptah |
+| --- | --- | --- |
+| `docker+postgres://_/postgres:17/dev` | 0 | 0 |
+| `docker+postgres:///postgres:17/dev` | 0 | 0 |
+| `docker+postgres://docker.io/library/postgres:17/dev` | 0 | 0 |
+| `docker+postgres://_/library/postgres:17/dev` | 0 | 0 |
+| `docker+postgres://_/local/dev` | 0 | 0 |
+| `DOCKER+POSTGRES://_/postgres:17/dev` | 0 | 0 |
+| `docker+postgres://_/postgres:17/dev?search_path=nosuch` | 1, `schema "nosuch" was not found` | 1, `database URL selects schema "nosuch", which does not exist in this database` |
+| `docker+postgres://_/` | 1, `invalid configuration` and a dump of its configuration | 1, `docker+postgres --dev-url names no image` |
+| `docker+postgres://postgres:17/dev` | 1, `Unable to find image 'postgres:17/dev:latest'` | 1, the same `docker run` refusal |
+| `docker+sqlite://_/postgres:17/dev` | 1, `sql/sqlclient: unknown driver "docker+sqlite"` | 1, byte-identical |
+| `docker+mysql://_/mysql:8.4.11/dev` | 0 | 0 |
+| `docker+postgres://_/ignores-db/dev` | 1, `database "dev" does not exist` | **0** |
+| `docker+sqlserver://_/mcr.microsoft.com/mssql/server:2022-latest/dev` | provisions SQL Server | 1, refused by name |
+| `docker+postgres://_/postgres:17` | 0, database `postgres` | 1, `refusing to clean protected PostgreSQL-family database "postgres"` |
+
+The last three rows differ, and each is recorded rather than matched:
+
+- **A database the image did not create.** Atlas CE passes the database to a
+  PostgreSQL image as `POSTGRES_DB` and stops there, so an image that ignores
+  the variable fails for a reason unrelated to the request. On a MySQL image it
+  also runs `CREATE DATABASE IF NOT EXISTS`, and an image that ignores
+  `MYSQL_DATABASE` exits 0. Ptah creates the database on both families once
+  the server answers. This falls under rule 2.
+- **ClickHouse and SQL Server.** Atlas CE registers `docker+clickhouse` and
+  `docker+sqlserver`. Ptah starts neither engine from a docker URL, so it
+  refuses both by name rather than answering `unknown driver` for a scheme that
+  binary knows.
+- **No database on PostgreSQL.** Both binaries connect to `postgres`, which
+  Ptah's cleanup refuses as a protected database.
+  [`stokaro/ptah#4035`](https://github.com/stokaro/ptah/issues/4035) owns
+  lifting that refusal on a server the run owns.
+
 ## PostgreSQL Introspection: Index and Domain Attributes
 
 Reading a live PostgreSQL database once lost nine attributes that the pinned

@@ -287,8 +287,8 @@ func Classify(rawURL string) (Source, error) {
 		return Source{Raw: trimmed, Kind: KindEnv, EnvAttr: attr}, nil
 	case platform.NormalizeDialect(scheme) != "":
 		return Source{Raw: trimmed, Kind: KindDatabase, Dialect: platform.NormalizeDialect(scheme)}, nil
-	case scheme == "docker":
-		return Source{}, errors.New("docker:// URLs provision Atlas dev databases and cannot be used as a desired-state source; pass a directly connectable database URL")
+	case atlasurl.IsDockerScheme(scheme):
+		return Source{}, fmt.Errorf("%s:// URLs provision Atlas dev databases and cannot be used as a desired-state source; pass a directly connectable database URL", scheme)
 	case scheme == "atlas":
 		return classifyAtlasReference(trimmed)
 	case scheme == projectconfig.RemoteSchemaMarkerScheme:

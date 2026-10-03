@@ -752,7 +752,7 @@ func normalizePlanDialect(dialect string) string {
 // stokaro/ptah#1635 objected to: accepted, checked, and then silently not
 // acted on.
 func reportPlanDevURLProvisionsNothing(diagnostics io.Writer, devURL string) {
-	if diagnostics == nil || !strings.HasPrefix(strings.TrimSpace(devURL), "docker://") {
+	if diagnostics == nil || !atlasurl.IsDockerURL(devURL) {
 		return
 	}
 	fmt.Fprintln(diagnostics,

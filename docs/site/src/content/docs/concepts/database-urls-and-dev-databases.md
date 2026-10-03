@@ -240,7 +240,9 @@ reading a routine body, such as `DROP FUNCTION`, `DROP FOREIGN TABLE`,
 
 ### A server Ptah provisions
 
-A `docker://` dev URL starts a server for one command and removes it
+A `docker://` dev URL, or a
+[`docker+<driver>://`](../../atlas/migrate-commands/#a-dev-database-from-a-named-image)
+one naming its own image, starts a server for one command and removes it
 afterwards, so the server holds only what the run put there. On such a server,
 replay also runs the statements it refuses elsewhere only because their effect
 reaches past the dev database:
@@ -274,8 +276,7 @@ this realm: `docker://` and the declaration below.
 ### A server declared disposable
 
 A server Ptah did not start can be as disposable: a CI service container
-the job throws away, or a container running an image `docker://` cannot name,
-such as TimescaleDB. `PTAH_DEV_SERVER_DISPOSABLE=1` declares that the server
+the job throws away, or a container the operator runs. `PTAH_DEV_SERVER_DISPOSABLE=1` declares that the server
 `--dev-url` names is the run's own. Replay then runs the statements listed
 above on it, as on a server Ptah provisions, and refuses the same rest.
 
