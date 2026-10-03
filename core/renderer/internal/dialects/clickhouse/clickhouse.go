@@ -1114,27 +1114,33 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 // column declares one, its default.
 //
 // A MODIFY COLUMN that names only a type keeps the default the column already
-// had, so it cannot set a default the declaration changed. A nullable column
-// made non-nullable needs the default too: measured on 26.3 and 26.9, MODIFY
-// COLUMN from Nullable(Int32) to Int32 answers `Cannot convert column 'n' from
-// nullable type Nullable(Int32) to non-nullable type Int32. Please specify
-// DEFAULT expression in ALTER MODIFY COLUMN statement` even on an empty table.
-// With a DEFAULT the statement is accepted, and every NULL row takes the
-// default: the value the author declared for a row that states none, the same
-// value the PostgreSQL plan fills NULL rows with before SET NOT NULL.
+// had, so it cannot set a default the declaration changed.
 //
-// A column that declares no default is refused on a target without
-// [capability.AlterColumnSetNotNull], before any statement runs, because the
-// server will refuse the statement. A value the type suggests, such as 0, is
-// not written in its place: it is data nobody wrote, which is why the
-// PostgreSQL plan does not fill a column without a default either
-// (stokaro/ptah#3648, stokaro/ptah#4020).
+// A nullable column made non-nullable is where the server lines part, measured
+// with a table holding a NULL row on 24.10, 25.8, 26.3, 26.7, 26.8 and 26.9
+// (stokaro/ptah#4025):
+//   - 26.3 and later refuse `MODIFY COLUMN n Int32` without a DEFAULT, even on
+//     an empty table, and with a DEFAULT fill every NULL row from it;
+//   - 24.10 and 25.8 accept the statement with or without a DEFAULT, change the
+//     column's type, and then fail the mutation that converts the rows with
+//     `Cannot convert NULL value to non-Nullable type`. The table is left with
+//     the new type and a mutation that cannot finish, and every SELECT of the
+//     column fails.
 //
-// A computed column is not refused here, because the server does not refuse
-// the statement: MATERIALIZED and ALIAS are default kinds to it, and 26.9
-// accepts MODIFY COLUMN to a non-nullable type for one. Where the key holds,
-// as on 24.10, the statement without a DEFAULT is accepted too. Neither is a
-// promise about the rows: see stokaro/ptah#4025.
+// So a column with a declared default has its NULL rows filled first, by an
+// UPDATE that waits for its mutation, and the MODIFY COLUMN that follows finds
+// none on every line. The fill is written on every line rather than chosen by
+// one: it is redundant on 26.3 and later, where the MODIFY fills them too, and
+// costs a mutation over the parts that hold a NULL. A value the type suggests,
+// such as 0, is not written for a column without a default: it is data nobody
+// wrote, which is why the PostgreSQL plan does not fill such a column either
+// (stokaro/ptah#3648). That change is refused on every line, since 26.3 and
+// later refuse the statement and 24.10 and 25.8 break the table when a row
+// holds NULL.
+//
+// A MATERIALIZED column is replaced instead; see [Renderer.replaceMaterialized].
+// An ALIAS column stores nothing, and MODIFY COLUMN changes its type on every
+// line measured.
 func (r *Renderer) renderModifyColumn(table string, op *ast.ModifyColumnOperation) error {
 	mapping, err := renderColumnType(op.Column, columnTypeOptions{})
 	if err != nil {
@@ -1142,21 +1148,32 @@ func (r *Renderer) renderModifyColumn(table string, op *ast.ModifyColumnOperatio
 	}
 	clause := defaultClause(op.Column)
 	setsNotNull := op.HasPreviousNullable && op.PreviousNullable && !rendersNullable(op.Column)
-	if setsNotNull && clause == "" && op.Column.GeneratedExpression == "" &&
-		!r.capabilities().Has(capability.AlterColumnSetNotNull) {
+	computed := op.Column.GeneratedExpression != ""
+	if setsNotNull && !computed && clause == "" {
 		return &ptaherr.CapabilityError{
 			Dialect: platform.ClickHouse,
 			Feature: "NOT NULL on an existing column",
 			Err:     ptaherr.ErrUnsupportedFeature,
 			Message: fmt.Sprintf(
-				"column %s.%s cannot be made NOT NULL here: this target refuses MODIFY COLUMN to %s"+
-					" unless the statement names a DEFAULT for the NULL rows to take, and the column"+
-					" has no default to name; give the column a default",
+				"column %s.%s cannot be made NOT NULL without a default: ClickHouse 26.3 and later refuse"+
+					" MODIFY COLUMN to %s unless it names a DEFAULT, and 24.10 and 25.8 accept it and then"+
+					" fail on a row holding NULL, which leaves the table unreadable; give the column a"+
+					" default for its NULL rows to take",
 				table, op.Column.Name, mapping.mapped),
 		}
 	}
+	if setsNotNull && computed && computedColumnKeyword(op.Column.GeneratedKind) == "MATERIALIZED" {
+		return r.replaceMaterialized(table, op.Column)
+	}
 	if mapping.notice != "" {
 		r.w.WriteLinef("-- CLICKHOUSE: column %q %s", op.Column.Name, mapping.notice)
+	}
+	if removesDefault(op, clause) {
+		r.w.WriteLinef("ALTER TABLE %s MODIFY COLUMN %s REMOVE DEFAULT;", table, op.Column.Name)
+	}
+	if setsNotNull && clause != "" {
+		r.w.WriteLinef("ALTER TABLE %s UPDATE %s = %s WHERE %s IS NULL SETTINGS mutations_sync = 2;",
+			table, op.Column.Name, strings.TrimPrefix(clause, "DEFAULT "), op.Column.Name)
 	}
 	statement := fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s %s", table, op.Column.Name, mapping.mapped)
 	if clause != "" {
@@ -1164,6 +1181,67 @@ func (r *Renderer) renderModifyColumn(table string, op *ast.ModifyColumnOperatio
 	}
 	r.w.WriteLinef("%s;", statement)
 	return nil
+}
+
+// replaceMaterialized makes a nullable MATERIALIZED column non-nullable by
+// dropping it and adding it back as declared.
+//
+// MODIFY COLUMN cannot do it on every line. Measured on 26.3, 26.7, 26.8 and
+// 26.9, `MODIFY COLUMN x Int32` on `x Nullable(Int32) MATERIALIZED id + 1`
+// fails its mutation with “Unknown expression or function identifier `id` “,
+// with or without the expression restated, and leaves the column unreadable and
+// the mutation unfinished (stokaro/ptah#4025). Dropping the column and adding
+// it back is accepted on 24.10, 25.8, 26.3 and 26.9 and reads back the values
+// the expression gives. Nothing is lost: a MATERIALIZED column holds only what
+// its expression computes, and the server computes it for the existing rows.
+//
+// An expression that can yield NULL, such as `s + 1` over a nullable `s`, makes
+// a non-nullable column that cannot be read, whichever statement creates it:
+// CREATE TABLE and ADD COLUMN accept it, and reading a row whose `s` is NULL
+// fails with `Cannot convert NULL value`. That is the declaration's
+// contradiction, and the plan carries it out as written.
+func (r *Renderer) replaceMaterialized(table string, column *ast.ColumnNode) error {
+	line, err := r.renderColumn(column)
+	if err != nil {
+		return fmt.Errorf("clickhouse: modify column on %q: %w", table, err)
+	}
+	r.w.WriteLinef("ALTER TABLE %s DROP COLUMN %s;", table, column.Name)
+	r.w.WriteLinef("ALTER TABLE %s ADD COLUMN %s;", table, strings.TrimPrefix(line, "  "))
+	return nil
+}
+
+// removesDefault reports whether a modification takes away the default the
+// column had, so the plan has to say REMOVE DEFAULT. clause is the DEFAULT
+// clause the modification writes, empty when the declaration has none.
+//
+// A MODIFY COLUMN that names only a type keeps the column's default: measured
+// on 24.10 and 26.9, `MODIFY COLUMN n Int64` on `n Int32 DEFAULT 5` leaves
+// `DEFAULT 5`, and a migration that meant to remove it reported success
+// (stokaro/ptah#4030). REMOVE DEFAULT is written before the type change and as
+// a statement of its own, for reasons measured on both lines:
+//   - a type the old default cannot take fails while the default is there:
+//     `MODIFY COLUMN s Int32` on `s String DEFAULT 'abc'` answers `Cannot parse
+//     string 'abc' as Int32` and changes nothing, and the same change after
+//     REMOVE DEFAULT is accepted;
+//   - both actions in one ALTER keep the default on 24.10, with no error, while
+//     26.9 removes it.
+//
+// The MODIFY COLUMN that restates the declared type still follows, even when
+// the default is the only change the comparison recorded. The recorded changes
+// are not a complete account of the type here: measured on 26.9, a live column
+// `d Int32 DEFAULT 5` compared with a declared `d Int64` records only the
+// default, so a plan that skipped the restatement would drop the type change
+// the old statement made in passing. Restating a type the column already has
+// is accepted and changes nothing.
+//
+// The previous default has to be known to exist, since REMOVE DEFAULT on a
+// column without one answers `Column n doesn't have DEFAULT, cannot remove it`.
+// A computed column is left alone: its expression is MATERIALIZED or ALIAS to
+// the server, which refuses REMOVE DEFAULT for one, and the comparison does not
+// plan a computed column becoming a plain one.
+func removesDefault(op *ast.ModifyColumnOperation, clause string) bool {
+	return op.HasPreviousDefault && op.PreviousDefault != "" && clause == "" &&
+		op.Column.GeneratedExpression == ""
 }
 
 // renderAddSkippingIndex emits the ClickHouse-native

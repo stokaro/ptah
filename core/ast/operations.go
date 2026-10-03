@@ -75,20 +75,21 @@ type ModifyColumnOperation struct {
 	// PreviousNullable is the best-known existing database nullability before
 	// the modification. Safety analysis uses it to distinguish DROP NOT NULL
 	// from SET NOT NULL. Most renderers ignore it. Oracle's MODIFY repeats a
-	// nullability clause only when this says it changed, and the ClickHouse
-	// renderer refuses a nullable column made non-nullable without a default
-	// where the target refuses that statement.
+	// nullability clause only when this says it changed. The ClickHouse
+	// renderer fills the NULL rows of a nullable column made non-nullable from
+	// its default first, refuses one without a default, and adds a MATERIALIZED
+	// one back rather than modifying it (stokaro/ptah#4025).
 	PreviousNullable bool
 	// HasPreviousNullable reports whether PreviousNullable was populated.
 	HasPreviousNullable bool
 	// PreviousDefault is the best-known existing default before the
 	// modification, empty when the column had none.
 	//
-	// Like PreviousNullable it is metadata most renderers ignore, and for the
-	// same reason the Oracle renderer cannot: MODIFY there states the whole new
-	// column definition, so a cleared default has to be spelled DEFAULT NULL --
-	// omitting it leaves the old default in place and the migration reports
-	// success (stokaro/ptah#1885).
+	// Like PreviousNullable it is metadata most renderers ignore. The Oracle
+	// and ClickHouse renderers cannot, because a MODIFY that omits the default
+	// leaves the old one in place and the migration reports success: Oracle
+	// spells a cleared default DEFAULT NULL (stokaro/ptah#1885), and ClickHouse
+	// writes REMOVE DEFAULT (stokaro/ptah#4030).
 	PreviousDefault string
 	// HasPreviousDefault reports whether PreviousDefault was populated.
 	HasPreviousDefault bool

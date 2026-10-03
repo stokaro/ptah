@@ -28,8 +28,11 @@ func modifyColumn(column *ast.ColumnNode, previousNullable bool) *ast.AlterTable
 // `Please specify DEFAULT expression in ALTER MODIFY COLUMN statement`, even on
 // an empty table, and a default the declaration changed is never set: a MODIFY
 // COLUMN naming only a type keeps the default the column had, measured on 24.10
-// and 26.9 (stokaro/ptah#4020). With it, 26.9 accepts the change and fills the
-// NULL rows with the default.
+// and 26.9 (stokaro/ptah#4020).
+//
+// A nullable column made NOT NULL has its NULL rows filled from the default
+// first, on every line: 24.10 and 25.8 accept the MODIFY COLUMN and then fail
+// on a NULL row, which leaves the table unreadable (stokaro/ptah#4025).
 func TestRenderModifyColumn_HappyPath(t *testing.T) {
 	tests := []struct {
 		name string
@@ -38,23 +41,25 @@ func TestRenderModifyColumn_HappyPath(t *testing.T) {
 		want string
 	}{
 		{
-			name: "NOT NULL with a literal default, where the key does not hold",
+			name: "NOT NULL with a literal default, on 24.11 and above",
 			caps: capability.ClickHouse2411(),
 			node: modifyColumn(ast.NewColumn("n", "INTEGER").SetNotNull().SetDefault("7"), true),
-			want: "ALTER TABLE asn MODIFY COLUMN n Int32 DEFAULT '7';\n",
+			want: "ALTER TABLE asn UPDATE n = '7' WHERE n IS NULL SETTINGS mutations_sync = 2;\n" +
+				"ALTER TABLE asn MODIFY COLUMN n Int32 DEFAULT '7';\n",
 		},
 		{
-			name: "NOT NULL with an expression default, where the key does not hold",
+			name: "NOT NULL with an expression default, on 24.11 and above",
 			caps: capability.ClickHouse2411(),
 			node: modifyColumn(ast.NewColumn("n", "INTEGER").SetNotNull().SetDefaultExpression("toInt32(40 + 2)"), true),
-			want: "ALTER TABLE asn MODIFY COLUMN n Int32 DEFAULT toInt32(40 + 2);\n",
+			want: "ALTER TABLE asn UPDATE n = toInt32(40 + 2) WHERE n IS NULL SETTINGS mutations_sync = 2;\n" +
+				"ALTER TABLE asn MODIFY COLUMN n Int32 DEFAULT toInt32(40 + 2);\n",
 		},
 		{
-			// 24.10 accepts the statement without a DEFAULT.
-			name: "NOT NULL without a default, where the key holds",
+			name: "NOT NULL with a literal default, on 24.10",
 			caps: capability.ClickHouse24(),
-			node: modifyColumn(ast.NewColumn("n", "INTEGER").SetNotNull(), true),
-			want: "ALTER TABLE asn MODIFY COLUMN n Int32;\n",
+			node: modifyColumn(ast.NewColumn("n", "INTEGER").SetNotNull().SetDefault("7"), true),
+			want: "ALTER TABLE asn UPDATE n = '7' WHERE n IS NULL SETTINGS mutations_sync = 2;\n" +
+				"ALTER TABLE asn MODIFY COLUMN n Int32 DEFAULT '7';\n",
 		},
 		{
 			name: "a default set on a column that is already NOT NULL",
@@ -83,12 +88,20 @@ func TestRenderModifyColumn_HappyPath(t *testing.T) {
 			want: "ALTER TABLE asn MODIFY COLUMN n Int32;\n",
 		},
 		{
-			// The server does not refuse this statement: MATERIALIZED is a
-			// default kind to it. What the conversion does to the rows is
-			// stokaro/ptah#4025.
-			name: "a computed column made NOT NULL, where the key does not hold",
+			// MODIFY COLUMN fails its mutation for one on 26.3 and later and
+			// leaves the column unreadable, so the column is added back as
+			// declared (stokaro/ptah#4025).
+			name: "a MATERIALIZED column made NOT NULL",
 			caps: capability.ClickHouse2411(),
 			node: modifyColumn(ast.NewColumn("n", "INTEGER").SetNotNull().SetGenerated("a + 1", "MATERIALIZED"), true),
+			want: "ALTER TABLE asn DROP COLUMN n;\nALTER TABLE asn ADD COLUMN n Int32 MATERIALIZED a + 1;\n",
+		},
+		{
+			// An ALIAS column stores nothing, and MODIFY COLUMN changes its
+			// type on every line measured.
+			name: "an ALIAS column made NOT NULL",
+			caps: capability.ClickHouse2411(),
+			node: modifyColumn(ast.NewColumn("n", "INTEGER").SetNotNull().SetGenerated("a + 1", "ALIAS"), true),
 			want: "ALTER TABLE asn MODIFY COLUMN n Int32;\n",
 		},
 	}
@@ -106,38 +119,34 @@ func TestRenderModifyColumn_HappyPath(t *testing.T) {
 }
 
 // A nullable column made NOT NULL with no default to fill its NULL rows from
-// is refused where the target has no statement for it, before any statement is
-// written. 26.3 and 26.9 refuse MODIFY COLUMN from Nullable(Int32) to Int32
-// without a DEFAULT, and a value the type suggests, such as 0, is data nobody
-// wrote (stokaro/ptah#4020).
+// is refused on every line, before any statement is written. 26.3 and later
+// refuse MODIFY COLUMN from Nullable(Int32) to Int32 without a DEFAULT, and
+// 24.10 and 25.8 accept it and then fail on a row holding NULL, which leaves
+// the table unreadable (stokaro/ptah#4020, stokaro/ptah#4025). A value the type
+// suggests, such as 0, is data nobody wrote.
 func TestRenderModifyColumn_FailurePath(t *testing.T) {
-	c := qt.New(t)
+	tests := []struct {
+		name string
+		caps capability.Capabilities
+	}{
+		{name: "24.11 and above", caps: capability.ClickHouse2411()},
+		{name: "24.10", caps: capability.ClickHouse24()},
+		{name: "a set that claims the key", caps: capability.ClickHouse2411().With(capability.AlterColumnSetNotNull, true)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 
-	got, err := clickhouse.NewWithCapabilities(capability.ClickHouse2411()).Render(
-		modifyColumn(ast.NewColumn("n", "INTEGER").SetNotNull(), true),
-	)
+			got, err := clickhouse.NewWithCapabilities(test.caps).Render(
+				modifyColumn(ast.NewColumn("n", "INTEGER").SetNotNull(), true),
+			)
 
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, "column asn.n cannot be made NOT NULL here: this target refuses MODIFY COLUMN to Int32"+
-		" unless the statement names a DEFAULT for the NULL rows to take, and the column"+
-		" has no default to name; give the column a default")
-	c.Assert(got, qt.Equals, "")
-}
-
-// The refusal is the capability's, not the dialect's: the same column renders
-// on a set that carries the key, and is refused on one that does not.
-func TestRenderModifyColumn_RefusalFollowsTheKey(t *testing.T) {
-	c := qt.New(t)
-	node := modifyColumn(ast.NewColumn("n", "INTEGER").SetNotNull(), true)
-
-	with, withErr := clickhouse.NewWithCapabilities(
-		capability.ClickHouse2411().With(capability.AlterColumnSetNotNull, true),
-	).Render(node)
-	_, withoutErr := clickhouse.NewWithCapabilities(
-		capability.ClickHouse24().With(capability.AlterColumnSetNotNull, false),
-	).Render(node)
-
-	c.Assert(withErr, qt.IsNil)
-	c.Assert(with, qt.Equals, "ALTER TABLE asn MODIFY COLUMN n Int32;\n")
-	c.Assert(withoutErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, "column asn.n cannot be made NOT NULL without a default: ClickHouse 26.3"+
+				" and later refuse MODIFY COLUMN to Int32 unless it names a DEFAULT, and 24.10 and 25.8 accept it"+
+				" and then fail on a row holding NULL, which leaves the table unreadable; give the column a"+
+				" default for its NULL rows to take")
+			c.Assert(got, qt.Equals, "")
+		})
+	}
 }

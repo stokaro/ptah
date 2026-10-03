@@ -25,9 +25,10 @@ import (
 //
 // Only the engine can say whether the planned statement runs. 26.3 and 26.9
 // refuse MODIFY COLUMN from Nullable(Int32) to Int32 unless it names a DEFAULT,
-// and the server CI runs is 26.9, so a plan without the DEFAULT fails here at
-// the ALTER. The capability set comes from the connection, as it does for the
-// command.
+// and 24.10 and 25.8 accept it and then fail on a NULL row, leaving the table
+// unreadable (stokaro/ptah#4025). The plan fills the NULL rows first, so the
+// same assertions hold on every line; CI runs them on 26.9. The capability set
+// comes from the connection, as it does for the command.
 
 // setNotNullDatabase creates a database for one test and drops it afterwards,
 // and returns a connection to it. The server is shared, and a plan compares the
@@ -105,9 +106,10 @@ func asnState(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnection) [
 	return state
 }
 
-// With a declared default the plan names it, the server accepts the change,
-// and the NULL row takes the default. A second plan finds nothing to do, so
-// the default the server stored reads back as the one declared.
+// With a declared default the plan fills the NULL row from it, then names it in
+// the MODIFY COLUMN. The server accepts the change, the table stays readable,
+// and the NULL row holds the default. A second plan finds nothing to do, so the
+// default the server stored reads back as the one declared.
 func TestSetNotNullWithADefault_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
@@ -118,7 +120,10 @@ func TestSetNotNullWithADefault_HappyPath(t *testing.T) {
 
 	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired})
 	c.Assert(err, qt.IsNil)
-	c.Assert(plan.Statements(), qt.DeepEquals, []string{"ALTER TABLE asn MODIFY COLUMN n Int32 DEFAULT '7'"})
+	c.Assert(plan.Statements(), qt.DeepEquals, []string{
+		"ALTER TABLE asn UPDATE n = '7' WHERE n IS NULL SETTINGS mutations_sync = 2",
+		"ALTER TABLE asn MODIFY COLUMN n Int32 DEFAULT '7'",
+	})
 	for _, statement := range plan.Statements() {
 		_, err := conn.ExecContext(ctx, statement)
 		c.Assert(err, qt.IsNil, qt.Commentf("statement: %s", statement))
@@ -130,10 +135,10 @@ func TestSetNotNullWithADefault_HappyPath(t *testing.T) {
 	c.Assert(again.Statements(), qt.HasLen, 0)
 }
 
-// Without a declared default there is no statement this server takes, so the
-// plan is refused before anything runs, and the column and its NULL row stay as
-// they were. The statement without a DEFAULT, `MODIFY COLUMN n Int32`, fails at
-// the ALTER on this server.
+// Without a declared default the plan is refused before anything runs, and the
+// column and its NULL row stay as they were. The statement without a DEFAULT,
+// `MODIFY COLUMN n Int32`, is refused by 26.3 and later, and breaks the table
+// on 24.10 and 25.8.
 func TestSetNotNullWithoutADefault_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
@@ -146,7 +151,43 @@ func TestSetNotNullWithoutADefault_FailurePath(t *testing.T) {
 	})
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `(?s).*column asn\.n cannot be made NOT NULL here: .*`)
+	c.Assert(err, qt.ErrorMatches, `(?s).*column asn\.n cannot be made NOT NULL without a default: .*`)
 	c.Assert(plan.Statements(), qt.HasLen, 0)
 	c.Assert(asnState(c, ctx, conn), qt.DeepEquals, []string{"n Nullable(Int32)", "1=NULL", "2=5"})
+}
+
+// A nullable MATERIALIZED column made NOT NULL is dropped and added back as
+// declared. MODIFY COLUMN fails its mutation for one on 26.3 and later, with
+// or without the expression restated, and leaves the column unreadable. After
+// the plan the column reads back the values its expression computes for the
+// existing rows, and a second plan finds nothing to do.
+func TestMaterializedColumnMadeNotNull_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
+	defer cancel()
+	conn := setNotNullDatabase(c, ctx)
+	for _, statement := range []string{
+		"CREATE TABLE asn (id Int32, n Nullable(Int32) MATERIALIZED id + 1) ENGINE = MergeTree ORDER BY id",
+		"INSERT INTO asn (id) VALUES (1), (2)",
+	} {
+		_, err := conn.ExecContext(ctx, statement)
+		c.Assert(err, qt.IsNil, qt.Commentf("statement: %s", statement))
+	}
+	desired := declaredAsn(schemamodel.Field{Type: "INTEGER", GeneratedExpression: "id + 1", GeneratedKind: "MATERIALIZED"})
+
+	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired})
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.Statements(), qt.DeepEquals, []string{
+		"ALTER TABLE asn DROP COLUMN n",
+		"ALTER TABLE asn ADD COLUMN n Int32 MATERIALIZED id + 1",
+	})
+	for _, statement := range plan.Statements() {
+		_, err := conn.ExecContext(ctx, statement)
+		c.Assert(err, qt.IsNil, qt.Commentf("statement: %s", statement))
+	}
+
+	c.Assert(asnState(c, ctx, conn), qt.DeepEquals, []string{"n Int32", "1=2", "2=3"})
+	again, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired})
+	c.Assert(err, qt.IsNil)
+	c.Assert(again.Statements(), qt.HasLen, 0)
 }
