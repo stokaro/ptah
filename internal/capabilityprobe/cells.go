@@ -671,9 +671,9 @@ var Cells = []Cell{
 	// dependency bump rather than a release a vendor supports.
 	//
 	// The refinement is the ladder's, not the container's: the resolver reads
-	// the version and picks SQLite324 below the 3.25 rename step and SQLite3
-	// above it, which is what lets an observation be credited to the line it
-	// was taken on.
+	// the version and picks SQLite324 below the 3.25 rename step, SQLite352
+	// below the 3.53 NOT NULL step and SQLite3 above it, which is what lets an
+	// observation be credited to the line it was taken on.
 	{
 		Dialect: platform.SQLite, Line: "3",
 		Preset: capability.SQLite3, PresetName: "SQLite3",
@@ -728,6 +728,9 @@ var PresetsWithoutCell = map[string]string{
 	"SQLite324": "describes SQLite below 3.25, which has no ALTER TABLE ... RENAME COLUMN. The engine " +
 		"Ptah links is pinned far above that floor, so no cell can name this preset: it exists for an " +
 		"offline render pinned with --server-version at an older consumer (stokaro/ptah#916)",
+	"SQLite352": "describes SQLite 3.25 through 3.52, which has no ALTER TABLE ... ALTER COLUMN ... SET NOT " +
+		"NULL or DROP NOT NULL. The engine Ptah links is pinned above that step, so no cell can name this " +
+		"preset: it exists for an offline render pinned with --server-version at an older consumer",
 	"MariaDBLegacy": "describes MariaDB before 10.2, whose newest release left support in 2022; it is the " +
 		"conservative floor ForServerVersion assigns to such a server rather than a line anybody runs",
 }

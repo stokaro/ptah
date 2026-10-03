@@ -537,7 +537,44 @@ func prepareCreateTableNode(
 	if err := ensureASTForeignKeyTableEngine(dialect, &cloned); err != nil {
 		return nil, err
 	}
+	if err := requirePrimaryKey(dialect, caps, &cloned); err != nil {
+		return nil, err
+	}
 	return &cloned, nil
+}
+
+// requirePrimaryKey refuses a keyless table on a target that refuses one
+// itself. Without it the render succeeds and the server answers at apply time,
+// after the statements before this one have already run: YDB says `Primary
+// key is required for ydb tables.`
+func requirePrimaryKey(dialect string, caps capability.Capabilities, node *ast.CreateTableNode) error {
+	if !caps.Has(capability.PrimaryKeyRequired) || createTableHasPrimaryKey(node) {
+		return nil
+	}
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: "table without a primary key",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf(
+			"%s requires a primary key and table %q declares none",
+			platform.NormalizeDialect(dialect),
+			node.Name,
+		),
+	}
+}
+
+func createTableHasPrimaryKey(node *ast.CreateTableNode) bool {
+	for _, column := range node.Columns {
+		if column.Primary {
+			return true
+		}
+	}
+	for _, constraint := range node.Constraints {
+		if constraint.Type == ast.PrimaryKeyConstraint {
+			return true
+		}
+	}
+	return false
 }
 
 func ensureASTForeignKeyTableEngine(dialect string, node *ast.CreateTableNode) error {
@@ -2034,9 +2071,13 @@ func validateDeclaredIndexIncludes(
 	return nil
 }
 
-// indexIncludeTargets names the dialects that attach an INCLUDE payload to an
-// index. It is the index twin of constraintIncludeTargets, and the two lists
-// disagree on two dialects rather than being one list read twice.
+// indexIncludeTargets names the default dialects whose preset carries
+// [capability.IndexCoveringColumns], so a refusal can say where the payload is
+// rendered. It does not decide anything: validateIndexInclude reads the
+// caller's own capability set, so a server resolved onto another release line
+// is judged by what that line has. It is the index twin of
+// constraintIncludeTargets, and the two disagree on two dialects rather than
+// being one list read twice.
 //
 // CockroachDB spells the payload STORING and takes INCLUDE as a synonym for it,
 // which a refusal here would deny. Measured on v26.3.1, one
@@ -2060,12 +2101,13 @@ func validateDeclaredIndexIncludes(
 // Spanner is the reverse pair: allowed here and refused for a constraint, in
 // the server's own words. See constraintIncludeTargets for that half.
 func indexIncludeTargets() []string {
-	return []string{
-		platform.Postgres,
-		platform.YugabyteDB,
-		platform.CockroachDB,
-		platform.Spanner,
+	var targets []string
+	for _, dialect := range capability.DefaultDialects() {
+		if capability.ForDialect(dialect).Has(capability.IndexCoveringColumns) {
+			targets = append(targets, dialect)
+		}
 	}
+	return targets
 }
 
 func validateIndexInclude(
@@ -2101,7 +2143,7 @@ func validateIndexInclude(
 	}
 
 	normalizedDialect := platform.NormalizeDialect(dialect)
-	if !slices.Contains(indexIncludeTargets(), normalizedDialect) {
+	if !caps.Has(capability.IndexCoveringColumns) {
 		return &ptaherr.CapabilityError{
 			Dialect: dialect,
 			Feature: "index INCLUDE columns",
@@ -2140,6 +2182,11 @@ func validateIndexInclude(
 	case platform.Spanner:
 		allowed = method == ""
 		supportedMethods = "the default access method"
+	default:
+		// A target whose capability set carries the key and has no arm here
+		// is refused rather than waved through: which access methods take a
+		// payload is a per-engine fact this switch has to be told.
+		supportedMethods = "an access method this renderer knows for it"
 	}
 	if allowed {
 		return nil

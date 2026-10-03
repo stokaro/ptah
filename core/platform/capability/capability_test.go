@@ -687,13 +687,15 @@ func TestResolveServerVersionReportsSaturation(t *testing.T) {
 		{"clickhouse on the line below the newest", "clickhouse", capabilityline.ClickHouse268 + ".2.7", capability.ClickHouse2411(), true, false, capabilityline.ClickHouse269},
 		{"clickhouse on its newest measured line", "clickhouse", capabilityline.ClickHouse269 + ".1.1629", capability.ClickHouse2411(), true, false, capabilityline.ClickHouse269},
 		{"clickhouse past the newest measured line", "clickhouse", "27.1.1.1", capability.ClickHouse2411(), false, true, capabilityline.ClickHouse269},
-		// SQLite has a ladder now, of one step at 3.25. It reports
-		// VersionSpecific because a version DID select an arm, and no newest
-		// measured line because the matrix declares one SQLite cell and it has
-		// no container to measure (stokaro/ptah#916).
-		{"sqlite above the step", "sqlite", "3.53.0", capability.SQLite3(), true, false, ""},
-		{"sqlite at the step", "sqlite", "3.25.0", capability.SQLite3(), true, false, ""},
-		{"sqlite below the step", "sqlite", "3.24.0", capability.SQLite324(), true, false, ""},
+		// SQLite has a ladder of two steps, the rename at 3.25 and ALTER
+		// COLUMN ... NOT NULL at 3.53. It reports VersionSpecific because a
+		// version DID select an arm, and no newest measured line because the
+		// matrix declares one SQLite cell and it has no container to measure
+		// (stokaro/ptah#916).
+		{"sqlite at the NOT NULL step", "sqlite", "3.53.0", capability.SQLite3(), true, false, ""},
+		{"sqlite below the NOT NULL step", "sqlite", "3.52.9", capability.SQLite352(), true, false, ""},
+		{"sqlite at the rename step", "sqlite", "3.25.0", capability.SQLite352(), true, false, ""},
+		{"sqlite below the rename step", "sqlite", "3.24.0", capability.SQLite324(), true, false, ""},
 		// SQL Server has a ladder of one arm: the three declared lines answered
 		// the capability probe identically, so the version selects which line
 		// an observation belongs to rather than which set it receives. The
