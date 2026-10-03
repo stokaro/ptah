@@ -27,6 +27,7 @@ import (
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/cli/internal/migratelock"
+	"ptah.run/internal/cli/internal/migratetimeout"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/deploymentreport"
@@ -528,6 +529,16 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	// Before any migrator call: reading the status initializes the revision
 	// table, and a decision taken after the first write answers nothing.
 	if err := lockRequest.DecideConnected(conn.Info().Dialect); err != nil {
+		return err
+	}
+	timeoutRequest := migratetimeout.Request{
+		Cmd:                 cmd,
+		LockFlag:            lockTimeoutFlag,
+		StatementFlag:       statementTimeoutFlag,
+		LockFromConfig:      projectCfg.StringValue(projectconfig.StringMigrationLockTimeout).Present,
+		StatementFromConfig: projectCfg.StringValue(projectconfig.StringMigrationStatementTimeout).Present,
+	}
+	if err := timeoutRequest.Decide(conn.Info().Dialect, conn.Info().Capabilities, timeouts); err != nil {
 		return err
 	}
 

@@ -266,6 +266,51 @@ func TestNewRootCommand_PTAHLockTimeoutKeepsMigrationsUpWorking(t *testing.T) {
 	c.Assert(stderr, qt.Not(qt.Contains), "schema apply lock")
 }
 
+// TestNewRootCommand_TypedMigrationTimeoutsRefuseATargetWithoutThem is the
+// versioned commands' answer to a run-wide timeout the target cannot carry:
+// typed, it is refused by name once the command has connected, even when no
+// migration is pending, where the migrator alone would accept it in silence.
+// The exported variable keeps the run working, which the test above holds.
+func TestNewRootCommand_TypedMigrationTimeoutsRefuseATargetWithoutThem(t *testing.T) {
+	tests := []struct {
+		name    string
+		verb    []string
+		wantErr string
+	}{
+		{
+			name: "up",
+			verb: []string{"migrations", "up", "--dry-run"},
+			wantErr: `--statement-timeout sets a timeout for every migration, and dialect "sqlite" has no lock or ` +
+				`statement timeout Ptah can set and restore around a migration. Remove --statement-timeout to run without one`,
+		},
+		{
+			name: "down",
+			verb: []string{"migrations", "down", "--dry-run", "--confirm"},
+			wantErr: `--statement-timeout sets a timeout for every migration, and dialect "sqlite" has no lock or ` +
+				`statement timeout Ptah can set and restore around a migration. Remove --statement-timeout to run without one`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			t.Setenv("PTAH_LOCK_TIMEOUT", "")
+			t.Setenv("PTAH_STATEMENT_TIMEOUT", "")
+			dir := t.TempDir()
+			migrationsDir := filepath.Join(dir, "migrations")
+			c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
+
+			args := append(append([]string{}, test.verb...),
+				"--db-url", atlasurl.SQLiteURLFromPath(filepath.Join(dir, "versioned.db")),
+				"--migrations-dir", migrationsDir,
+				"--statement-timeout", "30s",
+			)
+			_, _, err := executeRootCommand(args...)
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+		})
+	}
+}
+
 // TestNewRootCommand_TypedLockTimeoutRefusesUnlockedDialect is the refusal seen
 // through the tree that installs the environment binding: a flag the operator
 // typed still refuses there, so scoping the rule to the command line did not
