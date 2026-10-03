@@ -499,10 +499,12 @@ var launchers = map[string]launcher{
 			"--env", "YDB_USE_IN_MEMORY_PDISKS=true",
 		},
 		// local-ydb serves the one database /local. The monitoring parameter
-		// makes the connection read the cluster's feature flags, so every run
-		// compares the server with the set those flags refine the preset
-		// into, and a flag whose default stopped agreeing with the line's
-		// preset turns the cell red.
+		// makes the connection read the cluster's feature flags, which the
+		// container leaves at the line's defaults. The rows compare the
+		// server with the set those flags refine the preset into, and
+		// Report.Err fails the cell on any key where that set and the preset
+		// disagree, so a default that moved in a new build turns the cell red
+		// instead of being measured in the preset's place.
 		url: "ydb://localhost:2136/local?monitoring=http://localhost:8765",
 		suiteSkip: "the integration runner has no YDB target yet; the YDB live tests run in the tagged " +
 			"integration contour against a 26.2 server, and this cell adds the capability-probe half " +

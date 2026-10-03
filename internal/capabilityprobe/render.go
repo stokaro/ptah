@@ -78,6 +78,7 @@ func writeHeader(w io.Writer, r *Report) {
 	}
 	fmt.Fprintf(w, "  resolution   version-specific=%t saturated=%t newest-measured=%q\n",
 		r.Resolution.VersionSpecific, r.Resolution.Saturated, r.Resolution.NewestMeasured)
+	writeConnectionDeltas(w, r)
 	writeSessionDeltas(w, r)
 	if r.Namespace != "" {
 		fmt.Fprintf(w, "  namespace    %s\n", r.Namespace)
@@ -97,6 +98,21 @@ func presetOrNone(cell Cell) string {
 		return "none"
 	}
 	return cell.PresetName
+}
+
+// writeConnectionDeltas names the keys the connection changed from the version
+// resolution: TimescaleDB's keys where the extension is installed, and on YDB
+// the keys the cluster's feature flags decide differently from the preset.
+func writeConnectionDeltas(w io.Writer, r *Report) {
+	if len(r.ConnectionDeltas) == 0 {
+		fmt.Fprintf(w, "  connection   preset unchanged by what the connection read\n")
+		return
+	}
+	names := make([]string, 0, len(r.ConnectionDeltas))
+	for _, key := range r.ConnectionDeltas {
+		names = append(names, fmt.Sprintf("%s=%t", key, r.ConnectionCapabilities.Has(key)))
+	}
+	fmt.Fprintf(w, "  connection   the connection changed %s\n", strings.Join(names, ", "))
 }
 
 // writeSessionDeltas names the keys the pinned session changed. MySQL 8.4+

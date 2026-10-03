@@ -1299,3 +1299,98 @@ func TestReportErr_AnUnderstatementIsAClaimAboutTheServerToo(t *testing.T) {
 		})
 	}
 }
+
+// ydb262Cell is the YDB 26.2 cell as cells.go declares it, with the fields the
+// report reads.
+var ydb262Cell = Cell{
+	Dialect: platform.YDB, Line: "26.2",
+	Preset: capability.YDB262, PresetName: "YDB262",
+	Refinement: RefinedByVersion,
+}
+
+var mysql84Cell = Cell{
+	Dialect: platform.MySQL, Line: "8.4",
+	Preset: capability.MySQL84, PresetName: "MySQL84",
+	Refinement: RefinedByVersion,
+}
+
+// refinedReport builds a fully decided run on cell whose connection resolved
+// connection and whose pinned session planned with session, against a server
+// that does exactly what the session set says -- the shape Run produces when
+// every row agrees.
+func refinedReport(cell Cell, connection, session capability.Capabilities) *Report {
+	report := reportOn(cell, true, session)
+	report.Planned = true
+	report.Control = Attempt{Statement: nonsenseControl}
+	report.Resolution.Capabilities = cell.Preset()
+	report.Resolution.VersionSpecific = true
+	report.ConnectionCapabilities = connection
+	report.ConnectionDeltas = deltas(report.Resolution.Capabilities, connection)
+	report.SessionDeltas = deltas(connection, session)
+
+	observations := make(map[capability.Capability]observation)
+	for _, key := range capability.All() {
+		observations[key] = decided(session.Has(key))
+	}
+	report.Rows = assemble(report, observations, nil)
+	return report
+}
+
+// What the connection reads about a server only fails a cell where it moves a
+// YDB cluster's set off the preset. A TimescaleDB extension and a MySQL session
+// variable each change the set Ptah plans with and say nothing about the line,
+// so a run that measured either still passes.
+func TestReportErr_ConnectionRefinement_HappyPath(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		cell       Cell
+		connection capability.Capabilities
+		session    capability.Capabilities
+	}{{
+		name:       "YDB flags at the line's defaults",
+		cell:       ydb262Cell,
+		connection: capability.YDB262(),
+		session:    capability.YDB262(),
+	}, {
+		name: "a TimescaleDB extension on a PostgreSQL line",
+		cell: measuredCell,
+		connection: capability.Postgres17().
+			With(capability.Hypertables, true).
+			With(capability.ContinuousAggregates, true),
+		session: capability.Postgres17().
+			With(capability.Hypertables, true).
+			With(capability.ContinuousAggregates, true),
+	}, {
+		name:       "a MySQL session that reads its foreign-key policy from a variable",
+		cell:       mysql84Cell,
+		connection: capability.MySQL84(),
+		session: capability.MySQL84().With(
+			capability.ForeignKeysRequireUniqueReference,
+			!capability.MySQL84().Has(capability.ForeignKeysRequireUniqueReference),
+		),
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			report := refinedReport(tc.cell, tc.connection, tc.session)
+
+			c.Assert(report.Err(), qt.IsNil)
+		})
+	}
+}
+
+// A 26.2 cluster whose flags say EnableTableDatetime64=false refuses a 64-bit
+// date column, and the connection plans without one, so every row agrees. The
+// preset says the line has them, and nothing in the run measured that: the
+// cell fails on the key the flags moved.
+func TestReportErr_ConnectionRefinement_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	flagged := capability.YDB262().With(capability.WideDateTimeTypes, false)
+
+	report := refinedReport(ydb262Cell, flagged, flagged)
+
+	c.Assert(report.Mismatches(), qt.HasLen, 0)
+	c.Assert(report.Err(), qt.ErrorMatches, `wide_date_time_types: the cluster's feature flags make it false `+
+		`where preset YDB262 says true; the rows compared the server with the flags' set, so this run `+
+		`measured nothing about the YDB262 preset for that key`)
+}

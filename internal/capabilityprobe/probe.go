@@ -98,14 +98,22 @@ type Report struct {
 	// Resolution is what capability.ResolveServerVersion answered for the
 	// banner.
 	Resolution capability.VersionResolution
+	// ConnectionCapabilities is the set the connection resolved before any
+	// session was pinned: the version resolution, refined by what the
+	// connection reads about the server -- an installed TimescaleDB extension
+	// on PostgreSQL, the cluster's feature flags on YDB.
+	ConnectionCapabilities capability.Capabilities
+	// ConnectionDeltas names the keys where ConnectionCapabilities differs
+	// from the version resolution.
+	ConnectionDeltas []capability.Capability
 	// SessionCapabilities is the set Ptah actually plans with once a physical
-	// session is pinned. It can differ from the version resolution: MySQL 8.4+
+	// session is pinned. It can differ from ConnectionCapabilities: MySQL 8.4+
 	// reads its foreign-key reference policy from a session variable, so the
 	// same version answers differently depending on how the server is
 	// configured.
 	SessionCapabilities capability.Capabilities
-	// SessionDeltas names the keys where SessionCapabilities differs from the
-	// version resolution.
+	// SessionDeltas names the keys where SessionCapabilities differs from
+	// ConnectionCapabilities.
 	SessionDeltas []capability.Capability
 	// Rows is one entry per registered capability, sorted by key.
 	Rows []Row
@@ -273,6 +281,36 @@ func (r *Report) cellProblems() []error {
 			"matrix cell %s names preset %s, but the resolver handed this server a different set",
 			r.Cell, r.Cell.PresetName))
 	}
+	problems = append(problems, r.flagProblems()...)
+	return problems
+}
+
+// flagProblems reports every key where a YDB cluster's feature flags moved the
+// connection's set away from the cell's preset.
+//
+// A YDB preset describes a release line with its default flags, and the
+// connection refines it by the flags the cluster reports. The rows compare the
+// server with that refined set, so a cluster whose flags disagree with the
+// preset agrees with every row while the preset goes unmeasured: a flag whose
+// default changed in a new build, or a container started off its defaults,
+// would leave the cell certified for a set nobody compared with the server.
+//
+// It reads only YDB. A TimescaleDB extension adds keys on a PostgreSQL server
+// that no PostgreSQL preset claims, because the extension is the database's
+// and not the line's, and MySQL's session deltas belong to a session rather
+// than to the connection; neither says anything about the preset.
+func (r *Report) flagProblems() []error {
+	if r.Dialect != platform.YDB {
+		return nil
+	}
+	preset := r.Cell.Preset()
+	var problems []error
+	for _, key := range deltas(preset, r.ConnectionCapabilities) {
+		problems = append(problems, fmt.Errorf(
+			"%s: the cluster's feature flags make it %t where preset %s says %t; the rows compared the server "+
+				"with the flags' set, so this run measured nothing about the %s preset for that key",
+			key, r.ConnectionCapabilities.Has(key), r.Cell.PresetName, preset.Has(key), r.Cell.PresetName))
+	}
 	return problems
 }
 
@@ -325,10 +363,12 @@ func Run(ctx context.Context, dbURL string) (*Report, error) {
 	}
 	report.Cell, report.Matched = CellFor(report.Dialect, report.Version)
 	report.Resolution = capability.ResolveServerVersion(report.Dialect, report.Banner)
+	report.ConnectionCapabilities = conn.Info().Capabilities
+	report.ConnectionDeltas = deltas(report.Resolution.Capabilities, report.ConnectionCapabilities)
 
 	if err := conn.WithSession(ctx, func(pinned *dbschema.DatabaseConnection) error {
 		report.SessionCapabilities = pinned.Info().Capabilities
-		report.SessionDeltas = deltas(report.Resolution.Capabilities, report.SessionCapabilities)
+		report.SessionDeltas = deltas(report.ConnectionCapabilities, report.SessionCapabilities)
 		return measure(ctx, measuredOn(report.Dialect, conn, pinned), report)
 	}); err != nil {
 		return nil, err
