@@ -171,6 +171,15 @@ up file:
 DROP TABLE IF EXISTS "users";
 ```
 
+On MySQL and MariaDB, `migrations up` runs a file inside a transaction unless
+the file opts out, and refuses one whose statements it cannot tie to that
+transaction: a trigger, view or routine definition, `LOCK TABLES`, or a
+statement on a table a trigger fires on. `generate` asks the migrator about
+each file it writes, against the database it compared with, and starts a file
+it would refuse with `-- +ptah no_transaction`. The down file of a refused up
+file gets the directive too, because it runs after the up file has changed the
+catalog. Such a file keeps its lock and statement timeouts.
+
 Pass `--report json` to publish a machine-readable safety artifact with each
 generated pair. `generate` writes
 `<version>_<name>.safety.json` beside the up and down files and prints its path

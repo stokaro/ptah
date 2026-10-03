@@ -368,10 +368,49 @@ func TestWithGeneratedTimeoutDirectivesForOptions_SkipsNoTransactionPair(t *test
 	c.Assert(got, qt.Not(qt.Contains), "-- +ptah statement_timeout")
 }
 
+// TestWithGeneratedTimeoutDirectives_TriggerChange covers a file whose
+// statements wait for a lock on an existing table without an ALTER TABLE among
+// them: a trigger swap under LOCK TABLES, and a MariaDB replacement in one
+// statement (stokaro/ptah#4012).
+func TestWithGeneratedTimeoutDirectives_TriggerChange(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		body    string
+	}{
+		{
+			name:    "a trigger swap under LOCK TABLES",
+			dialect: "mysql",
+			body: "LOCK TABLES `mytable` WRITE;\nDROP TRIGGER IF EXISTS `audit`;\n" +
+				"CREATE TRIGGER `audit` AFTER INSERT ON `mytable` FOR EACH ROW SET @x = 1;\nUNLOCK TABLES;",
+		},
+		{
+			name:    "a replacement in one statement",
+			dialect: "mariadb",
+			body:    "CREATE OR REPLACE TRIGGER `audit` AFTER INSERT ON `mytable` FOR EACH ROW SET @x = 1;",
+		},
+		{
+			name:    "a trigger dropped on its own",
+			dialect: "postgres",
+			body:    `DROP TRIGGER IF EXISTS "audit" ON "mytable";`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := withGeneratedTimeoutDirectives("-- Direction: UP\n\n"+test.body, test.dialect)
+
+			c.Assert(got, qt.Equals, "-- Direction: UP\n-- +ptah lock_timeout=3s\n-- +ptah statement_timeout=30s\n\n"+test.body)
+		})
+	}
+}
+
 func TestWithGeneratedTimeoutDirectives_NoAlterTable(t *testing.T) {
 	c := qt.New(t)
 
-	sql := "-- Direction: UP\n\nCREATE TABLE users (id INTEGER PRIMARY KEY);"
+	// A trigger named in a column comment is not a trigger change.
+	sql := "-- Direction: UP\n\nCREATE TABLE users (id INTEGER PRIMARY KEY, note TEXT); -- DROP TRIGGER audit"
 	got := withGeneratedTimeoutDirectives(sql, "postgres")
 
 	c.Assert(got, qt.Equals, sql)

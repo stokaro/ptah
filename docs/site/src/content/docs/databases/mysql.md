@@ -484,7 +484,10 @@ refuses the new body and takes no lock. A rename takes the lock there too.
   as long as the server's `lock_wait_timeout`: a year on MySQL and a day on
   MariaDB.
 - The migrator refuses `CREATE TRIGGER` and `LOCK TABLES` inside a migration
-  transaction, so a migration that changes triggers runs with `--tx-mode none`.
+  transaction. `migrations generate` writes such a file with
+  `-- +ptah no_transaction` and `ptah-compat migrate diff` with
+  `-- atlas:txmode none`, so it applies with the default `--tx-mode`. A file
+  written by hand needs one of them, or `--tx-mode none`.
 - When MySQL refuses the new body of a trigger it replaces by name, the old
   trigger is already gone, the migration is recorded dirty, and the lock ends
   with the session. `migrations up --allow-dirty` takes the lock again before

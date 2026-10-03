@@ -93,7 +93,9 @@ enables diff.concurrent_index.create, new indexes are planned as CREATE INDEX
 CONCURRENTLY; files carrying such statements are tagged with the Atlas
 ` + "`-- atlas:txmode none`" + ` directive, and plans mixing them with
 transactional statements are split into a transactional file followed by a
-concurrent-index file. atlas.sum is updated only after every migration file
+concurrent-index file. On MySQL and MariaDB, a file migrate apply would refuse
+to run inside a transaction, such as one that changes a trigger, is tagged with
+the same directive. atlas.sum is updated only after every migration file
 was written. With --edit the generated migration files open in $VISUAL or
 $EDITOR before the directory checksum is finalized. A docker:// --dev-url
 starts a throwaway PostgreSQL, MySQL or MariaDB container for the run and
@@ -375,6 +377,7 @@ func runAtlasMigrateDiff(
 		Vars:                      schemaVars,
 		IgnoreUnknownHCLNames:     opts.policy.IgnoreUnknownHCLNames(),
 		OmitNullBackfill:          !opts.policy.FillsNullRowsWithDefault(),
+		MarkFileModeRefusals:      !opts.policy.IsStrictCE(),
 		ValidateDesiredSchema:     opts.policy.ValidateDesiredSchema,
 		ValidateInspectedSchema:   opts.policy.ValidateInspectedSchema,
 		ValidateLiveObject:        atlasLiveSchemaObjectValidator(opts.policy),
