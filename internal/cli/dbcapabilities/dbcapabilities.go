@@ -125,28 +125,28 @@ func runCapabilities(cmd *cobra.Command, opts *options) error {
 	return WriteProfile(cmd.OutOrStdout(), opts.format, profile)
 }
 
-// withSessionRefinement asks the server for the capability set a pinned session
-// resolves, and records where it differs from the release line's answer.
+// withSessionRefinement asks the server for the capability set its connection
+// and a pinned session resolve, and records where each differs from the
+// release line's answer.
 //
 // A failure to pin is not a failure of the verb: the profile the version gives
 // is still the truth about the release line, and refusing to print it because a
 // session could not be opened would take away an answer over a refinement that
-// may not exist on this dialect. The error is returned only when the session
-// opened and the read inside it failed, which is a server that answered
-// something unreadable rather than one that answered nothing.
+// may not exist on this dialect. What the connection read is still reported.
 func withSessionRefinement(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	profile serverprofile.Profile,
 ) (serverprofile.Profile, error) {
-	var effective capability.Capabilities
+	connection := ConnectionReading(conn.Info().Dialect, conn.Info().Capabilities)
+	var session capability.Capabilities
 	if err := conn.WithSession(ctx, func(scoped *dbschema.DatabaseConnection) error {
-		effective = scoped.Info().Capabilities
+		session = scoped.Info().Capabilities
 		return nil
 	}); err != nil {
-		return profile, nil
+		return profile.Refined(connection), nil
 	}
-	return profile.Refined(effective, refinementReason(conn.Info().Dialect)), nil
+	return profile.Refined(connection, SessionReading(session)), nil
 }
 
 // sessionRefinementReason names, in the server's own vocabulary, what a pinned
@@ -155,19 +155,42 @@ func withSessionRefinement(
 // where they are read.
 const sessionRefinementReason = "read from this server's session settings, not from its release line"
 
-// featureFlagRefinementReason is the same sentence for YDB, whose refinement
-// is the cluster's feature flags rather than a session setting: the
-// connection reads them from the endpoint the URL's monitoring parameter
-// names, and without that parameter nothing is refined.
+// extensionRefinementReason names what the connection reads on PostgreSQL:
+// the TimescaleDB keys come from pg_extension, which belongs to the database
+// and not to any session.
+const extensionRefinementReason = "read from the extensions installed in this database (pg_extension), " +
+	"not from its release line"
+
+// featureFlagRefinementReason names what the connection reads on YDB: the
+// cluster's feature flags, from the endpoint the URL's monitoring parameter
+// names. Without that parameter nothing is refined.
 const featureFlagRefinementReason = "read from this cluster's feature flags at its monitoring endpoint, " +
 	"not from its release line"
 
-// refinementReason names what refined a dialect's capability set.
-func refinementReason(dialect string) string {
-	if platform.NormalizeDialect(dialect) == platform.YDB {
-		return featureFlagRefinementReason
+// connectionRefinementReason is the sentence for a connection that reads
+// something else about the server. No dialect but PostgreSQL and YDB does, and
+// a key one changed would otherwise be reported as a session setting.
+const connectionRefinementReason = "read from this server when Ptah connected, not from its release line"
+
+// ConnectionReading is what the connection read about the server before any
+// session, with the reason that names where it read it. It is exported, with
+// [SessionReading], because the reasons are what an operator acts on and the
+// path that takes the readings needs a live server.
+func ConnectionReading(dialect string, capabilities capability.Capabilities) serverprofile.Reading {
+	reason := connectionRefinementReason
+	switch platform.NormalizeDialect(dialect) {
+	case platform.Postgres:
+		reason = extensionRefinementReason
+	case platform.YDB:
+		reason = featureFlagRefinementReason
 	}
-	return sessionRefinementReason
+	return serverprofile.Reading{Capabilities: capabilities, Reason: reason}
+}
+
+// SessionReading is what a pinned session resolved, with the reason that names
+// the session's settings.
+func SessionReading(capabilities capability.Capabilities) serverprofile.Reading {
+	return serverprofile.Reading{Capabilities: capabilities, Reason: sessionRefinementReason}
 }
 
 // validateFormat rejects a format value both entry points have to reject the
@@ -293,7 +316,10 @@ func writeProfileTraits(w io.Writer, traits capability.Traits) error {
 //
 // Silent rather than "none", because an ordinary server is the common case and
 // a section that appears only when it has something to say is one a reader
-// learns to look for.
+// learns to look for. The keys are grouped by the source that decided them,
+// each group followed by its reason, so a TimescaleDB key is not reported as a
+// session setting because a session setting moved another key on the same
+// server.
 func writeProfileRefinements(w io.Writer, refinements []serverprofile.Refinement) error {
 	if len(refinements) == 0 {
 		return nil
@@ -301,20 +327,32 @@ func writeProfileRefinements(w io.Writer, refinements []serverprofile.Refinement
 	if _, err := fmt.Fprintln(w, "\nSet by this server rather than by its release line:"); err != nil {
 		return err
 	}
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	var reasons []string
+	byReason := make(map[string][]serverprofile.Refinement)
 	for _, entry := range refinements {
-		if _, err := fmt.Fprintf(
-			tw, "  %s\t%s\t(the %s line answers %s)\n",
-			entry.Key, supportedWord[entry.Effective], "release", supportedWord[entry.Preset],
-		); err != nil {
+		if _, seen := byReason[entry.Reason]; !seen {
+			reasons = append(reasons, entry.Reason)
+		}
+		byReason[entry.Reason] = append(byReason[entry.Reason], entry)
+	}
+	for _, reason := range reasons {
+		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+		for _, entry := range byReason[reason] {
+			if _, err := fmt.Fprintf(
+				tw, "  %s\t%s\t(the %s line answers %s)\n",
+				entry.Key, supportedWord[entry.Effective], "release", supportedWord[entry.Preset],
+			); err != nil {
+				return err
+			}
+		}
+		if err := tw.Flush(); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "  %s\n", reason); err != nil {
 			return err
 		}
 	}
-	if err := tw.Flush(); err != nil {
-		return err
-	}
-	_, err := fmt.Fprintf(w, "  %s\n", refinements[0].Reason)
-	return err
+	return nil
 }
 
 func writeProfileCapabilities(w io.Writer, capabilities []serverprofile.Capability) error {

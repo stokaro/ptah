@@ -88,7 +88,7 @@ func TestProfileRefinedRecordsWhatTheServerDecided(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got := preset.Refined(test.effective, test.reason)
+			got := preset.Refined(serverprofile.Reading{Capabilities: test.effective, Reason: test.reason})
 
 			values := make([]bool, 0, len(got.Capabilities))
 			for _, row := range got.Capabilities {
@@ -162,7 +162,10 @@ func TestProfileRefined_TraitsFollowTheKeysTheyAreReadFrom(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got := mysql84Profile().Refined(test.effective, "read from this server's session settings")
+			got := mysql84Profile().Refined(serverprofile.Reading{
+				Capabilities: test.effective,
+				Reason:       "read from this server's session settings",
+			})
 
 			c.Assert(got.Traits.ForeignKeyReference, qt.Equals, test.wantReference)
 			c.Assert(got.Traits.EnumModeling, qt.Equals, test.wantEnum)
@@ -191,4 +194,54 @@ func mysql84Profile() serverprofile.Profile {
 			{Key: string(capability.ForeignKeysRequireUniqueReference), Supported: true},
 		},
 	}
+}
+
+// Each key's reason names the reading that changed it. The connection reads
+// TimescaleDB's keys from pg_extension and the session reads MySQL's
+// foreign-key policy from a variable; a profile that gave every key the last
+// reading's reason would tell an operator to look for hypertables in the
+// session settings. A key one reading moves and a later one moves back is the
+// release line's answer again and is not reported.
+func TestProfileRefined_EachKeyNamesTheReadingThatChangedIt(t *testing.T) {
+	c := qt.New(t)
+	preset := serverprofile.Profile{
+		Capabilities: []serverprofile.Capability{
+			{Key: string(capability.ForeignKeysRequireUniqueReference), Supported: true},
+			{Key: string(capability.Hypertables), Supported: false},
+			{Key: string(capability.Views), Supported: true},
+		},
+	}
+	connection := serverprofile.Reading{
+		Capabilities: capability.Capabilities{
+			capability.ForeignKeysRequireUniqueReference: true,
+			capability.Hypertables:                       true,
+			capability.Views:                             false,
+		},
+		Reason: "read from pg_extension",
+	}
+	session := serverprofile.Reading{
+		Capabilities: capability.Capabilities{
+			capability.ForeignKeysRequireUniqueReference: false,
+			capability.Hypertables:                       true,
+			capability.Views:                             true,
+		},
+		Reason: "read from the session settings",
+	}
+
+	got := preset.Refined(connection, session)
+
+	c.Assert(got.Refinements, qt.DeepEquals, []serverprofile.Refinement{
+		{
+			Key:       string(capability.ForeignKeysRequireUniqueReference),
+			Preset:    true,
+			Effective: false,
+			Reason:    "read from the session settings",
+		},
+		{Key: string(capability.Hypertables), Preset: false, Effective: true, Reason: "read from pg_extension"},
+	})
+	c.Assert(got.Capabilities, qt.DeepEquals, []serverprofile.Capability{
+		{Key: string(capability.ForeignKeysRequireUniqueReference), Supported: false},
+		{Key: string(capability.Hypertables), Supported: true},
+		{Key: string(capability.Views), Supported: true},
+	})
 }
