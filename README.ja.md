@@ -53,7 +53,12 @@ Go パッケージとしても利用できます。
 
 ## スキーマの変更
 
-<p align="center"><img src="docs/site/src/assets/product-journeys.svg" alt="スキーマソースと稼働中のデータベースからレビュー可能な計画が生成され、それがバージョン管理されたマイグレーションファイルになるか、直接適用される。推論仕様とソース行からは候補世代が生成され、切り替え前に検証される。その間も稼働中の世代はロールバックのために残る" width="1000"></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/site/src/assets/product-journeys-dark.svg">
+    <img src="docs/site/src/assets/product-journeys-light.svg" alt="スキーマソースと稼働中のデータベースからレビュー可能な計画が生成され、それがバージョン管理されたマイグレーションファイルになるか、直接適用される。推論仕様とソース行からは候補世代が生成され、切り替え前に検証される。前世代は保持され、条件を満たす場合にロールバックできる" width="1000">
+  </picture>
+</p>
 
 どちらのワークフローも同じ比較モデルと計画モデルを使います。違いは、SQL が実行される前に
 バージョン管理下のレビュー対象成果物になるかどうかだけです。
@@ -64,7 +69,12 @@ Ptah が担うのはマイグレーションの進行であり、推論そのも
 外部エンドポイントを呼び出し、候補世代を自分で書き込みます。検証と切り替えが終わるまで、
 稼働中の世代には手を触れません。
 
-<p align="center"><img src="docs/site/src/assets/inference-generation-lifecycle.svg" alt="稼働中の推論世代がクエリに応答し続ける間に、Ptah が候補世代の準備、バックフィル、追いつき、インデックス作成、検証を行う。切り替えによって検証済みの候補が稼働状態になり、保持された前世代へロールバックできる。世代の廃棄は別の破壊的な操作である" width="1000"></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/site/src/assets/inference-generation-lifecycle-dark.svg">
+    <img src="docs/site/src/assets/inference-generation-lifecycle-light.svg" alt="稼働中の推論世代がクエリに応答し続ける間に、Ptah が候補世代の準備、バックフィル、追いつき、インデックス作成、検証を行う。切り替えによって検証済みの候補が稼働状態になり、条件を満たす保持済みの前世代へロールバックできる。廃棄は別の破壊的な操作であり、稼働しておらず、有効なロールバック先としても必要とされない世代だけが対象となる" width="1000">
+  </picture>
+</p>
 
 [推論マイグレーションガイド](https://docs.ptah.run/edge/inference/overview/)には、仕様、
 並行変更への追いつき、評価、承認、ロールバック、廃棄が書かれています。

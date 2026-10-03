@@ -414,6 +414,7 @@ jobs:
           npm run check:style:selftest
           npm run check:style
           npx playwright install --with-deps chromium
+          npm run check:journey-diagrams
           npm run check:responsive:selftest
           npm run check:glossary-coverage:selftest
           npm run check:accessibility:selftest
@@ -426,6 +427,7 @@ jobs:
           npm run check:faq-groups:selftest
           npm run check:faq-page:selftest
           npm run build
+          npm run check:journey-themes
           # Need the built site, so they run after the build rather than with
           # the other checks.
           npm run check:responsive

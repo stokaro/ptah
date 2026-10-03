@@ -1,0 +1,29 @@
+flowchart TB
+  accTitle: Ptah product journeys
+  accDescr: Desired schema sources and the current database produce a reviewable plan. Versioned SQL files or direct apply change the target database. Inference builds and verifies a separate candidate before switching the active pointer; rollback switches it to an eligible previous generation.
+  subgraph schema[Schema changes]
+    direction LR
+    sources["Schema sources<br/>desired state"] --> plan["Compare and plan<br/>review the changes"]
+    live["Live database<br/>current state"] --> plan
+    plan --> files["Versioned migrations<br/>reviewed SQL files"]
+    plan --> direct["Direct apply"]
+    files --> target["Target database"]
+    direct --> target
+  end
+  subgraph inference[Persistent inference state]
+    direction TB
+    subgraph build[Build and verify a candidate]
+      direction LR
+      spec["Specification<br/>model and source rows"] --> candidate["Candidate build<br/>isolated generation"]
+      candidate --> verify["Verify<br/>required checks"]
+    end
+    subgraph pointers[Switch the active pointer]
+      direction LR
+      active["New active<br/>previous retained"] -. rollback if eligible .-> previous["Previous active"]
+    end
+    build -->|cutover| pointers
+  end
+  schema ~~~ inference
+  class plan,verify decision
+  class candidate candidate
+  class target,active,previous active

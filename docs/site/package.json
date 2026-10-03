@@ -83,7 +83,10 @@
     "check:glossary-coverage": "node scripts/check-glossary-coverage.mjs",
     "check:glossary-coverage:selftest": "node scripts/check-glossary-coverage.mjs --selftest",
     "versions:selftest": "node scripts/gen-versions.mjs --selftest",
-    "root-assets:selftest": "node scripts/publish-root-assets.mjs --selftest"
+    "root-assets:selftest": "node scripts/publish-root-assets.mjs --selftest",
+    "diagrams:write": "node scripts/generate-journey-diagrams.mjs",
+    "check:journey-diagrams": "node scripts/generate-journey-diagrams.mjs --check",
+    "check:journey-themes": "node scripts/check-journey-themes.mjs"
   },
   "dependencies": {
     "@astrojs/starlight": "0.42.5",

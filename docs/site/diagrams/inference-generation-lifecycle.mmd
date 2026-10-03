@@ -1,0 +1,21 @@
+flowchart TB
+  accTitle: Inference generation lifecycle
+  accDescr: The current generation serves queries during candidate preparation, backfill, catchup, indexing, and verification. Cutover switches the active pointer to the verified candidate and retains the previous generation. Rollback switches the pointer back only if the previous generation is eligible. Retirement is a separate destructive operation, allowed only for inactive generations that are no longer eligible rollback targets.
+  subgraph build[Candidate build: current generation keeps serving queries]
+    direction LR
+    prepare["Prepare<br/>storage and capture"] --> backfill["Backfill<br/>boundary snapshot"]
+    backfill --> catchup["Catchup<br/>source changes"]
+    catchup --> index["Index<br/>vector index"]
+    index --> verify["Verify<br/>required checks"]
+  end
+  subgraph pointers[Activation and cleanup are separate decisions]
+    direction LR
+    cutover["Cutover<br/>switch active pointer"] --> active["New active<br/>previous retained"]
+    active -. rollback if eligible .-> restored["Previous active<br/>new retained"]
+    active -. separate decision .-> retire["Retire inactive generation<br/>no eligible rollback dependency<br/>destructive"]
+    restored -. separate decision .-> retire
+  end
+  build --> pointers
+  class verify,cutover decision
+  class active,restored active
+  class retire destructive

@@ -20,36 +20,70 @@
     },
     {
       "id": "product-journeys",
-      "path": "docs/site/src/assets/product-journeys.svg",
+      "path": "docs/site/src/assets/product-journeys-light.svg",
       "type": "semantic-diagram",
-      "editableSource": "docs/site/src/assets/product-journeys.svg",
+      "editableSource": "docs/site/diagrams/product-journeys.mmd",
       "fixture": null,
-      "generator": null,
+      "generator": "docs/site/scripts/generate-journey-diagrams.mjs",
       "pages": [
         "/"
       ],
       "titleRequired": true,
       "descriptionRequired": true,
-      "sizeLimitBytes": 16384,
-      "themeBehavior": "prefers-color-scheme",
-      "fullSizeArtifact": "docs/site/src/assets/product-journeys.svg",
+      "sizeLimitBytes": 128000,
+      "themeBehavior": "site-light",
+      "fullSizeArtifact": "docs/site/src/assets/product-journeys-light.svg",
+      "versionedDownload": true
+    },
+    {
+      "id": "product-journeys-dark",
+      "path": "docs/site/src/assets/product-journeys-dark.svg",
+      "type": "semantic-diagram",
+      "editableSource": "docs/site/diagrams/product-journeys.mmd",
+      "fixture": null,
+      "generator": "docs/site/scripts/generate-journey-diagrams.mjs",
+      "pages": [
+        "/"
+      ],
+      "titleRequired": true,
+      "descriptionRequired": true,
+      "sizeLimitBytes": 128000,
+      "themeBehavior": "site-dark",
+      "fullSizeArtifact": "docs/site/src/assets/product-journeys-dark.svg",
       "versionedDownload": true
     },
     {
       "id": "inference-generation-lifecycle",
-      "path": "docs/site/src/assets/inference-generation-lifecycle.svg",
+      "path": "docs/site/src/assets/inference-generation-lifecycle-light.svg",
       "type": "semantic-diagram",
-      "editableSource": "docs/site/src/assets/inference-generation-lifecycle.svg",
+      "editableSource": "docs/site/diagrams/inference-generation-lifecycle.mmd",
       "fixture": null,
-      "generator": null,
+      "generator": "docs/site/scripts/generate-journey-diagrams.mjs",
       "pages": [
         "/inference/overview/"
       ],
       "titleRequired": true,
       "descriptionRequired": true,
-      "sizeLimitBytes": 16384,
-      "themeBehavior": "prefers-color-scheme",
-      "fullSizeArtifact": "docs/site/src/assets/inference-generation-lifecycle.svg",
+      "sizeLimitBytes": 128000,
+      "themeBehavior": "site-light",
+      "fullSizeArtifact": "docs/site/src/assets/inference-generation-lifecycle-light.svg",
+      "versionedDownload": true
+    },
+    {
+      "id": "inference-generation-lifecycle-dark",
+      "path": "docs/site/src/assets/inference-generation-lifecycle-dark.svg",
+      "type": "semantic-diagram",
+      "editableSource": "docs/site/diagrams/inference-generation-lifecycle.mmd",
+      "fixture": null,
+      "generator": "docs/site/scripts/generate-journey-diagrams.mjs",
+      "pages": [
+        "/inference/overview/"
+      ],
+      "titleRequired": true,
+      "descriptionRequired": true,
+      "sizeLimitBytes": 128000,
+      "themeBehavior": "site-dark",
+      "fullSizeArtifact": "docs/site/src/assets/inference-generation-lifecycle-dark.svg",
       "versionedDownload": true
     },
     {
@@ -595,7 +629,7 @@
       "primaryVisualId": "product-journeys",
       "selector": "[data-visual-id=\"product-journeys\"]",
       "expectedCaption": "Schema changes and persistent inference state use separate review and cutover paths.",
-      "expectedArtifact": "docs/site/src/assets/product-journeys.svg",
+      "expectedArtifact": "docs/site/src/assets/product-journeys-light.svg",
       "maxVisibleWordsBeforeVisual": 250,
       "minimumRenderedWidth": 280,
       "minimumRenderedHeight": 120,
