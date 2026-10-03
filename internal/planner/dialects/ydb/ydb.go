@@ -79,10 +79,10 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := indexscope.ValidateDiffWithSemantics(platform.YDB, semantics, diff); err != nil {
 		return nil, err
 	}
-	if err := p.refuseObjects(diff); err != nil {
+	removedTables := tableSet(diff.TablesRemoved, semantics)
+	if err := p.refuseObjects(withoutKeysOfDroppedTables(diff, removedTables, semantics)); err != nil {
 		return nil, err
 	}
-	removedTables := tableSet(diff.TablesRemoved, semantics)
 	addedTables := make(map[string]bool, len(diff.TablesAdded))
 	for _, creation := range diff.TablesAdded {
 		addedTables[semantics.TableIdentityKey(creation.Name)] = true
@@ -190,6 +190,25 @@ func (p *Planner) changeTable(tableDiff difftypes.TableDiff, enums []schemamodel
 }
 
 // tableSet keys table names by the target's identity rule.
+// withoutKeysOfDroppedTables is diff without the primary keys of the tables it
+// drops. The reader reports a table's key as a constraint, so a dropped table
+// reaches the planner with its key's removal too; DROP TABLE removes the key
+// with the table, and refusing that removal as a key change would refuse every
+// plan that drops a table.
+func withoutKeysOfDroppedTables(
+	diff *difftypes.SchemaDiff,
+	removedTables map[string]bool,
+	semantics identifier.Semantics,
+) *difftypes.SchemaDiff {
+	scoped := *diff
+	scoped.ConstraintsRemoved = slices.DeleteFunc(slices.Clone(diff.ConstraintsRemoved),
+		func(removal difftypes.ConstraintRemovalInfo) bool {
+			return strings.EqualFold(strings.TrimSpace(removal.Type), "PRIMARY KEY") &&
+				removedTables[semantics.TableIdentityKey(removal.TableName)]
+		})
+	return &scoped
+}
+
 func tableSet(names []string, semantics identifier.Semantics) map[string]bool {
 	set := make(map[string]bool, len(names))
 	for _, name := range names {

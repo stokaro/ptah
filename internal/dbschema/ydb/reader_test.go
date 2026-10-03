@@ -532,3 +532,23 @@ func TestReader_FailurePath_SourceFails(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, "connection refused")
 	c.Assert(db, qt.IsNil)
 }
+
+// An object outside the directories a read is scoped to is not read, so one
+// the reader would refuse does not refuse a read that never meets it.
+func TestReader_ScopedReadPassesAnObjectOutsideIt(t *testing.T) {
+	c := qt.New(t)
+	source := fakeSource{
+		directories: map[string][]*Ydb_Scheme.Entry{
+			"/local":     {entry("vol", Ydb_Scheme.Entry_BLOCK_STORE_VOLUME), entry("app", Ydb_Scheme.Entry_DIRECTORY)},
+			"/local/app": {entry("orders", Ydb_Scheme.Entry_TABLE)},
+		},
+		tables: map[string]*Ydb_Table.DescribeTableResult{"/local/app/orders": plainTable()},
+	}
+	reader := ydbschema.NewReaderFromSource(source, "/local", capability.YDB262())
+	reader.SetSchemas([]string{"app"})
+
+	db, err := reader.ReadSchemaContext(context.Background())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Tables, qt.HasLen, 1)
+}

@@ -155,15 +155,16 @@ func (r *Reader) entry(
 		// A system view outside a dot-directory belongs to the server too.
 		return nil
 	}
+	if !r.inScope(schema) {
+		return nil
+	}
 	kind, known := unmodeledEntries[entry.GetType()]
 	if !known {
 		return fmt.Errorf("YDB object %s is a %s, which Ptah does not read; "+
 			"remove it from the database or read a schema that does not hold it",
 			r.absolute(schema, name), entryTypeName(entry.GetType()))
 	}
-	if r.inScope(schema) {
-		db.NotDescribed = db.NotDescribed.With(unmodeled(kind, schema, name))
-	}
+	db.NotDescribed = db.NotDescribed.With(unmodeled(kind, schema, name))
 	return nil
 }
 

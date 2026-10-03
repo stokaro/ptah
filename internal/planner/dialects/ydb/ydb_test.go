@@ -321,3 +321,21 @@ func withIndex(column schemamodel.Field, index schemamodel.Index) *difftypes.Sch
 	diff.IndexesAdded = difftypes.IndexChanges{{TableName: "items", Index: index}}
 	return diff
 }
+
+// TestGenerateMigrationAST_DropsATableWithItsKey pins the removal a read hands
+// the planner with every dropped table: the reader reports a table's key as a
+// constraint, so dropping the table removes the key too. DROP TABLE takes the
+// key with it, and refusing the removal as a key change would refuse every
+// plan that drops a table. A key removal on a table the plan keeps is still a
+// key change; see TestGenerateMigrationAST_RefusesByCapability_FailurePath.
+func TestGenerateMigrationAST_DropsATableWithItsKey(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{
+		TablesRemoved: []string{"app.obsolete"},
+		ConstraintsRemoved: difftypes.ConstraintRemovals{
+			{Name: "obsolete_pkey", TableName: "app.obsolete", Type: "PRIMARY KEY"},
+		},
+	}
+
+	c.Assert(render(c, capability.YDB262(), diff), qt.Equals, "DROP TABLE `app/obsolete`;\n")
+}
