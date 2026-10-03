@@ -269,6 +269,16 @@ func TestReplayGuardMySQLFamily_HappyPath(t *testing.T) {
 			statement: "CREATE DEFINER = CURRENT_USER VIEW active_users AS SELECT id FROM users WHERE active = 1",
 		},
 		{
+			// A planned trigger swap (stokaro/ptah#4014): the lock ends with
+			// the replay session and names only the dev database.
+			name:      "lock tables in the dev database",
+			statement: "LOCK TABLES `users` WRITE, `ptah_dev`.`orders` AS o READ LOCAL",
+		},
+		{
+			name:      "unlock tables",
+			statement: "UNLOCK TABLES",
+		},
+		{
 			name:      "table as select with engine column",
 			statement: "CREATE TABLE copied_users AS SELECT engine FROM users",
 		},
@@ -443,9 +453,14 @@ func TestReplayGuardMySQLFamily_FailurePath(t *testing.T) {
 			wantErr:   `mysql migration replay rejects LOAD external data operation .*`,
 		},
 		{
-			name:      "lock tables",
-			statement: "LOCK TABLES users WRITE",
-			wantErr:   `mysql migration replay rejects LOCK TABLES .*`,
+			name:      "lock tables in another database",
+			statement: "LOCK TABLES `ptah_dev`.`users` WRITE, `production`.`users` WRITE",
+			wantErr:   `mysql migration replay rejects cross-database target "production.users" .*`,
+		},
+		{
+			name:      "lock table in another database",
+			statement: "LOCK TABLE production.users READ",
+			wantErr:   `mysql migration replay rejects cross-database target "production.users" .*`,
 		},
 		{
 			name:      "alter instance",

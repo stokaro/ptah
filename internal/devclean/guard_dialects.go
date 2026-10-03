@@ -107,10 +107,6 @@ func unsafeMySQLReplayOperation(tokens []lexer.Token) string {
 		return "privilege or role mutation"
 	case "PREPARE", "EXECUTE", "DEALLOCATE":
 		return "prepared statement"
-	case "LOCK":
-		if tokenSequenceAt(tokens, 1, "TABLES") {
-			return "LOCK TABLES"
-		}
 	case "ALTER":
 		if tokenSequenceAt(tokens, 1, "INSTANCE") {
 			return "ALTER INSTANCE"
@@ -169,6 +165,13 @@ func mysqlMutationTargets(tokens []lexer.Token) [][]string {
 		}
 	case "UPDATE":
 		return mysqlUpdateTargets(tokens)
+	case "LOCK":
+		// A planned trigger swap runs under LOCK TABLES. The lock ends with
+		// the replay session, so only a table outside the realm makes it
+		// unsafe: that would hold writes off a database the run does not own.
+		if tokenSequenceAt(tokens, 1, "TABLES") || tokenSequenceAt(tokens, 1, "TABLE") {
+			return commaSeparatedQualifiedTargets(tokens, 2, "")
+		}
 	}
 	return mutationTargets(tokens)
 }

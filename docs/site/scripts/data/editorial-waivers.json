@@ -36,6 +36,12 @@
     "reason": "This command-family reference keeps the executable Atlas schema examples and exact behavior under stable verb anchors."
   },
   {
+    "route": "/databases/mysql/",
+    "check": "page-length",
+    "target": "page",
+    "reason": "The engine reference keeps MySQL and MariaDB object, migration and release behavior together for target-specific lookup."
+  },
+  {
     "route": "/databases/postgresql/",
     "check": "page-length",
     "target": "page",

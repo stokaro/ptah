@@ -128,12 +128,16 @@ func TestPlanner_GenerateSchemaDiffSQLStatements_CompoundTriggerBody(t *testing.
 		statements[i] = legacyRenderedSQL(statement)
 	}
 
-	c.Assert(statements, qt.HasLen, 2)
-	c.Assert(statements[0], qt.Equals, "DROP TRIGGER IF EXISTS set_updated_at")
-	c.Assert(statements[1], qt.Contains, "CREATE TRIGGER set_updated_at BEFORE UPDATE ON users FOR EACH ROW BEGIN")
-	c.Assert(statements[1], qt.Contains, "SET NEW.updated_at = NOW();")
-	c.Assert(statements[1], qt.Contains, "SET NEW.name = TRIM(NEW.name);")
-	c.Assert(statements[1], qt.Contains, "END")
+	// MySQL replaces a trigger with DROP and CREATE, so the pair runs under
+	// LOCK TABLES; the body's own semicolons must not split it further.
+	c.Assert(statements, qt.HasLen, 4)
+	c.Assert(statements[0], qt.Matches, `(?s).*LOCK TABLES users WRITE`)
+	c.Assert(statements[1], qt.Equals, "DROP TRIGGER IF EXISTS set_updated_at")
+	c.Assert(statements[2], qt.Contains, "CREATE TRIGGER set_updated_at BEFORE UPDATE ON users FOR EACH ROW BEGIN")
+	c.Assert(statements[2], qt.Contains, "SET NEW.updated_at = NOW();")
+	c.Assert(statements[2], qt.Contains, "SET NEW.name = TRIM(NEW.name);")
+	c.Assert(statements[2], qt.Contains, "END")
+	c.Assert(statements[3], qt.Equals, "UNLOCK TABLES")
 }
 
 func TestPlanner_GenerateMigrationAST_RejectsMaterializedViews(t *testing.T) {

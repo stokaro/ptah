@@ -551,8 +551,9 @@ func RequiresNoTransaction(dialect string, nodes []ast.Node) bool {
 // Returns a slice of individual SQL statements. A statement carries no
 // trailing semicolon and may open with the comment lines the planner attached
 // to it, so each element is handed to the driver as-is. The statements are
-// ordered to respect database dependencies and can be executed sequentially to
-// perform the migration.
+// ordered to respect database dependencies and are executed in order, on one
+// database session, to perform the migration: a MySQL or MariaDB plan that
+// replaces a trigger holds LOCK TABLES from one statement to a later one.
 //
 // # Statement Processing
 //
@@ -572,9 +573,14 @@ func RequiresNoTransaction(dialect string, nodes []ast.Node) bool {
 //		return err
 //	}
 //
-//	// Execute statements sequentially
+//	// Execute statements in order on one session
+//	session, err := db.Conn(ctx)
+//	if err != nil {
+//		return err
+//	}
+//	defer session.Close()
 //	for _, stmt := range statements {
-//		if _, err := db.Exec(stmt); err != nil {
+//		if _, err := session.ExecContext(ctx, stmt); err != nil {
 //			log.Fatalf("Failed to execute statement: %v", err)
 //		}
 //	}
