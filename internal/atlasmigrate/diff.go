@@ -2,6 +2,7 @@ package atlasmigrate
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -21,6 +22,7 @@ import (
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/fsnapshot"
@@ -30,6 +32,7 @@ import (
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemascope"
+	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/migrationfile"
@@ -702,6 +705,11 @@ func compareReplayedState(
 	// environment, not something the directory built; see
 	// [devclean.Baseline.WithoutEnvironment].
 	replayed = baseline.WithoutEnvironment(replayed, desiredExtensionNames(desired))
+	// A dev database a docker block provisioned holds its starting point too,
+	// which the directory did not create either.
+	replayed = baseline.WithoutStartingPoint(replayed,
+		goschematodb.ToDBSchema(desired, replayConn.Info().Dialect),
+		cmp.Or(defaultSchema, schemaselection.DialectDefault(replayConn.Info().Dialect)))
 	if err := atlasschema.ValidateLiveObjects(replayConn, readNames, validateLiveObject); err != nil {
 		return nil, nil, err
 	}

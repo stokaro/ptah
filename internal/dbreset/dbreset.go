@@ -11,6 +11,7 @@ import (
 	"errors"
 
 	"ptah.run/internal/pgdefaultacl"
+	"ptah.run/internal/pgsnapshot"
 )
 
 // Object is something a reset of a dev database drops: an object in one of
@@ -74,12 +75,20 @@ type DefaultPrivileges struct {
 // it refuses any other. Server, which only a realm reset reads, says whether
 // the server's default user database may be reset. The zero value keeps
 // nothing and is on a [NamedServer].
+//
+// StartingPoint, when set, replaces the rest with the whole state a dev
+// database an atlas.hcl docker block provisioned started from: a reset of
+// either kind returns the database to it, removing what the run added in
+// every schema and putting back each privilege the run changed. Artifacts
+// still applies. Server does not: such a reset removes only what the run
+// added, so it cannot empty a database someone else filled.
 type Kept struct {
 	Extensions        []string
 	Schemas           []string
 	DefaultPrivileges DefaultPrivileges
 	Artifacts         []Object
 	Server            Server
+	StartingPoint     *pgsnapshot.Snapshot
 }
 
 // Server says whose server a reset of a PostgreSQL-family database realm runs

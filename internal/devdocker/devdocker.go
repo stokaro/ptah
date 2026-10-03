@@ -430,6 +430,10 @@ type Spec struct {
 	// declaration is what an atlas.hcl docker block adds to such a URL; see
 	// [Declare]. Its zero value adds nothing.
 	declaration Declaration
+	// fromBlock reports that the URL names a declaration an atlas.hcl docker
+	// block recorded, so the state the provisioning leaves is the dev
+	// database's starting point; see [StartingPointDeclared].
+	fromBlock bool
 }
 
 // URL is the directly connectable URL for a server published at hostPort. It
@@ -620,7 +624,7 @@ func parseImageURL(parsed *url.URL, driver string) (Spec, error) {
 	if err != nil {
 		return Spec{}, err
 	}
-	declaration, _ := declared(parsed.Fragment)
+	declaration, fromBlock := declared(parsed.Fragment)
 	return Spec{
 		Engine:      driver,
 		Dialect:     dialect,
@@ -630,6 +634,7 @@ func parseImageURL(parsed *url.URL, driver string) (Spec, error) {
 		engine:      found,
 		fromImage:   true,
 		declaration: declaration,
+		fromBlock:   fromBlock,
 	}, nil
 }
 

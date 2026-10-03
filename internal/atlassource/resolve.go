@@ -1,6 +1,7 @@
 package atlassource
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	"ptah.run/internal/atlasregistry"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devlock"
@@ -172,6 +174,11 @@ type State struct {
 	// not the source's: a comparison leaves them out with
 	// [State.WithoutEnvironment].
 	EnvironmentExtensions []string
+	// EnvironmentState is the starting point of a dev database an atlas.hcl
+	// docker block provisioned, when the state was read from one, and nil
+	// otherwise. Like the extensions, it is the dev database's and not the
+	// source's: a comparison leaves it out with [State.WithoutStartingPoint].
+	EnvironmentState *catalog.Database
 }
 
 // ExtensionNames is the set of extensions the state holds.
@@ -188,6 +195,30 @@ func (s State) ExtensionNames() map[string]bool {
 		}
 	}
 	return names
+}
+
+// WithoutStartingPoint returns the state without the objects of its dev
+// database's starting point that other does not hold, so a comparison with
+// other reads what the source built rather than what the dev database started
+// from. A state read from no such dev database comes back as it is. See
+// [devclean.Baseline.WithoutStartingPoint].
+func (s State) WithoutStartingPoint(other State, dialect string) State {
+	if s.EnvironmentState == nil || s.DB == nil {
+		return s
+	}
+	declared := other.DB
+	if declared == nil && other.Schema != nil {
+		declared = goschematodb.ToDBSchema(other.Schema, dialect)
+	}
+	defaultSchema := cmp.Or(s.DefaultSchema, schemaselection.DialectDefault(dialect))
+	filtered := devclean.WithoutKeptState(s.DB, s.EnvironmentState, declared, defaultSchema)
+	s.DB = filtered
+	if s.Schema != nil {
+		notDescribed := s.Schema.NotDescribed
+		s.Schema = dbschematogo.ConvertDBSchemaToGoSchema(filtered, dialect)
+		s.Schema.NotDescribed = notDescribed
+	}
+	return s
 }
 
 // WithoutEnvironment returns the state with its dev database's environment
@@ -533,6 +564,7 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions, finis
 				return err
 			}
 			state.EnvironmentExtensions = baseline.Extensions()
+			state.EnvironmentState = baseline.StartingPoint()
 			// Finished here rather than after the replay returns, because the
 			// replay's cleanup drops the schema this session holds, and a
 			// caller holding the state may need to ask the server about it.

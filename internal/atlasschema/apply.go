@@ -20,6 +20,7 @@ import (
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/protectedtable"
@@ -62,11 +63,12 @@ type ApplyOptions struct {
 	// DevURL is the dev database used to replay migration-directory
 	// desired-state sources.
 	DevURL string
-	// keptExtensions are extensions the database held before a rehearsal
-	// claimed it; the comparison leaves the ones the desired state does not
-	// declare out of the current state. Only the rehearsal's end-state check
-	// sets it, on the dev database it rehearsed on.
-	keptExtensions []string
+	// baseline is what the database held before a rehearsal claimed it: its
+	// extensions, and the whole starting point of a dev database an atlas.hcl
+	// docker block provisioned. The comparison leaves what the desired schema
+	// does not declare out of the current state. Only the rehearsal's
+	// end-state check sets it, on the dev database it rehearsed on.
+	baseline devclean.Baseline
 	// DevServerDisposable is the operator's declaration that the server
 	// DevURL names is the run's own; see
 	// [ptah.run/internal/migrationreplay.Options.DevServerDisposable].
@@ -367,7 +369,9 @@ func computeApplyPlan(
 	if err != nil {
 		return applyComputation{}, err
 	}
-	current := devclean.WithoutKeptExtensions(read.current, opts.keptExtensions, declaredExtensionNames(desired))
+	current := opts.baseline.WithoutEnvironment(read.current, declaredExtensionNames(desired))
+	current = opts.baseline.WithoutStartingPoint(current,
+		goschematodb.ToDBSchema(desired, conn.Info().Dialect), defaultSchemaOf(conn.Info()))
 	if err := validateCurrentApplyState(conn, current, read.readScope, opts); err != nil {
 		return applyComputation{}, err
 	}
@@ -613,56 +617,7 @@ func applyReadScope(requested, base []string, desired *schemamodel.Database) []s
 	if names := SplitSchemaNames(requested); len(names) > 0 {
 		return names
 	}
-	return schemascope.Union(base, desiredSchemaNames(desired))
-}
-
-// desiredSchemaNames is every schema a desired state names, over the
-// declarations that carry one. A document may name a schema by declaring a
-// block for it or by qualifying an object with it, and both have to count: an
-// inspected document does the first, a hand-written one often only the second.
-//
-// A default privilege's schema is its home the same way a table's is: `IN
-// SCHEMA app` is where the object lives, and it can be the document's only
-// mention of `app`. Leave it out and the current side never reads that schema,
-// so a default privilege the database already has reads as absent and every run
-// plans it again.
-//
-// Grants are not walked here. A grant is written against a target object, which
-// a document usually declares in its own right, so the schema is already on
-// this list by the time the grant is read.
-func desiredSchemaNames(desired *schemamodel.Database) []string {
-	if desired == nil {
-		return nil
-	}
-	var names []string
-	add := func(name string) {
-		if trimmed := strings.TrimSpace(name); trimmed != "" {
-			names = append(names, trimmed)
-		}
-	}
-	for _, schema := range desired.Schemas {
-		add(schema.Name)
-	}
-	for _, table := range desired.Tables {
-		add(table.Schema)
-	}
-	for _, sequence := range desired.Sequences {
-		add(sequence.Schema)
-	}
-	for _, domain := range desired.Domains {
-		add(domain.Schema)
-	}
-	for _, composite := range desired.CompositeTypes {
-		add(composite.Schema)
-	}
-	for _, rangeType := range desired.Ranges {
-		add(rangeType.Schema)
-	}
-	for _, privilege := range desired.DefaultPrivileges {
-		add(privilege.Schema)
-	}
-	slices.Sort(names)
-	return slices.Compact(names)
+	return schemascope.Union(base, schemascope.DeclaredSchemaNames(desired))
 }
 
 // loadDesiredApplySchema materializes the desired schema for apply planning.
@@ -753,7 +708,25 @@ func loadDesiredApplySchema(
 		// directory's to create there.
 		state = state.WithoutEnvironment(installed)
 	}
+	if state.EnvironmentState != nil {
+		// So is a docker block's starting point: what the target holds of it
+		// matches, and the rest is not the directory's to create there.
+		target, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, catalogSchemaNames(state.EnvironmentState))
+		if err != nil {
+			return nil, fmt.Errorf("read target schema: %w", err)
+		}
+		state = state.WithoutStartingPoint(atlassource.State{DB: target}, conn.Info().Dialect)
+	}
 	return state.Schema, nil
+}
+
+// catalogSchemaNames returns the names of the schemas database holds.
+func catalogSchemaNames(database *catalog.Database) []string {
+	names := make([]string, 0, len(database.Schemas))
+	for _, schema := range database.Schemas {
+		names = append(names, schema.Name)
+	}
+	return names
 }
 
 // extensionInstaller is the writer that names the extensions its database

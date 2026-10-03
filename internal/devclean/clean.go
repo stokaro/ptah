@@ -13,6 +13,7 @@ import (
 	"ptah.run/internal/dbreset"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/migrateclean"
+	"ptah.run/internal/pgsnapshot"
 )
 
 type databaseRealmCleaner interface {
@@ -71,6 +72,16 @@ func DatabaseRealm(ctx context.Context, conn *dbschema.DatabaseConnection) error
 // the database held, which the cleanup leaves and checks are still there; it
 // still refuses one the run created.
 //
+// A dev database an atlas.hcl docker block provisioned keeps more: the whole
+// state the image and the block's baseline left, which is its starting point
+// (stokaro/ptah#4056). The Supabase image holds the auth, storage and realtime
+// schemas, their tables and functions and the grants on them, and none of it
+// is the run's. The claim does not judge such a database clean; it records
+// the starting point, and every reset returns the database to it, removing
+// what the run added in any schema -- a trigger a migration puts on
+// auth.users included -- and putting back each privilege the run changed. A
+// URL that names no block keeps the rule the community binary applies.
+//
 // The zero Baseline keeps nothing, which is [DatabaseRealm].
 type Baseline struct {
 	extensions []string
@@ -81,6 +92,12 @@ type Baseline struct {
 	defaultPrivileges dbreset.DefaultPrivileges
 	// artifacts are the database-scoped objects the database held; see above.
 	artifacts []dbreset.Object
+	// startingPoint is the whole state of a dev database an atlas.hcl docker
+	// block provisioned; see above. Nil for every other dev database.
+	startingPoint *pgsnapshot.Snapshot
+	// environment is the same state as a read describes it, for
+	// [Baseline.WithoutStartingPoint]. Nil for every other dev database.
+	environment *catalog.Database
 	// realm records whether the claim judged the dev database's whole realm
 	// or only its connected schema; see [Reset].
 	realm bool
@@ -93,6 +110,13 @@ func (b Baseline) Extensions() []string {
 	return slices.Clone(b.extensions)
 }
 
+// StartingPoint returns the starting point of a dev database an atlas.hcl
+// docker block provisioned, as a read describes it, and nil for any other dev
+// database. The caller must not change it. See [Baseline.WithoutStartingPoint].
+func (b Baseline) StartingPoint() *catalog.Database {
+	return b.environment
+}
+
 // Schemas returns the schemas a realm cleanup leaves as they are, sorted: the
 // ones outside the schema the URL pinned. It is empty when the URL pinned
 // none.
@@ -102,6 +126,10 @@ func (b Baseline) Schemas() []string {
 
 type extensionLister interface {
 	InstalledExtensions(context.Context) ([]string, error)
+}
+
+type startingPointRecorder interface {
+	CaptureStartingPoint(context.Context) (*pgsnapshot.Snapshot, error)
 }
 
 type artifactLister interface {
@@ -140,14 +168,29 @@ func Claim(ctx context.Context, conn *dbschema.DatabaseConnection) (Baseline, er
 	if conn == nil {
 		return Baseline{}, fmt.Errorf("capture dev database baseline: nil database connection")
 	}
-	if err := EnsureClean(ctx, conn); err != nil {
-		return Baseline{}, err
+	writer := conn.SchemaWriter()
+	recorder, records := writer.(startingPointRecorder)
+	fromBlock := records && migrateclean.StartsFromDeclaredState(conn)
+	if !fromBlock {
+		if err := EnsureClean(ctx, conn); err != nil {
+			return Baseline{}, err
+		}
 	}
 	baseline := Baseline{realm: migrateclean.RealmScoped(conn), server: dbreset.NamedServer}
 	if devdocker.RunOwned(conn.Info().URL) {
 		baseline.server = dbreset.OwnedServer
 	}
-	writer := conn.SchemaWriter()
+	if fromBlock {
+		start, err := recorder.CaptureStartingPoint(ctx)
+		if err != nil {
+			return Baseline{}, fmt.Errorf("capture dev database baseline: %w", err)
+		}
+		baseline.startingPoint = start
+		baseline.environment, err = dbschema.ReadSchemaWithSchemasContext(ctx, conn, start.Schemas)
+		if err != nil {
+			return Baseline{}, fmt.Errorf("capture dev database baseline: %w", err)
+		}
+	}
 	if lister, ok := writer.(extensionLister); ok {
 		extensions, err := lister.InstalledExtensions(ctx)
 		if err != nil {
@@ -269,6 +312,7 @@ func (b Baseline) kept() dbreset.Kept {
 		DefaultPrivileges: b.defaultPrivileges,
 		Artifacts:         b.artifacts,
 		Server:            b.server,
+		StartingPoint:     b.startingPoint,
 	}
 }
 

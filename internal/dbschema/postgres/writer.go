@@ -1769,6 +1769,9 @@ func (w *PostgreSQLWriter) DropAllTables(ctx context.Context) error {
 // an extension it held before the run is its environment, and the pinned
 // community binary applies a plan against a dev database that has one.
 func (w *PostgreSQLWriter) DropAllTablesKeeping(ctx context.Context, kept dbreset.Kept) error {
+	if kept.StartingPoint != nil {
+		return w.returnToStartingPoint(ctx, kept)
+	}
 	return w.dropSchemaObjects(ctx, kept)
 }
 
@@ -1822,6 +1825,9 @@ func (w *PostgreSQLWriter) DropDatabaseRealmKeeping(ctx context.Context, kept db
 			"refusing to clean PostgreSQL database realm with system root schema %q",
 			w.schema,
 		)
+	}
+	if kept.StartingPoint != nil {
+		return w.returnToStartingPoint(ctx, kept)
 	}
 	return w.dropDatabaseRealm(ctx, kept)
 }
