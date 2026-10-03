@@ -240,10 +240,10 @@ reading a routine body, such as `DROP FUNCTION`, `DROP FOREIGN TABLE`,
 
 ### A server Ptah provisions
 
-A `docker://` dev URL, or a
+A `docker://` or
 [`docker+<driver>://`](../../atlas/migrate-commands/#a-dev-database-from-a-named-image)
-one naming its own image, starts a server for one command and removes it
-afterwards, so the server holds only what the run put there. On such a server,
+dev URL starts a server for one command and removes it afterwards, so the
+server holds only what the run put there. On such a server,
 replay also runs the statements it refuses elsewhere only because their effect
 reaches past the dev database:
 
