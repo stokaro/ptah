@@ -16,6 +16,19 @@ func TestRebind(t *testing.T) {
 		want    string
 	}{
 		{
+			// The YDB driver binds `?` positionally; `$1` is a YQL parse error.
+			name:    "ydb keeps question marks",
+			dialect: "ydb",
+			query:   "SELECT * FROM `t` WHERE a = ? AND b = '?'",
+			want:    "SELECT * FROM `t` WHERE a = ? AND b = '?'",
+		},
+		{
+			name:    "ydbs alias keeps question marks",
+			dialect: "ydbs",
+			query:   "UPSERT INTO `t` (a, b) VALUES (?, ?)",
+			want:    "UPSERT INTO `t` (a, b) VALUES (?, ?)",
+		},
+		{
 			name:    "postgres simple",
 			dialect: "postgres",
 			query:   "SELECT * FROM t WHERE a = ? AND b = ?",

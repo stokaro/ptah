@@ -22,6 +22,8 @@ func VersionLiteral(dialect, value string) string {
 		value = strings.ReplaceAll(value, `\`, `\\`)
 	case platform.SQLServer:
 		return "N'" + strings.ReplaceAll(value, "'", "''") + "'"
+	case platform.YDB:
+		return yqlUtf8Literal(value)
 	}
 	if platform.IsPostgresFamily(normalizedDialect) && strings.Contains(value, `\`) {
 		// Dollar-quoted content is literal regardless of PostgreSQL's
@@ -30,6 +32,19 @@ func VersionLiteral(dialect, value string) string {
 		return postgresDollarQuotedLiteral(value)
 	}
 	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+}
+
+// yqlEscaper escapes what would end or change a YQL string literal. YQL has
+// no session mode that turns escapes off, and a doubled quote is not an
+// escape there: 'a''b' is two literals.
+var yqlEscaper = strings.NewReplacer(`\`, `\\`, "'", `\'`)
+
+// yqlUtf8Literal renders value as a typed YQL Utf8 literal. The u suffix is
+// the type, as Ptah types every YQL data literal (stokaro/ptah#4015, decision
+// 11). Measured on YDB 26.2.1.14, '20260103_a\\b\'c'u reads back as
+// 20260103_a\b'c of type Utf8.
+func yqlUtf8Literal(value string) string {
+	return "'" + yqlEscaper.Replace(value) + "'u"
 }
 
 func postgresDollarQuotedLiteral(value string) string {
