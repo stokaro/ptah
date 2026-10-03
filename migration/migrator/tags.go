@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
+	"ptah.run/internal/atlasretry"
 )
 
 // defaultMigrationTagsTable is where the tag namespace lives.
@@ -247,6 +248,9 @@ func (m *Migrator) DeleteMigrationTag(ctx context.Context, tag string) error {
 	if !exists {
 		return fmt.Errorf("%w: %q", ErrMigrationTagNotFound, normalized)
 	}
+	if m.usesDescribedMetadata() {
+		return m.deleteYDBMigrationTag(ctx, normalized)
+	}
 	query := sqlutil.Rebind(m.connectionDialect(),
 		fmt.Sprintf("DELETE FROM %s WHERE tag = ?", m.qualifiedMigrationTagsTable()))
 	result, err := m.conn.ExecContext(ctx, query, normalized)
@@ -294,3 +298,54 @@ func normalizeMigrationTag(tag string) (string, error) {
 // refused where it can be explained instead of truncated by the database into
 // a tag that silently collides with another.
 const migrationTagMaxLength = 255
+
+// deleteYDBMigrationTag removes a tag on YDB, where the count of rows a DELETE
+// affected cannot say whether the tag existed: ydb-go-sdk counts the rows the
+// statement's plan deleted, and a DELETE by key counts its key whether a row
+// held it or not. Measured on 26.2.1.14, deleting a tag that was already gone
+// reported one row affected. So the tag is counted and deleted in one
+// serializable transaction, which YDB aborts rather than let a concurrent
+// write change what the count saw.
+func (m *Migrator) deleteYDBMigrationTag(ctx context.Context, tag string) error {
+	table := m.qualifiedMigrationTagsTable()
+	for attempt := range ydbDataQueryAttempts {
+		found, err := m.tryDeleteYDBMigrationTag(ctx, table, tag)
+		if err == nil && !found {
+			return fmt.Errorf("%w: %q", ErrMigrationTagNotFound, tag)
+		}
+		if err == nil {
+			return nil
+		}
+		if !atlasretry.IsRetryable(err) || attempt == ydbDataQueryAttempts-1 {
+			return fmt.Errorf("delete migration tag %q: %w", tag, err)
+		}
+		if err := waitForYDBDataQueryRetry(ctx, attempt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *Migrator) tryDeleteYDBMigrationTag(ctx context.Context, table, tag string) (bool, error) {
+	tx, err := m.conn.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return false, err
+	}
+	var count int64
+	if err := tx.QueryRowContext(ctx,
+		sqlutil.Rebind(platform.YDB, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE tag = ?", table)), tag,
+	).Scan(&count); err != nil {
+		_ = tx.Rollback()
+		return false, err
+	}
+	if count == 0 {
+		return false, tx.Rollback()
+	}
+	if _, err := tx.ExecContext(ctx,
+		sqlutil.Rebind(platform.YDB, fmt.Sprintf("DELETE FROM %s WHERE tag = ?", table)), tag,
+	); err != nil {
+		_ = tx.Rollback()
+		return false, err
+	}
+	return true, tx.Commit()
+}
