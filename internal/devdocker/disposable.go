@@ -13,6 +13,11 @@ import "ptah.run/internal/envbool"
 // on both binaries.
 const DisposableServerEnvVar = "PTAH_DEV_SERVER_DISPOSABLE"
 
+// OwnedServerRemedy names the two ways an operator makes a dev server the run's
+// own, for the end of a refusal that only such a server lifts.
+const OwnedServerRemedy = "if nothing else uses this server, declare it disposable with " +
+	DisposableServerEnvVar + "=1, or use a " + Scheme + ":// dev URL"
+
 // disposableServer is the declaration of the variable, made once, in the
 // package that owns the record it feeds. See [ptah.run/internal/envbool].
 //

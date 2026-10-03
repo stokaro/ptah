@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/aclitem"
+	"ptah.run/internal/dbreset"
 	"ptah.run/internal/dbschema/dbtest"
 	"ptah.run/internal/dbschema/postgres"
 )
@@ -498,26 +499,76 @@ func TestWriterDropDatabaseRealm_RejectsSystemRootSchema(t *testing.T) {
 	c.Assert(db.ExecCount(), qt.Equals, 0)
 }
 
-func TestWriterDropDatabaseRealm_RejectsProtectedDatabasesBeforeMutation(t *testing.T) {
-	tests := []struct {
-		name     string
-		version  string
-		database string
-	}{
-		{name: "postgres database", version: "PostgreSQL 18.0", database: "POSTGRES"},
-		{name: "postgres template0", version: "PostgreSQL 18.0", database: "template0"},
-		{name: "postgres template1", version: "PostgreSQL 18.0", database: "template1"},
-		{name: "cockroach defaultdb", version: "CockroachDB CCL v26.2.4", database: "defaultdb"},
-		{name: "cockroach postgres", version: "CockroachDB CCL v26.2.4", database: "postgres"},
-		{name: "cockroach system", version: "CockroachDB CCL v26.2.4", database: "system"},
-		{name: "yugabyte database", version: "YugabyteDB 2026.1", database: "yugabyte"},
-		{name: "yugabyte postgres", version: "YugabyteDB 2026.1", database: "postgres"},
-		{name: "yugabyte template0", version: "YugabyteDB 2026.1", database: "template0"},
-		{name: "yugabyte template1", version: "YugabyteDB 2026.1", database: "template1"},
-		{name: "yugabyte system platform", version: "YugabyteDB 2026.1", database: "system_platform"},
-	}
+// postgresFamilySystemDatabases are refused by a realm cleanup on every
+// server: a template every later CREATE DATABASE copies, or a database the
+// server keeps for itself.
+var postgresFamilySystemDatabases = []struct {
+	name     string
+	version  string
+	database string
+}{
+	{name: "postgres template0", version: "PostgreSQL 18.0", database: "template0"},
+	{name: "postgres template1", version: "PostgreSQL 18.0", database: "TEMPLATE1"},
+	{name: "cockroach system", version: "CockroachDB CCL v26.2.4", database: "system"},
+	{name: "yugabyte template0", version: "YugabyteDB 2026.1", database: "template0"},
+	{name: "yugabyte template1", version: "YugabyteDB 2026.1", database: "template1"},
+	{name: "yugabyte system platform", version: "YugabyteDB 2026.1", database: "system_platform"},
+}
 
-	for _, test := range tests {
+// postgresFamilyDefaultDatabases are the user databases each server is created
+// with. A realm cleanup refuses them on a server the operator named and cleans
+// them on a server the run owns.
+var postgresFamilyDefaultDatabases = []struct {
+	name     string
+	version  string
+	database string
+}{
+	{name: "postgres database", version: "PostgreSQL 18.0", database: "POSTGRES"},
+	{name: "cockroach defaultdb", version: "CockroachDB CCL v26.2.4", database: "defaultdb"},
+	{name: "cockroach postgres", version: "CockroachDB CCL v26.2.4", database: "postgres"},
+	{name: "yugabyte database", version: "YugabyteDB 2026.1", database: "yugabyte"},
+	{name: "yugabyte postgres", version: "YugabyteDB 2026.1", database: "postgres"},
+}
+
+// realmCleanupServers are both answers to whose server a cleanup runs on.
+var realmCleanupServers = []struct {
+	name   string
+	server dbreset.Server
+}{
+	{name: "named server", server: dbreset.NamedServer},
+	{name: "owned server", server: dbreset.OwnedServer},
+}
+
+func TestWriterDropDatabaseRealm_RejectsSystemDatabasesBeforeMutation(t *testing.T) {
+	for _, owner := range realmCleanupServers {
+		for _, test := range postgresFamilySystemDatabases {
+			t.Run(owner.name+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				queryHandler := &postgresRealmQuery{
+					version:  test.version,
+					database: test.database,
+				}
+				db := dbtest.Open(t, queryHandler.query)
+				writer := postgres.NewPostgreSQLWriter(db.SQL, "public")
+
+				err := writer.DropDatabaseRealmKeepingSchemas(t.Context(), nil, nil, owner.server)
+
+				c.Assert(err, qt.ErrorMatches, `refusing to clean protected PostgreSQL-family database "`+test.database+`"`)
+				c.Assert(db.QueryCount(), qt.Equals, 2)
+				c.Assert(db.BeginCount(), qt.Equals, 1)
+				c.Assert(db.ExecCount(), qt.Equals, 0)
+				c.Assert(db.CommitCount(), qt.Equals, 0)
+				c.Assert(db.RollbackCount(), qt.Equals, 1)
+			})
+		}
+	}
+}
+
+// TestWriterDropDatabaseRealm_RejectsDefaultDatabasesOnANamedServer refuses a
+// server's default database before anything changes, and says the refusal is
+// about the server: the same cleanup on a server the run owns runs.
+func TestWriterDropDatabaseRealm_RejectsDefaultDatabasesOnANamedServer(t *testing.T) {
+	for _, test := range postgresFamilyDefaultDatabases {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			queryHandler := &postgresRealmQuery{
@@ -529,16 +580,36 @@ func TestWriterDropDatabaseRealm_RejectsProtectedDatabasesBeforeMutation(t *test
 
 			err := writer.DropDatabaseRealm(t.Context())
 
-			c.Assert(
-				err,
-				qt.ErrorMatches,
-				`refusing to clean protected PostgreSQL-family database ".*"`,
-			)
+			c.Assert(err, qt.ErrorIs, dbreset.ErrServerDefaultDatabase)
+			c.Assert(err, qt.ErrorMatches, `refusing to clean protected PostgreSQL-family database "`+test.database+`": `+
+				`it is the server's default database, which is reset only on a server the run owns`)
 			c.Assert(db.QueryCount(), qt.Equals, 2)
-			c.Assert(db.BeginCount(), qt.Equals, 1)
 			c.Assert(db.ExecCount(), qt.Equals, 0)
 			c.Assert(db.CommitCount(), qt.Equals, 0)
 			c.Assert(db.RollbackCount(), qt.Equals, 1)
+		})
+	}
+}
+
+// TestWriterDropDatabaseRealm_CleansTheDefaultDatabaseOfAnOwnedServer runs the
+// realm cleanup a named server refuses, on each default database of a server
+// the run owns. The control is the test above.
+func TestWriterDropDatabaseRealm_CleansTheDefaultDatabaseOfAnOwnedServer(t *testing.T) {
+	for _, test := range postgresFamilyDefaultDatabases {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			queryHandler := newPostgresRealmMetadataQuery()
+			queryHandler.version = test.version
+			queryHandler.database = test.database
+			queryHandler.publicObjects = nil
+			db := dbtest.OpenWithExec(t, queryHandler.query, nil)
+			writer := postgres.NewPostgreSQLWriter(db.SQL, "public")
+
+			err := writer.DropDatabaseRealmKeepingSchemas(t.Context(), nil, nil, dbreset.OwnedServer)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(db.CommitCount(), qt.Equals, 1)
+			c.Assert(db.RollbackCount(), qt.Equals, 0)
 		})
 	}
 }

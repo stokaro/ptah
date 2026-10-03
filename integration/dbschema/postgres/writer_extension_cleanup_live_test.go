@@ -10,6 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/dbreset"
 	"ptah.run/internal/dbschema/postgres"
 	"ptah.run/internal/dbtarget"
 )
@@ -322,7 +323,7 @@ func TestWriterDropDatabaseRealmKeepingSchemas_LivePostgres(t *testing.T) {
 	`)
 	c.Assert(err, qt.IsNil)
 
-	err = postgres.NewPostgreSQLWriter(db, "public").DropDatabaseRealmKeepingSchemas(ctx, nil, []string{"kept_schema", "public"})
+	err = postgres.NewPostgreSQLWriter(db, "public").DropDatabaseRealmKeepingSchemas(ctx, nil, []string{"kept_schema", "public"}, dbreset.NamedServer)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(postgresWriterLiveSchemaCount(c, ctx, db, "kept_schema"), qt.Equals, 1)
@@ -366,7 +367,7 @@ func TestWriterDropDatabaseRealmKeepingSchemas_LiveLeavesPublicBesideAnotherRoot
 				c.Assert(err, qt.IsNil, qt.Commentf("%s", statement))
 			}
 
-			err := postgres.NewPostgreSQLWriter(db, "app").DropDatabaseRealmKeepingSchemas(ctx, nil, []string{"public"})
+			err := postgres.NewPostgreSQLWriter(db, "app").DropDatabaseRealmKeepingSchemas(ctx, nil, []string{"public"}, dbreset.NamedServer)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(postgresWriterLiveSchemaCount(c, ctx, db, "app"), qt.Equals, 1)

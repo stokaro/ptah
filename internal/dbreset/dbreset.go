@@ -7,6 +7,8 @@
 // lives here so that neither side imports the other.
 package dbreset
 
+import "errors"
+
 // Object is something a reset of a dev database drops: an object in one of
 // the schemas the reset empties, or one that belongs to no schema, such as a
 // PostgreSQL large object, whose Name is its oid, or a SQL Server schema,
@@ -29,3 +31,25 @@ type Scope struct {
 	Schemas        []string
 	KeptExtensions []string
 }
+
+// Server says whose server a reset of a PostgreSQL-family database realm runs
+// on, which decides whether the server's default user database may be reset.
+// The other writers ignore it.
+type Server int
+
+const (
+	// NamedServer is a server the operator named. Its default user database,
+	// such as PostgreSQL's postgres, is where work that is not the run's tends
+	// to live, so a reset refuses it.
+	NamedServer Server = iota
+	// OwnedServer is a server the run owns as a whole: one Ptah started for the
+	// run, or one the operator declared disposable. Its default user database
+	// holds nothing that is not the run's, and a reset empties it as it empties
+	// any other.
+	OwnedServer
+)
+
+// ErrServerDefaultDatabase is wrapped by a reset that refused a database only
+// because it is the server's default user database on a [NamedServer]. The
+// same reset on an [OwnedServer] would have run.
+var ErrServerDefaultDatabase = errors.New("it is the server's default database, which is reset only on a server the run owns")

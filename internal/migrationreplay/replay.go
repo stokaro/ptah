@@ -257,7 +257,7 @@ func replayOnLockedConnection(
 		migrator.WithAtlasRevisionVersions(revisionVersions),
 		migrator.WithStatementValidator(
 			devclean.NewReplayGuard(conn.Info(), replayRealm(conn.Info())).
-				WithServerRealmRemedy(serverRealmRemedy),
+				WithServerRealmRemedy(devdocker.OwnedServerRemedy),
 		),
 	)
 	if err != nil {
@@ -283,16 +283,12 @@ func replayOnLockedConnection(
 	})
 }
 
-// serverRealmRemedy ends a replay refusal that the server realm lifts. Both
-// ways it names reach that realm here: [replayRealm] answers the server for a
-// server the operator declared disposable and for one a docker URL started.
-var serverRealmRemedy = "if nothing else uses this server, declare it disposable with " +
-	devdocker.DisposableServerEnvVar + "=1, or use a " + devdocker.Scheme + ":// dev URL"
-
 // replayRealm is how much of the dev server this replay may change: the whole
 // server when the run owns it, and the dev database otherwise. The run owns a
 // server this process provisioned and removes afterwards, and a server the
-// operator declared disposable with [devdocker.DisposableServerEnvVar].
+// operator declared disposable with [devdocker.DisposableServerEnvVar]. Those
+// are the two ways [devdocker.OwnedServerRemedy] names, which is why the guard
+// ends a refusal the server realm lifts with it.
 //
 // Both answers come from the one record [devdocker.RunOwned] reads, keyed on
 // the URL the connection was opened with, and the two cases cannot be asked
