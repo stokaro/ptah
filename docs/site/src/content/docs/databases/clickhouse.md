@@ -98,6 +98,39 @@ answer rather than from the declaration's text:
   position.** A table sorted by a column named `settings` or `ttl` is read as
   what it is; the clause is only recognized where a clause can start.
 
+## Column changes
+
+A changed column is planned as one `ALTER TABLE ... MODIFY COLUMN` that states
+the column's type and, when the column declares one, its default. The default
+is in the statement because a `MODIFY COLUMN` that names only a type keeps the
+default the column already had.
+
+Making a nullable column `NOT NULL` depends on the server line:
+
+| Server | Column declares a default | Column declares no default |
+| --- | --- | --- |
+| 24.11 and later | `MODIFY COLUMN n Int32 DEFAULT '7'`; every NULL row takes the default | refused when the plan is made |
+| 24.10 | `MODIFY COLUMN n Int32 DEFAULT '7'` | `MODIFY COLUMN n Int32` |
+
+ClickHouse 26.3 and 26.9 refuse the statement without a `DEFAULT`, even on an
+empty table, with `Please specify DEFAULT expression in ALTER MODIFY COLUMN
+statement`. Ptah does not invent a value such as `0` for the NULL rows, so it
+refuses the change and asks for a default. The decision reads the
+`alter_column_set_not_null` key in the
+[capability gates](../../reference/capabilities/). The server line comes from
+the connection, or from `--server-version` on `ptah schema diff`. Without
+either, Ptah plans for 24.10.
+
+The same rule applies to a down migration. On 24.11 and later,
+`ptah migrations generate` refuses to make a `NOT NULL` column without a
+default nullable, because the down migration would have to make it `NOT NULL`
+again. To make such a column nullable, give it a default in one migration,
+then make it nullable in the next.
+
+On 24.10, a row that holds NULL makes the conversion fail, with or without a
+default, and the table is left unreadable (stokaro/ptah#4025). Check for NULL
+rows before you apply the change there.
+
 ## Views and materialized views
 
 Plain views participate in the complete render, plan, and introspection cycle.
