@@ -1244,3 +1244,49 @@ func TestYDBNamespaceStatements(t *testing.T) {
 	c.Assert(occupancySQLFor(platform.YDB, "/local"), qt.Equals,
 		"SELECT COUNT(DISTINCT Path) FROM `/local/.sys/partition_stats` WHERE NOT StartsWith(Path, '/local/.')")
 }
+
+// TestReportErr_AnUnderstatementIsAClaimAboutTheServerToo pins both readings of
+// a declared understatement: the server doing the key is the decision the cell
+// recorded and passes, and the server not doing it makes the declaration's
+// reason false and fails the run -- which is also what an experiment that
+// stopped proving the object exists would produce.
+func TestReportErr_AnUnderstatementIsAClaimAboutTheServerToo(t *testing.T) {
+	const key = capability.Hypertables // Postgres17 says false.
+	cell := measuredCell
+	cell.Understates = map[capability.Capability]string{key: "the server has it and Ptah does not plan it yet"}
+	for _, tc := range []struct {
+		name        string
+		serverDoes  bool
+		wantOutcome Outcome
+		wantErr     string
+	}{{
+		name:        "the server does the understated key",
+		serverDoes:  true,
+		wantOutcome: Conservative,
+	}, {
+		name:        "the server does not do it either",
+		serverDoes:  false,
+		wantOutcome: Agrees,
+		wantErr: `(?s).*hypertables: matrix cell postgres 17 declares that its preset understates this key ` +
+			`\(the server has it and Ptah does not plan it yet\), and the server was measured not to do it ` +
+			`either, so the declaration is stale.*`,
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			preset := capability.Postgres17()
+			report := reportOn(cell, true, preset)
+			report.Planned = true
+			report.Control = Attempt{Statement: nonsenseControl}
+			report.Resolution.Capabilities = preset
+			observations := make(map[capability.Capability]observation)
+			for _, registered := range capability.All() {
+				observations[registered] = decided(preset.Has(registered))
+			}
+			observations[key] = decided(tc.serverDoes)
+			report.Rows = assemble(report, observations, nil)
+
+			c.Assert(rowFor(c, report.Rows, key).Outcome, qt.Equals, tc.wantOutcome)
+			assertErrMatches(c, report.Err(), tc.wantErr)
+		})
+	}
+}

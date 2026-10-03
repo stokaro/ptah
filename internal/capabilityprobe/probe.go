@@ -209,6 +209,7 @@ func (r *Report) Err() error {
 		problems = append(problems, fmt.Errorf(
 			"%s: preset says %t, server does %t", row.Capability, row.PresetSays, row.ServerDoes))
 	}
+	problems = append(problems, r.staleUnderstatements()...)
 	if r.Decided() < r.Floor() {
 		problems = append(problems, r.coverageProblem())
 	}
@@ -261,6 +262,28 @@ func (r *Report) cellProblems() []error {
 		problems = append(problems, fmt.Errorf(
 			"matrix cell %s names preset %s, but the resolver handed this server a different set",
 			r.Cell, r.Cell.PresetName))
+	}
+	return problems
+}
+
+// staleUnderstatements reports every key the cell declares its preset
+// understates on a server measured not to do it.
+//
+// An understatement is a claim about the server as well as about Ptah: that
+// the server does what the preset leaves out. Measured false, the reason it
+// carries is wrong, and a row that agrees with the preset is all that would
+// say so -- which is also what an experiment that stopped proving the object
+// was made would produce.
+func (r *Report) staleUnderstatements() []error {
+	var problems []error
+	for _, row := range r.Rows {
+		reason, declared := r.Cell.Understates[row.Capability]
+		if !declared || row.Outcome != Agrees || row.ServerDoes {
+			continue
+		}
+		problems = append(problems, fmt.Errorf(
+			"%s: matrix cell %s declares that its preset understates this key (%s), and the server was measured "+
+				"not to do it either, so the declaration is stale", row.Capability, r.Cell, reason))
 	}
 	return problems
 }
