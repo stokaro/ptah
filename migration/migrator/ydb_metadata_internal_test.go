@@ -84,7 +84,7 @@ func TestYDBNativeRevisionColumns_MatchTheDDL(t *testing.T) {
 	for _, column := range ydbNativeRevisionColumns {
 		positions = append(positions, strings.Index(ddl, "\n    "+column+" "))
 	}
-	c.Assert(slices.Contains(positions, -1), qt.IsFalse, qt.Commentf("positions %v", positions))
+	c.Assert(positions, qt.Not(qt.Contains), -1)
 	c.Assert(slices.IsSorted(positions), qt.IsTrue, qt.Commentf("positions %v", positions))
 	c.Assert(strings.Count(ddl, "\n    "), qt.Equals, len(ydbNativeRevisionColumns)+1)
 }

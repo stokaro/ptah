@@ -78,7 +78,7 @@ func TestSourceStatementsForDialect_FollowTheUnits(t *testing.T) {
 		"$v = 1l;\nUPSERT INTO `t` (id) VALUES ($v);\nUPSERT INTO `t` (id) VALUES ($v + 1);",
 		"ALTER TABLE `t` ADD COLUMN `name` Utf8;",
 	})
-	c.Assert(len(sources), qt.Equals, len(splitSQLStatementsForDialect(ydbBody, platform.YDB)))
+	c.Assert(sources, qt.HasLen, len(splitSQLStatementsForDialect(ydbBody, platform.YDB)))
 }
 
 func TestRefuseUnsplittableSQL_FailurePath(t *testing.T) {
@@ -185,7 +185,7 @@ func TestCommitStatement(t *testing.T) {
 			c := qt.New(t)
 			committed, err := commitStatement(ctx, StatementEvent{Statement: test.statement, Index: 1, Total: 1})
 			c.Assert(committed, qt.Equals, test.wantCommitted)
-			c.Assert(errors.Is(err, test.wantErr), qt.IsTrue)
+			c.Assert(err, qt.ErrorIs, test.wantErr)
 		})
 	}
 	c := qt.New(t)
