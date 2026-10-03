@@ -1032,6 +1032,95 @@ const (
 	// it refuses the index rather than build one the optimizer uses, which
 	// would change the query plans its author held back (stokaro/ptah#3853).
 	InvisibleIndexes Capability = "invisible_indexes"
+
+	// PrimaryKeyRequired marks a target that refuses a table without a primary
+	// key, so a render for it refuses one too rather than leave the refusal to
+	// the server at apply time.
+	//
+	// YDB answers `Primary key is required for ydb tables.` ClickHouse is
+	// false, because a MergeTree table sorted by `tuple()` has no key and is
+	// accepted, and so is the Spanner emulator, which takes `CREATE TABLE t (n
+	// int)`.
+	PrimaryKeyRequired Capability = "primary_key_required"
+
+	// PrimaryKeyAlterable marks a target that changes an existing table's
+	// primary key in place, with ALTER TABLE, rather than by building a new
+	// table.
+	//
+	// The key names what the engine does. The planners that already plan a
+	// key change keep their own paths (SQLite rebuilds the table whatever this
+	// says); the YDB planner reads it, because YDB has no ALTER for a key at
+	// all. The probe proves a change by use: a row that only the new key
+	// admits must be accepted afterwards.
+	PrimaryKeyAlterable Capability = "primary_key_alterable"
+
+	// AlterColumnType marks a target that changes a column's type in place.
+	// The probe widens a length-limited string and proves it with a value
+	// that only the wider type admits, after the same value was refused by
+	// the narrow one. YDB has no type change of any kind.
+	AlterColumnType Capability = "alter_column_type"
+
+	// AlterColumnSetNotNull marks a target that adds NOT NULL to an existing
+	// column in place. It is separate from [AlterColumnDropNotNull] because
+	// the two halves do not travel together: measured on YDB 25.4 through
+	// 26.2, DROP NOT NULL is accepted and SET NOT NULL answers `SET NOT NULL
+	// is currently not supported.`
+	AlterColumnSetNotNull Capability = "alter_column_set_not_null"
+
+	// AlterColumnDropNotNull marks a target that removes NOT NULL from an
+	// existing column in place. See [AlterColumnSetNotNull].
+	AlterColumnDropNotNull Capability = "alter_column_drop_not_null"
+
+	// AlterColumnDefault marks a target that sets and removes a column
+	// default in place. One key covers both halves, because a target that
+	// can set a default it cannot remove leaves a plan that cannot be
+	// reversed. Measured on YDB, both arrived together in 26.2.
+	AlterColumnDefault Capability = "alter_column_default"
+
+	// AddColumnWithDefault marks a target that adds a column with a default
+	// to a table that already holds rows, and fills the default into those
+	// rows. The probe reads the existing row back, because an engine that
+	// accepted the column and left the old row NULL would break a NOT NULL
+	// the declaration promised. YDB refuses it before 26.1.
+	AddColumnWithDefault Capability = "add_column_with_default"
+
+	// ExpressionDefaults marks a target whose column default may be an
+	// expression evaluated by the server, not only a literal. MySQL grew it
+	// in 8.0.13 and MariaDB in 10.2; YDB takes literals only and refuses
+	// `DEFAULT CurrentUtcTimestamp()` with `Unsupported type of literal`.
+	ExpressionDefaults Capability = "expression_defaults"
+
+	// CheckConstraints marks a target whose grammar has CHECK at all.
+	//
+	// It is a different question from [CheckConstraintsEnforced], which asks
+	// whether a CHECK the server accepted is then enforced: MySQL before
+	// 8.0.16 has this key and not that one. YDB has neither, and its parser
+	// answers `no viable alternative at input 'CHECK'`. There is
+	// deliberately no `requires` edge between the two, for the reason
+	// [DeferrableConstraints] gives: a caller narrowing one key must not
+	// turn a set into an invalid one.
+	CheckConstraints Capability = "check_constraints"
+
+	// IndexCoveringColumns marks a target on which Ptah renders, reads and
+	// plans an index's payload columns: INCLUDE on the PostgreSQL family
+	// (STORING on CockroachDB, which takes INCLUDE as a synonym) and COVER on
+	// YDB.
+	//
+	// It describes Ptah rather than the engine: SQL Server takes INCLUDE, and
+	// the key is false there because its renderer does not emit it, so an
+	// index that declares payload columns is refused instead of rendered
+	// without them.
+	IndexCoveringColumns Capability = "index_covering_columns"
+
+	// UniqueIndexOnExistingTable marks a target that adds a unique index to a
+	// table that already exists and holds rows.
+	//
+	// It is a key rather than an assumption because YDB keeps it behind a
+	// feature flag that is off by default: `ALTER TABLE ... ADD INDEX ...
+	// GLOBAL UNIQUE SYNC` answers `Adding a unique index to an existing table
+	// is disabled`, while the same index declared in CREATE TABLE is
+	// accepted. ClickHouse is false because it has no unique index.
+	UniqueIndexOnExistingTable Capability = "unique_index_on_existing_table"
 )
 
 // spec documents a registry entry and its implication edges.
@@ -1302,6 +1391,39 @@ var registry = map[Capability]spec{
 	InvisibleIndexes: {
 		doc: "an index the optimizer does not use: INVISIBLE on MySQL 8.0+, IGNORED on MariaDB 10.6+, NOT VISIBLE on CockroachDB",
 	},
+	PrimaryKeyRequired: {
+		doc: "a table without a primary key is refused (YDB)",
+	},
+	PrimaryKeyAlterable: {
+		doc: "ALTER TABLE changes an existing table's primary key in place (not ClickHouse, SQLite, Spanner or YDB)",
+	},
+	AlterColumnType: {
+		doc: "ALTER TABLE changes a column's type in place (not SQLite or YDB)",
+	},
+	AlterColumnSetNotNull: {
+		doc: "ALTER TABLE adds NOT NULL to an existing column in place (not SQLite or YDB)",
+	},
+	AlterColumnDropNotNull: {
+		doc: "ALTER TABLE removes NOT NULL from an existing column in place (not SQLite)",
+	},
+	AlterColumnDefault: {
+		doc: "ALTER TABLE sets and removes a column default in place (not SQLite; YDB 26.2+)",
+	},
+	AddColumnWithDefault: {
+		doc: "a column added with a default fills that default into the rows the table already holds (YDB 26.1+)",
+	},
+	ExpressionDefaults: {
+		doc: "a column default may be an expression the server evaluates, not only a literal (MySQL 8.0.13+, MariaDB 10.2+; not YDB)",
+	},
+	CheckConstraints: {
+		doc: "the grammar has CHECK constraints at all, enforced or not (not YDB)",
+	},
+	IndexCoveringColumns: {
+		doc: "Ptah renders an index's payload columns: INCLUDE on the PostgreSQL family, COVER on YDB",
+	},
+	UniqueIndexOnExistingTable: {
+		doc: "a unique index can be added to a table that already holds rows (not ClickHouse; behind a flag on YDB)",
+	},
 }
 
 // mutexGroups lists capability groups in which AT MOST ONE member may be
@@ -1539,6 +1661,17 @@ func MySQL84() Capabilities {
 		AlterTableAlgorithmLock:         true,
 		AddConstraintNotValid:           false,
 		InvisibleIndexes:                true,
+		PrimaryKeyRequired:              false,
+		PrimaryKeyAlterable:             true,
+		AlterColumnType:                 true,
+		AlterColumnSetNotNull:           true,
+		AlterColumnDropNotNull:          true,
+		AlterColumnDefault:              true,
+		AddColumnWithDefault:            true,
+		ExpressionDefaults:              true,
+		CheckConstraints:                true,
+		IndexCoveringColumns:            false,
+		UniqueIndexOnExistingTable:      true,
 	}
 }
 
@@ -1583,7 +1716,10 @@ func MySQLLegacy() Capabilities {
 		With(CatalogViewDependencies, false).
 		// MySQL 5.7 has no invisible index. MySQL 8.0 does, from its first
 		// GA release, and [MySQL8013] restores it for the arm above.
-		With(InvisibleIndexes, false)
+		With(InvisibleIndexes, false).
+		// An expression default, `DEFAULT (expr)`, arrived in 8.0.13, and
+		// [MySQL8013] restores it for the arm above.
+		With(ExpressionDefaults, false)
 }
 
 // MySQL8013 is the preset for MySQL 8.0.13 through 8.0.15: [MySQLLegacy] plus
@@ -1594,7 +1730,10 @@ func MySQLLegacy() Capabilities {
 // arrives before the constraint behavior does and neither arm can carry both
 // (stokaro/ptah#916 item 3).
 func MySQL8013() Capabilities {
-	return MySQLLegacy().With(CatalogViewDependencies, true).With(InvisibleIndexes, true)
+	return MySQLLegacy().
+		With(CatalogViewDependencies, true).
+		With(InvisibleIndexes, true).
+		With(ExpressionDefaults, true)
 }
 
 // MariaDB1011 is the preset for the current MariaDB LTS line (10.6+ /
@@ -1706,6 +1845,17 @@ func MariaDB1011() Capabilities {
 		AlterTableAlgorithmLock:         true,
 		AddConstraintNotValid:           false,
 		InvisibleIndexes:                true,
+		PrimaryKeyRequired:              false,
+		PrimaryKeyAlterable:             true,
+		AlterColumnType:                 true,
+		AlterColumnSetNotNull:           true,
+		AlterColumnDropNotNull:          true,
+		AlterColumnDefault:              true,
+		AddColumnWithDefault:            true,
+		ExpressionDefaults:              true,
+		CheckConstraints:                true,
+		IndexCoveringColumns:            false,
+		UniqueIndexOnExistingTable:      true,
 	}
 }
 
@@ -1722,7 +1872,10 @@ func MariaDBLegacy() Capabilities {
 		With(DropConstraintIfExists, false).
 		With(DropIndexIfExists, false).
 		With(CheckConstraintsEnforced, false).
-		With(CreateOrReplaceTrigger, false)
+		With(CreateOrReplaceTrigger, false).
+		// A DEFAULT that is an expression arrived in MariaDB 10.2.1, the
+		// first release above this arm.
+		With(ExpressionDefaults, false)
 }
 
 // Postgres16 is the preset for PostgreSQL 14–16.
@@ -1817,6 +1970,17 @@ func Postgres16() Capabilities {
 		AlterTableAlgorithmLock:         false,
 		AddConstraintNotValid:           true,
 		InvisibleIndexes:                false,
+		PrimaryKeyRequired:              false,
+		PrimaryKeyAlterable:             true,
+		AlterColumnType:                 true,
+		AlterColumnSetNotNull:           true,
+		AlterColumnDropNotNull:          true,
+		AlterColumnDefault:              true,
+		AddColumnWithDefault:            true,
+		ExpressionDefaults:              true,
+		CheckConstraints:                true,
+		IndexCoveringColumns:            true,
+		UniqueIndexOnExistingTable:      true,
 	}
 }
 
@@ -2056,23 +2220,42 @@ func ClickHouse24() Capabilities {
 		AlterTableAlgorithmLock:         false,
 		AddConstraintNotValid:           false,
 		InvisibleIndexes:                false,
+		PrimaryKeyRequired:              false,
+		PrimaryKeyAlterable:             false,
+		AlterColumnType:                 true,
+		// Measured on 24.10: MODIFY COLUMN from Nullable(Int32) to Int32 is
+		// accepted and system.columns then reports Int32. ClickHouse2411 turns
+		// it off.
+		AlterColumnSetNotNull:      true,
+		AlterColumnDropNotNull:     true,
+		AlterColumnDefault:         true,
+		AddColumnWithDefault:       true,
+		ExpressionDefaults:         true,
+		CheckConstraints:           true,
+		IndexCoveringColumns:       false,
+		UniqueIndexOnExistingTable: false,
 	}
 }
 
 // ClickHouse2411 is the preset for ClickHouse 24.11 and above.
 //
-// It differs from [ClickHouse24] in exactly one key, and that key is the reason
-// this dialect has a version ladder at all. Measured on the two lines the matrix
-// declares furthest apart, `CHECK GRANT SHOW DATABASES, SHOW TABLES ON *.*`
-// answers 1 on 26.7.3.19 and is `Syntax error` on 24.10.4.191; every other
-// registered key answers identically on both, which is why the arm is one line
-// long rather than a second transcription of the whole set
-// (stokaro/ptah#916 item 1).
+// It differs from [ClickHouse24] in two keys, measured on the two lines the
+// matrix declares furthest apart. `CHECK GRANT SHOW DATABASES, SHOW TABLES ON
+// *.*` answers 1 on 26.7.3.19 and is `Syntax error` on 24.10.4.191, and that key
+// is the reason this dialect has a version ladder at all (stokaro/ptah#916 item
+// 1). MODIFY COLUMN from Nullable(Int32) to Int32 is accepted on 24.10 and
+// refused on 26.3 and 26.9: `Cannot convert column 'n' from nullable type
+// Nullable(Int32) to non-nullable type Int32. Please specify DEFAULT expression
+// in ALTER MODIFY COLUMN statement`. The release in between that changed it is
+// unmeasured, so the lines from 24.11 are false on the conservative side. Every
+// other registered key answers identically on both.
 func ClickHouse2411() Capabilities {
-	return ClickHouse24().With(CheckGrantStatement, true)
+	return ClickHouse24().
+		With(CheckGrantStatement, true).
+		With(AlterColumnSetNotNull, false)
 }
 
-// SQLite3 is the preset for modern SQLite 3.x. SQLite enforces CHECK
+// SQLite3 is the preset for SQLite 3.53 and newer, the line Ptah links. SQLite enforces CHECK
 // constraints and declarative foreign keys when PRAGMA foreign_keys is enabled
 // per connection, but it has no native enum, schema, sequence, role, RLS, or
 // advisory-lock surface.
@@ -2176,7 +2359,31 @@ func SQLite3() Capabilities {
 		AlterTableAlgorithmLock:    false,
 		AddConstraintNotValid:      false,
 		InvisibleIndexes:           false,
+		PrimaryKeyRequired:         false,
+		PrimaryKeyAlterable:        false,
+		AlterColumnType:            false,
+		// Measured on the linked 3.53.4: SET NOT NULL and DROP NOT NULL are
+		// accepted, and a NULL insert is refused after the first and accepted
+		// after the second. They arrived in 3.53.0; SQLite352 turns them off
+		// for the lines below.
+		AlterColumnSetNotNull:      true,
+		AlterColumnDropNotNull:     true,
+		AlterColumnDefault:         false,
+		AddColumnWithDefault:       true,
+		ExpressionDefaults:         true,
+		CheckConstraints:           true,
+		IndexCoveringColumns:       false,
+		UniqueIndexOnExistingTable: true,
 	}
+}
+
+// SQLite352 is the preset for SQLite 3.25 through 3.52: [SQLite3] without
+// ALTER TABLE ... ALTER COLUMN ... SET NOT NULL and DROP NOT NULL, which
+// arrived in 3.53.0.
+func SQLite352() Capabilities {
+	return SQLite3().
+		With(AlterColumnSetNotNull, false).
+		With(AlterColumnDropNotNull, false)
 }
 
 // SQLite324 is the preset for SQLite below 3.25, which has no
@@ -2189,7 +2396,7 @@ func SQLite3() Capabilities {
 // this DDL is older than Ptah's own engine, which is exactly the case
 // stokaro/ptah#916 item 5 exists for.
 func SQLite324() Capabilities {
-	return SQLite3().
+	return SQLite352().
 		With(RenameColumnClause, false).
 		// Generated columns arrived in 3.31, well above this arm's ceiling, so
 		// a target pinned here cannot parse the clause either. Measured on the
@@ -2379,6 +2586,17 @@ func SQLServer2022() Capabilities {
 		AlterTableAlgorithmLock:    false,
 		AddConstraintNotValid:      false,
 		InvisibleIndexes:           false,
+		PrimaryKeyRequired:         false,
+		PrimaryKeyAlterable:        true,
+		AlterColumnType:            true,
+		AlterColumnSetNotNull:      true,
+		AlterColumnDropNotNull:     true,
+		AlterColumnDefault:         true,
+		AddColumnWithDefault:       true,
+		ExpressionDefaults:         true,
+		CheckConstraints:           true,
+		IndexCoveringColumns:       false,
+		UniqueIndexOnExistingTable: true,
 	}
 }
 
@@ -2822,7 +3040,13 @@ func SpannerPostgres() Capabilities {
 		With(XMLType, false).
 		With(AdvisoryLocks, false).
 		With(ForeignKeysRequireUniqueReference, false).
-		With(ForeignKeysCreateBackingIndex, true)
+		With(ForeignKeysCreateBackingIndex, true).
+		// Measured against the PGAdapter emulator v0.56.1: `CREATE TABLE sc_nopk
+		// (n int)` is accepted, and `ALTER TABLE sc_pka DROP CONSTRAINT
+		// sc_pka_pkey, ADD PRIMARY KEY (a, b)` is refused, because a key is
+		// part of a Spanner table's storage layout.
+		With(PrimaryKeyRequired, false).
+		With(PrimaryKeyAlterable, false)
 }
 
 // Oracle23 is the capability set measured against Oracle 23.26.
@@ -3018,6 +3242,17 @@ func Oracle23() Capabilities {
 		AlterTableAlgorithmLock:    false,
 		AddConstraintNotValid:      false,
 		InvisibleIndexes:           false,
+		PrimaryKeyRequired:         false,
+		PrimaryKeyAlterable:        true,
+		AlterColumnType:            true,
+		AlterColumnSetNotNull:      true,
+		AlterColumnDropNotNull:     true,
+		AlterColumnDefault:         true,
+		AddColumnWithDefault:       true,
+		ExpressionDefaults:         true,
+		CheckConstraints:           true,
+		IndexCoveringColumns:       false,
+		UniqueIndexOnExistingTable: true,
 	}
 }
 
@@ -3110,6 +3345,7 @@ func NamedPresets() []NamedPreset {
 		{"YugabyteDB24", YugabyteDB24()},
 		{"YugabyteDB25", YugabyteDB25()},
 		{"SQLite324", SQLite324()},
+		{"SQLite352", SQLite352()},
 		{"SQLite3", SQLite3()},
 		{"SQLServer2022", SQLServer2022()},
 		{"SpannerPostgres", SpannerPostgres()},
@@ -3562,10 +3798,14 @@ func sqliteResolution(version string) VersionResolution {
 
 // sqliteForVersion picks the arm. RENAME COLUMN arrived in 3.25.
 func sqliteForVersion(v serverVersion) Capabilities {
-	if v.major > 3 || (v.major == 3 && v.minor >= 25) {
+	switch {
+	case v.major > 3 || (v.major == 3 && v.minor >= 53):
 		return SQLite3()
+	case v.major == 3 && v.minor >= 25:
+		return SQLite352()
+	default:
+		return SQLite324()
 	}
-	return SQLite324()
 }
 
 // oracleResolution answers an Oracle version string or banner.

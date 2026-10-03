@@ -176,7 +176,7 @@ func ExampleValidateSchema() {
 
 	// Output:
 	// <nil>
-	// mysql does not support INCLUDE columns on index "idx_orders_customer"; target postgres, yugabytedb, cockroachdb, or spanner
+	// mysql does not support INCLUDE columns on index "idx_orders_customer"; target cockroachdb, postgres, spanner, or yugabytedb
 	// true
 }
 

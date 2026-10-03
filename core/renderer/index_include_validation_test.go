@@ -84,7 +84,7 @@ func TestIndexIncludeUnsupportedDialectsFailClosed(t *testing.T) {
 				qt.ErrorMatches,
 				fmt.Sprintf(
 					`%s does not support INCLUDE columns on index "idx_accounts_email"; `+
-						`target postgres, yugabytedb, cockroachdb, or spanner`,
+						`target cockroachdb, postgres, spanner, or yugabytedb`,
 					dialect,
 				),
 			)

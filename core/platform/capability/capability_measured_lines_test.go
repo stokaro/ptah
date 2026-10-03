@@ -206,11 +206,22 @@ func measuredLines() map[string]measuredLine {
 					"PGAdapter 0.55.2, which takes the CREATE SCHEMA before it and answers `Unknown " +
 					"statement` -- and carried elsewhere from PostgreSQL 17, CockroachDB v24.1.33 and " +
 					"YugabyteDB 2024.1.3.0, which accept it and read it back (stokaro/ptah#2651)",
-				capability.NotEnforcedChecks:      enforcementAndMatchCarried,
-				capability.NotEnforcedForeignKeys: enforcementAndMatchCarried,
-				capability.ForeignKeyMatchFull:    enforcementAndMatchCarried,
-				capability.ForeignKeyMatchPartial: enforcementAndMatchCarried,
-				capability.InvisibleIndexes:       invisibleIndexesCarried,
+				capability.NotEnforcedChecks:          enforcementAndMatchCarried,
+				capability.NotEnforcedForeignKeys:     enforcementAndMatchCarried,
+				capability.ForeignKeyMatchFull:        enforcementAndMatchCarried,
+				capability.ForeignKeyMatchPartial:     enforcementAndMatchCarried,
+				capability.InvisibleIndexes:           invisibleIndexesCarried,
+				capability.PrimaryKeyRequired:         schemaChangeCarried,
+				capability.PrimaryKeyAlterable:        schemaChangeCarried,
+				capability.AlterColumnType:            schemaChangeCarried,
+				capability.AlterColumnSetNotNull:      schemaChangeCarried,
+				capability.AlterColumnDropNotNull:     schemaChangeCarried,
+				capability.AlterColumnDefault:         schemaChangeCarried,
+				capability.AddColumnWithDefault:       schemaChangeCarried,
+				capability.ExpressionDefaults:         schemaChangeCarried,
+				capability.CheckConstraints:           schemaChangeCarried,
+				capability.IndexCoveringColumns:       schemaChangeCarried,
+				capability.UniqueIndexOnExistingTable: schemaChangeCarried,
 				capability.DeferrableKeys: "this run predates the key and sent no deferrable key. It was " +
 					"measured on 2026-09-27 against PostgreSQL 18.6, CockroachDB v26.3.2, YugabyteDB 2026.1.2 " +
 					"and Oracle Free 23, and carried here from those runs (stokaro/ptah#3824)",
@@ -323,11 +334,22 @@ func measuredLines() map[string]measuredLine {
 					"PGAdapter 0.55.2, which takes the CREATE SCHEMA before it and answers `Unknown " +
 					"statement` -- and carried elsewhere from PostgreSQL 17, CockroachDB v24.1.33 and " +
 					"YugabyteDB 2024.1.3.0, which accept it and read it back (stokaro/ptah#2651)",
-				capability.NotEnforcedChecks:      enforcementAndMatchCarried,
-				capability.NotEnforcedForeignKeys: enforcementAndMatchCarried,
-				capability.ForeignKeyMatchFull:    enforcementAndMatchCarried,
-				capability.ForeignKeyMatchPartial: enforcementAndMatchCarried,
-				capability.InvisibleIndexes:       invisibleIndexesCarried,
+				capability.NotEnforcedChecks:          enforcementAndMatchCarried,
+				capability.NotEnforcedForeignKeys:     enforcementAndMatchCarried,
+				capability.ForeignKeyMatchFull:        enforcementAndMatchCarried,
+				capability.ForeignKeyMatchPartial:     enforcementAndMatchCarried,
+				capability.InvisibleIndexes:           invisibleIndexesCarried,
+				capability.PrimaryKeyRequired:         schemaChangeCarried,
+				capability.PrimaryKeyAlterable:        schemaChangeCarried,
+				capability.AlterColumnType:            schemaChangeCarried,
+				capability.AlterColumnSetNotNull:      schemaChangeCarried,
+				capability.AlterColumnDropNotNull:     schemaChangeCarried,
+				capability.AlterColumnDefault:         schemaChangeCarried,
+				capability.AddColumnWithDefault:       schemaChangeCarried,
+				capability.ExpressionDefaults:         schemaChangeCarried,
+				capability.CheckConstraints:           schemaChangeCarried,
+				capability.IndexCoveringColumns:       schemaChangeCarried,
+				capability.UniqueIndexOnExistingTable: schemaChangeCarried,
 				capability.DeferrableKeys: "this run predates the key and sent no deferrable key. It was " +
 					"measured on 2026-09-27 against PostgreSQL 18.6, CockroachDB v26.3.2, YugabyteDB 2026.1.2 " +
 					"and Oracle Free 23, and carried here from those runs (stokaro/ptah#3824)",
@@ -441,11 +463,22 @@ func measuredLines() map[string]measuredLine {
 					"PGAdapter 0.55.2, which takes the CREATE SCHEMA before it and answers `Unknown " +
 					"statement` -- and carried elsewhere from PostgreSQL 17, CockroachDB v24.1.33 and " +
 					"YugabyteDB 2024.1.3.0, which accept it and read it back (stokaro/ptah#2651)",
-				capability.NotEnforcedChecks:      enforcementAndMatchCarried,
-				capability.NotEnforcedForeignKeys: enforcementAndMatchCarried,
-				capability.ForeignKeyMatchFull:    enforcementAndMatchCarried,
-				capability.ForeignKeyMatchPartial: enforcementAndMatchCarried,
-				capability.InvisibleIndexes:       invisibleIndexesCarried,
+				capability.NotEnforcedChecks:          enforcementAndMatchCarried,
+				capability.NotEnforcedForeignKeys:     enforcementAndMatchCarried,
+				capability.ForeignKeyMatchFull:        enforcementAndMatchCarried,
+				capability.ForeignKeyMatchPartial:     enforcementAndMatchCarried,
+				capability.InvisibleIndexes:           invisibleIndexesCarried,
+				capability.PrimaryKeyRequired:         schemaChangeCarried,
+				capability.PrimaryKeyAlterable:        schemaChangeCarried,
+				capability.AlterColumnType:            schemaChangeCarried,
+				capability.AlterColumnSetNotNull:      schemaChangeCarried,
+				capability.AlterColumnDropNotNull:     schemaChangeCarried,
+				capability.AlterColumnDefault:         schemaChangeCarried,
+				capability.AddColumnWithDefault:       schemaChangeCarried,
+				capability.ExpressionDefaults:         schemaChangeCarried,
+				capability.CheckConstraints:           schemaChangeCarried,
+				capability.IndexCoveringColumns:       schemaChangeCarried,
+				capability.UniqueIndexOnExistingTable: schemaChangeCarried,
 				capability.DeferrableKeys: "this run predates the key and sent no deferrable key. It was " +
 					"measured on 2026-09-27 against PostgreSQL 18.6, CockroachDB v26.3.2, YugabyteDB 2026.1.2 " +
 					"and Oracle Free 23, and carried here from those runs (stokaro/ptah#3824)",
@@ -561,3 +594,10 @@ const routineCommentCarried = "this run predates the key and sent no COMMENT ON 
 	"materialized view, trigger or policy. The keys were measured on 2026-09-26 against PostgreSQL 14 and 18, " +
 	"YugabyteDB 2024.2, 2025.2 and 2026.1, CockroachDB v25.4.16, v26.2.7 and v26.3.1 and the Spanner emulator " +
 	"behind PGAdapter 0.55.3, and carried here from those runs (stokaro/ptah#3646)"
+
+// schemaChangeCarried is why the keys about holding and changing a table are
+// carried on every measured line: the run named there predates them. The probe
+// asks them on every run through its schema-change experiments, each of which
+// proves an accepted change by using it, and the value here is the preset's.
+const schemaChangeCarried = "this run predates the key and sent no schema-change experiment; the probe " +
+	"asks it on every run through those experiments, and the value here is the preset's"
