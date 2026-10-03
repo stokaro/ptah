@@ -73,6 +73,19 @@ const (
 // node but not use it waited on it without end.
 const ydbSessionStartTimeout = 10 * time.Second
 
+// lockNodeMissing says what acquiring a YDB lock does when the coordination
+// node it lives on does not exist.
+type lockNodeMissing int
+
+const (
+	// createLockNode creates the node and takes the lock.
+	createLockNode lockNodeMissing = iota
+	// skipTheLock creates nothing and takes no lock, for a run that writes
+	// nothing: no run that took a lock has used the database, so there is
+	// nobody to wait for.
+	skipTheLock
+)
+
 // ydbLockSessionDescription is how the session that holds a lock names itself
 // to the server, so an operator who describes the semaphore sees whose it is.
 const ydbLockSessionDescription = "ptah"
@@ -85,16 +98,14 @@ const ydbLockSessionDescription = "ptah"
 // and ephemeral, held by a coordination session of its own rather than by any
 // SQL session.
 //
-// The node is created when it does not exist and create is true. When it does
-// not exist and create is false, nothing is created and no lock is taken: the
-// hold is nil. No run that took a lock has used the database then, so there is
-// nobody to wait for.
+// When the node does not exist, missing says whether to create it or to take
+// no lock, in which case the hold is nil.
 func acquireYDBLock(
 	ctx context.Context,
 	pool connOpener,
 	name string,
 	timeout time.Duration,
-	create bool,
+	missing lockNodeMissing,
 ) (*ydbHold, error) {
 	session, err := pool.Conn(ctx)
 	if err != nil {
@@ -107,7 +118,7 @@ func acquireYDBLock(
 	if err != nil {
 		return nil, fmt.Errorf("reach the YDB coordination service: %w", err)
 	}
-	return acquireYDBSemaphore(ctx, sdk, name, timeout, create)
+	return acquireYDBSemaphore(ctx, sdk, name, timeout, missing)
 }
 
 func acquireYDBSemaphore(
@@ -115,14 +126,14 @@ func acquireYDBSemaphore(
 	sdk *ydbsdk.Driver,
 	name string,
 	timeout time.Duration,
-	create bool,
+	missing lockNodeMissing,
 ) (*ydbHold, error) {
 	node := path.Join(sdk.Name(), YDBLockNode)
 	exists, err := ydbLockNodeExists(ctx, sdk, node)
 	if err != nil {
 		return nil, err
 	}
-	if !exists && !create {
+	if !exists && missing == skipTheLock {
 		return nil, nil
 	}
 	if !exists {

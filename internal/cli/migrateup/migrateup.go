@@ -519,15 +519,9 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
-	// Before connecting, which is what creates a sqlite:// target's file.
-	if err := newTimeoutRequest(cmd, projectCfg, dbURL).DecideFromURL(timeouts); err != nil {
-		return err
-	}
-	connectCtx, cancelConnect := dbcli.ConnectContext(cmd.Context(), settings.connectTimeout)
-	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
-	cancelConnect()
+	conn, err := connectTarget(cmd, projectCfg, dbURL, timeouts, settings.connectTimeout)
 	if err != nil {
-		return fmt.Errorf("error connecting to database: %w", err)
+		return err
 	}
 	defer dbschema.CloseAndWarn(conn)
 
@@ -718,6 +712,28 @@ func newTimeoutRequest(cmd *cobra.Command, projectCfg projectconfig.Config, dbUR
 		StatementFromConfig: projectCfg.StringValue(projectconfig.StringMigrationStatementTimeout).Present,
 		DBURL:               dbURL,
 	}
+}
+
+// connectTarget refuses run-wide timeouts the dialect dbURL names cannot
+// carry, and connects. The refusal comes first: connecting is what creates a
+// sqlite:// target's file.
+func connectTarget(
+	cmd *cobra.Command,
+	projectCfg projectconfig.Config,
+	dbURL string,
+	timeouts migrationfile.Timeouts,
+	connectTimeout time.Duration,
+) (*dbschema.DatabaseConnection, error) {
+	if err := newTimeoutRequest(cmd, projectCfg, dbURL).DecideFromURL(timeouts); err != nil {
+		return nil, err
+	}
+	connectCtx, cancelConnect := dbcli.ConnectContext(cmd.Context(), connectTimeout)
+	defer cancelConnect()
+	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
+	if err != nil {
+		return nil, fmt.Errorf("error connecting to database: %w", err)
+	}
+	return conn, nil
 }
 
 // planReport is the block a run prints about the work it is about to do: where

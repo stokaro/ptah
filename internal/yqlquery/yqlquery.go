@@ -346,7 +346,7 @@ func (s *splitter) defineAction(tokens []lexer.Token) {
 	for i := 3; i < len(tokens); i++ {
 		if tokens[i].MatchIdentifierValue("AS") {
 			if s.actions == nil {
-				s.actions = map[string]Kind{}
+				s.actions = make(map[string]Kind)
 			}
 			s.actions[tokens[2].Value] = s.blockKind(tokens[i+1:])
 			return

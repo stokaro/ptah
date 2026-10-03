@@ -99,7 +99,7 @@ func TestYDBMigrator_StopsWhenTheLockIsLost(t *testing.T) {
 		`(?s).*advisory lock "ptah_migrate" on ydb was lost while it was held: .*the run stopped there.*`)
 	c.Assert(dblock.IsLost(cause), qt.IsTrue, qt.Commentf("the body's context ended with %v", cause))
 	c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.DeepEquals, []string{dir + "|x"})
-	c.Assert(revisionProgress(c, newMigrator(c, openYDB(c), map[string]string{}, migrator.RevisionTableFormatPtah, dir)),
+	c.Assert(revisionProgress(c, newMigrator(c, openYDB(c), make(map[string]string), migrator.RevisionTableFormatPtah, dir)),
 		qt.DeepEquals, []progress{{Version: 1, State: "pending", Applied: 1, Total: 2}})
 }
 

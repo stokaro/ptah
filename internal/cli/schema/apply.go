@@ -86,26 +86,46 @@ type schemaApplyOptions struct {
 // handed the pinned session and a context that ends when the lock is lost:
 // whether that session carries a real database lock is settled from --db-url
 // before the connection is opened, so no caller reads the lock back here.
-// preview says the run writes nothing, so taking the lock must not either.
 type schemaApplyLockSession func(
 	context.Context,
 	*dbschema.DatabaseConnection,
 	string,
 	time.Duration,
-	bool,
+	applyLockScope,
 	func(context.Context, *dbschema.DatabaseConnection) error,
 ) (runErr, releaseErr error)
+
+// applyLockScope says what an apply may write, which decides how it takes
+// its lock.
+type applyLockScope int
+
+const (
+	// applyWrites is an apply that writes; taking its lock may create the
+	// state the lock lives on.
+	applyWrites applyLockScope = iota
+	// applyPreviews is a dry run, which writes nothing, and takes its lock
+	// only where that writes nothing either.
+	applyPreviews
+)
+
+// lockScope is the scope of the apply these options run.
+func (o schemaApplyOptions) lockScope() applyLockScope {
+	if o.dryRun {
+		return applyPreviews
+	}
+	return applyWrites
+}
 
 func withSchemaApplyLockSession(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	name string,
 	timeout time.Duration,
-	preview bool,
+	scope applyLockScope,
 	use func(context.Context, *dbschema.DatabaseConnection) error,
 ) (runErr, releaseErr error) {
 	session := atlasschema.WithApplyLockSession
-	if preview {
+	if scope == applyPreviews {
 		session = atlasschema.WithApplyPreviewLockSession
 	}
 	return session(
@@ -459,7 +479,7 @@ func applySchema(
 		conn,
 		"",
 		lockTimeout,
-		opts.dryRun,
+		opts.lockScope(),
 		func(ctx context.Context, session *dbschema.DatabaseConnection) error {
 			var applyErr error
 			outcome, applyErr = runSchemaApplyOnLockedSession(ctx, cmd, opts, session, desired, projectCfg, txMode, run)
@@ -639,7 +659,7 @@ func applySchemaPlanFile(
 		conn,
 		"",
 		lockTimeout,
-		opts.dryRun,
+		opts.lockScope(),
 		func(ctx context.Context, session *dbschema.DatabaseConnection) error {
 			var applyErr error
 			outcome, applyErr = runSchemaApplyPlanFileOnLockedSession(ctx, cmd, opts, session, plan, txMode, run)

@@ -190,7 +190,7 @@ func (l *Lock) Err() error {
 // run under the context stops with the lock. Call stop once the work is done
 // and before releasing the lock. For a lock that reports no loss the context
 // ends only with ctx.
-func (l *Lock) Guard(ctx context.Context) (guarded context.Context, stop func()) {
+func (l *Lock) Guard(ctx context.Context) (context.Context, func()) {
 	guarded, cancel := context.WithCancelCause(ctx)
 	lost := l.Done()
 	if lost == nil {
@@ -198,13 +198,14 @@ func (l *Lock) Guard(ctx context.Context) (guarded context.Context, stop func())
 	}
 	stopped := make(chan struct{})
 	finished := make(chan struct{})
+	done := guarded.Done()
 	go func() {
 		defer close(finished)
 		select {
 		case <-lost:
 			cancel(&LostError{Dialect: l.dialect, Name: l.name})
 		case <-stopped:
-		case <-guarded.Done():
+		case <-done:
 		}
 	}()
 	return guarded, func() {
@@ -345,7 +346,7 @@ func acquireSessionLock(
 	name string,
 	timeout time.Duration,
 ) (*Lock, error) {
-	return acquireOnSession(ctx, session, witness, dialect, name, timeout, true)
+	return acquireOnSession(ctx, session, witness, dialect, name, timeout, createLockNode)
 }
 
 func acquirePreviewLock(
@@ -356,7 +357,7 @@ func acquirePreviewLock(
 	name string,
 	timeout time.Duration,
 ) (*Lock, error) {
-	return acquireOnSession(ctx, session, witness, dialect, name, timeout, false)
+	return acquireOnSession(ctx, session, witness, dialect, name, timeout, skipTheLock)
 }
 
 // Acquire takes the dialect-specific session advisory lock named name on a
@@ -385,7 +386,7 @@ func Acquire(
 	if dialect == platform.YDB {
 		// The semaphore belongs to a coordination session of its own, so
 		// the lock holds no SQL session from the pool.
-		return acquireOnSession(ctx, nil, conn, dialect, name, timeout, true)
+		return acquireOnSession(ctx, nil, conn, dialect, name, timeout, createLockNode)
 	}
 
 	session, err := conn.Conn(ctx)
@@ -393,7 +394,7 @@ func Acquire(
 		return nil, err
 	}
 
-	lock, acquireErr := acquireOnSession(ctx, session, conn, dialect, name, timeout, true)
+	lock, acquireErr := acquireOnSession(ctx, session, conn, dialect, name, timeout, createLockNode)
 	if acquireErr != nil {
 		return nil, closeAfterFailedAcquisition(session, acquireErr)
 	}
@@ -401,8 +402,9 @@ func Acquire(
 	return lock, nil
 }
 
-// acquireOnSession takes the lock dialect offers. create says whether state
-// the lock lives on may be created; only YDB's lock lives on any.
+// acquireOnSession takes the lock dialect offers. missing says what to do
+// when the state the lock lives on does not exist; only YDB's lock lives on
+// any.
 func acquireOnSession(
 	ctx context.Context,
 	session queryRower,
@@ -410,7 +412,7 @@ func acquireOnSession(
 	dialect,
 	name string,
 	timeout time.Duration,
-	create bool,
+	missing lockNodeMissing,
 ) (*Lock, error) {
 	lock := &Lock{name: name, dialect: dialect}
 	if !Supported(dialect) {
@@ -435,7 +437,7 @@ func acquireOnSession(
 		acquireErr = acquireSQLServerLock(ctx, session, name, timeout)
 	case platform.YDB:
 		var hold *ydbHold
-		hold, acquireErr = acquireYDBLock(ctx, witness, name, timeout, create)
+		hold, acquireErr = acquireYDBLock(ctx, witness, name, timeout, missing)
 		if hold != nil {
 			lock.release = hold.release
 			lock.holding = hold
