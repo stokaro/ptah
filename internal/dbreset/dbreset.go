@@ -7,7 +7,11 @@
 // lives here so that neither side imports the other.
 package dbreset
 
-import "errors"
+import (
+	"errors"
+
+	"ptah.run/internal/pgdefaultacl"
+)
 
 // Object is something a reset of a dev database drops: an object in one of
 // the schemas the reset empties, or one that belongs to no schema, such as a
@@ -24,12 +28,54 @@ type Object struct {
 }
 
 // Scope is the part of a PostgreSQL-family database a reset empties: the
-// schemas it drops objects from, and the extensions it keeps with everything
-// they own. The other writers reset the database they are connected to, and
+// schemas it drops objects from, the extensions it keeps with everything they
+// own, and the default privileges it returns to what they were rather than
+// revoking. The other writers reset the database they are connected to, and
 // ignore it.
 type Scope struct {
-	Schemas        []string
-	KeptExtensions []string
+	Schemas               []string
+	KeptExtensions        []string
+	KeptDefaultPrivileges DefaultPrivilegeScope
+}
+
+// DefaultPrivilegeScope names the PostgreSQL default privileges a reset keeps:
+// the rows set IN SCHEMA one of Schemas, and with Global the rows set without
+// IN SCHEMA, which apply in every schema of the database. A writer whose
+// catalog cannot read them back keeps none, and its reset revokes them as it
+// revokes the rest.
+type DefaultPrivilegeScope struct {
+	Schemas []string
+	Global  bool
+}
+
+// IsZero reports whether the scope keeps no default privilege.
+func (s DefaultPrivilegeScope) IsZero() bool {
+	return len(s.Schemas) == 0 && !s.Global
+}
+
+// DefaultPrivileges is what the default privileges in Scope were when a dev
+// database was claimed. A reset returns them to Rows: a row the run added is
+// revoked, one it changed or removed is set back, and one it left alone is
+// not touched. The zero value keeps nothing.
+type DefaultPrivileges struct {
+	Scope DefaultPrivilegeScope
+	Rows  []pgdefaultacl.Row
+}
+
+// Kept is the environment a reset of a dev database leaves in place: what the
+// database held when it was claimed and does not belong to the run, and whose
+// server it is on.
+//
+// Extensions stay installed with everything they own. Schemas, which only a
+// realm reset reads, are left as they are, contents and all. DefaultPrivileges
+// are returned to what they were. Server, which only a realm reset reads, says
+// whether the server's default user database may be reset. The zero value
+// keeps nothing and is on a [NamedServer].
+type Kept struct {
+	Extensions        []string
+	Schemas           []string
+	DefaultPrivileges DefaultPrivileges
+	Server            Server
 }
 
 // Server says whose server a reset of a PostgreSQL-family database realm runs

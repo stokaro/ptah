@@ -380,6 +380,10 @@ type postgresCleanupScope struct {
 	// kept with it. A schema-scoped cleanup refuses a schema that owns an
 	// extension instead, so there nothing is left to a drop that never runs.
 	realm bool
+	// keptDefaultPrivileges are the default privileges the cleanup returns
+	// to what they were instead of revoking them; see
+	// [PostgreSQLWriter.collectDefaultPrivilegeStatements].
+	keptDefaultPrivileges dbreset.DefaultPrivileges
 }
 
 func inspectCleanupCapabilities(
@@ -455,6 +459,15 @@ func (c postgresCleanupCapabilities) defaultPrivilegeRevokes() defaultPrivilegeR
 		return pgdefaultacl.ReadRevokesFromShow
 	}
 	return pgdefaultacl.ReadRevokes
+}
+
+// keepsDefaultPrivileges reports whether the cleanup can return default
+// privileges to what they were rather than revoke them. It reads them back
+// from pg_default_acl, which CockroachDB answers in a shape that cannot be
+// read back ([pgdefaultacl.ReadGlobalFromShow]), so a CockroachDB cleanup
+// keeps none and a dev database holding one is refused before it is reset.
+func (c postgresCleanupCapabilities) keepsDefaultPrivileges() bool {
+	return !c.showDefaultPrivileges
 }
 
 // globalDefaultPrivilegeResetReader reads the statements that return the global
@@ -547,6 +560,11 @@ type postgresDatabaseCleanupPlan struct {
 	// keptExtensions are the extensions the cleanup leaves installed: the
 	// server's own and the ones the caller asked to keep.
 	keptExtensions []string
+	// keptDefaultPrivileges are the default privileges the cleanup returns to
+	// what they were, narrowed to the ones it owns. The check that the cleanup
+	// finished leaves the schemas they are set in to
+	// [PostgreSQLWriter.verifyKeptDefaultPrivileges].
+	keptDefaultPrivileges dbreset.DefaultPrivileges
 	// inPlaceSchemas are the schemas a kept extension is installed in. The
 	// cleanup empties them where they stand instead of dropping and
 	// recreating them: DROP SCHEMA is refused while the extension depends on
@@ -835,13 +853,46 @@ func (w *PostgreSQLWriter) collectAllObjects(
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to iterate schema objects: %w", err)
 	}
-	// The revokes run after every drop.
-	revokes, err := w.collectDefaultPrivilegeRevokes(ctx, tx, scope.schemas, capabilities.defaultPrivilegeRevokes())
+	// The default privileges are taken back after every drop.
+	privileges, err := w.collectDefaultPrivilegeStatements(ctx, tx, scope, capabilities)
 	if err != nil {
 		return nil, err
 	}
-	objects = append(objects, revokes...)
-	if !scope.realm {
+	return append(objects, privileges...), nil
+}
+
+// collectDefaultPrivilegeStatements returns what a cleanup does to the default
+// privileges it owns: a revoke per grantee of each one set in the managed
+// schemas, and for a realm cleanup the resets that return each global default
+// to the built-in one.
+//
+// The ones scope.keptDefaultPrivileges names are a dev database's environment
+// rather than the run's state, as its extensions are, and they are returned to
+// what they were when the database was claimed instead
+// ([pgdefaultacl.Reconcile]). Only a grantee whose privileges the run changed
+// gets a statement there, so a default the run did not touch is left as it is,
+// and so is a grantor the connecting role could not set defaults for. A
+// schema-scoped cleanup owns no global default otherwise, and returns the kept
+// ones to what they were too, so a global default the run created does not
+// outlive it.
+func (w *PostgreSQLWriter) collectDefaultPrivilegeStatements(
+	ctx context.Context,
+	tx cleanupConn,
+	scope postgresCleanupScope,
+	capabilities postgresCleanupCapabilities,
+) ([]postgresCleanupObject, error) {
+	kept := keptDefaultPrivilegesIn(scope, capabilities)
+	revokes, err := w.collectDefaultPrivilegeRevokes(ctx, tx,
+		excludeStrings(scope.schemas, kept.Scope.Schemas), capabilities.defaultPrivilegeRevokes())
+	if err != nil {
+		return nil, err
+	}
+	reconciled, err := w.collectDefaultPrivilegeReconciliation(ctx, tx, kept)
+	if err != nil {
+		return nil, err
+	}
+	objects := slices.Concat(revokes, reconciled)
+	if !scope.realm || kept.Scope.Global {
 		return objects, nil
 	}
 	resets, err := w.collectGlobalDefaultPrivilegeResets(ctx, tx, capabilities.globalDefaultPrivilegeResets())
@@ -849,6 +900,80 @@ func (w *PostgreSQLWriter) collectAllObjects(
 		return nil, err
 	}
 	return append(objects, resets...), nil
+}
+
+// keptDefaultPrivilegesIn narrows the default privileges a cleanup keeps to
+// the ones it owns: those set in the schemas it manages, and the global ones.
+// A cleanup that cannot read them back keeps none.
+func keptDefaultPrivilegesIn(
+	scope postgresCleanupScope,
+	capabilities postgresCleanupCapabilities,
+) dbreset.DefaultPrivileges {
+	kept := scope.keptDefaultPrivileges
+	if !capabilities.keepsDefaultPrivileges() || kept.Scope.IsZero() {
+		return dbreset.DefaultPrivileges{}
+	}
+	narrowed := dbreset.DefaultPrivileges{Scope: dbreset.DefaultPrivilegeScope{Global: kept.Scope.Global}}
+	for _, schema := range kept.Scope.Schemas {
+		if slices.Contains(scope.schemas, schema) {
+			narrowed.Scope.Schemas = append(narrowed.Scope.Schemas, schema)
+		}
+	}
+	for _, row := range kept.Rows {
+		if row.Schema == "" && narrowed.Scope.Global || slices.Contains(narrowed.Scope.Schemas, row.Schema) {
+			narrowed.Rows = append(narrowed.Rows, row)
+		}
+	}
+	return narrowed
+}
+
+// collectDefaultPrivilegeReconciliation returns the statements that return the
+// default privileges kept names to kept.Rows, or nothing on a server whose
+// catalog has no pg_default_acl.
+func (w *PostgreSQLWriter) collectDefaultPrivilegeReconciliation(
+	ctx context.Context,
+	tx cleanupConn,
+	kept dbreset.DefaultPrivileges,
+) ([]postgresCleanupObject, error) {
+	if kept.Scope.IsZero() || !w.caps.Has(capability.CatalogDefaultPrivileges) {
+		return nil, nil
+	}
+	current, err := readDefaultPrivilegeRows(ctx, tx, kept.Scope)
+	if err != nil {
+		return nil, err
+	}
+	statements := pgdefaultacl.Reconcile(kept.Rows, current)
+	objects := make([]postgresCleanupObject, 0, len(statements))
+	for _, statement := range statements {
+		objects = append(objects, postgresCleanupObject{
+			Kind:      defaultPrivilegeKind,
+			Schema:    statement.Schema,
+			Name:      statement.Name(),
+			Statement: statement.Statement,
+		})
+	}
+	return objects, nil
+}
+
+// verifyKeptDefaultPrivileges refuses a cleanup that left the default
+// privileges it keeps different from what they were when the database was
+// claimed.
+func (w *PostgreSQLWriter) verifyKeptDefaultPrivileges(
+	ctx context.Context,
+	tx cleanupConn,
+	kept dbreset.DefaultPrivileges,
+) error {
+	left, err := w.collectDefaultPrivilegeReconciliation(ctx, tx, kept)
+	if err != nil {
+		return err
+	}
+	if len(left) > 0 {
+		return fmt.Errorf(
+			"PostgreSQL cleanup left default privilege %q in schema %q different from what the dev database held when it was claimed",
+			left[0].Name, left[0].Schema,
+		)
+	}
+	return nil
 }
 
 // The routine kinds are compared with OR rather than IN, and pg_class's are
@@ -1624,21 +1749,27 @@ func retryCleanupObjects(
 
 // DropAllTables drops all user objects in the configured database schema.
 func (w *PostgreSQLWriter) DropAllTables(ctx context.Context) error {
-	return w.dropSchemaObjects(ctx, nil)
+	return w.dropSchemaObjects(ctx, dbreset.Kept{})
 }
 
-// DropAllTablesKeeping is DropAllTables that leaves the named extensions
-// installed in the schema, together with every object they own. An extension
-// the schema holds and the caller did not name is refused, as DropAllTables
-// refuses every one: dropping an extension removes its members wherever they
-// are, which a cleanup of one schema cannot own. A server whose catalog cannot
-// say what an extension owns refuses the named ones too.
+// DropAllTablesKeeping is DropAllTables that leaves kept in place.
+//
+// kept.Extensions stay installed in the schema, together with every object
+// they own. An extension the schema holds and the caller did not name is
+// refused, as DropAllTables refuses every one: dropping an extension removes
+// its members wherever they are, which a cleanup of one schema cannot own. A
+// server whose catalog cannot say what an extension owns refuses the named
+// ones too.
+//
+// kept.DefaultPrivileges are returned to what they were, the global ones
+// included; see [PostgreSQLWriter.collectDefaultPrivilegeStatements].
+// kept.Schemas is a realm cleanup's and is not read.
 //
 // A dev database is the caller, as for [PostgreSQLWriter.DropDatabaseRealmKeeping]:
 // an extension it held before the run is its environment, and the pinned
 // community binary applies a plan against a dev database that has one.
-func (w *PostgreSQLWriter) DropAllTablesKeeping(ctx context.Context, extensions []string) error {
-	return w.dropSchemaObjects(ctx, extensions)
+func (w *PostgreSQLWriter) DropAllTablesKeeping(ctx context.Context, kept dbreset.Kept) error {
+	return w.dropSchemaObjects(ctx, kept)
 }
 
 // DropDatabaseRealm removes every user schema and recreates the configured
@@ -1647,43 +1778,39 @@ func (w *PostgreSQLWriter) DropAllTablesKeeping(ctx context.Context, extensions 
 // It drops every user extension; [PostgreSQLWriter.DropDatabaseRealmKeeping]
 // leaves named ones in place.
 func (w *PostgreSQLWriter) DropDatabaseRealm(ctx context.Context) error {
-	return w.DropDatabaseRealmKeeping(ctx, nil)
+	return w.DropDatabaseRealmKeeping(ctx, dbreset.Kept{})
 }
 
-// DropDatabaseRealmKeeping is DropDatabaseRealm that leaves the named
-// extensions installed, together with every object they own: their schemas,
-// their member tables and routines, and what those carry, such as a member
-// table's indexes. The check that the cleanup finished accepts exactly those.
+// DropDatabaseRealmKeeping is DropDatabaseRealm that leaves kept in place.
 //
-// A dev database is the caller: the extensions it held before a replay are its
-// environment rather than the replay's state. Dropped, they took with them a
-// type a migration used without creating it, and TimescaleDB, created again in
-// the same session by the replay's first migration, answered `schema
+// kept.Extensions stay installed, together with every object they own: their
+// schemas, their member tables and routines, and what those carry, such as a
+// member table's indexes. The check that the cleanup finished accepts exactly
+// those. A dev database is the caller: the extensions it held before a replay
+// are its environment rather than the replay's state. Dropped, they took with
+// them a type a migration used without creating it, and TimescaleDB, created
+// again in the same session by the replay's first migration, answered `schema
 // "_timescaledb_functions" does not exist` (stokaro/ptah#3542).
-func (w *PostgreSQLWriter) DropDatabaseRealmKeeping(ctx context.Context, extensions []string) error {
-	return w.DropDatabaseRealmKeepingSchemas(ctx, extensions, nil, dbreset.NamedServer)
-}
-
-// DropDatabaseRealmKeepingSchemas is [PostgreSQLWriter.DropDatabaseRealmKeeping]
-// that also leaves the named schemas as they are: neither they nor anything in
-// them is dropped, and the check that the cleanup finished does not look at
-// them. The configured root schema is emptied whatever the list says;
-// "public" is kept when the list names it and the root is another schema.
 //
-// A dev database whose URL pins one schema is the caller. The clean check
-// judges that schema alone, and the pinned community binary leaves the other
-// schemas of the database as they were, tables included; a cleanup of the
-// whole realm dropped them.
+// kept.Schemas are left as they are: neither they nor anything in them is
+// dropped, and the check that the cleanup finished does not look at them. The
+// configured root schema is emptied whatever the list says; "public" is kept
+// when the list names it and the root is another schema. A dev database whose
+// URL pins one schema is the caller. The clean check judges that schema alone,
+// and the pinned community binary leaves the other schemas of the database as
+// they were, tables included; a cleanup of the whole realm dropped them.
 //
-// server says whose server the database is on. The other realm cleanups pass
-// [dbreset.NamedServer], which refuses the server's default user database;
-// [dbreset.OwnedServer] cleans it too. A template or a system database is
-// refused on either.
-func (w *PostgreSQLWriter) DropDatabaseRealmKeepingSchemas(
-	ctx context.Context,
-	extensions, schemas []string,
-	server dbreset.Server,
-) error {
+// kept.DefaultPrivileges are returned to what they were; see
+// [PostgreSQLWriter.collectDefaultPrivilegeStatements]. A root schema holding
+// one is emptied in place rather than dropped and recreated, since recreating
+// it would drop every default set in it, and setting them again needs the
+// rights of each grantor.
+//
+// kept.Server says whose server the database is on. A cleanup on a
+// [dbreset.NamedServer], the zero value, refuses the server's default user
+// database; one on a [dbreset.OwnedServer] cleans it too. A template or a
+// system database is refused on either.
+func (w *PostgreSQLWriter) DropDatabaseRealmKeeping(ctx context.Context, kept dbreset.Kept) error {
 	if w.dryRun {
 		return nil
 	}
@@ -1696,14 +1823,67 @@ func (w *PostgreSQLWriter) DropDatabaseRealmKeepingSchemas(
 			w.schema,
 		)
 	}
-	return w.dropDatabaseRealm(ctx, extensions, schemas, server)
+	return w.dropDatabaseRealm(ctx, kept)
+}
+
+// DefaultPrivilegeBaseline reads the default privileges scope names, for a
+// reset that keeps them to return them to: the rows set IN SCHEMA one of
+// scope.Schemas, and with scope.Global the global ones.
+//
+// It keeps nothing, and answers the zero value, on a server with no
+// pg_default_acl and on CockroachDB, whose catalog cannot be read back that way
+// (see [postgresCleanupCapabilities.keepsDefaultPrivileges]). [ResetObjects]
+// then lists those default privileges as a reset takes them away, so a dev
+// database holding one is refused before it is reset.
+func (w *PostgreSQLWriter) DefaultPrivilegeBaseline(
+	ctx context.Context,
+	scope dbreset.DefaultPrivilegeScope,
+) (dbreset.DefaultPrivileges, error) {
+	if w.db == nil {
+		return dbreset.DefaultPrivileges{}, fmt.Errorf("no database connection")
+	}
+	if scope.IsZero() || !w.caps.Has(capability.CatalogDefaultPrivileges) {
+		return dbreset.DefaultPrivileges{}, nil
+	}
+	capabilities, err := inspectCleanupCapabilities(ctx, w.db)
+	if err != nil {
+		return dbreset.DefaultPrivileges{}, err
+	}
+	if !capabilities.keepsDefaultPrivileges() {
+		return dbreset.DefaultPrivileges{}, nil
+	}
+	rows, err := readDefaultPrivilegeRows(ctx, w.db, scope)
+	if err != nil {
+		return dbreset.DefaultPrivileges{}, fmt.Errorf("read the dev database's default privileges: %w", err)
+	}
+	return dbreset.DefaultPrivileges{Scope: scope, Rows: rows}, nil
+}
+
+// readDefaultPrivilegeRows reads the pg_default_acl rows scope names: those
+// set in its schemas, and the global ones when it says so.
+func readDefaultPrivilegeRows(
+	ctx context.Context,
+	q pgdefaultacl.Querier,
+	scope dbreset.DefaultPrivilegeScope,
+) ([]pgdefaultacl.Row, error) {
+	rows, err := pgdefaultacl.ReadRows(ctx, q, scope.Schemas)
+	if err != nil || !scope.Global {
+		return rows, err
+	}
+	global, err := pgdefaultacl.ReadGlobalRows(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	return append(global, rows...), nil
 }
 
 // ResetObjects lists what a reset of schemas drops, keeping keptExtensions and
 // everything they own: tables, views, sequences, routines, types, collations
 // and foreign tables, the default privileges it revokes, and the global
 // default privileges the realm cleanup returns to the built-in ones, sorted by
-// schema, name and kind. A constraint or an index
+// schema, name and kind. The default privileges scope.KeptDefaultPrivileges
+// names are not listed where this server can keep them: a reset returns them
+// to what they are now, which takes nothing away. A constraint or an index
 // is left out, since it is dropped with the relation it belongs to, which is
 // listed. Where the realm cleanup removes large objects, which is PostgreSQL
 // itself, the lowest one is listed last, whatever the schemas: a replay of a
@@ -1723,18 +1903,29 @@ func (w *PostgreSQLWriter) ResetObjects(ctx context.Context, scope dbreset.Scope
 	if err != nil {
 		return nil, err
 	}
-	collected, err := w.collectAllObjects(ctx, w.db, postgresSchemaCleanupScope(scope.Schemas, scope.KeptExtensions), capabilities)
+	// The default privileges the claim keeps are its baseline, read now, so
+	// the reset returns them to what they already are and lists none of them.
+	kept, err := w.DefaultPrivilegeBaseline(ctx, scope.KeptDefaultPrivileges)
+	if err != nil {
+		return nil, err
+	}
+	cleanupScope := postgresSchemaCleanupScope(scope.Schemas, scope.KeptExtensions)
+	cleanupScope.keptDefaultPrivileges = kept
+	collected, err := w.collectAllObjects(ctx, w.db, cleanupScope, capabilities)
 	if err != nil {
 		return nil, err
 	}
 	// The global default privileges go with the realm cleanup, whatever the
 	// schemas: they belong to the database rather than to a schema, and a
 	// replay of a dev database whose URL pins one schema still resets them.
-	resets, err := w.collectGlobalDefaultPrivilegeResets(ctx, w.db, capabilities.globalDefaultPrivilegeResets())
-	if err != nil {
-		return nil, err
+	// Kept ones are returned to what they were instead, which they are.
+	if !kept.Scope.Global {
+		resets, err := w.collectGlobalDefaultPrivilegeResets(ctx, w.db, capabilities.globalDefaultPrivilegeResets())
+		if err != nil {
+			return nil, err
+		}
+		collected = append(collected, resets...)
 	}
-	collected = append(collected, resets...)
 	objects := make([]dbreset.Object, 0, len(collected))
 	for _, object := range collected {
 		if object.Kind == "constraint" || object.Kind == "index" {
@@ -1769,7 +1960,7 @@ func (w *PostgreSQLWriter) ResetObjects(ctx context.Context, scope dbreset.Scope
 // UserSchemas returns the database's user schemas, sorted: every schema but
 // the server's own and those an extension owns. It is the list a realm
 // cleanup empties, and what a caller reads to name the schemas it keeps with
-// [PostgreSQLWriter.DropDatabaseRealmKeepingSchemas].
+// [PostgreSQLWriter.DropDatabaseRealmKeeping].
 func (w *PostgreSQLWriter) UserSchemas(ctx context.Context) ([]string, error) {
 	if w.db == nil {
 		return nil, fmt.Errorf("no database connection")
@@ -1972,7 +2163,7 @@ func verifyPostgresLargeObjects(ctx context.Context, tx *sql.Tx) error {
 	return fmt.Errorf("PostgreSQL database realm cleanup left residual large object %d", oid)
 }
 
-func (w *PostgreSQLWriter) dropSchemaObjects(ctx context.Context, keep []string) (resultErr error) {
+func (w *PostgreSQLWriter) dropSchemaObjects(ctx context.Context, kept dbreset.Kept) (resultErr error) {
 	if w.dryRun {
 		return nil
 	}
@@ -1986,7 +2177,7 @@ func (w *PostgreSQLWriter) dropSchemaObjects(ctx context.Context, keep []string)
 	// scratch database this drops and is the only way the run can finish at all
 	// (#1811). Every other PostgreSQL-family engine keeps the transaction.
 	if !w.caps.Has(capability.DDLInsideTransaction) {
-		return w.dropSchemaObjectsWithoutTransaction(ctx, keep)
+		return w.dropSchemaObjectsWithoutTransaction(ctx, kept)
 	}
 
 	sqlTx, err := w.db.BeginTx(ctx, nil)
@@ -2007,15 +2198,11 @@ func (w *PostgreSQLWriter) dropSchemaObjects(ctx context.Context, keep []string)
 	if err != nil {
 		return err
 	}
-	if err := w.rejectSchemaScopedExtensions(ctx, sqlTx, keep); err != nil {
+	if err := w.rejectSchemaScopedExtensions(ctx, sqlTx, kept.Extensions); err != nil {
 		return err
 	}
-	objects, err := w.collectAllObjects(
-		ctx,
-		sqlTx,
-		postgresSchemaCleanupScope([]string{w.schema}, keep),
-		capabilities,
-	)
+	scope := w.schemaCleanupScope(kept)
+	objects, err := w.collectAllObjects(ctx, sqlTx, scope, capabilities)
 	if err != nil {
 		return err
 	}
@@ -2033,6 +2220,9 @@ func (w *PostgreSQLWriter) dropSchemaObjects(ctx context.Context, keep []string)
 	dropErr := capabilities.dropObjects(ctx, sqlTx, objects)
 	if dropErr != nil {
 		return fmt.Errorf("refusing to clean schema %q: %w", w.schema, dropErr)
+	}
+	if err := w.verifyKeptDefaultPrivileges(ctx, sqlTx, keptDefaultPrivilegesIn(scope, capabilities)); err != nil {
+		return err
 	}
 
 	if err := sqlTx.Commit(); err != nil {
@@ -2056,16 +2246,17 @@ func (w *PostgreSQLWriter) dropSchemaObjects(ctx context.Context, keep []string)
 // one, leaving this path a single ordered pass that has to get dependency order
 // right the first time -- see [dropCleanupObjectsRetrying] for the server that
 // shows it cannot.
-func (w *PostgreSQLWriter) dropSchemaObjectsWithoutTransaction(ctx context.Context, keep []string) error {
+func (w *PostgreSQLWriter) dropSchemaObjectsWithoutTransaction(ctx context.Context, kept dbreset.Kept) error {
 	capabilities, err := inspectCleanupCapabilities(ctx, w.db)
 	if err != nil {
 		return err
 	}
 	capabilities = capabilities.withoutTransaction()
-	if err := w.rejectSchemaScopedExtensions(ctx, w.db, keep); err != nil {
+	if err := w.rejectSchemaScopedExtensions(ctx, w.db, kept.Extensions); err != nil {
 		return err
 	}
-	objects, err := w.collectAllObjects(ctx, w.db, postgresSchemaCleanupScope([]string{w.schema}, keep), capabilities)
+	scope := w.schemaCleanupScope(kept)
+	objects, err := w.collectAllObjects(ctx, w.db, scope, capabilities)
 	if err != nil {
 		return err
 	}
@@ -2077,14 +2268,18 @@ func (w *PostgreSQLWriter) dropSchemaObjectsWithoutTransaction(ctx context.Conte
 	if err := capabilities.dropObjects(ctx, w.db, objects); err != nil {
 		return fmt.Errorf("refusing to clean schema %q: %w", w.schema, err)
 	}
-	return nil
+	return w.verifyKeptDefaultPrivileges(ctx, w.db, keptDefaultPrivilegesIn(scope, capabilities))
 }
 
-func (w *PostgreSQLWriter) dropDatabaseRealm(
-	ctx context.Context,
-	keep, untouched []string,
-	server dbreset.Server,
-) (resultErr error) {
+// schemaCleanupScope is the cleanup of the configured schema, keeping kept's
+// extensions and default privileges.
+func (w *PostgreSQLWriter) schemaCleanupScope(kept dbreset.Kept) postgresCleanupScope {
+	scope := postgresSchemaCleanupScope([]string{w.schema}, kept.Extensions)
+	scope.keptDefaultPrivileges = kept.DefaultPrivileges
+	return scope
+}
+
+func (w *PostgreSQLWriter) dropDatabaseRealm(ctx context.Context, kept dbreset.Kept) (resultErr error) {
 	sqlTx, err := w.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
@@ -2093,7 +2288,7 @@ func (w *PostgreSQLWriter) dropDatabaseRealm(
 		finishPostgresCleanupTransaction(sqlTx, &resultErr)
 	}()
 
-	plan, err := w.planDatabaseRealmCleanup(ctx, sqlTx, keep, untouched, server)
+	plan, err := w.planDatabaseRealmCleanup(ctx, sqlTx, kept)
 	if err != nil {
 		return err
 	}
@@ -2102,6 +2297,9 @@ func (w *PostgreSQLWriter) dropDatabaseRealm(
 		return err
 	}
 	if err := verifyCompletedPostgresDatabaseCleanup(ctx, sqlTx, preservedSchemas, plan, w.caps); err != nil {
+		return err
+	}
+	if err := w.verifyKeptDefaultPrivileges(ctx, sqlTx, plan.keptDefaultPrivileges); err != nil {
 		return err
 	}
 	if err := sqlTx.Commit(); err != nil {
@@ -2120,14 +2318,14 @@ func finishPostgresCleanupTransaction(tx *sql.Tx, resultErr *error) {
 func (w *PostgreSQLWriter) planDatabaseRealmCleanup(
 	ctx context.Context,
 	tx *sql.Tx,
-	keep, untouched []string,
-	server dbreset.Server,
+	kept dbreset.Kept,
 ) (postgresDatabaseCleanupPlan, error) {
+	keep, untouched := kept.Extensions, kept.Schemas
 	capabilities, err := inspectCleanupCapabilities(ctx, tx)
 	if err != nil {
 		return postgresDatabaseCleanupPlan{}, err
 	}
-	if err := rejectProtectedPostgresDatabase(ctx, tx, capabilities.protectedDatabases, server); err != nil {
+	if err := rejectProtectedPostgresDatabase(ctx, tx, capabilities.protectedDatabases, kept.Server); err != nil {
 		return postgresDatabaseCleanupPlan{}, err
 	}
 	if capabilities.inspectDatabaseArtifacts {
@@ -2159,12 +2357,13 @@ func (w *PostgreSQLWriter) planDatabaseRealmCleanup(
 	if err != nil {
 		return postgresDatabaseCleanupPlan{}, err
 	}
-	objects, err := w.collectAllObjects(
-		ctx,
-		tx,
-		postgresDatabaseCleanupScope(schemas, keptExtensions),
-		capabilities,
-	)
+	scope := postgresDatabaseCleanupScope(schemas, keptExtensions)
+	scope.keptDefaultPrivileges = kept.DefaultPrivileges
+	keptDefaults := keptDefaultPrivilegesIn(scope, capabilities)
+	if slices.ContainsFunc(keptDefaults.Rows, func(row pgdefaultacl.Row) bool { return row.Schema == w.schema }) {
+		inPlaceSchemas = appendUniqueString(inPlaceSchemas, w.schema)
+	}
+	objects, err := w.collectAllObjects(ctx, tx, scope, capabilities)
 	if err != nil {
 		return postgresDatabaseCleanupPlan{}, err
 	}
@@ -2174,14 +2373,15 @@ func (w *PostgreSQLWriter) planDatabaseRealmCleanup(
 		}
 	}
 	return postgresDatabaseCleanupPlan{
-		capabilities:   capabilities,
-		rootMetadata:   rootMetadata,
-		publicMetadata: publicMetadata,
-		schemas:        schemas,
-		objects:        objects,
-		keptExtensions: keptExtensions,
-		inPlaceSchemas: inPlaceSchemas,
-		untouched:      untouched,
+		capabilities:          capabilities,
+		rootMetadata:          rootMetadata,
+		publicMetadata:        publicMetadata,
+		schemas:               schemas,
+		objects:               objects,
+		keptExtensions:        keptExtensions,
+		keptDefaultPrivileges: keptDefaults,
+		inPlaceSchemas:        inPlaceSchemas,
+		untouched:             untouched,
 	}, nil
 }
 
@@ -2278,6 +2478,7 @@ func verifyCompletedPostgresDatabaseCleanup(
 		preservedSchemas,
 		plan.untouched,
 		plan.keptExtensions,
+		plan.keptDefaultPrivileges.Scope.Schemas,
 		caps,
 	); err != nil {
 		return err
@@ -2562,7 +2763,8 @@ func verifyPostgresDatabaseRealm(
 	tx *sql.Tx,
 	preservedSchemas,
 	untouchedSchemas,
-	keptExtensions []string,
+	keptExtensions,
+	keptDefaultPrivilegeSchemas []string,
 	caps capability.Capabilities,
 ) error {
 	// A schema an extension owns is checked through the extension: the
@@ -2598,7 +2800,7 @@ func verifyPostgresDatabaseRealm(
 		return err
 	}
 
-	query, args := residualObjectsQuery(preservedSchemas, keptExtensions, caps)
+	query, args := residualObjectsQuery(preservedSchemas, keptExtensions, keptDefaultPrivilegeSchemas, caps)
 	var kind string
 	var schema string
 	var name string
@@ -2624,10 +2826,13 @@ func verifyPostgresDatabaseRealm(
 // residualObjectsQuery lists what is left in the preserved schemas after a
 // realm cleanup, less what a kept extension owns. The kept extensions' own
 // rows are left out by name; their members, and what those carry, through
-// [extensionOwnedCTE].
+// [extensionOwnedCTE]. The default privileges set in keptDefaultPrivilegeSchemas
+// are left out too: the cleanup returns them to what they were, and
+// [PostgreSQLWriter.verifyKeptDefaultPrivileges] checks that it did.
 func residualObjectsQuery(
 	preservedSchemas,
-	keptExtensions []string,
+	keptExtensions,
+	keptDefaultPrivilegeSchemas []string,
 	caps capability.Capabilities,
 ) (string, []any) {
 	args := stringsToAny(preservedSchemas)
@@ -2636,6 +2841,12 @@ func residualObjectsQuery(
 		keptFilter = "\n\t\t\tWHERE e.extname NOT IN (" +
 			postgresPlaceholdersFrom(len(args)+1, len(keptExtensions)) + ")"
 		args = append(args, stringsToAny(keptExtensions)...)
+	}
+	keptDefaultFilter := ""
+	if len(keptDefaultPrivilegeSchemas) > 0 {
+		keptDefaultFilter = "\n\t\t\tWHERE n.nspname NOT IN (" +
+			postgresPlaceholdersFrom(len(args)+1, len(keptDefaultPrivilegeSchemas)) + ")"
+		args = append(args, stringsToAny(keptDefaultPrivilegeSchemas)...)
 	}
 	ownedCTE, ownedFilter := "", ""
 	if extensionOwnershipReadable(caps) {
@@ -2651,6 +2862,7 @@ func residualObjectsQuery(
 	query := strings.NewReplacer(
 		"{{SCHEMA_PLACEHOLDERS}}", postgresPlaceholders(len(preservedSchemas)),
 		"{{KEPT_EXTENSION_FILTER}}", keptFilter,
+		"{{KEPT_DEFAULT_PRIVILEGE_FILTER}}", keptDefaultFilter,
 		"{{EXTENSION_OWNED_CTE}}", ownedCTE,
 		"{{RECURSIVE}}", recursiveKeyword(ownedCTE),
 		"{{EXTENSION_OWNED_FILTER}}", ownedFilter,
@@ -2729,7 +2941,7 @@ func residualObjectsQuery(
 			UNION ALL
 			SELECT 'default privilege', 'pg_default_acl'::regclass, d.oid, n.nspname, d.oid::text
 			FROM pg_default_acl d
-			JOIN managed_namespaces n ON n.oid = d.defaclnamespace
+			JOIN managed_namespaces n ON n.oid = d.defaclnamespace{{KEPT_DEFAULT_PRIVILEGE_FILTER}}
 		)
 		SELECT object_kind, nspname, relname
 		FROM residual_objects residual{{EXTENSION_OWNED_FILTER}}
@@ -2790,6 +3002,16 @@ func excludeString(values []string, excluded string) []string {
 	result := make([]string, 0, len(values))
 	for _, value := range values {
 		if value != excluded {
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
+func excludeStrings(values, excluded []string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if !slices.Contains(excluded, value) {
 			result = append(result, value)
 		}
 	}

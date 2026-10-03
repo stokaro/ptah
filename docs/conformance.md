@@ -681,9 +681,10 @@ writer lists what its reset drops through the query the reset runs, and the
 check reads that list:
 
 - PostgreSQL, CockroachDB, YugabyteDB and Spanner: a view, a materialized view,
-  a function, a procedure, an aggregate, a sequence, a type, a collation, a
-  default privilege it would revoke, a global default privilege it would
-  return to the built-in default, or on PostgreSQL a large object.
+  a function, a procedure, an aggregate, a sequence, a type, a collation, on
+  PostgreSQL a large object, and a default privilege the reset would take
+  away: one set in a schema when the URL pins no `search_path`, and on
+  CockroachDB every default privilege, global ones included.
 - MySQL and MariaDB: a view, a procedure, a function, an event, a sequence, or
   a system-versioned table.
 - SQLite: a view.
@@ -697,7 +698,12 @@ is not clean: found view "v" in connected schema` on PostgreSQL with a
 `search_path`, `in schema "public"` without one, and `in schema "<database>"`
 on the other engines. SQLite has one schema, so it prints `found view "v"`.
 What an installed extension owns, and every PostgreSQL schema outside a pinned
-`search_path`, is kept and does not refuse.
+`search_path`, is kept and does not refuse. So are the PostgreSQL and
+YugabyteDB default privileges set in the schema a `search_path` pins, and the
+global ones in either scope: each reset returns them to what they were when
+the run took the dev database, so an image that grants its roles through them,
+such as Supabase's, can be the dev database
+([`stokaro/ptah#4034`](https://github.com/stokaro/ptah/issues/4034)).
 
 Measured 2026-09-27 on PostgreSQL 18.6, each object alone in the dev database,
 with `migrate validate` and `schema apply`:
@@ -707,8 +713,12 @@ with `migrate validate` and `schema apply`:
 | `?search_path=public`, a view, function, sequence, enum, domain, composite type or collation | 0, the object kept | 0, the object dropped | **1**, names it, kept |
 | no `search_path`, the same objects | 0, every one dropped but the enum | 0, the object dropped | **1**, names it, kept |
 | a large object, either scope | 0, kept | `migrate validate` 0, dropped | **1**, names it, kept |
-| a default privilege on `public`, `migrate validate` | 0, kept with a `search_path`, revoked without one | 0, revoked | **1**, names it, kept |
-| a global default privilege, either scope, `migrate validate` | 0, kept | 0, returned to the built-in default | **1**, names it, kept |
+| a default privilege on `public`, `migrate validate` | 0, kept with a `search_path`, revoked without one | 0, revoked | 0, kept with a `search_path`; **1** without one, names it, kept |
+| a global default privilege, either scope, `migrate validate` | 0, kept | 0, returned to the built-in default | 0, kept |
+
+Ptah's column of the two default privilege rows was measured on 2026-10-03,
+with `migrate diff` too. A default the run set survives the binary's cleanup,
+where Ptah's takes it back.
 
 Measured the same day on the other engines, each object alone in a fresh dev
 database, with the same verbs:

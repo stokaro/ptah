@@ -213,7 +213,7 @@ func TestWriterDropDatabaseRealmKeeping_LivePostgres(t *testing.T) {
 	`)
 	c.Assert(err, qt.IsNil)
 
-	err = postgres.NewPostgreSQLWriter(db, "public").DropDatabaseRealmKeeping(ctx, []string{"hstore"})
+	err = postgres.NewPostgreSQLWriter(db, "public").DropDatabaseRealmKeeping(ctx, dbreset.Kept{Extensions: []string{"hstore"}})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(postgresWriterLiveExtensionNames(c, ctx, db), qt.DeepEquals, []string{"hstore", "plpgsql"})
@@ -243,7 +243,7 @@ func TestWriterDropDatabaseRealmKeeping_LiveTimescaleDB(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	extensionSchemas := postgresWriterLiveSchemasLike(c, ctx, db, "%timescaledb%")
 
-	err = postgres.NewPostgreSQLWriter(db, "public").DropDatabaseRealmKeeping(ctx, []string{"timescaledb"})
+	err = postgres.NewPostgreSQLWriter(db, "public").DropDatabaseRealmKeeping(ctx, dbreset.Kept{Extensions: []string{"timescaledb"}})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(postgresWriterLiveExtensionNames(c, ctx, db), qt.DeepEquals, []string{"plpgsql", "timescaledb"})
@@ -271,7 +271,7 @@ func TestWriterDropAllTablesKeeping_LivePostgres(t *testing.T) {
 	`)
 	c.Assert(err, qt.IsNil)
 
-	err = postgres.NewPostgreSQLWriter(db, "public").DropAllTablesKeeping(ctx, []string{"hstore"})
+	err = postgres.NewPostgreSQLWriter(db, "public").DropAllTablesKeeping(ctx, dbreset.Kept{Extensions: []string{"hstore"}})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(postgresWriterLiveExtensionNames(c, ctx, db), qt.DeepEquals, []string{"hstore", "plpgsql"})
@@ -296,17 +296,17 @@ func TestWriterDropAllTablesKeeping_LivePostgresRefusesAnExtensionItWasNotAsked(
 	`)
 	c.Assert(err, qt.IsNil)
 
-	err = postgres.NewPostgreSQLWriter(db, "public").DropAllTablesKeeping(ctx, []string{"hstore"})
+	err = postgres.NewPostgreSQLWriter(db, "public").DropAllTablesKeeping(ctx, dbreset.Kept{Extensions: []string{"hstore"}})
 
 	c.Assert(err, qt.ErrorMatches, `refusing to clean schema "public": extension "pg_trgm" is owned by it; .*`)
 	c.Assert(postgresWriterLiveExtensionNames(c, ctx, db), qt.DeepEquals, []string{"hstore", "pg_trgm", "plpgsql"})
 }
 
-// TestWriterDropDatabaseRealmKeepingSchemas_LivePostgres empties the realm of
+// TestWriterDropDatabaseRealmKeeping_LiveKeepsSchemas empties the realm of
 // a database whose schema kept_schema is named: it stays with its table and
 // row, while a user schema not named goes and public is emptied, even though
 // the list names it too (stokaro/ptah#3808).
-func TestWriterDropDatabaseRealmKeepingSchemas_LivePostgres(t *testing.T) {
+func TestWriterDropDatabaseRealmKeeping_LiveKeepsSchemas(t *testing.T) {
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
@@ -323,7 +323,9 @@ func TestWriterDropDatabaseRealmKeepingSchemas_LivePostgres(t *testing.T) {
 	`)
 	c.Assert(err, qt.IsNil)
 
-	err = postgres.NewPostgreSQLWriter(db, "public").DropDatabaseRealmKeepingSchemas(ctx, nil, []string{"kept_schema", "public"}, dbreset.NamedServer)
+	err = postgres.NewPostgreSQLWriter(db, "public").DropDatabaseRealmKeeping(ctx, dbreset.Kept{
+		Schemas: []string{"kept_schema", "public"}, Server: dbreset.NamedServer,
+	})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(postgresWriterLiveSchemaCount(c, ctx, db, "kept_schema"), qt.Equals, 1)
@@ -334,13 +336,13 @@ func TestWriterDropDatabaseRealmKeepingSchemas_LivePostgres(t *testing.T) {
 	c.Assert(rows, qt.Equals, 1)
 }
 
-// TestWriterDropDatabaseRealmKeepingSchemas_LiveLeavesPublicBesideAnotherRoot
+// TestWriterDropDatabaseRealmKeeping_LiveLeavesPublicBesideAnotherRoot
 // cleans a realm whose root is app while the caller keeps public, which holds
 // a table with a row. public is kept like any other schema: the cleanup
 // neither drops it nor empties it in place. CockroachDB is the engine that
 // empties public in place rather than dropping it, so it is the row that
 // keeps that arm honest.
-func TestWriterDropDatabaseRealmKeepingSchemas_LiveLeavesPublicBesideAnotherRoot(t *testing.T) {
+func TestWriterDropDatabaseRealmKeeping_LiveLeavesPublicBesideAnotherRoot(t *testing.T) {
 	engines := []struct {
 		name   string
 		engine dbtarget.Engine
@@ -367,7 +369,9 @@ func TestWriterDropDatabaseRealmKeepingSchemas_LiveLeavesPublicBesideAnotherRoot
 				c.Assert(err, qt.IsNil, qt.Commentf("%s", statement))
 			}
 
-			err := postgres.NewPostgreSQLWriter(db, "app").DropDatabaseRealmKeepingSchemas(ctx, nil, []string{"public"}, dbreset.NamedServer)
+			err := postgres.NewPostgreSQLWriter(db, "app").DropDatabaseRealmKeeping(ctx, dbreset.Kept{
+				Schemas: []string{"public"}, Server: dbreset.NamedServer,
+			})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(postgresWriterLiveSchemaCount(c, ctx, db, "app"), qt.Equals, 1)

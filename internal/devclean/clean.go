@@ -33,8 +33,9 @@ func DatabaseRealm(ctx context.Context, conn *dbschema.DatabaseConnection) error
 }
 
 // Baseline is what a dev database held before a run, and what the run's
-// cleanups leave in place: the extensions installed there, and, when the URL
-// pinned one schema, the other schemas of the database.
+// cleanups leave in place: the extensions installed there, its PostgreSQL
+// default privileges, and, when the URL pinned one schema, the other schemas
+// of the database.
 //
 // A dev database's extensions are its environment, as they are to the Atlas
 // community binary, which applies a migration that uses a preinstalled
@@ -51,11 +52,24 @@ func DatabaseRealm(ctx context.Context, conn *dbschema.DatabaseConnection) error
 // schema nobody had checked. A schema the run creates is not in the baseline
 // either, and is removed; an object the run creates inside a kept schema stays.
 //
+// The default privileges are environment too. An image such as Supabase's
+// grants its API roles on every table created in public through `ALTER
+// DEFAULT PRIVILEGES ... IN SCHEMA public`, and the pinned community binary
+// takes a dev database holding them. A reset that revoked them would leave the
+// claim to refuse such a database rather than lose them, and the image could
+// not be a dev database at all (stokaro/ptah#4034). The baseline records the ones
+// [migrateclean.KeptDefaultPrivileges] names, and every reset returns them to
+// what they were: a default the run added is revoked, one it changed is set
+// back, and one it did not touch is left alone.
+//
 // The zero Baseline keeps nothing, which is [DatabaseRealm].
 type Baseline struct {
 	extensions []string
 	// schemas are the schemas outside the one the URL pinned; see above.
 	schemas []string
+	// defaultPrivileges are what the default privileges were at the claim;
+	// see above.
+	defaultPrivileges dbreset.DefaultPrivileges
 	// realm records whether the claim judged the dev database's whole realm
 	// or only its connected schema; see [Reset].
 	realm bool
@@ -79,16 +93,20 @@ type extensionLister interface {
 	InstalledExtensions(context.Context) ([]string, error)
 }
 
+type defaultPrivilegeReader interface {
+	DefaultPrivilegeBaseline(context.Context, dbreset.DefaultPrivilegeScope) (dbreset.DefaultPrivileges, error)
+}
+
 type schemaLister interface {
 	UserSchemas(context.Context) ([]string, error)
 }
 
 type databaseRealmKeeper interface {
-	DropDatabaseRealmKeepingSchemas(context.Context, []string, []string, dbreset.Server) error
+	DropDatabaseRealmKeeping(context.Context, dbreset.Kept) error
 }
 
 type schemaKeeper interface {
-	DropAllTablesKeeping(context.Context, []string) error
+	DropAllTablesKeeping(context.Context, dbreset.Kept) error
 }
 
 // Claim takes a dev database for one run. It refuses one that is not clean,
@@ -121,6 +139,13 @@ func Claim(ctx context.Context, conn *dbschema.DatabaseConnection) (Baseline, er
 			return Baseline{}, fmt.Errorf("capture dev database baseline: %w", err)
 		}
 		baseline.extensions = extensions
+	}
+	if reader, ok := writer.(defaultPrivilegeReader); ok {
+		defaults, err := reader.DefaultPrivilegeBaseline(ctx, migrateclean.KeptDefaultPrivileges(conn))
+		if err != nil {
+			return Baseline{}, fmt.Errorf("capture dev database baseline: %w", err)
+		}
+		baseline.defaultPrivileges = defaults
 	}
 	if lister, ok := writer.(schemaLister); ok && !baseline.realm {
 		schemas, err := lister.UserSchemas(ctx)
@@ -167,7 +192,7 @@ func EnsureClean(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 // this way before and after it runs, so it removes what it created -- a schema
 // or an extension schema included -- and leaves a schema outside the pinned
 // one alone, since the claim did not look there. The baseline's extensions
-// stay in either scope.
+// and default privileges stay in either scope.
 //
 // A migration replay resets the engine's realm instead, whatever the URL
 // pinned; see [DatabaseRealmKeeping].
@@ -180,19 +205,19 @@ func Reset(ctx context.Context, conn *dbschema.DatabaseConnection, baseline Base
 	}
 	writer := conn.SchemaWriter()
 	if keeper, ok := writer.(schemaKeeper); ok {
-		return keeper.DropAllTablesKeeping(ctx, baseline.extensions)
+		return keeper.DropAllTablesKeeping(ctx, baseline.kept())
 	}
-	if len(baseline.extensions) > 0 {
-		return fmt.Errorf("reset dev database: this writer cannot keep the extensions the database held before the run")
+	if len(baseline.extensions) > 0 || len(baseline.defaultPrivileges.Rows) > 0 {
+		return fmt.Errorf("reset dev database: this writer cannot keep the extensions or default privileges the database held before the run")
 	}
 	return writer.DropAllTables(ctx)
 }
 
 // DatabaseRealmKeeping is [DatabaseRealm] that leaves the baseline in place.
 //
-// A baseline that names extensions was captured through a writer that keeps
-// them, so a writer that cannot is refused rather than allowed to remove
-// them.
+// A baseline that names extensions or default privileges was captured through
+// a writer that keeps them, so a writer that cannot is refused rather than
+// allowed to remove them.
 //
 // A refusal of the server's default user database on a server the run does not
 // own ends with the two ways to make it the run's.
@@ -201,14 +226,24 @@ func DatabaseRealmKeeping(ctx context.Context, conn *dbschema.DatabaseConnection
 		return fmt.Errorf("clean dev database realm: nil database connection")
 	}
 	if keeper, ok := conn.SchemaWriter().(databaseRealmKeeper); ok {
-		err := keeper.DropDatabaseRealmKeepingSchemas(ctx, baseline.extensions, baseline.schemas, baseline.server)
+		err := keeper.DropDatabaseRealmKeeping(ctx, baseline.kept())
 		if errors.Is(err, dbreset.ErrServerDefaultDatabase) {
 			return fmt.Errorf("%w; %s", err, devdocker.OwnedServerRemedy)
 		}
 		return err
 	}
-	if len(baseline.extensions) > 0 || len(baseline.schemas) > 0 {
-		return fmt.Errorf("clean dev database realm: this writer cannot keep the extensions or schemas the database held before the run")
+	if len(baseline.extensions) > 0 || len(baseline.schemas) > 0 || len(baseline.defaultPrivileges.Rows) > 0 {
+		return fmt.Errorf("clean dev database realm: this writer cannot keep the extensions, schemas or default privileges the database held before the run")
 	}
 	return DatabaseRealm(ctx, conn)
+}
+
+// kept is the baseline as a writer's reset reads it.
+func (b Baseline) kept() dbreset.Kept {
+	return dbreset.Kept{
+		Extensions:        b.extensions,
+		Schemas:           b.schemas,
+		DefaultPrivileges: b.defaultPrivileges,
+		Server:            b.server,
+	}
 }
