@@ -1279,8 +1279,9 @@ func declaredExtensionNames(r *schemamodel.Database) []string {
 // errors.Is(err, [ptaherr.ErrInvalidSchemaDiff]), and so is a table-owned
 // declaration that names no host. A declaration the target
 // cannot carry — a foreign key, a referential action, an extension
-// installation schema, an index INCLUDE list — is refused with an error
-// satisfying errors.Is(err, [ptaherr.ErrUnsupportedFeature]). Other
+// installation schema, an index INCLUDE list, a table without a primary key
+// on a target that requires one — is refused with an error satisfying
+// errors.Is(err, [ptaherr.ErrUnsupportedFeature]). Other
 // declaration refusals carry no sentinel of their own, so treat any non-nil
 // error as a refusal and branch with errors.Is on the sentinels rather than
 // errors.As on a single concrete type.
@@ -1305,8 +1306,33 @@ func ValidateSchemaWithCapabilities(
 			Message: "cannot validate a nil database schema",
 		}
 	}
-	_, err := prepareDatabaseForRendering(r, dialect, caps)
-	return err
+	prepared, err := prepareDatabaseForRendering(r, dialect, caps)
+	if err != nil {
+		return err
+	}
+	return validateDeclaredPrimaryKeys(dialect, caps, prepared)
+}
+
+// validateDeclaredPrimaryKeys refuses a table without a key on a target that
+// requires one, before anything is emitted, so validation refuses the schemas
+// the render refuses.
+//
+// It lowers the tables the way the render does and asks each one the question
+// requirePrimaryKey asks. A key reaches a table from a field, from a composite
+// key on the table, or from a PRIMARY KEY constraint, and a second reading of
+// that from the model would be a second answer that can drift from the first;
+// this one cannot, because it is the same function over the same nodes.
+func validateDeclaredPrimaryKeys(dialect string, caps capability.Capabilities, database schemamodel.Database) error {
+	if !caps.Has(capability.PrimaryKeyRequired) {
+		return nil
+	}
+	return modelast.WalkDatabase(database, dialect, func(node ast.Node) error {
+		table, ok := node.(*ast.CreateTableNode)
+		if !ok {
+			return nil
+		}
+		return requirePrimaryKey(dialect, caps, table)
+	})
 }
 
 // GetOrderedCreateStatementsWithCapabilities renders ordered create statements
