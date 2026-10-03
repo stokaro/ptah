@@ -121,6 +121,13 @@ func platformFieldType(field schemamodel.Field, targetPlatform string) string {
 		case "TEXT", "VARCHAR":
 			return "NVARCHAR(MAX)"
 		}
+	case platform.YDB:
+		// YDB has SERIAL of its own: Serial, BigSerial and SmallSerial fill the
+		// column from a sequence YDB creates with the table. The declared type
+		// is kept for the YDB type map, which writes it as one of those where
+		// capability.SerialColumns holds and refuses it where it does not, so
+		// rewriting it here into a plain integer would lose the increment.
+		return field.Type
 	}
 	return field.Type
 }
@@ -142,4 +149,20 @@ func fieldWithPlatformValues(
 	field.DefaultSet = defaultSet
 	field.DefaultExpr = defaultExpr
 	return field
+}
+
+// DeclaresIndexesInCreateTable reports whether a new table's indexes are
+// written inside its CREATE TABLE rather than as statements after it.
+//
+// It is a generator choice about where Ptah writes an index, not a fact a
+// capability key can carry, the way the enum lists in this package are: a
+// target that takes inline indexes may take standalone ones too. YDB is the
+// target that needs it. Its only standalone form is ALTER TABLE ... ADD INDEX,
+// and that refuses a unique index on every measured line (`Adding a unique
+// index to an existing table is disabled`, even on an empty table), while the
+// same index inside CREATE TABLE is accepted. Writing every index of a new
+// table there keeps one rule for unique and plain indexes alike, and makes the
+// table and its indexes one statement.
+func DeclaresIndexesInCreateTable(targetPlatform string) bool {
+	return platform.NormalizeDialect(targetPlatform) == platform.YDB
 }

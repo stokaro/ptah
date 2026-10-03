@@ -665,7 +665,8 @@ directive from that migration.
 
 The first row is the engine rather than a Ptah policy, and it is decided by the
 target's transactional-DDL capability rather than by a list of dialect names.
-MySQL, MariaDB, ClickHouse, Oracle and Spanner commit DDL as it runs.
+MySQL, MariaDB, ClickHouse, Oracle and Spanner commit DDL as it runs, and YDB
+refuses DDL inside a transaction at all.
 CockroachDB refuses for a narrower reason: a target named with no server version
 in hand resolves to the newest measured line, where a schema statement inside a
 transaction commits itself first, so the rollback has nothing left to undo. A

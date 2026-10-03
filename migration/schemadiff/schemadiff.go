@@ -560,6 +560,12 @@ func isInlineEnumDialect(dialect string) bool {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.MySQL, platform.MariaDB, platform.SQLite, platform.SQLServer, platform.Oracle:
 		return true
+	case platform.YDB:
+		// YDB has no enum, inline or standalone, and the renderer and the
+		// planner refuse one; it is classed with the standalone dialects to
+		// agree with schemaprep.EmitsStandaloneEnumDefinitions, which keeps
+		// the enum a declaration of its own for that refusal to meet.
+		return false
 	default:
 		return false
 	}

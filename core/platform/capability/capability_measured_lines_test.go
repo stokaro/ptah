@@ -222,6 +222,12 @@ func measuredLines() map[string]measuredLine {
 				capability.CheckConstraints:           schemaChangeCarried,
 				capability.IndexCoveringColumns:       schemaChangeCarried,
 				capability.UniqueIndexOnExistingTable: schemaChangeCarried,
+				capability.WideDateTimeTypes:          typeKeyCarried,
+				capability.ParameterizedDecimal:       typeKeyCarried,
+				capability.AsyncIndexes:               typeKeyCarried,
+				capability.SerialColumns:              typeKeyCarried,
+				capability.SmallIntegerDefaults:       typeKeyCarried,
+				capability.DocumentTypeDefaults:       typeKeyCarried,
 				capability.DeferrableKeys: "this run predates the key and sent no deferrable key. It was " +
 					"measured on 2026-09-27 against PostgreSQL 18.6, CockroachDB v26.3.2, YugabyteDB 2026.1.2 " +
 					"and Oracle Free 23, and carried here from those runs (stokaro/ptah#3824)",
@@ -350,6 +356,12 @@ func measuredLines() map[string]measuredLine {
 				capability.CheckConstraints:           schemaChangeCarried,
 				capability.IndexCoveringColumns:       schemaChangeCarried,
 				capability.UniqueIndexOnExistingTable: schemaChangeCarried,
+				capability.WideDateTimeTypes:          typeKeyCarried,
+				capability.ParameterizedDecimal:       typeKeyCarried,
+				capability.AsyncIndexes:               typeKeyCarried,
+				capability.SerialColumns:              typeKeyCarried,
+				capability.SmallIntegerDefaults:       typeKeyCarried,
+				capability.DocumentTypeDefaults:       typeKeyCarried,
 				capability.DeferrableKeys: "this run predates the key and sent no deferrable key. It was " +
 					"measured on 2026-09-27 against PostgreSQL 18.6, CockroachDB v26.3.2, YugabyteDB 2026.1.2 " +
 					"and Oracle Free 23, and carried here from those runs (stokaro/ptah#3824)",
@@ -479,6 +491,12 @@ func measuredLines() map[string]measuredLine {
 				capability.CheckConstraints:           schemaChangeCarried,
 				capability.IndexCoveringColumns:       schemaChangeCarried,
 				capability.UniqueIndexOnExistingTable: schemaChangeCarried,
+				capability.WideDateTimeTypes:          typeKeyCarried,
+				capability.ParameterizedDecimal:       typeKeyCarried,
+				capability.AsyncIndexes:               typeKeyCarried,
+				capability.SerialColumns:              typeKeyCarried,
+				capability.SmallIntegerDefaults:       typeKeyCarried,
+				capability.DocumentTypeDefaults:       typeKeyCarried,
 				capability.DeferrableKeys: "this run predates the key and sent no deferrable key. It was " +
 					"measured on 2026-09-27 against PostgreSQL 18.6, CockroachDB v26.3.2, YugabyteDB 2026.1.2 " +
 					"and Oracle Free 23, and carried here from those runs (stokaro/ptah#3824)",
@@ -601,3 +619,10 @@ const routineCommentCarried = "this run predates the key and sent no COMMENT ON 
 // proves an accepted change by using it, and the value here is the preset's.
 const schemaChangeCarried = "this run predates the key and sent no schema-change experiment; the probe " +
 	"asks it on every run through those experiments, and the value here is the preset's"
+
+// typeKeyCarried is why the keys the YDB type map and renderer read are
+// carried on every measured line: the run named there predates them. The probe
+// asks them on every run through its type experiments, and the value here is
+// the preset's.
+const typeKeyCarried = "this run predates the key and sent no type experiment; the probe asks it " +
+	"on every run through those experiments, and the value here is the preset's"

@@ -702,7 +702,67 @@ var Cells = []Cell{
 		Support:    capability.BestEffort,
 		Note:       "measured against the Cloud Spanner emulator behind PGAdapter, which is the only Spanner endpoint a container can provide; the managed service is not what runs here",
 	},
+
+	// YDB: six release lines, measured by hand on ydbplatform/local-ydb
+	// 25.1.4.7, 25.2.1.24, 25.3.1.25, 25.4.1.15, 26.1.1.22 and 26.2.1.14
+	// through the bundled CLI, each statement read back with `scheme
+	// describe`. Every line is best-effort because nothing in continuous
+	// integration starts a YDB server: the probe has no YDB statement table
+	// or launch recipe, and no integration service runs one
+	// (stokaro/ptah#4015 plans each). YDB publishes no support period, so
+	// the upstream half of the rubric has nothing to read.
+	//
+	// The image tags name the line and resolve to its newest patch, because
+	// local-ydb's own line tags are stale builds: `26.2` is a June build
+	// while 26.2.1.14 is the release.
+	{
+		Dialect: platform.YDB, Line: capabilityline.YDB262,
+		Preset: capability.YDB262, PresetName: "YDB262",
+		Refinement: RefinedByVersion, Support: capability.BestEffort,
+		Image: "ydbplatform/local-ydb:26.2", ResolveNewestPatch: true,
+		Note: ydbBestEffortNote + " The first line that sets and drops a column default in place.",
+	},
+	{
+		Dialect: platform.YDB, Line: capabilityline.YDB261,
+		Preset: capability.YDB261, PresetName: "YDB261",
+		Refinement: RefinedByVersion, Support: capability.BestEffort,
+		Image: "ydbplatform/local-ydb:26.1", ResolveNewestPatch: true,
+		Note: ydbBestEffortNote + " The first line that adds a column with a default to a table holding rows.",
+	},
+	{
+		Dialect: platform.YDB, Line: capabilityline.YDB254,
+		Preset: capability.YDB253, PresetName: "YDB253",
+		Refinement: RefinedByVersion, Support: capability.BestEffort,
+		Image: "ydbplatform/local-ydb:25.4", ResolveNewestPatch: true,
+		Note: ydbBestEffortNote + " Answered every measured statement as 25.3 did, and reports its version as `stable-25-4-1`.",
+	},
+	{
+		Dialect: platform.YDB, Line: capabilityline.YDB253,
+		Preset: capability.YDB253, PresetName: "YDB253",
+		Refinement: RefinedByVersion, Support: capability.BestEffort,
+		Image: "ydbplatform/local-ydb:25.3", ResolveNewestPatch: true,
+		Note: ydbBestEffortNote + " The first line that takes a literal default on JsonDocument and DyNumber.",
+	},
+	{
+		Dialect: platform.YDB, Line: capabilityline.YDB252,
+		Preset: capability.YDB252, PresetName: "YDB252",
+		Refinement: RefinedByVersion, Support: capability.BestEffort,
+		Image: "ydbplatform/local-ydb:25.2", ResolveNewestPatch: true,
+		Note: ydbBestEffortNote + " The first line with the 64-bit date and time types and a Decimal of any precision.",
+	},
+	{
+		Dialect: platform.YDB, Line: capabilityline.YDB251,
+		Preset: capability.YDB251, PresetName: "YDB251",
+		Refinement: RefinedByVersion, Support: capability.BestEffort,
+		Image: "ydbplatform/local-ydb:25.1", ResolveNewestPatch: true,
+		Note: ydbBestEffortNote + " The oldest measured line: no 64-bit date types, Decimal(22,9) only, and no default on a 16-bit integer.",
+	},
 }
+
+// ydbBestEffortNote opens every YDB cell's note with why the line is
+// best-effort.
+const ydbBestEffortNote = "best-effort: measured by hand on local-ydb; the probe has no YDB statement table, " +
+	"so CI starts no server for this line."
 
 // PresetsWithoutCell names every capability preset Ptah ships that no cell
 // claims, and why that absence is deliberate.

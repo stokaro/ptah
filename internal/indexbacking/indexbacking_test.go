@@ -44,6 +44,8 @@ func TestServerBacks_HappyPath(t *testing.T) {
 		{name: "postgres unique", dialect: "postgres", kind: indexbacking.Unique, want: true},
 		{name: "mysql unique", dialect: "mysql", kind: indexbacking.Unique, want: true},
 		{name: "sqlserver keeps them separate", dialect: "sqlserver", kind: indexbacking.Unique, want: false},
+		{name: "ydb has no unique constraint to back", dialect: "ydb", kind: indexbacking.Unique, want: false},
+		{name: "ydb keys a table without an index", dialect: "ydb", kind: indexbacking.PrimaryKey, want: true},
 		{name: "postgres exclusion", dialect: "postgres", kind: indexbacking.Exclusion, want: true},
 		{name: "mysql foreign key", dialect: "mysql", kind: indexbacking.ForeignKey, want: true},
 		{name: "mariadb foreign key", dialect: "mariadb", kind: indexbacking.ForeignKey, want: true},

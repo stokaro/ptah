@@ -18,6 +18,7 @@ import (
 	"ptah.run/internal/oracletype"
 	"ptah.run/internal/sqlitekey"
 	"ptah.run/internal/typechange"
+	"ptah.run/internal/ydbtype"
 	"ptah.run/migration/internal/generatedschema"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -448,6 +449,9 @@ func columnsWithDesiredDomains(
 	if genCol.Primary && primaryKeyImpliesNotNull(dialect) {
 		genNullable = false
 	}
+	if writesYDBSerial(genCol, dialect) {
+		genNullable = false
+	}
 	dbNullable := dbCol.IsNullable == "YES"
 	if genNullable != dbNullable {
 		colDiff.Changes["nullable"] = fmt.Sprintf("%t -> %t", dbNullable, genNullable)
@@ -571,6 +575,18 @@ func columnDefaultChange(
 // rowid table. [sqliteKeyColumnImpliesNotNull] carries the STRICT and
 // WITHOUT ROWID halves, where SQLite does enforce NOT NULL on a key column, and
 // the caller applies both.
+//
+// YDB answers true for a different reason than the SQL engines. Its key does
+// not imply NOT NULL -- a key column declared without it is nullable and takes
+// one row whose key is NULL -- but the YDB renderer writes NOT NULL on every key
+// column, because no Ptah declaration can ask for a nullable key and every
+// other engine makes a key NOT NULL. Normalizing the declared side to that
+// rendering is what keeps a key column declared without not_null from
+// differing from the column Ptah built; and a catalog key the server reports
+// as nullable, built outside Ptah, still differs from the declaration and is
+// reported. Measured on 26.2.1.14: `ALTER COLUMN id DROP NOT NULL` on a key
+// column is accepted, so a comparison that treated the declared key as
+// nullable would plan exactly that on the second apply.
 func primaryKeyImpliesNotNull(dialect string) bool {
 	return platform.NormalizeDialect(dialect) != platform.SQLite
 }
@@ -677,6 +693,9 @@ func columnTypeChange(
 		return ""
 	}
 
+	if platform.NormalizeDialect(dialect) == platform.YDB {
+		return ydbColumnTypeChange(genCol, dbCol, dbRawType)
+	}
 	genType, dbType := normalizeColumnTypesForDialect(genCol, dbRawType, dialect)
 	switch {
 	case genType != dbType:
@@ -1006,6 +1025,8 @@ func normalizeColumnTypesForDialect(
 		// has to answer is not "are these the same word" but "would rendering
 		// this declaration produce the type the catalog holds".
 		return normalize.Type(oracletype.Map(genType)), normalize.Type(dbType)
+	case platform.YDB:
+		return ydbComparableTypes(genType, dbType)
 	default:
 		return normalize.Type(genType), normalize.Type(dbType)
 	}
@@ -1070,6 +1091,83 @@ func spannerStringType(raw, normalized string) string {
 		return "varchar"
 	}
 	return "text"
+}
+
+// ydbColumnTypeChange compares a YDB column's type. An integer that increments,
+// on either side, is read as the Serial type the renderer writes for it: a
+// declared BIGINT with auto_increment is a BigSerial, and so is a column the
+// other side reports as an incrementing Int64.
+func ydbColumnTypeChange(genCol schemamodel.Field, dbCol catalog.Column, dbRawType string) string {
+	declared, current := genCol.Type, dbRawType
+	if genCol.AutoInc || genCol.IdentityGeneration != "" {
+		declared = ydbSerialOf(declared)
+	}
+	if dbCol.IsAutoIncrement {
+		current = ydbSerialOf(current)
+	}
+	desiredType, currentType := ydbComparableTypes(declared, current)
+	if desiredType == currentType {
+		return ""
+	}
+	return fmt.Sprintf("%s -> %s", currentType, desiredType)
+}
+
+// ydbSerialOf answers the Serial type an incrementing integer of columnType
+// is written as, and columnType itself where YDB has no Serial for it.
+func ydbSerialOf(columnType string) string {
+	renderings := ydbtype.Renderings(columnType)
+	if len(renderings) == 0 {
+		return columnType
+	}
+	if serial, ok := ydbtype.SerialFor(renderings[0]); ok {
+		return serial
+	}
+	return columnType
+}
+
+// writesYDBSerial reports a column the YDB renderer writes as a Serial type,
+// which it writes NOT NULL whatever the field says: a Serial column always
+// holds a value from its sequence. Without this a Serial column declared
+// without not_null would plan DROP NOT NULL against the column Ptah built, on
+// every run.
+func writesYDBSerial(genCol schemamodel.Field, dialect string) bool {
+	if platform.NormalizeDialect(dialect) != platform.YDB {
+		return false
+	}
+	return genCol.AutoInc || genCol.IdentityGeneration != "" || ydbtype.DeclaresSerial(genCol.Type)
+}
+
+// ydbComparableTypes reads both sides through the YDB type map, the one the
+// renderer writes from, and calls them equal when any type the declaration can
+// land on is a type the other side can be. A declared TIMESTAMP is Timestamp64
+// on a line with the wide types and Timestamp on one without, and a table
+// built on either answers the declaration. A declared VARCHAR(255) is Utf8,
+// whose length YDB does not keep, so the length is not a difference here; the
+// render reports it as dropped instead.
+//
+// The current side goes through the map too because it is not always a
+// catalog: a file-to-file comparison hands it a declaration, VARCHAR(255)
+// where a server would say Utf8. A catalog spelling maps to itself, since the
+// map reads YDB's own names case-sensitively -- Int8 is YDB's 8-bit integer,
+// INT8 is SQL's 64-bit one. The full spelling is compared, Decimal(10,2)
+// against Decimal(12,2) included, so no width check runs after this.
+func ydbComparableTypes(declared, current string) (desiredType, currentType string) {
+	want := ydbtype.Renderings(declared)
+	have := ydbtype.Renderings(current)
+	if len(have) == 0 {
+		have = []string{strings.TrimSpace(current)}
+	}
+	for _, rendering := range want {
+		for _, candidate := range have {
+			if strings.EqualFold(rendering, candidate) {
+				return candidate, candidate
+			}
+		}
+	}
+	if len(want) == 0 {
+		return strings.TrimSpace(declared), have[0]
+	}
+	return want[0], have[0]
 }
 
 // renderedSQLiteType is the type SQLite's renderer would write for a

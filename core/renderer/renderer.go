@@ -6,7 +6,7 @@
 //
 // The package renders for every dialect SupportedDialects names: PostgreSQL,
 // MySQL, MariaDB, ClickHouse, SQLite, SQL Server, CockroachDB, YugabyteDB,
-// Spanner, and Oracle, plus the alias spellings each of those accepts.
+// Spanner, Oracle and YDB, plus the alias spellings each of those accepts.
 // CockroachDB, YugabyteDB, and Spanner are rendered by the PostgreSQL renderer
 // constructed for that dialect, so their capability presets decide what each
 // one emits. Unsupported dialects are reported as errors instead of falling
@@ -58,6 +58,7 @@ import (
 	"ptah.run/core/renderer/internal/dialects/oracle"
 	"ptah.run/core/renderer/internal/dialects/postgres"
 	"ptah.run/core/renderer/internal/dialects/sqlite"
+	"ptah.run/core/renderer/internal/dialects/ydb"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/clickhouserbac"
 	"ptah.run/internal/crdbttl"
@@ -75,7 +76,7 @@ import (
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/usertypescope"
-	"ptah.run/internal/ydbgap"
+	"ptah.run/internal/ydbindex"
 )
 
 // RenderVisitor defines the interface for rendering AST nodes to SQL statements.
@@ -122,7 +123,7 @@ func SupportedDialects() []string {
 	// docs/feature-inventory.json derives its dialect rows from this list
 	// folded through platform.NormalizeDialect, so editing it is a
 	// documented-surface change.
-	return []string{"postgresql", "postgres", "mysql", "mariadb", "clickhouse", "sqlite", "sqlite3", "sqlserver", "mssql", "cockroachdb", "yugabytedb", "spanner", "oracle"}
+	return []string{"postgresql", "postgres", "mysql", "mariadb", "clickhouse", "sqlite", "sqlite3", "sqlserver", "mssql", "cockroachdb", "yugabytedb", "spanner", "oracle", "ydb"}
 }
 
 // NewRenderer creates a new renderer for the specified database dialect.
@@ -177,14 +178,7 @@ func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (
 	case platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
 		raw = postgres.NewWithCapabilities(caps, normalizedDialect)
 	case platform.YDB:
-		// YDB is a dialect name with no renderer behind it. The refusal names
-		// the canonical dialect rather than the spelling, so `ydbs` is refused
-		// in the words `ydb` is.
-		return nil, &ptaherr.RenderError{
-			Dialect: dialect,
-			Err:     ptaherr.ErrUnsupportedDialect,
-			Message: ydbgap.Rendering.Message(),
-		}
+		raw = ydb.NewWithCapabilities(caps)
 	default:
 		return nil, &ptaherr.RenderError{
 			Dialect: dialect,
@@ -540,6 +534,17 @@ func prepareCreateTableNode(
 			return nil, err
 		}
 		cloned.Constraints[i] = prepared
+	}
+	// An index the statement carries is held to what a standalone one is: a
+	// target that writes a new table's indexes inside CREATE TABLE would
+	// otherwise skip every index refusal for exactly those indexes.
+	cloned.Indexes = slices.Clone(node.Indexes)
+	for i, index := range cloned.Indexes {
+		prepared, err := prepareIndexNode(dialect, caps, index)
+		if err != nil {
+			return nil, err
+		}
+		cloned.Indexes[i] = prepared
 	}
 	if err := validateCreateTableForeignKeyColumns(dialect, &cloned); err != nil {
 		return nil, err
@@ -1320,7 +1325,33 @@ func ValidateSchemaWithCapabilities(
 	if err != nil {
 		return err
 	}
-	return validateDeclaredPrimaryKeys(dialect, caps, prepared)
+	if err := validateDeclaredPrimaryKeys(dialect, caps, prepared); err != nil {
+		return err
+	}
+	return validateTablesWithInlineIndexes(dialect, caps, prepared)
+}
+
+// validateTablesWithInlineIndexes renders every table on a target that writes a
+// new table's indexes inside its CREATE TABLE, so validation refuses what the
+// render of the table refuses. There an index is held to rules about its table
+// -- YDB refuses an index whose columns are the key, a covered key column, and
+// an index column of a type it cannot order -- and the render checks them with
+// the table, because the index is part of the table's statement. A plan that
+// adds such an index to a table that exists sees the index alone, so without
+// this a schema that validates would plan an ADD INDEX the server refuses
+// partway through a migration.
+func validateTablesWithInlineIndexes(dialect string, caps capability.Capabilities, database schemamodel.Database) error {
+	if !schemaprep.DeclaresIndexesInCreateTable(dialect) {
+		return nil
+	}
+	return modelast.WalkDatabase(database, dialect, func(node ast.Node) error {
+		table, ok := node.(*ast.CreateTableNode)
+		if !ok {
+			return nil
+		}
+		_, err := RenderSQLWithCapabilities(dialect, caps, table)
+		return err
+	})
 }
 
 // validateDeclaredPrimaryKeys refuses a table without a key on a target that
@@ -2218,6 +2249,12 @@ func validateIndexInclude(
 	case platform.Spanner:
 		allowed = method == ""
 		supportedMethods = "the default access method"
+	case platform.YDB:
+		// COVER is a clause of a global index, synchronous or asynchronous,
+		// and of nothing else a YDB row table has.
+		_, err := ydbindex.KindOf(trimmedIndexType)
+		allowed = err == nil
+		supportedMethods = "a global index, synchronous or asynchronous"
 	default:
 		// A target whose capability set carries the key and has no arm here
 		// is refused rather than waved through: which access methods take a

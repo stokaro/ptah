@@ -1,0 +1,258 @@
+package ydb
+
+import (
+	"fmt"
+
+	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer/internal/dialects/internal/nodedispatch"
+	"ptah.run/internal/ydbgap"
+)
+
+// VisitNode renders node, or reports why YDB cannot hold it.
+//
+// The switch is this renderer's whole decision table: every concrete node kind
+// in [ptah.run/core/ast] appears in it, and
+// [ptah.run/internal/astrouteguard] fails the build when one is missing. A kind
+// YDB has no statement for is refused here, by its capability key where one
+// exists and by the phase that implements it where the family is planned.
+// Nothing is answered with a skip comment: a comment lets an apply exit 0
+// without the object.
+//
+//nolint:gocyclo // a dispatch table's arms are not branching complexity, and collapsing them is what would hide a missing kind
+func (r *Renderer) VisitNode(node ast.Node) error {
+	if nodedispatch.IsAbsent(node) {
+		return fmt.Errorf("%w: %s: the AST node is nil", ptaherr.ErrInvalidSchemaDiff, DialectName)
+	}
+
+	switch n := node.(type) {
+	// Tables, columns and indexes: what this renderer writes.
+	case *ast.CreateTableNode:
+		return r.renderCreateTable(n)
+	case *ast.AlterTableNode:
+		return r.renderAlterTable(n)
+	case *ast.DropTableNode:
+		return r.renderDropTable(n)
+	case *ast.ColumnNode:
+		return r.renderColumnNode(n)
+	case *ast.ConstraintNode:
+		return r.renderConstraintNode(n)
+	case *ast.IndexNode:
+		return r.renderIndex(n)
+	case *ast.DropIndexNode:
+		return r.renderDropIndex(n)
+	case *ast.AlterIndexNode:
+		// PostgreSQL's ALTER INDEX ... RENAME TO names no table, and YDB
+		// renames an index through its table.
+		return refuseFact("ALTER INDEX "+n.Name+" RENAME TO "+n.NewName,
+			"YDB renames an index with ALTER TABLE ... RENAME INDEX, which needs the table this statement does not name")
+	case *ast.CommentNode:
+		return r.renderComment(n)
+	case *ast.ObjectCommentNode:
+		return refuseGap(ydbgap.Comments, "COMMENT ON "+string(n.Object)+" "+n.Name)
+
+	// A Ptah schema is a directory on YDB, and no SQL creates one: a table
+	// path names its directories and YDB creates them with the table
+	// (measured: `CREATE DIRECTORY` is a parse error, and `CREATE TABLE
+	// `dir/sub/t`` creates dir and sub). So a schema renders no statement.
+	case *ast.CreateSchemaNode:
+		return nil
+	case *ast.CreateDatabaseNode:
+		return refuseGap(ydbgap.CreatingDatabases, "CREATE DATABASE "+n.Name)
+
+	// User-defined types. YDB has none: CREATE TYPE and CREATE DOMAIN are
+	// parse errors, and an enum is neither a column type nor a named type.
+	case *ast.EnumNode:
+		return r.keyed(capability.EnumCustomType, "enum type", "enum "+n.Name)
+	case *ast.CreateTypeNode:
+		return refuseKey(typeKey(n), "type "+n.Name)
+	case *ast.AlterTypeNode:
+		return refuseKey(capability.EnumCustomType, "ALTER TYPE "+n.Name)
+	case *ast.DropTypeNode:
+		return refuseKey(capability.EnumCustomType, "DROP TYPE "+n.Name)
+
+	// Views are a family of their own in a later phase; a materialized view
+	// does not exist.
+	case *ast.CreateViewNode:
+		return refuseGap(ydbgap.Views, "view "+n.Name)
+	case *ast.DropViewNode:
+		return refuseGap(ydbgap.Views, "DROP VIEW "+n.Name)
+	case *ast.CreateMaterializedViewNode:
+		return r.keyed(capability.MaterializedViews, "materialized view", "materialized view "+n.Name)
+	case *ast.DropMaterializedViewNode:
+		return r.keyed(capability.MaterializedViews, "materialized view", "DROP MATERIALIZED VIEW "+n.Name)
+	case *ast.RefreshMaterializedViewNode:
+		return r.keyed(capability.MaterializedViews, "materialized view", "REFRESH MATERIALIZED VIEW "+n.Name)
+	case *ast.AlterMaterializedViewRefreshNode:
+		return r.keyed(capability.MaterializedViews, "materialized view", "the refresh schedule of "+n.Name)
+
+	// Routines and triggers do not exist.
+	case *ast.CreateFunctionNode:
+		return r.keyed(capability.Functions, "function", "function "+n.Name)
+	case *ast.DropFunctionNode:
+		return r.keyed(capability.Functions, "function", "DROP FUNCTION "+n.Name)
+	case *ast.CreateTriggerNode:
+		return r.keyed(capability.Triggers, "trigger", "trigger "+n.Name)
+	case *ast.DropTriggerNode:
+		return r.keyed(capability.Triggers, "trigger", "DROP TRIGGER "+n.Name)
+
+	// A sequence exists only behind a Serial column; there is no CREATE
+	// SEQUENCE (parse error) and no DROP SEQUENCE.
+	case *ast.CreateSequenceNode:
+		return r.keyed(capability.Sequences, "sequence", "sequence "+n.Name)
+	case *ast.AlterSequenceNode:
+		return r.keyed(capability.Sequences, "sequence", "ALTER SEQUENCE "+n.Name)
+	case *ast.DropSequenceNode:
+		return r.keyed(capability.Sequences, "sequence", "DROP SEQUENCE "+n.Name)
+
+	// Users, groups and permissions are YDB's own access model, a family of
+	// its own in a later phase.
+	case *ast.CreateRoleNode:
+		return refuseGap(ydbgap.AccessControl, "role "+n.Name)
+	case *ast.AlterRoleNode:
+		return refuseGap(ydbgap.AccessControl, "ALTER ROLE "+n.Name)
+	case *ast.DropRoleNode:
+		return refuseGap(ydbgap.AccessControl, "DROP ROLE "+n.Name)
+	case *ast.GrantPrivilegeNode:
+		return refuseGap(ydbgap.AccessControl, "GRANT on "+n.ObjectName)
+	case *ast.RevokePrivilegeNode:
+		return refuseGap(ydbgap.AccessControl, "REVOKE on "+n.ObjectName)
+	case *ast.DefaultPrivilegeNode:
+		return refuseGap(ydbgap.AccessControl, "default privileges")
+	case *ast.RevokeDefaultPrivilegeNode:
+		return refuseGap(ydbgap.AccessControl, "revoked default privileges")
+
+	// Row-level security does not exist.
+	case *ast.CreatePolicyNode:
+		return r.keyed(capability.RowLevelSecurity, "row-level security", "policy "+n.Name)
+	case *ast.DropPolicyNode:
+		return r.keyed(capability.RowLevelSecurity, "row-level security", "DROP POLICY "+n.Name)
+	case *ast.AlterTableEnableRLSNode:
+		return r.keyed(capability.RowLevelSecurity, "row-level security", "row-level security on "+n.Table)
+	case *ast.AlterTableDisableRLSNode:
+		return r.keyed(capability.RowLevelSecurity, "row-level security", "row-level security on "+n.Table)
+	case *ast.AlterTableForceRLSNode:
+		return r.keyed(capability.RowLevelSecurity, "row-level security", "forced row-level security on "+n.Table)
+
+	// Objects of other engines.
+	case *ast.CreateSynonymNode:
+		return refuseFact("synonym "+n.Name, "YDB has no synonyms")
+	case *ast.DropSynonymNode:
+		return refuseFact("DROP SYNONYM "+n.Name, "YDB has no synonyms")
+	case *ast.ExtensionNode:
+		return refuseFact("extension "+n.Name, "YDB has no extensions")
+	case *ast.DropExtensionNode:
+		return refuseFact("DROP EXTENSION "+n.Name, "YDB has no extensions")
+	case *ast.ExtendedPropertyNode:
+		return refuseFact("extended property "+n.Name, "extended properties are SQL Server's")
+	case *ast.CreateHypertableNode:
+		return r.keyed(capability.Hypertables, "hypertable", "hypertable "+n.Table)
+	case *ast.CreateContinuousAggregateNode:
+		return r.keyed(capability.ContinuousAggregates, "continuous aggregate", "continuous aggregate "+n.Name)
+	case *ast.DropContinuousAggregateNode:
+		return r.keyed(capability.ContinuousAggregates, "continuous aggregate", "DROP continuous aggregate "+n.Name)
+
+	// Writing rows is the data phase's work.
+	case *ast.UpsertNode:
+		return refuseGap(ydbgap.DataChanges, "upsert into "+n.Table)
+
+	// Literal SQL is the author's own YQL and is written as it stands. A
+	// routine body is another engine's code.
+	case *ast.RawSQLNode:
+		return r.renderRawSQL(n)
+	case *ast.MySQLRoutineNode:
+		return r.keyed(capability.Functions, "routine", "a MySQL routine")
+	case *ast.OpaqueRoutineNode:
+		return r.keyed(capability.Functions, "routine", "a routine")
+	case *ast.PostgresDoBlockNode:
+		return refuseFact("a PostgreSQL DO block", "YQL has no anonymous code block in DDL")
+	case *ast.PostgresRoutineNode:
+		return r.keyed(capability.Functions, "routine", "a PostgreSQL routine")
+	case *ast.SQLServerRoutineNode:
+		return r.keyed(capability.Functions, "routine", "a SQL Server routine")
+
+	case *ast.StatementList:
+		for _, statement := range n.Statements {
+			if err := r.VisitNode(statement); err != nil {
+				return err
+			}
+		}
+		return nil
+
+	// An operation and a type definition are parts of a statement. Each is
+	// read out of the ALTER or the CREATE TYPE that carries it, so one
+	// arriving alone names no table and no type.
+	case *ast.AddColumnOperation,
+		*ast.DropColumnOperation,
+		*ast.ModifyColumnOperation,
+		*ast.RenameColumnOperation,
+		*ast.AlterGeneratedColumnExpressionOperation,
+		*ast.AlterColumnOperation,
+		*ast.AddConstraintOperation,
+		*ast.ValidateConstraintOperation,
+		*ast.DropConstraintOperation,
+		*ast.RenameConstraintOperation,
+		*ast.RenameIndexOperation,
+		*ast.AlterIndexVisibilityOperation,
+		*ast.ReplaceIndexOperation,
+		*ast.AddIndexOperation,
+		*ast.AddSkippingIndexOperation,
+		*ast.RenameTableOperation,
+		*ast.SetCommentOperation,
+		*ast.SetConstraintCommentOperation,
+		*ast.ModifyTTLOperation,
+		*ast.SetRowTTLOperation,
+		*ast.ResetRowTTLOperation,
+		*ast.SetRowDeletionPolicyOperation,
+		*ast.DropRowDeletionPolicyOperation,
+		*ast.AddEnumValueOperation,
+		*ast.RenameEnumValueOperation,
+		*ast.RenameTypeOperation,
+		*ast.CompositeAttributeOperation,
+		*ast.DomainConstraintOperation,
+		*ast.DomainDefaultOperation,
+		*ast.DomainNotNullOperation,
+		*ast.EnumTypeDef,
+		*ast.DomainTypeDef,
+		*ast.CompositeTypeDef,
+		*ast.RangeTypeDef:
+		return fmt.Errorf("%w: %s: %T renders as part of the statement that carries it, not on its own",
+			ptaherr.ErrInvalidSchemaDiff, DialectName, node)
+
+	default:
+		return fmt.Errorf("%w: %s: %T has no handler in this renderer",
+			ptaherr.ErrUnsupportedFeature, DialectName, node)
+	}
+}
+
+// typeKey is the capability a CREATE TYPE asks for, by the kind it declares.
+func typeKey(node *ast.CreateTypeNode) capability.Capability {
+	switch node.TypeDef.(type) {
+	case *ast.DomainTypeDef:
+		return capability.DomainTypes
+	case *ast.CompositeTypeDef:
+		return capability.CompositeTypes
+	case *ast.RangeTypeDef:
+		return capability.RangeTypes
+	default:
+		return capability.EnumCustomType
+	}
+}
+
+// renderComment writes a planner's annotation as a YQL line comment. It is a
+// note for the person reading the script and carries no declaration.
+func (r *Renderer) renderComment(node *ast.CommentNode) error {
+	if node.Text == "" {
+		r.w.WriteLine("--")
+		return nil
+	}
+	r.w.WriteLinef("-- %s", node.Text)
+	return nil
+}
+
+// renderRawSQL writes the author's statement as it stands, terminated.
+func (r *Renderer) renderRawSQL(node *ast.RawSQLNode) error {
+	r.w.WriteLine(terminated(node.SQL))
+	return nil
+}

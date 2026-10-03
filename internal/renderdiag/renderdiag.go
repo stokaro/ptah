@@ -315,6 +315,14 @@ const (
 	// separately by [Sink.RecordLostIdentity] -- but the generation itself, on
 	// a target that has none to spell.
 	AutoIncrementProperty = "auto-increment"
+	// TypeModifierProperty is the part of a declared type the target's type
+	// does not keep: the length of a VARCHAR(255) on YDB, whose Utf8 has none,
+	// or a timestamp precision coarser than the microseconds YDB stores. The
+	// column holds every value the declaration admits and more, so nothing
+	// written through Ptah is lost; what is lost is the limit, which the
+	// server no longer enforces. The detail names the declared type and what
+	// was dropped from it.
+	TypeModifierProperty = "type modifier"
 )
 
 // ColumnProperties carries the column properties one target does not render.

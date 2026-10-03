@@ -92,12 +92,16 @@ func ServerBacks(dialect string, kind Kind) bool {
 		// Every server enforces a primary key with an index. The reader marks
 		// that index rather than leaving it to be recognized by its name, so
 		// the answer a caller wants is Unaddressable, which reads the mark.
+		// On YDB the table itself is ordered by its key and no index object
+		// exists for it, so the reader reports none to attribute.
 		return true
 	case Unique:
 		// SQL Server keeps a UNIQUE constraint and a unique index as separate
 		// objects, so neither backs the other and its index query already
-		// filters `is_unique_constraint = 0`.
-		return normalized != platform.SQLServer
+		// filters `is_unique_constraint = 0`. YDB has no UNIQUE constraint at
+		// all (`UNIQUE (a)` in CREATE TABLE is a parse error), so a unique
+		// index there is an index of its own and backs nothing.
+		return normalized != platform.SQLServer && normalized != platform.YDB
 	case Exclusion:
 		// An EXCLUDE constraint is a PostgreSQL-family construct and is always
 		// implemented by an index.

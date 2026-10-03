@@ -16,12 +16,16 @@ func TestLayer_Message_HappyPath(t *testing.T) {
 		layer ydbgap.Layer
 		want  string
 	}{
-		{name: "rendering", layer: ydbgap.Rendering, want: "rendering a YDB schema is not implemented yet (stokaro/ptah#4015, phase 3)"},
-		{name: "planning", layer: ydbgap.Planning, want: "planning a YDB migration is not implemented yet (stokaro/ptah#4015, phase 3)"},
 		{name: "schema files", layer: ydbgap.SchemaFiles, want: "reading a YDB schema file is not implemented yet (stokaro/ptah#4015, phase 2)"},
 		{name: "connecting", layer: ydbgap.Connecting, want: "connecting to a YDB server is not implemented yet (stokaro/ptah#4015, phase 4)"},
+		{name: "query building", layer: ydbgap.QueryBuilding, want: "building a YQL query is not implemented yet (stokaro/ptah#4015, phase 7)"},
+		{name: "data changes", layer: ydbgap.DataChanges, want: "writing YDB rows is not implemented yet (stokaro/ptah#4015, phase 7)"},
 		{name: "linting", layer: ydbgap.Linting, want: "linting YQL for YDB is not implemented yet (stokaro/ptah#4015, phase 8)"},
 		{name: "creating databases", layer: ydbgap.CreatingDatabases, want: "creating a YDB database is not implemented yet (stokaro/ptah#4015, phase 9)"},
+		{name: "comments", layer: ydbgap.Comments, want: "storing a comment on a YDB object is not implemented yet (stokaro/ptah#4015, phase 10)"},
+		{name: "views", layer: ydbgap.Views, want: "managing YDB views is not implemented yet (stokaro/ptah#4015, phase 10)"},
+		{name: "access control", layer: ydbgap.AccessControl, want: "managing YDB users, groups and permissions is not implemented yet (stokaro/ptah#4015, phase 10)"},
+		{name: "table settings", layer: ydbgap.TableSettings, want: "setting YDB table options (TTL, partitioning, column families, changefeeds) is not implemented yet (stokaro/ptah#4015, phase 10)"},
 	}
 
 	for _, test := range tests {

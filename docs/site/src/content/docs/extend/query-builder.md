@@ -61,10 +61,10 @@ and guessing a frame would change results.
 ## Dialect coverage
 
 `RenderSelect`, `RenderInsert`, `RenderUpdate`, and `RenderDelete` render for
-every dialect `renderer.SupportedDialects()` returns. What differs between them
-is the placeholder, the identifier quoting, and how a row limit is written. The
-first column holds the strings you pass as the dialect, so the table is also
-that list of names:
+every dialect `renderer.SupportedDialects()` returns except `ydb`. What differs
+between them is the placeholder, the identifier quoting, and how a row limit is
+written. The first column holds the strings you pass as the dialect, so the
+table is also that list of names:
 
 | Dialect | Placeholder | Identifiers | `LIMIT` / `OFFSET` |
 | --- | --- | --- | --- |
@@ -74,6 +74,7 @@ that list of names:
 | `sqlite` `sqlite3` | `?` | `"id"` | `LIMIT ? OFFSET ?` |
 | `sqlserver` `mssql` | `@p1`, `@p2`, … | `[id]` | `OFFSET 0 ROWS FETCH NEXT @pn ROWS ONLY` |
 | `oracle` | `:1`, `:2`, … | bare `id` | `OFFSET 0 ROWS FETCH NEXT :n ROWS ONLY` |
+| `ydb` | refused | — | — |
 
 Three of those rows carry a decision worth stating:
 
@@ -94,6 +95,12 @@ Three of those rows carry a decision worth stating:
   has no live coverage in this repository, so the
   [support matrix](../../databases/support-matrix/) caveat applies — review the
   generated SQL before relying on it.
+
+YDB is refused in all four functions. Its DDL renders, which is why the name is
+in the list. A YQL query needs every bound value typed to its column, and the
+builder's values carry no type, so each function returns an error that names
+the verb and the plan that adds the builder,
+[`stokaro/ptah#4015`](https://github.com/stokaro/ptah/issues/4015).
 
 One statement is refused, and for an engine reason rather than an untaught one:
 

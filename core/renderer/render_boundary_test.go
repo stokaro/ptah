@@ -93,7 +93,7 @@ func interceptedRefusals() []boundaryFixture {
 			dialect: platform.MySQL,
 			node:    indexWithInclude(),
 			wantIs:  ptaherr.ErrUnsupportedFeature,
-			wantErr: `mysql does not support INCLUDE columns on index "idx_products_sku"; target cockroachdb, postgres, spanner, or yugabytedb`,
+			wantErr: `mysql does not support INCLUDE columns on index "idx_products_sku"; target cockroachdb, postgres, spanner, ydb, or yugabytedb`,
 		},
 		{
 			name:    "extension",

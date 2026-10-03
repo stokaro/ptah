@@ -277,9 +277,10 @@ func toDBIndexes(
 // indexAccessMethod reports schemamodel.Index.Type as an access method only where
 // that is what it means. On ClickHouse the same field carries the
 // data-skipping-index type, which is a different concept the DB shape keeps in
-// Index.Type.
+// Index.Type. On YDB it carries how the index is maintained, synchronously or
+// not, and the YDB comparison reads that from Method on the current side.
 func indexAccessMethod(indexType, dialect string) string {
-	if !platform.IsPostgresFamily(dialect) {
+	if !platform.IsPostgresFamily(dialect) && platform.NormalizeDialect(dialect) != platform.YDB {
 		return ""
 	}
 	return indexType

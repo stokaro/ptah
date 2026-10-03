@@ -2,7 +2,6 @@ package planner_test
 
 import (
 	"fmt"
-	"regexp"
 	"sync/atomic"
 	"testing"
 
@@ -15,7 +14,6 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/planner/dialects/mysql"
-	"ptah.run/internal/ydbgap"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff"
@@ -179,21 +177,26 @@ func TestGenerateSchemaDiffSQL_UnsupportedDialectReturnsError(t *testing.T) {
 	c.Assert(planErr.Dialect, qt.Equals, "db2")
 }
 
-// YDB is a dialect name with no planner behind it. Every spelling of it is
-// refused in the words of the gap, with the sentinel an embedder branches on.
-func TestGenerateSchemaDiffSQL_RefusesYDB(t *testing.T) {
+// Every spelling of YDB plans through the YDB planner and renders YQL: an
+// added table is one CREATE TABLE with a backticked path and a table-level key.
+func TestGenerateSchemaDiffSQL_PlansYDB(t *testing.T) {
+	diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{
+		Name:  "items",
+		Table: schemamodel.Table{StructName: "Item", Name: "items"},
+		Fields: []schemamodel.Field{
+			{StructName: "Item", Name: "id", Type: "BIGINT", Primary: true},
+			{StructName: "Item", Name: "label", Type: "TEXT", Nullable: true},
+		},
+	}}}
+	want := "CREATE TABLE `items` (\n    `id` Int64 NOT NULL,\n    `label` Utf8,\n    PRIMARY KEY (`id`)\n);"
 	for _, dialect := range []string{"ydb", "ydbs"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			sql, err := planner.GenerateSchemaDiffSQL(&difftypes.SchemaDiff{}, dialect)
+			sql, err := planner.GenerateSchemaDiffSQL(diff, dialect)
 
-			c.Assert(sql, qt.Equals, "")
-			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(ydbgap.Planning.Message()))
-			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
-			var planErr *ptaherr.PlanError
-			c.Assert(err, qt.ErrorAs, &planErr)
-			c.Assert(planErr.Dialect, qt.Equals, dialect)
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Contains, want)
 		})
 	}
 }

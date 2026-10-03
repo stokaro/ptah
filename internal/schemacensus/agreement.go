@@ -109,14 +109,6 @@ func SurfaceDifferences() []SurfaceDifference {
 			Reason: "the same leading `--` line, above ALTER TABLE ... ENABLE ROW LEVEL SECURITY",
 		},
 		{
-			Field: "schemamodel.Field.IdentityStart", RenderOnly: true,
-			Reason: "both surfaces agree when the column declares no IdentityOptions, and both drop START WITH when it does; the corpus declares all four, so this is one dialect's handling of the pair rather than a lost fact",
-		},
-		{
-			Field: "schemamodel.Field.IdentityIncrement", RenderOnly: true,
-			Reason: "the INCREMENT BY half of the same pair",
-		},
-		{
 			Field: "schemamodel.Index.Concurrently", RenderOnly: true,
 			Reason: "the render writes what the source declared, because its output is a " +
 				"script the reader runs and a concurrent build is a promise about the lock " +

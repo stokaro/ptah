@@ -45,6 +45,7 @@ measured.
 | [YugabyteDB](../distributed/) | `yugabytedb` (`yugabyte`, `ysql`) | `yugabytedb://`, `ysql://` | PostgreSQL-compatible path with capability differences. |
 | [ClickHouse](../clickhouse/) | `clickhouse` (`ch`) | `clickhouse://`, `ch://` | Capability-limited support. |
 | [Spanner (PostgreSQL interface)](../distributed/) | `spanner` (`cloudspanner`, `google-spanner`, `google_spanner`) | `spanner://` | Most conservative capability-limited support. |
+| YDB | `ydb` (`ydbs`) | `ydb://`, `ydbs://` | Renders and plans YQL for row tables. Connecting to a server, the migrator and the YDB object families are planned in stokaro/ptah#4015. |
 | [Oracle](../oracle/) | `oracle` | `oracle://` | Renders, plans, and reads a live catalog. |
 
 Accepted URL formats, and the difference between target, dev, shadow, and
@@ -105,14 +106,26 @@ the declared set cannot say one thing here and another in a workflow file.
 | `sqlite` | 3 | certified | `SQLite3` | yes |
 | `spanner` | 0 | best-effort | `SpannerPostgres` | yes |
 | `clickhouse` | 25.8 | best-effort | `ClickHouse2411` | no |
+| `ydb` | 26.2 | best-effort | `YDB262` | no |
+| `ydb` | 26.1 | best-effort | `YDB261` | no |
+| `ydb` | 25.4 | best-effort | `YDB253` | no |
+| `ydb` | 25.3 | best-effort | `YDB253` | no |
+| `ydb` | 25.2 | best-effort | `YDB252` | no |
+| `ydb` | 25.1 | best-effort | `YDB251` | no |
 
-Declared release lines: 32. Probed on every pull request: 31.
+Declared release lines: 38. Probed on every pull request: 31.
 
-Support levels across the 32 declared lines: 28 certified, 2 legacy-tested, 2 best-effort.
+Support levels across the 38 declared lines: 28 certified, 2 legacy-tested, 8 best-effort.
 
 Lines that are declared and not probed, and why:
 
 - `clickhouse` 25.8 — upstream support ended on 2026-08-29 (endoflife.date/clickhouse).
+- `ydb` 26.2 — the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing.
+- `ydb` 26.1 — the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing.
+- `ydb` 25.4 — the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing.
+- `ydb` 25.3 — the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing.
+- `ydb` 25.2 — the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing.
+- `ydb` 25.1 — the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing.
 
 Lines whose container tag does not name the line, so which patch it resolves to has to be read off the tag:
 

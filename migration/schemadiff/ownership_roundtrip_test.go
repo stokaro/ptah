@@ -42,6 +42,8 @@ func ownershipShapes() []ownershipShape {
 			skip: map[string]string{
 				"sqlserver": "the SQL Server reader's index query filters " +
 					"`is_unique_constraint = 0`, so this catalog never carries both",
+				"ydb": "YDB has no UNIQUE constraint (`UNIQUE (a)` in CREATE TABLE is a parse error), " +
+					"so a YDB catalog carries the unique index alone",
 			},
 			build: func(database *catalog.Database) {
 				database.Constraints = []catalog.Constraint{{
