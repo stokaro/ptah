@@ -238,9 +238,9 @@ The flags decide these capabilities:
 | `EnableParameterizedDecimal` | `parameterized_decimal` |
 
 A flag the cluster does not list leaves the capability as the release line's
-preset has it. Ptah sends no
-credentials to the monitoring endpoint. A failed read fails the connection
-rather than planning without the flags. `ptah db capabilities` lists the keys
+preset has it. Ptah sends no credentials to the monitoring endpoint and follows
+no redirect from it. A failed read fails the connection rather than planning
+without the flags. `ptah db capabilities` lists the keys
 the flags changed under `Set by this server rather than by its release line`.
 
 Without the parameter the line's preset stands. A statement the cluster

@@ -116,14 +116,27 @@ func (f Flags) Refine(caps capability.Capabilities) capability.Capabilities {
 // Path is the monitoring page the flags are read from.
 const Path = "/viewer/json/feature_flags"
 
-// timeout bounds one read when the caller's context sets no deadline.
+// timeout bounds one read. The client applies it whatever the caller's
+// context says, and the earlier of the two ends the read.
 const timeout = 30 * time.Second
 
 // maxBody bounds the page Ptah reads. A database lists a few hundred flags,
 // about 15 KB measured.
 const maxBody = 4 << 20
 
-var client = &http.Client{Timeout: timeout}
+// maxEcho bounds how much of a refusing page an error repeats: enough for the
+// endpoint's own message, and not the whole of whatever answered.
+const maxEcho = 256
+
+// client follows no redirect. The page is read from the endpoint the operator
+// named, and a redirect to another host is answered as the status it is
+// rather than followed somewhere Ptah was not pointed at.
+var client = &http.Client{
+	Timeout: timeout,
+	CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
+}
 
 // Read asks the monitoring endpoint for the flags of database, an absolute
 // path such as /local. It sends no credentials: a cluster that requires a
@@ -151,13 +164,22 @@ func Read(ctx context.Context, monitoring *url.URL, database string) (Flags, err
 	}
 	if response.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("read YDB feature flags from %s: %s: %s",
-			page.Redacted(), response.Status, strings.TrimSpace(string(body)))
+			page.Redacted(), response.Status, echo(body))
 	}
 	flags, err := Decode(body, database)
 	if err != nil {
 		return nil, fmt.Errorf("read YDB feature flags from %s: %w", page.Redacted(), err)
 	}
 	return flags, nil
+}
+
+// echo is the start of a refusing page, as an error repeats it.
+func echo(body []byte) string {
+	text := strings.TrimSpace(string(body))
+	if len(text) <= maxEcho {
+		return text
+	}
+	return strings.ToValidUTF8(text[:maxEcho], "") + "..."
 }
 
 // pageVersion is the only page layout Ptah reads; measured on 25.1.4.7

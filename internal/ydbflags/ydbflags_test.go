@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -223,6 +225,45 @@ func TestRead_FailurePath(t *testing.T) {
 		c := qt.New(t)
 		flags, err := ydbflags.Read(t.Context(), nil, "/local")
 		c.Assert(err, qt.ErrorMatches, `no monitoring endpoint to read feature flags from`)
+		c.Assert(flags, qt.IsNil)
+	})
+	// The page is read from the endpoint the operator named. A redirect is
+	// answered as the status it is, and the host it points at is never asked.
+	t.Run("a redirect", func(t *testing.T) {
+		c := qt.New(t)
+		var elsewhere atomic.Int32
+		other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			elsewhere.Add(1)
+			_, _ = w.Write([]byte(`{"Version":2,"Databases":[{"Name":"/local","FeatureFlags":[]}]}`))
+		}))
+		c.Cleanup(other.Close)
+		redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, other.URL+"/latest/meta-data/", http.StatusFound)
+		}))
+		c.Cleanup(redirector.Close)
+		redirecting, err := url.Parse(redirector.URL)
+		c.Assert(err, qt.IsNil)
+
+		flags, err := ydbflags.Read(t.Context(), redirecting, "/local")
+
+		c.Assert(err, qt.ErrorMatches, `read YDB feature flags from http://.*: 302 Found: .*`)
+		c.Assert(flags, qt.IsNil)
+		c.Assert(elsewhere.Load(), qt.Equals, int32(0))
+	})
+	// An error repeats the start of a refusing page, not the page.
+	t.Run("a long refusal", func(t *testing.T) {
+		c := qt.New(t)
+		long := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(strings.Repeat("y", 1<<20)))
+		}))
+		c.Cleanup(long.Close)
+		refusing, err := url.Parse(long.URL)
+		c.Assert(err, qt.IsNil)
+
+		flags, err := ydbflags.Read(t.Context(), refusing, "/local")
+
+		c.Assert(err, qt.ErrorMatches, `read YDB feature flags from http://.*: 500 Internal Server Error: y{256}\.\.\.`)
 		c.Assert(flags, qt.IsNil)
 	})
 }
