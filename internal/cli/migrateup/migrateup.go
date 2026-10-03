@@ -18,6 +18,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
@@ -528,17 +529,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 
 	// Before any migrator call: reading the status initializes the revision
 	// table, and a decision taken after the first write answers nothing.
-	if err := lockRequest.DecideConnected(conn.Info().Dialect); err != nil {
-		return err
-	}
-	timeoutRequest := migratetimeout.Request{
-		Cmd:                 cmd,
-		LockFlag:            lockTimeoutFlag,
-		StatementFlag:       statementTimeoutFlag,
-		LockFromConfig:      projectCfg.StringValue(projectconfig.StringMigrationLockTimeout).Present,
-		StatementFromConfig: projectCfg.StringValue(projectconfig.StringMigrationStatementTimeout).Present,
-	}
-	if err := timeoutRequest.Decide(conn.Info().Dialect, conn.Info().Capabilities, timeouts); err != nil {
+	if err := decideConnected(cmd, projectCfg, lockRequest, conn.Info(), timeouts); err != nil {
 		return err
 	}
 
@@ -694,6 +685,29 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		emitMigrateUpDeferredChecks(emit, checksDeferred)
 	}
 	return nil
+}
+
+// decideConnected refuses, against the server the run reached, the requests
+// that server may not carry: the migration lock, and timeouts for every
+// migration.
+func decideConnected(
+	cmd *cobra.Command,
+	projectCfg projectconfig.Config,
+	lockRequest migratelock.Request,
+	server catalog.ServerInfo,
+	timeouts migrationfile.Timeouts,
+) error {
+	if err := lockRequest.DecideConnected(server.Dialect); err != nil {
+		return err
+	}
+	timeoutRequest := migratetimeout.Request{
+		Cmd:                 cmd,
+		LockFlag:            lockTimeoutFlag,
+		StatementFlag:       statementTimeoutFlag,
+		LockFromConfig:      projectCfg.StringValue(projectconfig.StringMigrationLockTimeout).Present,
+		StatementFromConfig: projectCfg.StringValue(projectconfig.StringMigrationStatementTimeout).Present,
+	}
+	return timeoutRequest.Decide(server.Dialect, server.Capabilities, timeouts)
 }
 
 // planReport is the block a run prints about the work it is about to do: where

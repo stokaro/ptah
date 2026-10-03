@@ -84,10 +84,12 @@ func (r Request) Decide(dialect string, caps capability.Capabilities, timeouts m
 		return nil
 	}
 	var requests []string
-	if spelling, asked := r.spelling(r.LockFlag, r.LockFromConfig, LockConfigKey); timeouts.HasLockTimeout && asked {
+	lock := timeoutInput{flag: r.LockFlag, configKey: LockConfigKey, fromConfig: r.LockFromConfig}
+	if spelling, asked := r.spelling(lock); timeouts.HasLockTimeout && asked {
 		requests = append(requests, spelling)
 	}
-	if spelling, asked := r.spelling(r.StatementFlag, r.StatementFromConfig, StatementConfigKey); timeouts.HasStatementTimeout && asked {
+	statement := timeoutInput{flag: r.StatementFlag, configKey: StatementConfigKey, fromConfig: r.StatementFromConfig}
+	if spelling, asked := r.spelling(statement); timeouts.HasStatementTimeout && asked {
 		requests = append(requests, spelling)
 	}
 	if len(requests) == 0 {
@@ -96,19 +98,27 @@ func (r Request) Decide(dialect string, caps capability.Capabilities, timeouts m
 	return &UnsupportedError{Requests: requests, Dialect: dialect}
 }
 
+// timeoutInput is where one of the two timeouts can come from: its flag, and
+// the project-config key that fills the flag when the config carries it.
+type timeoutInput struct {
+	flag       string
+	configKey  string
+	fromConfig bool
+}
+
 // spelling names where one timeout reached this run from, and reports false
 // when it came from the environment, which is not addressed to this command
 // alone (see [Request.Decide]).
-func (r Request) spelling(flagName string, fromConfig bool, configKey string) (string, bool) {
+func (r Request) spelling(in timeoutInput) (string, bool) {
 	flags := r.Cmd.Flags()
-	if _, fromEnv := cmdflags.AppliedEnvName(flags, flagName); fromEnv {
+	if _, fromEnv := cmdflags.AppliedEnvName(flags, in.flag); fromEnv {
 		return "", false
 	}
-	if cmdflags.SetOnCommandLine(flags, flagName) {
-		return "--" + flagName, true
+	if cmdflags.SetOnCommandLine(flags, in.flag) {
+		return "--" + in.flag, true
 	}
-	if fromConfig {
-		return configKey, true
+	if in.fromConfig {
+		return in.configKey, true
 	}
 	return "", false
 }
