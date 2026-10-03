@@ -44,7 +44,9 @@ func ConvertDBSchemaToGoSchema(dbSchema *catalog.Database, dialect string) *sche
 	columnKeys := indexForeignKeysByColumn(dbSchema)
 	tablePrimaryKeys := primaryKeysByTable(dbSchema, dialect)
 	tablePKColumns := primaryKeyColumnSets(tablePrimaryKeys)
-	tableStructNames := convertTablesAndFields(database, dbSchema, columnKeys.byColumn, tablePrimaryKeys, tablePKColumns)
+	tableStructNames := convertTablesAndFields(
+		database, dbSchema, columnKeys.byColumn, tablePrimaryKeys, tablePKColumns, dialect,
+	)
 
 	// One decision, consulted by both pools below. A unique constraint and its
 	// backing index describe one object, so exactly one of them may be emitted.
@@ -140,6 +142,7 @@ func convertTablesAndFields(
 	fkByColumn map[tableMemberKey]foreignKeyInfo,
 	tablePrimaryKeys map[string]tablePrimaryKey,
 	tablePKColumns map[string]map[string]bool,
+	dialect string,
 ) map[string]string {
 	tableStructNames := assignTableStructNames(dbSchema.Tables)
 	for _, dbTable := range dbSchema.Tables {
@@ -183,6 +186,7 @@ func convertTablesAndFields(
 		for _, dbColumn := range dbTable.Columns {
 			opts := catalogfield.Options{
 				CoveredByTablePrimaryKey: tablePKColumns[dbTable.QualifiedName()][dbColumn.Name],
+				Dialect:                  dialect,
 			}
 			// Carry the field-level foreign key (reference + referential actions)
 			// so down migrations can reconstruct it with the prior action.

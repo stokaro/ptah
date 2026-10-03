@@ -28,11 +28,11 @@ import (
 	"ptah.run/internal/dbschema/oracle"
 	"ptah.run/internal/dbschema/postgres"
 	"ptah.run/internal/dbschema/sqlite"
+	ydbschema "ptah.run/internal/dbschema/ydb"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqlrunner"
-	"ptah.run/internal/ydbgap"
 )
 
 // ConnectToDatabase creates a database connection from a URL.
@@ -113,11 +113,6 @@ func connect(ctx context.Context, dbURL string, scope scopeRule) (*DatabaseConne
 		return nil, err
 	}
 
-	if dialect == platform.YDB {
-		// YDB is a dialect name with no driver behind it. The generic arm below
-		// would say Ptah renders and plans YDB schemas, which it does not.
-		return nil, errors.New(ydbgap.Connecting.Message())
-	}
 	dialectProtocol, connectionString := databaseDriverConfig(dialect, dbURL)
 	if dialectProtocol == "" {
 		// A dialect Ptah renders and plans for, and does not connect to yet.
@@ -130,9 +125,9 @@ func connect(ctx context.Context, dbURL string, scope scopeRule) (*DatabaseConne
 				"and reading a live %s catalog is not implemented", dialect, dialect, dialect)
 	}
 
-	db, err := sql.Open(dialectProtocol, connectionString)
+	db, ydbConnection, err := openDatabase(ctx, dialectProtocol, connectionString)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open database connection: %w", err)
+		return nil, err
 	}
 	inMemorySQLite := dialectProtocol == "sqlite" && isSQLiteMemoryDSN(connectionString)
 	if inMemorySQLite {
@@ -253,6 +248,16 @@ func connect(ctx context.Context, dbURL string, scope scopeRule) (*DatabaseConne
 		newWriter = func(runner sqlrunner.Runner, _ *sql.Conn) catalog.SchemaWriter {
 			return oracle.NewOracleWriterForRunner(runner, info.Schema)
 		}
+	case "ydb":
+		// The reader asks the scheme and table services rather than SQL, so it
+		// reads through the driver whatever runner a session hands it; YDB has
+		// no session state a schema read could see.
+		newReader = func(sqlrunner.Runner) catalog.SchemaReader {
+			return ydbschema.NewReader(ydbConnection.Driver, info.Capabilities)
+		}
+		newWriter = func(runner sqlrunner.Runner, _ *sql.Conn) catalog.SchemaWriter {
+			return ydbschema.NewWriter(runner, ydbConnection.Driver)
+		}
 	default:
 		_ = db.Close()
 		return nil, fmt.Errorf("no schema reader available for dialect: %s", dialect)
@@ -271,6 +276,28 @@ func connect(ctx context.Context, dbURL string, scope scopeRule) (*DatabaseConne
 		remoteLibSQL:   dialectProtocol == "libsql",
 	}, nil
 }
+
+// openDatabase opens the pool for a driver name and its data source. YDB is
+// opened through its SDK rather than sql.Open, because the connection binds
+// arguments itself and closes the SDK driver with the pool; see
+// internal/dbschema/ydb.
+func openDatabase(ctx context.Context, driverName, dataSourceName string) (*sql.DB, *ydbschema.Connection, error) {
+	if driverName == ydbDriverName {
+		connection, err := ydbschema.Open(ctx, dataSourceName)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to open database connection: %w", err)
+		}
+		return connection.DB, connection, nil
+	}
+	db, err := sql.Open(driverName, dataSourceName)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to open database connection: %w", err)
+	}
+	return db, nil, nil
+}
+
+// ydbDriverName is the driver name databaseDriverConfig gives a YDB URL.
+const ydbDriverName = "ydb"
 
 // parseDatabaseURL parses a database URL into the form the rest of the
 // connection path reads: the scheme names the dialect, and the path is where
@@ -513,6 +540,10 @@ func databaseDriverConfig(dialect, dbURL string) (driverName, dataSourceName str
 		return "sqlserver", convertSQLServerURL(dbURL)
 	case platform.Oracle:
 		return "oracle", oracleDataSourceName(dbURL)
+	case platform.YDB:
+		// The ydb:// URL itself: internal/dbschema/ydb translates it to the
+		// SDK's grpc:// form and checks its parameters and credentials.
+		return ydbDriverName, dbURL
 	default:
 		return "", ""
 	}
@@ -796,9 +827,11 @@ func (dc *DatabaseConnection) WithIsolatedQuerySession(
 		return fmt.Errorf("begin isolated query transaction: %w", err)
 	}
 	defer func() {
-		if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
-			resultErr = errors.Join(resultErr, fmt.Errorf("roll back transaction: %w", rollbackErr))
+		rollbackErr := tx.Rollback()
+		if rollbackErr == nil || errors.Is(rollbackErr, sql.ErrTxDone) || ydbTransactionEnded(dc.info.Dialect, rollbackErr) {
+			return
 		}
+		resultErr = errors.Join(resultErr, fmt.Errorf("roll back transaction: %w", rollbackErr))
 	}()
 	if readOnlyStatement != "" {
 		if _, err := tx.ExecContext(ctx, readOnlyStatement); err != nil {
@@ -807,6 +840,15 @@ func (dc *DatabaseConnection) WithIsolatedQuerySession(
 	}
 
 	return use(isolatedQueryer{runner: tx})
+}
+
+// ydbTransactionEnded reports the rollback of a YDB transaction the server had
+// already ended. YDB ends a transaction when a statement in it fails, and the
+// rollback that follows answers NOT_FOUND (`Transaction not found`), measured
+// on 26.2.1.14; there is nothing left to undo, and the failure that ended it
+// is the one the caller is told about.
+func ydbTransactionEnded(dialect string, rollbackErr error) bool {
+	return platform.NormalizeDialect(dialect) == platform.YDB && ydbschema.TransactionNotFound(rollbackErr)
 }
 
 // isolatedSessionReadOnly moves a read-only request from a driver that cannot
@@ -822,13 +864,30 @@ func (dc *DatabaseConnection) WithIsolatedQuerySession(
 // PRAGMA AUTONOMOUS_TRANSACTION runs in a transaction of its own, so a caller
 // that needs a statement to change nothing still has to say so about the
 // statement itself.
+//
+// ydb-go-sdk carries the request only with the isolation it implies: measured
+// with v3.153.2 on YDB 26.2.1.14, a read-only transaction at the default
+// isolation is refused (`unsupported transaction options`), a snapshot
+// read-only one is accepted, and a write inside it answers `Operation 'Upsert'
+// can't be performed in read only transaction`.
 func isolatedSessionReadOnly(dialect string, opts *sql.TxOptions) (*sql.TxOptions, string) {
-	if opts == nil || !opts.ReadOnly || platform.NormalizeDialect(dialect) != platform.Oracle {
+	if opts == nil || !opts.ReadOnly {
 		return opts, ""
 	}
-	carried := *opts
-	carried.ReadOnly = false
-	return &carried, "SET TRANSACTION READ ONLY"
+	switch platform.NormalizeDialect(dialect) {
+	case platform.Oracle:
+		carried := *opts
+		carried.ReadOnly = false
+		return &carried, "SET TRANSACTION READ ONLY"
+	case platform.YDB:
+		carried := *opts
+		if carried.Isolation == sql.LevelDefault {
+			carried.Isolation = sql.LevelSnapshot
+		}
+		return &carried, ""
+	default:
+		return opts, ""
+	}
 }
 
 // WithSession pins one physical database session for the callback and rebuilds
@@ -1349,6 +1408,16 @@ func getDatabaseInfo(
 		return getSQLServerDatabaseInfo(ctx, db, parsedURL, info)
 	case platform.Oracle:
 		return getOracleDatabaseInfo(ctx, db, parsedURL, info)
+	case platform.YDB:
+		var version string
+		if err := db.QueryRowContext(ctx, "SELECT Version()").Scan(&version); err != nil {
+			return info, fmt.Errorf("failed to get YDB version: %w", err)
+		}
+		info.Version = version
+		// A schema is a directory, and the database root is the one an
+		// unqualified name means.
+		info.Schema = ""
+		info.IdentifierSemantics.DefaultSchema = info.Schema
 	}
 
 	return info, nil

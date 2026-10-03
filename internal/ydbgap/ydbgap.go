@@ -9,10 +9,14 @@
 // through [Layer.Message] instead, and the phase that implements a layer
 // removes its constant together with every refusal that names it.
 //
-// The renderer and the planner exist. The object families they do not carry
-// yet -- comments, views, access control, table settings -- are layers here
-// too, because a declaration of one reaches the renderer by name and has to be
-// refused there rather than rendered as something else.
+// The renderer, the planner, the connection, the schema reader and the schema
+// writer exist. The object families they do not carry yet -- comments, views,
+// access control, table settings, the index kinds beyond global ones -- are
+// layers here too, because a declaration of one reaches the renderer by name,
+// and a database holding one reaches the reader, and each has to be refused
+// there rather than handled as something else. So are the commands that
+// connect and then need a layer that does not exist yet: the migrator, the
+// compatibility surface and the surfaces planned last.
 package ydbgap
 
 import "fmt"
@@ -28,9 +32,9 @@ type Layer int
 const (
 	// SchemaFiles is reading a YQL file as a desired schema.
 	SchemaFiles Layer = iota + 1
-	// Connecting is opening a YDB server, and with it every reader, writer
-	// and migrator that needs one.
-	Connecting
+	// Migrating is the versioned migrator: its revision, log and tag tables,
+	// its lock, and every command that applies or records a migration file.
+	Migrating
 	// QueryBuilding is the query builder writing YQL.
 	QueryBuilding
 	// DataChanges is writing rows: an upsert, a data diff, a seed.
@@ -41,6 +45,9 @@ const (
 	// run. SQL cannot create one; the alternative is designed with the dev
 	// database work.
 	CreatingDatabases
+	// DevDatabases is a YDB database a run claims, resets and replays into as
+	// its dev or shadow database.
+	DevDatabases
 	// Comments is storing a comment on a table, a column or an index. YQL has
 	// no COMMENT statement; the comments family stores them as table
 	// attributes through the scheme API.
@@ -52,6 +59,15 @@ const (
 	// TableSettings is a table's YDB settings: TTL, partitioning, column
 	// families and changefeeds.
 	TableSettings
+	// IndexFamilies is the index kinds beyond a row table's global indexes:
+	// vector, full-text and JSON indexes, and a column table's local ones.
+	IndexFamilies
+	// Compatibility is a YDB URL on the ptah-compat surface.
+	Compatibility
+	// OtherSurfaces is the commands planned after the compatibility surface:
+	// Go struct generation from a database, schema security analysis and the
+	// other surfaces that read more than the schema reader describes.
+	OtherSurfaces
 )
 
 // work is what a layer does, as a refusal prints it.
@@ -59,8 +75,8 @@ func (l Layer) work() string {
 	switch l {
 	case SchemaFiles:
 		return "reading a YDB schema file"
-	case Connecting:
-		return "connecting to a YDB server"
+	case Migrating:
+		return "running versioned migrations against YDB"
 	case QueryBuilding:
 		return "building a YQL query"
 	case DataChanges:
@@ -69,6 +85,8 @@ func (l Layer) work() string {
 		return "linting YQL for YDB"
 	case CreatingDatabases:
 		return "creating a YDB database"
+	case DevDatabases:
+		return "using a YDB database as a dev or shadow database"
 	case Comments:
 		return "storing a comment on a YDB object"
 	case Views:
@@ -77,6 +95,12 @@ func (l Layer) work() string {
 		return "managing YDB users, groups and permissions"
 	case TableSettings:
 		return "setting YDB table options (TTL, partitioning, column families, changefeeds)"
+	case IndexFamilies:
+		return "reading or creating a YDB vector, full-text, JSON or column-table index"
+	case Compatibility:
+		return "using a YDB database through ptah-compat"
+	case OtherSurfaces:
+		return "running this command against YDB"
 	default:
 		return "this YDB operation"
 	}
@@ -88,16 +112,20 @@ func (l Layer) Phase() int {
 	switch l {
 	case SchemaFiles:
 		return 2
-	case Connecting:
-		return 4
+	case Migrating:
+		return 6
 	case QueryBuilding, DataChanges:
 		return 7
 	case Linting:
 		return 8
-	case CreatingDatabases:
+	case CreatingDatabases, DevDatabases:
 		return 9
-	case Comments, Views, AccessControl, TableSettings:
+	case Comments, Views, AccessControl, TableSettings, IndexFamilies:
 		return 10
+	case Compatibility:
+		return 11
+	case OtherSurfaces:
+		return 12
 	default:
 		return 0
 	}

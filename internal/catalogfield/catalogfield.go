@@ -19,8 +19,10 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
+	"ptah.run/internal/ydbtype"
 )
 
 // ForeignKey is the field-level foreign key a column carries, in the spelling a
@@ -57,12 +59,22 @@ type Options struct {
 
 	// ForeignKey is the column's own foreign key, or nil.
 	ForeignKey *ForeignKey
+
+	// Dialect is the dialect that reported the column. It decides how a
+	// reported default is told apart from an expression; see [Field].
+	Dialect string
 }
 
 // Field describes one reported column as a field of the desired-schema model.
 //
 // StructName and FieldName are left empty: they name the Go source a field was
 // parsed from, and a column the database reported was not parsed from any.
+//
+// A reported default becomes the field's Default when it is a value and its
+// DefaultExpr when it is an expression. A quoted default is a value. On YDB
+// every stored default is a value, reported as the typed YQL literal
+// internal/ydbtype writes (`5t`, `'x'u`, `Timestamp('...')`), and is carried
+// as the value that literal was written from.
 func Field(column catalog.Column, opts Options) schemamodel.Field {
 	field := schemamodel.Field{
 		Name:               column.Name,
@@ -90,7 +102,7 @@ func Field(column catalog.Column, opts Options) schemamodel.Field {
 		field.GeneratedExpression = *column.GeneratedExpression
 	}
 	if column.ColumnDefault != nil && serialType(column) == "" {
-		setDefault(&field, *column.ColumnDefault)
+		setDefault(&field, *column.ColumnDefault, opts.Dialect)
 	}
 	if opts.ForeignKey != nil {
 		field.Foreign = opts.ForeignKey.Reference
@@ -238,7 +250,13 @@ func sizedType(dbColumn catalog.Column) string {
 	return ""
 }
 
-func setDefault(field *schemamodel.Field, defaultSQL string) {
+func setDefault(field *schemamodel.Field, defaultSQL, dialect string) {
+	if platform.NormalizeDialect(dialect) == platform.YDB {
+		if value, isLiteral := ydbtype.LiteralValue(defaultSQL); isLiteral {
+			field.Default = value
+			return
+		}
+	}
 	if sqlutil.DefaultLooksLikeExpression(defaultSQL) {
 		field.DefaultExpr = defaultSQL
 		return

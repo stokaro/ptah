@@ -146,3 +146,46 @@ func TestType_PrefersTheServersOwnSpelling(t *testing.T) {
 		})
 	}
 }
+
+// TestField_YDBDefaultIsTheValueItsLiteralWasWrittenFrom covers YDB, where a
+// stored default is always a value: the reader reports the typed YQL literal,
+// and the field carries the value that literal was written from, so a
+// renderer writes the same literal back. The same text from another dialect
+// keeps the generic rule.
+func TestField_YDBDefaultIsTheValueItsLiteralWasWrittenFrom(t *testing.T) {
+	tests := []struct {
+		name      string
+		dialect   string
+		dataType  string
+		reported  string
+		wantValue string
+		wantExpr  string
+	}{
+		{name: "a text literal", dialect: "ydb", dataType: "Utf8", reported: `'it\'s'u`, wantValue: "it's"},
+		{name: "an integer with a width suffix", dialect: "ydb", dataType: "Int16", reported: "5s", wantValue: "5"},
+		{name: "a boolean", dialect: "ydb", dataType: "Bool", reported: "true", wantValue: "true"},
+		{name: "a constructor", dialect: "ydb", dataType: "Timestamp64",
+			reported: "Timestamp64('2026-01-02T03:04:05Z')", wantValue: "2026-01-02T03:04:05Z"},
+		{name: "a decimal", dialect: "ydbs", dataType: "Decimal(10,2)", reported: "Decimal('12.5', 10, 2)",
+			wantValue: "12.5"},
+		{name: "text that is no literal stays an expression", dialect: "ydb", dataType: "Timestamp",
+			reported: "CurrentUtcTimestamp()", wantExpr: "CurrentUtcTimestamp()"},
+		{name: "the same boolean on postgres is an expression", dialect: "postgres", dataType: "boolean",
+			reported: "true", wantExpr: "true"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			reported := test.reported
+			field := catalogfield.Field(
+				catalog.Column{Name: "c", DataType: test.dataType, ColumnDefault: &reported},
+				catalogfield.Options{Dialect: test.dialect},
+			)
+
+			c.Assert(field.Default, qt.Equals, test.wantValue)
+			c.Assert(field.DefaultExpr, qt.Equals, test.wantExpr)
+		})
+	}
+}

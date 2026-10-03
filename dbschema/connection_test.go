@@ -8,7 +8,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"regexp"
 	"testing"
 	"time"
 
@@ -16,7 +15,6 @@ import (
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
-	"ptah.run/internal/ydbgap"
 )
 
 func TestDatabaseConnectionWithSession_DiscardsSessionState(t *testing.T) {
@@ -178,17 +176,36 @@ func TestConnectToDatabase_InvalidURL(t *testing.T) {
 }
 
 // TestPostgreSQLConnection tests PostgreSQL connection (will fail if no server running)
-// A YDB URL names a dialect Ptah accepts and has no driver for. The
-// refusal says so in the words of the gap, and is reached before anything is
-// opened, so it does not depend on a server answering.
-func TestConnectToDatabase_RefusesYDB(t *testing.T) {
-	for _, dbURL := range []string{"ydb://localhost:2136/local", "ydbs://user:secret@localhost:2135/?database=/local"} {
-		t.Run(dbURL, func(t *testing.T) {
+// A YDB URL is opened by the YDB connection, which checks the URL before it
+// dials, so these refusals need no server. internal/dbschema/ydb holds the
+// whole set; these rows pin that both schemes reach it.
+func TestConnectToDatabase_FailurePath_YDBURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		dbURL   string
+		wantErr string
+	}{
+		{
+			name:  "no database",
+			dbURL: "ydb://localhost:2136",
+			wantErr: `failed to open database connection: invalid YDB URL: name the database in the path ` +
+				`\(ydb://host:2136/local\) or in the database parameter`,
+		},
+		{
+			name:  "an unknown parameter over TLS",
+			dbURL: "ydbs://user:secret@localhost:2135/?database=/local&sslmode=require",
+			wantErr: `failed to open database connection: invalid YDB URL: parameter "sslmode" is not one ` +
+				`Ptah reads on a YDB URL; accepted: .*`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
+			conn, err := dbschema.ConnectToDatabase(t.Context(), test.dbURL)
 
-			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(ydbgap.Connecting.Message()))
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(conn, qt.IsNil)
 		})
 	}
