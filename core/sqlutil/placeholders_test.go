@@ -44,6 +44,14 @@ func TestRebind(t *testing.T) {
 			want:    "SELECT $p1 AS `p?` -- what?\n/* why? */ FROM t WHERE c = $p2",
 		},
 		{
+			// A quoted name, a string and a multiline string that each hold a
+			// question mark and nothing else.
+			name:    "ydb leaves a lone question mark inside a name or a literal",
+			dialect: "ydb",
+			query:   "SELECT `?`, '?', @@?@@, ? FROM t",
+			want:    "SELECT `?`, '?', @@?@@, $p1 FROM t",
+		},
+		{
 			name:    "postgres simple",
 			dialect: "postgres",
 			query:   "SELECT * FROM t WHERE a = ? AND b = ?",
