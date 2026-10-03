@@ -26,8 +26,7 @@ import (
 // That is ariga/atlas#3807's scenario: there the reset between the two uses of
 // the dev database revoked every grant the image's baseline state held. Here
 // the block pins public, so the claim judges public alone and leaves the
-// baseline's schema, its grant included, as it was. The block names its
-// database: cleanup refuses `postgres`, the default (stokaro/ptah#4035).
+// baseline's schema, its grant included, as it was.
 
 // dockerBlockBaseline creates a role, a schema and a grant on it.
 const dockerBlockBaseline = `CREATE ROLE ptah_block_reader;

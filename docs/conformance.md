@@ -974,10 +974,13 @@ them and there is no wording to copy.
 start, where `docker://` starts an engine's own
 ([`stokaro/ptah#4040`](https://github.com/stokaro/ptah/issues/4040)). Measured
 2026-10-03 on a Linux host with a local daemon, with every exit status read from
-an unpiped `schema inspect -u file://schema.sql --dev-url <value>`. Two images
+an unpiped `schema inspect -u file://schema.sql --dev-url <value>`. Four images
 were built for it: `ignores-db` starts from `postgres:17` with an entrypoint
 that unsets `POSTGRES_DB`, and `local` is `postgres:17` tagged `local:latest`,
-named in the URL with no tag:
+named in the URL with no tag. `own-user` starts from `postgres:16-alpine`, sets
+`POSTGRES_USER=image_admin` and creates the `postgres` role in an init script
+that runs as `image_admin`, as the Supabase image does with `supabase_admin`.
+`init-exits` runs an init script that exits with code 3:
 
 | `--dev-url` | Atlas CE v1.3.0 | Ptah |
 | --- | --- | --- |
@@ -994,9 +997,15 @@ named in the URL with no tag:
 | `docker+mysql://_/mysql:8.4.11/dev` | 0 | 0 |
 | `docker+postgres://_/ignores-db/dev` | 1, `database "dev" does not exist` | **0** |
 | `docker+sqlserver://_/mcr.microsoft.com/mssql/server:2022-latest/dev` | provisions SQL Server | 1, refused by name |
-| `docker+postgres://_/postgres:17` | 0, database `postgres` | 1, `refusing to clean protected PostgreSQL-family database "postgres"` |
+| `docker+postgres://_/postgres:17` | 0, database `postgres` | 0, database `postgres` |
+| `docker+postgres://_/own-user/dev` | 0 | 0 |
+| `docker+postgres://_/init-exits/dev` | 1 after 60 s, `timeout: postgres: scanning system variables: dial tcp [::1]:37129: connect: connection refused` | 1 after 2 s, `the container stopped before the server answered: it exited with code 3` and the end of its log |
 
-The last three rows differ, and each is recorded rather than matched:
+Ptah passes a PostgreSQL image `POSTGRES_PASSWORD` and `POSTGRES_DB` and leaves
+`POSTGRES_USER` to the image, as Atlas CE does, so an image whose init scripts
+run as its own user starts
+([`stokaro/ptah#4053`](https://github.com/stokaro/ptah/issues/4053)). Where the
+binaries still differ, the difference is recorded rather than matched:
 
 - **A database the image did not create.** Atlas CE passes the database to a
   PostgreSQL image as `POSTGRES_DB` and stops there, so an image that ignores
@@ -1008,10 +1017,10 @@ The last three rows differ, and each is recorded rather than matched:
   `docker+sqlserver`. Ptah starts neither engine from a docker URL, so it
   refuses both by name rather than answering `unknown driver` for a scheme that
   binary knows.
-- **No database on PostgreSQL.** Both binaries connect to `postgres`, which
-  Ptah's cleanup refuses as a protected database.
-  [`stokaro/ptah#4035`](https://github.com/stokaro/ptah/issues/4035) owns
-  lifting that refusal on a server the run owns.
+- **An image whose init exits.** Atlas CE waits out its readiness timeout and
+  reports the refused connection. Ptah asks the runtime whether the container
+  still runs, stops waiting as soon as it does not, and reports the exit code
+  and the end of the container's log. Both exit 1.
 
 ## PostgreSQL Introspection: Index and Domain Attributes
 

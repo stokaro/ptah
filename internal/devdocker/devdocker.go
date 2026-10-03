@@ -198,10 +198,15 @@ var engines = map[string]engine{
 		// default disables it. An operator who writes `sslmode` on the docker
 		// URL replaces this value rather than being silently overruled.
 		params: map[string]string{"sslmode": "disable"},
+		// POSTGRES_USER is the image's. The official image's default is
+		// postgres, and an image that names another user runs its init
+		// scripts as that user: the Supabase image declares supabase_admin,
+		// and with the variable overridden its init fails and the container
+		// exits (stokaro/ptah#4053). The pinned binary passes these two
+		// variables and no user, measured on 2026-10-03.
 		env: func(database, password string) []string {
 			return []string{
 				"POSTGRES_PASSWORD=" + password,
-				"POSTGRES_USER=postgres",
 				"POSTGRES_DB=" + database,
 			}
 		},

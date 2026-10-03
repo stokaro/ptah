@@ -1159,11 +1159,15 @@ Atlas reads it, and native `ptah` verbs take it too:
   `docker+postgres://ghcr.io/acme/pg:17/dev` starts `ghcr.io/acme/pg:17`.
 - The last path segment is the database when it holds no colon. Without one, a
   PostgreSQL URL connects to `postgres` and a MySQL or MariaDB URL to the whole
-  server. Cleanup refuses the `postgres` database, so on PostgreSQL name the
-  database (stokaro/ptah#4035).
+  server.
+- A PostgreSQL image gets `POSTGRES_PASSWORD` and `POSTGRES_DB`, as Atlas
+  passes them, and keeps its own `POSTGRES_USER`: the Supabase image runs its
+  init scripts as `supabase_admin`.
 - An image may ignore `POSTGRES_DB` or `MYSQL_DATABASE`, the variables that
   name its database. Ptah creates the database once the server answers when
   the image did not. Atlas exits 1 on such a PostgreSQL image.
+- A container that exits before its server answers ends the wait at once, with
+  its exit code and the end of its log, where Atlas waits out its timeout.
 
 ### A whole dev server
 

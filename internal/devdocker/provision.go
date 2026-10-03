@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -40,6 +41,14 @@ const removeTimeout = 30 * time.Second
 // readyPollInterval is how often a starting server is probed.
 const readyPollInterval = 250 * time.Millisecond
 
+// stoppedCheckInterval is how often the readiness wait asks whether the
+// container still runs; see [waitReady].
+const stoppedCheckInterval = time.Second
+
+// stoppedLogLines is how much of a stopped container's log a readiness failure
+// quotes: enough to hold an init script's error and the line that named it.
+const stoppedLogLines = 20
+
 // Runner is the container runtime this package drives.
 //
 // It is an interface on the consumer side so the lifecycle -- naming, readiness,
@@ -54,6 +63,10 @@ type Runner interface {
 	// Remove deletes the container, whether or not it is still running. It must
 	// succeed when the container is already gone.
 	Remove(ctx context.Context, name string) error
+	// Stopped describes how the container ended when it no longer runs: its
+	// exit code and the end of its log. It answers "" while the container
+	// runs, and an error when the runtime could not say.
+	Stopped(ctx context.Context, name string) (string, error)
 	// Build builds image from build, tagging it with image.
 	Build(ctx context.Context, image string, build Build) error
 	// RemoveImage deletes the image tag. It must succeed when the image is
@@ -325,7 +338,8 @@ func Provision(ctx context.Context, rawURL string, opts Options) (*Instance, err
 	// The wait probes the server, not the operator's parameters; see
 	// [Spec.ReadyURL] for the two minutes that distinction is worth.
 	readyURL := spec.ReadyURL(hostPort, password)
-	if err := waitReady(ctx, readyURL, opts); err != nil {
+	stopped := func(ctx context.Context) (string, error) { return runner.Stopped(ctx, name) }
+	if err := waitReady(ctx, readyURL, stopped, opts); err != nil {
 		// The same bounded retry the release uses, not a single discarded
 		// Close. On this path the caller receives no instance, so nothing else
 		// is left holding a handle to the container: a removal refused here
@@ -411,7 +425,15 @@ func releaseInstance(instance *Instance, opts Options) {
 }
 
 // waitReady polls until the database accepts a connection, the deadline passes,
-// or the caller's context ends.
+// the container stops, or the caller's context ends.
+//
+// A container that exits during its init never answers, so without the
+// stopped check the wait spent its whole deadline on a dial that could not
+// succeed, and reported a timeout instead of the exit. Measured with an image
+// whose init script failed: the container exited after a few seconds, and the
+// run reported `dial error: timeout` two minutes later (stokaro/ptah#4053). The
+// check runs once per [stoppedCheckInterval] rather than once per probe, since
+// each one is a `docker inspect`.
 //
 // Every probe runs on a context carrying the readiness deadline, not on the
 // caller's. The deadline check between probes is not enough on its own: the
@@ -422,7 +444,12 @@ func releaseInstance(instance *Instance, opts Options) {
 // timeout would not bound anything. Measured against a remote daemon before
 // this change, a probe that could never succeed still returned on its own; a
 // probe that HANGS is the case the check cannot see.
-func waitReady(ctx context.Context, rawURL string, opts Options) error {
+func waitReady(
+	ctx context.Context,
+	rawURL string,
+	stopped func(context.Context) (string, error),
+	opts Options,
+) error {
 	timeout := opts.readyTimeout()
 	deadline := time.Now().Add(timeout)
 	waitCtx, cancel := context.WithDeadline(ctx, deadline)
@@ -432,6 +459,7 @@ func waitReady(ctx context.Context, rawURL string, opts Options) error {
 	ticker := time.NewTicker(readyPollInterval)
 	defer ticker.Stop()
 	var last error
+	nextStoppedCheck := time.Now()
 	for {
 		if err := ready(waitCtx, rawURL); err == nil {
 			return nil
@@ -440,6 +468,14 @@ func waitReady(ctx context.Context, rawURL string, opts Options) error {
 		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("timed out after %s: %w", timeout, last)
+		}
+		if !time.Now().Before(nextStoppedCheck) {
+			nextStoppedCheck = time.Now().Add(stoppedCheckInterval)
+			// A runtime that cannot say is not an answer: the wait goes on
+			// and the deadline still bounds it.
+			if reason, err := stopped(waitCtx); err == nil && reason != "" {
+				return fmt.Errorf("the container stopped before the server answered: %s", reason)
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -522,7 +558,10 @@ func (d DockerCLI) Start(ctx context.Context, name, image, containerPort string,
 		return "", err
 	}
 	args := []string{
-		"run", "--detach", "--rm",
+		// No --rm: a container that exits during init keeps its log until
+		// Ptah removes it, so the readiness failure can quote why. Every exit
+		// path removes the container already; see [releaseInstance].
+		"run", "--detach",
 		"--name", name,
 		"--label", ContainerLabel + "=1",
 		// `<bind>::<container>` — the empty middle field is what asks the
@@ -585,6 +624,34 @@ func (DockerCLI) Remove(ctx context.Context, name string) error {
 		return nil
 	}
 	return fmt.Errorf("%s: %w", trimDockerOutput(out), err)
+}
+
+// Stopped reads the container's state. A container that is not running is
+// described by its exit code and the last [stoppedLogLines] lines of its log; a
+// container the daemon no longer has is described as gone.
+func (DockerCLI) Stopped(ctx context.Context, name string) (string, error) {
+	out, err := exec.CommandContext(ctx, "docker", "inspect", "--format", "{{.State.Status}} {{.State.ExitCode}}", name).CombinedOutput()
+	if err != nil {
+		// Docker 29 answers `Error: no such object: <name>`; older daemons
+		// capitalize it, or name a container.
+		if answer := strings.ToLower(string(out)); strings.Contains(answer, "no such object") || strings.Contains(answer, "no such container") {
+			return "the container is gone", nil
+		}
+		return "", fmt.Errorf("inspect container %s: %s: %w", name, trimDockerOutput(out), err)
+	}
+	status, exitCode, _ := strings.Cut(strings.TrimSpace(string(out)), " ")
+	switch status {
+	case "exited", "dead":
+	default:
+		return "", nil
+	}
+	// #nosec G204 -- docker is invoked with an argument list, never a shell.
+	logs, err := exec.CommandContext(ctx, "docker", "logs", "--tail", strconv.Itoa(stoppedLogLines), name).CombinedOutput()
+	if err != nil {
+		// The exit is the answer; the log only says more about it.
+		return "it exited with code " + exitCode, nil
+	}
+	return fmt.Sprintf("it exited with code %s; the end of its log:\n%s", exitCode, strings.TrimRight(string(logs), "\n")), nil
 }
 
 // Build runs `docker build`, tagging the result with image. An inline
