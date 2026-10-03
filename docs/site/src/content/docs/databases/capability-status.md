@@ -13,9 +13,9 @@ sourceOfTruth:
 generated: true
 generator: internal/cmd/capmatrix
 editSource: internal/capabilityprobe/cells.go
-lastVerified: "2026-09-22"
+lastVerified: "2026-10-03"
 evidence:
-  - "https://github.com/stokaro/ptah/actions/runs/35729544267"
+  - "https://github.com/stokaro/ptah/actions/runs/37123727811"
 searchAliases:
   - database capability status
   - which database versions pass
@@ -31,10 +31,10 @@ What the tier 2 capability matrix measured, one row per declared
 release line, in the run named below. Regenerate it with `capmatrix status`
 over that run's cell results.
 
-- Measured: 2026-09-22T12:49:37Z
-- Commit: `37a21258e4a28d35af6961cdab5579f4d5714d7b`
-- Run: [35729544267](https://github.com/stokaro/ptah/actions/runs/35729544267)
-- Declared release lines: 32. Runnable cells: 31. Results received: 31.
+- Measured: 2026-10-03T12:42:14Z
+- Commit: `4de2bb6088f36973292ad5174ab9b3f0582a5325`
+- Run: [37123727811](https://github.com/stokaro/ptah/actions/runs/37123727811)
+- Declared release lines: 38. Runnable cells: 31. Results received: 31.
 - 31 passed, 0 capability disagreements, 0 suite failures, 0 missing.
 
 | Cell | Engine | Line | Verdict |
@@ -74,3 +74,9 @@ over that run's cell results.
 ## Declared lines this tier cannot run
 
 - `clickhouse-25-8` (clickhouse 25.8) — upstream support ended on 2026-08-29 (endoflife.date/clickhouse)
+- `ydb-26-2` (ydb 26.2) — the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing
+- `ydb-26-1` (ydb 26.1) — the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing
+- `ydb-25-4` (ydb 25.4) — the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing
+- `ydb-25-3` (ydb 25.3) — the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing
+- `ydb-25-2` (ydb 25.2) — the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing
+- `ydb-25-1` (ydb 25.1) — the capability probe has no statement table for the ydb dialect, so a server on this line would be asked nothing
