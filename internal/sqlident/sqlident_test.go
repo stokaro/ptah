@@ -41,6 +41,14 @@ func TestQuote(t *testing.T) {
 		{name: "postgres escapes embedded double quote", dialect: "postgres", ident: `a"b`, want: `"a""b"`},
 		{name: "mysql escapes embedded backtick", dialect: "mysql", ident: "a`b", want: "`a``b`"},
 		{name: "sqlserver escapes embedded bracket", dialect: "sqlserver", ident: "a]b", want: "[a]]b]"},
+		// YQL: SELECT 1 AS `a\\b`, 2 AS `c\`d`, 3 AS `e\\\`f` answered the
+		// columns a\b, c`d and e\`f on YDB 26.2.1.14.
+		{name: "ydb backticks", dialect: "ydb", ident: "users", want: "`users`"},
+		{name: "ydbs alias backticks", dialect: "ydbs", ident: "Users", want: "`Users`"},
+		{name: "ydb escapes a backtick with a backslash", dialect: "ydb", ident: "c`d", want: "`c\\`d`"},
+		{name: "ydb doubles a backslash", dialect: "ydb", ident: `a\b`, want: "`a\\\\b`"},
+		{name: "ydb escapes both", dialect: "ydb", ident: "e\\`f", want: "`e\\\\\\`f`"},
+		{name: "ydb keeps a path whole", dialect: "ydb", ident: "dir/sub/t", want: "`dir/sub/t`"},
 	}
 
 	for _, tt := range tests {
@@ -64,6 +72,11 @@ func TestQualified(t *testing.T) {
 		{name: "whitespace schema treated as empty", dialect: "postgres", schema: "  ", ident: " users ", want: `" users "`},
 		{name: "schema and name bytes are preserved", dialect: "mysql", schema: " app ", ident: " users ", want: "` app `.` users `"},
 		{name: "sqlserver schema qualified", dialect: "sqlserver", schema: "dbo", ident: "users", want: "[dbo].[users]"},
+		// A YDB schema is a directory, and the qualified name is one path.
+		{name: "ydb schema is a directory", dialect: "ydb", schema: "dir/sub", ident: "t", want: "`dir/sub/t`"},
+		{name: "ydb trailing slash names the same directory", dialect: "ydb", schema: "dir/", ident: "t", want: "`dir/t`"},
+		{name: "ydb root is the empty schema", dialect: "ydb", schema: "", ident: "t", want: "`t`"},
+		{name: "ydb escapes inside the path", dialect: "ydbs", schema: "d`x", ident: "t", want: "`d\\`x/t`"},
 	}
 
 	for _, tt := range tests {
@@ -102,6 +115,8 @@ func TestBareOrQuoted(t *testing.T) {
 		{name: "an embedded quote is doubled", dialect: "sqlite", input: `a"b`, want: `"a""b"`},
 		{name: "the empty name is quoted", dialect: "sqlite", input: "", want: `""`},
 		{name: "the dialect selects the quote style", dialect: "mysql", input: "fts-5", want: "`fts-5`"},
+		{name: "a plain YDB name is quoted", dialect: "ydb", input: "users", want: "`users`"},
+		{name: "a YDB keyword is quoted", dialect: "ydb", input: "select", want: "`select`"},
 	}
 
 	for _, tt := range tests {
@@ -190,6 +205,8 @@ func TestQualifiedIdent(t *testing.T) {
 		{name: "oracle name that is not plain is quoted", dialect: "oracle", schema: "", ident: "ora-flags", want: `"ora-flags"`},
 		{name: "blank schema yields the name alone", dialect: "oracle", schema: "  ", ident: "flags", want: "flags"},
 		{name: "postgres stays quoted", dialect: "postgres", schema: "app", ident: "flags", want: `"app"."flags"`},
+		{name: "ydb qualifies with one path", dialect: "ydb", schema: "app", ident: "flags", want: "`app/flags`"},
+		{name: "ydb at the root", dialect: "ydb", schema: "", ident: "Flags", want: "`Flags`"},
 	}
 
 	for _, tt := range tests {
