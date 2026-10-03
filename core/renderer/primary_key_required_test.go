@@ -89,3 +89,64 @@ func TestRender_IndexCoveringColumnsFollowsTheCapability_FailurePath(t *testing.
 			`target cockroachdb, postgres, spanner, or yugabytedb`)
 	c.Assert(sql, qt.Equals, "")
 }
+
+// keyedEventSchemas are the ways a model gives a table its key, one per row.
+// Each reaches the table through a different part of the model, which is the
+// reason validation and rendering have to read them through the same lowering.
+func keyedEventSchemas() map[string]*schemamodel.Database {
+	events := []schemamodel.Table{{StructName: "Event", Name: "events"}}
+	return map[string]*schemamodel.Database{
+		"a field": {
+			Tables: events,
+			Fields: []schemamodel.Field{
+				{StructName: "Event", Name: "id", Type: "BIGINT", Primary: true},
+				{StructName: "Event", Name: "payload", Type: "TEXT"},
+			},
+		},
+		"a composite key on the table": {
+			Tables: []schemamodel.Table{{StructName: "Event", Name: "events", PrimaryKey: []string{"a", "b"}}},
+			Fields: []schemamodel.Field{
+				{StructName: "Event", Name: "a", Type: "BIGINT"},
+				{StructName: "Event", Name: "b", Type: "BIGINT"},
+			},
+		},
+		"a PRIMARY KEY constraint": {
+			Tables: events,
+			Fields: []schemamodel.Field{{StructName: "Event", Name: "id", Type: "BIGINT"}},
+			Constraints: []schemamodel.Constraint{
+				{StructName: "Event", Table: "events", Name: "events_pk", Type: "PRIMARY KEY", Columns: []string{"id"}},
+			},
+		},
+	}
+}
+
+// TestValidateSchema_AgreesWithTheRenderOnARequiredKey_HappyPath is the
+// control for the agreement: every way of declaring a key passes both
+// validation and the render on a set that requires one.
+func TestValidateSchema_AgreesWithTheRenderOnARequiredKey_HappyPath(t *testing.T) {
+	for name, schema := range keyedEventSchemas() {
+		t.Run(name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(renderer.ValidateSchemaWithCapabilities(schema, "postgres", requireKey()), qt.IsNil)
+			statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(schema, "postgres", requireKey())
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements, qt.Not(qt.HasLen), 0)
+		})
+	}
+}
+
+// TestValidateSchema_AgreesWithTheRenderOnARequiredKey_FailurePath pins that
+// validation refuses the keyless table the render refuses, in the same words.
+// Without the check validation passed it and the render refused it after, so a
+// planner that validated first went on to build a plan it could not render.
+func TestValidateSchema_AgreesWithTheRenderOnARequiredKey_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	validated := renderer.ValidateSchemaWithCapabilities(keylessEvents(), "postgres", requireKey())
+	c.Assert(validated, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(validated, qt.ErrorMatches, `postgres requires a primary key and table "events" declares none`)
+
+	statements, rendered := renderer.GetOrderedCreateStatementsWithCapabilities(keylessEvents(), "postgres", requireKey())
+	c.Assert(rendered, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(rendered.Error(), qt.Equals, validated.Error())
+	c.Assert(statements, qt.IsNil)
+}
