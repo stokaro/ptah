@@ -42,9 +42,10 @@ type Gate struct {
 
 // gates are the measured flags. Each one's default on every YDB line agrees
 // with the line's preset, measured on local-ydb 25.1.4.7, 25.2.1.24,
-// 25.3.1.25, 25.4.1.15, 26.1.1.22 and 26.2.1.14, and each one was turned on
-// with YDB_FEATURE_FLAGS on a line where it is off by default and the
-// statement it gates was then accepted.
+// 25.3.1.25, 25.4.1.15, 26.1.1.22 and 26.2.1.14. Each one was then turned
+// on with YDB_FEATURE_FLAGS on every line where it is off by default, and the
+// statement it gates was accepted and did what it says on each of them, so
+// Refine claims no capability a line refuses with the flag on.
 var gates = []Gate{
 	{
 		// Off on every line that lists it (25.3 and later); 25.1 and 25.2 do
@@ -78,6 +79,7 @@ var gates = []Gate{
 		refusals: []string{"EnableTableDatetime64 feature flag is off"},
 	},
 	{
+		// Off on 25.1 and on from 25.2, like EnableTableDatetime64.
 		Key:      capability.ParameterizedDecimal,
 		Flag:     "EnableParameterizedDecimal",
 		refusals: []string{"EnableParameterizedDecimal feature flag is off"},
