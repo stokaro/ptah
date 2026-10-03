@@ -11,6 +11,8 @@
 package columnchange
 
 import (
+	"strings"
+
 	"ptah.run/core/ast"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -31,4 +33,28 @@ func Properties(colDiff difftypes.ColumnDiff) ast.ColumnProperties {
 		Nullability: nullabilityChanged,
 		Default:     literalDefaultChanged || expressionDefaultChanged,
 	}
+}
+
+// PreviousDefault returns the default the live column carried before the change
+// colDiff records, and whether the comparison recorded a default change at all.
+//
+// The two answers are separate because an empty default is a fact too: a
+// change recorded as ` -> 7` says the column had no default, while no default
+// change says nothing about the default. A renderer that has to remove a
+// default needs to know it existed, since ClickHouse refuses `REMOVE DEFAULT`
+// on a column that has none, and Oracle has to spell the removal out because a
+// MODIFY that omits it keeps the old one.
+func PreviousDefault(colDiff difftypes.ColumnDiff) (string, bool) {
+	changed := false
+	for _, key := range []string{"default", "default_expr"} {
+		change, present := colDiff.Changes[key]
+		if !present {
+			continue
+		}
+		changed = true
+		if before, _, ok := strings.Cut(change, " -> "); ok {
+			return strings.TrimSpace(before), true
+		}
+	}
+	return "", changed
 }
