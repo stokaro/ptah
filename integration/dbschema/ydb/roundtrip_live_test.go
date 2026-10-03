@@ -11,6 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dbtarget"
@@ -45,7 +46,7 @@ func TestYDBRoundTrip_NothingLeftToPlan(t *testing.T) {
 	dropTables(c, conn, roundTripSchemas)
 	c.Cleanup(func() { dropTables(c, conn, roundTripSchemas) })
 
-	declared := roundTripDeclaration()
+	declared := roundTripDeclaration(conn.Info().Capabilities)
 	first := planAgainst(c, conn, declared, roundTripSchemas)
 	c.Assert(first, qt.Not(qt.HasLen), 0)
 	apply(c, conn, first)
@@ -60,13 +61,15 @@ func TestYDBRoundTrip_NothingLeftToPlan(t *testing.T) {
 // TestYDBRoundTrip_ReadsWhatTheServerBuilt pins what the reader reports for
 // the round-trip schema, read from the server rather than restated from the
 // declaration: the Serial key, the composite key, the index kinds, the
-// defaults in the spelling the renderer writes, and the escaped names.
+// defaults in the spelling the renderer writes, and the escaped names. The
+// spellings are the CI line's, which has the 64-bit date and time types and
+// a Decimal of any precision.
 func TestYDBRoundTrip_ReadsWhatTheServerBuilt(t *testing.T) {
 	c := qt.New(t)
 	conn := openYDB(c)
 	dropTables(c, conn, roundTripSchemas)
 	c.Cleanup(func() { dropTables(c, conn, roundTripSchemas) })
-	apply(c, conn, planAgainst(c, conn, roundTripDeclaration(), roundTripSchemas))
+	apply(c, conn, planAgainst(c, conn, roundTripDeclaration(conn.Info().Capabilities), roundTripSchemas))
 
 	live := readScoped(c, conn, roundTripSchemas)
 
@@ -106,8 +109,10 @@ func TestYDBRoundTrip_ReadsWhatTheServerBuilt(t *testing.T) {
 	c.Assert(columnNamed(c, tick, "weird-col").DataType, qt.Equals, "Utf8")
 }
 
-// roundTripDeclaration is the representative schema.
-func roundTripDeclaration() *schemamodel.Database {
+// roundTripDeclaration is the representative schema for a server with caps.
+// The columns of a type or a default the line lacks are left out, so the
+// round trip runs on every line and covers each type where it exists.
+func roundTripDeclaration(caps capability.Capabilities) *schemamodel.Database {
 	db := &schemamodel.Database{
 		Tables: []schemamodel.Table{
 			{StructName: "Account", Name: "accounts", Schema: roundTripSchema},
@@ -168,8 +173,30 @@ func roundTripDeclaration() *schemamodel.Database {
 			{StructName: "Order", Name: "idx_orders_amount", Fields: []string{"amount"}},
 		},
 	}
+	db.Fields = slices.DeleteFunc(db.Fields, func(field schemamodel.Field) bool {
+		return !lineHas(caps, field)
+	})
 	schemamodel.Finalize(db)
 	return db
+}
+
+// lineHas reports whether a line with caps takes field: a 64-bit date or time
+// type needs [capability.WideDateTimeTypes], a Decimal other than (22,9) needs
+// [capability.ParameterizedDecimal], and a default on a 16-bit integer or a
+// document type needs the key that says the line takes one.
+func lineHas(caps capability.Capabilities, field schemamodel.Field) bool {
+	switch field.Type {
+	case "Datetime64":
+		return caps.Has(capability.WideDateTimeTypes)
+	case "DECIMAL(10,2)":
+		return caps.Has(capability.ParameterizedDecimal)
+	case "SMALLINT", "SMALLINT UNSIGNED":
+		return field.Default == "" || caps.Has(capability.SmallIntegerDefaults)
+	case "JSONB", "DyNumber":
+		return field.Default == "" || caps.Has(capability.DocumentTypeDefaults)
+	default:
+		return true
+	}
 }
 
 // openYDB connects to the YDB database the run names.

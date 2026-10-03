@@ -5,6 +5,7 @@ package ydb_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"regexp"
 	"strings"
 	"testing"
@@ -154,13 +155,15 @@ func TestYDBConnection_AbortedTransactionIsRetryable(t *testing.T) {
 		"SELECT `v` FROM `ptah_ydb_connection/contended` WHERE `id` = 1").Scan(&v), qt.IsNil)
 	c.Assert(conn.Writer().ExecuteSQL(c.Context(),
 		"UPDATE `ptah_ydb_connection/contended` SET `v` = 2l WHERE `id` = 1"), qt.IsNil)
-	_, err = tx.ExecContext(c.Context(), "UPDATE `ptah_ydb_connection/contended` SET `v` = 10l WHERE `id` = 1")
-	c.Assert(err, qt.IsNil)
 
-	commitErr := tx.Commit()
+	// Where the abort arrives depends on the line: 26.2.1.14 answers it at
+	// the commit, and 25.1.4.7 at the write, saying the transaction `has
+	// deferred effects, but locks are broken`. Either way it is one error.
+	_, writeErr := tx.ExecContext(c.Context(), "UPDATE `ptah_ydb_connection/contended` SET `v` = 10l WHERE `id` = 1")
+	aborted := errors.Join(writeErr, tx.Commit())
 
-	c.Assert(commitErr, qt.ErrorMatches, `(?s).*Transaction locks invalidated.*`)
-	c.Assert(atlasretry.IsRetryable(commitErr), qt.IsTrue)
+	c.Assert(aborted, qt.ErrorMatches, `(?s).*Transaction locks invalidated.*`)
+	c.Assert(atlasretry.IsRetryable(aborted), qt.IsTrue)
 }
 
 // The writer judges a statement by its status. YDB answers CREATE TABLE IF NOT
@@ -220,6 +223,7 @@ func TestYDBReader_RecordsWhatItDoesNotModel(t *testing.T) {
 
 // An index kind the reader does not read is refused by name rather than read
 // as a plain global index, which is how ydb-go-sdk's own description reads it.
+// A vector index needs a line with vector indexes, which the CI line has.
 func TestYDBReader_RefusesAVectorIndex(t *testing.T) {
 	c := qt.New(t)
 	conn := openYDB(c)
