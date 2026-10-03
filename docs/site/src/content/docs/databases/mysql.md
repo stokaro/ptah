@@ -445,20 +445,18 @@ ones it created; see
 
 ## Replacing a trigger
 
-A plan runs every trigger change in one block. The block comes after the
-columns a new trigger body uses are added, and before the columns an old body
-reads are dropped. Both servers accept a trigger whose body writes a column that
-does not exist yet, and a column dropped while a trigger reads it through
-`NEW`. In both cases every write to the table fails with error 1054 until the
-plan reaches its next statement.
+A plan runs every trigger change in one block, after the columns a new trigger
+body uses are added and before the columns an old body reads are dropped. Both
+servers accept a trigger whose body writes a column that does not exist yet,
+and a column dropped while a trigger reads it through `NEW`; in both cases
+every write to the table fails with error 1054 until the plan moves on.
 
 MySQL has no `CREATE OR REPLACE TRIGGER`, so a changed trigger is replaced with
-`DROP TRIGGER` and `CREATE TRIGGER`. A renamed trigger is created before the old
-one is dropped, so a body the server refuses leaves the old trigger in place.
-A write that lands between two such statements sees no trigger, or both of
-them. So when the block both removes or replaces a trigger and creates one on a
-table, it runs under `LOCK TABLES ... WRITE`, and the write waits for the
-metadata lock instead:
+`DROP TRIGGER` and `CREATE TRIGGER`. A renamed trigger is created before the
+old one is dropped, so a body the server refuses leaves the old trigger in
+place. A write between two such statements sees no trigger or both of them, so
+when the block both removes or replaces a trigger and creates one on a table,
+it runs under `LOCK TABLES ... WRITE` and the write waits instead:
 
 ```sql
 ALTER TABLE `secondtable` ADD COLUMN `NewColumn` VARCHAR(100);
@@ -471,27 +469,22 @@ UNLOCK TABLES;
 ```
 
 MariaDB replaces a trigger that keeps its name with one
-`CREATE OR REPLACE TRIGGER`. The statement keeps the old trigger when the
-server refuses the new body, and takes no lock. A rename takes the lock on
-MariaDB too.
+`CREATE OR REPLACE TRIGGER`, which keeps the old trigger when the server
+refuses the new body and takes no lock. A rename takes the lock there too.
 
-The lock has these requirements and limits:
-
-- The statements run in order on one session. `migrations up`,
-  `schema apply` and `ptah-compat migrate apply` do. A program that runs planned
-  statements itself has to use one connection: on a pool, a statement after
-  `LOCK TABLES` can wait behind the lock another connection holds.
-- The migration account needs the `LOCK TABLES` privilege on the tables.
-- The migrator refuses `CREATE TRIGGER` and `LOCK TABLES` in a migration that
-  runs in one transaction, so a migration that changes triggers runs with
-  `--tx-mode none`.
+- The statements run in order on one session, as `migrations up`,
+  `schema apply` and `ptah-compat migrate apply` run them. A program that runs
+  planned statements on a connection pool can leave a statement waiting behind
+  the lock another connection holds.
+- The migration account needs the `LOCK TABLES` privilege.
+- The migrator refuses `CREATE TRIGGER` and `LOCK TABLES` inside a migration
+  transaction, so a migration that changes triggers runs with `--tx-mode none`.
 - When MySQL refuses the new body of a trigger it replaces by name, the old
-  trigger is already gone. The migration stops and is recorded dirty, and the
-  lock ends with the session. `migrations up --allow-dirty` takes the lock
-  again before it retries the failed statement.
-- A migration replayed on a dev database takes the lock there too. The replay
-  refuses a lock on a table in another database unless the dev server belongs
-  to the run.
+  trigger is already gone, the migration is recorded dirty, and the lock ends
+  with the session. `migrations up --allow-dirty` takes the lock again before
+  it retries the failed statement.
+- A dev-database replay runs the lock too, and refuses a lock on a table in
+  another database unless the dev server belongs to the run.
 
 ## Making a column NOT NULL
 
