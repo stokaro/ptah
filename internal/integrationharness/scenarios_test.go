@@ -120,6 +120,40 @@ func TestSQLServerCompatibleScenariosAreExplicit(t *testing.T) {
 	}
 }
 
+// The scenarios YDB runs are pinned, because each one reads its migrations
+// from the *_ydb fixtures and was run against a live server; a scenario that
+// opts in without that is a YDB run of PostgreSQL SQL.
+func TestYDBCompatibleScenariosAreExplicit(t *testing.T) {
+	c := qt.New(t)
+	expected := map[string]bool{
+		"apply_incremental_migrations": true,
+		"rollback_migrations":          true,
+		"upgrade_to_specific_version":  true,
+		"check_current_version":        true,
+		"generate_desired_schema":      true,
+		"read_actual_db_schema":        true,
+		"dry_run_support":              true,
+		"operation_planning":           true,
+		"schema_diff":                  true,
+		"failure_diagnostics":          true,
+		"idempotency_reapply":          true,
+		"idempotency_up_to_date":       true,
+		"parallel_migrate_smoke":       true,
+		"partial_failure_recovery":     true,
+		"partial_failure_resume":       true,
+		"timestamp_verification":       true,
+		"cleanup_support":              true,
+	}
+	for _, scenario := range integrationharness.GetAllScenarios() {
+		c.Assert(
+			scenario.YDBCompatible,
+			qt.Equals,
+			expected[scenario.Name],
+			qt.Commentf("unexpected YDB compatibility for %s", scenario.Name),
+		)
+	}
+}
+
 func scenarioNames(scenarios []integrationharness.TestScenario) []string {
 	names := make([]string, 0, len(scenarios))
 	for _, scenario := range scenarios {

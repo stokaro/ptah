@@ -20,58 +20,68 @@ func GetAllScenarios() []TestScenario {
 			Description:         "Apply multiple sequential migrations to a fresh database",
 			TestFunc:            testApplyIncrementalMigrations,
 			SQLServerCompatible: true,
+			YDBCompatible:       true,
 		},
 		{
 			Name:                "rollback_migrations",
 			Description:         "Roll back migrations in reverse order",
 			TestFunc:            testRollbackMigrations,
 			SQLServerCompatible: true,
+			YDBCompatible:       true,
 		},
 		{
 			Name:                "upgrade_to_specific_version",
 			Description:         "Apply migrations up to a defined version",
 			TestFunc:            testUpgradeToSpecificVersion,
 			SQLServerCompatible: true,
+			YDBCompatible:       true,
 		},
 		{
 			Name:                "check_current_version",
 			Description:         "Query current migration version",
 			TestFunc:            testCheckCurrentVersion,
 			SQLServerCompatible: true,
+			YDBCompatible:       true,
 		},
 		{
-			Name:        "generate_desired_schema",
-			Description: "Extract expected schema from entity definitions",
-			TestFunc:    testGenerateDesiredSchema,
+			Name:          "generate_desired_schema",
+			Description:   "Extract expected schema from entity definitions",
+			TestFunc:      testGenerateDesiredSchema,
+			YDBCompatible: true,
 		},
 		{
 			Name:                "read_actual_db_schema",
 			Description:         "Introspect current schema from the database",
 			TestFunc:            testReadActualDBSchema,
 			SQLServerCompatible: true,
+			YDBCompatible:       true,
 		},
 		{
 			Name:                "dry_run_support",
 			Description:         "Simulate migrations without executing SQL",
 			TestFunc:            testDryRunSupport,
 			SQLServerCompatible: true,
+			YDBCompatible:       true,
 		},
 		{
 			Name:                "operation_planning",
 			Description:         "Generate detailed plan of operations",
 			TestFunc:            testOperationPlanning,
 			SQLServerCompatible: true,
+			YDBCompatible:       true,
 		},
 		{
-			Name:        "schema_diff",
-			Description: "Compare DB schema with entity definitions",
-			TestFunc:    testSchemaDiff,
+			Name:          "schema_diff",
+			Description:   "Compare DB schema with entity definitions",
+			TestFunc:      testSchemaDiff,
+			YDBCompatible: true,
 		},
 		{
 			Name:                "failure_diagnostics",
 			Description:         "Simulate a failing migration and capture error",
 			TestFunc:            testFailureDiagnostics,
 			SQLServerCompatible: true,
+			YDBCompatible:       true,
 		},
 
 		// Idempotency
@@ -80,12 +90,14 @@ func GetAllScenarios() []TestScenario {
 			Description:         "Re-apply already applied migrations",
 			TestFunc:            testIdempotencyReapply,
 			SQLServerCompatible: true,
+			YDBCompatible:       true,
 		},
 		{
 			Name:                "idempotency_up_to_date",
 			Description:         "Run migrate up when database is already up-to-date",
 			TestFunc:            testIdempotencyUpToDate,
 			SQLServerCompatible: true,
+			YDBCompatible:       true,
 		},
 
 		// Parallel execution smoke
@@ -94,20 +106,29 @@ func GetAllScenarios() []TestScenario {
 			Description:         "Launch two migrate up processes in parallel and verify final consistency",
 			TestFunc:            testParallelMigrateSmoke,
 			SQLServerCompatible: true,
+			YDBCompatible:       true,
 		},
 
 		// Partial Failure Recovery
 		{
-			Name:        "partial_failure_recovery",
-			Description: "Handle multi-step migration with intentional failure",
-			TestFunc:    testPartialFailureRecovery,
+			Name:          "partial_failure_recovery",
+			Description:   "Handle multi-step migration with intentional failure",
+			TestFunc:      testPartialFailureRecovery,
+			YDBCompatible: true,
+		},
+		{
+			Name:          "partial_failure_resume",
+			Description:   "Resume a migration that failed partway without running its committed statements again",
+			TestFunc:      testPartialFailureResume,
+			YDBCompatible: true,
 		},
 
 		// Timestamp Verification
 		{
-			Name:        "timestamp_verification",
-			Description: "Check that applied_at timestamps are stored correctly",
-			TestFunc:    testTimestampVerification,
+			Name:          "timestamp_verification",
+			Description:   "Check that applied_at timestamps are stored correctly",
+			TestFunc:      testTimestampVerification,
+			YDBCompatible: true,
 		},
 
 		// Manual Patch Detection
@@ -143,6 +164,7 @@ func GetAllScenarios() []TestScenario {
 			cleanupTestFunc:      testCleanupSupport,
 			ClickHouseCompatible: true,
 			SQLServerCompatible:  true,
+			YDBCompatible:        true,
 		},
 	}
 

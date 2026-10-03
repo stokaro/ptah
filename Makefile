@@ -1,6 +1,6 @@
 # Ptah Migration Library Makefile
 
-.PHONY: help build test integration-test integration-test-sqlserver db-start-sqlserver clean docker-build lint lint-qtlint lint-nolintguard lint-golangci lint-fix install-hooks conformance
+.PHONY: help build test integration-test integration-test-sqlserver db-start-sqlserver integration-test-ydb db-start-ydb clean docker-build lint lint-qtlint lint-nolintguard lint-golangci lint-fix install-hooks conformance
 
 VERSION ?= $(shell git describe --tags --always --dirty)
 COMMIT ?= $(shell git rev-parse --short HEAD)
@@ -20,6 +20,8 @@ help:
 	@echo "  integration-test   Run integration tests using Docker Compose"
 	@echo "  integration-test-sqlserver"
 	@echo "                     Run SQL Server opt-in integration smoke tests"
+	@echo "  integration-test-ydb"
+	@echo "                     Run YDB opt-in integration smoke tests"
 	@echo "  lint               Run golangci-lint, qtlint, and nolintguard"
 	@echo "  conformance        Show Atlas conformance scoreboard location"
 	@echo "  lint-fix           Run auto-fixable linters"
@@ -101,6 +103,10 @@ integration-test-sqlserver: docker-build db-start-sqlserver
 		--scenarios=apply_incremental_migrations,rollback_migrations,upgrade_to_specific_version,check_current_version,read_actual_db_schema,dry_run_support,operation_planning,failure_diagnostics,idempotency_reapply,idempotency_up_to_date,parallel_migrate_smoke,cleanup_support,dynamic_sqlserver_identity_schema_bracket_reserved_words \
 		--report=html --verbose
 
+integration-test-ydb: docker-build db-start-ydb
+	@echo "Running integration tests against YDB only..."
+	docker compose --profile test --profile ydb run --rm ptah-tester --databases=ydb --report=html --verbose
+
 # Run integration tests using Docker Compose with custom arguments
 integration-test-custom: docker-build
 	@echo "Running integration tests with custom arguments..."
@@ -115,6 +121,10 @@ db-start:
 db-start-sqlserver:
 	@echo "Starting SQL Server..."
 	docker compose --profile sqlserver up -d --wait sqlserver
+
+db-start-ydb:
+	@echo "Starting YDB..."
+	docker compose --profile ydb up -d --wait ydb
 
 # Stop databases
 db-stop:

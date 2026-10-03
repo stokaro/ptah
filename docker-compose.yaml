@@ -149,6 +149,26 @@ services:
       timeout: 5s
       retries: 24
 
+  # YDB, opt-in like SQL Server: the runner gives it only the scenarios that
+  # opted in through YDBCompatible. local-ydb advertises its node through
+  # discovery under the container's host name, so the container is named
+  # localhost and the runner connects with the balancer disabled; the health
+  # check is the image's own script.
+  ydb:
+    image: ydbplatform/local-ydb:26.2.1.14
+    profiles:
+      - ydb
+    hostname: localhost
+    environment:
+      YDB_USE_IN_MEMORY_PDISKS: "true"
+    ports:
+      - "2136:2136"
+    healthcheck:
+      test: ["CMD-SHELL", "sh /health_check"]
+      interval: 5s
+      timeout: 20s
+      retries: 30
+
   # Test runner service
   ptah-tester:
     build:
@@ -181,6 +201,8 @@ services:
       # runner started without it must skip rather than wait for a service that
       # was never asked for.
       SPANNER_URL: "spanner://spanner:5432/ptah_test?sslmode=disable"
+      # Behind its own profile too, so no depends_on entry either.
+      YDB_URL: "ydb://ydb:2136/local?go_balancer=disable"
     volumes:
       - ./integration/reports:/app/reports
       - ./integration/internal/fixtures:/app/fixtures

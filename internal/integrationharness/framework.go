@@ -134,6 +134,12 @@ type TestScenario struct {
 	// portable. Opted-in scenarios must be verified against the T-SQL renderer,
 	// migrator, and reader end to end.
 	SQLServerCompatible bool
+	// YDBCompatible opts a scenario in to running against YDB. Default false
+	// because most scenarios carry PostgreSQL-flavored SQL or entities with
+	// foreign keys, enums and other objects YDB has no counterpart for. An
+	// opted-in scenario reads its migrations from the *_ydb fixtures and has
+	// been run against a live YDB server.
+	YDBCompatible bool
 }
 
 // IsRunnable reports whether the scenario has an executable test function.
@@ -311,6 +317,20 @@ func (tr *TestRunner) runSingleTest(
 		)
 		result.Skipped = true
 		result.SkipReason = "Scenario has not opted in via SQLServerCompatible; skipping on SQL Server"
+		result.Steps = recorder.GetSteps()
+		result.Duration = time.Since(start)
+		return result
+	}
+
+	if platform.NormalizeDialect(conn.Info().Dialect) == platform.YDB && !scenario.YDBCompatible {
+		recorder := &StepRecorder{}
+		_ = recorder.RecordStep(
+			"Skip Non-YDB-Compatible Scenario",
+			"Scenario has not opted in via YDBCompatible; skipping on YDB",
+			func() error { return nil },
+		)
+		result.Skipped = true
+		result.SkipReason = "Scenario has not opted in via YDBCompatible; skipping on YDB"
 		result.Steps = recorder.GetSteps()
 		result.Duration = time.Since(start)
 		return result
