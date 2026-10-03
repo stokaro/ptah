@@ -827,11 +827,13 @@ func TestRenovate_ClassifiesEveryDatabaseServerImage(t *testing.T) {
 }
 
 type renovatePackageRule struct {
-	GroupName         string   `json:"groupName"`
-	MatchPackageNames []string `json:"matchPackageNames"`
-	MatchFileNames    []string `json:"matchFileNames"`
-	AutoMerge         *bool    `json:"automerge"`
-	Enabled           *bool    `json:"enabled"`
+	GroupName                   string   `json:"groupName"`
+	MatchPackageNames           []string `json:"matchPackageNames"`
+	MatchFileNames              []string `json:"matchFileNames"`
+	MatchUpdateTypes            []string `json:"matchUpdateTypes"`
+	AutoMerge                   *bool    `json:"automerge"`
+	Enabled                     *bool    `json:"enabled"`
+	DependencyDashboardApproval *bool    `json:"dependencyDashboardApproval"`
 }
 
 // TestRenovate_DisablesEveryLinePinnedImage is the second lock on the release
@@ -885,6 +887,57 @@ func ruleDisablingCellsFile(c *qt.C) renovatePackageRule {
 			"manager pattern is the only thing standing between a bot and the release lines",
 			renovateConfig, cellsFile))
 	return matching[0]
+}
+
+// ydbImage is the image repository whose release lines wait on the
+// Dependency Dashboard; see TestRenovate_HoldsANewYDBLineForApproval.
+const ydbImage = "ydbplatform/local-ydb"
+
+// TestRenovate_HoldsANewYDBLineForApproval keeps a YDB line change out of the
+// pull request queue.
+//
+// local-ydb tags a pre-release line exactly as it tags a released one, and the
+// integration workflow pins a four-part version, so a move to another line
+// reaches Renovate as a minor update and reads like a patch. Merged as one, it
+// replaced the certified line with a line YDB had not released
+// (stokaro/ptah#4076). The rule holds major and minor updates for approval and
+// leaves a patch inside the pinned line to arrive as a pull request.
+func TestRenovate_HoldsANewYDBLineForApproval(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(declaredImageRepositories(), qt.Contains, ydbImage,
+		qt.Commentf("no cell declares %q, so the rule below guards an image nothing runs", ydbImage))
+
+	rules := rulesHoldingForApproval(c, ydbImage)
+	c.Assert(rules, qt.HasLen, 1,
+		qt.Commentf("%s must carry exactly one rule that holds %q updates for approval; without it "+
+			"a new YDB line arrives as an ordinary pull request", renovateConfig, ydbImage))
+	c.Assert(rules[0].MatchUpdateTypes, qt.ContentEquals, []string{"major", "minor"},
+		qt.Commentf("a line change is a major or minor update; holding a patch as well would stop "+
+			"the pinned line from receiving its fixes"))
+}
+
+// rulesHoldingForApproval returns the rules that cover the package and make
+// its updates wait for approval on the Dependency Dashboard.
+func rulesHoldingForApproval(c *qt.C, name string) []renovatePackageRule {
+	c.Helper()
+
+	body, err := os.ReadFile(renovateConfig)
+	c.Assert(err, qt.IsNil)
+
+	var config struct {
+		PackageRules []renovatePackageRule `json:"packageRules"`
+	}
+	c.Assert(json.Unmarshal(body, &config), qt.IsNil)
+
+	var matching []renovatePackageRule
+	for _, rule := range config.PackageRules {
+		if rule.DependencyDashboardApproval != nil && *rule.DependencyDashboardApproval &&
+			renovateRuleCovers(c, rule, name) {
+			matching = append(matching, rule)
+		}
+	}
+	return matching
 }
 
 // renovateRuleCovers reports whether the rule's package selectors match name.
