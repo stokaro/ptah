@@ -150,11 +150,13 @@ func checkStatementScopedToDev(statement string, index int, dialect, devSchema s
 //
 // The second form is restricted to the statement's leading keywords so that an
 // ordinary column named `database` — legal and unreserved in MySQL — is not
-// mistaken for one.
+// mistaken for one. The NEW and OLD of a trigger body that name its row are
+// not qualifiers either; see [triggerRowReferences].
 func schemaNamePositions(tokens []lexer.Token) []int {
 	var positions []int
+	rowReferences := triggerRowReferences(tokens)
 	for i := range tokens {
-		if !isSchemaNameToken(tokens[i]) {
+		if !isSchemaNameToken(tokens[i]) || rowReferences[i] {
 			continue
 		}
 		if i+1 >= len(tokens) || !tokens[i+1].MatchOperatorValue(".") {
