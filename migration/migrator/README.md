@@ -9,7 +9,7 @@ The Ptah Migrator provides versioned database migration capabilities with up/dow
 - **Transaction Safety**: Global and per-file modes resolve before a migration changes schema or revision state
 - **SQL File Support**: Migrations can be defined as SQL files
 - **Go Function Support**: Migrations can also be defined as Go functions for complex logic
-- **Multiple Database Support**: Runs through Ptah's `dbschema` connections, with migrator-specific handling for PostgreSQL, CockroachDB, YugabyteDB, Spanner, MySQL, MariaDB, SQL Server, SQLite, and ClickHouse
+- **Multiple Database Support**: Runs through Ptah's `dbschema` connections, with migrator-specific handling for PostgreSQL, CockroachDB, YugabyteDB, Spanner, MySQL, MariaDB, SQL Server, SQLite, ClickHouse, Oracle and YDB
 - **Dry Run Mode**: Preview what migrations would do without actually applying them
 - **Migration Status**: Check current migration state and pending migrations
 - **Configurable Migration State**: Store migration history in a custom schema/table
@@ -712,12 +712,14 @@ keeping a failed or not-yet-deleted rollback dirty and recoverable.
 
 ### Migration Advisory Locks
 
-PostgreSQL, YugabyteDB, MySQL, MariaDB, and SQL Server migrators acquire a
-session-level advisory lock around the planning and apply window for `MigrateUp`,
+PostgreSQL, YugabyteDB, MySQL, MariaDB, SQL Server and YDB migrators acquire a
+session-level lock around the planning and apply window for `MigrateUp`,
 `MigrateDown`, `MigrateDownTo`, `MigrateTo`, and `RepairMigration`. Repair holds
 the lock across revision inspection, resumed SQL, safety checks, and its final
 metadata write. This prevents concurrent runners from acting on the same
-migration state.
+migration state. YDB has no SQL advisory lock, so there the lock is an
+exclusive, ephemeral semaphore on the coordination node `ptah_locks` at the
+database root, which Ptah creates on first use.
 
 By default the migrator waits until the lock is available. Use
 `WithMigrationLockName` to coordinate on a custom lock name, and use

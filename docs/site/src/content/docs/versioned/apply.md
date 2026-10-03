@@ -210,6 +210,16 @@ target does anyway.
 `ptah migrations down` and `ptah migrations baseline` answer the same way: all
 three take the same lock on the same history.
 
+YQL has no advisory lock, so on YDB the lock is a semaphore on the coordination
+node `ptah_locks` at the database root, one semaphore per lock name. It is
+exclusive and ephemeral: a second run waits for it in the server's queue, and the
+server releases it when the run that holds it ends, whether that run released
+it or died. Ptah creates the node on first use and keeps it. The node holds no
+data, so dropping it while no run is active is safe, and the next run creates it
+again. Like every advisory lock, it keeps Ptah runs apart; it does not stop a
+client that ignores it, and a run whose session to the server is lost for longer
+than the session timeout loses the lock.
+
 Every spelling refuses. `PTAH_MIGRATION_LOCK_TIMEOUT` fills the flag on each of
 those commands, and `migration.migration_lock_timeout` in
 [the project config](../../reference/configuration/) fills it on `up` and
@@ -674,8 +684,16 @@ connected CockroachDB server on an older line reaches the capability through the
 version ladder and is accepted.
 
 Timeouts themselves are not tied to that capability and reach every target whose
-server takes a session or transaction timeout; a target that takes none refuses
-`--lock-timeout` and `--statement-timeout` by naming the engine.
+server takes a session or transaction timeout. On a target that takes none,
+`migrations up` and `migrations down` refuse `--lock-timeout` and
+`--statement-timeout` once connected, naming the flag or the `ptah.yaml` key
+that set them and the engine, before anything is read or written. A value from
+`PTAH_LOCK_TIMEOUT` or `PTAH_STATEMENT_TIMEOUT` is refused by the migrator
+instead, on the first migration that would run under it: `ptah schema apply`
+reads `PTAH_LOCK_TIMEOUT` as a lock wait, so an exported value is not taken as
+addressed to the versioned commands alone. YDB takes none: it has no lock wait
+to bound, and a timeout that gives up on a schema statement cannot promise the
+statement did not commit.
 
 - **Run logging** (`--log-level`, `--log-format`): `--log-level`
   debug\|info\|warn\|error selects how much of the run is narrated —
@@ -709,6 +727,57 @@ it did not create; running it against one fails on the first object that
 already exists. `ptah migrations baseline` is the native way to adopt an
 existing database, and `--shadow-db` verifies that the baselined history
 reproduces the schema it was pointed at.
+
+## Migrations on YDB
+
+YDB runs a schema statement only outside a transaction, never in the same query
+as a data statement, and a named expression, an action, a `DECLARE` or a
+`PRAGMA` exists only in the query that holds it. Ptah therefore runs a YDB
+migration as a sequence of queries:
+
+- Each schema statement — `CREATE`, `ALTER`, `DROP`, `GRANT`, `REVOKE`,
+  `TRUNCATE` and the rest — is a query of its own, in file order.
+- Consecutive data statements are one query. It runs in a serializable
+  transaction together with the revision checkpoint that records it, and a
+  transaction YDB aborts for a conflict runs again.
+- A definition — `PRAGMA`, `DECLARE`, `$name = ...`, `DEFINE ACTION`,
+  `DEFINE SUBQUERY` — is carried into every query after it, so each query sees
+  what the file defined above it.
+- A `--!syntax_v1` line at the head of the file heads every query.
+
+In this file the `UPDATE` uses `$name` across the `ALTER TABLE`, which runs as
+a query of its own:
+
+```sql illustration
+CREATE TABLE `app/items` (id Int64 NOT NULL, name Utf8, PRIMARY KEY (id));
+$name = 'first'u;
+UPSERT INTO `app/items` (id, name) VALUES (1l, $name);
+ALTER TABLE `app/items` ADD COLUMN note Utf8;
+UPDATE `app/items` SET note = $name WHERE id = 1l;
+```
+
+It runs as four queries: the `CREATE TABLE`, the definition with the `UPSERT`,
+the definition with the `ALTER TABLE`, and the definition with the `UPDATE`.
+
+The queries are what the revision counts, what partial hashes digest and what a
+resume skips. Progress is recorded after each query. An interrupted schema query
+leaves its outcome unknown, as an interrupted statement does under `none`, and
+the row has to be inspected and repaired. A data query commits together with
+its checkpoint, so after an interruption either both are in the database or
+neither is, and `up --allow-dirty` runs it again.
+
+Some files cannot be split the way YDB reads them, and Ptah refuses them before
+the run writes anything:
+
+| In a YDB migration file | Why it is refused |
+| --- | --- |
+| `DELIMITER` or `-- atlas:delimiter` | YQL has no client delimiter; every statement ends with a semicolon |
+| A `--!` setting other than `--!syntax_v1` | `--!ansi_lexer` changes how the text is read, and YDB refuses `--!syntax_pg`, `--!syntax_v0` and unknown settings |
+| `COMMIT`, `ROLLBACK` or `BEGIN` | YDB refuses `COMMIT` inside a query, and Ptah decides where each transaction begins and ends |
+
+The revision table, the migration log and the tag table sit in the directory
+`--migrations-schema` names, or at the database root. YDB has no
+`information_schema`, so Ptah asks the scheme service whether they exist.
 
 ## Operational hooks
 
@@ -828,6 +897,12 @@ skips is only ever the prefix that really survived:
   commits as it runs, as under `none`. `applied` counts the statements that ran
   before the one that failed, and those statements stay in the database.
   Spanner does not support `all`.
+- On YDB, `file` runs a body the way `none` does. YDB runs no schema statement
+  inside a transaction, so a file transaction could hold only data statements,
+  and those already commit query by query. The unit is a query rather than a
+  statement; see [Migrations on YDB](#migrations-on-ydb). `applied` counts the
+  queries that committed before the one that failed. YDB does not support
+  `all`.
 - Under `file` on MySQL and MariaDB, the server may commit the open transaction
   around DDL, so part of a failed body can survive its final rollback. Ptah does
   not infer that prefix from SQL keywords. Before and after each statement it

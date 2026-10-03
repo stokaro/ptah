@@ -3434,9 +3434,17 @@ func (m *Migrator) validateRepairMigrationSQL(
 // and loses its DML on a rollback, which is why that class carries a witness
 // statement by statement and is not exempt here: zero there means the
 // transaction took the body back with it.
+//
+// YDB is of the durable class and still carries a witness: every body runs the
+// way `none` runs it there, a scheme query marked in flight before it runs and
+// a data query committed together with its checkpoint, so zero with no marker
+// is the witness speaking. See runsQueriesOnTheirOwn.
 func revisionProvesNothingRan(revision *MigrationRevision, dialect string) bool {
 	if revision == nil || !revision.Dirty || !isZeroProgressUpFailure(*revision) {
 		return false
+	}
+	if platform.NormalizeDialect(dialect) == platform.YDB {
+		return true
 	}
 	return !ddltx.AllStatementsDurable(ddltx.ClassOf(dialect))
 }

@@ -36,6 +36,9 @@ func TestRevisionProvesNothingRan(t *testing.T) {
 		{name: "clickhouse commits each statement", dialect: "clickhouse", revision: zeroProgress, want: false},
 		{name: "oracle commits each statement", dialect: "oracle", revision: zeroProgress, want: false},
 		{name: "spanner commits each statement", dialect: "spanner", revision: zeroProgress, want: false},
+		// YDB commits each query too, and still records a witness around
+		// each one, so zero with no marker in flight is proof.
+		{name: "ydb records a witness around each query", dialect: "ydb", revision: zeroProgress, want: true},
 		// MySQL keeps its DDL and loses its DML on a rollback, so the class
 		// carries a per-statement witness and zero there is that witness
 		// speaking, not the absence of one.

@@ -200,7 +200,9 @@ recorded: the body may have run in full, in part, or not at all. The hint says
 so there, repair does not refuse, and what ends the row is to finish the body
 by hand and then record it. The MySQL family is not in that group -- it keeps
 its DDL and loses its DML on a rollback, which is why it carries a witness
-statement by statement and reads zero the same way PostgreSQL does.
+statement by statement and reads zero the same way PostgreSQL does. Neither is
+YDB: each query there is durable as it runs, and Ptah records a witness around
+each one, so zero is read the same way too.
 
 A run that died while a statement was executing reads `applied=0/N` too, and the
 hint reads the recorded failure to tell it apart. Whether that statement
