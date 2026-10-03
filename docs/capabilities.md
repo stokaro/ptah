@@ -405,7 +405,8 @@ for SQL Server-specific view, trigger, and index metadata is outside it.
 
 The YDB presets were measured by hand on `ydbplatform/local-ydb` 25.1.4.7,
 25.2.1.24, 25.3.1.25, 25.4.1.15, 26.1.1.22 and 26.2.1.14, a statement per query,
-each table read back with `scheme describe`. `YDB262()` covers 26.2 and is the
+each table read back with `scheme describe`, and the capability probe measures
+each line again on every run of the tiered workflows. `YDB262()` covers 26.2 and is the
 base the others derive from; each line below it turns off what it was measured
 without:
 
@@ -421,9 +422,16 @@ without:
 names no product in `SELECT Version()`, so the dialect comes from the `ydb://`
 URL scheme or `--dialect`, and the ladder reads both version shapes YDB
 reports: the dotted `26.2.1.14` and the branch name `stable-25-4-1`, which
-25.4.1.15 answers with. A preset describes a server with default feature flags.
-The keys that name an object family YDB has and Ptah does not carry yet --
-views, access control, TTL -- are false whatever the server can do.
+25.4.1.15 answers with.
+
+A preset describes a server with default feature flags. A `ydb://` URL that
+names the cluster's monitoring endpoint refines the keys the flags decide
+(`unique_index_on_existing_table`, `add_column_with_default`,
+`alter_column_default`, `wide_date_time_types`, `parameterized_decimal`), and
+the capability probe measures every line with that refinement in place. The
+keys that name an object family YDB has and Ptah does not carry yet -- views,
+access control, TTL -- are false whatever the server can do, and each YDB cell
+declares them understated on purpose.
 
 ### Saturation: servers newer than the newest measured line
 
