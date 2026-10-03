@@ -3,6 +3,7 @@ package root_test
 import (
 	"bytes"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -269,9 +270,10 @@ func TestNewRootCommand_PTAHLockTimeoutKeepsMigrationsUpWorking(t *testing.T) {
 
 // TestNewRootCommand_TypedMigrationTimeoutsRefuseATargetWithoutThem is the
 // versioned commands' answer to a run-wide timeout the target cannot carry:
-// typed, it is refused by name once the command has connected, even when no
+// typed, it is refused by name before the command connects, even when no
 // migration is pending, where the migrator alone would accept it in silence.
-// The exported variable keeps the run working, which the test above holds.
+// A sqlite:// target is not created. The exported variable keeps the run
+// working, which the test above holds.
 func TestNewRootCommand_TypedMigrationTimeoutsRefuseATargetWithoutThem(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -280,13 +282,19 @@ func TestNewRootCommand_TypedMigrationTimeoutsRefuseATargetWithoutThem(t *testin
 	}{
 		{
 			name: "up",
+			verb: []string{"migrations", "up"},
+			wantErr: `--statement-timeout sets a timeout for every migration, and dialect "sqlite" has no lock or ` +
+				`statement timeout Ptah can set and restore around a migration. Remove --statement-timeout to run without one`,
+		},
+		{
+			name: "up --dry-run",
 			verb: []string{"migrations", "up", "--dry-run"},
 			wantErr: `--statement-timeout sets a timeout for every migration, and dialect "sqlite" has no lock or ` +
 				`statement timeout Ptah can set and restore around a migration. Remove --statement-timeout to run without one`,
 		},
 		{
 			name: "down",
-			verb: []string{"migrations", "down", "--dry-run", "--confirm"},
+			verb: []string{"migrations", "down", "--confirm"},
 			wantErr: `--statement-timeout sets a timeout for every migration, and dialect "sqlite" has no lock or ` +
 				`statement timeout Ptah can set and restore around a migration. Remove --statement-timeout to run without one`,
 		},
@@ -300,14 +308,17 @@ func TestNewRootCommand_TypedMigrationTimeoutsRefuseATargetWithoutThem(t *testin
 			migrationsDir := filepath.Join(dir, "migrations")
 			c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
 
+			dbPath := filepath.Join(dir, "versioned.db")
 			args := slices.Concat(test.verb, []string{
-				"--db-url", atlasurl.SQLiteURLFromPath(filepath.Join(dir, "versioned.db")),
+				"--db-url", atlasurl.SQLiteURLFromPath(dbPath),
 				"--migrations-dir", migrationsDir,
 				"--statement-timeout", "30s",
 			})
 			_, _, err := executeRootCommand(args...)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			_, statErr := os.Stat(dbPath)
+			c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
 		})
 	}
 }
@@ -327,13 +338,17 @@ func TestNewRootCommand_ConfiguredMigrationTimeoutsRefuseATargetWithoutThem(t *t
 	config := filepath.Join(dir, "ptah.yaml")
 	c.Assert(os.WriteFile(config, []byte("migration:\n  lock_timeout: 5s\n"), 0o600), qt.IsNil)
 
-	_, _, err := executeRootCommand("migrations", "up", "--dry-run", "--config", config,
-		"--db-url", atlasurl.SQLiteURLFromPath(filepath.Join(dir, "versioned.db")),
+	dbPath := filepath.Join(dir, "versioned.db")
+
+	_, _, err := executeRootCommand("migrations", "up", "--config", config,
+		"--db-url", atlasurl.SQLiteURLFromPath(dbPath),
 		"--migrations-dir", migrationsDir)
 
 	c.Assert(err, qt.ErrorMatches,
 		`migration.lock_timeout sets a timeout for every migration, and dialect "sqlite" has no lock or `+
 			`statement timeout Ptah can set and restore around a migration. Remove migration.lock_timeout to run without one`)
+	_, statErr := os.Stat(dbPath)
+	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
 }
 
 // TestNewRootCommand_ExportedTimeoutOverridesTheConfiguredOne is the control:

@@ -24,9 +24,10 @@ import (
 // those queries are the units it counts, records progress over and resumes
 // from, in place of statements.
 //
-// A scheme query is marked in flight before it runs and checkpointed after,
-// as every statement outside a transaction is: an interruption between the
-// two leaves an outcome nobody knows, and a resume refuses to guess it. A data
+// A scheme query, and a BATCH query, which YDB runs only outside a
+// transaction, is marked in flight before it runs and checkpointed after, as
+// every statement outside a transaction is: an interruption between the two
+// leaves an outcome nobody knows, and a resume refuses to guess it. A data
 // query runs in one serializable transaction together with the checkpoint that
 // records it, so the two commit together or not at all.
 //
@@ -181,12 +182,12 @@ func (m *Migrator) commitYDBDataQuery(
 	event StatementEvent,
 	direction MigrationDirection,
 ) error {
-	checkpoint, args := m.checkpointMigrationRevisionStatement(migration, startedAt, event, direction)
 	return dataQueryCommit{
-		begin:      m.conn.BeginTx,
-		query:      event.Statement,
-		checkpoint: checkpoint,
-		args:       args,
+		begin: m.conn.BeginTx,
+		query: event.Statement,
+		checkpoint: func() (string, []any) {
+			return m.checkpointMigrationRevisionStatement(migration, startedAt, event, direction)
+		},
 		recorded: func(ctx context.Context) (bool, error) {
 			revision, err := m.getMigrationRevision(ctx, migration)
 			if err != nil {
@@ -211,10 +212,13 @@ func (m *Migrator) commitYDBDataQuery(
 // recorded, which reads the revision back: the checkpoint commits with the
 // query, so a recorded checkpoint is the proof that the query did too.
 type dataQueryCommit struct {
-	begin      func(context.Context, *sql.TxOptions) (*sql.Tx, error)
-	query      string
-	checkpoint string
-	args       []any
+	begin func(context.Context, *sql.TxOptions) (*sql.Tx, error)
+	query string
+	// checkpoint is the statement that records the query, and its arguments.
+	// It is built after the query ran in each attempt, so the execution time
+	// it records includes the query and is not carried over from an attempt
+	// YDB aborted.
+	checkpoint func() (string, []any)
 	recorded   func(context.Context) (bool, error)
 	wait       func(context.Context, int) error
 }
@@ -254,9 +258,16 @@ func (d dataQueryCommit) try(ctx context.Context) (committing bool, err error) {
 		_ = tx.Rollback()
 		return false, err
 	}
-	if _, err := tx.ExecContext(ctx, d.checkpoint, d.args...); err != nil {
+	checkpoint, args := d.checkpoint()
+	if _, err := tx.ExecContext(ctx, checkpoint, args...); err != nil {
 		_ = tx.Rollback()
 		return false, fmt.Errorf("record the query in the revision table: %w", err)
+	}
+	// The migration lock is asked for last, right before the commit, which
+	// is the step that cannot be taken back.
+	if err := migrationLockLost(ctx); err != nil {
+		_ = tx.Rollback()
+		return false, err
 	}
 	if err := tx.Commit(); err != nil {
 		return true, err

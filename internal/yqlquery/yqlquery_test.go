@@ -142,6 +142,104 @@ func TestSplit_HappyPath(t *testing.T) {
 			text: "-- nothing here\n;\n",
 			want: make([]shape, 0),
 		},
+		{
+			name: "a block that runs a scheme statement is a scheme query",
+			text: "UPSERT INTO a (id) VALUES (1l);\nDO BEGIN\n  CREATE TABLE b (id Int64 NOT NULL, PRIMARY KEY (id));\nEND DO;",
+			want: []shape{
+				{Kind: yqlquery.Data, Text: "UPSERT INTO a (id) VALUES (1l)"},
+				{Kind: yqlquery.Scheme, Text: "DO BEGIN\n  CREATE TABLE b (id Int64 NOT NULL, PRIMARY KEY (id));\nEND DO"},
+			},
+		},
+		{
+			name: "a block of data statements is data",
+			text: "DO BEGIN\n  UPSERT INTO a (id) VALUES (1l);\nEND DO;\nUPSERT INTO a (id) VALUES (2l);",
+			want: []shape{
+				{Kind: yqlquery.Data, Text: "DO BEGIN\n  UPSERT INTO a (id) VALUES (1l);\nEND DO;\nUPSERT INTO a (id) VALUES (2l)"},
+			},
+		},
+		{
+			name: "a block holding a scheme statement after a data statement is a scheme query",
+			text: "DO BEGIN\n  UPSERT INTO a (id) VALUES (1l);\n  DROP TABLE b;\nEND DO;",
+			want: []shape{
+				{Kind: yqlquery.Scheme, Text: "DO BEGIN\n  UPSERT INTO a (id) VALUES (1l);\n  DROP TABLE b;\nEND DO"},
+			},
+		},
+		{
+			name: "running an action that runs a scheme statement is a scheme query",
+			text: "DEFINE ACTION $make($name) AS\n  CREATE TABLE $name (id Int64 NOT NULL, PRIMARY KEY (id));\nEND DEFINE;\n" +
+				"UPSERT INTO a (id) VALUES (1l);\nDO $make('b');",
+			want: []shape{
+				{Kind: yqlquery.Data, Text: "DEFINE ACTION $make($name) AS\n  CREATE TABLE $name (id Int64 NOT NULL, PRIMARY KEY (id));\n" +
+					"END DEFINE;\nUPSERT INTO a (id) VALUES (1l)"},
+				{Kind: yqlquery.Scheme, Text: "DEFINE ACTION $make($name) AS\n  CREATE TABLE $name (id Int64 NOT NULL, PRIMARY KEY (id));\n" +
+					"END DEFINE;\nDO $make('b')"},
+			},
+		},
+		{
+			name: "EVALUATE FOR over an action that runs a scheme statement is a scheme query",
+			text: "DEFINE ACTION $make($name) AS\n  CREATE TABLE $name (id Int64 NOT NULL, PRIMARY KEY (id));\nEND DEFINE;\n" +
+				"EVALUATE FOR $n IN AsList('b', 'c') DO $make($n);",
+			want: []shape{
+				{Kind: yqlquery.Scheme, Text: "DEFINE ACTION $make($name) AS\n  CREATE TABLE $name (id Int64 NOT NULL, PRIMARY KEY (id));\n" +
+					"END DEFINE;\nEVALUATE FOR $n IN AsList('b', 'c') DO $make($n)"},
+			},
+		},
+		{
+			name: "EVALUATE IF over an action that runs a scheme statement is a scheme query",
+			text: "DEFINE ACTION $make() AS\n  DROP TABLE b;\nEND DEFINE;\nEVALUATE IF true DO $make();",
+			want: []shape{
+				{Kind: yqlquery.Scheme, Text: "DEFINE ACTION $make() AS\n  DROP TABLE b;\nEND DEFINE;\nEVALUATE IF true DO $make()"},
+			},
+		},
+		{
+			name: "an action that runs an action reads as the action it runs",
+			text: "DEFINE ACTION $drop() AS\n  DROP TABLE b;\nEND DEFINE;\nDEFINE ACTION $outer() AS\n  DO $drop();\nEND DEFINE;\n" +
+				"DO $outer();",
+			want: []shape{
+				{Kind: yqlquery.Scheme, Text: "DEFINE ACTION $drop() AS\n  DROP TABLE b;\nEND DEFINE;\nDEFINE ACTION $outer() AS\n  " +
+					"DO $drop();\nEND DEFINE;\nDO $outer()"},
+			},
+		},
+		{
+			name: "an action redefined as data is data",
+			text: "DEFINE ACTION $a() AS\n  DROP TABLE b;\nEND DEFINE;\nDEFINE ACTION $a() AS\n  UPSERT INTO a (id) VALUES (1l);\n" +
+				"END DEFINE;\nDO $a();",
+			want: []shape{
+				{Kind: yqlquery.Data, Text: "DEFINE ACTION $a() AS\n  DROP TABLE b;\nEND DEFINE;\nDEFINE ACTION $a() AS\n  " +
+					"UPSERT INTO a (id) VALUES (1l);\nEND DEFINE;\nDO $a()"},
+			},
+		},
+		{
+			name: "an action the text does not define is data",
+			text: "DO $imported();",
+			want: []shape{{Kind: yqlquery.Data, Text: "DO $imported()"}},
+		},
+		{
+			name: "a BATCH statement is a query of its own",
+			text: "$k = 2l;\nUPSERT INTO a (id) VALUES (1l);\nBATCH DELETE FROM a WHERE id = $k;\nBATCH UPDATE a SET n = 0l;\n" +
+				"UPSERT INTO a (id) VALUES (3l);",
+			want: []shape{
+				{Kind: yqlquery.Data, Text: "$k = 2l;\nUPSERT INTO a (id) VALUES (1l)"},
+				{Kind: yqlquery.Batch, Text: "$k = 2l;\nBATCH DELETE FROM a WHERE id = $k"},
+				{Kind: yqlquery.Batch, Text: "$k = 2l;\nBATCH UPDATE a SET n = 0l"},
+				{Kind: yqlquery.Data, Text: "$k = 2l;\nUPSERT INTO a (id) VALUES (3l)"},
+			},
+		},
+		{
+			name: "a block that runs a BATCH statement is a batch query",
+			text: "DO BEGIN\n  BATCH DELETE FROM a WHERE id = 1l;\nEND DO;",
+			want: []shape{{Kind: yqlquery.Batch, Text: "DO BEGIN\n  BATCH DELETE FROM a WHERE id = 1l;\nEND DO"}},
+		},
+		{
+			name: "a block holding a scheme statement and a BATCH statement is a scheme query",
+			text: "DO BEGIN\n  BATCH DELETE FROM a WHERE id = 1l;\n  DROP TABLE b;\nEND DO;",
+			want: []shape{{Kind: yqlquery.Scheme, Text: "DO BEGIN\n  BATCH DELETE FROM a WHERE id = 1l;\n  DROP TABLE b;\nEND DO"}},
+		},
+		{
+			name: "a scheme verb as a column alias starts no statement",
+			text: "DO BEGIN\n  UPSERT INTO a SELECT 1l AS id, 'x' AS drop;\nEND DO;",
+			want: []shape{{Kind: yqlquery.Data, Text: "DO BEGIN\n  UPSERT INTO a SELECT 1l AS id, 'x' AS drop;\nEND DO"}},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

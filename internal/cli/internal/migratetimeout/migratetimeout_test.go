@@ -109,3 +109,64 @@ func commandWithTimeoutFlags(c *qt.C, args []string) *cobra.Command {
 	c.Assert(cmd.Flags().Parse(args), qt.IsNil)
 	return cmd
 }
+
+// A URL whose dialect has no timeout spelling refuses before anything
+// connects.
+func TestRequestDecideFromURL_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		url     string
+		wantErr string
+	}{
+		{name: "sqlite", url: "sqlite://versioned.db", wantErr: `--statement-timeout sets a timeout .* dialect "sqlite" .*`},
+		{name: "ydb", url: "ydb://localhost:2136/local", wantErr: `--statement-timeout sets a timeout .* dialect "ydb" .*`},
+		{name: "clickhouse", url: "clickhouse://localhost:9000/db",
+			wantErr: `--statement-timeout sets a timeout .* dialect "clickhouse" .*`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			request := migratetimeout.Request{
+				Cmd:           commandWithTimeoutFlags(c, []string{"--statement-timeout", "30s"}),
+				LockFlag:      "lock-timeout",
+				StatementFlag: "statement-timeout",
+				DBURL:         test.url,
+			}
+
+			err := request.DecideFromURL(migrationfile.Timeouts{StatementTimeout: 30 * time.Second, HasStatementTimeout: true})
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+		})
+	}
+}
+
+// Each row is a URL that does not settle the answer before connecting, or a
+// run that asked for nothing.
+func TestRequestDecideFromURL_HappyPath(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		args []string
+	}{
+		{name: "a PostgreSQL-wire URL may reach Spanner", url: "postgres://localhost/db",
+			args: []string{"--statement-timeout", "30s"}},
+		{name: "a MySQL URL", url: "mysql://localhost/db", args: []string{"--statement-timeout", "30s"}},
+		{name: "a URL Ptah cannot classify", url: "nosuch://x", args: []string{"--statement-timeout", "30s"}},
+		{name: "nothing typed", url: "sqlite://versioned.db"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			request := migratetimeout.Request{
+				Cmd:           commandWithTimeoutFlags(c, test.args),
+				LockFlag:      "lock-timeout",
+				StatementFlag: "statement-timeout",
+				DBURL:         test.url,
+			}
+
+			c.Assert(request.DecideFromURL(migrationfile.Timeouts{
+				StatementTimeout: 30 * time.Second, HasStatementTimeout: true,
+			}), qt.IsNil)
+		})
+	}
+}

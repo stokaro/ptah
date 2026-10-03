@@ -159,40 +159,71 @@ func TestIsYDBDataQuery(t *testing.T) {
 	}
 }
 
-// The loop asks the committer first, and a statement it claims is run and
-// recorded by it alone; one it does not claim is left to the loop.
-func TestCommitStatement(t *testing.T) {
-	failure := errors.New("refused")
-	var ran []string
-	ctx := withStatementCommitter(context.Background(), statementCommitter{
+// committerThatAnswers is a committer of data queries whose run records each
+// statement it was handed and answers it with err.
+func committerThatAnswers(ran *[]string, err error) statementCommitter {
+	return statementCommitter{
 		claims: isYDBDataQuery,
 		run: func(_ context.Context, event StatementEvent) error {
-			ran = append(ran, event.Statement)
-			return failure
+			*ran = append(*ran, event.Statement)
+			return err
 		},
-	})
+	}
+}
+
+// The loop asks the committer first, and a statement it claims is run and
+// recorded by it alone; one it does not claim is left to the loop.
+func TestCommitStatement_HappyPath(t *testing.T) {
 	tests := []struct {
 		name          string
 		statement     string
 		wantCommitted bool
-		wantErr       error
+		wantRan       []string
 	}{
-		{name: "a data query is committed", statement: "UPSERT INTO a (id) VALUES (1l)", wantCommitted: true, wantErr: failure},
+		{
+			name: "a data query is committed", statement: "UPSERT INTO a (id) VALUES (1l)",
+			wantCommitted: true, wantRan: []string{"UPSERT INTO a (id) VALUES (1l)"},
+		},
 		{name: "a scheme query is left to the loop", statement: "DROP TABLE a", wantCommitted: false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			committed, err := commitStatement(ctx, StatementEvent{Statement: test.statement, Index: 1, Total: 1})
+			var ran []string
+			ctx := withStatementCommitter(context.Background(), committerThatAnswers(&ran, nil))
+
+			committed, err := commitStatement(ctx, StatementEvent{Statement: test.statement})
+
+			c.Assert(err, qt.IsNil)
 			c.Assert(committed, qt.Equals, test.wantCommitted)
-			c.Assert(err, qt.ErrorIs, test.wantErr)
+			c.Assert(ran, qt.DeepEquals, test.wantRan)
 		})
 	}
+}
+
+// Where no committer is installed, every statement is left to the loop.
+func TestCommitStatement_WithoutCommitter(t *testing.T) {
 	c := qt.New(t)
-	c.Assert(ran, qt.DeepEquals, []string{"UPSERT INTO a (id) VALUES (1l)"})
+
 	committed, err := commitStatement(context.Background(), StatementEvent{Statement: "UPSERT INTO a (id) VALUES (1l)"})
-	c.Assert(committed, qt.IsFalse)
+
 	c.Assert(err, qt.IsNil)
+	c.Assert(committed, qt.IsFalse)
+}
+
+// A committer's failure is the statement's failure, and the statement still
+// counts as claimed: nothing else runs it.
+func TestCommitStatement_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	failure := errors.New("refused")
+	var ran []string
+	ctx := withStatementCommitter(context.Background(), committerThatAnswers(&ran, failure))
+
+	committed, err := commitStatement(ctx, StatementEvent{Statement: "UPSERT INTO a (id) VALUES (1l)", Index: 1, Total: 1})
+
+	c.Assert(err, qt.ErrorIs, failure)
+	c.Assert(committed, qt.IsTrue)
+	c.Assert(ran, qt.DeepEquals, []string{"UPSERT INTO a (id) VALUES (1l)"})
 }
 
 // fakeTxDriver is a database/sql driver whose connections log what they are
@@ -268,12 +299,14 @@ func newDataQueryCommit(c *qt.C, fake *fakeTxDriver, recorded bool, readErr erro
 	db := sql.OpenDB(fake)
 	c.Cleanup(func() { _ = db.Close() })
 	return dataQueryCommit{
-		begin:      db.BeginTx,
-		query:      "UPSERT data",
-		checkpoint: "UPDATE checkpoint",
-		args:       []any{int64(2), int64(1)},
-		recorded:   func(context.Context) (bool, error) { return recorded, readErr },
-		wait:       func(context.Context, int) error { return nil },
+		begin: db.BeginTx,
+		query: "UPSERT data",
+		checkpoint: func() (string, []any) {
+			fake.log = append(fake.log, "build checkpoint")
+			return "UPDATE checkpoint", []any{int64(2), int64(1)}
+		},
+		recorded: func(context.Context) (bool, error) { return recorded, readErr },
+		wait:     func(context.Context, int) error { return nil },
 	}
 }
 
@@ -289,15 +322,15 @@ func TestDataQueryCommit_HappyPath(t *testing.T) {
 		{
 			name: "one transaction",
 			wantLog: []string{
-				"begin isolation=6", "exec UPSERT data (0 args)", "exec UPDATE checkpoint (2 args)", "commit",
+				"begin isolation=6", "exec UPSERT data (0 args)", "build checkpoint", "exec UPDATE checkpoint (2 args)", "commit",
 			},
 		},
 		{
 			name:         "an aborted commit runs the transaction again",
 			commitErrors: []error{abortedError{}},
 			wantLog: []string{
-				"begin isolation=6", "exec UPSERT data (0 args)", "exec UPDATE checkpoint (2 args)", "commit",
-				"begin isolation=6", "exec UPSERT data (0 args)", "exec UPDATE checkpoint (2 args)", "commit",
+				"begin isolation=6", "exec UPSERT data (0 args)", "build checkpoint", "exec UPDATE checkpoint (2 args)", "commit",
+				"begin isolation=6", "exec UPSERT data (0 args)", "build checkpoint", "exec UPDATE checkpoint (2 args)", "commit",
 			},
 		},
 		{
@@ -305,7 +338,7 @@ func TestDataQueryCommit_HappyPath(t *testing.T) {
 			commitErrors: []error{errors.New("connection reset")},
 			recorded:     true,
 			wantLog: []string{
-				"begin isolation=6", "exec UPSERT data (0 args)", "exec UPDATE checkpoint (2 args)", "commit",
+				"begin isolation=6", "exec UPSERT data (0 args)", "build checkpoint", "exec UPDATE checkpoint (2 args)", "commit",
 			},
 		},
 	}
@@ -348,7 +381,7 @@ func TestDataQueryCommit_FailurePath(t *testing.T) {
 			checkpointErrs: []error{errors.New("no such column")},
 			wantErr:        "record the query in the revision table: no such column",
 			wantLog: []string{
-				"begin isolation=6", "exec UPSERT data (0 args)", "exec UPDATE checkpoint (2 args)", "rollback",
+				"begin isolation=6", "exec UPSERT data (0 args)", "build checkpoint", "exec UPDATE checkpoint (2 args)", "rollback",
 			},
 			wantCommits: 0,
 		},
@@ -357,7 +390,7 @@ func TestDataQueryCommit_FailurePath(t *testing.T) {
 			commitErrors: []error{errors.New("connection reset")},
 			wantErr:      "connection reset",
 			wantLog: []string{
-				"begin isolation=6", "exec UPSERT data (0 args)", "exec UPDATE checkpoint (2 args)", "commit",
+				"begin isolation=6", "exec UPSERT data (0 args)", "build checkpoint", "exec UPDATE checkpoint (2 args)", "commit",
 			},
 			wantCommits: 1,
 		},
@@ -370,7 +403,7 @@ func TestDataQueryCommit_FailurePath(t *testing.T) {
 			readErr:      errors.New("transport: connection refused"),
 			wantErr:      "connection reset\nread back whether the query committed: transport: connection refused",
 			wantLog: []string{
-				"begin isolation=6", "exec UPSERT data (0 args)", "exec UPDATE checkpoint (2 args)", "commit",
+				"begin isolation=6", "exec UPSERT data (0 args)", "build checkpoint", "exec UPDATE checkpoint (2 args)", "commit",
 			},
 			wantCommits: 1,
 		},
@@ -380,7 +413,7 @@ func TestDataQueryCommit_FailurePath(t *testing.T) {
 				abortedError{}},
 			wantErr: "Transaction locks invalidated",
 			wantLog: []string{
-				"begin isolation=6", "exec UPSERT data (0 args)", "exec UPDATE checkpoint (2 args)", "commit",
+				"begin isolation=6", "exec UPSERT data (0 args)", "build checkpoint", "exec UPDATE checkpoint (2 args)", "commit",
 			},
 			wantCommits: ydbTransactionAttempts,
 		},
@@ -589,4 +622,20 @@ func TestRevisionFailureRecord_FailurePath(t *testing.T) {
 			c.Assert(fake.log[:len(test.wantLog)], qt.DeepEquals, test.wantLog)
 		})
 	}
+}
+
+// The lock is asked for right before the commit, and a run that lost it rolls
+// the transaction back: neither the query nor its checkpoint is applied.
+func TestDataQueryCommit_StopsBeforeCommitWhenTheLockIsLost(t *testing.T) {
+	c := qt.New(t)
+	fake := &fakeTxDriver{}
+	ctx := withHeldMigrationLock(context.Background(), heldLockAnswer{err: lostMigrationLock})
+
+	err := newDataQueryCommit(c, fake, false, nil).run(ctx)
+
+	c.Assert(err, qt.ErrorIs, error(lostMigrationLock))
+	c.Assert(fake.commitAttempt, qt.Equals, 0)
+	c.Assert(fake.log, qt.DeepEquals, []string{
+		"begin isolation=6", "exec UPSERT data (0 args)", "build checkpoint", "exec UPDATE checkpoint (2 args)", "rollback",
+	})
 }

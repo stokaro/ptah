@@ -214,11 +214,24 @@ YQL has no advisory lock, so on YDB the lock is a semaphore on the coordination
 node `ptah_locks` at the database root, one semaphore per lock name. It is
 exclusive and ephemeral: a second run waits for it in the server's queue, and the
 server releases it when the run that holds it ends, whether that run released
-it or died. Ptah creates the node on first use and keeps it. The node holds no
-data, so dropping it while no run is active is safe, and the next run creates it
-again. Like every advisory lock, it keeps Ptah runs apart; it does not stop a
-client that ignores it, and a run whose session to the server is lost for longer
-than the session timeout loses the lock.
+it or died. The first run that locks creates the node, and later runs only use
+it, so a user who may not create a coordination node at the root can run once
+another user has. The node holds no data, so dropping it while no run is active
+is safe, and the next run creates it again. Ptah's schema reader leaves it out,
+so a plan never drops it. Like every advisory lock, it keeps Ptah runs apart; it
+does not stop a client that ignores it.
+
+The semaphore is held by a coordination session of its own, not by the
+connection the migrations run on, so the server can take it away while the run
+goes on: after ten seconds without hearing from the run, or when the node is
+dropped. The run asks the server every second whether it still holds the lock,
+and trusts an answer for five seconds. Once no answer is that recent, the run
+treats the lock as lost: the statement running then is canceled, no further
+statement starts and no data query commits, nothing more is written to the
+revision table, and the run fails with the loss. The revision table then
+records what the run committed, and a resume starts there. A run stopped for
+longer than that reads the loss as soon as it continues, before its next
+statement.
 
 Every spelling refuses. `PTAH_MIGRATION_LOCK_TIMEOUT` fills the flag on each of
 those commands, and `migration.migration_lock_timeout` in
@@ -686,14 +699,18 @@ version ladder and is accepted.
 Timeouts themselves are not tied to that capability and reach every target whose
 server takes a session or transaction timeout. On a target that takes none,
 `migrations up` and `migrations down` refuse `--lock-timeout` and
-`--statement-timeout` once connected, naming the flag or the `ptah.yaml` key
-that set them and the engine, before anything is read or written. A value from
-`PTAH_LOCK_TIMEOUT` or `PTAH_STATEMENT_TIMEOUT` is refused by the migrator
-instead, on the first migration that would run under it: `ptah schema apply`
-reads `PTAH_LOCK_TIMEOUT` as a lock wait, so an exported value is not taken as
-addressed to the versioned commands alone. YDB takes none: it has no lock wait
-to bound, and a timeout that gives up on a schema statement cannot promise the
-statement did not commit.
+`--statement-timeout`, naming the flag or the `ptah.yaml` key that set them and
+the engine, even when no migration is pending. Where the URL settles the answer
+the refusal comes before the command connects, so a `sqlite://` file is not
+created; a `postgres://` URL can reach Spanner, which takes none, and is
+refused once connected, before anything is read or written. YDB takes none: it
+has no lock wait to bound, and a timeout that gives up on a schema statement
+cannot promise the statement did not commit.
+
+A value from `PTAH_LOCK_TIMEOUT` or `PTAH_STATEMENT_TIMEOUT` is refused by the
+migrator instead, on the first migration that would run under it:
+`ptah schema apply` reads `PTAH_LOCK_TIMEOUT` as a lock wait, so an exported
+value is not taken as addressed to the versioned commands alone.
 
 - **Run logging** (`--log-level`, `--log-format`): `--log-level`
   debug\|info\|warn\|error selects how much of the run is narrated —
@@ -736,7 +753,14 @@ as a data statement, and a named expression, an action, a `DECLARE` or a
 migration as a sequence of queries:
 
 - Each schema statement — `CREATE`, `ALTER`, `DROP`, `GRANT`, `REVOKE`,
-  `TRUNCATE` and the rest — is a query of its own, in file order.
+  `TRUNCATE` and the rest — is a query of its own, in file order. So is a block
+  or an action call that runs one: `DO BEGIN ... END DO` holding a schema
+  statement, or `DO $action()` and `EVALUATE FOR ... DO $action($x)` over an
+  action whose body holds one.
+- Each `BATCH UPDATE` and `BATCH DELETE` is a query of its own, outside any
+  transaction, which is the only way YDB runs one. YDB applies it in batches
+  rather than atomically, so an interrupted one leaves its outcome unknown, as
+  an interrupted schema query does.
 - Consecutive data statements are one query. It runs in a serializable
   transaction together with the revision checkpoint that records it, and a
   transaction YDB aborts for a conflict runs again.

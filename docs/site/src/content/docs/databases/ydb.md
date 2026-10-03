@@ -277,9 +277,11 @@ refused. [Migrations on YDB](../../versioned/apply/#migrations-on-ydb) has the
 details, including the files refused before a run writes anything.
 
 The migration lock is a semaphore on the coordination node `ptah_locks` at the
-database root, which Ptah creates on first use and keeps. `--lock-timeout` and
-`--statement-timeout` are refused: YDB has no lock wait to bound, and a client
-timeout cannot promise a schema statement did not commit.
+database root, which Ptah creates on first use and keeps. A run that loses it
+stops before its next statement; see
+[locking](../../versioned/apply/#locking-and---migration-lock-timeout).
+`--lock-timeout` and `--statement-timeout` are refused: YDB has no lock wait to
+bound, and a client timeout cannot promise a schema statement did not commit.
 
 ## What is not supported yet
 
