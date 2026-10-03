@@ -1,0 +1,268 @@
+//go:build integration
+
+package ydb_test
+
+import (
+	"context"
+	"database/sql"
+	"regexp"
+	"strings"
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+
+	"ptah.run/core/coverage"
+	"ptah.run/core/platform"
+	"ptah.run/core/sqlutil"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasretry"
+	"ptah.run/internal/ydbgap"
+	"ptah.run/migration/migrator"
+)
+
+const connectionSchema = "ptah_ydb_connection"
+
+var connectionSchemas = []string{connectionSchema}
+
+// The connection reports the server it reached: YDB, the version Version()
+// answers, and the database root as the schema an unqualified name means.
+func TestYDBConnection_DescribesTheServer(t *testing.T) {
+	c := qt.New(t)
+	conn := openYDB(c)
+
+	var version string
+	c.Assert(conn.QueryRowContext(c.Context(), "SELECT Version()").Scan(&version), qt.IsNil)
+
+	info := conn.Info()
+	c.Assert(info.Dialect, qt.Equals, platform.YDB)
+	c.Assert(info.Version, qt.Equals, version)
+	c.Assert(info.Schema, qt.Equals, "")
+	c.Assert(info.IdentifierSemantics.DefaultSchema, qt.Equals, "")
+	c.Assert(info.Capabilities, qt.Not(qt.HasLen), 0)
+}
+
+// A `?` Ptah writes is a YQL named parameter after Rebind, and the connection
+// binds a positional argument to it. A Go int is bound as Int64: the SDK binds
+// one as Int32 and wraps 5000000000 to 705032704, and the round trip through
+// the server is what shows the value survived. A `?` inside a literal stays
+// text.
+func TestYDBConnection_BindsPositionalArguments(t *testing.T) {
+	c := qt.New(t)
+	conn := openYDB(c)
+
+	var wide int64
+	var literal []byte
+	var widened string
+	c.Assert(conn.QueryRowContext(c.Context(),
+		sqlutil.Rebind(platform.YDB, `SELECT ? AS wide, '?' AS literal, FormatType(TypeOf(?)) AS widened`),
+		5000000000, 7,
+	).Scan(&wide, &literal, &widened), qt.IsNil)
+
+	c.Assert(wide, qt.Equals, int64(5000000000))
+	c.Assert(string(literal), qt.Equals, "?")
+	c.Assert(widened, qt.Equals, "Int64")
+}
+
+// An Int64 argument bound to a narrower column is refused by the server
+// rather than converted, and the same value written with the column's own
+// width is accepted. Ptah widens a Go int to 64 bits so that a value too wide
+// for a column fails loudly instead of wrapping; a caller writing a narrow
+// column passes the narrow Go type.
+func TestYDBConnection_RefusesAWideArgumentForANarrowColumn(t *testing.T) {
+	c := qt.New(t)
+	conn := openYDB(c)
+	dropTables(c, conn, connectionSchemas)
+	c.Cleanup(func() { dropTables(c, conn, connectionSchemas) })
+	c.Assert(conn.Writer().ExecuteSQL(c.Context(),
+		"CREATE TABLE `ptah_ydb_connection/narrow` (`id` Int64 NOT NULL, `small` Int32, PRIMARY KEY (`id`))"), qt.IsNil)
+	insert := sqlutil.Rebind(platform.YDB, "UPSERT INTO `ptah_ydb_connection/narrow` (`id`, `small`) VALUES (?, ?)")
+
+	_, wideErr := conn.ExecContext(c.Context(), insert, 1, 5)
+	_, narrowErr := conn.ExecContext(c.Context(), insert, 2, int32(5))
+
+	c.Assert(wideErr, qt.ErrorMatches, `(?s).*Failed to convert 'small': Int64 to Optional<Int32>.*`)
+	c.Assert(narrowErr, qt.IsNil)
+	var stored int32
+	c.Assert(conn.QueryRowContext(c.Context(),
+		"SELECT `small` FROM `ptah_ydb_connection/narrow` WHERE `id` = 2").Scan(&stored), qt.IsNil)
+	c.Assert(stored, qt.Equals, int32(5))
+}
+
+// An isolated read session is a snapshot read-only transaction on YDB: a read
+// runs, and a write inside it is refused by the server.
+func TestYDBConnection_IsolatedReadSessionIsReadOnly(t *testing.T) {
+	c := qt.New(t)
+	conn := openYDB(c)
+	dropTables(c, conn, connectionSchemas)
+	c.Cleanup(func() { dropTables(c, conn, connectionSchemas) })
+	c.Assert(conn.Writer().ExecuteSQL(c.Context(),
+		"CREATE TABLE `ptah_ydb_connection/guarded` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))"), qt.IsNil)
+
+	var rows int64
+	readErr := conn.WithIsolatedQuerySession(c.Context(), &sql.TxOptions{ReadOnly: true},
+		func(queryer dbschema.IsolatedQueryer) error {
+			return queryOne(c.Context(), queryer, "SELECT COUNT(*) FROM `ptah_ydb_connection/guarded`", &rows)
+		})
+	writeErr := conn.WithIsolatedQuerySession(c.Context(), &sql.TxOptions{ReadOnly: true},
+		func(queryer dbschema.IsolatedQueryer) error {
+			return queryOne(c.Context(), queryer, "UPSERT INTO `ptah_ydb_connection/guarded` (`id`) VALUES (1l)")
+		})
+
+	c.Assert(readErr, qt.IsNil)
+	c.Assert(rows, qt.Equals, int64(0))
+	// The failed write ended the transaction on the server, so the rollback
+	// that follows finds none; that is not reported over the refusal.
+	c.Assert(writeErr, qt.ErrorMatches, `(?s).*can't be performed in read only transaction.*`)
+	c.Assert(strings.Contains(writeErr.Error(), "roll back transaction"), qt.IsFalse)
+}
+
+// db verify evaluates its assertions in the isolated session above. One that
+// holds is verified, and one the server cannot run is reported as errored
+// rather than ending the run.
+func TestYDBConnection_VerifiesChecks(t *testing.T) {
+	c := qt.New(t)
+	conn := openYDB(c)
+
+	report, err := migrator.VerifyChecks(c.Context(), conn, []migrator.Check{
+		{Name: "holds", Assert: "SELECT 1 = 1"},
+		{Name: "errors", Assert: "SELECT COUNT(*) = 0 FROM `ptah_ydb_connection/no_such_table`"},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Results, qt.HasLen, 2)
+	c.Assert(report.Results[0].Status, qt.Equals, migrator.VerifyStatusVerified)
+	c.Assert(report.Results[1].Status, qt.Equals, migrator.VerifyStatusErrored)
+}
+
+// A transaction whose read another transaction changed before it committed is
+// aborted (`Transaction locks invalidated`), and the error the driver returns
+// is the one the retry reads as safe to run again.
+func TestYDBConnection_AbortedTransactionIsRetryable(t *testing.T) {
+	c := qt.New(t)
+	conn := openYDB(c)
+	dropTables(c, conn, connectionSchemas)
+	c.Cleanup(func() { dropTables(c, conn, connectionSchemas) })
+	c.Assert(conn.Writer().ExecuteSQL(c.Context(),
+		"CREATE TABLE `ptah_ydb_connection/contended` (`id` Int64 NOT NULL, `v` Int64, PRIMARY KEY (`id`))"), qt.IsNil)
+	c.Assert(conn.Writer().ExecuteSQL(c.Context(),
+		"UPSERT INTO `ptah_ydb_connection/contended` (`id`, `v`) VALUES (1l, 1l)"), qt.IsNil)
+
+	tx, err := conn.BeginTx(c.Context(), &sql.TxOptions{Isolation: sql.LevelSerializable})
+	c.Assert(err, qt.IsNil)
+	var v int64
+	c.Assert(tx.QueryRowContext(c.Context(),
+		"SELECT `v` FROM `ptah_ydb_connection/contended` WHERE `id` = 1").Scan(&v), qt.IsNil)
+	c.Assert(conn.Writer().ExecuteSQL(c.Context(),
+		"UPDATE `ptah_ydb_connection/contended` SET `v` = 2l WHERE `id` = 1"), qt.IsNil)
+	_, err = tx.ExecContext(c.Context(), "UPDATE `ptah_ydb_connection/contended` SET `v` = 10l WHERE `id` = 1")
+	c.Assert(err, qt.IsNil)
+
+	commitErr := tx.Commit()
+
+	c.Assert(commitErr, qt.ErrorMatches, `(?s).*Transaction locks invalidated.*`)
+	c.Assert(atlasretry.IsRetryable(commitErr), qt.IsTrue)
+}
+
+// The writer judges a statement by its status. YDB answers CREATE TABLE IF NOT
+// EXISTS on an existing table, and ADD INDEX on a table holding rows, with
+// issue text and a success status, and both succeed. Two DDL statements in
+// one text run as two queries, so the second sees the column the first added.
+func TestYDBWriter_StatementsSucceedByStatus(t *testing.T) {
+	c := qt.New(t)
+	conn := openYDB(c)
+	dropTables(c, conn, connectionSchemas)
+	c.Cleanup(func() { dropTables(c, conn, connectionSchemas) })
+	create := "CREATE TABLE IF NOT EXISTS `ptah_ydb_connection/statused` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))"
+	c.Assert(conn.Writer().ExecuteSQL(c.Context(), create), qt.IsNil)
+	c.Assert(conn.Writer().ExecuteSQL(c.Context(),
+		"UPSERT INTO `ptah_ydb_connection/statused` (`id`) VALUES (1l), (2l)"), qt.IsNil)
+
+	c.Assert(conn.Writer().ExecuteSQL(c.Context(), create), qt.IsNil)
+	c.Assert(conn.Writer().ExecuteSQL(c.Context(),
+		"ALTER TABLE `ptah_ydb_connection/statused` ADD COLUMN `v` Utf8;\n"+
+			"ALTER TABLE `ptah_ydb_connection/statused` ADD INDEX `by_v` GLOBAL SYNC ON (`v`);"), qt.IsNil)
+
+	live := readScoped(c, conn, connectionSchemas)
+	c.Assert(columnNamesOf(tableNamed(c, live, connectionSchema, "statused")), qt.DeepEquals, []string{"id", "v"})
+	c.Assert(indexNamesOf(live), qt.DeepEquals, []string{"by_v"})
+}
+
+// An object Ptah does not model is recorded by the read, not dropped from it
+// in silence, and a table setting is recorded the same way.
+func TestYDBReader_RecordsWhatItDoesNotModel(t *testing.T) {
+	c := qt.New(t)
+	conn := openYDB(c)
+	dropTables(c, conn, connectionSchemas)
+	dropObjects(c, conn)
+	c.Cleanup(func() {
+		dropObjects(c, conn)
+		dropTables(c, conn, connectionSchemas)
+	})
+	for _, statement := range []string{
+		"CREATE TABLE `ptah_ydb_connection/base` (`id` Int64 NOT NULL, `ts` Timestamp, PRIMARY KEY (`id`)) " +
+			"WITH (TTL = Interval('P1D') ON `ts`)",
+		"CREATE VIEW `ptah_ydb_connection/v` WITH (security_invoker = TRUE) AS SELECT 1 AS a",
+		"CREATE TOPIC `ptah_ydb_connection/events`",
+		"CREATE TABLE `ptah_ydb_connection/olap` (`id` Int64 NOT NULL, PRIMARY KEY (`id`)) " +
+			"PARTITION BY HASH(`id`) WITH (STORE = COLUMN)",
+	} {
+		c.Assert(conn.Writer().ExecuteSQL(c.Context(), statement), qt.IsNil, qt.Commentf("execute: %s", statement))
+	}
+
+	live := readScoped(c, conn, connectionSchemas)
+
+	c.Assert(tableNames(live), qt.DeepEquals, []string{"ptah_ydb_connection|base"})
+	c.Assert(live.NotDescribed.Describes(coverage.View, "ptah_ydb_connection.v"), qt.IsFalse)
+	c.Assert(live.NotDescribed.Describes(coverage.Topic, "ptah_ydb_connection.events"), qt.IsFalse)
+	c.Assert(live.NotDescribed.Describes(coverage.ColumnTable, "ptah_ydb_connection.olap"), qt.IsFalse)
+	c.Assert(live.NotDescribed.Describes(coverage.TTL, "ptah_ydb_connection.base"), qt.IsFalse)
+}
+
+// An index kind the reader does not read is refused by name rather than read
+// as a plain global index, which is how ydb-go-sdk's own description reads it.
+func TestYDBReader_RefusesAVectorIndex(t *testing.T) {
+	c := qt.New(t)
+	conn := openYDB(c)
+	dropTables(c, conn, connectionSchemas)
+	c.Assert(conn.Writer().ExecuteSQL(c.Context(),
+		"CREATE TABLE `ptah_ydb_connection/vectors` (`id` Int64 NOT NULL, `emb` String, PRIMARY KEY (`id`), "+
+			"INDEX `by_emb` GLOBAL USING vector_kmeans_tree ON (`emb`) "+
+			"WITH (distance=cosine, vector_type=\"float\", vector_dimension=3, levels=1, clusters=2))"), qt.IsNil)
+	c.Cleanup(func() {
+		c.Assert(conn.Writer().ExecuteSQL(context.Background(), "DROP TABLE `ptah_ydb_connection/vectors`"), qt.IsNil)
+	})
+
+	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, connectionSchemas)
+
+	c.Assert(err, qt.ErrorMatches, `YDB table /\w+/ptah_ydb_connection/vectors: index "by_emb" is a vector_kmeans_tree index: `+
+		regexp.QuoteMeta(ydbgap.IndexFamilies.Message()))
+	c.Assert(live, qt.IsNil)
+}
+
+// dropObjects drops what the unmodeled-object test creates besides tables.
+func dropObjects(c *qt.C, conn *dbschema.DatabaseConnection) {
+	c.Helper()
+	for _, statement := range []string{
+		"DROP VIEW IF EXISTS `ptah_ydb_connection/v`",
+		"DROP TOPIC IF EXISTS `ptah_ydb_connection/events`",
+		"DROP TABLE IF EXISTS `ptah_ydb_connection/olap`",
+	} {
+		c.Assert(conn.Writer().ExecuteSQL(context.Background(), statement), qt.IsNil, qt.Commentf("execute: %s", statement))
+	}
+}
+
+// queryOne runs query in an isolated session and scans its one row into
+// destinations, which may be none.
+func queryOne(ctx context.Context, queryer dbschema.IsolatedQueryer, query string, destinations ...any) error {
+	result, err := queryer.QueryContext(ctx, query)
+	if err != nil {
+		return err
+	}
+	defer result.Close()
+	for result.Next() {
+		if err := result.Scan(destinations...); err != nil {
+			return err
+		}
+	}
+	return result.Err()
+}
