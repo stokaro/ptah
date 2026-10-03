@@ -725,10 +725,18 @@ procedure, and grants are compared per individual privilege, so a
 `privilege="SELECT,INSERT"` list round-trips cleanly through introspection. A
 grant on a sequence is described with `on_sequence`, so the description
 compares equal to the database it was read from. That holds for the sequence a
-`SERIAL` or identity column owns too: write it under the name the server gave
-it, such as `GRANT USAGE ON SEQUENCE items_id_seq TO app`, and Ptah reads it
-back, plans it only when the database lacks it, and revokes it from a role the
-schema manages when the declaration leaves it out.
+`SERIAL` or identity column owns too, such as `GRANT USAGE ON SEQUENCE
+items_id_seq TO app`: Ptah reads it back, plans it only when the database lacks
+it, and revokes it from a role the schema manages when the declaration leaves
+it out.
+
+Such a grant belongs to the column, not to the sequence's name. Renaming a
+table or a column leaves its sequence's name as it was, so a table created as
+`items` and renamed to `products` keeps `items_id_seq`, while its `BIGSERIAL`
+column creates `products_id_seq` on an empty database. Ptah matches a grant
+written with either name to the column. A description from `schema inspect`
+names the sequence the column creates, so it replays on an empty database, and
+a plan names the sequence the database holds.
 
 A function or procedure is named with its argument types, because PostgreSQL
 tells overloads apart by them: `on_function="purge_workspace(uuid)"` in Go,

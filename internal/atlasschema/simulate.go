@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"ptah.run/catalog"
@@ -16,6 +17,7 @@ import (
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devlock"
+	"ptah.run/internal/sqlident"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -478,17 +480,79 @@ func recreateCurrentSchema(
 	if err != nil {
 		return fmt.Errorf("compare current schema with dev database: %w", err)
 	}
-	if !diff.HasChanges() {
+	if diff.HasChanges() {
+		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, info.Dialect, planner.Options{
+			Capabilities: info.Capabilities,
+		})
+		if err != nil {
+			return fmt.Errorf("generate current schema DDL for dev database: %w", err)
+		}
+		if err := executeApplyStatements(ctx, devConn.Writer(), statements); err != nil {
+			return err
+		}
+	}
+	return nameColumnSequencesAsTarget(ctx, devConn, current)
+}
+
+// nameColumnSequencesAsTarget renames each sequence a dev column owns to the
+// name the target's column owns it under.
+//
+// The baseline writes a serial or identity column as its shorthand, so the dev
+// database creates the column's sequence under the name PostgreSQL gives it.
+// The target may hold another one: renaming a table or a column leaves its
+// sequence's name as it was. A plan names the target's sequence, in a grant on
+// it for one, and without this rename the rehearsal of that plan fails with
+// `relation "items_id_seq" does not exist` before the target is reached
+// (stokaro/ptah#4064). The renames go through temporary names, so one cannot
+// collide with a sequence another column holds under the name it takes.
+func nameColumnSequencesAsTarget(
+	ctx context.Context,
+	devConn *dbschema.DatabaseConnection,
+	current *catalog.Database,
+) error {
+	dialect := devConn.Info().Dialect
+	if current == nil || !platform.IsPostgresFamily(dialect) {
 		return nil
 	}
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, info.Dialect, planner.Options{
-		Capabilities: info.Capabilities,
-	})
-
-	if err != nil {
-		return fmt.Errorf("generate current schema DDL for dev database: %w", err)
+	want := make(map[string]string)
+	for _, table := range current.Tables {
+		for _, column := range table.Columns {
+			if column.OwnedSequence != "" {
+				want[columnSequenceKey(table.Schema, table.Name, column.Name)] = column.OwnedSequence
+			}
+		}
 	}
-	return executeApplyStatements(ctx, devConn.Writer(), statements)
+	if len(want) == 0 {
+		return nil
+	}
+	dev, err := dbschema.ReadSchemaWithSchemasContext(ctx, devConn, nil)
+	if err != nil {
+		return fmt.Errorf("read dev database sequences: %w", err)
+	}
+	var moves, settles []string
+	for _, table := range dev.Tables {
+		for _, column := range table.Columns {
+			target, ok := want[columnSequenceKey(table.Schema, table.Name, column.Name)]
+			if !ok || column.OwnedSequence == "" || column.OwnedSequence == target {
+				continue
+			}
+			temporary := fmt.Sprintf("ptah_rehearsal_seq_%d", len(moves))
+			moves = append(moves, "ALTER SEQUENCE "+sqlident.QualifiedIdent(dialect, table.Schema, column.OwnedSequence)+
+				" RENAME TO "+sqlident.Ident(dialect, temporary))
+			settles = append(settles, "ALTER SEQUENCE "+sqlident.QualifiedIdent(dialect, table.Schema, temporary)+
+				" RENAME TO "+sqlident.Ident(dialect, target))
+		}
+	}
+	if err := executeApplyStatements(ctx, devConn.Writer(), slices.Concat(moves, settles)); err != nil {
+		return fmt.Errorf("name dev database sequences as the target names them: %w", err)
+	}
+	return nil
+}
+
+// columnSequenceKey identifies a column across the target's read and the dev
+// database's, which name the same schema the same way.
+func columnSequenceKey(schema, table, column string) string {
+	return catalog.QualifyTableName(schema, table) + "." + column
 }
 
 // catalogExtensionNames is the set of extensions a read database holds.

@@ -46,18 +46,19 @@ func GrantsWithSemantics(
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
 ) {
+	sequences := newColumnSequences(desired, database, semantics)
 	generatedGrantMap := make(map[grantIdentity]difftypes.GrantRef)
 	generatedGrantRoles := make(map[string]bool)
 	for _, grant := range desired.Grants {
 		generatedGrantRoles[grant.Role] = true
 		for _, ref := range grantRefsFromGenerated(grant) {
-			generatedGrantMap[newGrantIdentity(ref, semantics)] = ref
+			generatedGrantMap[sequences.desiredKey(newGrantIdentity(ref, semantics))] = ref
 		}
 	}
 	// A revoked grant is asserted absent whoever holds it, so it reaches a
 	// grantee the removal map below never looks at: PUBLIC, and a role the
 	// schema does not manage.
-	revokedGrants := revokedGrantIdentities(desired, semantics)
+	revokedGrants := revokedGrantIdentities(desired, sequences, semantics)
 
 	managedRoles := make(map[string]bool)
 	for _, role := range desired.Roles {
@@ -84,7 +85,7 @@ func GrantsWithSemantics(
 			continue
 		}
 		ref := grantRefFromDatabase(grant)
-		key := newGrantIdentity(ref, semantics)
+		key := sequences.databaseKey(newGrantIdentity(ref, semantics))
 		if managedRoles[ref.Role] || generatedGrantRoles[ref.Role] {
 			databaseGrantMapForAdditions[key] = ref
 		}
@@ -103,6 +104,8 @@ func GrantsWithSemantics(
 	}
 
 	planGrantAdditions(generatedGrantMap, databaseGrantMapForAdditions, managedRoles, diff)
+	sequences.nameAsDatabase(diff.GrantsAdded, semantics)
+	sequences.nameAsDatabase(diff.GrantOptionsAdded, semantics)
 	for key, ref := range databaseGrantMapForRemovals {
 		if !declaredGrant(key, generatedGrantMap) {
 			diff.GrantsRemoved = append(diff.GrantsRemoved, ref)
@@ -207,11 +210,15 @@ func declaredGrant(key grantIdentity, declared map[grantIdentity]difftypes.Grant
 // revokedGrantIdentities keys every privilege the desired schema revokes. A
 // revoked ALL is keyed as itself and as each privilege it names, so it matches
 // a catalog read's per-privilege rows as well as a file's ALL.
-func revokedGrantIdentities(desired *schemamodel.Database, semantics identifier.Semantics) map[grantIdentity]bool {
+func revokedGrantIdentities(
+	desired *schemamodel.Database,
+	sequences columnSequences,
+	semantics identifier.Semantics,
+) map[grantIdentity]bool {
 	revoked := make(map[grantIdentity]bool)
 	for _, grant := range desired.RevokedGrants {
 		for _, ref := range grantRefsFromGenerated(grant) {
-			key := newGrantIdentity(ref, semantics)
+			key := sequences.desiredKey(newGrantIdentity(ref, semantics))
 			revoked[key] = true
 			if key.privilege != allPrivilege {
 				continue
