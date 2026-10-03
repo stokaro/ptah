@@ -45,7 +45,7 @@ measured.
 | [YugabyteDB](../distributed/) | `yugabytedb` (`yugabyte`, `ysql`) | `yugabytedb://`, `ysql://` | PostgreSQL-compatible path with capability differences. |
 | [ClickHouse](../clickhouse/) | `clickhouse` (`ch`) | `clickhouse://`, `ch://` | Capability-limited support. |
 | [Spanner (PostgreSQL interface)](../distributed/) | `spanner` (`cloudspanner`, `google-spanner`, `google_spanner`) | `spanner://` | Most conservative capability-limited support. |
-| YDB | `ydb` (`ydbs`) | `ydb://`, `ydbs://` | Renders and plans YQL for row tables. Connecting to a server, the migrator and the YDB object families are planned in stokaro/ptah#4015. |
+| YDB | `ydb` (`ydbs`) | `ydb://`, `ydbs://` | Renders, plans, reads a live catalog and applies a schema for row tables. The migrator, data changes, dev databases and the YDB object families are planned in stokaro/ptah#4015. |
 | [Oracle](../oracle/) | `oracle` | `oracle://` | Renders, plans, and reads a live catalog. |
 
 Accepted URL formats, and the difference between target, dev, shadow, and

@@ -49,7 +49,7 @@ func RegisterConnectTimeoutFlag(flags *pflag.FlagSet, target *string) {
 // verb whose empty value leaves the read at the schema the connection landed
 // in.
 func RegisterSchemasFlag(flags *pflag.FlagSet, target *string) {
-	flags.StringVar(target, SchemasFlagName, "", "Comma-separated database schemas to introspect (PostgreSQL-family only). Empty uses the connection default schema.")
+	flags.StringVar(target, SchemasFlagName, "", "Comma-separated database schemas to introspect: PostgreSQL-family and SQL Server schemas, or YDB directories relative to the database root. Empty uses the connection default schema, and on YDB every directory.")
 }
 
 // RegisterURLScopedSchemasFlag registers the same flag for the verbs whose
@@ -68,9 +68,9 @@ func RegisterSchemasFlag(flags *pflag.FlagSet, target *string) {
 // `compare`, `migrate` and the rest keep the narrower default they document.
 func RegisterURLScopedSchemasFlag(flags *pflag.FlagSet, target *string) {
 	flags.StringVar(target, SchemasFlagName, "", "Comma-separated database schemas to introspect: PostgreSQL-family schemas, "+
-		"or the databases of a MySQL or MariaDB URL that names none. "+
+		"the databases of a MySQL or MariaDB URL that names none, or YDB directories relative to the database root. "+
 		"Empty lets the URL decide: a URL pinning search_path is read at that schema, one pinning none across every schema, "+
-		"and a MySQL or MariaDB URL naming no database across every user database.")
+		"a MySQL or MariaDB URL naming no database across every user database, and a YDB URL across every directory.")
 }
 
 // RegisterMigrationsSchemaFlag registers the migration tracking table schema flag.
