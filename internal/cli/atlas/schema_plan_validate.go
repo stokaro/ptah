@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/internal/cli/internal/cmdutil"
+	"ptah.run/internal/devdocker"
 )
 
 type atlasSchemaPlanValidateOptions struct {
@@ -119,6 +120,12 @@ since a local plan file is approved by operator review.`,
 }
 
 func runAtlasSchemaPlanValidate(cmd *cobra.Command, opts atlasSchemaPlanValidateOptions) error {
+	// Resolved first, so a malformed declaration fails every run and not only
+	// one that reaches the rehearsal.
+	devServerDisposable, err := devdocker.DisposableServerDeclared()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	transition, _, err := resolveAtlasSchemaPlanTransitionConfig(
 		cmd, atlasSchemaPlanValidateVerb, opts.atlasSchemaPlanTransitionFlags)
 	if err != nil {
@@ -129,7 +136,7 @@ func runAtlasSchemaPlanValidate(cmd *cobra.Command, opts atlasSchemaPlanValidate
 		return cmdutil.Fail(cmd, err)
 	}
 	if _, err := verifyAtlasSchemaPlanFile(
-		cmd, atlasSchemaPlanValidateVerb, opts.file, opts.atlasSchemaPlanTransitionFlags); err != nil {
+		cmd, atlasSchemaPlanValidateVerb, opts.file, opts.atlasSchemaPlanTransitionFlags, devServerDisposable); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	// Success is silent on stdout. The shape of a successful plan validation is

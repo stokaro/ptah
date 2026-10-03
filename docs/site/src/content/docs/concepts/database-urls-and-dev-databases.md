@@ -289,7 +289,7 @@ scheduler runs it during the rest of the command.
 The decision reads what Ptah recorded when it started the server, not the
 URL's spelling. A named server keeps the whole list, since it may hold
 databases and roles that are not the run's. Its refusal names the two ways to
-this realm: `docker://` and the declaration below.
+this realm: a docker URL and the declaration below.
 
 ### A server declared disposable
 
@@ -309,9 +309,9 @@ A later command that replays the same directory on the same server meets it,
 so a migration that creates a role without checking for it first fails the
 second time. Declare only a server that nothing else uses.
 
-Every command that replays a migration directory on a dev database reads the
-variable, on both binaries, and refuses a non-boolean value before any work,
-whether or not it replays. Strict Atlas
+Every command that replays a migration directory or rehearses a plan on a dev
+database reads the variable, on both binaries, and refuses a non-boolean value
+before any work, whether or not it replays. Strict Atlas
 compatibility keeps the variable, because the pinned community binary runs
 these statements on any dev database.
 

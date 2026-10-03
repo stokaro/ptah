@@ -677,10 +677,11 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	// applied — including edited SQL — and a failed rehearsal refuses the
 	// apply before the target is touched.
 	if err := plan.SimulateOnDev(cmd.Context(), atlasschema.SimulateOptions{
-		DevURL:      opts.devURL,
-		TargetURL:   opts.url,
-		DesiredURLs: opts.toURLs,
-		Statements:  statements,
+		DevURL:              opts.devURL,
+		TargetURL:           opts.url,
+		DesiredURLs:         opts.toURLs,
+		Statements:          statements,
+		DevServerDisposable: opts.devServerDisposable,
 	}); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -941,15 +942,16 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	// test-drives a plan, and it would be useless if verifying a foreign plan
 	// required committing to apply it.
 	if err := rehearseAtlasSchemaApplyPlan(cmd, conn, rehearsePlanParams{
-		policy:      rehearseWhenUnverified,
-		format:      planFormat,
-		statements:  statements,
-		desired:     desired,
-		exclude:     plan.Exclude,
-		txMode:      txMode,
-		devURL:      opts.devURL,
-		targetURL:   opts.url,
-		desiredURLs: opts.toURLs,
+		policy:              rehearseWhenUnverified,
+		format:              planFormat,
+		statements:          statements,
+		desired:             desired,
+		exclude:             plan.Exclude,
+		txMode:              txMode,
+		devURL:              opts.devURL,
+		targetURL:           opts.url,
+		desiredURLs:         opts.toURLs,
+		devServerDisposable: opts.devServerDisposable,
 	}); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -1008,6 +1010,9 @@ type rehearsePlanParams struct {
 	// desiredURLs are the --to sources, refused as dev databases for the same
 	// reason.
 	desiredURLs []string
+	// devServerDisposable is the operator's declaration that the server devURL
+	// names is the run's own; see [atlasschema.SimulateOptions.DevServerDisposable].
+	devServerDisposable bool
 }
 
 // planRehearsalPolicy selects how hard the dev-database replay is required.
@@ -1127,11 +1132,12 @@ func rehearseAtlasSchemaApplyPlan(
 		devURL = ephemeralURL
 	}
 	return atlasschema.RehearsePlanStatements(cmd.Context(), conn, params.statements, params.desired, atlasschema.PlanRehearsalOptions{
-		DevURL:      devURL,
-		TargetURL:   params.targetURL,
-		DesiredURLs: params.desiredURLs,
-		Exclude:     params.exclude,
-		TxMode:      params.txMode,
+		DevURL:              devURL,
+		TargetURL:           params.targetURL,
+		DesiredURLs:         params.desiredURLs,
+		Exclude:             params.exclude,
+		TxMode:              params.txMode,
+		DevServerDisposable: params.devServerDisposable,
 	})
 }
 
