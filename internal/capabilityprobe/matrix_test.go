@@ -565,6 +565,7 @@ func TestCIMatrix_ProbeOnlyCellsAreDeclaredAsSuch(t *testing.T) {
 		{name: "clickhouse 24.10 is probe-only", id: "clickhouse-24-10", wantSuite: false},
 		{name: "spanner runs the suite now that its cleanup path lands", id: "spanner-0", wantSuite: true},
 		{name: "postgres runs the suite too", id: "postgres-18", wantSuite: true},
+		{name: "ydb runs the scenarios that opted in", id: "ydb-25-1", wantSuite: true},
 	}
 
 	for _, tt := range tests {

@@ -506,9 +506,12 @@ var launchers = map[string]launcher{
 		// disagree, so a default that moved in a new build turns the cell red
 		// instead of being measured in the preset's place.
 		url: "ydb://localhost:2136/local?monitoring=http://localhost:8765",
-		suiteSkip: "the integration runner has no YDB target yet; the YDB live tests run in the tagged " +
-			"integration contour against a 26.2 server, and this cell adds the capability-probe half " +
-			"(stokaro/ptah#4015)",
+		// The runner's YDB target, with the URL go-integration-tests.yml gives
+		// it: the scenarios that opted in through YDBCompatible run, and the
+		// runner skips every other one on YDB.
+		suiteDatabase: "ydb",
+		suiteURLEnv:   "YDB_URL",
+		suiteURL:      "ydb://localhost:2136/local",
 	},
 }
 
