@@ -140,10 +140,12 @@ func TestAtlasCheckFileMode(t *testing.T) {
 	c.Assert(atlasCheckFileMode("SELECT 1;\n-- atlas:assert oneof\nSELECT 0;\n", platform.Postgres), qt.Equals, checkGroupAll)
 }
 
-// Oracle is in the list through a translation rather than through its driver:
-// go-ora refuses a read-only BeginTx, and dbschema.WithIsolatedQuerySession
-// carries the request to the server as SET TRANSACTION READ ONLY. Asking for it
-// here is what makes that translation run.
+// Oracle and YDB are in the list through a translation rather than through
+// their drivers: go-ora refuses a read-only BeginTx, and ydb-go-sdk refuses
+// one at the default isolation, so dbschema.WithIsolatedQuerySession carries
+// the request to the server as SET TRANSACTION READ ONLY on Oracle and as a
+// snapshot read-only transaction on YDB. Asking for it here is what makes that
+// translation run.
 func TestCheckTransactionOptions_ReadOnlyDialects(t *testing.T) {
 	dialects := []string{
 		platform.Postgres,
@@ -153,6 +155,7 @@ func TestCheckTransactionOptions_ReadOnlyDialects(t *testing.T) {
 		platform.MySQL,
 		platform.MariaDB,
 		platform.Oracle,
+		platform.YDB,
 	}
 
 	for _, dialect := range dialects {
