@@ -1035,9 +1035,33 @@ func normalizeColumnTypesForDialect(
 		return normalize.Type(oracletype.Map(genType)), normalize.Type(dbType)
 	case platform.YDB:
 		return ydbComparableTypes(genType, dbType)
+	case platform.CockroachDB:
+		return normalize.Type(cockroachCatalogTypeName(genType)), normalize.Type(cockroachCatalogTypeName(dbType))
 	default:
 		return normalize.Type(genType), normalize.Type(dbType)
 	}
+}
+
+// cockroachCatalogTypeName spells a CockroachDB type by the name its catalog
+// reports for it, where the two differ.
+//
+// CockroachDB names its string and byte types STRING and BYTES and reports them
+// as text and bytea: measured on v26.3.2, a column declared STRING reads back
+// as text, STRING[] as text[], and BYTES as bytea. Compared as declared, each
+// planned ALTER COLUMN ... TYPE to the type the column had, on every run
+// (stokaro/ptah#4059). A sized STRING(n) is not folded: it is a text column
+// with a width, read back as STRING(n), not the varchar(n) it resembles.
+func cockroachCatalogTypeName(typeName string) string {
+	base, depth := splitArrayDepth(typeName)
+	switch strings.ToLower(strings.TrimSpace(base)) {
+	case "string":
+		base = "text"
+	case "bytes":
+		base = "bytea"
+	default:
+		return typeName
+	}
+	return base + strings.Repeat("[]", depth)
 }
 
 // resolvedDeclaredType is the type a server builds for a declaration, where it

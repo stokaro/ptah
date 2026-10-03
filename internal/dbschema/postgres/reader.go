@@ -921,6 +921,7 @@ func (r *Reader) readColumnsForSchema(ctx context.Context, schemaName string) (m
 			col.GeneratedKind = postgresGeneratedKind(generatedKind)
 		}
 		col.IdentityGeneration = postgresIdentityGeneration(identityKind)
+		col.FormattedType = cockroachSizedString(r.dialect, col)
 
 		if col.ColumnDefault != nil {
 			defaultVal := *col.ColumnDefault
@@ -973,6 +974,24 @@ func keepColumnSequencesOnly(tables []catalog.Table, sequences []catalog.Sequenc
 			}
 		}
 	}
+}
+
+// cockroachSizedString answers the spelling a CockroachDB STRING(n) column is
+// compared and inspected by, and the column's FormattedType otherwise.
+//
+// CockroachDB reports a column declared STRING(10) as data_type text with a
+// character_maximum_length of 10, a type of its own rather than VARCHAR(10),
+// which it reports as character varying. Measured on v26.3.2. Read as text,
+// the width is gone: STRING(10) and STRING(20) read the same, and a schema
+// inspect writes the column unbounded. Spelled text(10), the server refuses
+// it as a syntax error, so the spelling is the server's own STRING(10)
+// (stokaro/ptah#4059).
+func cockroachSizedString(dialect string, column catalog.Column) string {
+	if dialect != platform.CockroachDB || column.FormattedType != "" ||
+		!strings.EqualFold(column.DataType, "text") || column.CharacterMaxLength == nil {
+		return column.FormattedType
+	}
+	return fmt.Sprintf("STRING(%d)", *column.CharacterMaxLength)
 }
 
 func postgresGeneratedKind(code string) string {
