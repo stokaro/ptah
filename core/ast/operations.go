@@ -75,9 +75,10 @@ type ModifyColumnOperation struct {
 	// PreviousNullable is the best-known existing database nullability before
 	// the modification. Safety analysis uses it to distinguish DROP NOT NULL
 	// from SET NOT NULL. Most renderers ignore it. Oracle's MODIFY repeats a
-	// nullability clause only when this says it changed, and the ClickHouse
-	// renderer refuses a nullable column made non-nullable without a default
-	// where the target refuses that statement.
+	// nullability clause only when this says it changed. The ClickHouse
+	// renderer fills the NULL rows of a nullable column made non-nullable from
+	// its default first, refuses one without a default, and adds a MATERIALIZED
+	// one back rather than modifying it (stokaro/ptah#4025).
 	PreviousNullable bool
 	// HasPreviousNullable reports whether PreviousNullable was populated.
 	HasPreviousNullable bool

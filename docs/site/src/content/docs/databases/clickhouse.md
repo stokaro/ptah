@@ -118,31 +118,47 @@ while the default is still there. In a single `ALTER`, ClickHouse 24.10 keeps
 the default and reports no error. A down migration that takes a default away is
 planned the same way.
 
-Making a nullable column `NOT NULL` depends on the server line:
+Making a nullable column `NOT NULL` needs a default for the rows that hold
+NULL. The server lines handle those rows differently. ClickHouse 26.3 and later
+refuse `MODIFY COLUMN n Int32` without a `DEFAULT`, even on an empty table, and
+fill every NULL row from the `DEFAULT` when there is one. ClickHouse 24.10 and
+25.8 accept the statement with or without a `DEFAULT`, change the column's
+type, and then fail on a row that holds NULL, which leaves the table
+unreadable.
 
-| Server | Column declares a default | Column declares no default |
-| --- | --- | --- |
-| 24.11 and later | `MODIFY COLUMN n Int32 DEFAULT '7'`; every NULL row takes the default | refused when the plan is made |
-| 24.10 | `MODIFY COLUMN n Int32 DEFAULT '7'` | `MODIFY COLUMN n Int32` |
+So a column that declares a default has its NULL rows filled first, on every
+line, by an update that waits for its mutation:
 
-ClickHouse 26.3 and 26.9 refuse the statement without a `DEFAULT`, even on an
-empty table, with `Please specify DEFAULT expression in ALTER MODIFY COLUMN
-statement`. Ptah does not invent a value such as `0` for the NULL rows, so it
-refuses the change and asks for a default. The decision reads the
-`alter_column_set_not_null` key in the
-[capability gates](../../reference/capabilities/). The server line comes from
-the connection, or from `--server-version` on `ptah schema diff`. Without
-either, Ptah plans for 24.10.
+```sql
+ALTER TABLE asn UPDATE n = '7' WHERE n IS NULL SETTINGS mutations_sync = 2;
+ALTER TABLE asn MODIFY COLUMN n Int32 DEFAULT '7';
+```
 
-The same rule applies to a down migration. On 24.11 and later,
-`ptah migrations generate` refuses to make a `NOT NULL` column without a
-default nullable, because the down migration would have to make it `NOT NULL`
-again. To make such a column nullable, give it a default in one migration,
-then make it nullable in the next.
+A column that declares no default is refused when the plan is made, on every
+line. Ptah does not invent a value such as `0` for the NULL rows. Give the
+column a default, which the NULL rows take.
 
-On 24.10, a row that holds NULL makes the conversion fail, with or without a
-default, and the table is left unreadable (stokaro/ptah#4025). Check for NULL
-rows before you apply the change there.
+The same rule applies to a down migration. `ptah migrations generate` refuses
+to make a `NOT NULL` column without a default nullable, because the down
+migration would have to make it `NOT NULL` again. To make such a column
+nullable, give it a default in one migration, then make it nullable in the
+next.
+
+A nullable `MATERIALIZED` column made `NOT NULL` is dropped and added back as
+declared:
+
+```sql
+ALTER TABLE asn DROP COLUMN x;
+ALTER TABLE asn ADD COLUMN x Int32 MATERIALIZED id + 1;
+```
+
+On 26.3 and later, `MODIFY COLUMN` fails the conversion for such a column and
+leaves it unreadable. The column holds only what its expression computes, so
+dropping it loses nothing, and the server computes the values again for the
+existing rows. An expression that can yield NULL, such as `s + 1` over a
+nullable `s`, cannot back a non-nullable column on any line: reading a row
+where it yields NULL fails. An `ALIAS` column stores nothing, and
+`MODIFY COLUMN` changes its type on every line.
 
 ## Views and materialized views
 
