@@ -68,13 +68,17 @@ type DefaultPrivileges struct {
 //
 // Extensions stay installed with everything they own. Schemas, which only a
 // realm reset reads, are left as they are, contents and all. DefaultPrivileges
-// are returned to what they were. Server, which only a realm reset reads, says
-// whether the server's default user database may be reset. The zero value
-// keeps nothing and is on a [NamedServer].
+// are returned to what they were. Artifacts, which only a realm reset reads,
+// are the database-scoped objects the database held, such as an event trigger
+// or a publication: the reset cannot remove one, and leaves these alone where
+// it refuses any other. Server, which only a realm reset reads, says whether
+// the server's default user database may be reset. The zero value keeps
+// nothing and is on a [NamedServer].
 type Kept struct {
 	Extensions        []string
 	Schemas           []string
 	DefaultPrivileges DefaultPrivileges
+	Artifacts         []Object
 	Server            Server
 }
 

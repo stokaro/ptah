@@ -70,9 +70,10 @@ It stays best-effort for a reason that no amount of coverage changes: an
 emulator is evidence about the PostgreSQL interface, not about the managed
 service. Review generated SQL before relying on it.
 
-PostgreSQL and YugabyteDB reject unsupported database-scoped publications,
+PostgreSQL and YugabyteDB keep the database-scoped publications,
 subscriptions, logical replication slots, event triggers, and non-extension
-foreign-data objects before dev-database cleanup. PostgreSQL additionally
+foreign-data objects a dev database held when the command started, and reject
+one the run created before dev-database cleanup. PostgreSQL additionally
 removes database large objects inside the cleanup transaction; YugabyteDB does
 not support that catalog write path.
 

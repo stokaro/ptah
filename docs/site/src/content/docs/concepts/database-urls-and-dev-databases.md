@@ -173,10 +173,13 @@ exercise a real server dialect — see
   view, materialized view, live/window view, dictionary, or `Buffer`,
   `Distributed`, or `Merge` table. Older servers fail before cleanup because
   role-aware visibility cannot be proven safely.
-- **PostgreSQL-family cleanup rejects database-scoped artifacts.** PostgreSQL
-  and YugabyteDB reject publications, subscriptions, logical replication
-  slots, event triggers, and non-extension foreign-data wrappers, servers, or
-  user mappings before DDL. An object the server created when it built the
+- **PostgreSQL-family cleanup keeps the database-scoped artifacts it found.**
+  Publications, subscriptions, logical replication slots, event triggers, and
+  non-extension foreign-data wrappers, servers, or user mappings the dev
+  database held when the command started are its environment, as under Atlas:
+  the realm cleanup leaves them and checks they are still there. PostgreSQL
+  and YugabyteDB reject one the run created before DDL, since the cleanup
+  cannot remove it. An object the server created when it built the
   database template is not counted: YugabyteDB 2026.1.2 puts the foreign
   server `yb_global_views_server` into every database, and the cleanup leaves
   it, and the extensions it depends on, in place. PostgreSQL also removes and

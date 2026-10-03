@@ -413,3 +413,31 @@ func TestWriterDropDatabaseRealm_LivePostgresNamesWhatKeepsASchema(t *testing.T)
 		     + (SELECT count(*) FROM pg_ts_dict WHERE dictname = 'keep_td')`).Scan(&remaining), qt.IsNil)
 	c.Assert(remaining, qt.Equals, 2)
 }
+
+// TestWriterDropDatabaseRealmKeeping_LiveKeepsAnExtensionInAnUntouchedSchema
+// keeps an extension installed in a schema a pinned URL leaves untouched, as
+// the Supabase image installs uuid-ossp and pgcrypto in `extensions` and
+// pg_graphql in `graphql`. The cleanup leaves the schema where it is, and its
+// check that it finished does not expect to have recreated it
+// (stokaro/ptah#4055).
+func TestWriterDropDatabaseRealmKeeping_LiveKeepsAnExtensionInAnUntouchedSchema(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	liveDatabase := newPostgresWriterLiveDatabase(c, ctx, requirePostgresWriterFamilyLiveURL(c, dbtarget.PostgreSQL))
+	defer liveDatabase.cleanup()
+	db := liveDatabase.db
+	_, err := db.ExecContext(ctx, `
+		CREATE SCHEMA extensions;
+		CREATE EXTENSION hstore SCHEMA extensions;
+		CREATE TABLE public.replayed (id integer PRIMARY KEY);`)
+	c.Assert(err, qt.IsNil)
+
+	err = postgres.NewPostgreSQLWriter(db, "public").DropDatabaseRealmKeeping(ctx,
+		dbreset.Kept{Extensions: []string{"hstore"}, Schemas: []string{"extensions"}})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(postgresWriterLiveExtensionNames(c, ctx, db), qt.DeepEquals, []string{"hstore", "plpgsql"})
+	c.Assert(postgresWriterLiveSchemasLike(c, ctx, db, "extensions"), qt.DeepEquals, []string{"extensions"})
+	c.Assert(postgresWriterLiveRelationsLike(c, ctx, db, "replayed"), qt.Equals, 0)
+}
