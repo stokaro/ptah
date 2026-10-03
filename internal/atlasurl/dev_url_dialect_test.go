@@ -169,3 +169,43 @@ func TestDialectFromURL_RefusesAnImageDriverTheCommunityBinaryDoesNotRegister(t 
 	c.Assert(err, qt.ErrorMatches, `unsupported --dev-url dialect "docker\+sqlite://_/x:1/dev"`)
 	c.Assert(dialect, qt.Equals, "")
 }
+
+// TestDialectFromURL_ReadsADockerURLAsWritten pins that a docker URL with a
+// leading space is not a docker URL. Measured on the pinned community binary
+// v1.3.0, ` docker://sqlite/dev` answers `parse open url: first path segment in
+// URL cannot contain colon`, where `docker://sqlite/dev` answers `unsupported
+// docker image "sqlite"`: the space makes the value a relative path.
+func TestDialectFromURL_ReadsADockerURLAsWritten(t *testing.T) {
+	tests := []string{" docker://sqlite/dev", " docker://postgres/16/dev", " docker+postgres://_/postgres:17/dev"}
+
+	for _, rawURL := range tests {
+		t.Run(rawURL, func(t *testing.T) {
+			c := qt.New(t)
+			dialect, err := atlasurl.DialectFromURL(rawURL)
+			c.Assert(err, qt.ErrorMatches, `parse --dev-url: .*first path segment in URL cannot contain colon`)
+			c.Assert(dialect, qt.Equals, "")
+		})
+	}
+}
+
+// TestDialectFromURL_TrimsAnyOtherURL is the control: a database URL keeps the
+// surrounding space this function has always trimmed, and so does a docker URL
+// with a trailing space, which is part of its database name.
+func TestDialectFromURL_TrimsAnyOtherURL(t *testing.T) {
+	tests := []struct {
+		rawURL string
+		want   string
+	}{
+		{rawURL: " postgres://localhost/dev ", want: "postgres"},
+		{rawURL: "docker://postgres/16/dev ", want: "postgres"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.rawURL, func(t *testing.T) {
+			c := qt.New(t)
+			dialect, err := atlasurl.DialectFromURL(test.rawURL)
+			c.Assert(err, qt.IsNil)
+			c.Assert(dialect, qt.Equals, test.want)
+		})
+	}
+}

@@ -25,12 +25,35 @@
 //	docker:///dev                exit 1, `unsupported docker image ""`
 //	docker://sqlite/dev          exit 1, `unsupported docker image "sqlite"`
 //
-// Two of those rows are the reason this parser does not reuse
-// [atlasurl.DialectFromURL], which answers a dialect for both `docker://sqlite`
-// and `docker://postgres:16/dev`. Provisioning on either would make `ptah-compat`
-// exit 0 where the pinned binary exits 1, which AGENTS.md compatibility rule (a)
-// forbids outright. The host segment is therefore matched against an explicit
-// engine table and a colon in it is refused, in the pinned binary's own words.
+// Measured on 2026-10-03 on a Linux host with a local daemon, reading the
+// container the binary started with `docker inspect` (stokaro/ptah#4066):
+//
+//	docker://postgis/16-3.4/dev   exit 0, image postgis/postgis:16-3.4, env
+//	                              POSTGRES_PASSWORD alone, database dev created
+//	                              by the binary, `CREATE EXTENSION postgis` succeeds
+//	docker://postgis/16-3.4       exit 1, database postgres, where the image put
+//	                              PostGIS: `connected database is not clean`
+//	docker://pgvector/pg16/dev    exit 0, image pgvector/pgvector:pg16, env
+//	                              POSTGRES_PASSWORD and POSTGRES_DB=dev
+//	docker://pgvector/pg16        exit 0, database postgres
+//	docker://postgis/dev          exit 1, `Unable to find image 'postgis/postgis:dev'`
+//	docker://POSTGRES/16-alpine/dev     exit 1, `unsupported docker image "POSTGRES"`
+//	docker://clickhouse/24.8/dev        exit 1, `unknown driver "clickhouse"`
+//	docker://sqlserver/2022-latest/dev  exit 1, `unknown driver "sqlserver"`
+//
+// The engine is matched as written, so `POSTGRES`, `Postgres` and `POSTGIS` are
+// refused. Without a database Ptah creates `dev` for every engine, so
+// `docker://postgis/16-3.4` exits 0 here where the binary connects to the
+// database its own image filled and exits 1.
+//
+// The host segment is matched whole against an explicit engine table, and a
+// colon in it is refused, in the pinned binary's own words. Reading it as a
+// dialect instead would provision `docker://sqlite` and `docker://postgres:16/dev`
+// -- `sqlite` is a dialect Ptah has, and `postgres:16` reads as an engine with a
+// port -- where the pinned binary exits 1, which AGENTS.md compatibility rule
+// (a) forbids outright. [atlasurl.DockerEngineDialect] is the one answer to
+// which engines there are and what each speaks, and [atlasurl.DialectFromURL]
+// refuses the same values with the same sentence.
 //
 // The path is `/<tag>` or `/<tag>/<database>`: measured, `docker://postgres/dev`
 // resolves `dev` as an image TAG and not as a database name, which is why a
@@ -101,7 +124,6 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/platform"
 	"ptah.run/internal/atlasurl"
 )
 
@@ -157,12 +179,12 @@ func IsURL(rawURL string) bool {
 	return err == nil && atlasurl.IsDockerScheme(parsed.Scheme)
 }
 
-// engine describes one database this package can start.
+// engine describes one database this package can start. The dialect it
+// speaks is [atlasurl.DockerEngineDialect]'s, which is also the answer to
+// which engines there are.
 type engine struct {
 	// image is the container image, without a tag.
 	image string
-	// dialect is the Ptah dialect the provisioned database speaks.
-	dialect string
 	// port is the port the server listens on inside the container.
 	port string
 	// params are the connection parameters the provisioned URL needs by
@@ -180,45 +202,90 @@ type engine struct {
 	// `postgres` on PostgreSQL, and no database -- the whole server -- on the
 	// MySQL family. It is the pinned community binary's own default for each.
 	serverDatabase string
+	// createsDatabase reports an image that fills the database its variable
+	// names with objects of its own, so env leaves the variable unset and the
+	// database is created once the server is ready; see
+	// [Spec.CreatesDatabase].
+	createsDatabase bool
+}
+
+// postgresEnv is the container environment of an image built on the official
+// PostgreSQL one.
+//
+// POSTGRES_USER is the image's. The official image's default is postgres, and
+// an image that names another user runs its init scripts as that user: the
+// Supabase image declares supabase_admin, and with the variable overridden its
+// init fails and the container exits (stokaro/ptah#4053). The pinned binary
+// passes these two variables and no user, measured on 2026-10-03.
+func postgresEnv(database, password string) []string {
+	return []string{
+		"POSTGRES_PASSWORD=" + password,
+		"POSTGRES_DB=" + database,
+	}
+}
+
+// postgresURL is the connectable URL of a server an image built on the
+// official PostgreSQL one runs.
+func postgresURL(hostPort, database, password, query string) string {
+	return fmt.Sprintf("postgres://postgres:%s@%s/%s%s", password, hostPort, url.PathEscape(database), querySuffix(query))
+}
+
+// postgresParams are the connection parameters of such a server. The
+// container publishes on loopback and speaks no TLS, so the default disables
+// it. An operator who writes `sslmode` on the docker URL replaces this value
+// rather than being silently overruled.
+func postgresParams() map[string]string {
+	return map[string]string{"sslmode": "disable"}
 }
 
 // engines maps the host segment of a docker URL onto the container to start.
 //
-// The keys are the spellings the pinned binary accepts, measured one at a time:
-// `postgres`, `mysql`, and both `maria` and `mariadb`. Anything else is refused,
-// including schemes [platform.NormalizeDialect] would happily name -- `sqlite`
+// The keys are the spellings the pinned binary accepts, measured one at a time,
+// and match [atlasurl.DockerEngineDialect]'s. Anything else is refused,
+// including schemes [ptah.run/core/platform.NormalizeDialect] would happily name -- `sqlite`
 // is a dialect Ptah has and an image the pinned binary refuses, so it must not
 // appear here.
 var engines = map[string]engine{
 	"postgres": {
-		image:   "postgres",
-		dialect: platform.Postgres,
-		port:    "5432",
-		// The container publishes on loopback and speaks no TLS, so the
-		// default disables it. An operator who writes `sslmode` on the docker
-		// URL replaces this value rather than being silently overruled.
-		params: map[string]string{"sslmode": "disable"},
-		// POSTGRES_USER is the image's. The official image's default is
-		// postgres, and an image that names another user runs its init
-		// scripts as that user: the Supabase image declares supabase_admin,
-		// and with the variable overridden its init fails and the container
-		// exits (stokaro/ptah#4053). The pinned binary passes these two
-		// variables and no user, measured on 2026-10-03.
-		env: func(database, password string) []string {
-			return []string{
-				"POSTGRES_PASSWORD=" + password,
-				"POSTGRES_DB=" + database,
-			}
-		},
-		url: func(hostPort, database, password, query string) string {
-			return fmt.Sprintf("postgres://postgres:%s@%s/%s%s", password, hostPort, url.PathEscape(database), querySuffix(query))
-		},
+		image:          "postgres",
+		port:           "5432",
+		params:         postgresParams(),
+		env:            postgresEnv,
+		url:            postgresURL,
 		serverDatabase: "postgres",
 	},
+	// The pgvector project's image is the official one with the extension
+	// installed and not created. Measured, the pinned binary starts
+	// `pgvector/pgvector:<tag>` with POSTGRES_PASSWORD and POSTGRES_DB, as it
+	// starts `postgres:<tag>`.
+	"pgvector": {
+		image:          "pgvector/pgvector",
+		port:           "5432",
+		params:         postgresParams(),
+		env:            postgresEnv,
+		url:            postgresURL,
+		serverDatabase: "postgres",
+	},
+	// The PostGIS image creates postgis, postgis_topology, fuzzystrmatch and
+	// postgis_tiger_geocoder, and the tiger and topology schemas, in the
+	// database POSTGRES_DB names. Measured, the pinned binary starts
+	// `postgis/postgis:<tag>` with POSTGRES_PASSWORD alone and creates the
+	// URL's database itself, which leaves it empty: `CREATE EXTENSION postgis`
+	// succeeds there.
+	"postgis": {
+		image:  "postgis/postgis",
+		port:   "5432",
+		params: postgresParams(),
+		env: func(_, password string) []string {
+			return []string{"POSTGRES_PASSWORD=" + password}
+		},
+		url:             postgresURL,
+		serverDatabase:  "postgres",
+		createsDatabase: true,
+	},
 	"mysql": {
-		image:   "mysql",
-		dialect: platform.MySQL,
-		port:    "3306",
+		image: "mysql",
+		port:  "3306",
 		env: func(database, password string) []string {
 			return []string{
 				"MYSQL_ROOT_PASSWORD=" + password,
@@ -242,9 +309,8 @@ var engines = map[string]engine{
 // mariaEngine is shared by both spellings the pinned binary accepts for
 // MariaDB, so the two cannot drift apart.
 var mariaEngine = engine{
-	image:   "mariadb",
-	dialect: platform.MariaDB,
-	port:    "3306",
+	image: "mariadb",
+	port:  "3306",
 	env: func(database, password string) []string {
 		return []string{
 			"MARIADB_ROOT_PASSWORD=" + password,
@@ -388,7 +454,7 @@ func (s Spec) URL(hostPort, password string) string {
 // [Spec.CreatesDatabase] says why.
 func (s Spec) ReadyURL(hostPort, password string) string {
 	database := s.Database
-	if s.fromImage {
+	if s.databaseFollowsReadiness() {
 		database = s.engine.serverDatabase
 	}
 	return s.engine.url(hostPort, database, password, defaultParams(s.engine.params))
@@ -400,11 +466,19 @@ func (s Spec) ReadyURL(hostPort, password string) string {
 // It is for an image the URL names. Such an image decides for itself whether it
 // honors the variable that names a database, and one that does not leaves the
 // database missing: measured, the pinned community binary v1.3.0 then exits 1
-// with `database "dev" does not exist` on PostgreSQL. An engine's own image
-// honors the variable, so its database is never created here. Neither is the
-// server's own database, which every image has.
+// with `database "dev" does not exist` on PostgreSQL. It is also for the
+// PostGIS engine, whose image fills the database its variable names; see
+// engines. Every other engine's image honors the variable, so its database is
+// never created here. Neither is the server's own database, which every image
+// has.
 func (s Spec) CreatesDatabase() bool {
-	return s.fromImage && s.Database != s.engine.serverDatabase
+	return s.databaseFollowsReadiness() && s.Database != s.engine.serverDatabase
+}
+
+// databaseFollowsReadiness reports a URL whose database may not exist when the
+// server first answers, so the readiness wait probes the server's own.
+func (s Spec) databaseFollowsReadiness() bool {
+	return s.fromImage || s.engine.createsDatabase
 }
 
 // Env is the container environment that creates the database with password as
@@ -487,9 +561,13 @@ func Parse(rawURL string) (Spec, error) {
 	if parsed.Scheme != Scheme {
 		return Spec{}, fmt.Errorf("not a docker --dev-url: %q", rawURL)
 	}
+	// Matched as written: measured, the pinned binary refuses
+	// `docker://POSTGRES/16/dev` and `docker://Postgres/16/dev` with
+	// `unsupported docker image`, as it refuses an engine it does not know.
 	host := parsed.Host
-	found, ok := engines[strings.ToLower(host)]
-	if !ok {
+	found, ok := engines[host]
+	dialect, known := atlasurl.DockerEngineDialect(host)
+	if !ok || !known {
 		return Spec{}, unsupportedImageError(host)
 	}
 	tag, database, err := splitDockerPath(parsed.Path)
@@ -507,7 +585,7 @@ func Parse(rawURL string) (Spec, error) {
 	}
 	return Spec{
 		Engine:   host,
-		Dialect:  found.dialect,
+		Dialect:  dialect,
 		Image:    found.image + ":" + tag,
 		Database: database,
 		Query:    query,
@@ -520,7 +598,8 @@ func Parse(rawURL string) (Spec, error) {
 // measurement.
 func parseImageURL(parsed *url.URL, driver string) (Spec, error) {
 	found, ok := engines[driver]
-	if !ok {
+	dialect, known := atlasurl.DockerEngineDialect(driver)
+	if !ok || !known {
 		return Spec{}, fmt.Errorf(
 			"docker+%s --dev-url names an engine Ptah does not start from a docker URL;"+
 				" pass a directly connectable dev database URL instead",
@@ -544,7 +623,7 @@ func parseImageURL(parsed *url.URL, driver string) (Spec, error) {
 	declaration, _ := declared(parsed.Fragment)
 	return Spec{
 		Engine:      driver,
-		Dialect:     found.dialect,
+		Dialect:     dialect,
 		Image:       image,
 		Database:    database,
 		Query:       query,

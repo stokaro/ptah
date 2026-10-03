@@ -968,6 +968,47 @@ a `docker://` value to the database connector. Atlas CE v1.3.0 answers
 `unknown flag: --dev-url` on all six — measured — so no parity cell is open on
 them and there is no wording to copy.
 
+### `docker://postgis` and `docker://pgvector` start their projects' images
+
+The pinned binary starts two more engines from a `docker://` URL, both as
+PostgreSQL ([`stokaro/ptah#4066`](https://github.com/stokaro/ptah/issues/4066)).
+Measured 2026-10-03 on a Linux host with a local daemon, every exit status read
+from an unpiped `schema inspect -u file://<file> --dev-url <value>`, and the
+image and environment read with `docker inspect` from the container Atlas CE
+v1.3.0 started:
+
+| `--dev-url` | Atlas CE v1.3.0 | Ptah |
+| --- | --- | --- |
+| `docker://postgis/16-3.4/dev`, a file running `CREATE EXTENSION postgis` | 0; `postgis/postgis:16-3.4` with `POSTGRES_PASSWORD` alone, `dev` created by the binary | 0 |
+| `docker://pgvector/pg16/dev`, a file running `CREATE EXTENSION vector` | 0; `pgvector/pgvector:pg16` with `POSTGRES_PASSWORD` and `POSTGRES_DB=dev` | 0 |
+| `docker://pgvector/pg16` | 0, database `postgres` | 0, database `dev` |
+| `docker://postgis/dev` | 1, `Unable to find image 'postgis/postgis:dev'` | 1, the same `docker run` refusal |
+| `docker://POSTGRES/16-alpine/dev` | 1, `unsupported docker image "POSTGRES"` | 1, byte-identical |
+| `docker://postgis/16-3.4` | 1, `connected database is not clean: found schema "public"` | **0**, database `dev` |
+
+The PostGIS image installs its extensions, and the `tiger` and `topology`
+schemas, in the database `POSTGRES_DB` names. Atlas CE leaves the variable
+unset and creates the URL's database itself, so the database is empty and
+`CREATE EXTENSION postgis` succeeds there. Ptah does the same.
+
+The engine is matched as written on both binaries, so `POSTGRES`, `Postgres`
+and `MYSQL` are refused. The URL is read as written too: a docker URL with a
+leading space is a relative path to net/url, and Ptah's dialect check reads it
+as the provisioner does. Measured on the same day:
+
+| argv | Atlas CE v1.3.0 | Ptah |
+| --- | --- | --- |
+| `schema diff --from file://schema.sql --to file://schema.sql --dev-url docker://sqlite/dev` | 1, `unsupported docker image "sqlite"` | 1, byte-identical |
+| `migrate diff`, `migrate lint` or `schema diff` with `--dev-url " docker://sqlite/dev"` | 1, `parse open url: first path segment in URL cannot contain colon` | 1, `parse --dev-url: ... first path segment in URL cannot contain colon` |
+ `clickhouse` and `sqlserver` exit 1 on both: Atlas CE
+answers `unknown driver`, and Ptah `unsupported docker image`, the sentence it
+gives every engine it does not start.
+
+The last row differs. Without a database Ptah creates `dev` for every engine,
+where Atlas CE connects to `postgres`, the database its own PostGIS image
+filled, and refuses it as not clean. That refusal is unrelated to the request,
+so this follows rule 2.
+
 ### `docker+<driver>://` dev databases start the image the URL names
 
 `docker+<driver>://[<host>/]<image>[:<tag>][/<database>]` names the image to

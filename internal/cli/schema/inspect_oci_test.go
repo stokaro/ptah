@@ -181,7 +181,7 @@ func TestSchemaInspect_AnswersLocalArgumentErrorsBeforeReachingTheRegistry(t *te
 			// for a value carrying one, so it does not have to trim again.
 			name:  "whitespace-prefixed docker --dev-url naming no engine",
 			extra: []string{"--dev-url", " docker://nosuchengine/16/dev"},
-			want:  `unsupported docker --dev-url engine "nosuchengine"`,
+			want:  `unsupported docker image "nosuchengine"`,
 		},
 		{
 			// A different function answers this one. The engine is real and

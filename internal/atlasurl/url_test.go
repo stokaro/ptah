@@ -36,8 +36,11 @@ func TestDialectFromURL_HappyPath(t *testing.T) {
 		{name: "maria socket", rawURL: "maria+unix://root@/run/mysqld/mysqld.sock", want: "mariadb"},
 		{name: "sqlite3 opaque drive path alias", rawURL: "sqlite3:C:/work/app.db", want: "sqlite"},
 		{name: "docker postgres", rawURL: "docker://postgres/16/dev", want: "postgres"},
-		{name: "docker postgres port", rawURL: "docker://postgres:16/dev", want: "postgres"},
 		{name: "docker mariadb", rawURL: "docker://mariadb/11/dev", want: "mariadb"},
+		// The PostGIS and pgvector projects' images, which the pinned binary
+		// starts as PostgreSQL (stokaro/ptah#4066).
+		{name: "docker postgis", rawURL: "docker://postgis/16-3.4/dev", want: "postgres"},
+		{name: "docker pgvector", rawURL: "docker://pgvector/pg16/dev", want: "postgres"},
 		{
 			// The engine the pinned binary provisions for this name is its
 			// MariaDB image, as it is for `docker://mariadb/...`. devdocker
@@ -47,7 +50,6 @@ func TestDialectFromURL_HappyPath(t *testing.T) {
 			rawURL: "docker://maria/11/dev",
 			want:   "mariadb",
 		},
-		{name: "docker maria alias with a tag", rawURL: "docker://maria:11/dev", want: "mariadb"},
 	}
 
 	for _, test := range tests {
@@ -66,7 +68,15 @@ func TestDialectFromURL_FailurePath(t *testing.T) {
 		rawURL  string
 		wantErr string
 	}{
-		{name: "missing docker engine", rawURL: "docker:///dev", wantErr: `docker --dev-url is missing database engine`},
+		// A docker URL naming no engine Ptah starts is refused in the pinned
+		// community binary's words, the host quoted as written, as
+		// internal/devdocker refuses it (stokaro/ptah#4066).
+		{name: "missing docker engine", rawURL: "docker:///dev", wantErr: `unsupported docker image ""`},
+		{name: "docker engine with a colon", rawURL: "docker://postgres:16/dev", wantErr: `unsupported docker image "postgres:16"`},
+		{name: "docker maria alias with a colon", rawURL: "docker://maria:11/dev", wantErr: `unsupported docker image "maria:11"`},
+		{name: "docker engine in capitals", rawURL: "docker://POSTGRES/16/dev", wantErr: `unsupported docker image "POSTGRES"`},
+		{name: "docker engine the binary has no driver for", rawURL: "docker://clickhouse/24.8/dev", wantErr: `unsupported docker image "clickhouse"`},
+		{name: "docker engine that is a dialect but not an image", rawURL: "docker://sqlite/dev", wantErr: `unsupported docker image "sqlite"`},
 		// "db2" rather than "spanner": Spanner lands here only when a
 		// hand-written scheme list has drifted from NormalizeDialect, not
 		// because a Spanner dev database is refused -- internal/devclean and

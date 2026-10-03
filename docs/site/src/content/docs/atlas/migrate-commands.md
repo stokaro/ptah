@@ -1140,8 +1140,13 @@ server-level authorization required to replay migration history.
 
 ### A dev database from a named image
 
-`docker://postgres/18/dev` starts an engine's own image. A
-`docker+<driver>://` URL starts the image it names instead, such as an image
+`docker://<engine>/<tag>[/<database>]` starts an engine's own image:
+`postgres`, `postgis` (`postgis/postgis`), `pgvector` (`pgvector/pgvector`),
+`mysql`, and `maria` or `mariadb`. The engine is matched as written, as Atlas
+matches it, so `POSTGRES` is refused. A `postgis` dev database is created empty;
+the image's extensions are created by a migration that needs them.
+
+A `docker+<driver>://` URL starts the image it names instead, such as an image
 with an extension installed, or one that carries a provider's roles and
 schemas:
 

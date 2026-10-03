@@ -28,6 +28,34 @@ import (
 // an engine's own image: `docker://postgres/16/dev`.
 const dockerScheme = "docker"
 
+// dockerEngineDialects maps the engine a `docker://<engine>/...` URL names
+// onto the dialect of the server it starts. The keys are the engines the
+// pinned community binary v1.3.0 starts, measured one at a time on 2026-10-03,
+// and they are matched as written: that binary refuses `docker://POSTGRES/...`
+// and `docker://Postgres/...` with `unsupported docker image`. `postgis` and
+// `pgvector` start their projects' PostgreSQL images (stokaro/ptah#4066).
+// `clickhouse` and `sqlserver` are not here: that binary answers `unknown
+// driver` for both.
+//
+// internal/devdocker keeps what it needs to start each engine; this map is the
+// one answer to which engines there are and what each speaks.
+var dockerEngineDialects = map[string]string{
+	"postgres": platform.Postgres,
+	"postgis":  platform.Postgres,
+	"pgvector": platform.Postgres,
+	"mysql":    platform.MySQL,
+	"maria":    platform.MariaDB,
+	"mariadb":  platform.MariaDB,
+}
+
+// DockerEngineDialect returns the dialect of the server a `docker://` URL
+// naming engine starts, and whether engine is one Ptah starts. engine is
+// compared as written.
+func DockerEngineDialect(engine string) (string, bool) {
+	dialect, ok := dockerEngineDialects[engine]
+	return dialect, ok
+}
+
 // dockerImageSchemePrefix begins the scheme that asks Ptah to start a dev
 // database from the image the URL names: `docker+postgres://_/postgres:17/dev`.
 const dockerImageSchemePrefix = "docker+"
@@ -193,6 +221,7 @@ func IsDockerURL(rawURL string) bool {
 }
 
 func DialectFromURL(rawURL string) (string, error) {
+	asWritten := rawURL
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {
 		return "", nil
@@ -205,6 +234,19 @@ func DialectFromURL(rawURL string) (string, error) {
 	parsed, err := Parse(rawURL)
 	if err != nil {
 		return "", fmt.Errorf("parse --dev-url: %w", err)
+	}
+	// A docker URL is read as written, as internal/devdocker reads it, because
+	// whether it starts a container depends on the bytes. Measured on the
+	// pinned community binary v1.3.0, ` docker://sqlite/dev` with its leading
+	// space answers `parse open url: first path segment in URL cannot contain
+	// colon` on `migrate diff`, `migrate lint` and `schema diff`, where the
+	// value without the space answers `unsupported docker image "sqlite"`.
+	// Trimmed, the value would be refused as an image, a sentence about a
+	// container that value cannot start.
+	if IsDockerScheme(parsed.Scheme) {
+		if _, err := url.Parse(asWritten); err != nil {
+			return "", fmt.Errorf("parse --dev-url: %w", err)
+		}
 	}
 	if parsed.Scheme == dockerScheme {
 		return dialectFromDockerURL(parsed)
@@ -626,20 +668,15 @@ func sqliteDatabasePath(parsed *url.URL) (string, bool, error) {
 	return filepath.Clean(path), false, nil
 }
 
+// dialectFromDockerURL answers the dialect of the engine a `docker://` URL
+// names. The host is the engine, matched whole and as written, and a value that
+// names none is refused in the pinned community binary's own words, quoting the
+// host: `unsupported docker image "postgres:16"`, `unsupported docker image ""`.
+// internal/devdocker refuses the same values with the same sentence.
 func dialectFromDockerURL(parsed *url.URL) (string, error) {
-	engine := parsed.Host
-	if engine == "" {
-		return "", errors.New("docker --dev-url is missing database engine")
-	}
-	if before, _, found := strings.Cut(engine, "/"); found {
-		engine = before
-	}
-	if before, _, found := strings.Cut(engine, ":"); found {
-		engine = before
-	}
-	dialect := platform.NormalizeDialect(engine)
-	if dialect == "" {
-		return "", fmt.Errorf("unsupported docker --dev-url engine %q", parsed.Host)
+	dialect, ok := DockerEngineDialect(parsed.Host)
+	if !ok {
+		return "", fmt.Errorf("unsupported docker image %q", parsed.Host)
 	}
 	return dialect, nil
 }
