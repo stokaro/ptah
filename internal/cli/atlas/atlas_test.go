@@ -4491,7 +4491,11 @@ func TestCompatCommand_ProjectRelativeSchemaSrcRejectsUnsupportedScheme(t *testi
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `atlas.hcl schema.src: only local file:// schema files are supported`)
+	// A value that is not a local path reaches the source resolver as an
+	// omitted --to does, through env://src, and the resolver names the
+	// reference it refuses.
+	c.Assert(err, qt.ErrorMatches,
+		`--to "env://src": atlas\.hcl schema source "env://src": nested env:// references are not supported`)
 }
 
 func TestCompatCommand_ProjectRelativeSchemaSrcRejectsQuery(t *testing.T) {

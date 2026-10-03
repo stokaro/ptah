@@ -131,15 +131,14 @@ example, `" sql "` writes hex `20 73 71 6c 20`. Use `"{{ hcl . }}"`,
 `ptah schema inspect --format hcl|sql|json` shorthands continue to render.
 
 `env.src` and `env.schema.src` accept either one string or a list of strings.
-The nested `schema.src` form matches Atlas project config syntax. Ptah
-currently uses these values as local schema-file defaults for `schema apply`
-and `schema diff`.
-
-`migrate diff` resolves the same defaults through its typed desired-state
-resolver, so they can contain local schema files or one directly connectable
-database URL. Plain local schema paths and relative `file://` schema URLs
-declared in `atlas.hcl` resolve relative to the directory containing that
-`atlas.hcl` file, not the process working directory.
+The nested `schema.src` form matches Atlas project config syntax. They are the
+desired schema of `schema apply`, `schema diff` and `migrate diff` when `--to`
+is left out, read as `--to env://src` reads them: local schema files or
+directories, a migration directory, one directly connectable database URL, or
+a value the `hcl_schema`, `external_schema`, `composite_schema` or
+`remote_schema` data source mints. Plain local schema paths and relative
+`file://` schema URLs declared in `atlas.hcl` resolve relative to the directory
+containing that `atlas.hcl` file, not the process working directory.
 
 Explicit CLI `--to` and `--from` values keep CLI semantics and resolve
 relative to the process working directory unless they are absolute.
@@ -981,6 +980,8 @@ unavailable in the current invocation. Global `variable`, `locals`, and `data`
 blocks are evaluated separately to build the shared context before environment
 selection.
 
-Non-local URI schemes in `migration.dir` and `schema.src` fail explicitly when
-a command needs that configured value. An explicit CLI path flag still wins over
-the matching `atlas.hcl` value before URI validation.
+Non-local URI schemes in `migration.dir` fail explicitly when a command needs
+that configured value. An explicit CLI path flag still wins over the matching
+`atlas.hcl` value before URI validation. A `schema.src` value with a scheme is
+classified as `--to env://src` classifies it, and a scheme that names no source
+kind fails explicitly.
