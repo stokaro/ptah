@@ -40,3 +40,31 @@ func TestProperties(t *testing.T) {
 		})
 	}
 }
+
+// PreviousDefault reads the live default from either of the comparator's two
+// default keys, and tells a column that had no default from a comparison that
+// recorded no default change.
+func TestPreviousDefault(t *testing.T) {
+	tests := []struct {
+		name        string
+		changes     map[string]string
+		wantDefault string
+		wantChanged bool
+	}{
+		{name: "a literal default removed", changes: map[string]string{"default": "'0' -> "}, wantDefault: "'0'", wantChanged: true},
+		{name: "an expression default removed", changes: map[string]string{"default_expr": "now() -> "}, wantDefault: "now()", wantChanged: true},
+		{name: "a default replaced", changes: map[string]string{"default": "5 -> 7"}, wantDefault: "5", wantChanged: true},
+		{name: "a default added to a column that had none", changes: map[string]string{"default": " -> 7"}, wantDefault: "", wantChanged: true},
+		{name: "no default change", changes: map[string]string{"type": "int -> bigint"}, wantDefault: "", wantChanged: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, changed := columnchange.PreviousDefault(difftypes.ColumnDiff{ColumnName: "c", Changes: test.changes})
+
+			c.Assert(got, qt.Equals, test.wantDefault)
+			c.Assert(changed, qt.Equals, test.wantChanged)
+		})
+	}
+}

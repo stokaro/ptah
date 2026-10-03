@@ -1158,12 +1158,49 @@ func (r *Renderer) renderModifyColumn(table string, op *ast.ModifyColumnOperatio
 	if mapping.notice != "" {
 		r.w.WriteLinef("-- CLICKHOUSE: column %q %s", op.Column.Name, mapping.notice)
 	}
+	if removesDefault(op, clause) {
+		r.w.WriteLinef("ALTER TABLE %s MODIFY COLUMN %s REMOVE DEFAULT;", table, op.Column.Name)
+	}
 	statement := fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s %s", table, op.Column.Name, mapping.mapped)
 	if clause != "" {
 		statement += " " + clause
 	}
 	r.w.WriteLinef("%s;", statement)
 	return nil
+}
+
+// removesDefault reports whether a modification takes away the default the
+// column had, so the plan has to say REMOVE DEFAULT. clause is the DEFAULT
+// clause the modification writes, empty when the declaration has none.
+//
+// A MODIFY COLUMN that names only a type keeps the column's default: measured
+// on 24.10 and 26.9, `MODIFY COLUMN n Int64` on `n Int32 DEFAULT 5` leaves
+// `DEFAULT 5`, and a migration that meant to remove it reported success
+// (stokaro/ptah#4030). REMOVE DEFAULT is written before the type change and as
+// a statement of its own, for reasons measured on both lines:
+//   - a type the old default cannot take fails while the default is there:
+//     `MODIFY COLUMN s Int32` on `s String DEFAULT 'abc'` answers `Cannot parse
+//     string 'abc' as Int32` and changes nothing, and the same change after
+//     REMOVE DEFAULT is accepted;
+//   - both actions in one ALTER keep the default on 24.10, with no error, while
+//     26.9 removes it.
+//
+// The MODIFY COLUMN that restates the declared type still follows, even when
+// the default is the only change the comparison recorded. The recorded changes
+// are not a complete account of the type here: measured on 26.9, a live column
+// `d Int32 DEFAULT 5` compared with a declared `d Int64` records only the
+// default, so a plan that skipped the restatement would drop the type change
+// the old statement made in passing. Restating a type the column already has
+// is accepted and changes nothing.
+//
+// The previous default has to be known to exist, since REMOVE DEFAULT on a
+// column without one answers `Column n doesn't have DEFAULT, cannot remove it`.
+// A computed column is left alone: its expression is MATERIALIZED or ALIAS to
+// the server, which refuses REMOVE DEFAULT for one, and the comparison does not
+// plan a computed column becoming a plain one.
+func removesDefault(op *ast.ModifyColumnOperation, clause string) bool {
+	return op.HasPreviousDefault && op.PreviousDefault != "" && clause == "" &&
+		op.Column.GeneratedExpression == ""
 }
 
 // renderAddSkippingIndex emits the ClickHouse-native
