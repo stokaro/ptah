@@ -296,7 +296,7 @@ multi-target apply with partial failure and retry, and ignored-name warnings.
 
 **Ptah documentation.** [Configuration](../../reference/configuration/), [Feature matrix](../feature-matrix/)
 
-**Implementation status.** Documented. A `--dev-url` names a disposable database the command resets before use, and it accepts a `docker://` image, an in-memory SQLite URL, or an ordinary server URL. The commands that need one say so and refuse without it rather than guessing.
+**Implementation status.** Documented. A `--dev-url` names a disposable database the command resets before use, and it accepts a `docker://` or `docker+<driver>://` image, an in-memory SQLite URL, or an ordinary server URL. The commands that need one say so and refuse without it rather than guessing.
 
 **Conformance status.** Partially measured for migrate validate, migrate lint, and selected migrate diff/schema paths.
 

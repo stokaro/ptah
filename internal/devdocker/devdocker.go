@@ -46,15 +46,62 @@
 // direction rule (b) permits, since a run that reaches a database at all is
 // strictly more than one that cannot pull the image. It is recorded in
 // docs/conformance.md.
+//
+// # An image the URL names
+//
+// `docker+<driver>://[<host>/]<image>[:<tag>][/<database>]` starts the image
+// the URL names instead of an engine's own (stokaro/ptah#4040). Measured against
+// the pinned community binary v1.3.0 on 2026-10-03 on a Linux host, each exit
+// status read from an unpiped `schema inspect -u file://schema.sql --dev-url
+// <value>`:
+//
+//	docker+postgres://_/postgres:17/dev                  exit 0, image postgres:17, database dev
+//	docker+postgres://_/postgres:17                      exit 0, database postgres
+//	docker+postgres:///postgres:17/dev                   exit 0, an empty host is `_`
+//	docker+postgres://docker.io/library/postgres:17/dev  exit 0, the host leads the image
+//	docker+postgres://_/library/postgres:17/dev          exit 0, the image may hold a slash
+//	docker+postgres://_/img/dev                          exit 0, an image with no tag is `latest`
+//	docker+postgres://_/img                              exit 0, one segment is the image
+//	DOCKER+POSTGRES://_/postgres:17/dev                  exit 0, the scheme is not case-sensitive
+//	docker+postgres://_/                                 exit 1, `invalid configuration`, no image
+//	docker+postgres://postgres:17/dev                    exit 1, image `postgres:17/dev`
+//	docker+postgres://_/postgres:17/dev/extra            exit 1, image `postgres:17/dev`
+//	docker+sqlite://_/postgres:17/dev                    exit 1, `sql/sqlclient: unknown driver "docker+sqlite"`
+//	docker+postgis://_/postgres:17/dev                   exit 1, the same, for `docker+postgis`
+//	docker+mysql://_/mysql:8.4.11/dev                    exit 0, database dev
+//	docker+mysql://_/mysql:8.4.11                        no database: the whole server
+//	docker+maria://_/mariadb:11.8.9/dev                  exit 0, and `docker+mariadb` too
+//
+// The path is read as that binary reads it: the last segment is the database
+// when there are two or more and it holds no colon, everything before it is the
+// image, and a host other than `_` leads the image. So `docker+postgres://_/org/img`
+// is the image `org` and the database `img`, and the run fails on the pull --
+// loudly, as it does on that binary. Without a database, a PostgreSQL URL
+// connects to `postgres` and a MySQL-family URL to the whole server.
+//
+// The image decides whether the database exists. The binary passes the
+// database to a PostgreSQL image as `POSTGRES_DB` and to a MySQL-family image as
+// `MYSQL_DATABASE`, and runs `CREATE DATABASE IF NOT EXISTS` for the MySQL family
+// only. Measured with images that ignore those variables, the MySQL run exits 0
+// and the PostgreSQL run exits 1 with `database "dev" does not exist`. Ptah
+// creates the database for both: a run that fails because an image ignored a
+// variable fails for a reason unrelated to what the operator asked for. So the
+// readiness wait probes the server's own database, and the URL's database is
+// created when the image did not create it.
+//
+// That binary also registers `docker+clickhouse` and `docker+sqlserver`. Ptah
+// starts neither engine from a docker URL, and refuses both by name.
 package devdocker
 
 import (
 	"fmt"
 	"maps"
 	"net/url"
+	"path"
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/internal/atlasurl"
 )
 
 // Scheme is the URL scheme this package provisions.
@@ -101,9 +148,12 @@ const passwordBytes = 24
 // through unprovisioned and the connector rejected the dialect. And
 // ` docker://postgres/16/dev` is NOT a docker URL to url.Parse, which reads it
 // as a relative path, but was one to a prefix match over a trimmed copy.
+//
+// A `docker+<driver>://` URL is a docker URL too, for each driver
+// [atlasurl.DockerImageDriver] recognizes.
 func IsURL(rawURL string) bool {
 	parsed, err := url.Parse(rawURL)
-	return err == nil && parsed.Scheme == Scheme
+	return err == nil && atlasurl.IsDockerScheme(parsed.Scheme)
 }
 
 // engine describes one database this package can start.
@@ -124,6 +174,11 @@ type engine struct {
 	// is the merged parameter string, already encoded and without a leading
 	// `?`; it is empty when there are no parameters.
 	url func(hostPort, database, password, query string) string
+	// serverDatabase is what a URL naming an image connects to when it names
+	// no database, and what the readiness wait probes on such an image:
+	// `postgres` on PostgreSQL, and no database -- the whole server -- on the
+	// MySQL family. It is the pinned community binary's own default for each.
+	serverDatabase string
 }
 
 // engines maps the host segment of a docker URL onto the container to start.
@@ -152,6 +207,7 @@ var engines = map[string]engine{
 		url: func(hostPort, database, password, query string) string {
 			return fmt.Sprintf("postgres://postgres:%s@%s/%s%s", password, hostPort, url.PathEscape(database), querySuffix(query))
 		},
+		serverDatabase: "postgres",
 	},
 	"mysql": {
 		image:   "mysql",
@@ -296,6 +352,9 @@ type Spec struct {
 	Query string
 
 	engine engine
+	// fromImage reports a `docker+<driver>://` URL, whose image is the one the
+	// URL names rather than the engine's own.
+	fromImage bool
 }
 
 // URL is the directly connectable URL for a server published at hostPort. It
@@ -315,8 +374,28 @@ func (s Spec) URL(hostPort, password string) string {
 // server and letting the consumer open the full URL turns that into an
 // immediate refusal naming the schema, which is also when the pinned community
 // binary v1.3.0 reports it.
+//
+// On an image the URL names, the wait probes the server's own database instead,
+// [Spec.CreatesDatabase] says why.
 func (s Spec) ReadyURL(hostPort, password string) string {
-	return s.engine.url(hostPort, s.Database, password, defaultParams(s.engine.params))
+	database := s.Database
+	if s.fromImage {
+		database = s.engine.serverDatabase
+	}
+	return s.engine.url(hostPort, database, password, defaultParams(s.engine.params))
+}
+
+// CreatesDatabase reports whether the database the URL names is created once
+// the server is ready, rather than left to the image.
+//
+// It is for an image the URL names. Such an image decides for itself whether it
+// honors the variable that names a database, and one that does not leaves the
+// database missing: measured, the pinned community binary v1.3.0 then exits 1
+// with `database "dev" does not exist` on PostgreSQL. An engine's own image
+// honors the variable, so its database is never created here. Neither is the
+// server's own database, which every image has.
+func (s Spec) CreatesDatabase() bool {
+	return s.fromImage && s.Database != s.engine.serverDatabase
 }
 
 // Env is the container environment that creates the database with password as
@@ -384,6 +463,9 @@ func Parse(rawURL string) (Spec, error) {
 	if err != nil {
 		return Spec{}, fmt.Errorf("parse docker --dev-url: %w", err)
 	}
+	if driver, ok := atlasurl.DockerImageDriver(parsed.Scheme); ok {
+		return parseImageURL(parsed, driver)
+	}
 	if parsed.Scheme != Scheme {
 		return Spec{}, fmt.Errorf("not a docker --dev-url: %q", rawURL)
 	}
@@ -415,19 +497,75 @@ func Parse(rawURL string) (Spec, error) {
 	}, nil
 }
 
+// parseImageURL interprets a `docker+<driver>://` URL, whose path names the
+// image to start; see the package documentation for the grammar and its
+// measurement.
+func parseImageURL(parsed *url.URL, driver string) (Spec, error) {
+	found, ok := engines[driver]
+	if !ok {
+		return Spec{}, fmt.Errorf(
+			"docker+%s --dev-url names an engine Ptah does not start from a docker URL;"+
+				" pass a directly connectable dev database URL instead",
+			driver,
+		)
+	}
+	image, database := splitImagePath(parsed.Host, parsed.Path)
+	if image == "" {
+		return Spec{}, fmt.Errorf("docker+%s --dev-url names no image", driver)
+	}
+	if database == "" {
+		database = found.serverDatabase
+	}
+	if strings.Contains(database, "?") {
+		return Spec{}, fmt.Errorf("docker --dev-url database name %q contains a query separator", database)
+	}
+	query, err := mergeParams(found.params, parsed.RawQuery)
+	if err != nil {
+		return Spec{}, err
+	}
+	return Spec{
+		Engine:    driver,
+		Dialect:   found.dialect,
+		Image:     image,
+		Database:  database,
+		Query:     query,
+		engine:    found,
+		fromImage: true,
+	}, nil
+}
+
+// splitImagePath reads the image and the database out of a `docker+` URL, as
+// the pinned community binary v1.3.0 reads them: the last path segment is the
+// database when there are two or more and it holds no colon, the segments
+// before it are the image, and a host other than `_` leads the image. A
+// database the path does not name is empty.
+func splitImagePath(host, urlPath string) (image, database string) {
+	segments := strings.Split(strings.TrimPrefix(urlPath, "/"), "/")
+	last := len(segments) - 1
+	if last > 0 && !strings.Contains(segments[last], ":") {
+		database = segments[last]
+		segments = segments[:last]
+	}
+	image = path.Join(segments...)
+	if host != "" && host != "_" {
+		image = path.Join(host, image)
+	}
+	return strings.TrimSuffix(image, ":"), database
+}
+
 // splitDockerPath reads the tag and database name out of a docker URL path.
 //
 // One segment is a TAG, not a database: measured, `docker://postgres/dev` makes
 // the pinned binary look for the image `postgres:dev`. Reading it as a database
 // name would silently run a different image than the operator asked for.
-func splitDockerPath(path string) (tag, database string, err error) {
-	trimmed := strings.Trim(path, "/")
+func splitDockerPath(urlPath string) (tag, database string, err error) {
+	trimmed := strings.Trim(urlPath, "/")
 	if trimmed == "" {
 		return DefaultTag, DefaultDatabase, nil
 	}
 	segments := strings.Split(trimmed, "/")
 	if len(segments) > 2 {
-		return "", "", fmt.Errorf("docker --dev-url path %q has more than <tag>/<database>", path)
+		return "", "", fmt.Errorf("docker --dev-url path %q has more than <tag>/<database>", urlPath)
 	}
 	tag = segments[0]
 	if tag == "" {

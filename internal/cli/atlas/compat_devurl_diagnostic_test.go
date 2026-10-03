@@ -531,6 +531,49 @@ func TestCompatDevURLDiagnostics_LeaveDockerToTheProvisioner(t *testing.T) {
 	c.Assert(stderr, qt.Not(qt.Contains), "unknown driver")
 }
 
+// TestCompatDevURLDiagnostics_LeaveAnImageURLToTheProvisioner is the same
+// control for a `docker+<driver>://` value, and its counterpart: a `docker+`
+// scheme the pinned community binary v1.3.0 does not register is not a docker
+// URL, and is answered in that binary's words. Measured on 2026-10-03,
+// `--dev-url docker+sqlite://_/postgres:17/dev` exits 1 with `sql/sqlclient:
+// unknown driver "docker+sqlite". See: https://atlasgo.io/url`, and
+// `docker+sqlserver` is a driver it registers. Neither row starts anything:
+// Ptah refuses to start SQL Server from a docker URL before it reaches the
+// runtime (stokaro/ptah#4040).
+func TestCompatDevURLDiagnostics_LeaveAnImageURLToTheProvisioner(t *testing.T) {
+	tests := []struct {
+		name       string
+		devURL     string
+		wantStderr string
+	}{
+		{
+			name:       "a driver the community binary registers",
+			devURL:     "docker+sqlserver://_/mssql:2022/dev",
+			wantStderr: "docker+sqlserver --dev-url names an engine Ptah does not start from a docker URL",
+		},
+		{
+			name:       "a driver it does not register",
+			devURL:     "docker+sqlite://_/postgres:17/dev",
+			wantStderr: `Error: sql/sqlclient: unknown driver "docker+sqlite". See: https://atlasgo.io/url`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			c := qt.New(t)
+			fx := newCompatDevURLFixture(c)
+
+			_, stderr, err := atlastest.RunCompat(
+				"migrate", "lint", "--dir", "file://"+fx.dir, "--latest", "1",
+				"--dev-url", tt.devURL,
+			)
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(stderr, qt.Contains, tt.wantStderr)
+		})
+	}
+}
+
 // compatDevURLVerbsWithoutOracleRow are the compat verbs that register
 // --dev-url with no row on the pinned community binary to match.
 //

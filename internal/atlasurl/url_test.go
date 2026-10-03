@@ -480,6 +480,9 @@ func TestIsDockerURL_HappyPath(t *testing.T) {
 		{name: "mysql with tag", rawURL: "docker://mysql/8/dev"},
 		{name: "no path", rawURL: "docker://postgres"},
 		{name: "surrounding space", rawURL: "  docker://postgres/16/dev  "},
+		{name: "an image the URL names", rawURL: "docker+postgres://_/postgres:17/dev"},
+		{name: "an image on a mariadb driver", rawURL: "docker+maria://_/mariadb:11/dev"},
+		{name: "an image with an uppercase scheme", rawURL: "DOCKER+MYSQL://_/mysql:8.4/dev"},
 	}
 
 	for _, test := range tests {
@@ -503,12 +506,46 @@ func TestIsDockerURL_FailurePath(t *testing.T) {
 		{name: "sqlite opaque", rawURL: "sqlite:file:app.db"},
 		{name: "a host named docker", rawURL: "postgres://user@docker:5432/db"},
 		{name: "scheme prefix only", rawURL: "dockerish://postgres/dev"},
+		// The pinned community binary v1.3.0 registers six `docker+` drivers and
+		// answers any other one `unknown driver` (stokaro/ptah#4040).
+		{name: "an image driver the community binary does not register", rawURL: "docker+sqlite://_/x:1/dev"},
+		{name: "an image scheme with no driver", rawURL: "docker+://_/postgres:17/dev"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(atlasurl.IsDockerURL(test.rawURL), qt.IsFalse)
+		})
+	}
+}
+
+// TestDockerImageDriver_HappyPath names the `docker+` drivers the pinned
+// community binary v1.3.0 registers, each answered with the driver as written.
+func TestDockerImageDriver_HappyPath(t *testing.T) {
+	tests := []string{"postgres", "mysql", "maria", "mariadb", "clickhouse", "sqlserver"}
+
+	for _, driver := range tests {
+		t.Run(driver, func(t *testing.T) {
+			c := qt.New(t)
+			got, ok := atlasurl.DockerImageDriver("docker+" + driver)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(got, qt.Equals, driver)
+		})
+	}
+}
+
+// TestDockerImageDriver_FailurePath covers schemes that only look like an image
+// scheme, and a driver the binary answers `unknown driver` for.
+func TestDockerImageDriver_FailurePath(t *testing.T) {
+	tests := []string{"docker", "docker+", "docker+sqlite", "docker+postgis", "postgres", "xdocker+postgres"}
+
+	for _, scheme := range tests {
+		t.Run(scheme, func(t *testing.T) {
+			c := qt.New(t)
+			got, ok := atlasurl.DockerImageDriver(scheme)
+			c.Assert(ok, qt.IsFalse)
+			c.Assert(got, qt.Equals, "")
 		})
 	}
 }

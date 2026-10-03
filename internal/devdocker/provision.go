@@ -56,6 +56,10 @@ type Runner interface {
 // ReadyFunc reports whether a provisioned database is accepting connections.
 type ReadyFunc func(ctx context.Context, rawURL string) error
 
+// DatabaseCreator creates database on the server serverURL connects to, unless
+// it exists already. dialect is the server's.
+type DatabaseCreator func(ctx context.Context, serverURL, dialect, database string) error
+
 // Options configures [Provision]. The zero value drives the `docker` CLI and
 // probes readiness with a real connection.
 type Options struct {
@@ -63,6 +67,10 @@ type Options struct {
 	Runner Runner
 	// Ready probes a provisioned database. Defaults to [Connectable].
 	Ready ReadyFunc
+	// CreateDatabase creates the database a URL naming an image asks for,
+	// once the server is ready; see [Spec.CreatesDatabase]. Defaults to
+	// [CreateDatabase].
+	CreateDatabase DatabaseCreator
 	// ReadyTimeout bounds the readiness wait. Defaults to two minutes.
 	ReadyTimeout time.Duration
 	// ReleaseAttempts bounds how many times the release function returned by
@@ -105,6 +113,13 @@ func (o Options) ready() ReadyFunc {
 		return o.Ready
 	}
 	return Connectable
+}
+
+func (o Options) createDatabase() DatabaseCreator {
+	if o.CreateDatabase != nil {
+		return o.CreateDatabase
+	}
+	return CreateDatabase
 }
 
 func (o Options) readyTimeout() time.Duration {
@@ -263,7 +278,8 @@ func Provision(ctx context.Context, rawURL string, opts Options) (*Instance, err
 	}
 	// The wait probes the server, not the operator's parameters; see
 	// [Spec.ReadyURL] for the two minutes that distinction is worth.
-	if err := waitReady(ctx, spec.ReadyURL(hostPort, password), opts); err != nil {
+	readyURL := spec.ReadyURL(hostPort, password)
+	if err := waitReady(ctx, readyURL, opts); err != nil {
 		// The same bounded retry the release uses, not a single discarded
 		// Close. On this path the caller receives no instance, so nothing else
 		// is left holding a handle to the container: a removal refused here
@@ -272,6 +288,12 @@ func Provision(ctx context.Context, rawURL string, opts Options) (*Instance, err
 		// from.
 		releaseInstance(instance, opts)
 		return nil, fmt.Errorf("dev database %s did not become ready: %w", spec.Image, err)
+	}
+	if spec.CreatesDatabase() {
+		if err := opts.createDatabase()(ctx, readyURL, spec.Dialect, spec.Database); err != nil {
+			releaseInstance(instance, opts)
+			return nil, fmt.Errorf("create database %q in dev database %s: %w", spec.Database, spec.Image, err)
+		}
 	}
 	recordRunOwned(instance.url)
 	return instance, nil

@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/internal/atlassource"
+	"ptah.run/internal/atlasurl"
 )
 
 // This file owns the Atlas-compatible surface's `--dev-url` error boundary, the
@@ -63,17 +64,17 @@ import (
 // refusals below therefore read the MERGED value and ask the Changed bit only to
 // separate "never given" from "given empty".
 //
-// `docker://` values are passed through untouched, and what happens to them
-// afterwards changed with stokaro/ptah#1468: they are now PROVISIONED into a
-// real container rather than refused. Answering them here as an unknown driver
-// would therefore not merely replace a clear diagnostic with a vague one, it
-// would delete the capability, which is compatibility rule (c). The refusals
-// that remain for a `docker://` value are the ones decidable from the URL text
-// -- an image no engine table names, a form the pinned community binary rejects
-// -- and they are internal/devdocker's, in that binary's own words. Every verb
-// in this family reaches the provisioner: `migrate test` and `schema test` were
-// the last two refusing the scheme outright, and stokaro/ptah#844 wired their
-// native runners to it.
+// `docker://` and `docker+<driver>://` values are passed through untouched, and
+// what happens to them afterwards changed with stokaro/ptah#1468: they are now
+// PROVISIONED into a real container rather than refused. Answering them here
+// as an unknown driver would therefore not merely replace a clear diagnostic
+// with a vague one, it would delete the capability, which is compatibility
+// rule (c). The refusals that remain for a docker value are the ones decidable
+// from the URL text -- an image no engine table names, a form the pinned
+// community binary rejects -- and they are internal/devdocker's, in that
+// binary's own words where it has some. Every verb in this family reaches the
+// provisioner: `migrate test` and `schema test` were the last two refusing the
+// scheme outright, and stokaro/ptah#844 wired their native runners to it.
 //
 // None of this reaches native Ptah. `ptah schema inspect`, `ptah migrations
 // lint` and the rest keep `unsupported --dev-url dialect "notadriver://x"`,
@@ -93,11 +94,6 @@ import (
 // given. It is the plural spelling on both; unlike `--url`, no verb in this
 // family was measured using the singular one.
 const atlasRequiredDevURLMessage = `required flag(s) "dev-url" not set`
-
-// atlasDevURLDockerScheme names the values this boundary must not answer. See
-// the file comment: Ptah's own docker refusal is clearer than an unknown-driver
-// verdict and is pinned by its own tests.
-const atlasDevURLDockerScheme = "docker"
 
 // atlasRequiredDevURLError returns the refusal for a `--dev-url` the verb
 // requires before it opens anything.
@@ -236,5 +232,5 @@ func requireAtlasDevURL(cmd *cobra.Command, mergedDevURL string) error {
 // boundary must leave to a more specific refusal.
 func atlasDevURLAnsweredElsewhere(rawURL string) bool {
 	scheme, ok := atlasURLScheme(rawURL)
-	return ok && scheme == atlasDevURLDockerScheme
+	return ok && atlasurl.IsDockerScheme(scheme)
 }

@@ -126,6 +126,11 @@ func TestClassify_Errors(t *testing.T) {
 			want: `docker:// URLs provision Atlas dev databases and cannot be used as a desired-state source; pass a directly connectable database URL`,
 		},
 		{
+			name: "docker image",
+			url:  "docker+postgres://_/postgres:17/dev",
+			want: `docker\+postgres:// URLs provision Atlas dev databases and cannot be used as a desired-state source; pass a directly connectable database URL`,
+		},
+		{
 			name: "reserved external-schema marker scheme",
 			url:  "ptah-external-schema://app",
 			want: `ptah-external-schema:// is a reserved internal marker scheme; reference data\.external_schema\.<name>\.url from an atlas\.hcl env src instead`,
@@ -530,6 +535,7 @@ func TestSetEnsureDevIsolation_SkipsADockerDevURL(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(set.EnsureDevIsolation("docker://postgres/16/dev"), qt.IsNil)
+	c.Assert(set.EnsureDevIsolation("docker+postgres://_/postgres:17/dev"), qt.IsNil)
 
 	// The skip is scoped to the scheme, not to "anything unparseable": a dev URL
 	// whose database name cannot be read is still refused, because that is the

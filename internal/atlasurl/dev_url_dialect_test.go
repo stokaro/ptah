@@ -134,3 +134,38 @@ func TestDialectFromURL_RefusesASchemeNamingNoDialect(t *testing.T) {
 		})
 	}
 }
+
+// TestDialectFromURL_AnswersTheDriverOfAnImageURL reads the dialect of a
+// `docker+<driver>://` dev URL off its driver, before anything is started, as
+// it reads a `docker://` URL off its engine (stokaro/ptah#4040).
+func TestDialectFromURL_AnswersTheDriverOfAnImageURL(t *testing.T) {
+	tests := []struct {
+		rawURL string
+		want   string
+	}{
+		{rawURL: "docker+postgres://_/postgres:17/dev", want: platform.Postgres},
+		{rawURL: "docker+mysql://_/mysql:8.4/dev", want: platform.MySQL},
+		{rawURL: "docker+maria://_/mariadb:11/dev", want: platform.MariaDB},
+		{rawURL: "docker+mariadb://_/mariadb:11/dev", want: platform.MariaDB},
+		{rawURL: "docker+sqlserver://_/mssql:2022/dev", want: platform.SQLServer},
+		{rawURL: "docker+clickhouse://_/clickhouse:24/dev", want: platform.ClickHouse},
+	}
+
+	for _, test := range tests {
+		t.Run(test.rawURL, func(t *testing.T) {
+			c := qt.New(t)
+			dialect, err := atlasurl.DialectFromURL(test.rawURL)
+			c.Assert(err, qt.IsNil)
+			c.Assert(dialect, qt.Equals, test.want)
+		})
+	}
+}
+
+// TestDialectFromURL_RefusesAnImageDriverTheCommunityBinaryDoesNotRegister is
+// the control: `docker+` alone does not make a URL a docker URL.
+func TestDialectFromURL_RefusesAnImageDriverTheCommunityBinaryDoesNotRegister(t *testing.T) {
+	c := qt.New(t)
+	dialect, err := atlasurl.DialectFromURL("docker+sqlite://_/x:1/dev")
+	c.Assert(err, qt.ErrorMatches, `unsupported --dev-url dialect "docker\+sqlite://_/x:1/dev"`)
+	c.Assert(dialect, qt.Equals, "")
+}
