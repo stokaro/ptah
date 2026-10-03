@@ -16,6 +16,7 @@ import (
 	"ptah.run/internal/catalogfield"
 	"ptah.run/internal/indexbacking"
 	"ptah.run/internal/mysqlindex"
+	"ptah.run/internal/pgname"
 	"ptah.run/internal/uniquename"
 )
 
@@ -67,7 +68,7 @@ func ConvertDBSchemaToGoSchema(dbSchema *catalog.Database, dialect string) *sche
 	convertSynonyms(database, dbSchema.Synonyms)
 	convertExtendedProperties(database, dbSchema.ExtendedProperties)
 	convertRoles(database, dbSchema.Roles)
-	database.Grants = convertGrants(dbSchema.Grants)
+	database.Grants = convertGrants(dbSchema.Grants, replayedColumnSequences(dbSchema.Tables))
 	database.RevokedGrants = revokedPublicExecute(dbSchema.Grants)
 	database.DefaultPrivileges = convertDefaultPrivileges(dbSchema.DefaultPrivileges)
 	convertRLSEnabledTables(database, dbSchema.Tables, tableStructNames)
@@ -1123,7 +1124,33 @@ func setDomainDefaultFromDB(domain *schemamodel.Domain, defaultSQL string) {
 // [ptah.run/internal/clickhouserbac.ValidateLive] refuses to compare a
 // managed role carrying one at all rather than leaving this function to
 // approximate it.
-func convertGrants(dbGrants []catalog.Grant) []schemamodel.Grant {
+// replayedColumnSequences maps each sequence a read column owns, by the target
+// a grant names it with, to the name the description's replay gives it.
+//
+// The description writes such a column as its serial type or identity clause,
+// which creates the sequence under the name PostgreSQL gives it, [pgname.Sequence].
+// The database may hold another one: renaming the table or the column leaves
+// the sequence's name as it was, so products.id can own items_id_seq. A
+// description that named items_id_seq in a grant did not replay, because the
+// replay creates products_id_seq (stokaro/ptah#4064). The comparator keys a
+// grant on such a sequence by its column, so the two names compare equal.
+func replayedColumnSequences(tables []catalog.Table) map[string]string {
+	replayed := make(map[string]string)
+	for _, table := range tables {
+		for _, column := range table.Columns {
+			if column.OwnedSequence == "" {
+				continue
+			}
+			replayed[catalog.QualifyTableName(table.Schema, column.OwnedSequence)] =
+				catalog.QualifyTableName(table.Schema, pgname.Sequence(table.Name, column.Name))
+		}
+	}
+	return replayed
+}
+
+// convertGrants describes the grants of a read. replayed renames a grant on a
+// column's sequence; see [replayedColumnSequences].
+func convertGrants(dbGrants []catalog.Grant, replayed map[string]string) []schemamodel.Grant {
 	grants := make([]schemamodel.Grant, 0, len(dbGrants))
 	for _, dbGrant := range dbGrants {
 		if dbGrant.IsPartialRevoke || dbGrant.Implicit {
@@ -1150,6 +1177,9 @@ func convertGrants(dbGrants []catalog.Grant) []schemamodel.Grant {
 			// by its object type, though, and the read reports SEQUENCE, so that
 			// description would never match the row it was made from.
 			grant.OnSequence = dbGrant.QualifiedTarget()
+			if name, ok := replayed[grant.OnSequence]; ok {
+				grant.OnSequence = name
+			}
 		default:
 			grant.OnTable = dbGrant.QualifiedTarget()
 			if dbGrant.Column != "" {
