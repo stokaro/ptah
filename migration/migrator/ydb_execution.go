@@ -263,6 +263,12 @@ func (d dataQueryCommit) try(ctx context.Context) (committing bool, err error) {
 		_ = tx.Rollback()
 		return false, fmt.Errorf("record the query in the revision table: %w", err)
 	}
+	// The migration lock is asked for last, right before the commit, which
+	// is the step that cannot be taken back.
+	if err := migrationLockLost(ctx); err != nil {
+		_ = tx.Rollback()
+		return false, err
+	}
 	if err := tx.Commit(); err != nil {
 		return true, err
 	}

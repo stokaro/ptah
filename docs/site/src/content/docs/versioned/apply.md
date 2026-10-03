@@ -214,11 +214,24 @@ YQL has no advisory lock, so on YDB the lock is a semaphore on the coordination
 node `ptah_locks` at the database root, one semaphore per lock name. It is
 exclusive and ephemeral: a second run waits for it in the server's queue, and the
 server releases it when the run that holds it ends, whether that run released
-it or died. Ptah creates the node on first use and keeps it. The node holds no
-data, so dropping it while no run is active is safe, and the next run creates it
-again. Like every advisory lock, it keeps Ptah runs apart; it does not stop a
-client that ignores it, and a run whose session to the server is lost for longer
-than the session timeout loses the lock.
+it or died. The first run that locks creates the node, and later runs only use
+it, so a user who may not create a coordination node at the root can run once
+another user has. The node holds no data, so dropping it while no run is active
+is safe, and the next run creates it again. Ptah's schema reader leaves it out,
+so a plan never drops it. Like every advisory lock, it keeps Ptah runs apart; it
+does not stop a client that ignores it.
+
+The semaphore is held by a coordination session of its own, not by the
+connection the migrations run on, so the server can take it away while the run
+goes on: after ten seconds without hearing from the run, or when the node is
+dropped. The run asks the server every second whether it still holds the lock,
+and trusts an answer for five seconds. Once no answer is that recent, the run
+treats the lock as lost: the statement running then is canceled, no further
+statement starts and no data query commits, nothing more is written to the
+revision table, and the run fails with the loss. The revision table then
+records what the run committed, and a resume starts there. A run stopped for
+longer than that reads the loss as soon as it continues, before its next
+statement.
 
 Every spelling refuses. `PTAH_MIGRATION_LOCK_TIMEOUT` fills the flag on each of
 those commands, and `migration.migration_lock_timeout` in

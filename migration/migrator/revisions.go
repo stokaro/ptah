@@ -20,6 +20,7 @@ import (
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasretry"
+	"ptah.run/internal/dblock"
 	"ptah.run/internal/ddltx"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/revisiontext"
@@ -2372,6 +2373,12 @@ func (m *Migrator) failMigrationRevisionWithMode(
 	if m.conn.Writer().IsDryRun() {
 		return nil
 	}
+	// A run that lost the migration lock writes nothing more: the row belongs
+	// to whichever runner holds the lock now, and it already records what this
+	// run committed.
+	if dblock.IsLost(failure) || dblock.IsLost(context.Cause(ctx)) {
+		return nil
+	}
 	// recordStatementProgressBefore wrote the unknown-outcome marker before the
 	// statement entered ExecContext. Cancellation can race a server-side commit,
 	// so replacing that marker with an ordinary failure would make the next retry
@@ -3632,6 +3639,9 @@ func (m *Migrator) resumeStatementsOnSession(
 			continue
 		}
 		event := StatementEvent{Statement: stmt, Index: i + 1, Total: len(statements)}
+		if err := migrationLockLost(ctx); err != nil {
+			return err
+		}
 		if m.runsQueriesOnTheirOwn() && !m.conn.Writer().IsDryRun() && isYDBDataQuery(stmt) {
 			if err := m.commitYDBDataQuery(ctx, migration, startedAt, event, direction); err != nil {
 				return m.failResumedMigrationDirection(ctx, migration, startedAt, err, event, direction)

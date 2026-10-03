@@ -40,13 +40,14 @@ func (r *redirectApplySession) run(
 	root *dbschema.DatabaseConnection,
 	_ string,
 	_ time.Duration,
-	use func(*dbschema.DatabaseConnection) error,
+	_ bool,
+	use func(context.Context, *dbschema.DatabaseConnection) error,
 ) (runErr, releaseErr error) {
 	r.root = root
 	r.callCount++
 	callbackErr := r.target.WithSession(ctx, func(session *dbschema.DatabaseConnection) error {
 		r.session = session
-		return use(session)
+		return use(ctx, session)
 	})
 	return errors.Join(callbackErr, r.terminal), nil
 }
@@ -132,13 +133,15 @@ func TestSchemaApplyAcquisitionFailureKeepsDiagnosticAndExitCode(t *testing.T) {
 		_ *dbschema.DatabaseConnection,
 		name string,
 		timeout time.Duration,
-		use func(*dbschema.DatabaseConnection) error,
+		preview bool,
+		use func(context.Context, *dbschema.DatabaseConnection) error,
 	) (runErr, releaseErr error) {
-		return withSchemaApplyLockSession(ctx, nil, name, timeout, func(
+		return withSchemaApplyLockSession(ctx, nil, name, timeout, preview, func(
+			ctx context.Context,
 			session *dbschema.DatabaseConnection,
 		) error {
 			callbackCount++
-			return use(session)
+			return use(ctx, session)
 		})
 	}
 
@@ -302,9 +305,10 @@ func testSchemaApplyJSONPanicAfterDispatch(t *testing.T, setup applySessionLossS
 		root *dbschema.DatabaseConnection,
 		name string,
 		timeout time.Duration,
-		use func(*dbschema.DatabaseConnection) error,
+		preview bool,
+		use func(context.Context, *dbschema.DatabaseConnection) error,
 	) (runErr, releaseErr error) {
-		_, _ = redirect.run(ctx, root, name, timeout, use)
+		_, _ = redirect.run(ctx, root, name, timeout, preview, use)
 		panic("lock session lost its connection")
 	}
 	cmd, stdout, stderr := newApplySessionJSONCommand()
@@ -338,7 +342,8 @@ func TestSchemaApplyJSONReportsAPanicBeforeDispatchAsFailed(t *testing.T) {
 		*dbschema.DatabaseConnection,
 		string,
 		time.Duration,
-		func(*dbschema.DatabaseConnection) error,
+		bool,
+		func(context.Context, *dbschema.DatabaseConnection) error,
 	) (runErr, releaseErr error) {
 		panic("lock session could not start")
 	}

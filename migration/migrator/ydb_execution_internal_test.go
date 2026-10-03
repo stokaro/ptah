@@ -623,3 +623,19 @@ func TestRevisionFailureRecord_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// The lock is asked for right before the commit, and a run that lost it rolls
+// the transaction back: neither the query nor its checkpoint is applied.
+func TestDataQueryCommit_StopsBeforeCommitWhenTheLockIsLost(t *testing.T) {
+	c := qt.New(t)
+	fake := &fakeTxDriver{}
+	ctx := withHeldMigrationLock(context.Background(), heldLockAnswer{err: lostMigrationLock})
+
+	err := newDataQueryCommit(c, fake, false, nil).run(ctx)
+
+	c.Assert(err, qt.ErrorIs, error(lostMigrationLock))
+	c.Assert(fake.commitAttempt, qt.Equals, 0)
+	c.Assert(fake.log, qt.DeepEquals, []string{
+		"begin isolation=6", "exec UPSERT data (0 args)", "build checkpoint", "exec UPDATE checkpoint (2 args)", "rollback",
+	})
+}

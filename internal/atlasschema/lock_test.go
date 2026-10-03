@@ -1,6 +1,7 @@
 package atlasschema_test
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -101,7 +102,7 @@ func TestWithApplyLockSession_UsesPinnedCallbackConnection(t *testing.T) {
 		conn,
 		"",
 		time.Second,
-		func(session *dbschema.DatabaseConnection, lock *atlasschema.ApplyLock) error {
+		func(_ context.Context, session *dbschema.DatabaseConnection, lock *atlasschema.ApplyLock) error {
 			callbackConnection = session
 			c.Assert(session, qt.Not(qt.Equals), conn)
 			c.Assert(lock.Supported(), qt.IsFalse)

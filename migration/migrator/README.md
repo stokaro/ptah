@@ -719,7 +719,11 @@ the lock across revision inspection, resumed SQL, safety checks, and its final
 metadata write. This prevents concurrent runners from acting on the same
 migration state. YDB has no SQL advisory lock, so there the lock is an
 exclusive, ephemeral semaphore on the coordination node `ptah_locks` at the
-database root, which Ptah creates on first use.
+database root, which Ptah creates on first use. A coordination session of its
+own holds it, so the server can take it away while the run goes on; the
+migrator asks for the lock before each statement and before each commit, and a
+run that lost it stops there, writes nothing more to the revision table and
+fails with the loss. A failed release is the run's failure too.
 
 By default the migrator waits until the lock is available. Use
 `WithMigrationLockName` to coordinate on a custom lock name, and use
