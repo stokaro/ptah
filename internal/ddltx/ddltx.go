@@ -125,6 +125,18 @@ func ClassOf(dialect string) Class {
 	case platform.Spanner:
 		return NoTransaction
 
+	// YDB runs no schema statement inside a transaction: measured on
+	// 26.2.1.14, CREATE TABLE inside an interactive transaction answers
+	// `Scheme operations cannot be executed inside transaction`, and DDL and
+	// DML cannot share one query (`Queries with mixed data and scheme
+	// operations are not supported`). A query holding several DDL statements
+	// is not atomic either: everything before a failing statement stays
+	// applied. So every statement commits on its own, body and revision write
+	// alike. The writer and its live test arrive with the YDB driver, phase 4
+	// of stokaro/ptah#4015; this records the contract that writer must keep.
+	case platform.YDB:
+		return NoTransaction
+
 	default:
 		return Unclassified
 	}

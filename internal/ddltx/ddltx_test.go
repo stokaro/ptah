@@ -33,6 +33,11 @@ func TestClassOf_CoversEveryCapabilityDialect(t *testing.T) {
 // test above. Without it, "every dialect is classified" could be satisfied by
 // a catch-all arm that classifies everything, including targets Ptah has no
 // preset for.
+//
+// YDB is the one dialect classified before its preset exists, by decision: the
+// contract was measured first, and its preset lands with the renderer in phase
+// 3 of stokaro/ptah#4015. It is a name, not a catch-all, so the rows below
+// still hold.
 func TestClassOf_KnowsNoDialectOutsideTheCapabilityPresets(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -73,6 +78,8 @@ func TestClassOf_AssignsTheMeasuredClass(t *testing.T) {
 		{name: "clickhouse alias ch", dialect: "ch", want: ddltx.NoTransaction},
 		{name: "spanner", dialect: platform.Spanner, want: ddltx.NoTransaction},
 		{name: "oracle", dialect: platform.Oracle, want: ddltx.NoTransaction},
+		{name: "ydb", dialect: platform.YDB, want: ddltx.NoTransaction},
+		{name: "ydb alias ydbs", dialect: "ydbs", want: ddltx.NoTransaction},
 	}
 
 	for _, test := range tests {
