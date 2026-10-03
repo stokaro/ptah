@@ -303,13 +303,11 @@ func unmodeledSettings(schema, name string, described *Ydb_Table.DescribeTableRe
 	return records
 }
 
-// hasColumnFamilies reports a family layout other than the default one.
+// hasColumnFamilies reports a family layout other than the default one. A
+// table lists every family its columns name, and family names are unique, so
+// any family but a plain `default` is enough to tell.
 func hasColumnFamilies(described *Ydb_Table.DescribeTableResult) bool {
-	families := described.GetColumnFamilies()
-	if len(families) > 1 {
-		return true
-	}
-	for _, family := range families {
+	for _, family := range described.GetColumnFamilies() {
 		if family.GetName() != "default" || family.GetData() != nil ||
 			family.GetKeepInMemory() == Ydb.FeatureFlag_ENABLED {
 			return true
@@ -317,11 +315,6 @@ func hasColumnFamilies(described *Ydb_Table.DescribeTableResult) bool {
 		switch family.GetCompression() {
 		case Ydb_Table.ColumnFamily_COMPRESSION_UNSPECIFIED, Ydb_Table.ColumnFamily_COMPRESSION_NONE:
 		default:
-			return true
-		}
-	}
-	for _, column := range described.GetColumns() {
-		if family := column.GetFamily(); family != "" && family != "default" {
 			return true
 		}
 	}

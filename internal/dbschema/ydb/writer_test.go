@@ -204,6 +204,22 @@ func TestWriter_ExecuteSQL_FailurePath(t *testing.T) {
 	}
 }
 
+// A data statement aborted by a conflict is not run again once the context
+// has ended: the wait before the retry returns the context's error instead.
+func TestWriter_ExecuteSQL_FailurePath_StopsRetryingWhenTheContextEnds(t *testing.T) {
+	c := qt.New(t)
+	fake := newFake()
+	fake.failures = []error{conflictError{}, conflictError{}, conflictError{}, conflictError{}, conflictError{}}
+	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := writer.ExecuteSQL(ctx, "UPSERT INTO `t` (`id`) VALUES (1)")
+
+	c.Assert(err, qt.ErrorIs, context.Canceled)
+	c.Assert(fake.executed, qt.HasLen, 1)
+}
+
 // A dry run executes nothing.
 func TestWriter_DryRun(t *testing.T) {
 	c := qt.New(t)

@@ -333,7 +333,39 @@ func TestReader_RecordsEachTableOption(t *testing.T) {
 		partitioning *Ydb_Table.PartitioningSettings
 		replicas     *Ydb_Table.ReadReplicasSettings
 		storage      *Ydb_Table.StorageSettings
+		bloom        Ydb.FeatureFlag_Status
 	}{
+		{
+			name: "partitioning by key",
+			partitioning: &Ydb_Table.PartitioningSettings{PartitionBy: []string{"id"},
+				PartitioningBySize: Ydb.FeatureFlag_ENABLED, PartitionSizeMb: 2048,
+				PartitioningByLoad: Ydb.FeatureFlag_DISABLED, MinPartitionsCount: 1},
+			storage: defaultStorage(),
+		},
+		{
+			name:         "a key bloom filter",
+			partitioning: defaultPartitioning(),
+			storage:      defaultStorage(),
+			bloom:        Ydb.FeatureFlag_ENABLED,
+		},
+		{
+			name:         "a commit log on a named pool",
+			partitioning: defaultPartitioning(),
+			storage: &Ydb_Table.StorageSettings{StoreExternalBlobs: Ydb.FeatureFlag_DISABLED,
+				TabletCommitLog0: &Ydb_Table.StoragePool{Media: "ssd"}},
+		},
+		{
+			name:         "a second commit log on a named pool",
+			partitioning: defaultPartitioning(),
+			storage: &Ydb_Table.StorageSettings{StoreExternalBlobs: Ydb.FeatureFlag_DISABLED,
+				TabletCommitLog1: &Ydb_Table.StoragePool{Media: "ssd"}},
+		},
+		{
+			name:         "an external pool",
+			partitioning: defaultPartitioning(),
+			storage: &Ydb_Table.StorageSettings{StoreExternalBlobs: Ydb.FeatureFlag_DISABLED,
+				External: &Ydb_Table.StoragePool{Media: "hdd"}},
+		},
 		{
 			name: "partitioning by load",
 			partitioning: &Ydb_Table.PartitioningSettings{PartitioningBySize: Ydb.FeatureFlag_ENABLED,
@@ -387,6 +419,7 @@ func TestReader_RecordsEachTableOption(t *testing.T) {
 			described.PartitioningSettings = test.partitioning
 			described.ReadReplicasSettings = test.replicas
 			described.StorageSettings = test.storage
+			described.KeyBloomFilter = test.bloom
 			source := fakeSource{
 				directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
 				tables:      map[string]*Ydb_Table.DescribeTableResult{"/local/t": described},
@@ -398,6 +431,93 @@ func TestReader_RecordsEachTableOption(t *testing.T) {
 			c.Assert(db.NotDescribed.Describes(coverage.TTL, "t"), qt.IsTrue)
 		})
 	}
+}
+
+// A family layout is recorded where it differs from the one family, default,
+// uncompressed and on no pool of its own, that a table created without
+// families carries.
+func TestReader_RecordsEachColumnFamilyLayout(t *testing.T) {
+	tests := []struct {
+		name     string
+		families []*Ydb_Table.ColumnFamily
+	}{
+		{name: "a second family", families: []*Ydb_Table.ColumnFamily{
+			{Name: "default", Compression: Ydb_Table.ColumnFamily_COMPRESSION_NONE},
+			{Name: "cold", Compression: Ydb_Table.ColumnFamily_COMPRESSION_NONE},
+		}},
+		{name: "a compressed default family", families: []*Ydb_Table.ColumnFamily{
+			{Name: "default", Compression: Ydb_Table.ColumnFamily_COMPRESSION_LZ4},
+		}},
+		{name: "a default family on a named pool", families: []*Ydb_Table.ColumnFamily{
+			{Name: "default", Compression: Ydb_Table.ColumnFamily_COMPRESSION_NONE,
+				Data: &Ydb_Table.StoragePool{Media: "ssd"}},
+		}},
+		{name: "a default family kept in memory", families: []*Ydb_Table.ColumnFamily{
+			{Name: "default", Compression: Ydb_Table.ColumnFamily_COMPRESSION_NONE, KeepInMemory: Ydb.FeatureFlag_ENABLED},
+		}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			described := plainTable()
+			described.ColumnFamilies = test.families
+			source := fakeSource{
+				directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
+				tables:      map[string]*Ydb_Table.DescribeTableResult{"/local/t": described},
+			}
+
+			db := readFrom(c, source)
+
+			c.Assert(db.NotDescribed.Describes(coverage.ColumnFamily, "t"), qt.IsFalse)
+			c.Assert(db.NotDescribed.Describes(coverage.TableOption, "t"), qt.IsTrue)
+		})
+	}
+}
+
+// Expiry is recorded whether it is a TTL, a tiering policy, or both.
+func TestReader_RecordsExpiry(t *testing.T) {
+	tests := []struct {
+		name    string
+		ttl     *Ydb_Table.TtlSettings
+		tiering string
+	}{
+		{name: "a TTL", ttl: &Ydb_Table.TtlSettings{}},
+		{name: "a tiering policy", tiering: "/local/.metadata/tiers"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			described := plainTable()
+			described.TtlSettings = test.ttl
+			described.Tiering = test.tiering
+			source := fakeSource{
+				directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
+				tables:      map[string]*Ydb_Table.DescribeTableResult{"/local/t": described},
+			}
+
+			db := readFrom(c, source)
+
+			c.Assert(db.NotDescribed.Describes(coverage.TTL, "t"), qt.IsFalse)
+		})
+	}
+}
+
+// The control for the family rows: a default family whose compression is
+// left unspecified is the layout a new table has.
+func TestReader_UnspecifiedCompressionRecordsNoFamily(t *testing.T) {
+	c := qt.New(t)
+	described := plainTable()
+	described.ColumnFamilies = []*Ydb_Table.ColumnFamily{{Name: "default"}}
+	source := fakeSource{
+		directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
+		tables:      map[string]*Ydb_Table.DescribeTableResult{"/local/t": described},
+	}
+
+	db := readFrom(c, source)
+
+	c.Assert(db.NotDescribed.Describes(coverage.ColumnFamily, "t"), qt.IsTrue)
 }
 
 func defaultPartitioning() *Ydb_Table.PartitioningSettings {
@@ -455,6 +575,16 @@ func TestReader_FailurePath(t *testing.T) {
 			},
 			wantErr: `YDB table /local/t: index "embedding_idx" is a vector_kmeans_tree index: reading or creating ` +
 				`a YDB vector, full-text, JSON or column-table index is not implemented yet \(stokaro/ptah#4015, phase 10\)`,
+		},
+		{
+			name: "a column type that is Optional twice",
+			source: fakeSource{
+				directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
+				tables: map[string]*Ydb_Table.DescribeTableResult{"/local/t": plainTable(
+					&Ydb_Table.ColumnMeta{Name: "c", Type: optional(optional(primitive(Ydb.Type_INT64)))},
+				)},
+			},
+			wantErr: `YDB table /local/t: column "c": its type Int64 is Optional twice, which a table column cannot be`,
 		},
 		{
 			name: "a scheme object of a type Ptah does not read",
