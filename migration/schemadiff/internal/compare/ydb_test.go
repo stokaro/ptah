@@ -271,3 +271,90 @@ func TestIndexesWithDialect_YDBKeepsAnUnchangedIndex(t *testing.T) {
 		})
 	}
 }
+
+// TestColumnsWithDialect_YDBDefaults_HappyPath pins the declared defaults that
+// are the default a YDB catalog reports. The reader reports a stored default
+// as the literal ydbtype writes for it, and the declaration is written through
+// the same function in the column's type, so spellings of one value agree.
+func TestColumnsWithDialect_YDBDefaults_HappyPath(t *testing.T) {
+	tests := []struct {
+		name        string
+		declared    string
+		declaration string
+		catalog     string
+		stored      *string
+	}{
+		{name: "a text value", declared: "VARCHAR(20)", declaration: "active", catalog: "Utf8", stored: new("'active'u")},
+		{name: "a quoted SQL literal", declared: "TEXT", declaration: "'it''s'", catalog: "Utf8", stored: new(`'it\'s'u`)},
+		{name: "an integer with a sign", declared: "SMALLINT", declaration: "+5", catalog: "Int16", stored: new("5s")},
+		{name: "a boolean from a digit", declared: "BOOLEAN", declaration: "1", catalog: "Bool", stored: new("true")},
+		{name: "an instant on a line with the wide types", declared: "TIMESTAMP",
+			declaration: "2026-01-02 03:04:05", catalog: "Timestamp64", stored: new("Timestamp64('2026-01-02T03:04:05Z')")},
+		{name: "an instant on a line without them", declared: "TIMESTAMP",
+			declaration: "2026-01-02 03:04:05", catalog: "Timestamp", stored: new("Timestamp('2026-01-02T03:04:05Z')")},
+		{name: "an interval in hours", declared: "INTERVAL", declaration: "PT26H", catalog: "Interval64",
+			stored: new("Interval64('P1DT2H')")},
+		{name: "a decimal with a trailing zero", declared: "DECIMAL(10,2)", declaration: "12.50",
+			catalog: "Decimal(10,2)", stored: new("Decimal('12.5', 10, 2)")},
+		{name: "a NULL default writes none", declared: "TEXT", declaration: "NULL", catalog: "Utf8", stored: nil},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff := compare.ColumnsWithDialect(
+				schemamodel.Field{Name: "c", Type: test.declared, Nullable: true, Default: test.declaration},
+				catalog.Column{Name: "c", DataType: test.catalog, ColumnType: test.catalog, IsNullable: "YES",
+					ColumnDefault: test.stored},
+				platform.YDB,
+			)
+
+			c.Assert(diff.Changes, qt.HasLen, 0)
+		})
+	}
+}
+
+// TestColumnsWithDialect_YDBDefaults_FailurePath pins the pairs that differ.
+func TestColumnsWithDialect_YDBDefaults_FailurePath(t *testing.T) {
+	tests := []struct {
+		name        string
+		declaration string
+		stored      *string
+		want        string
+	}{
+		{name: "another value", declaration: "inactive", stored: new("'active'u"), want: "'active'u -> inactive"},
+		{name: "a default the catalog does not have", declaration: "active", stored: nil, want: " -> active"},
+		{name: "a default the declaration drops", declaration: "", stored: new("'active'u"), want: "'active'u -> "},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff := compare.ColumnsWithDialect(
+				schemamodel.Field{Name: "c", Type: "TEXT", Nullable: true, Default: test.declaration},
+				catalog.Column{Name: "c", DataType: "Utf8", ColumnType: "Utf8", IsNullable: "YES",
+					ColumnDefault: test.stored},
+				platform.YDB,
+			)
+
+			c.Assert(diff.Changes, qt.DeepEquals, map[string]string{"default": test.want})
+		})
+	}
+}
+
+// A Serial column takes its value from its sequence, so the catalog reports no
+// default for it and a declaration naming none is not a change.
+func TestColumnsWithDialect_YDBSerialHasNoDefault(t *testing.T) {
+	c := qt.New(t)
+
+	diff := compare.ColumnsWithDialect(
+		schemamodel.Field{Name: "id", Type: "BIGINT", AutoInc: true, Primary: true},
+		catalog.Column{Name: "id", DataType: "Int64", ColumnType: "Int64", IsNullable: "NO",
+			IsPrimaryKey: true, IsAutoIncrement: true},
+		platform.YDB,
+	)
+
+	c.Assert(diff.Changes, qt.HasLen, 0)
+}

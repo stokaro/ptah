@@ -3,17 +3,20 @@ package introspect
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematogo"
 	"ptah.run/internal/pathguard"
+	"ptah.run/internal/ydbgap"
 )
 
 const (
@@ -97,6 +100,11 @@ func run(cmd *cobra.Command, opts options) error {
 		return cmdutil.Fail(cmd, fmt.Errorf("connect to database: %w", err))
 	}
 	defer dbschema.CloseAndWarn(conn)
+	// The Go struct generator maps another dialect's type names, and a YDB
+	// column would come out as whatever its fallback answers.
+	if platform.NormalizeDialect(conn.Info().Dialect) == platform.YDB {
+		return cmdutil.Fail(cmd, errors.New(ydbgap.OtherSurfaces.Message()))
+	}
 
 	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(cmd.Context(), conn, dbcli.ParseSchemas(opts.schemasRaw))
 	if err != nil {

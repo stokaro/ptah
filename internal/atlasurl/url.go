@@ -21,6 +21,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/internal/ydbgap"
+	"ptah.run/internal/ydburl"
 )
 
 // dockerScheme is the URL scheme that asks Ptah to start a dev database from
@@ -70,14 +71,6 @@ var defaultPorts = map[string]string{
 	platform.MariaDB:     "3306",
 	platform.SQLServer:   "1433",
 	platform.ClickHouse:  "9000",
-}
-
-// ydbDefaultPorts are YDB's default gRPC ports by URL scheme rather than by
-// dialect: both schemes are YDB, and a server listens for plaintext on 2136
-// and for TLS on 2135.
-var ydbDefaultPorts = map[string]string{
-	"ydb":  "2136",
-	"ydbs": "2135",
 }
 
 // SQLiteURLFromPath returns a SQLite URL whose path remains unambiguous on the
@@ -434,37 +427,21 @@ func networkDatabaseIdentity(parsed *url.URL, dialect string) (databaseIdentity,
 		}
 		database = options.Auth.Database
 	case platform.YDB:
-		endpoint, database = ydbDatabaseIdentity(parsed)
+		ydbURL, err := ydburl.FromURL(parsed)
+		if err != nil {
+			return databaseIdentity{}, fmt.Errorf("invalid YDB database URL: %w", err)
+		}
+		// The port defaults by scheme rather than by dialect: both schemes are
+		// YDB, and a server listens for plaintext on one port and for TLS on
+		// another.
+		endpoint = networkEndpoint(ydbURL.Host, ydbURL.Port, platform.YDB)
+		database = ydbURL.Database
 	}
 	return databaseIdentity{
 		dialect:  identityDialect(dialect),
 		endpoint: endpoint,
 		database: database,
 	}, nil
-}
-
-// ydbDatabaseIdentity reads the endpoint and the database a YDB URL names.
-//
-// A YDB database is a path such as /local, and it may come from either the
-// URL path or a database parameter. The YDB SDK reads the parameter after the
-// path, so the parameter wins, and this reads it the same way: two URLs on one
-// endpoint that name different databases, in either place, are different
-// databases. The path is folded to one leading slash and no trailing one, so
-// /local, local and /local/ are one database.
-func ydbDatabaseIdentity(parsed *url.URL) (endpoint, database string) {
-	port := parsed.Port()
-	if port == "" {
-		port = ydbDefaultPorts[strings.ToLower(parsed.Scheme)]
-	}
-	endpoint = networkEndpoint(parsed.Hostname(), port, platform.YDB)
-	database = parsed.Path
-	if values, ok := parsed.Query()["database"]; ok && len(values) > 0 {
-		database = values[0]
-	}
-	if strings.Trim(database, "/") == "" {
-		return endpoint, ""
-	}
-	return endpoint, "/" + strings.Trim(database, "/")
 }
 
 func networkEndpointRoute(endpoints []string) string {

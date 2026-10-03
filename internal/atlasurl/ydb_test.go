@@ -11,9 +11,9 @@ import (
 )
 
 // A YDB database is a path, and the URL may carry it in its path or in a
-// database parameter, which the YDB SDK reads after the path. Two URLs on one
-// endpoint that name different databases must never compare as one, because
-// a dev or scratch run cleans the database it is handed.
+// database parameter. Two URLs on one endpoint that name different databases
+// must never compare as one, because a dev or scratch run cleans the database
+// it is handed.
 func TestSameDatabaseEndpoint_YDB_HappyPath(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -64,16 +64,10 @@ func TestSameDatabaseEndpoint_YDB_HappyPath(t *testing.T) {
 			want:  false,
 		},
 		{
-			name:  "the parameter decides when the paths agree",
+			name:  "the path and the parameter may both name the database",
 			left:  "ydb://localhost:2136/local?database=/local",
-			right: "ydb://localhost:2136/local?database=/dev",
+			right: "ydb://localhost:2136/dev?database=dev/",
 			want:  false,
-		},
-		{
-			name:  "the parameter wins over the path",
-			left:  "ydb://localhost:2136/local?database=/dev",
-			right: "ydb://localhost:2136/dev",
-			want:  true,
 		},
 		{
 			name:  "a nested database path",
@@ -95,6 +89,42 @@ func TestSameDatabaseEndpoint_YDB_HappyPath(t *testing.T) {
 			got, err := atlasurl.SameDatabaseEndpoint(test.left, test.right)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+// The YDB SDK silently takes the parameter when the path and the parameter
+// name different databases, so a reader of the path would describe a database
+// the command does not open. Such a URL is refused rather than compared.
+func TestSameDatabaseEndpoint_YDB_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		left    string
+		wantErr string
+	}{
+		{
+			name:    "the path and the parameter disagree",
+			left:    "ydb://localhost:2136/local?database=/dev",
+			wantErr: `invalid YDB database URL: the URL names database /local in its path and /dev in the database parameter; name it once`,
+		},
+		{
+			name:    "the parameter is given twice",
+			left:    "ydb://localhost:2136/?database=/a&database=/b",
+			wantErr: `invalid YDB database URL: the database parameter is given more than once`,
+		},
+		{
+			name:    "the parameter is empty",
+			left:    "ydb://localhost:2136/local?database=",
+			wantErr: `invalid YDB database URL: the database parameter is empty`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			got, err := atlasurl.SameDatabaseEndpoint(test.left, "ydb://localhost:2136/local")
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(test.wantErr))
+			c.Assert(got, qt.IsFalse)
 		})
 	}
 }

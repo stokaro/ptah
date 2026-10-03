@@ -160,6 +160,9 @@ func runAtlasMigrateDownFormat(
 	if opts.url == "" {
 		return fmt.Errorf("database URL is required")
 	}
+	if err := refuseAtlasYDBDirectURLs(opts.url, opts.devURL); err != nil {
+		return err
+	}
 	if opts.dir == "" {
 		return fmt.Errorf("migrations directory is required")
 	}

@@ -128,6 +128,9 @@ const (
 	// covered by the servers the other engines name (stokaro/ptah#3885).
 	MySQLDevServer
 	MariaDBDevServer
+	// YDB is a YDB database, reached over gRPC through a ydb:// or ydbs://
+	// URL that names the database.
+	YDB
 )
 
 // source is where one engine's address comes from.
@@ -254,6 +257,10 @@ var sources = map[Engine]source{
 		canonical: "MARIADB_DEV_SERVER_URL",
 		scheme:    []string{"mariadb", "mysql"},
 	},
+	YDB: {
+		canonical: "YDB_TEST_URL",
+		scheme:    []string{"ydb", "ydbs"},
+	},
 }
 
 // String names the engine as its canonical variable does.
@@ -345,47 +352,34 @@ func checkScheme(src source, name, value string) error {
 
 // engineName renders an engine for a human-facing message.
 func engineName(engine Engine) string {
-	switch engine {
-	case PostgreSQL:
-		return "PostgreSQL"
-	case MySQL:
-		return "MySQL"
-	case MySQLAdmin:
-		return "MySQL with an administrative account"
-	case PostgreSQLPooled:
-		return "PostgreSQL behind a transaction-pooling proxy"
-	case TimescaleDB:
-		return "PostgreSQL with the TimescaleDB extension"
-	case MariaDB:
-		return "MariaDB"
-	case MariaDBAdmin:
-		return "MariaDB with an administrative account"
-	case ClickHouse:
-		return "ClickHouse"
-	case SQLServer:
-		return "SQL Server"
-	case CockroachDB:
-		return "CockroachDB"
-	case YugabyteDB:
-		return "YugabyteDB"
-	case Oracle:
-		return "Oracle"
-	case OracleAdmin:
-		return "Oracle with an administrative account"
-	case MySQLSocket:
-		return "MySQL through its Unix socket"
-	case MariaDBSocket:
-		return "MariaDB through its Unix socket"
-	case PostgreSQLAliased:
-		return "PostgreSQL database that the pooler also serves under another name"
-	case PostgreSQLAlias:
-		return "PostgreSQL database reached through the pooler under another name"
-	case MySQLDevServer:
-		return "second MySQL server"
-	case MariaDBDevServer:
-		return "second MariaDB server"
+	if name, ok := engineNames[engine]; ok {
+		return name
 	}
 	return engine.String()
+}
+
+// engineNames are the names engineName gives each engine.
+var engineNames = map[Engine]string{
+	PostgreSQL:        "PostgreSQL",
+	MySQL:             "MySQL",
+	MySQLAdmin:        "MySQL with an administrative account",
+	PostgreSQLPooled:  "PostgreSQL behind a transaction-pooling proxy",
+	TimescaleDB:       "PostgreSQL with the TimescaleDB extension",
+	MariaDB:           "MariaDB",
+	MariaDBAdmin:      "MariaDB with an administrative account",
+	ClickHouse:        "ClickHouse",
+	SQLServer:         "SQL Server",
+	CockroachDB:       "CockroachDB",
+	YugabyteDB:        "YugabyteDB",
+	Oracle:            "Oracle",
+	OracleAdmin:       "Oracle with an administrative account",
+	MySQLSocket:       "MySQL through its Unix socket",
+	MariaDBSocket:     "MariaDB through its Unix socket",
+	PostgreSQLAliased: "PostgreSQL database that the pooler also serves under another name",
+	PostgreSQLAlias:   "PostgreSQL database reached through the pooler under another name",
+	MySQLDevServer:    "second MySQL server",
+	MariaDBDevServer:  "second MariaDB server",
+	YDB:               "YDB",
 }
 
 // DriverDSN returns the address in the form a raw database/sql driver parses,
@@ -478,6 +472,10 @@ func driverForm(engine Engine, address string) string {
 		// wire protocol, and a raw pgx caller handed `spanner://` cannot parse
 		// it (stokaro/ptah#1719).
 		return postgresWireURL(address)
+	case YDB:
+		// ydb-go-sdk reads grpc:// and grpcs://, the two transports ydb:// and
+		// ydbs:// name.
+		return ydbSDKURL(address)
 	}
 	// Every other engine's driver reads the address as it stands: pgx parses
 	// postgres:// and postgresql://, go-mssqldb parses sqlserver://, and
@@ -499,6 +497,21 @@ func postgresWireURL(address string) string {
 	switch scheme {
 	case "cockroachdb", "yugabytedb", "spanner":
 		return "postgres://" + rest
+	}
+	return address
+}
+
+// ydbSDKURL rewrites a YDB URL to the scheme ydb-go-sdk reads.
+func ydbSDKURL(address string) string {
+	scheme, rest, found := strings.Cut(address, "://")
+	if !found {
+		return address
+	}
+	switch scheme {
+	case "ydb":
+		return "grpc://" + rest
+	case "ydbs":
+		return "grpcs://" + rest
 	}
 	return address
 }
@@ -535,7 +548,7 @@ func Engines() []Engine {
 		PostgreSQL, MySQL, MySQLAdmin, MariaDB, MariaDBAdmin,
 		ClickHouse, SQLServer, CockroachDB, YugabyteDB,
 		MySQLSocket, MariaDBSocket, PostgreSQLAliased, PostgreSQLAlias,
-		MySQLDevServer, MariaDBDevServer,
+		MySQLDevServer, MariaDBDevServer, YDB,
 	}
 }
 

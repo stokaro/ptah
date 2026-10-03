@@ -9,6 +9,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/catalogfield"
@@ -172,7 +173,7 @@ func tableColumnsWithSemantics(
 
 	for identity, column := range dbColumns {
 		if _, exists := genColumns[identity]; !exists {
-			tableDiff.ColumnsRemoved = append(tableDiff.ColumnsRemoved, removedColumn(column))
+			tableDiff.ColumnsRemoved = append(tableDiff.ColumnsRemoved, removedColumn(column, dialect))
 		}
 	}
 
@@ -498,6 +499,13 @@ func columnDefaultChange(
 	genDefault := genCol.Default
 	if genDefault == "" {
 		genDefault = genCol.DefaultExpr
+	}
+	if platform.NormalizeDialect(dialect) == platform.YDB {
+		dbDefault := ""
+		if dbCol.ColumnDefault != nil {
+			dbDefault = *dbCol.ColumnDefault
+		}
+		return ydbDefaultChange(genCol, dbCol, genDefault, dbDefault)
 	}
 	// Default is a literal value, while DefaultExpr is SQL. The renderer quotes
 	// the literal NULL, so feed its quoted form to the normalizer too. Otherwise
@@ -1112,6 +1120,48 @@ func ydbColumnTypeChange(genCol schemamodel.Field, dbCol catalog.Column, dbRawTy
 	return fmt.Sprintf("%s -> %s", currentType, desiredType)
 }
 
+// ydbDefaultChange compares a YDB column's default as YQL literals. YDB
+// stores a default as a typed value, and the reader reports it as the literal
+// ydbtype.Literal writes for it; the declaration is written through the same
+// function in the type the column has, so `5`, `+5` and `05` on an Int8 column
+// all compare as `5t`, and a declared TIMESTAMP default compares in the
+// Timestamp64 or Timestamp spelling the server built. A Serial column takes
+// its value from its sequence, so the reader reports no default for one and
+// there is nothing to compare.
+func ydbDefaultChange(genCol schemamodel.Field, dbCol catalog.Column, declared, current string) (key, change string) {
+	if strings.TrimSpace(declared) == "" && current == "" {
+		return "", ""
+	}
+	if ydbDeclaredDefault(genCol, dbCol.RawType(), declared) == current {
+		return "", ""
+	}
+	return "default", fmt.Sprintf("%s -> %s", current, declared)
+}
+
+// ydbDeclaredDefault writes a declared default as the literal the YDB renderer
+// writes for it: in the catalog's type where the declaration lands on that
+// type, and in the declaration's own type otherwise. A NULL default writes
+// nothing, as the renderer writes none. An expression, and a value the type
+// cannot hold, are compared as written.
+func ydbDeclaredDefault(genCol schemamodel.Field, catalogType, declared string) string {
+	if strings.TrimSpace(genCol.Default) == "" && strings.TrimSpace(genCol.DefaultExpr) != "" {
+		return declared
+	}
+	value, isNull := ydbtype.DeclaredValue(declared)
+	if isNull {
+		return ""
+	}
+	columnType, _ := ydbComparableTypes(genCol.Type, catalogType)
+	literal, err := ydbtype.Literal(columnType, value, capability.Capabilities{
+		capability.SmallIntegerDefaults: true,
+		capability.DocumentTypeDefaults: true,
+	})
+	if err != nil {
+		return declared
+	}
+	return literal
+}
+
 // ydbSerialOf answers the Serial type an incrementing integer of columnType
 // is written as, and columnType itself where YDB has no Serial for it.
 func ydbSerialOf(columnType string) string {
@@ -1563,8 +1613,8 @@ func writeSQLServerBracketedIdentifier(b *strings.Builder, expression string, st
 // The forward direction is unaffected: a DECLARED field carries its own foreign
 // key, the constraint comparison reports none for it, and the column path is
 // the only one that emits it.
-func removedColumn(reported catalog.Column) schemamodel.Field {
-	field := catalogfield.Field(reported, catalogfield.Options{})
+func removedColumn(reported catalog.Column, dialect string) schemamodel.Field {
+	field := catalogfield.Field(reported, catalogfield.Options{Dialect: dialect})
 	field.Primary = false
 	field.Foreign = ""
 	field.ForeignKeyName = ""

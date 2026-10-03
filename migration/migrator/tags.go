@@ -104,6 +104,9 @@ func (m *Migrator) ensureMigrationTagsTable(ctx context.Context) error {
 	if m.conn == nil {
 		return errors.New("ensure migration tags table: no database connection")
 	}
+	if err := m.refuseUnimplementedDialect(); err != nil {
+		return err
+	}
 	if statement := m.migrationsSchemaStatement(); statement != "" {
 		if _, err := m.conn.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("ensure migration tags schema: %w", err)

@@ -105,3 +105,40 @@ func TestValidateSchema_YDBAcceptsAnIndexTheRenderAccepts(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 }
+
+// TestGetOrderedCreateStatements_YDBQuotesATableNameOnce pins the path of a
+// table name YDB has to escape. A name holding a backtick and a dot reaches
+// the renderer in the canonical spelling, and the renderer writes it as one
+// backticked path with the backtick escaped once.
+func TestGetOrderedCreateStatements_YDBQuotesATableNameOnce(t *testing.T) {
+	tests := []struct {
+		name   string
+		schema string
+		table  string
+		want   string
+	}{
+		{name: "a backtick and dots at the root", table: "tick`name.with.dot",
+			want: "CREATE TABLE `tick\\`name.with.dot` ("},
+		{name: "the same name in a directory", schema: "app/sub", table: "tick`name.with.dot",
+			want: "CREATE TABLE `app/sub/tick\\`name.with.dot` ("},
+		{name: "a backslash", table: `back\slash`,
+			want: "CREATE TABLE `back\\\\slash` ("},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db := &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "T", Name: test.table, Schema: test.schema}},
+				Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "BIGINT", Primary: true}},
+			}
+			schemamodel.Finalize(db)
+
+			statements, err := renderer.GetOrderedCreateStatements(db, "ydb")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements, qt.HasLen, 1)
+			c.Assert(statements[0], qt.Contains, test.want)
+		})
+	}
+}

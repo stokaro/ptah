@@ -2,6 +2,7 @@ package schema
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,12 +12,14 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/schemasecurity"
+	"ptah.run/internal/ydbgap"
 )
 
 const (
@@ -145,6 +148,11 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 		return cmdutil.Fail(cmd, fmt.Errorf("connect to --%s: %w", securityDBURLFlag, err))
 	}
 	defer func() { _ = conn.Close() }()
+	// The YDB reader reads no users, groups or permissions, so an analysis of
+	// its description would report a clean access model it never saw.
+	if platform.NormalizeDialect(conn.Info().Dialect) == platform.YDB {
+		return cmdutil.Fail(cmd, errors.New(ydbgap.OtherSurfaces.Message()))
+	}
 
 	live, err := dbschema.ReadSchemaWithSchemasContext(cmd.Context(), conn, atlasschema.SplitSchemaNames([]string{opts.schemas}))
 	if err != nil {

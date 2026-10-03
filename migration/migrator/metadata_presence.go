@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/ydbgap"
 )
 
 func (m *Migrator) migrationsTableExists(ctx context.Context) (bool, error) {
@@ -62,10 +63,25 @@ func (m *Migrator) MetadataPresent(ctx context.Context) (bool, error) {
 // to catch would reach the database before the value that was already wrong
 // was read at all.
 func (m *Migrator) validateMetadataInputs() error {
+	if err := m.refuseUnimplementedDialect(); err != nil {
+		return err
+	}
 	if _, err := allowForeignMetadataTableVar.Resolve(); err != nil {
 		return err
 	}
 	return m.refuseUnaddressableMetadata()
+}
+
+// refuseUnimplementedDialect refuses a connection whose dialect the migrator
+// has no revision, log or tag table for. Every public entry point that reads
+// or writes the metadata reaches it before its first statement, so a YDB
+// connection is refused in the words of the gap instead of being sent another
+// dialect's DDL.
+func (m *Migrator) refuseUnimplementedDialect() error {
+	if platform.NormalizeDialect(m.connectionDialect()) == platform.YDB {
+		return errors.New(ydbgap.Migrating.Message())
+	}
+	return nil
 }
 
 // RevisionLayoutBase reports whether an existing native revision table carries
@@ -973,6 +989,8 @@ WHERE table_schema = current_schema() AND table_name = ? AND table_type = 'BASE 
 			table,
 		}, nil
 	default:
+		// YDB never reaches here: refuseUnimplementedDialect refuses it at
+		// every entry point first.
 		return "", nil, fmt.Errorf("unsupported migration metadata dialect %q", dialect)
 	}
 }

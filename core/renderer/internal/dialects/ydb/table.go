@@ -9,7 +9,6 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer/internal/dialects/internal/defaultlit"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/ydbgap"
 	"ptah.run/internal/ydbtype"
@@ -322,7 +321,7 @@ func nullDefault(value *ast.DefaultValue) bool {
 	if value == nil || strings.TrimSpace(value.Expression) != "" || !value.HasLiteral() {
 		return false
 	}
-	_, isNull := unquoteDefault(value.Value)
+	_, isNull := ydbtype.DeclaredValue(value.Value)
 	return isNull
 }
 
@@ -438,7 +437,7 @@ func (r *Renderer) defaultClause(subject string, value *ast.DefaultValue, ydbTyp
 	case !value.HasLiteral():
 		return "", nil
 	}
-	raw, isNull := unquoteDefault(value.Value)
+	raw, isNull := ydbtype.DeclaredValue(value.Value)
 	if isNull {
 		return "", nil
 	}
@@ -447,31 +446,6 @@ func (r *Renderer) defaultClause(subject string, value *ast.DefaultValue, ydbTyp
 		return "", typeRefusal(subject, err)
 	}
 	return "DEFAULT " + literal, nil
-}
-
-// unquoteDefault reads a default's text into the value it denotes. A struct
-// tag stores the value bare and the SQL parser keeps a quoted literal, with or
-// without a cast; both are read here into the bare value, and a bare NULL is
-// reported as no value at all.
-func unquoteDefault(value string) (raw string, isNull bool) {
-	text := strings.TrimSpace(value)
-	if !defaultlit.IsSQLLiteral(text) {
-		return text, strings.EqualFold(text, "NULL")
-	}
-	var b strings.Builder
-	for i := 1; i < len(text); i++ {
-		if text[i] != '\'' {
-			b.WriteByte(text[i])
-			continue
-		}
-		if i+1 < len(text) && text[i+1] == '\'' {
-			b.WriteByte('\'')
-			i++
-			continue
-		}
-		break
-	}
-	return b.String(), false
 }
 
 // typeRefusal turns a type map refusal into the renderer's error, keyed where

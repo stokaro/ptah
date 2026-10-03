@@ -181,13 +181,63 @@ const (
 	VirtualTable Kind = "virtual_table"
 )
 
+// The YDB object families Ptah does not model yet. A YDB read records each
+// one it meets, by the path of the object or of the table that carries it,
+// so a description's silence about them is never read as their absence and
+// nothing plans their removal. Like [ChangeStream], none of them is consulted
+// by a comparator that plans the family, because no planner writes one.
+const (
+	// View is a YDB view (CREATE VIEW ... WITH (security_invoker = TRUE)).
+	View Kind = "view"
+	// Topic is a YDB topic, a persistent message queue in the scheme tree.
+	Topic Kind = "topic"
+	// ColumnTable is a YDB column-oriented table (STORE = COLUMN), or the
+	// column store that holds such tables.
+	ColumnTable Kind = "column_table"
+	// CoordinationNode is a YDB coordination node, which holds semaphores for
+	// distributed locks.
+	CoordinationNode Kind = "coordination_node"
+	// Replication is a YDB asynchronous replication.
+	Replication Kind = "replication"
+	// Transfer is a YDB transfer, which moves messages from a topic into a
+	// table.
+	Transfer Kind = "transfer"
+	// ExternalDataSource is a YDB external data source.
+	ExternalDataSource Kind = "external_data_source"
+	// ExternalTable is a YDB external table over an external data source.
+	ExternalTable Kind = "external_table"
+	// Secret is a YDB secret. Its value is never read.
+	Secret Kind = "secret"
+	// ResourcePool is a YDB resource pool, which limits the resources a class
+	// of queries may use.
+	ResourcePool Kind = "resource_pool"
+	// Changefeed is a YDB changefeed, a stream of a table's changes. It is
+	// named by the table's path and the changefeed's name.
+	Changefeed Kind = "changefeed"
+	// TTL is a YDB table's time to live: the rule that deletes a row once a
+	// column's value is old enough, and its tiers.
+	TTL Kind = "ttl"
+	// ColumnFamily is a YDB table's column families beyond the default one,
+	// or a default family with its own storage pool or compression.
+	ColumnFamily Kind = "column_family"
+	// TableOption is a YDB table's partitioning, read replica, key bloom
+	// filter and storage settings, where they differ from what a table Ptah
+	// creates is given.
+	TableOption Kind = "table_option"
+	// Grant is a permission granted on an object. A YDB read records the
+	// whole kind, since it does not read the access model.
+	Grant Kind = "grant"
+)
+
 // kinds is every [Kind] the serialized directive grammar accepts, in the order
 // [ParseKind]'s refusal message lists them. [Hypertable] and
 // [ContinuousAggregate] are not in it; both constants say what that costs a
 // serialized [Set].
 var kinds = []Kind{
-	ChangeStream, Composite, DefaultPrivilege, Domain, Extension, ExtendedProperty, Policy, Range, Role,
-	Schema, Sequence, Synonym, VirtualTable,
+	Changefeed, ChangeStream, ColumnFamily, ColumnTable, Composite, CoordinationNode, DefaultPrivilege, Domain,
+	Extension, ExtendedProperty, ExternalDataSource, ExternalTable, Grant, Policy, Range, Replication,
+	ResourcePool, Role, Schema, Secret, Sequence, Synonym, TableOption, Topic, Transfer, TTL, View,
+	VirtualTable,
 }
 
 // ParseKind resolves a serialized kind token. It refuses anything not in the

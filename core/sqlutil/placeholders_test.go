@@ -16,17 +16,40 @@ func TestRebind(t *testing.T) {
 		want    string
 	}{
 		{
-			// The YDB driver binds `?` positionally; `$1` is a YQL parse error.
-			name:    "ydb keeps question marks",
+			// YQL has no positional placeholder, and `$1` is a parse error.
+			name:    "ydb writes named parameters",
 			dialect: "ydb",
 			query:   "SELECT * FROM `t` WHERE a = ? AND b = '?'",
-			want:    "SELECT * FROM `t` WHERE a = ? AND b = '?'",
+			want:    "SELECT * FROM `t` WHERE a = $p1 AND b = '?'",
 		},
 		{
-			name:    "ydbs alias keeps question marks",
+			name:    "ydbs alias writes named parameters",
 			dialect: "ydbs",
 			query:   "UPSERT INTO `t` (a, b) VALUES (?, ?)",
-			want:    "UPSERT INTO `t` (a, b) VALUES (?, ?)",
+			want:    "UPSERT INTO `t` (a, b) VALUES ($p1, $p2)",
+		},
+		{
+			// The three literals ydb-go-sdk's positional binder rewrote, each
+			// read here by YQL's own rules: a backslash-escaped quote, a
+			// multiline string, and a double-quoted string with an escape.
+			name:    "ydb leaves a question mark inside a YQL literal",
+			dialect: "ydb",
+			query:   `SELECT 'a\'?'u, @@x?y@@u, "b\"?"u, ?`,
+			want:    `SELECT 'a\'?'u, @@x?y@@u, "b\"?"u, $p1`,
+		},
+		{
+			name:    "ydb leaves a question mark inside comments and names",
+			dialect: "ydb",
+			query:   "SELECT ? AS `p?` -- what?\n/* why? */ FROM t WHERE c = ?",
+			want:    "SELECT $p1 AS `p?` -- what?\n/* why? */ FROM t WHERE c = $p2",
+		},
+		{
+			// A quoted name, a string and a multiline string that each hold a
+			// question mark and nothing else.
+			name:    "ydb leaves a lone question mark inside a name or a literal",
+			dialect: "ydb",
+			query:   "SELECT `?`, '?', @@?@@, ? FROM t",
+			want:    "SELECT `?`, '?', @@?@@, $p1 FROM t",
 		},
 		{
 			name:    "postgres simple",

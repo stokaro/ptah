@@ -732,6 +732,29 @@ func TestRenderStatements_FailurePath(t *testing.T) {
 		c.Assert(up, qt.IsNil)
 		c.Assert(down, qt.IsNil)
 	})
+	// YQL types every data literal, and the typed literals are not written
+	// yet, so a YDB diff is refused whatever it holds -- even an empty one,
+	// which would otherwise read as a data plan Ptah had checked.
+	for _, dialect := range []string{"ydb", "ydbs"} {
+		t.Run("a "+dialect+" diff", func(t *testing.T) {
+			c := qt.New(t)
+			up, down, err := datadiff.RenderStatements(&datadiff.DataDiff{
+				Table:   "t",
+				Keys:    []string{"code"},
+				Inserts: []datadiff.Row{{"code": "US"}},
+			}, dialect)
+			c.Assert(err, qt.ErrorMatches, `datadiff: writing YDB rows is not implemented yet \(stokaro/ptah#4015, phase 7\)`)
+			c.Assert(up, qt.IsNil)
+			c.Assert(down, qt.IsNil)
+		})
+	}
+	t.Run("an empty ydb diff", func(t *testing.T) {
+		c := qt.New(t)
+		up, down, err := datadiff.RenderStatements(&datadiff.DataDiff{Table: "t"}, "ydb")
+		c.Assert(err, qt.ErrorMatches, `datadiff: writing YDB rows is not implemented yet.*`)
+		c.Assert(up, qt.IsNil)
+		c.Assert(down, qt.IsNil)
+	})
 	t.Run("a value with no literal", func(t *testing.T) {
 		c := qt.New(t)
 		up, down, err := datadiff.RenderStatements(&datadiff.DataDiff{

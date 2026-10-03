@@ -2,16 +2,25 @@ package ydbtype
 
 import (
 	"fmt"
+	"math"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/defaultlit"
 )
 
 // Literal writes value as the YQL literal a column of ydbType takes as its
 // default on a target with caps.
+//
+// The literal is canonical: two spellings of one value write one literal, so
+// `05`, `+5` and `5` are all `5t` on an Int8 column, `PT26H` and `P1DT2H` are
+// both `Interval('P1DT2H')`, and `1.50` is `Decimal('1.5', 10, 2)`. The schema
+// reader writes a default YDB stores through this function too, which is what
+// lets a comparison decide equality by comparing the two literals.
 //
 // value is the default's text with any SQL quoting already removed: `active`,
 // `42`, `2026-01-02 03:04:05`. YDB types a default strictly and refuses one
@@ -78,7 +87,7 @@ func literalFor(ydbType, value string) (string, error) {
 	case Interval, Interval64:
 		return intervalLiteral(ydbType, value)
 	}
-	if precision, scale, ok := decimalArguments(ydbType); ok {
+	if precision, scale, ok := DecimalArguments(ydbType); ok {
 		return decimalLiteral(value, precision, scale)
 	}
 	return "", &Refusal{Declared: "a default of type " + ydbType, Reason: "Ptah writes no literal of that type"}
@@ -105,16 +114,18 @@ type integerKind struct {
 
 func integerLiteral(ydbType, value string, kind integerKind) (string, error) {
 	text := strings.TrimSpace(value)
-	var err error
 	if kind.unsigned {
-		_, err = strconv.ParseUint(text, 10, kind.bits)
-	} else {
-		_, err = strconv.ParseInt(text, 10, kind.bits)
+		number, err := strconv.ParseUint(text, 10, kind.bits)
+		if err != nil {
+			return "", valueRefusal(ydbType, value)
+		}
+		return strconv.FormatUint(number, 10) + kind.suffix, nil
 	}
+	number, err := strconv.ParseInt(text, 10, kind.bits)
 	if err != nil {
 		return "", valueRefusal(ydbType, value)
 	}
-	return text + kind.suffix, nil
+	return strconv.FormatInt(number, 10) + kind.suffix, nil
 }
 
 func boolLiteral(value string) (string, error) {
@@ -135,16 +146,32 @@ var decimalNumber = regexp.MustCompile(`^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$`
 
 // numberConstructor checks the value is a number YDB reads before wrapping it,
 // so a word in a numeric default is refused here rather than by the server.
+// A Float or a Double is written as the shortest text that reads back as the
+// same binary value at the column's width; a DyNumber keeps its digits, since
+// it is a decimal type and its digits are the value.
 func numberConstructor(ydbType, value string) (string, error) {
 	text := strings.TrimSpace(value)
 	if !decimalNumber.MatchString(text) {
 		return "", valueRefusal(ydbType, value)
 	}
+	switch ydbType {
+	case Float, Double:
+		bits := 64
+		if ydbType == Float {
+			bits = 32
+		}
+		number, err := strconv.ParseFloat(text, bits)
+		if err != nil {
+			return "", valueRefusal(ydbType, value)
+		}
+		text = strconv.FormatFloat(number, 'g', -1, bits)
+	}
 	return ydbType + "(" + quote(text) + ")", nil
 }
 
-// decimalArguments reads the precision and scale out of `Decimal(p,s)`.
-func decimalArguments(ydbType string) (precision, scale int, ok bool) {
+// DecimalArguments reads the precision and scale out of a YDB type spelled
+// `Decimal(p,s)`, and reports false for any other type.
+func DecimalArguments(ydbType string) (precision, scale int, ok bool) {
 	inner, found := strings.CutPrefix(ydbType, "Decimal(")
 	if !found || !strings.HasSuffix(inner, ")") {
 		return 0, 0, false
@@ -168,12 +195,35 @@ func decimalLiteral(value string, precision, scale int) (string, error) {
 	if !decimalPattern.MatchString(text) {
 		return "", valueRefusal(declared, value)
 	}
-	integerPart, fraction, _ := strings.Cut(strings.TrimLeft(text, "+-"), ".")
-	integerPart = strings.TrimLeft(integerPart, "0")
-	if len(strings.TrimRight(fraction, "0")) > scale || len(integerPart) > precision-scale {
+	canonical := DecimalText(text)
+	integerPart, fraction, _ := strings.Cut(strings.TrimPrefix(canonical, "-"), ".")
+	if len(fraction) > scale || len(strings.TrimLeft(integerPart, "0")) > precision-scale {
 		return "", valueRefusal(declared, value)
 	}
-	return fmt.Sprintf("Decimal(%s, %d, %d)", quote(text), precision, scale), nil
+	return fmt.Sprintf("Decimal(%s, %d, %d)", quote(canonical), precision, scale), nil
+}
+
+// DecimalText writes a decimal value, an optional sign and digits with an
+// optional fraction, in its shortest form: no plus sign, no leading zero in
+// the integer part, no trailing zero in the fraction, and no sign on zero.
+// `-0012.340` writes as -12.34 and `-0.0` as 0. Text of any other shape comes
+// back with only its sign and zeros changed.
+func DecimalText(value string) string {
+	unsigned := strings.TrimLeft(value, "+-")
+	integerDigits, fractionDigits, _ := strings.Cut(unsigned, ".")
+	integerDigits = strings.TrimLeft(integerDigits, "0")
+	fractionDigits = strings.TrimRight(fractionDigits, "0")
+	if integerDigits == "" {
+		integerDigits = "0"
+	}
+	text := integerDigits
+	if fractionDigits != "" {
+		text += "." + fractionDigits
+	}
+	if strings.HasPrefix(value, "-") && text != "0" {
+		text = "-" + text
+	}
+	return text
 }
 
 var decimalPattern = regexp.MustCompile(`^[+-]?\d+(\.\d+)?$`)
@@ -261,11 +311,112 @@ var isoDuration = regexp.MustCompile(`^-?P(\d+W)?(\d+D)?(T(\d+H)?(\d+M)?(\d+(\.\
 
 func intervalLiteral(ydbType, value string) (string, error) {
 	text := strings.TrimSpace(value)
-	if !isoDuration.MatchString(text) || strings.HasSuffix(text, "P") || strings.HasSuffix(text, "T") {
+	micros, ok := parseDuration(text)
+	if !ok {
 		return "", &Refusal{Declared: fmt.Sprintf("default %q", value),
 			Reason: ydbType + " takes an ISO 8601 duration such as P1D or PT30M"}
 	}
-	return ydbType + "(" + quote(text) + ")", nil
+	return ydbType + "(" + quote(IntervalText(micros)) + ")", nil
+}
+
+// parseDuration reads an ISO 8601 duration in the form YDB's Interval takes
+// into microseconds. A week is seven days and a day is 24 hours, which is how
+// YDB stores them: `Interval('P1DT2H')` reads back as 93600000000.
+func parseDuration(text string) (int64, bool) {
+	match := isoDuration.FindStringSubmatch(text)
+	if match == nil || strings.HasSuffix(text, "P") || strings.HasSuffix(text, "T") {
+		return 0, false
+	}
+	const (
+		second = int64(1_000_000)
+		minute = 60 * second
+		hour   = 60 * minute
+		day    = 24 * hour
+	)
+	var micros int64
+	for _, part := range []struct {
+		text string
+		unit int64
+	}{
+		{match[1], 7 * day}, {match[2], day}, {match[4], hour}, {match[5], minute},
+	} {
+		if part.text == "" {
+			continue
+		}
+		count, err := strconv.ParseInt(part.text[:len(part.text)-1], 10, 64)
+		if err != nil || count > (math.MaxInt64-micros)/part.unit {
+			return 0, false
+		}
+		micros += count * part.unit
+	}
+	if seconds := match[6]; seconds != "" {
+		whole, fraction, _ := strings.Cut(strings.TrimSuffix(seconds, "S"), ".")
+		count, err := strconv.ParseInt(whole, 10, 64)
+		if err != nil {
+			return 0, false
+		}
+		fraction += strings.Repeat("0", 6-len(fraction))
+		fractionMicros, err := strconv.ParseInt(fraction, 10, 64)
+		if err != nil || count > (math.MaxInt64-micros-fractionMicros)/second {
+			return 0, false
+		}
+		micros += count*second + fractionMicros
+	}
+	if strings.HasPrefix(text, "-") {
+		micros = -micros
+	}
+	return micros, true
+}
+
+// IntervalText writes a duration of micros microseconds as the ISO 8601 text
+// YDB's Interval reads, in days, hours, minutes and seconds, leaving out the
+// parts that are zero: 93600000000 is P1DT2H, -1000000 is -PT1S, and 0 is
+// PT0S.
+func IntervalText(micros int64) string {
+	var b strings.Builder
+	const (
+		second = int64(1_000_000)
+		minute = 60 * second
+		hour   = 60 * minute
+		day    = 24 * hour
+	)
+	// Go's division truncates toward zero, so on a negative duration both
+	// parts are negative and each is small enough to negate, math.MinInt64
+	// included.
+	days, rest := micros/day, micros%day
+	if micros < 0 {
+		b.WriteByte('-')
+		days, rest = -days, -rest
+	}
+	hours, rest := rest/hour, rest%hour
+	minutes, rest := rest/minute, rest%minute
+	seconds, fraction := rest/second, rest%second
+
+	b.WriteByte('P')
+	if days > 0 {
+		fmt.Fprintf(&b, "%dD", days)
+	}
+	if hours == 0 && minutes == 0 && seconds == 0 && fraction == 0 {
+		if days == 0 {
+			b.WriteString("T0S")
+		}
+		return b.String()
+	}
+	b.WriteByte('T')
+	if hours > 0 {
+		fmt.Fprintf(&b, "%dH", hours)
+	}
+	if minutes > 0 {
+		fmt.Fprintf(&b, "%dM", minutes)
+	}
+	if seconds > 0 || fraction > 0 {
+		fmt.Fprintf(&b, "%d", seconds)
+		if fraction > 0 {
+			b.WriteString("." + strings.TrimRight(fmt.Sprintf("%06d", fraction), "0"))
+		}
+		b.WriteByte('S')
+	}
+	return b.String()
 }
 
 func valueRefusal(ydbType, value string) *Refusal {
@@ -300,4 +451,122 @@ func quote(value string) string {
 	}
 	b.WriteByte('\'')
 	return b.String()
+}
+
+// DeclaredValue reads a declared default's text into the value it denotes,
+// and reports a bare NULL as no value at all. A struct tag stores the value
+// bare and the SQL parser keeps a quoted literal, with or without a cast; both
+// read to the bare value, so `active`, `'active'` and `'active'::text` are the
+// same default. The renderer writes a default from this value and the schema
+// comparison reads a declaration through it, so the two cannot disagree about
+// what a default says.
+func DeclaredValue(text string) (value string, isNull bool) {
+	trimmed := strings.TrimSpace(text)
+	if !defaultlit.IsSQLLiteral(trimmed) {
+		return trimmed, strings.EqualFold(trimmed, "NULL")
+	}
+	var b strings.Builder
+	for i := 1; i < len(trimmed); i++ {
+		if trimmed[i] != '\'' {
+			b.WriteByte(trimmed[i])
+			continue
+		}
+		if i+1 < len(trimmed) && trimmed[i+1] == '\'' {
+			b.WriteByte('\'')
+			i++
+			continue
+		}
+		break
+	}
+	return b.String(), false
+}
+
+// LiteralValue reads a literal [Literal] writes back into the value it was
+// written from, and reports false for text that is not such a literal: an
+// expression, or a literal of a form Literal does not write. Writing the value
+// again with Literal and the column's type gives the literal back, which is
+// what lets a description of a YDB table carry a stored default as a value a
+// declaration could have written.
+func LiteralValue(literal string) (string, bool) {
+	text := strings.TrimSpace(literal)
+	switch {
+	case text == "true" || text == "false":
+		return text, true
+	case integerLiteralPattern.MatchString(text):
+		return integerLiteralPattern.FindStringSubmatch(text)[1], true
+	case strings.HasPrefix(text, "'"):
+		return unquoteLiteral(strings.TrimSuffix(text, "u"))
+	}
+	name, inner, found := strings.Cut(text, "(")
+	if !found || !strings.HasSuffix(inner, ")") {
+		return "", false
+	}
+	inner = strings.TrimSuffix(inner, ")")
+	if name == "Decimal" {
+		quoted, _, found := strings.Cut(inner, ",")
+		if !found {
+			return "", false
+		}
+		return unquoteLiteral(strings.TrimSpace(quoted))
+	}
+	if !slices.Contains(constructorLiterals, name) {
+		return "", false
+	}
+	return unquoteLiteral(inner)
+}
+
+// integerLiteralPattern is an integer literal with YQL's width suffix.
+var integerLiteralPattern = regexp.MustCompile(`^(-?\d+)(t|s|l|ut|us|u|ul)?$`)
+
+// constructorLiterals are the types whose literal is the type's constructor
+// over a quoted string.
+var constructorLiterals = []string{
+	Float, Double, DyNumber, JSON, JSONDocument, Yson, UUID,
+	Date, Date32, Datetime, Datetime64, Timestamp, Timestamp64, Interval, Interval64,
+}
+
+// unquoteLiteral reads a single-quoted YQL string, undoing the escapes quote
+// writes. Text with anything after the closing quote is not one string.
+func unquoteLiteral(text string) (string, bool) {
+	if len(text) < 2 || text[0] != '\'' || text[len(text)-1] != '\'' {
+		return "", false
+	}
+	var b strings.Builder
+	body := text[1 : len(text)-1]
+	for i := 0; i < len(body); i++ {
+		c := body[i]
+		switch {
+		case c == '\'':
+			return "", false
+		case c != '\\':
+			b.WriteByte(c)
+			continue
+		case i+1 == len(body):
+			return "", false
+		}
+		i++
+		switch body[i] {
+		case '\\', '\'', '"':
+			b.WriteByte(body[i])
+		case 'n':
+			b.WriteByte('\n')
+		case 'r':
+			b.WriteByte('\r')
+		case 't':
+			b.WriteByte('\t')
+		case 'x':
+			if i+2 >= len(body) {
+				return "", false
+			}
+			value, err := strconv.ParseUint(body[i+1:i+3], 16, 8)
+			if err != nil {
+				return "", false
+			}
+			b.WriteByte(byte(value))
+			i += 2
+		default:
+			return "", false
+		}
+	}
+	return b.String(), true
 }
