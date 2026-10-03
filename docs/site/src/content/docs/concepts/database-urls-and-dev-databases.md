@@ -267,9 +267,9 @@ such as `pg_catalog`. A MySQL or MariaDB event stays refused because the
 scheduler runs it during the rest of the command.
 
 The decision reads what Ptah recorded when it started the server, not the
-URL's spelling. A server URL keeps the whole list, because such a server may
-hold databases and roles that are not the run's: a role a replay created there
-would outlive the command.
+URL's spelling. A named server keeps the whole list, since it may hold
+databases and roles that are not the run's. Its refusal names the two ways to
+this realm: `docker://` and the declaration below.
 
 ### A server declared disposable
 

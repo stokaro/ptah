@@ -223,3 +223,106 @@ func TestReplayGuardServerRealm_MySQLFailurePath(t *testing.T) {
 		}
 	}
 }
+
+// replayRemedy stands for the remedy a caller passes; the guard appends it as
+// given.
+const replayRemedy = "raise the realm"
+
+// TestReplayGuardRemedy_EndsARefusalTheServerRealmLifts replays, on a server
+// the operator named, the statements a provisioned server accepts. Each
+// refusal ends with the remedy, because reaching the server realm would lift
+// it.
+func TestReplayGuardRemedy_EndsARefusalTheServerRealmLifts(t *testing.T) {
+	for _, test := range postgresServerWideStatements {
+		t.Run("postgres/"+test.name, func(t *testing.T) {
+			c := qt.New(t)
+			guard := postgresGuard(devclean.ReplayRealmDatabase).WithServerRealmRemedy(replayRemedy)
+			c.Assert(guard.ValidateStatement(test.statement), qt.ErrorMatches,
+				`postgres migration replay rejects .* because its effects cannot be confined to the disposable database realm; raise the realm`)
+		})
+	}
+	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+		for _, test := range mysqlServerWideStatements {
+			t.Run(dialect+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				guard := mysqlGuard(dialect, devclean.ReplayRealmDatabase).WithServerRealmRemedy(replayRemedy)
+				c.Assert(guard.ValidateStatement(test.statement), qt.ErrorMatches,
+					dialect+` migration replay rejects .* because its effects cannot be confined to the disposable database realm; raise the realm`)
+			})
+		}
+	}
+}
+
+// TestReplayGuardRemedy_EndsAWholeServerRefusalTheServerRealmLifts is the same
+// for a MySQL or MariaDB dev URL that names no database. Its realm already
+// lifts a database's creation and a write in another one; what it still
+// refuses outlives the cleanup of the server's databases, and the server realm
+// lifts it.
+func TestReplayGuardRemedy_EndsAWholeServerRefusalTheServerRealmLifts(t *testing.T) {
+	statements := []string{
+		"CREATE USER 'app'@'%' IDENTIFIED BY 'secret'",
+		"GRANT SELECT ON dev.* TO 'app'@'%'",
+		"CREATE PROCEDURE refresh_totals() BEGIN SELECT 1; END",
+		"CALL refresh_totals()",
+	}
+	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+		for _, statement := range statements {
+			t.Run(dialect+"/"+statement, func(t *testing.T) {
+				c := qt.New(t)
+				guard := mysqlGuard(dialect, devclean.ReplayRealmServerDatabases).WithServerRealmRemedy(replayRemedy)
+				c.Assert(guard.ValidateStatement(statement), qt.ErrorMatches,
+					dialect+` migration replay rejects .* because its effects cannot be confined to the disposable database realm; raise the realm`)
+			})
+		}
+	}
+}
+
+// TestReplayGuardRemedy_LeavesARefusalTheServerRealmKeeps pins the refusals
+// that reaching the server realm would not lift. Each message ends where the
+// guard's own does, so the remedy never points at a setting that does not
+// help. The engines other than PostgreSQL and MySQL have one realm, and a
+// guard for the server realm has nothing left to suggest.
+func TestReplayGuardRemedy_LeavesARefusalTheServerRealmKeeps(t *testing.T) {
+	tests := []struct {
+		name      string
+		dialect   string
+		realm     devclean.ReplayRealm
+		statement string
+		wantErr   string
+	}{
+		{name: "server configuration", dialect: platform.Postgres, realm: devclean.ReplayRealmDatabase, statement: `ALTER SYSTEM SET work_mem = '64MB'`, wantErr: `postgres migration replay rejects ALTER SYSTEM because its effects cannot be confined to the disposable database realm`},
+		{name: "search path", dialect: platform.Postgres, realm: devclean.ReplayRealmDatabase, statement: `SET search_path TO app`, wantErr: `postgres migration replay rejects SET search_path because its effects cannot be confined to the disposable database realm`},
+		{name: "routine in a protected namespace", dialect: platform.Postgres, realm: devclean.ReplayRealmDatabase, statement: `CREATE FUNCTION pg_catalog.add_one(i integer) RETURNS integer LANGUAGE sql AS $$ SELECT i + 1 $$`, wantErr: `postgres migration replay rejects CREATE routine definition because its effects cannot be confined to the disposable database realm`},
+		{name: "routine on a provisioned server", dialect: platform.Postgres, realm: devclean.ReplayRealmServer, statement: `CREATE FUNCTION pg_catalog.add_one(i integer) RETURNS integer LANGUAGE sql AS $$ SELECT i + 1 $$`, wantErr: `postgres migration replay rejects protected namespace "pg_catalog" mutation because its effects cannot be confined to the disposable database realm`},
+		{name: "scheduled event", dialect: platform.MySQL, realm: devclean.ReplayRealmDatabase, statement: "CREATE EVENT purge ON SCHEDULE EVERY 1 MINUTE DO DELETE FROM orders", wantErr: `mysql migration replay rejects CREATE executable stored body because its effects cannot be confined to the disposable database realm`},
+		{name: "executable comment", dialect: platform.MariaDB, realm: devclean.ReplayRealmServerDatabases, statement: "/*!50000 CREATE USER 'app'@'%' */", wantErr: `mariadb migration replay rejects executable comment because its effects cannot be confined to the disposable database realm`},
+		{name: "SQL Server database", dialect: platform.SQLServer, realm: devclean.ReplayRealmDatabase, statement: `CREATE DATABASE scratch`, wantErr: `sqlserver migration replay rejects CREATE DATABASE because its effects cannot be confined to the disposable database realm`},
+		{name: "SQLite attachment", dialect: platform.SQLite, realm: devclean.ReplayRealmDatabase, statement: `ATTACH DATABASE 'other.db' AS other`, wantErr: `sqlite migration replay rejects ATTACH because its effects cannot be confined to the disposable database realm`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			guard := devclean.NewReplayGuard(catalog.ServerInfo{Dialect: test.dialect, Schema: "dev"}, test.realm).
+				WithServerRealmRemedy(replayRemedy)
+			c.Assert(guard.ValidateStatement(test.statement), qt.ErrorMatches, test.wantErr)
+		})
+	}
+}
+
+// TestReplayGuardRemedy_AcceptsWhatTheRealmAccepts shows the remedy changes a
+// refusal's message and nothing the guard accepts.
+func TestReplayGuardRemedy_AcceptsWhatTheRealmAccepts(t *testing.T) {
+	c := qt.New(t)
+	guard := postgresGuard(devclean.ReplayRealmDatabase).WithServerRealmRemedy(replayRemedy)
+	c.Assert(guard.ValidateStatement(`CREATE TABLE orders (id integer PRIMARY KEY)`), qt.IsNil)
+}
+
+// TestReplayGuardRemedy_LeavesTheGuardItCopies shows WithServerRealmRemedy
+// returns a copy: the guard it was called on refuses as before.
+func TestReplayGuardRemedy_LeavesTheGuardItCopies(t *testing.T) {
+	c := qt.New(t)
+	guard := postgresGuard(devclean.ReplayRealmDatabase)
+	_ = guard.WithServerRealmRemedy(replayRemedy)
+	c.Assert(guard.ValidateStatement(`CREATE ROLE app`), qt.ErrorMatches,
+		`postgres migration replay rejects CREATE ROLE because its effects cannot be confined to the disposable database realm`)
+}

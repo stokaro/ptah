@@ -154,7 +154,8 @@ func TestApplyConfinesATransactionScopedSettingToItsMigration(t *testing.T) {
 }
 
 // TestReplayRefusesASessionSetting is the control: a plain SET outlives its
-// transaction and would reach every later migration of the replay.
+// transaction and would reach every later migration of the replay. A server
+// the run owns refuses it too, so the refusal names no way to such a server.
 func TestReplayRefusesASessionSetting(t *testing.T) {
 	c := qt.New(t)
 	dir := writeReplayProbeDir(c, map[string]string{
@@ -165,5 +166,5 @@ func TestReplayRefusesASessionSetting(t *testing.T) {
 	_, err := runCompatVerb("migrate", "validate", "--dir", "file://"+dir, "--dev-url", devURL)
 
 	c.Assert(err, qt.ErrorMatches, `(?s).*replay migration 1 on dev database: .*`+
-		`postgres migration replay rejects SET session or transaction state because its effects cannot be confined to the disposable database realm.*`)
+		`postgres migration replay rejects SET session or transaction state because its effects cannot be confined to the disposable database realm\nSQL: SET .*`)
 }

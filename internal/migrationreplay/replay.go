@@ -255,7 +255,10 @@ func replayOnLockedConnection(
 		migrator.WithMigrationDirFormat(dirFormat),
 		migrator.WithAtlasTemplateData(atlasTemplateData),
 		migrator.WithAtlasRevisionVersions(revisionVersions),
-		migrator.WithStatementValidator(devclean.NewReplayGuard(conn.Info(), replayRealm(conn.Info()))),
+		migrator.WithStatementValidator(
+			devclean.NewReplayGuard(conn.Info(), replayRealm(conn.Info())).
+				WithServerRealmRemedy(serverRealmRemedy),
+		),
 	)
 	if err != nil {
 		return fmt.Errorf("load migration directory: %w", err)
@@ -279,6 +282,12 @@ func replayOnLockedConnection(
 		)
 	})
 }
+
+// serverRealmRemedy ends a replay refusal that the server realm lifts. Both
+// ways it names reach that realm here: [replayRealm] answers the server for a
+// server the operator declared disposable and for one a docker URL started.
+var serverRealmRemedy = "if nothing else uses this server, declare it disposable with " +
+	devdocker.DisposableServerEnvVar + "=1, or use a " + devdocker.Scheme + ":// dev URL"
 
 // replayRealm is how much of the dev server this replay may change: the whole
 // server when the run owns it, and the dev database otherwise. The run owns a
