@@ -85,6 +85,15 @@ This renders `GRANT USAGE, SELECT ON SEQUENCE order_number_seq TO app_writer;`.
 
 `ptah introspect` describes a grant on a standalone sequence with `on_sequence` as well, so the package it writes compares equal to the database it was read from.
 
+The sequence a `SERIAL` or identity column owns takes grants the same way. It is not declared, so name it as the server named it: `<table>_<column>_seq` by default, and the old name after the table or the column is renamed, since a rename leaves the sequence's name alone:
+
+```go
+//ptah:schema:grant role="app_writer" privilege="USAGE" on_sequence="orders_id_seq"
+type OrderSequenceAccess struct{}
+```
+
+Ptah reads that grant back and compares it like any other, so it is planned only when the database lacks it.
+
 ## Advanced Role Configurations
 
 ### Service Roles

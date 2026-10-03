@@ -8,7 +8,7 @@ Standalone sequences are a PostgreSQL feature that Atlas keeps out of its open-s
 
 PostgreSQL creates an *implicit* sequence for every `SERIAL` / `BIGSERIAL` / `SMALLSERIAL` column and for identity columns (`GENERATED ... AS IDENTITY`). Those implicit sequences are owned by their column and are created and dropped automatically with it — you do not declare them.
 
-A *standalone* sequence is one you declare explicitly, typically to share a single number generator across several tables or to control a column default with `DEFAULT nextval(...)`. Ptah's introspection deliberately excludes implicit serial/identity sequences, so declaring a plain `SERIAL` column never produces a spurious standalone-sequence diff.
+A *standalone* sequence is one you declare explicitly, typically to share a single number generator across several tables or to control a column default with `DEFAULT nextval(...)`. Ptah's introspection deliberately excludes implicit serial/identity sequences, so declaring a plain `SERIAL` column never produces a spurious standalone-sequence diff. A grant on an implicit sequence is read and compared all the same; the [roles guide](./POSTGRESQL_ROLES.md#sequence-grants) shows how to declare one.
 
 ## Declaring a sequence
 

@@ -22,8 +22,6 @@ func notCockroachBuiltin(column string) string {
 // readCockroachGrants reads the table, sequence, schema and routine grants of
 // the schemas under this read from information_schema, on every CockroachDB
 // line, rather than from the ACL columns the PostgreSQL reads explode.
-// standaloneSequences is what [standaloneSequenceSet] built for
-// [Reader.readGrants].
 //
 // v25.4.16 and v26.2.7 leave pg_class.relacl, pg_namespace.nspacl and
 // pg_proc.proacl NULL whatever was granted, so a read built on them finds no
@@ -53,10 +51,10 @@ func notCockroachBuiltin(column string) string {
 // column is NULL -- so GrantedBy is empty, as it is for a table grant on any
 // line. It refuses column privileges as a syntax error, so there are none to
 // read.
-func (r *Reader) readCockroachGrants(ctx context.Context, standaloneSequences map[string]bool) ([]catalog.Grant, error) {
+func (r *Reader) readCockroachGrants(ctx context.Context) ([]catalog.Grant, error) {
 	var grants []catalog.Grant
 	for _, schemaName := range r.schemasToRead() {
-		relationGrants, err := r.readCockroachRelationGrants(ctx, schemaName, standaloneSequences)
+		relationGrants, err := r.readCockroachRelationGrants(ctx, schemaName)
 		if err != nil {
 			return nil, err
 		}
@@ -81,13 +79,9 @@ func (r *Reader) readCockroachGrants(ctx context.Context, standaloneSequences ma
 
 // readCockroachRelationGrants reads the grants on the tables, views and
 // sequences of one schema. role_table_grants lists a sequence as a table, so
-// the relation kind decides which it is, and only a standalone sequence is
-// kept, as [Reader.readSequenceGrantsForSchema] keeps it.
-func (r *Reader) readCockroachRelationGrants(
-	ctx context.Context,
-	schemaName string,
-	standaloneSequences map[string]bool,
-) ([]catalog.Grant, error) {
+// the relation kind decides which it is. A sequence a column owns is kept, as
+// [Reader.readSequenceGrantsForSchema] keeps it.
+func (r *Reader) readCockroachRelationGrants(ctx context.Context, schemaName string) ([]catalog.Grant, error) {
 	query := `
 		SELECT
 			CASE g.grantee WHEN 'public' THEN 'PUBLIC' ELSE g.grantee END,
@@ -120,9 +114,6 @@ func (r *Reader) readCockroachRelationGrants(
 		grant.Schema = r.outputSchema(schemaName)
 		grant.ObjectType = "TABLE"
 		if sequence {
-			if !standaloneSequences[catalog.QualifyTableName(grant.Schema, grant.ObjectName)] {
-				continue
-			}
 			grant.ObjectType = "SEQUENCE"
 		}
 		grants = append(grants, grant)

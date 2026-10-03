@@ -61,11 +61,12 @@ func answerCockroachGrants(sent *[]string) dbtest.QueryHandler {
 // CockroachDB v25.4.16, v26.2.7 and v26.3.1 alike for the fixture of
 // stokaro/ptah#3815, where the ACL columns are NULL on the first two.
 //
-// A sequence is told from a table by its relation kind, and only a standalone
-// one is kept. PUBLIC's EXECUTE on f is the default and reads as implicit. The
-// owner of each routine reads as an implicit EXECUTE whoever it is, root here:
-// untouched_f's owner row is what says the routine was read and PUBLIC holds
-// nothing on it, which is the revoke a description has to carry.
+// A sequence is told from a table by its relation kind, and t_id_seq, which a
+// column owns, is kept beside the standalone s. PUBLIC's EXECUTE on f is the
+// default and reads as implicit. The owner of each routine reads as an
+// implicit EXECUTE whoever it is, root here: untouched_f's owner row is what
+// says the routine was read and PUBLIC holds nothing on it, which is the
+// revoke a description has to carry.
 func TestReadCockroachGrants_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	var sent []string
@@ -73,7 +74,7 @@ func TestReadCockroachGrants_HappyPath(t *testing.T) {
 	reader := NewPostgreSQLWireReaderWithCapabilities(db.SQL, "public", platform.CockroachDB, capability.CockroachDB26())
 	reader.SetSchemas([]string{"app"})
 
-	grants, err := reader.readCockroachGrants(t.Context(), map[string]bool{"app.s": true})
+	grants, err := reader.readCockroachGrants(t.Context())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(grants, qt.DeepEquals, []catalog.Grant{
@@ -81,6 +82,7 @@ func TestReadCockroachGrants_HappyPath(t *testing.T) {
 		{Role: "g_reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t", Schema: "app"},
 		{Role: "PUBLIC", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "v", Schema: "app"},
 		{Role: "g_reader", Privilege: "USAGE", ObjectType: "SEQUENCE", ObjectName: "s", Schema: "app"},
+		{Role: "g_reader", Privilege: "USAGE", ObjectType: "SEQUENCE", ObjectName: "t_id_seq", Schema: "app"},
 		{Role: "g_reader", Privilege: "USAGE", ObjectType: "SCHEMA", ObjectName: "app"},
 		{Role: "PUBLIC", Privilege: "EXECUTE", ObjectType: "FUNCTION", ObjectName: "f", Schema: "app", Implicit: true},
 		{Role: "g_reader", Privilege: "EXECUTE", ObjectType: "FUNCTION", ObjectName: "f", Schema: "app"},
@@ -104,7 +106,7 @@ func TestReadCockroachGrants_StatementsLeaveOutWhatNobodyGranted(t *testing.T) {
 	reader := NewPostgreSQLWireReaderWithCapabilities(db.SQL, "public", platform.CockroachDB, capability.CockroachDB26())
 	reader.SetSchemas([]string{"app"})
 
-	_, err := reader.readCockroachGrants(t.Context(), nil)
+	_, err := reader.readCockroachGrants(t.Context())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sent, qt.HasLen, 3)
