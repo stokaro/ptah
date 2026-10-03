@@ -410,9 +410,11 @@ func TestYDBMigrator_RefusesToResumeOverAnEditedPrefix(t *testing.T) {
 	const dir = "ptah_ydb_mig_edited"
 	dropDirectory(c, conn, dir, "e", "f")
 	c.Cleanup(func() { dropDirectory(c, conn, dir, "e", "f") })
-	body := func(id, fType string) string {
+	// The edit is in the INSERT, the second statement of the second query, so
+	// a digest over statements rather than queries would stop short of it.
+	body := func(value, fType string) string {
 		return "CREATE TABLE `" + dir + "/e` (id Int64 NOT NULL, PRIMARY KEY (id));\n" +
-			"$id = " + id + ";\nINSERT INTO `" + dir + "/e` (id) VALUES ($id);\n" +
+			"$id = 1l;\nINSERT INTO `" + dir + "/e` (id) VALUES (" + value + ");\n" +
 			"CREATE TABLE `" + dir + "/f` (id " + fType + " NOT NULL, PRIMARY KEY (id));\n"
 	}
 	files := func(up string) map[string]string {
@@ -421,11 +423,11 @@ func TestYDBMigrator_RefusesToResumeOverAnEditedPrefix(t *testing.T) {
 			"0000000001_e.down.sql": "DROP TABLE `" + dir + "/f`;\nDROP TABLE `" + dir + "/e`;\n",
 		}
 	}
-	failed := newMigrator(c, conn, files(body("1l", "NoSuchType")), migrator.RevisionTableFormatPtah, dir).
+	failed := newMigrator(c, conn, files(body("$id", "NoSuchType")), migrator.RevisionTableFormatPtah, dir).
 		MigrateUp(c.Context())
 	c.Assert(failed, qt.IsNotNil)
 
-	edited := newMigrator(c, conn, files(body("7l", "Int64")), migrator.RevisionTableFormatPtah, dir)
+	edited := newMigrator(c, conn, files(body("$id * 7l", "Int64")), migrator.RevisionTableFormatPtah, dir)
 	err := edited.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true})
 
 	c.Assert(err, qt.ErrorMatches, `migration 1 cannot resume automatically: the already committed statement prefix `+
