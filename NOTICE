@@ -23,6 +23,13 @@ The files come from:
   https://github.com/simple-icons/simple-icons
     cockroachdb.svg
 
+  ydb-platform/ydb, Apache License 2.0
+  https://github.com/ydb-platform/ydb
+  https://www.apache.org/licenses/LICENSE-2.0
+    ydb.svg, which is ydb/docs/_assets/logo.svg at commit 4adb48c,
+    unedited. Neither icon set above carries a YDB mark; the YDB
+    repository ships its own under the license of the repository.
+
 cockroachdb.svg is the only edited file: simple-icons ships its icons as a
 single monochrome path, so the fill carries the brand's own hex (#6933FF) as
 that project's metadata records it. Nine coloured marks beside one black one
@@ -33,8 +40,8 @@ Trademarks
 
 All product names, logos and brands are the property of their respective
 owners. ClickHouse, CockroachDB, MariaDB, Microsoft SQL Server, MySQL, Oracle
-Database, PostgreSQL, Google Cloud Spanner, SQLite and YugabyteDB are marks of
-their respective holders.
+Database, PostgreSQL, Google Cloud Spanner, SQLite, YDB and YugabyteDB are
+marks of their respective holders.
 
 Ptah uses these marks to identify the databases it supports, and for no other
 purpose. Their use here does not imply that any of these vendors endorses,

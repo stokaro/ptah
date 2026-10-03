@@ -19,9 +19,9 @@ import (
 	"ptah.run/internal/planner/dialects/oracle"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/internal/planner/dialects/sqlite"
+	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/internal/txrequire"
 	"ptah.run/internal/usertypescope"
-	"ptah.run/internal/ydbgap"
 	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -299,6 +299,11 @@ func registerBuiltInPlanners() error {
 	}); err != nil {
 		return err
 	}
+	if err := registerPlannerFactory(platform.YDB, func(opts Options) Planner {
+		return ydb.NewWithCapabilities(opts.CapabilitiesFor(platform.YDB))
+	}); err != nil {
+		return err
+	}
 	return registerPlannerFactory(platform.SQLite, func(opts Options) Planner {
 		return sqlite.NewWithCapabilities(opts.CapabilitiesFor(platform.SQLite))
 	})
@@ -368,15 +373,6 @@ func getRegisteredPlanner(dialect string, opts Options) (Planner, error) {
 }
 
 func unsupportedDialectPlanError(dialect string) error {
-	if platform.NormalizeDialect(dialect) == platform.YDB {
-		// YDB is a dialect name with no planner behind it, refused in the same
-		// words for every spelling of it.
-		return &ptaherr.PlanError{
-			Dialect: dialect,
-			Err:     ptaherr.ErrUnsupportedDialect,
-			Message: ydbgap.Planning.Message(),
-		}
-	}
 	return &ptaherr.PlanError{
 		Dialect: dialect,
 		Err:     ptaherr.ErrUnsupportedDialect,

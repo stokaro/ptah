@@ -38,6 +38,8 @@
   <a href="https://docs.ptah.run/edge/databases/oracle/" title="Oracle"><img src="docs/assets/engines/oracle.svg" alt="Oracle" height="32" width="32"></a>
   &nbsp;&nbsp;
   <a href="https://docs.ptah.run/edge/databases/distributed/" title="Spanner"><img src="docs/assets/engines/spanner.svg" alt="Spanner" height="32" width="32"></a>
+  &nbsp;&nbsp;
+  <a href="https://docs.ptah.run/edge/databases/support-matrix/" title="YDB"><img src="docs/assets/engines/ydb.svg" alt="YDB" height="32" width="32"></a>
 </p>
 
 Ptah manages database change across schemas and persistent inference state. For

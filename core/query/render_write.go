@@ -105,6 +105,9 @@ func RenderDelete(stmt *DeleteStatement, dialect string) (string, []any, error) 
 // unsupported-dialect error.
 func newWriteRenderer(dialect, kind string) (*selectRenderer, error) {
 	normalized := platform.NormalizeDialect(dialect)
+	if err := refuseYDB(normalized, kind); err != nil {
+		return nil, err
+	}
 	style, ok := selectPlaceholderStyle(normalized)
 	if !ok {
 		return nil, fmt.Errorf("renderer: %s rendering is not supported for dialect %q", kind, dialect)

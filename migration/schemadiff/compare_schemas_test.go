@@ -70,6 +70,31 @@ func TestCompareSchemas_IdenticalInputsReportNothing(t *testing.T) {
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %+v", diff))
 }
 
+// TestCompareSchemas_YDBSelfCompareReportsNothing pins the file-to-file path
+// on YDB, where the current side is a declaration rather than a catalog: its
+// types are SQL spellings and its index kind sits where a catalog's would. A
+// comparison that read only the desired side through the YDB type map would
+// plan VARCHAR(255) -> Utf8, and one that read no kind from the current side
+// would rebuild every asynchronous index, on a schema compared with itself.
+func TestCompareSchemas_YDBSelfCompareReportsNothing(t *testing.T) {
+	c := qt.New(t)
+	db := usersV2()
+	db.Fields = append(db.Fields,
+		schemamodel.Field{StructName: "User", Name: "balance", Type: "DECIMAL(12,2)", Nullable: true},
+		schemamodel.Field{StructName: "User", Name: "nickname", Type: "TEXT", Nullable: true},
+	)
+	db.Indexes = append(db.Indexes,
+		schemamodel.Index{StructName: "User", Name: "idx_users_balance", Fields: []string{"balance"},
+			Type: "async", IncludeColumns: []string{"nickname"}},
+		schemamodel.Index{StructName: "User", Name: "uidx_users_email", Fields: []string{"email"}, Unique: true},
+	)
+	schemamodel.Finalize(db)
+
+	diff := schemadiff.CompareSchemas(db, db, platform.YDB)
+
+	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %+v", diff))
+}
+
 // TestCompareSchemas_MatchesExplicitConversionThenCompare pins CompareSchemas
 // to the path it documents: converting the current side with
 // goschematodb.ToDBSchema and comparing with CompareWithDialect must produce

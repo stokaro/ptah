@@ -118,6 +118,7 @@ var txModeAllTargets = []struct {
 	{dialect: platform.Oracle, pageName: "Oracle"},
 	{dialect: platform.Spanner, pageName: "Spanner"},
 	{dialect: platform.CockroachDB, pageName: "CockroachDB"},
+	{dialect: platform.YDB, pageName: "YDB"},
 }
 
 // TestTxModeAllDocumentation_CensusMatchesEveryPreset holds the other end of the

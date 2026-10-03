@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/sqlident"
+	"ptah.run/internal/ydbgap"
 )
 
 // This file is the dialect-coverage guard for the query builder's four render
@@ -265,7 +266,19 @@ func dmlMatrixRows() []dmlMatrixRow {
 		dollarCells("yugabytedb"),
 		dollarCells("spanner"),
 		oracleCells("oracle"),
+		ydbCells("ydb"),
 	}
+}
+
+// ydbCells pins the query builder's refusal of YDB. The DDL renderer accepts the
+// name, so it is in SupportedDialects; the builder is the data phase's work,
+// and each verb names that phase rather than answering with the generic
+// refusal a dialect nobody planned gets.
+func ydbCells(dialect string) dmlMatrixRow {
+	refusal := func(verb string) dmlCell {
+		return dmlCell{err: "renderer: " + verb + ` for dialect "ydb": ` + ydbgap.QueryBuilding.Message()}
+	}
+	return dmlMatrixRow{dialect: dialect, sel: refusal("SELECT"), ins: refusal("INSERT"), upd: refusal("UPDATE"), del: refusal("DELETE")}
 }
 
 // dmlGenericRefusalQuarantine is the hand-written list of cells that still
@@ -486,11 +499,15 @@ func TestDMLPlaceholderAgreesWithRebind(t *testing.T) {
 		{dialect: "spanner"},
 		{dialect: "oracle"},
 	}
+	// YDB is refused by name in every verb, which ydbCells pins; it has no
+	// placeholder to compare until the builder renders it.
+	refusedByName := []string{"ydb"}
 
-	names := make([]string, 0, len(rows))
+	names := make([]string, 0, len(rows)+len(refusedByName))
 	for _, row := range rows {
 		names = append(names, row.dialect)
 	}
+	names = append(names, refusedByName...)
 	c.Assert(names, qt.DeepEquals, renderer.SupportedDialects())
 
 	for _, dialect := range taughtDialects(rows) {

@@ -892,6 +892,12 @@
       "claimed_by": "docs/site/src/content/docs/databases/sqlserver.md"
     },
     {
+      "id": "dialect-ydb",
+      "kind": "dialect",
+      "surface": "ydb",
+      "claimed_by": null
+    },
+    {
       "id": "dialect-yugabytedb",
       "kind": "dialect",
       "surface": "yugabytedb",

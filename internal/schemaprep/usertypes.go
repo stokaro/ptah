@@ -159,6 +159,12 @@ func EmitsStandaloneEnumDefinitions(targetPlatform string) bool {
 	switch platform.NormalizeDialect(targetPlatform) {
 	case platform.MySQL, platform.MariaDB, platform.SQLite, platform.SQLServer, platform.Oracle:
 		return false
+	case platform.YDB:
+		// YDB models an enum neither way: it has no enum column type, no
+		// CREATE TYPE and no CHECK to emulate one with. The enum stays a
+		// declaration of its own here so the YDB renderer meets it before any
+		// column that names it, and refuses it by name.
+		return true
 	default:
 		return true
 	}

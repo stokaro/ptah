@@ -15,6 +15,7 @@ import (
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/mysqlname"
+	"ptah.run/internal/ydbindex"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -923,9 +924,40 @@ func indexDefinitionsChanged(
 		return postgresIndexDefinitionChanged(desired, database, semantics, resolved)
 	case platform.MySQL, platform.MariaDB:
 		return mysqlIndexDefinitionChanged(desired, database, semantics, dialect)
+	case platform.YDB:
+		return ydbIndexDefinitionChanged(desired, database, semantics)
 	default:
 		return false
 	}
+}
+
+// ydbIndexDefinitionChanged answers whether a YDB index has to be rebuilt to
+// match the desired definition. YDB changes none of these in place -- an
+// index's columns, its covered columns, its uniqueness and whether it is
+// maintained synchronously are fixed when it is built -- so a difference in
+// any of them is a DROP INDEX and an ADD INDEX of the same name.
+//
+// The kind is read through [ydbindex.KindOf] on both sides, which is the same
+// reading the renderer writes the clause from, so a declared BTREE and a
+// catalog GLOBAL SYNC are one kind. A catalog therefore reports the kind alone
+// in Method -- `GLOBAL SYNC` or `GLOBAL ASYNC` -- and uniqueness in IsUnique,
+// not the `GLOBAL UNIQUE SYNC` clause the renderer writes. An access method
+// either side cannot read is a difference, because the index cannot be the
+// one that was declared.
+//
+// The covered columns are compared in order, as the key columns are: YDB
+// reports `data_columns` in the order the COVER clause wrote them.
+func ydbIndexDefinitionChanged(
+	desired schemamodel.Index,
+	database catalog.Index,
+	semantics identifier.Semantics,
+) bool {
+	desiredKind, desiredErr := ydbindex.KindOf(desired.Type)
+	databaseKind, databaseErr := ydbindex.KindOf(database.Method)
+	return desired.Unique != database.IsUnique ||
+		desiredErr != nil || databaseErr != nil || desiredKind != databaseKind ||
+		indexKeyPartsChanged(desired, database, semantics) ||
+		postgresIncludeColumnsChanged(desired.IncludeColumns, database.IncludeColumns, semantics)
 }
 
 // mysqlIndexDefinitionChanged answers whether a MySQL or MariaDB index has to

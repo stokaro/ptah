@@ -84,7 +84,7 @@ func TestIndexIncludeUnsupportedDialectsFailClosed(t *testing.T) {
 				qt.ErrorMatches,
 				fmt.Sprintf(
 					`%s does not support INCLUDE columns on index "idx_accounts_email"; `+
-						`target cockroachdb, postgres, spanner, or yugabytedb`,
+						`target cockroachdb, postgres, spanner, ydb, or yugabytedb`,
 					dialect,
 				),
 			)
@@ -185,6 +185,10 @@ func TestIndexIncludeUnsupportedAccessMethodsFailClosed(t *testing.T) {
 		{name: "spanner btree", dialect: platform.Spanner, method: "BTREE", supported: "the default access method"},
 		{name: "spanner lsm", dialect: platform.Spanner, method: "LSM", supported: "the default access method"},
 		{name: "spanner gist", dialect: platform.Spanner, method: "GIST", supported: "the default access method"},
+		// YDB's COVER belongs to a global index; any other access method is
+		// not an index YDB has, covering or not.
+		{name: "ydb hash", dialect: platform.YDB, method: "HASH", supported: "a global index, synchronous or asynchronous"},
+		{name: "ydb gin", dialect: platform.YDB, method: "GIN", supported: "a global index, synchronous or asynchronous"},
 	}
 
 	for _, test := range tests {

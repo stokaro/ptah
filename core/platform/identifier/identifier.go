@@ -182,6 +182,19 @@ func ForDialect(dialect string) Semantics {
 			TableNames:     ComparisonCatalogUnknown,
 			ColumnNames:    ComparisonCatalogUnknown,
 		}
+	case platform.YDB:
+		// Every YDB name is case-sensitive, quoted or not: measured on
+		// 26.2.1.14, tables `Users` and `users` coexist, and so do columns
+		// `id`, `ID` and `Id` in one table. There is no schema to default to:
+		// a Ptah schema is a directory, and the database root is the empty
+		// one. An index belongs to its table -- it is the path `table/index`,
+		// and two tables carry an index of the same name without a clash.
+		return Semantics{
+			IndexNamespace: IndexNamespaceTable,
+			IndexNames:     ComparisonExact,
+			TableNames:     ComparisonExact,
+			ColumnNames:    ComparisonExact,
+		}
 	default:
 		return Semantics{
 			IndexNamespace: IndexNamespaceTable,

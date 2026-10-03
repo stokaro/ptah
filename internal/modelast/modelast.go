@@ -2086,7 +2086,12 @@ func WalkDatabase(
 	// A routine that names a relation waits for it among the view-likes at
 	// step 9, unless a table calls it, in which case it is created here
 	// between the tables.
-	tableRoutines, err := appendTableStatements(visit, database, allFields, targetPlatform, placements)
+	//
+	// A target that declares a new table's indexes inside its CREATE TABLE
+	// takes them here, with the table; what remains is emitted after.
+	tableIndexes, viewIndexes := splitMaterializedViewIndexes(database)
+	inlineIndexes, tableIndexes := inlineTableIndexes(database.Tables, tableIndexes, targetPlatform)
+	tableRoutines, err := appendTableStatements(visit, database, allFields, targetPlatform, placements, inlineIndexes)
 	if err != nil {
 		return err
 	}
@@ -2094,7 +2099,6 @@ func WalkDatabase(
 	// 7. Add unique indexes before foreign keys. PostgreSQL accepts a unique
 	// index as the referenced key for a foreign key, so it must exist before
 	// the FK constraint is added.
-	tableIndexes, viewIndexes := splitMaterializedViewIndexes(database)
 	if err := appendUniqueIndexStatements(visit, database.Tables, tableIndexes); err != nil {
 		return err
 	}
@@ -2306,6 +2310,7 @@ func appendTableStatements(
 	allFields []schemamodel.Field,
 	targetPlatform string,
 	placements map[string]deporder.RoutinePlacement,
+	inlineIndexes map[string][]*ast.IndexNode,
 ) (map[string]bool, error) {
 	sqliteTarget := isSQLiteTarget(targetPlatform)
 	mode := tableConstraintsWithoutForeignKeys
@@ -2352,7 +2357,7 @@ func appendTableStatements(
 			tableNode = FromTable(table, allFields, database.Enums, targetPlatform)
 		}
 		after := addTableConstraints(tableNode, table, allFields, database.Constraints, mode, targetPlatform)
-		if err := visit(tableNode); err != nil {
+		if err := visit(withInlineIndexes(tableNode, inlineIndexes[table.QualifiedName()])); err != nil {
 			return nil, err
 		}
 		for _, constraint := range after {
@@ -2365,6 +2370,42 @@ func appendTableStatements(
 		}
 	}
 	return created, nil
+}
+
+// withInlineIndexes adds the indexes a target declares inside CREATE TABLE to
+// the table's statement.
+func withInlineIndexes(table *ast.CreateTableNode, indexes []*ast.IndexNode) *ast.CreateTableNode {
+	for _, index := range indexes {
+		table.AddIndex(index)
+	}
+	return table
+}
+
+// inlineTableIndexes splits the table indexes a target declares inside CREATE
+// TABLE from the ones it emits on their own; see
+// [schemaprep.DeclaresIndexesInCreateTable]. An index whose table the
+// declaration does not resolve stays standalone, so the renderer answers for it
+// rather than this split dropping it.
+func inlineTableIndexes(
+	tables []schemamodel.Table,
+	indexes []schemamodel.Index,
+	targetPlatform string,
+) (map[string][]*ast.IndexNode, []schemamodel.Index) {
+	if !schemaprep.DeclaresIndexesInCreateTable(targetPlatform) {
+		return nil, indexes
+	}
+	owners := schemamodel.ResolveIndexTableNames(indexes, tables)
+	inline := make(map[string][]*ast.IndexNode)
+	var standalone []schemamodel.Index
+	for position, index := range indexes {
+		owner := owners[position]
+		if owner == "" {
+			standalone = append(standalone, index)
+			continue
+		}
+		inline[owner] = append(inline[owner], indexNodeOn(index, owner))
+	}
+	return inline, standalone
 }
 
 // tableFields are the declared columns of table.

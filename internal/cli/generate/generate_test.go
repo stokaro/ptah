@@ -14,7 +14,6 @@ import (
 
 	"ptah.run/internal/cli/generate"
 	"ptah.run/internal/cli/internal/exitcode"
-	"ptah.run/internal/ydbgap"
 )
 
 func runGenerateHelperProcess() {
@@ -126,12 +125,53 @@ func TestGenerateCommandUnsupportedDialectExits2WithoutPanicTrace(t *testing.T) 
 	c.Assert(errOut.String(), qt.Not(qt.Contains), "Usage:")
 }
 
-// YDB is a dialect name with no renderer behind it. `schema render --dialect
-// ydb` refuses with the gap, exit 2, rather than rendering another dialect's
-// DDL or reporting an unknown dialect.
-func TestGenerateCommand_RefusesYDB(t *testing.T) {
+// `schema render --dialect ydb` writes YQL through the YDB renderer, for every
+// spelling of the name: backticked paths, YDB types, a NOT NULL key and a
+// table-level PRIMARY KEY clause.
+func TestGenerateCommand_RendersYDB_HappyPath(t *testing.T) {
+	fixtureDir := filepath.Join("..", "..", "..", "integration", "internal", "fixtures", "entities", "026-roundtrip-composite-pk")
+	want := "CREATE TABLE `memberships` (\n" +
+		"    `org_id` Int32 NOT NULL,\n" +
+		"    `user_id` Int32 NOT NULL,\n" +
+		"    `role` Utf8 NOT NULL,\n" +
+		"    PRIMARY KEY (`org_id`, `user_id`)\n" +
+		");"
 	for _, dialect := range []string{"ydb", "ydbs"} {
 		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			cmd := generate.NewGenerateCommand()
+			cmd.SetArgs([]string{"--root-dir", fixtureDir, "--dialect", dialect})
+			stdout, stderr, err := executeGenerate(c, cmd)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("generate stderr:\n%s", stderr))
+			c.Assert(stdout, qt.Contains, want)
+		})
+	}
+}
+
+// A declaration YDB cannot hold refuses the render with exit 2 and names what
+// the target lacks, rather than rendering it as something else.
+func TestGenerateCommand_RendersYDB_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		rootDir string
+		wantErr string
+	}{
+		{
+			name:    "an expression default",
+			rootDir: filepath.Join("..", "..", "..", "integration", "internal", "fixtures", "entities", "000-initial"),
+			wantErr: `error: error rendering ydb schema: column "created_at" of table "products" defaults to the expression ` +
+				`CURRENT_TIMESTAMP, which requires target capability expression_defaults, unavailable on this ydb target`,
+		},
+		{
+			name:    "a foreign key",
+			rootDir: filepath.Join("..", "..", "..", "internal", "stubs"),
+			wantErr: "error: error rendering ydb schema: ydb does not support foreign keys",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
 			cmd := generate.NewGenerateCommand()
@@ -139,13 +179,12 @@ func TestGenerateCommand_RefusesYDB(t *testing.T) {
 			var errOut bytes.Buffer
 			cmd.SetOut(&out)
 			cmd.SetErr(&errOut)
-			cmd.SetArgs([]string{"--root-dir", filepath.Join("..", "..", "..", "internal", "stubs"), "--dialect", dialect})
+			cmd.SetArgs([]string{"--root-dir", test.rootDir, "--dialect", "ydb"})
 
 			err := cmd.Execute()
 
 			c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
-			c.Assert(errOut.String(), qt.Contains,
-				"error: error rendering "+dialect+" schema: "+ydbgap.Rendering.Message())
+			c.Assert(errOut.String(), qt.Contains, test.wantErr)
 			c.Assert(out.String(), qt.Not(qt.Contains), "CREATE TABLE")
 		})
 	}

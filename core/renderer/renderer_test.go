@@ -19,7 +19,7 @@ func TestSupportedDialects(t *testing.T) {
 	c := qt.New(t)
 
 	dialects := renderer.SupportedDialects()
-	expected := []string{"postgresql", "postgres", "mysql", "mariadb", "clickhouse", "sqlite", "sqlite3", "sqlserver", "mssql", "cockroachdb", "yugabytedb", "spanner", "oracle"}
+	expected := []string{"postgresql", "postgres", "mysql", "mariadb", "clickhouse", "sqlite", "sqlite3", "sqlserver", "mssql", "cockroachdb", "yugabytedb", "spanner", "oracle", "ydb"}
 
 	c.Assert(dialects, qt.DeepEquals, expected)
 }
@@ -210,24 +210,38 @@ func TestRenderSQL_UnsupportedDialect(t *testing.T) {
 	c.Assert(renderErr.Dialect, qt.Equals, "db2")
 }
 
-// YDB is a dialect name with no renderer behind it. Every spelling of it is
-// refused in the words of the gap, with the sentinel an embedder branches on,
-// rather than in the words the default arm uses for a name nobody knows.
-func TestRenderSQL_RefusesYDB(t *testing.T) {
+// Every spelling of YDB reaches the YDB renderer: `ydbs` names the TLS
+// scheme, and a dialect written in capitals is the same dialect. Each renders
+// a table byte for byte as `ydb` does.
+func TestRenderSQL_EveryYDBSpellingRendersAsYDB(t *testing.T) {
+	table := ast.NewCreateTable("users").
+		AddColumn(ast.NewColumn("id", "BIGINT").SetPrimary()).
+		AddColumn(ast.NewColumn("name", "VARCHAR(80)"))
+	want := "CREATE TABLE `users` (\n    `id` Int64 NOT NULL,\n    `name` Utf8,\n    PRIMARY KEY (`id`)\n);\n"
+
 	for _, dialect := range []string{"ydb", "ydbs", "YDB"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			sql, err := renderer.RenderSQL(dialect, &ast.CommentNode{Text: "Test comment"})
+			sql, err := renderer.RenderSQL(dialect, table)
 
-			c.Assert(sql, qt.Equals, "")
-			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(ydbgap.Rendering.Message()))
-			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
-			var renderErr *ptaherr.RenderError
-			c.Assert(err, qt.ErrorAs, &renderErr)
-			c.Assert(renderErr.Dialect, qt.Equals, dialect)
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Equals, want)
 		})
 	}
+}
+
+// Writing rows is the data phase's work on YDB, and an upsert names that
+// phase rather than rendering YQL nobody has measured.
+func TestRenderSQL_UpsertRefusedOnYDB(t *testing.T) {
+	c := qt.New(t)
+	node := ast.NewUpsert("users").AddInsertValue("id", "?").SetMatchColumns("id")
+
+	sql, err := renderer.RenderSQL("ydb", node)
+
+	c.Assert(sql, qt.Equals, "")
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `upsert into users: `+regexp.QuoteMeta(ydbgap.DataChanges.Message()))
 }
 
 func TestRenderSQL_UpsertUnsupportedDialects(t *testing.T) {

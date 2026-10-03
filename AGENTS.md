@@ -51,9 +51,9 @@ Read facts out of their declaration rather than out of a count written here:
 
 - Accepted dialects: `core/platform.NormalizeDialect` and
   `core/platform/constants.go`. `migrations lint` and `sql lint` leave Oracle
-  and YDB out deliberately; `internal/lintdialect/dialect.go` says why. YDB is
-  accepted before its renderer, planner and driver exist, and every layer that
-  lacks one refuses through `internal/ydbgap`.
+  and YDB out deliberately; `internal/lintdialect/dialect.go` says why. YDB
+  renders and plans before its driver exists, and every layer that does not
+  reach it yet refuses through `internal/ydbgap`.
 - Which driver a URL takes: `databaseDriverConfig` in `dbschema/connection.go`.
   It is not one driver per dialect, and a `sqlite` URL may take `libsql`.
 - What a dialect renders: `docs/capabilities.md`. Acceptance is not a promise;

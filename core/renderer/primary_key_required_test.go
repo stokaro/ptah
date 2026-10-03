@@ -86,7 +86,7 @@ func TestRender_IndexCoveringColumnsFollowsTheCapability_FailurePath(t *testing.
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches,
 		`postgres does not support INCLUDE columns on index "idx_accounts_email"; `+
-			`target cockroachdb, postgres, spanner, or yugabytedb`)
+			`target cockroachdb, postgres, spanner, ydb, or yugabytedb`)
 	c.Assert(sql, qt.Equals, "")
 }
 

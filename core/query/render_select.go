@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/internal/sqlident"
+	"ptah.run/internal/ydbgap"
 )
 
 // RenderSelect renders a SELECT statement to parameterized SQL for the given
@@ -94,11 +95,25 @@ type selectRenderer struct {
 
 func newSelectRenderer(dialect string) (*selectRenderer, error) {
 	normalized := platform.NormalizeDialect(dialect)
+	if err := refuseYDB(normalized, "SELECT"); err != nil {
+		return nil, err
+	}
 	style, ok := selectPlaceholderStyle(normalized)
 	if !ok {
 		return nil, fmt.Errorf("renderer: SELECT rendering is not supported for dialect %q", dialect)
 	}
 	return &selectRenderer{dialect: normalized, placeholder: style}, nil
+}
+
+// refuseYDB answers YDB by name rather than with the generic refusal. YDB has
+// a DDL renderer, and the query builder is the data phase's work: a YQL query
+// needs every value typed to its column, which the builder's bound values do
+// not carry yet.
+func refuseYDB(normalized, kind string) error {
+	if normalized != platform.YDB {
+		return nil
+	}
+	return fmt.Errorf("renderer: %s for dialect %q: %s", kind, platform.YDB, ydbgap.QueryBuilding.Message())
 }
 
 // selectPlaceholderStyle reports how a dialect numbers bound parameters, and

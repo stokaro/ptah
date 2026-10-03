@@ -195,6 +195,16 @@ var modifyColumnNullabilityCases = []modifyColumnNullabilityCase{
 		key:      renderExpectation{wantErr: `.*requires a table rebuild plan.*`},
 		ordinary: renderExpectation{wantErr: `.*requires a table rebuild plan.*`},
 	},
+	{
+		// YDB has no MODIFY COLUMN. A column changes its NOT NULL and its
+		// default in place and nothing else, and a modification that does not
+		// say which of the two moved is refused rather than guessed at, key or
+		// not.
+		name:     "ydb",
+		dialect:  "ydb",
+		key:      renderExpectation{wantErr: `column "id" of table "users": YDB has no MODIFY COLUMN; .*`},
+		ordinary: renderExpectation{wantErr: `column "nickname" of table "users": YDB has no MODIFY COLUMN; .*`},
+	},
 }
 
 func TestModifyColumn_KeyColumnNeverRendersNullable(t *testing.T) {
