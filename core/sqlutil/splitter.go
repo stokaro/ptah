@@ -95,10 +95,12 @@ func SplitSQLStatements(sql string) []string {
 //
 // YDB text is read as YQL: both quote styles are string literals with
 // backslash escapes, and a DEFINE ACTION or DEFINE SUBQUERY body, a DO BEGIN
-// block and a lambda body keep their semicolons. YQL's named expressions and
-// actions belong to the query that defines them, so a statement that uses one
-// defined by an earlier statement runs only where the statements are sent as
-// one query.
+// block and a lambda body keep their semicolons. YQL has no client delimiter,
+// so DELIMITER and `-- atlas:delimiter` lines are not honored there: the text
+// is split as written, and the server refuses a terminator it does not know.
+// YQL's named expressions and actions belong to the query that defines them,
+// so a statement that uses one defined by an earlier statement runs only where
+// the statements are sent as one query.
 func SplitSQLStatementsForDialect(sql, dialect string) []string {
 	return splitSQLStatements(sql, platform.NormalizeDialect(dialect))
 }
@@ -108,7 +110,7 @@ func splitSQLStatements(sql, dialect string) []string {
 		return make([]string, 0)
 	}
 
-	sql = NormalizeClientDelimiters(sql)
+	sql = normalizeClientDelimitersFor(sql, dialect)
 	// Use SQL-standard string scanning so a semicolon inside a string literal
 	// cannot leak out and be mis-split into an extra statement. Backslash
 	// escapes are only honored for the dialects that actually process them;
@@ -184,6 +186,18 @@ func splitSQLStatements(sql, dialect string) []string {
 	}
 
 	return statements
+}
+
+// normalizeClientDelimitersFor honors client delimiter directives for every
+// dialect but YDB. The rewriter reads strings and comments by the rules the
+// other dialects share, so on YQL it would rewrite a delimiter inside an
+// @@...@@ literal and stop at a # it reads as a comment; and no YDB client
+// writes a delimiter directive, so there is nothing to honor.
+func normalizeClientDelimitersFor(sql, dialect string) string {
+	if platform.NormalizeDialect(dialect) == platform.YDB {
+		return sql
+	}
+	return NormalizeClientDelimiters(sql)
 }
 
 func handleSQLServerGoBatchSeparator(

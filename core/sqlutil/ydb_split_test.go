@@ -215,6 +215,19 @@ func TestSplitSQLStatementsForDialect_YDBLiteralsAndComments(t *testing.T) {
 			want: []string{"SELECT $a$", "SELECT $a$"},
 		},
 		{
+			// The delimiter rewriter would turn the GO inside the literal
+			// into a semicolon. YQL has no client delimiter, so the text is
+			// split as written and the server refuses the GO it does not know.
+			name: "an Atlas delimiter directive is not honored",
+			sql:  "-- atlas:delimiter GO\nSELECT @@a GO b@@ GO\nSELECT 'x\\'GO' GO\n",
+			want: []string{"-- atlas:delimiter GO\nSELECT @@a GO b@@ GO\nSELECT 'x\\'GO' GO"},
+		},
+		{
+			name: "a MySQL delimiter directive is not honored",
+			sql:  "DELIMITER //\nSELECT 1 //\nSELECT 2;",
+			want: []string{"DELIMITER //\nSELECT 1 //\nSELECT 2"},
+		},
+		{
 			name: "a translation setting stays with the statement it heads",
 			sql:  "--!syntax_v1\nSELECT 1; SELECT 2;",
 			want: []string{"--!syntax_v1\nSELECT 1", "SELECT 2"},
@@ -277,6 +290,18 @@ func TestSplitSQLStatementsForDialect_YDBMalformedTextStaysWhole(t *testing.T) {
 			c.Assert(sqlutil.SplitSQLStatementsForDialect(test.sql, platform.YDB), qt.DeepEquals, test.want)
 		})
 	}
+}
+
+// The source split leaves a delimiter directive as written, as the
+// executable one does.
+func TestSplitSourceStatements_YDBDoesNotHonorADelimiterDirective(t *testing.T) {
+	c := qt.New(t)
+
+	got := sqlutil.SplitSourceStatements("-- atlas:delimiter GO\nSELECT @@a GO b@@ GO\n", platform.YDB)
+
+	c.Assert(got, qt.DeepEquals, []sqlutil.SourceStatement{
+		{Text: "SELECT @@a GO b@@ GO\n", Terminated: false},
+	})
 }
 
 // The compound bodies decide the source split as they decide the executable
