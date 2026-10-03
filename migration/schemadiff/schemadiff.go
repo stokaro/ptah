@@ -382,7 +382,7 @@ func compareReportingUndecidedAdditions(
 	compare.RangesWithSemantics(desired, database, diff, cov, identifierSemantics)
 
 	// Compare views, materialized views, and triggers
-	compare.ViewsWithSemantics(desired, database, diff, opts.Dialect, identifierSemantics)
+	compare.ViewsWithSemantics(desired, database, diff, opts.Dialect, identifierSemantics, opts.ViewBodies)
 	compare.Synonyms(desired, database, diff, cov)
 
 	// Compare TimescaleDB hypertables (PostgreSQL with the extension)
@@ -393,7 +393,7 @@ func compareReportingUndecidedAdditions(
 
 	// Compare SQL Server extended properties (schema, table and column scope)
 	compare.ExtendedProperties(desired, database, diff, cov)
-	compare.MaterializedViewsWithSemantics(desired, database, diff, opts.Dialect, identifierSemantics)
+	compare.MaterializedViewsWithSemantics(desired, database, diff, opts.Dialect, identifierSemantics, opts.ViewBodies)
 	compare.TriggersWithSemanticsAndConditions(desired, database, diff, identifierSemantics, opts.TriggerConditions, caps)
 
 	// Compare RLS policies (PostgreSQL-specific feature)

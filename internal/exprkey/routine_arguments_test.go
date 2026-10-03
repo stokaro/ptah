@@ -44,3 +44,12 @@ func TestRoutineArguments_DifferentListsAreDifferentKeys(t *testing.T) {
 		})
 	}
 }
+
+// One body declared on two views is one key, and two bodies are two: the
+// server's spelling of a view depends on its body alone.
+func TestViewBody_OneBodyIsOneKey(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(exprkey.ViewBody("SELECT id FROM all_items()"), qt.Equals, exprkey.ViewBody("SELECT id FROM all_items()"))
+	c.Assert(exprkey.ViewBody("SELECT id FROM all_items()"), qt.Not(qt.Equals), exprkey.ViewBody("SELECT id FROM all_items() i"))
+}
