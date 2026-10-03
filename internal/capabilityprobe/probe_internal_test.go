@@ -671,6 +671,15 @@ func TestReportErr(t *testing.T) {
 		},
 		want: `(?s).*ACCEPTED the nonsense control.*`,
 	}, {
+		name: "a run that left what it created on the server fails",
+		build: func() *Report {
+			report := decidedReport(measuredCell, true)
+			report.Leftovers = []string{"group ptahcapprobe00", "2 table(s) under /local/ptah_capprobe_00"}
+			return report
+		},
+		want: `(?s).*the run left objects it created on the server: group ptahcapprobe00; ` +
+			`2 table\(s\) under /local/ptah_capprobe_00.*`,
+	}, {
 		name: "a dialect with no statement table fails rather than reporting agreement",
 		build: func() *Report {
 			report := decidedReport(measuredCell, true)

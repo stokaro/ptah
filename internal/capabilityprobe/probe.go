@@ -141,8 +141,14 @@ type Report struct {
 	// namespace that silently does not apply is how one run's leftovers become
 	// the next run's findings.
 	Namespaced []Attempt
-	// Cleanup records the teardown statements.
+	// Cleanup records the teardown statements, and on YDB the reads that
+	// confirm the teardown removed what the run created.
 	Cleanup []Attempt
+	// Leftovers names what the run created and the teardown did not remove,
+	// on a dialect the probe can ask; any entry fails the run. The nightly
+	// tier runs the integration suite on the server the probe used, and an
+	// object left here is one the suite's first cleanup meets.
+	Leftovers []string
 }
 
 // Count returns how many rows carry an outcome.
@@ -210,6 +216,10 @@ func (r *Report) Err() error {
 			"%s: preset says %t, server does %t", row.Capability, row.PresetSays, row.ServerDoes))
 	}
 	problems = append(problems, r.staleUnderstatements()...)
+	if len(r.Leftovers) > 0 {
+		problems = append(problems, fmt.Errorf(
+			"the run left objects it created on the server: %s", strings.Join(r.Leftovers, "; ")))
+	}
 	if r.Decided() < r.Floor() {
 		problems = append(problems, r.coverageProblem())
 	}
@@ -406,6 +416,9 @@ func measure(ctx context.Context, pinned *dbschema.DatabaseConnection, report *R
 	}
 	defer func() {
 		report.Cleanup = append(s.dropRoles(ctx), s.leave(ctx, leave)...)
+		confirmed, left := s.leftovers(ctx)
+		report.Cleanup = append(report.Cleanup, confirmed...)
+		report.Leftovers = left
 	}()
 
 	confirmations, err := s.confirmNamespace(ctx)
