@@ -7,7 +7,10 @@ import { chromium } from 'playwright';
 
 const siteRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const check = process.argv.includes('--check');
-// Pin font metrics across development machines and CI; embed the font in SVGs.
+if (process.platform !== 'linux') {
+  throw new Error('Journey SVGs use Linux text metrics. Set PTAH_DOCKER_CONTEXT and run npm run diagrams:docker (add -- --check to verify).');
+}
+// Embed the font so image viewers need no installed fonts. Linux owns layout metrics.
 const font = readFileSync(join(siteRoot, 'src/fonts/instrument-sans-var-latin.woff2')).toString('base64');
 const fontCSS = `@font-face{font-family:PtahDiagram;src:url(data:font/woff2;base64,${font}) format('woff2');font-weight:100 900;}`;
 const browser = await chromium.launch();

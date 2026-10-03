@@ -286,6 +286,11 @@ run_node_selftest_case check-page-health.mjs \
 	"the sidebar-to-page rule short-circuited inside analyze()" \
 	"perl -0pi -e 's/if \\(!liveRoutes\\.has\\(entry\\.route\\)\\) \\{/if (false) {/' docs/site/scripts/check-page-health.mjs"
 
+# Theme checks must reject the wrong SVG even when every action links to it.
+run_node_selftest_case check-journey-themes.mjs \
+	"accepting a diagram from the wrong theme" \
+	"perl -0pi -e 's/^.*diagram theme.*\\n//m' docs/site/scripts/check-journey-themes.mjs"
+
 # A modal that lets keyboard focus escape is unusable. Require the preview
 # self-test to fail when its focus rule stops reading that defect.
 run_node_selftest_case check-graphic-preview.mjs \

@@ -86,7 +86,9 @@
     "root-assets:selftest": "node scripts/publish-root-assets.mjs --selftest",
     "diagrams:write": "node scripts/generate-journey-diagrams.mjs",
     "check:journey-diagrams": "node scripts/generate-journey-diagrams.mjs --check",
-    "check:journey-themes": "node scripts/check-journey-themes.mjs"
+    "check:journey-themes": "node scripts/check-journey-themes.mjs",
+    "check:journey-themes:selftest": "node scripts/check-journey-themes.mjs --selftest",
+    "diagrams:docker": "node scripts/render-journey-diagrams-linux.mjs"
   },
   "dependencies": {
     "@astrojs/starlight": "0.42.5",
