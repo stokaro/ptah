@@ -247,8 +247,8 @@ func resolveTriggerConditions(
 	return conditions, nil
 }
 
-// resolveRoutineArguments asks the server to spell the argument list of every
-// declared routine whose name the database also holds.
+// resolveRoutineArguments asks the server to spell the argument list and the
+// result of every declared routine whose name the database also holds.
 //
 // Only those, for the reason [resolveDomainExpressions] gives: a routine being
 // created carries its declaration into the CREATE unchanged. The name is
@@ -258,7 +258,8 @@ func resolveTriggerConditions(
 //
 // Each probe is the CREATE the renderer writes for the declared kind,
 // arguments and return type, in pg_temp and with a body nobody reads: the
-// server spells the arguments the way it would for the plan's own statement.
+// server spells both the way it would for the plan's own statement. A routine
+// that declares neither, a procedure without arguments, has nothing to spell.
 func resolveRoutineArguments(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -277,7 +278,7 @@ func resolveRoutineArguments(
 	var probes []dbexprprobe.RoutineArgumentsProbe
 	for _, function := range desired.Functions {
 		key := exprkey.RoutineArguments(function)
-		if strings.TrimSpace(function.Parameters) == "" || seen[key] || !held[strings.ToLower(routineName(function.Name))] {
+		if strings.TrimSpace(function.Parameters+function.Returns) == "" || seen[key] || !held[strings.ToLower(routineName(function.Name))] {
 			continue
 		}
 		seen[key] = true
@@ -324,7 +325,11 @@ func routineArgumentsProbe(
 	if err != nil {
 		return dbexprprobe.RoutineArgumentsProbe{}, false
 	}
-	return dbexprprobe.RoutineArgumentsProbe{Key: key, Name: name, Statement: statement}, true
+	drop, err := renderer.RenderSQL(dialect, ast.NewDropFunction("pg_temp."+name).SetKind(function.Kind))
+	if err != nil {
+		return dbexprprobe.RoutineArgumentsProbe{}, false
+	}
+	return dbexprprobe.RoutineArgumentsProbe{Key: key, Name: name, Statement: statement, Drop: drop}, true
 }
 
 // resolveColumnSpellings asks the server to spell the type and default of

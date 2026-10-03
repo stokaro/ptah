@@ -285,9 +285,9 @@ type CompareOptions struct {
 	// sides the way it folds a CHECK.
 	TriggerConditions map[string]TriggerCondition
 
-	// RoutineArguments carries each declared routine's argument list as the
-	// target server itself spells it, keyed by the routine's kind and the
-	// argument list as declared.
+	// RoutineArguments carries each declared routine's argument list and
+	// result as the target server itself spells them, keyed by the routine's
+	// kind, argument list and result as declared.
 	//
 	// PostgreSQL stores the arguments, not the text that declared them, and
 	// pg_get_function_arguments prints them back: a default gains a cast, a
@@ -303,6 +303,20 @@ type CompareOptions struct {
 	// modifier, differs from its own read-back, and every plan drops and
 	// creates it again (stokaro/ptah#3673). A resolved entry is the
 	// declaration after the same round trip.
+	//
+	// The result goes through the same round trip because
+	// pg_get_function_result prints a type's schema only where the session's
+	// search path does not reach it. Measured on PostgreSQL 18.6, with public
+	// on the search path:
+	//
+	//	declared                      stored
+	//	SETOF public.items         -> SETOF items
+	//	TABLE (r public.items)     -> TABLE(r items)
+	//	SETOF other.t2             -> SETOF other.t2
+	//
+	// No fold over the text can tell the first from the third without the
+	// search path, and compared as text the first is dropped and created again
+	// on every plan (stokaro/ptah#4038).
 	//
 	// A nil map means nobody could ask a server. The comparison then folds the
 	// two spellings with its own normalizer, as before.
@@ -321,8 +335,8 @@ type TriggerCondition struct {
 	Resolved bool
 }
 
-// RoutineArguments is one routine's argument list in the target server's own
-// spelling. See [CompareOptions.RoutineArguments].
+// RoutineArguments is one routine's argument list and result in the target
+// server's own spelling. See [CompareOptions.RoutineArguments].
 //
 // The zero value is what a resolver returns for a declaration it could not put
 // through the server; a comparison must then fall back to its own folding.
@@ -331,7 +345,11 @@ type RoutineArguments struct {
 	// Arguments is the argument list as pg_get_function_arguments prints it,
 	// empty for a routine that takes none.
 	Arguments string
-	// Resolved reports that a server answered for this argument list.
+	// Result is the result as pg_get_function_result prints it, empty for a
+	// procedure. A function that declares OUT arguments and no RETURNS clause
+	// gets the type the server derives from them.
+	Result string
+	// Resolved reports that a server answered for this declaration.
 	Resolved bool
 }
 
