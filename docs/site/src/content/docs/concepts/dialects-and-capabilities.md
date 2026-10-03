@@ -37,7 +37,9 @@ covered.
 Each normalized dialect maps
 to an implementation family, and several engines deliberately share one —
 MySQL and MariaDB share a planner family that SQL Server and Oracle also ride,
-and CockroachDB, YugabyteDB, and Spanner ride the PostgreSQL family. Sharing a
+and CockroachDB, YugabyteDB, and Spanner ride the PostgreSQL family. YDB rides
+none: Ptah writes YQL for it, with its own renderer, planner, reader and writer
+([YDB](../../databases/ydb/)). Sharing a
 family is not sharing a dialect: each member keeps its own renderer and its own
 capability set, which is what lets Oracle write bare identifiers while the rest
 quote. What distinguishes the members is their
