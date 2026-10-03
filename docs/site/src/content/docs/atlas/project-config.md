@@ -35,6 +35,8 @@ Ptah accepts these local configuration blocks:
 - `data "external"` for direct program output
 - `data "runtimevar"` for Go CDK runtime-variable URLs
 - `data "template_dir"` for rendered migration directories
+- top-level `docker` for a dev database started from a container image; see
+  [Docker dev database block](#docker-dev-database-block)
 - `env` blocks, with either one label or no label
 - top-level and env-local `lint`
 - top-level `exporter` for named output templates
@@ -824,6 +826,59 @@ outside it, and symbolic links that leave it fail as `outside allowed root`.
 Non-local URI schemes in `migration.dir` and `schema.src` fail explicitly when
 a command needs that configured value; an explicit CLI path flag still wins
 before URI validation.
+
+## Docker dev database block
+
+A top-level `docker "<type>" "<name>"` block declares a dev database started
+from a container image, and an env names it with `docker.<type>.<name>.url`:
+
+```hcl
+docker "postgres" "dev" {
+  image    = "postgres:custom"
+  database = "dev"
+  schema   = "public"
+  build {
+    context    = "."
+    dockerfile = "Dockerfile"
+  }
+  baseline = <<-SQL
+    CREATE SCHEMA audit;
+  SQL
+}
+
+env "development" {
+  dev = docker.postgres.dev.url
+}
+```
+
+The block is read only when a selected env, a local or a data source
+references its `url`. Otherwise it is reported as ignored, as Atlas CE ignores
+every `docker` block. The reference evaluates to a
+[`docker+<driver>://` URL](../migrate-commands/#a-dev-database-from-a-named-image),
+so a command starts and removes the container as it does for any docker dev
+URL:
+
+- `build` runs `docker build` for `image` first, from a `context` relative to
+  `atlas.hcl`, and the image is removed with the container.
+- `baseline` runs on the dev database once the server answers, before the
+  command claims the database, so the claim judges what the baseline left. A
+  block that sets `schema` pins that schema, and the baseline's other schemas
+  stay as they were, their grants included.
+- `env` is passed to the container. The password and database variables Ptah
+  sets come after it and win.
+- `timeout` bounds the readiness wait.
+- On PostgreSQL, `database` names the database and `schema` pins the
+  `search_path`. Without `database` the block connects to `postgres`, which
+  cleanup refuses (stokaro/ptah#4035). On MySQL and MariaDB, `schema` is the
+  database, and without it the dev database is the whole server.
+
+Ptah reads `postgres`, `mysql` and `mariadb` blocks with `image`, `schema`,
+`database` on PostgreSQL, `baseline`, `env`, `timeout`, and a `build` with
+`context`, `dockerfile`, `dockerfile_inline`, `target`, `args` and `platform`.
+Any other engine, attribute or nested block is refused with
+`unsupported atlas.hcl construct`. These names follow Atlas's configuration
+reference. Atlas CE does not read the block and refuses a reference to its
+`url` with `Unsupported attribute`, and strict CE mode answers the same way.
 
 ## Named output templates
 

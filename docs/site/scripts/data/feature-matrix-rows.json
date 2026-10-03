@@ -450,6 +450,15 @@
     "evidence": "Measured 2026-10-03 on a Linux host with a local daemon against the pinned community binary v1.3.0 and a branch build, each exit status read from an unpiped `schema inspect -u file://schema.sql --dev-url <value>` (stokaro/ptah#4040). Both exit 0 on `docker+postgres://_/postgres:17/dev`, an empty host, a registry host leading the image, an image path holding a slash, an image with no tag, an uppercase scheme, and `docker+mysql://_/mysql:8.4.11/dev`; both exit 1 on `docker+postgres://_/`, on `docker+postgres://postgres:17/dev` at `docker run`, and on `docker+sqlite`, `docker+postgis` and `docker+nosuch` with `sql/sqlclient: unknown driver`. On a PostgreSQL image whose entrypoint unsets POSTGRES_DB the binary exits 1 with `database \"dev\" does not exist` and Ptah creates the database and exits 0; the binary runs `CREATE DATABASE IF NOT EXISTS` on a MySQL-family image and Ptah does too. The binary registers `docker+clickhouse` and `docker+sqlserver`; Ptah refuses both by name. Without a database a PostgreSQL URL connects to `postgres` on both, which Ptah's cleanup refuses (stokaro/ptah#4035). internal/devdocker/devdocker.go parseImageURL; integration/devdocker_image_e2e_test.go starts an image built in the test on both binaries' replaying verbs and reads its marker role back."
   },
   {
+    "area": "Dev databases",
+    "feature": "`docker` block in `atlas.hcl` (`docker.<type>.<name>.url`)",
+    "ptah": "partial",
+    "atlas_oss": "no",
+    "atlas_pro": "yes",
+    "note": "PostgreSQL, MySQL and MariaDB blocks with image, build, baseline, env, schema, database and timeout; other attributes are refused by name. Strict CE refuses the reference, as CE does.",
+    "evidence": "Measured 2026-10-03 against the pinned community binary v1.3.0: an atlas.hcl env with `dev = docker.postgres.dev.url` exits 1 with `Unsupported attribute; This object does not have an attribute named \"url\".`, and the block itself is accepted and dropped. The attribute names come from Atlas's public configuration reference (https://atlasgo.io/hcl/config) and from ariga/atlas#3807, not from a measured run. config/projectconfig/atlas_docker.go reads the block lazily and evaluates the reference to a `docker+<driver>://` URL whose fragment names a devdocker.Declaration carrying the build, baseline, environment and timeout; internal/devdocker/provision.go builds before the container starts, runs the baseline after the database exists, and removes the image with the container. integration/atlas_hcl_docker_block_e2e_test.go runs `ptah-compat migrate diff --env` on a block that builds its image and whose baseline creates a role, a schema and a grant; the replayed migration reads the grant back through a CHECK, and the image is gone afterwards (stokaro/ptah#4041)."
+  },
+  {
     "area": "Migration linting",
     "feature": "`schema apply --skip-lint`",
     "ptah": "yes",

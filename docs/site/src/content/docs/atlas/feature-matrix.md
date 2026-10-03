@@ -107,16 +107,16 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 194 capabilities below:
+Across the 195 capabilities below:
 
 | Reading | Count |
 | --- | --- |
 | Ptah supports it fully | 182 |
-| Ptah supports it with a stated limitation | 1 |
+| Ptah supports it with a stated limitation | 2 |
 | Ptah does not implement it | 0 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 11 |
 | Ptah and Atlas CE both support it | 64 |
-| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 53 |
+| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 54 |
 | Ptah has it and neither Atlas edition does | 27 |
 | Atlas CE has it and Ptah does not, or only in part | 0 |
 | An Atlas column is ❔ — not established by this page's evidence | 4 |
@@ -308,6 +308,7 @@ seven of them as open capabilities regardless.
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
 | `--var` does not require an `atlas.hcl` | ✅ | ✅ | ✅ | `-c` and `--env` select a project file and still require one. `--var` only supplies values to one, on every verb. Its syntax is still checked with no `atlas.hcl` present. |
+| `docker` block in `atlas.hcl` (`docker.<type>.<name>.url`) | 🟡 | ❌ | ✅ | PostgreSQL, MySQL and MariaDB blocks with image, build, baseline, env, schema, database and timeout; other attributes are refused by name. Strict CE refuses the reference, as CE does. |
 | A malformed `--var` is refused wherever it is spelled | ✅ | ✅ | ✅ | CE parses `--var` while parsing flags, so a value with no `=` is refused before any project file is sought. Ptah checks it on every command under `schema` and `migrate`, even ones that never read it. |
 | Atlas project config (atlas.hcl) | ✅ | ✅ | ✅ | Envs, variables, locals, data sources and `for_each` are evaluated. A collection env expands where a verb takes one and is refused by name elsewhere. |
 | atlas.hcl file() and fileset() path confinement | ✅ | ❌ | ❌ | Ptah confines file() and fileset() to the atlas.hcl directory: absolute, parent-traversal and symlink escapes are refused by name. Atlas reads them. Deliberate divergence; exit 1 either way today. |

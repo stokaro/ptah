@@ -98,6 +98,7 @@ import (
 	"maps"
 	"net/url"
 	"path"
+	"slices"
 	"strings"
 
 	"ptah.run/core/platform"
@@ -355,6 +356,9 @@ type Spec struct {
 	// fromImage reports a `docker+<driver>://` URL, whose image is the one the
 	// URL names rather than the engine's own.
 	fromImage bool
+	// declaration is what an atlas.hcl docker block adds to such a URL; see
+	// [Declare]. Its zero value adds nothing.
+	declaration Declaration
 }
 
 // URL is the directly connectable URL for a server published at hostPort. It
@@ -399,9 +403,18 @@ func (s Spec) CreatesDatabase() bool {
 }
 
 // Env is the container environment that creates the database with password as
-// its superuser credential.
+// its superuser credential. A docker block's own environment comes first, so
+// the variables the provisioner depends on are the ones the container sees.
 func (s Spec) Env(password string) []string {
-	return s.engine.env(s.Database, password)
+	return append(slices.Clone(s.declaration.Env), s.engine.env(s.Database, password)...)
+}
+
+// BaselineURL is the URL a docker block's baseline runs on: the dev database
+// the URL names, or the whole server when it names none on the MySQL family,
+// with the engine's own parameters only. An operator's `search_path` may name
+// a schema the baseline is about to create.
+func (s Spec) BaselineURL(hostPort, password string) string {
+	return s.engine.url(hostPort, s.Database, password, defaultParams(s.engine.params))
 }
 
 // Port is the port the provisioned server listens on inside the container.
@@ -523,14 +536,16 @@ func parseImageURL(parsed *url.URL, driver string) (Spec, error) {
 	if err != nil {
 		return Spec{}, err
 	}
+	declaration, _ := declared(parsed.Fragment)
 	return Spec{
-		Engine:    driver,
-		Dialect:   found.dialect,
-		Image:     image,
-		Database:  database,
-		Query:     query,
-		engine:    found,
-		fromImage: true,
+		Engine:      driver,
+		Dialect:     found.dialect,
+		Image:       image,
+		Database:    database,
+		Query:       query,
+		engine:      found,
+		fromImage:   true,
+		declaration: declaration,
 	}, nil
 }
 

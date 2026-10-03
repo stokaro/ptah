@@ -46,6 +46,12 @@ type AtlasLoadOptions struct {
 	// has no handler for the data source; a compatibility adapter selects this
 	// option for its strict policy. The zero value evaluates the block.
 	RejectCompositeSchema bool
+	// IgnoreDockerBlocks leaves every top-level docker block unread, as Atlas
+	// Community Edition leaves it: the block is reported as ignored, and a
+	// reference to its url fails with `Unsupported attribute`. The default
+	// starts the dev database a block declares when a selected env references
+	// it.
+	IgnoreDockerBlocks bool
 }
 
 // LoadAtlasFile loads the supported subset of an Atlas project config file. A
@@ -222,6 +228,7 @@ func ParseAtlasFSCollectionWithOptions(
 	}
 	p.source = data
 	p.rejectCompositeSchema = opts.RejectCompositeSchema
+	p.ignoreDockerBlocks = opts.IgnoreDockerBlocks
 	return p.parseCollection(body, opts.EnvName)
 }
 
@@ -284,6 +291,8 @@ type atlasParser struct {
 	// rejectListMapForEach selects the narrower dynamic-env type boundary for
 	// consumers that need it without narrowing the parser's default behavior.
 	rejectListMapForEach bool
+	// ignoreDockerBlocks is [AtlasLoadOptions.IgnoreDockerBlocks].
+	ignoreDockerBlocks bool
 	// externalSchemas holds the declared data.external_schema sources by name.
 	externalSchemas map[string]externalSchemaDataSource
 	// migrationDirectories holds immutable data.template_dir filesystems by
@@ -433,6 +442,7 @@ func (p atlasParser) parseCollection(body *hclsyntax.Body, envName string) ([]Co
 		blocks.variables,
 		blocks.locals,
 		blocks.data,
+		blocks.docker,
 		atlasEvaluationRoots(body.Attributes, blocks.globalDiff, blocks.globalLint, selected),
 	); err != nil {
 		return nil, err
@@ -503,6 +513,7 @@ func (p atlasParser) parseCollection(body *hclsyntax.Body, envName string) ([]Co
 
 type atlasTopBlocks struct {
 	data       []*hclsyntax.Block
+	docker     []*hclsyntax.Block
 	globalDiff []*hclsyntax.Block
 	globalLint []*hclsyntax.Block
 	envs       []atlasEnvBlock
@@ -750,6 +761,10 @@ func (p atlasParser) collectAtlasTopBlock(block *hclsyntax.Block, collected *atl
 	switch block.Type {
 	case "data":
 		collected.data = append(collected.data, block)
+	case "docker":
+		// Read once the evaluation context exists, and only where a selected
+		// env references it; see atlas_docker.go.
+		collected.docker = append(collected.docker, block)
 	case "diff":
 		collected.globalDiff = append(collected.globalDiff, block)
 	case "env":

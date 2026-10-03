@@ -63,7 +63,8 @@ discarding it:
 - YAML desired-schema sources;
 - an authored `schema apply` lint policy the CE execution path cannot enforce;
 - extended `atlas.hcl` evaluation outside the supported CE subset, including a
-  `data "composite_schema"` block, declared or referenced;
+  `data "composite_schema"` block, declared or referenced, and a reference to a
+  `docker` block's `url`, which Atlas CE refuses with `Unsupported attribute`;
 - Atlas txtar, Ptah directives, and SQL templates for commands that execute,
   convert, or replay migration bodies.
 

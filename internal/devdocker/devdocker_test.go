@@ -234,17 +234,48 @@ type fakeRunner struct {
 
 	started []string
 	removed []string
+
+	buildErr error
+	// builds records each Build call's image and build; removedImages each
+	// RemoveImage call; startedImages and startedEnv each Start call's image
+	// and environment.
+	builds        []recordedBuild
+	removedImages []string
+	startedImages []string
+	startedEnv    [][]string
+}
+
+// recordedBuild is one Build call a fakeRunner saw.
+type recordedBuild struct {
+	Image string
+	Build devdocker.Build
 }
 
 func (f *fakeRunner) Available(context.Context) error {
 	return f.availableErr
 }
 
-func (f *fakeRunner) Start(_ context.Context, name, _, _ string, _ []string) (string, error) {
+func (f *fakeRunner) Start(_ context.Context, name, image, _ string, env []string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.started = append(f.started, name)
+	f.startedImages = append(f.startedImages, image)
+	f.startedEnv = append(f.startedEnv, env)
 	return f.hostPort, f.startErr
+}
+
+func (f *fakeRunner) Build(_ context.Context, image string, build devdocker.Build) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.builds = append(f.builds, recordedBuild{Image: image, Build: build})
+	return f.buildErr
+}
+
+func (f *fakeRunner) RemoveImage(_ context.Context, image string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.removedImages = append(f.removedImages, image)
+	return nil
 }
 
 func (f *fakeRunner) Remove(_ context.Context, name string) error {
