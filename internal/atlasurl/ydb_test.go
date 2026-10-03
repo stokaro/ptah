@@ -20,9 +20,9 @@ func TestSameDatabaseEndpoint_YDB_HappyPath(t *testing.T) {
 		want  bool
 	}{
 		{
-			name:  "the plaintext default port is 2136",
+			name:  "the plaintext default port is 2136, and a user and options change nothing",
 			left:  "ydb://localhost/local",
-			right: "ydb://reader:secret@localhost:2136/local?token=x",
+			right: "ydb://reader@localhost:2136/local?go_query_mode=query",
 			want:  true,
 		},
 		{

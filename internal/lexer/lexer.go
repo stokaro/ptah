@@ -285,6 +285,11 @@ func (l *Lexer) NextToken() Token {
 	if l.opts.YQL {
 		return l.nextYQLToken()
 	}
+	return l.nextSQLToken()
+}
+
+// nextSQLToken is NextToken for every mode but [Options.YQL].
+func (l *Lexer) nextSQLToken() Token {
 	for {
 		ch := l.peek()
 

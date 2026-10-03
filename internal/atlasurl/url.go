@@ -411,13 +411,13 @@ func networkDatabaseIdentity(parsed *url.URL, dialect string) (databaseIdentity,
 // endpoint that name different databases, in either place, are different
 // databases. The path is folded to one leading slash and no trailing one, so
 // /local, local and /local/ are one database.
-func ydbDatabaseIdentity(parsed *url.URL) (string, string) {
+func ydbDatabaseIdentity(parsed *url.URL) (endpoint, database string) {
 	port := parsed.Port()
 	if port == "" {
 		port = ydbDefaultPorts[strings.ToLower(parsed.Scheme)]
 	}
-	endpoint := networkEndpoint(parsed.Hostname(), port, platform.YDB)
-	database := parsed.Path
+	endpoint = networkEndpoint(parsed.Hostname(), port, platform.YDB)
+	database = parsed.Path
 	if values, ok := parsed.Query()["database"]; ok && len(values) > 0 {
 		database = values[0]
 	}
