@@ -890,10 +890,16 @@ func functionDefinitions(
 			strings.Join(dbSettings, ", "), strings.Join(genSettings, ", "))
 	}
 
-	// Compare function body (normalize whitespace for comparison)
+	// Compare function body (normalize whitespace for comparison). The body the
+	// server stored for the declaration, where it was asked, is a second chance
+	// to match and never a reason to differ, as a view's is: a server that
+	// rewrites a body when it stores it never holds the declared text, and
+	// compared as text alone the routine is replaced on every plan
+	// (stokaro/ptah#4058).
 	genBody := strings.TrimSpace(genFunction.Body)
 	dbBody := strings.TrimSpace(dbFunction.Body)
-	if genBody != dbBody {
+	storedForm := spelled.BodyResolved && strings.TrimSpace(spelled.Body) == dbBody
+	if genBody != dbBody && !storedForm {
 		functionDiff.Changes["body"] = fmt.Sprintf("%s -> %s", dbBody, genBody)
 	}
 

@@ -35,10 +35,11 @@ func routineWithResult(
 }
 
 // resultSpelling is the answer a server gives for a function that takes no
-// arguments and declares the result.
+// arguments and declares the result, keyed by the declaration
+// [routineWithResult] compares.
 func resultSpelling(declared, spelled string) map[string]config.RoutineArguments {
 	return map[string]config.RoutineArguments{
-		exprkey.RoutineArguments(schemamodel.Function{Returns: declared}): {Result: spelled, Resolved: true},
+		exprkey.RoutineArguments(schemamodel.Function{Returns: declared, Language: "sql"}): {Result: spelled, Resolved: true},
 	}
 }
 
@@ -93,7 +94,7 @@ func TestFunctionsWithSemantics_TheServersSpellingOfTheResultStillSeesAChange(t 
 		{
 			name:      "an unresolved spelling",
 			observed:  "SETOF items",
-			spellings: map[string]config.RoutineArguments{exprkey.RoutineArguments(schemamodel.Function{Returns: declared}): {}},
+			spellings: map[string]config.RoutineArguments{exprkey.RoutineArguments(schemamodel.Function{Returns: declared, Language: "sql"}): {}},
 		},
 		{
 			name:      "a spelling of another result",
