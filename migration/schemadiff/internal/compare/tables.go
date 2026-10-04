@@ -253,12 +253,8 @@ func TablesAndColumnsWithServerSpellings(
 			// is its retention has to reach TablesModified or the schema
 			// reports synced while rows expire on a schedule nobody declared
 			// (stokaro/ptah#2236).
-			//
-			// A description that cannot spell the policy at all -- an HCL
-			// document, which records that in its header -- is silent about it
-			// rather than asking for its removal, so the removal is withheld.
-			tableDiff.RowDeletionPolicyChange = withheldPolicyRemoval(rowDeletionPolicyChange(
-				genTable.RowDeletionPolicy, dbTable.RowDeletionPolicy, semantics), cov, dbTable)
+			tableDiff.RowDeletionPolicyChange = rowDeletionPolicyChange(
+				genTable.RowDeletionPolicy, dbTable.RowDeletionPolicy, semantics)
 			// A comment is compared here for the same reason as the TTL policy,
 			// and reaches TablesModified for the same reason: it belongs to the
 			// table rather than to any column, and a table whose only
@@ -363,20 +359,6 @@ func rowDeletionPolicyChange(
 		return nil
 	}
 	return &difftypes.RowDeletionPolicyChange{Desired: desired.Clone(), Current: current.Clone()}
-}
-
-// withheldPolicyRemoval is change, or nil where change removes a policy the
-// desired state does not describe; see [Coverage.PlansRemoval].
-func withheldPolicyRemoval(
-	change *difftypes.RowDeletionPolicyChange,
-	cov Coverage,
-	table catalog.Table,
-) *difftypes.RowDeletionPolicyChange {
-	if change == nil || !change.Desired.IsZero() ||
-		cov.PlansRemoval(coverage.TTL, table.Schema, tableref.Canonical(table.Schema, table.Name), table.Name) {
-		return change
-	}
-	return nil
 }
 
 // tableCreationSchemaOnly and tableCreationName are the coverage filter's two

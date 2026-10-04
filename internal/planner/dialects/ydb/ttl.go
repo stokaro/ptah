@@ -75,7 +75,10 @@ func (p *Planner) refuseTTLChange(tableDiff difftypes.TableDiff, notDescribed co
 		return err
 	}
 	change := tableDiff.RowDeletionPolicyChange
-	if change == nil || change.Desired.IsZero() {
+	if change == nil {
+		return refuseDroppingTheTTLColumn(tableDiff)
+	}
+	if change.Desired.IsZero() {
 		return nil
 	}
 	subject, desired := ttlSubject(tableDiff), change.Desired
@@ -92,6 +95,24 @@ func (p *Planner) refuseTTLChange(tableDiff difftypes.TableDiff, notDescribed co
 			"or reset it first")
 	}
 	return p.refuseTTLColumn(subject, tableDiff.Desired, desired)
+}
+
+// refuseDroppingTheTTLColumn refuses dropping the column a table's TTL reads
+// while the TTL stays: YDB refuses it (`Can't drop TTL column: 'ts', disable
+// TTL first`). A declaration that names such a column is refused when it is
+// validated, so this is reached by a TTL the declaration does not describe and
+// keeps from the database, as an HCL document does.
+func refuseDroppingTheTTLColumn(tableDiff difftypes.TableDiff) error {
+	policy := tableDiff.Desired.Table.RowDeletionPolicy
+	if policy.IsZero() {
+		return nil
+	}
+	if !slices.ContainsFunc(tableDiff.ColumnsRemoved, func(column schemamodel.Field) bool { return column.Name == policy.Column }) {
+		return nil
+	}
+	return refuseFact(fmt.Sprintf("dropping column %q of table %q", policy.Column, tableDiff.TableName),
+		"the table's TTL reads it, and YDB refuses to drop the column a TTL reads (`Can't drop TTL column`); "+
+			"remove the TTL, or move it to another column, first")
 }
 
 // refuseTTLColumn holds the column a policy reads to the types YDB reads a TTL
@@ -125,10 +146,16 @@ func (p *Planner) refuseTTLColumn(subject string, declaration difftypes.TableDec
 // of kind on table as not described. A record naming the whole kind counts: a
 // read that did not look at any table's setting cannot say this table has
 // none.
+//
+// A format's limit does not count. It is what a document's loader records for
+// a family the format has no spelling for -- an HCL document standing for the
+// current state cannot say whether a table has a TTL -- and it says nothing
+// about a table carrying one, where these records are read as exactly that.
 func recordsSetting(set coverage.Set, kind coverage.Kind, table schemamodel.Table) bool {
 	canonical := tableref.Canonical(table.Schema, table.Name)
 	return slices.ContainsFunc(set.Objects, func(object coverage.Object) bool {
-		return object.Kind == kind &&
+		formatLimit := object.Reason == coverage.Unsupported && object.Provenance == coverage.DerivedFromFact
+		return object.Kind == kind && !formatLimit &&
 			(object.WholeKind() || object.Name == canonical || strings.HasPrefix(object.Name, canonical+"/"))
 	})
 }

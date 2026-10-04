@@ -267,3 +267,38 @@ func TestGenerateMigrationAST_NewTableTTL(t *testing.T) {
 		"    PRIMARY KEY (`id`)\n"+
 		") WITH (TTL = Interval(\"PT1H\") ON `expires` AS MILLISECONDS);\n")
 }
+
+// Dropping the column a TTL the plan keeps reads is refused before any node is
+// returned, as YDB refuses it (`Can't drop TTL column`). A declaration that
+// names a dropped column is refused when it is validated; this is the TTL a
+// declaration does not describe and keeps from the database.
+func TestGenerateMigrationAST_TTL_ColumnDroppedUnderAKeptTTL(t *testing.T) {
+	c := qt.New(t)
+	declaration := itemsDeclaration(field("label", "TEXT", true))
+	declaration.Table.RowDeletionPolicy = &ast.RowDeletionPolicySpec{Column: "ts", Interval: "P1D"}
+	diff := modified(difftypes.TableDiff{
+		TableName: "items", Desired: declaration,
+		ColumnsRemoved: difftypes.ColumnChanges{field("ts", "TIMESTAMP", true)},
+	})
+
+	nodes, err := ydb.NewWithCapabilities(capability.YDB262()).GenerateMigrationAST(diff)
+
+	c.Assert(err, qt.ErrorMatches, `dropping column "ts" of table "items": the table's TTL reads it, and YDB refuses `+
+		"to drop the column a TTL reads \\(`Can't drop TTL column`\\); .*")
+	c.Assert(nodes, qt.IsNil)
+}
+
+// A rebuild is not refused for a TTL the current side cannot spell: an HCL
+// document standing for the current state records that it has no spelling for
+// a TTL, which says nothing about the table carrying one. A record the read of
+// a database made is still refused; see
+// TestGenerateMigrationAST_TableRebuild_FailurePath.
+func TestGenerateMigrationAST_TableRebuild_FormatLimitIsNotASetting(t *testing.T) {
+	c := qt.New(t)
+	diff := notDescribing(modified(difftypes.TableDiff{TableName: "app.items",
+		Desired:         appItems(field("label", "TEXT", true), field("n", "BIGINT", true)),
+		ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}}}),
+		coverage.Object{Kind: coverage.TTL, Reason: coverage.Unsupported, Provenance: coverage.DerivedFromFact})
+
+	c.Assert(renderRebuild(c, capability.YDB262(), diff), qt.Contains, "RENAME TO `app/items`;\n")
+}
