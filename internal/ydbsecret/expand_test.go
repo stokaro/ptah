@@ -188,6 +188,8 @@ func TestClearValue_HappyPath(t *testing.T) {
 			form: "ALTER SECRET", path: "pw", writes: true},
 		{name: "a named expression Ptah does not define",
 			statement: "CREATE SECRET pw WITH (value = $v)", form: "CREATE SECRET", path: "pw", writes: true},
+		{name: "the prefix in another case, which Ptah does not define",
+			statement: "CREATE SECRET pw WITH (value = $ptah_secret_pw)", form: "CREATE SECRET", path: "pw", writes: true},
 		{name: "a reference Ptah defines", statement: "CREATE SECRET pw WITH (value = $PTAH_SECRET_PW)",
 			form: "CREATE SECRET", path: "pw"},
 		{name: "the deprecated object", statement: "CREATE OBJECT pw (TYPE SECRET) WITH value = 's3cr3t'",
