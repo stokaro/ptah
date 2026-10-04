@@ -658,9 +658,11 @@ refuses such a column by name and writes nothing.
 describes, labeled with the dialect and the `--schemas` directories. Like
 every other dialect, it counts objects and reads no row counts or sizes.
 
-`ptah schema lineage --db-url ydb://...` traces views. YDB has no routines, so a
-directory without views has nothing to trace. The reader does not read a view
-yet, so a directory holding one is refused rather than reported as empty.
+`ptah schema lineage --db-url ydb://...` traces views from the queries the
+server stores. A view's source is its table's Ptah name, such as `shop.items`
+for the path `shop/items`, so a view over a view links to the view it reads,
+and a double-quoted text is a YQL string, which feeds no column. YDB has no
+routines, so a directory without views has nothing to trace.
 
 `ptah schema security --db-url ydb://...` is refused: the analysis reads the
 access model, and Ptah does not read YDB users, groups and permissions yet.

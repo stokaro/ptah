@@ -130,7 +130,7 @@ func runSchemaLineage(cmd *cobra.Command, opts schemaLineageOptions) error {
 		return cmdutil.Fail(cmd, err)
 	}
 	document := lineageDocument{
-		Result:   schemalineage.Derive(database),
+		Result:   schemalineage.DeriveForDialect(database, opts.dialect),
 		Routines: schemalineage.DeriveRoutines(database, opts.dialect),
 	}
 	return writeLineage(cmd.OutOrStdout(), opts.format, document)
@@ -204,7 +204,7 @@ func runSchemaLineageLive(cmd *cobra.Command, opts schemaLineageOptions) error {
 	dialect := conn.Info().Dialect
 	database := dbschematogo.ConvertDBSchemaToGoSchema(live, conn.Info().Dialect)
 	document := lineageDocument{
-		Result:   schemalineage.Derive(database),
+		Result:   schemalineage.DeriveForDialect(database, dialect),
 		Routines: schemalineage.DeriveRoutines(database, dialect),
 	}
 	return writeLineage(cmd.OutOrStdout(), opts.format, document)
