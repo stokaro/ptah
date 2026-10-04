@@ -56,6 +56,25 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
+    # YDB is the one engine the smoke reaches over a network: every other run
+    # here uses a SQLite file. local-ydb advertises its node under the
+    # container's host name, so the container is named localhost and the SDK's
+    # default balancer reaches it through the published port, as in
+    # go-integration-tests.yml.
+    services:
+      ydb:
+        image: ydbplatform/local-ydb:26.2.1.14
+        env:
+          YDB_USE_IN_MEMORY_PDISKS: "true"
+        options: >-
+          --hostname localhost
+          --health-cmd "sh /health_check"
+          --health-interval 5s
+          --health-timeout 20s
+          --health-retries 30
+        ports:
+          - 2136:2136
+
     steps:
       - uses: actions/checkout@v7
 
@@ -131,6 +150,70 @@ jobs:
             process.exit(1);
           }
           console.log(`lint report: failed, ${report.findings.length} finding(s)`);
+          NODE
+
+      # A YDB URL takes the same path through the action as any other: plan,
+      # safety report, generated migration files and a lint of them as YQL.
+      # The model declares a unique index rather than a UNIQUE column, which
+      # YDB has no constraint for.
+      - name: Create YDB smoke schema source
+        run: |
+          mkdir -p "$RUNNER_TEMP/ptah-action-ydb-models"
+          cat > "$RUNNER_TEMP/ptah-action-ydb-models/models.go" <<'GO'
+          package models
+
+          //ptah:schema:table name="users" schema="ptah_action"
+          type User struct {
+              //ptah:schema:field name="id" type="BIGINT" primary="true" auto_increment="true"
+              ID int64
+
+              //ptah:schema:field name="email" type="TEXT" not_null="true"
+              Email string
+
+              //ptah:schema:index name="users_email_uq" fields="email" unique="true"
+              _ int
+          }
+          GO
+
+      - name: Run local Ptah action against YDB
+        id: ydb
+        uses: ./.github/actions/ptah
+        with:
+          binary-path: ${{ runner.temp }}/ptah
+          setup-go: "false"
+          dir: ${{ runner.temp }}/ptah-action-ydb-models
+          db-url: ydb://localhost:2136/local
+          dialect: ydb
+          migration-dir: ${{ runner.temp }}/ptah-action-ydb-migrations
+          output-dir: ${{ runner.temp }}/ptah-action-ydb
+          comment: "false"
+          lint: "true"
+          generate: "true"
+
+      # The action does not fail on a generate error, so the files are counted
+      # here, and the plan is read for the YQL it carries.
+      - name: Read what the action wrote for YDB
+        env:
+          GENERATE_EXIT_CODE: ${{ steps.ydb.outputs.generate-exit-code }}
+          GENERATED_COUNT: ${{ steps.ydb.outputs.generated-count }}
+          DESTRUCTIVE: ${{ steps.ydb.outputs.destructive }}
+          PLAN_PATH: ${{ steps.ydb.outputs.plan-path }}
+          LINT_PATH: ${{ steps.ydb.outputs.lint-path }}
+          WANT_TABLE: "CREATE TABLE `ptah_action/users` ("
+          WANT_INDEX: "INDEX `users_email_uq` GLOBAL UNIQUE SYNC ON (`email`)"
+        run: |
+          test "$GENERATE_EXIT_CODE" = 0
+          test "$GENERATED_COUNT" = 2
+          test "$DESTRUCTIVE" = false
+          grep -F -- "$WANT_TABLE" "$PLAN_PATH"
+          grep -F -- "$WANT_INDEX" "$PLAN_PATH"
+          node - <<'NODE'
+          const fs = require("fs");
+          const report = JSON.parse(fs.readFileSync(process.env.LINT_PATH, "utf8"));
+          if (report.failed !== false || report.dialect !== "ydb") {
+            console.error(`the YDB lint report is not a passing YDB lint: ${JSON.stringify(report).slice(0, 200)}`);
+            process.exit(1);
+          }
           NODE
 
       # The action's own setup-go step was unreachable from CI while every smoke

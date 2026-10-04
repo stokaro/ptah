@@ -17,7 +17,7 @@
 // declaration of one reaches the renderer by name, and a database holding one
 // reaches the reader, and each has to be refused there rather than handled as
 // something else. So are the commands that connect and then need a layer that
-// does not exist yet: the compatibility surface and the surfaces planned last.
+// does not exist yet: the compatibility surface and inference.
 package ydbgap
 
 import (
@@ -62,10 +62,11 @@ const (
 	IndexFamilies
 	// Compatibility is a YDB URL on the ptah-compat surface.
 	Compatibility
-	// OtherSurfaces is the commands planned after the compatibility surface:
-	// Go struct generation from a database, schema security analysis and the
-	// other surfaces that read more than the schema reader describes.
-	OtherSurfaces
+	// Inference is an embedding generation on YDB: `ptah inference` and the
+	// agent surface's inference tools. The run state and the vectors they
+	// work on are a PostgreSQL vertical built on pgvector, and the YDB design
+	// waits for the vector index family.
+	Inference
 
 	// endOfLayers is one past the last layer and names none. It keeps
 	// [Layers] derived from this block rather than from a second list.
@@ -102,8 +103,8 @@ func (l Layer) work() string {
 		return "reading or creating a YDB vector, full-text, JSON or column-table index"
 	case Compatibility:
 		return "using a YDB database through ptah-compat"
-	case OtherSurfaces:
-		return "running this command against YDB"
+	case Inference:
+		return "running an embedding generation against YDB"
 	default:
 		return "this YDB operation"
 	}
@@ -119,7 +120,7 @@ func (l Layer) Phase() int {
 		return 10
 	case Compatibility:
 		return 11
-	case OtherSurfaces:
+	case Inference:
 		return 12
 	default:
 		return 0
@@ -156,9 +157,8 @@ func (l Layer) Unsupported() string {
 		return "vector, full-text, JSON and column-table indexes"
 	case Compatibility:
 		return "every `ptah-compat` command with a YDB URL, from any source"
-	case OtherSurfaces:
-		return "`ptah introspect`, `ptah schema security` and `ptah schema lineage`, " +
-			"which need more of a database than the schema reader describes"
+	case Inference:
+		return "`ptah inference` and the inference tools of `ptah mcp`, which wait for the vector index family"
 	default:
 		return ""
 	}

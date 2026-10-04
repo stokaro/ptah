@@ -5,11 +5,13 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/cli/inference"
+	"ptah.run/internal/ydbgap"
 )
 
 // TestOpen_AnotherEngineIsRefusedByName is stokaro/ptah#2386.
@@ -115,6 +117,23 @@ func TestOpen_AnUnrecognizedSchemeStillReachesTheDriver(t *testing.T) {
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Not(qt.Contains), "ptah inference works against PostgreSQL")
+}
+
+// TestOpen_YDBIsRefusedThroughItsGap is the YDB row, which reads differently
+// from the rows above: an inference migration on YDB's vector indexes is
+// planned, so the refusal names the gap that plans it rather than saying there
+// is nothing to run against the engine. Both YDB schemes are read as YDB, and
+// no connection is attempted.
+func TestOpen_YDBIsRefusedThroughItsGap(t *testing.T) {
+	for _, dbURL := range []string{"ydb://localhost:2136/local", "ydbs://ydb.example.com:2135/?database=/a/b"} {
+		t.Run(dbURL, func(t *testing.T) {
+			c := qt.New(t)
+			output, err := runInference(c, "plan", "--spec", writeSpec(c), "--db-url", dbURL)
+
+			c.Assert(err, qt.ErrorMatches, `"ydbs?://" names a YDB database: `+regexp.QuoteMeta(ydbgap.Inference.Message()))
+			c.Assert(output, qt.Not(qt.Contains), "invalid keyword/value")
+		})
+	}
 }
 
 // runInference drives the namespace's own command tree.
