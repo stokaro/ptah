@@ -5,6 +5,9 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	"github.com/hashicorp/hcl/v2"
+	"github.com/zclconf/go-cty/cty"
 )
 
 // DefaultMaxBatches bounds a walk that does not end.
@@ -58,7 +61,7 @@ func RunLoop(ctx context.Context, db Transactor, script Script, opts RunOptions)
 	}
 
 	outcome := LoopOutcome{Steps: make([]ExecOutcome, 0)}
-	cursor := make([]any, 0)
+	cursor := cty.NilVal
 	for {
 		if outcome.Batches >= maxBatches {
 			return outcome, fmt.Errorf(
@@ -66,23 +69,34 @@ func RunLoop(ctx context.Context, db Transactor, script Script, opts RunOptions)
 				script.Name, outcome.Batches)
 		}
 
-		batch, err := nextBatch(ctx, db, script, cursor, outcome.Batches)
+		page, err := nextBatch(ctx, db, script, cursor, outcome.Batches)
 		if err != nil {
 			return outcome, err
 		}
-		if len(batch) == 0 {
+		if len(page.rows) == 0 {
 			break
 		}
 		outcome.Batches++
-		outcome.Rows += len(batch)
-		reportf(opts.Report, "-- batch %d | %d rows\n", outcome.Batches, len(batch))
+		outcome.Rows += len(page.rows)
+		reportf(opts.Report, "-- batch %d | %d rows\n", outcome.Batches, len(page.rows))
 
-		steps, err := runBatch(ctx, db, script, opts, now)
+		// The cursor is the last row of this page: the do body reads it as
+		// iterator.keyset.cursor, and the next query reads it as cursor.
+		cursor, err = rowValue(script.Iterator.Cursor, page.columns, page.rows[len(page.rows)-1])
+		if err != nil {
+			return outcome, fmt.Errorf("loop %q iterator cursor: %w", script.Name, err)
+		}
+		batch, err := pageValue(script.Iterator, page)
+		if err != nil {
+			return outcome, fmt.Errorf("loop %q iterator batch: %w", script.Name, err)
+		}
+		evaluation := bodyContext(cursor, batch, cty.NumberIntVal(int64(outcome.Batches-1)))
+
+		steps, err := runBatch(ctx, db, script, opts, now, evaluation)
 		if err != nil {
 			return outcome, fmt.Errorf("loop %q batch %d: %w", script.Name, outcome.Batches, err)
 		}
 		outcome.Steps = append(outcome.Steps, steps...)
-		cursor = batch[len(batch)-1]
 	}
 
 	outcome.Elapsed = now().Sub(started)
@@ -91,28 +105,44 @@ func RunLoop(ctx context.Context, db Transactor, script Script, opts RunOptions)
 	return outcome, nil
 }
 
+// page is one batch the iterator read: the column names the result set
+// reported, and its rows in order.
+type page struct {
+	columns []string
+	rows    [][]any
+}
+
 // nextBatch runs init for the first batch and next for the rest.
+//
+// The next query's args are evaluated against the cursor of the page before,
+// and bind in the order written. Binding the cursor row itself would position
+// its columns by declaration order, so `args = [cursor.b, cursor.a]` on a
+// cursor declared `a, b` would bind a and b the wrong way round.
 func nextBatch(
-	ctx context.Context, db Transactor, script Script, cursor []any, batches int,
-) ([][]any, error) {
+	ctx context.Context, db Transactor, script Script, cursor cty.Value, batches int,
+) (page, error) {
 	querier, ok := db.(Querier)
 	if !ok {
-		return nil, fmt.Errorf("loop %q: the target cannot run the iterator's queries", script.Name)
+		return page{}, fmt.Errorf("loop %q: the target cannot run the iterator's queries", script.Name)
 	}
 
-	query := script.Iterator.InitSQL
-	args := make([]any, 0, len(cursor))
+	query, exprs, evaluation := script.Iterator.InitSQL, script.Iterator.InitArgs, constantContext()
 	if batches > 0 {
-		query = script.Iterator.NextSQL
-		// The cursor row of the LAST batch, positioned as the next query's
-		// arguments. Positional rather than named because that is what a
-		// placeholder takes, and it is why the cursor is read in source order.
-		args = append(args, cursor...)
+		query, exprs = script.Iterator.NextSQL, script.Iterator.NextArgs
+		evaluation = &hcl.EvalContext{
+			Variables: map[string]cty.Value{"cursor": cursor},
+			Functions: argFunctions,
+		}
+	}
+	args, err := bindArgs(exprs, evaluation)
+	if err != nil {
+		return page{}, fmt.Errorf("loop %q iterator (%s:%d): %w",
+			script.Name, script.Iterator.Range.Filename, script.Iterator.Range.Start.Line, err)
 	}
 
 	rows, err := querier.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("loop %q iterator (%s:%d): %w",
+		return page{}, fmt.Errorf("loop %q iterator (%s:%d): %w",
 			script.Name, script.Iterator.Range.Filename, script.Iterator.Range.Start.Line, err)
 	}
 	defer func() { _ = rows.Close() }()
@@ -120,7 +150,7 @@ func nextBatch(
 	batch := make([][]any, 0)
 	columns, err := rows.Columns()
 	if err != nil {
-		return nil, fmt.Errorf("loop %q iterator: read columns: %w", script.Name, err)
+		return page{}, fmt.Errorf("loop %q iterator: read columns: %w", script.Name, err)
 	}
 	for rows.Next() {
 		values := make([]any, len(columns))
@@ -129,19 +159,36 @@ func nextBatch(
 			holders[index] = &values[index]
 		}
 		if err := rows.Scan(holders...); err != nil {
-			return nil, fmt.Errorf("loop %q iterator: scan: %w", script.Name, err)
+			return page{}, fmt.Errorf("loop %q iterator: scan: %w", script.Name, err)
 		}
 		batch = append(batch, values)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("loop %q iterator: %w", script.Name, err)
+		return page{}, fmt.Errorf("loop %q iterator: %w", script.Name, err)
 	}
-	return batch, nil
+	return page{columns: columns, rows: batch}, nil
 }
 
-// runBatch runs the loop's body once, in its own transaction.
+// pageValue is the page a do body reads as iterator.keyset.batch: one object
+// per row, carrying the batch columns, or the cursor's when none are declared.
+func pageValue(iterator *Iterator, read page) (cty.Value, error) {
+	columns := pageShape{cursor: iterator.Cursor, batch: iterator.Batch}.batchColumns()
+	rows := make([]cty.Value, 0, len(read.rows))
+	for _, row := range read.rows {
+		value, err := rowValue(columns, read.columns, row)
+		if err != nil {
+			return cty.NilVal, err
+		}
+		rows = append(rows, value)
+	}
+	return cty.ListVal(rows), nil
+}
+
+// runBatch runs the loop's body once, in its own transaction, with evaluation
+// carrying the page its args read.
 func runBatch(
 	ctx context.Context, db Transactor, script Script, opts RunOptions, now func() time.Time,
+	evaluation *hcl.EvalContext,
 ) ([]ExecOutcome, error) {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -150,7 +197,7 @@ func runBatch(
 	defer func() { _ = tx.Rollback() }()
 
 	reportf(opts.Report, "-- tx open\n")
-	steps, err := runExecSteps(ctx, tx, script, opts, now)
+	steps, err := runExecSteps(ctx, tx, script, opts, now, evaluation)
 	if err != nil {
 		reportf(opts.Report, "-- tx rollback\n")
 		return nil, err

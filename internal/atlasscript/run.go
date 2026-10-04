@@ -7,6 +7,8 @@ import (
 	"io"
 	"strings"
 	"time"
+
+	"github.com/hashicorp/hcl/v2"
 )
 
 // Querier is the read half of a database connection.
@@ -85,7 +87,7 @@ func RunQuery(ctx context.Context, db Querier, script Script, opts RunOptions) (
 				step.Range.Filename, step.Range.Start.Line, step.Message)
 			continue
 		case StepQuery:
-			result, err := runQueryStep(ctx, db, step, opts, now)
+			result, err := runQueryStep(ctx, db, step, opts, now, constantContext())
 			if err != nil {
 				return nil, err
 			}
@@ -107,14 +109,16 @@ func RunQuery(ctx context.Context, db Querier, script Script, opts RunOptions) (
 
 func runQueryStep(
 	ctx context.Context, db Querier, step Step, opts RunOptions, now func() time.Time,
+	evaluation *hcl.EvalContext,
 ) (Result, error) {
 	reportf(opts.Report, "-- query %q (%s:%d)\n   -> %s\n",
 		step.Name, step.Range.Filename, step.Range.Start.Line, step.SQL)
 
 	started := now()
-	args := make([]any, 0, len(step.Args))
-	for _, arg := range step.Args {
-		args = append(args, arg)
+	args, err := bindArgs(step.Args, evaluation)
+	if err != nil {
+		return Result{}, fmt.Errorf("query %q (%s:%d): %w",
+			step.Name, step.Range.Filename, step.Range.Start.Line, err)
 	}
 	rows, err := db.QueryContext(ctx, step.SQL, args...)
 	if err != nil {

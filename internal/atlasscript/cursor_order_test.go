@@ -12,9 +12,10 @@ import (
 //
 // hclsyntax keeps a block's attributes in a map and Go randomizes that
 // iteration, so a parser that ranged over it would order the cursor differently
-// on every run. The cursor's order is what the next batch's placeholders are
-// positioned against, so getting it from a map is a defect that reproduces one
-// run in N -- the worst kind to ship, because it passes review and passes CI.
+// on every run. Each column is matched to the result set by name and each
+// argument names its column, so the order positions nothing; it is still what
+// the script says, and a parse that changed it between runs would be reading a
+// map where it means to read a document.
 //
 // Six columns rather than two: with two, map order matches source order half
 // the time and the test would pass by luck.
@@ -47,8 +48,7 @@ script "loop" "purge" {
 `)
 
 	c.Assert(scripts[0].Iterator, qt.IsNotNil)
-	c.Assert(scripts[0].Iterator.Cursor, qt.DeepEquals,
-		[]string{"alpha", "bravo", "charlie", "delta", "echo", "foxtrot"})
+	c.Assert(scripts[0].Iterator.Cursor, qt.DeepEquals, sixColumns)
 }
 
 // The same document parsed repeatedly gives the same cursor.
@@ -82,11 +82,19 @@ script "loop" "purge" {
   }
 }
 `
-	want := []string{"alpha", "bravo", "charlie", "delta", "echo", "foxtrot"}
-
 	for range 20 {
 		scripts, err := atlasscript.Parse([]byte(document), "script.hcl")
 		c.Assert(err, qt.IsNil)
-		c.Assert(scripts[0].Iterator.Cursor, qt.DeepEquals, want)
+		c.Assert(scripts[0].Iterator.Cursor, qt.DeepEquals, sixColumns)
 	}
+}
+
+// sixColumns is the cursor both documents declare, in the order written.
+var sixColumns = []atlasscript.Column{
+	{Name: "alpha", Type: "string"},
+	{Name: "bravo", Type: "int"},
+	{Name: "charlie", Type: "string"},
+	{Name: "delta", Type: "int"},
+	{Name: "echo", Type: "string"},
+	{Name: "foxtrot", Type: "int"},
 }
