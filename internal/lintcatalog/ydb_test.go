@@ -1,6 +1,7 @@
 package lintcatalog_test
 
 import (
+	"maps"
 	"regexp"
 	"slices"
 	"testing"
@@ -48,10 +49,7 @@ var ydbBase = map[string]string{
 
 // withVersion adds a second version to the base directory.
 func withVersion(up, down string) map[string]string {
-	files := map[string]string{}
-	for name, content := range ydbBase {
-		files[name] = content
-	}
+	files := maps.Clone(ydbBase)
 	files["0000000002_change.up.sql"] = up
 	if down != "" {
 		files["0000000002_change.down.sql"] = down
