@@ -140,7 +140,7 @@ func TestYDBSchemaStats_CountsWhatTheReaderDescribes(t *testing.T) {
 			} {
 				c.Assert(stdout, qt.Contains, sample)
 			}
-			c.Assert(strings.HasSuffix(stdout, "# EOF\n"), qt.IsTrue)
+			c.Assert(stdout, qt.Matches, `(?s).*# EOF\n`)
 		})
 	}
 }

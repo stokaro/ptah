@@ -1,7 +1,6 @@
 package goschematogo_test
 
 import (
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -88,7 +87,7 @@ func TestRender_YDBFieldsTakeTheTypeTheDriverScansInto(t *testing.T) {
 		"\tTtl *time.Duration\n",
 		"\tTotal *types.Decimal\n",
 	} {
-		c.Assert(strings.Contains(source, line), qt.IsTrue, qt.Commentf("missing %q in:\n%s", line, source))
+		c.Assert(source, qt.Contains, line)
 	}
 }
 
@@ -100,9 +99,9 @@ func TestRender_WithoutADialectTypeNamesReadAsSQL(t *testing.T) {
 	source := introspect(c, ydbTable(), "")
 
 	for _, line := range []string{"\tSmall int64\n", "\tRatio float64\n", "\tRaw *string\n", "\tTotal *string\n"} {
-		c.Assert(strings.Contains(source, line), qt.IsTrue, qt.Commentf("missing %q in:\n%s", line, source))
+		c.Assert(source, qt.Contains, line)
 	}
-	c.Assert(strings.Contains(source, "ydb-go-sdk"), qt.IsFalse)
+	c.Assert(source, qt.Not(qt.Contains), "ydb-go-sdk")
 }
 
 // A YDB key column may be nullable, and no declaration can say so, so the
@@ -172,6 +171,5 @@ func TestRender_NullableKeyColumnOfAnotherDialect(t *testing.T) {
 
 	source := introspect(c, db, platform.SQLite)
 
-	c.Assert(strings.Contains(source, `//ptah:schema:field name="id" type="INTEGER" primary="true"`), qt.IsTrue,
-		qt.Commentf("in:\n%s", source))
+	c.Assert(source, qt.Contains, `//ptah:schema:field name="id" type="INTEGER" primary="true"`)
 }
