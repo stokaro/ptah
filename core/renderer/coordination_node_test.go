@@ -65,8 +65,8 @@ func TestRenderSQL_YDBWritesCoordinationNodeStatements(t *testing.T) {
 }
 
 // The YDB renderer refuses a node it must not write: Ptah's lock node, a
-// server's dot path, a creation the node would not run with as written, a
-// change of nothing, and any node on a YDB target without the key.
+// server's dot path, a creation the node would not run with as written, and a
+// change of nothing.
 func TestRenderSQL_YDBRefusesCoordinationNodes(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -105,14 +105,6 @@ func TestRenderSQL_YDBRefusesCoordinationNodes(t *testing.T) {
 			wantErr: `.*ALTER COORDINATION NODE locks names no setting to change`,
 			wantIs:  ptaherr.ErrInvalidSchemaDiff,
 		},
-		{
-			name: "a target without the key",
-			caps: capability.YDB262().With(capability.CoordinationNodes, false),
-			node: &ast.CreateCoordinationNodeNode{Name: "locks"},
-			wantErr: `coordination node locks, which requires target capability coordination_nodes, ` +
-				`unavailable on this ydb target`,
-			wantIs: ptaherr.ErrUnsupportedFeature,
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -123,6 +115,28 @@ func TestRenderSQL_YDBRefusesCoordinationNodes(t *testing.T) {
 			c.Assert(rendered, qt.Equals, "")
 		})
 	}
+}
+
+// A YDB target without the key refuses a node on both layers: the renderer's
+// central check, which RenderSQLWithCapabilities runs, and the YDB renderer's
+// own, which a caller that visits the node with the renderer reaches.
+func TestRenderSQL_YDBWithoutTheKeyRefusesCoordinationNodes(t *testing.T) {
+	c := qt.New(t)
+	caps := capability.YDB262().With(capability.CoordinationNodes, false)
+	const want = `coordination node locks, which requires target capability coordination_nodes, unavailable on this ydb target`
+	node := &ast.CreateCoordinationNodeNode{Name: "locks"}
+	visitor, err := renderer.NewRendererWithCapabilities(platform.YDB, caps)
+	c.Assert(err, qt.IsNil)
+
+	rendered, centralErr := renderer.RenderSQLWithCapabilities(platform.YDB, caps, node)
+	visitErr := node.Accept(visitor)
+
+	c.Assert(centralErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(centralErr, qt.ErrorMatches, want)
+	c.Assert(rendered, qt.Equals, "")
+	c.Assert(visitErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(visitErr, qt.ErrorMatches, want)
+	c.Assert(visitor.Output(), qt.Equals, "")
 }
 
 // coordinationNodeStatements are the three statements, as nodes.
@@ -148,7 +162,8 @@ func TestRenderSQL_OtherTargetsRefuseCoordinationNodes(t *testing.T) {
 				dispatched, dispatchErr := renderer.RenderSQLWithCapabilities(dialect, claimed, node)
 
 				c.Assert(centralErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-				c.Assert(centralErr, qt.ErrorMatches, `.*coordination node locks, which requires target capability coordination_nodes.*`)
+				c.Assert(centralErr, qt.ErrorMatches, `coordination node locks, which requires target capability `+
+					`coordination_nodes, unavailable on this \w+ target`)
 				c.Assert(centrally, qt.Equals, "")
 				c.Assert(dispatchErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 				c.Assert(dispatchErr, qt.ErrorMatches, `.*coordination node locks, which requires target capability `+
