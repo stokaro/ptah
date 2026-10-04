@@ -71,7 +71,7 @@ source-of-truth representation:
 	flags.BoolVar(&opts.lowercaseFields, lowercaseFieldsFlag, false, "Generate lowercase struct field names")
 	flags.BoolVar(&opts.addJSONTags, addJSONTagsFlag, false, "Add json struct tags using database column names")
 	flags.BoolVar(&opts.addDBTags, addDBTagsFlag, false, "Add db struct tags using database column names")
-	flags.StringVar(&opts.schemasRaw, dbcli.SchemasFlagName, "", "Comma-separated database schemas to introspect (PostgreSQL-family only). Empty uses the connection default schema.")
+	dbcli.RegisterSchemasFlag(flags, &opts.schemasRaw)
 	flags.StringVar(&opts.connectTimeout, dbcli.ConnectTimeoutFlagName, dbcli.DefaultConnectTimeout.String(), "Maximum time to wait while opening the database connection, e.g. 5s or 500ms. Use 0 to disable the timeout.")
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
