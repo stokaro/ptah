@@ -12,6 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/devdocker"
 	"ptah.run/internal/ydburl"
 )
 
@@ -198,6 +199,23 @@ func TestYDBBinary_DevDatabaseIsARealm(t *testing.T) {
 				c.Assert(applied, qt.Contains, "Schema apply completed successfully.")
 				c.Assert(directoryNames(c, ctx, line, "ptah_ydb_devrealm"), qt.DeepEquals, []string{"items"})
 				c.Assert(directoryNames(c, ctx, line), qt.Not(qt.Contains), ydburl.RealmDirectory)
+			})
+
+			// The text of the two URLs is not compared on YDB, so the live
+			// comparison is what refuses this run; the subtest above is the
+			// control, the same URLs without the declaration.
+			t.Run("a disposable dev database that is the target is refused", func(t *testing.T) {
+				c := qt.New(t)
+				c.Setenv(devdocker.DisposableServerEnvVar, "1")
+				entities := filepath.Join(c.TempDir(), "entities")
+				writeFiles(c, entities, map[string]string{"items.go": devRealmEntities})
+
+				refused, err := runBinary(ctx, binary, "schema", "apply", "--db-url", url, "--root-dir", entities,
+					"--dev-url", url, "--auto-approve")
+
+				c.Assert(err, qt.IsNotNil)
+				c.Assert(refused, qt.Contains, "--dev-url must not point at the target database")
+				c.Assert(tableNames(readScoped(c, conn, []string{"ptah_ydb_devrealm"})), qt.HasLen, 0)
 			})
 
 			c.Assert(directoryNames(c, ctx, line, devRealmKept), qt.DeepEquals, []string{"t"})

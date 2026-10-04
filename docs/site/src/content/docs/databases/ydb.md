@@ -525,7 +525,10 @@ ptah migrations validate --dir migrations --dev-url "ydb://localhost:2136/local"
 A run that reads or changes a database leaves `ptah_dev` out, as it leaves out
 `ptah_locks`. So a `--dev-url` or `--shadow-db` may name the target database
 itself: a realm is never part of the target's schema, of a plan against it or
-of a `ptah db drop-all`. `ptah migrations test` and `ptah schema test` run their
+of a `ptah db drop-all`. It may also name a database on another server. Two
+local-ydb servers both serve `local`, and every node of a cluster serves each
+of its databases, so Ptah does not tell databases apart by their URLs; the
+realm keeps the dev database apart from the target on either server. `ptah migrations test` and `ptah schema test` run their
 cases in one realm, and a case marked `parallel` in a realm of its own.
 
 Creating a realm needs the `ydb.granular.create_directory` right on the
@@ -562,7 +565,8 @@ ptah migrations validate --dir migrations --dev-url docker://ydb/26.2.1.14/local
 
 `PTAH_DEV_SERVER_DISPOSABLE=1` makes the server a YDB dev URL names the run's
 own in the same way. The run then gets no realm: the database is the dev
-database, and it has to be empty.
+database, and it has to be empty. Ptah connects to both databases and refuses
+a dev database that is the target's own.
 
 ## ptah-compat
 
