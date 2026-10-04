@@ -41,6 +41,7 @@ var routedKinds = []routedKind{
 	{name: "rls enable", want: 1, count: countNodes[*ast.AlterTableEnableRLSNode]},
 	{name: "policy", want: 1, count: countNodes[*ast.CreatePolicyNode]},
 	{name: "synonym", want: 1, count: countNodes[*ast.CreateSynonymNode]},
+	{name: "topic", want: 1, count: countNodes[*ast.CreateTopicNode]},
 	{name: "hypertable", want: 1, count: countNodes[*ast.CreateHypertableNode]},
 	{name: "continuous aggregate", want: 1, count: countNodes[*ast.CreateContinuousAggregateNode]},
 	{name: "extended property", want: 1, count: countNodes[*ast.ExtendedPropertyNode]},
@@ -85,6 +86,7 @@ func routingFixture() schemamodel.Database {
 		Views:             []schemamodel.View{{StructName: "V", Name: "view_probe", Body: "SELECT id FROM table_probe"}},
 		MaterializedViews: []schemamodel.MaterializedView{{StructName: "MV", Name: "matview_probe", Body: "SELECT id FROM table_probe"}},
 		Synonyms:          []schemamodel.Synonym{{StructName: "SY", Name: "synonym_probe", Target: "dbo.table_probe"}},
+		Topics:            []schemamodel.Topic{{StructName: "TO", Name: "topic_probe"}},
 		Hypertables: []schemamodel.Hypertable{{
 			StructName: "HY", Table: "table_probe", Column: "n",
 		}},

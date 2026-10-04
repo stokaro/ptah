@@ -29,7 +29,7 @@
 // The top level is a set of object collections, each keyed by name: tables,
 // indexes, constraints, enums, extensions, functions, rls_policies,
 // rls_enabled_tables (also accepted as rls_enabled), roles, grants, revokes,
-// default_privileges, views, matviews, and triggers. A table carries its
+// default_privileges, views, matviews, triggers, and topics. A table carries its
 // columns in declaration order, along with its primary key, checks, engine,
 // comment, and per-platform overrides. A column carries the type, its
 // nullability, key and uniqueness flags, defaults, generated and identity
@@ -147,6 +147,7 @@ type document struct {
 	Views             map[string]viewSpec             `yaml:"views"`
 	MaterializedViews map[string]matViewSpec          `yaml:"matviews"`
 	Triggers          map[string]triggerSpec          `yaml:"triggers"`
+	Topics            map[string]topicSpec            `yaml:"topics"`
 }
 
 type tableSpec struct {
@@ -610,6 +611,9 @@ func (d document) toDatabase() (*schemamodel.Database, error) {
 		return nil, err
 	}
 	if err := d.addTriggers(db); err != nil {
+		return nil, err
+	}
+	if err := d.addTopics(db); err != nil {
 		return nil, err
 	}
 	d.addRLS(db)

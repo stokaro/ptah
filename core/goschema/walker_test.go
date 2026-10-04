@@ -1601,39 +1601,50 @@ func TestParseDir_AllIntegrationFixturesRemainParsable(t *testing.T) {
 
 // TestParseDir_ReflectionGuard is the future-proof guard required by #279.
 // It uses reflection over Database to enumerate all slice fields, runs ParseSource
-// on the comprehensive fixture, then ParseDir on the same fixture, and asserts
-// that every Database slice is both covered by the fixture and survives the
+// on the comprehensive fixtures, then ParseDir on the same fixtures, and asserts
+// that every Database slice is both covered by a fixture and survives the
 // ParseFS append path used by ParseDir.
 // Merge uses general reflection over all slice fields from ParseSource results (no hard-coded list).
+//
+// Fixture 023 carries every object kind a PostgreSQL render takes, refused or
+// skipped. A YDB topic is refused by every target but YDB, so it has a
+// fixture of its own, and the guard reads both.
 func TestParseDir_ReflectionGuard(t *testing.T) {
 	c := qt.New(t)
 
-	fixtureDir := "../../integration/internal/fixtures/entities/023-go-annotations-objects"
-
-	merged := schemamodel.Database{}
-	entries, err := os.ReadDir(fixtureDir)
-	c.Assert(err, qt.IsNil)
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
-			continue
-		}
-		full := filepath.Join(fixtureDir, e.Name())
-		content, err := os.ReadFile(full)
-		c.Assert(err, qt.IsNil)
-		db := mustParseSource(c, e.Name(), string(content))
-		// General reflection merge over ALL slice fields from ParseSource (future-proof, no hard-coded list of 6)
-		fvSrc := reflect.ValueOf(db)
-		fvDst := reflect.ValueOf(&merged).Elem()
-		for j := 0; j < fvSrc.NumField(); j++ {
-			if fvSrc.Field(j).Kind() == reflect.Slice {
-				dstField := fvDst.Field(j)
-				dstField.Set(reflect.AppendSlice(dstField, fvSrc.Field(j)))
-			}
-		}
+	fixtureDirs := []string{
+		"../../integration/internal/fixtures/entities/023-go-annotations-objects",
+		"../../integration/internal/fixtures/entities/048-ydb-topics",
 	}
 
-	dirDb, err := goschema.ParseDir(fixtureDir)
-	c.Assert(err, qt.IsNil)
+	merged := schemamodel.Database{}
+	dirDb := schemamodel.NewDatabase()
+	for _, fixtureDir := range fixtureDirs {
+		entries, err := os.ReadDir(fixtureDir)
+		c.Assert(err, qt.IsNil)
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
+				continue
+			}
+			full := filepath.Join(fixtureDir, e.Name())
+			content, err := os.ReadFile(full)
+			c.Assert(err, qt.IsNil)
+			db := mustParseSource(c, e.Name(), string(content))
+			// General reflection merge over ALL slice fields from ParseSource (future-proof, no hard-coded list of 6)
+			fvSrc := reflect.ValueOf(db)
+			fvDst := reflect.ValueOf(&merged).Elem()
+			for j := 0; j < fvSrc.NumField(); j++ {
+				if fvSrc.Field(j).Kind() == reflect.Slice {
+					dstField := fvDst.Field(j)
+					dstField.Set(reflect.AppendSlice(dstField, fvSrc.Field(j)))
+				}
+			}
+		}
+
+		parsed, err := goschema.ParseDir(fixtureDir)
+		c.Assert(err, qt.IsNil)
+		schemamodel.AppendDatabase(dirDb, parsed)
+	}
 
 	fvMerged := reflect.ValueOf(merged)
 	fvDir := reflect.ValueOf(*dirDb)
@@ -1645,7 +1656,8 @@ func TestParseDir_ReflectionGuard(t *testing.T) {
 		name := typ.Field(i).Name
 		mLen := fvMerged.Field(i).Len()
 		if mLen == 0 {
-			c.Fatalf("%s is not exercised by the fixture; add it to 023-go-annotations-objects so the walker append stays covered", name)
+			c.Fatalf("%s is not exercised by the fixtures; add it to 023-go-annotations-objects, or to 048-ydb-topics "+
+				"for a kind only YDB renders, so the walker append stays covered", name)
 		}
 		dLen := fvDir.Field(i).Len()
 		c.Assert(dLen > 0, qt.IsTrue, qt.Commentf("%s populated by per-file parse (%d) but ParseDir/ParseFS gave %d — missing append in walker.go?", name, mLen, dLen))

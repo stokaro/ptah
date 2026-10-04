@@ -29,11 +29,12 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 		{
 			// HCL has the synonym and extended_property blocks
 			// (stokaro/ptah#1031), so it records neither -- and it still cannot
-			// name a virtual table, a table's row deletion policy or a changefeed.
-			name:     "HCL cannot name a virtual table, a TTL or a changefeed",
+			// name a virtual table, a table's row deletion policy, a
+			// changefeed or a YDB topic.
+			name:     "HCL cannot name a virtual table, a TTL, a changefeed or a topic",
 			file:     "schema.hcl",
 			contents: "schema \"main\" {\n}\n",
-			want:     unsupportedRecords(coverage.Changefeed, coverage.TTL, coverage.VirtualTable),
+			want:     unsupportedRecords(coverage.Changefeed, coverage.Topic, coverage.TTL, coverage.VirtualTable),
 		},
 		{
 			// The control on the virtual table. A `.sql` document CAN name one,
@@ -47,7 +48,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			contents: "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
 			want: unsupportedRecords(
 				coverage.ContinuousAggregate, coverage.ExtendedProperty,
-				coverage.Hypertable, coverage.Synonym),
+				coverage.Hypertable, coverage.Synonym, coverage.Topic),
 		},
 		{
 			// YAML expresses the fewest families of the three, and the row is
@@ -55,7 +56,9 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			// longer records these kinds anywhere". It has keys for a row
 			// deletion policy and a changefeed, as `.sql` has Spanner's policy
 			// clause, so both rows are the control on the TTL and changefeed
-			// records HCL and DBML carry.
+			// records HCL and DBML carry. It is also the control on the topic:
+			// YAML has a topics key, so a loader that recorded the topic for
+			// every format fails here.
 			name:     "YAML cannot name nine families",
 			file:     "schema.yaml",
 			contents: "tables:\n  users:\n    fields:\n      id:\n        type: INTEGER\n",
@@ -72,14 +75,14 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			// what makes this one the exhaustive boundary #2065 asks for --
 			// and coverage.Schema is absent from it because DBML qualifies a
 			// name with a schema.
-			name:     "DBML cannot name fourteen families",
+			name:     "DBML cannot name fifteen families",
 			file:     "schema.dbml",
 			contents: "Table users {\n  id integer [pk]\n}\n",
 			want: unsupportedRecords(
 				coverage.Changefeed, coverage.Composite, coverage.ContinuousAggregate, coverage.Domain,
 				coverage.ExtendedProperty, coverage.Extension, coverage.Hypertable,
 				coverage.Policy, coverage.Range, coverage.Role, coverage.Sequence,
-				coverage.Synonym, coverage.TTL, coverage.VirtualTable),
+				coverage.Synonym, coverage.Topic, coverage.TTL, coverage.VirtualTable),
 		},
 	}
 

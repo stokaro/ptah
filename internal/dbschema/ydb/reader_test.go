@@ -370,7 +370,6 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 		directories: map[string][]*Ydb_Scheme.Entry{
 			"/local": {
 				entry("v", Ydb_Scheme.Entry_VIEW),
-				entry("events", Ydb_Scheme.Entry_TOPIC),
 				entry("legacy_queue", Ydb_Scheme.Entry_PERS_QUEUE_GROUP),
 				entry("olap", Ydb_Scheme.Entry_COLUMN_TABLE),
 				entry("store", Ydb_Scheme.Entry_COLUMN_STORE),
@@ -404,7 +403,6 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 		observed(coverage.Changefeed, "app.t/feed"),
 		observed(coverage.ColumnFamily, "app.t"),
 		observed(coverage.TableOption, "app.t"),
-		observed(coverage.Topic, "events"),
 		observed(coverage.ExternalTable, "ext"),
 		observed(coverage.Secret, "key"),
 		observed(coverage.Topic, "legacy_queue"),

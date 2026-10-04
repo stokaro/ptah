@@ -65,6 +65,9 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := schemaprecondition.RefuseChangefeedChanges(DialectName, diff); err != nil {
 		return nil, err
 	}
+	if err := schemaprecondition.RefuseTopics(DialectName, diff); err != nil {
+		return nil, err
+	}
 	if err := schemaprecondition.RefuseRoleMemberships(DialectName, diff); err != nil {
 		return nil, err
 	}
