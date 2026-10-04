@@ -12,19 +12,16 @@ import (
 )
 
 // ydbColumn is one column as the YDB reader reports it: the YDB type name in
-// both type fields, and IS_NULLABLE from whether the type is Optional.
-func ydbColumn(name, ydbType string, nullable bool) catalog.Column {
-	column := catalog.Column{Name: name, DataType: ydbType, ColumnType: ydbType, IsNullable: "NO"}
-	if nullable {
-		column.IsNullable = "YES"
-	}
-	return column
+// both type fields, and isNullable "YES" for an Optional type and "NO" for one
+// declared NOT NULL.
+func ydbColumn(name, ydbType, isNullable string) catalog.Column {
+	return catalog.Column{Name: name, DataType: ydbType, ColumnType: ydbType, IsNullable: isNullable}
 }
 
 // ydbTable is a row table in the directory shop, keyed by id, holding one
 // column of each YDB type a Go field type depends on.
 func ydbTable() *catalog.Database {
-	id := ydbColumn("id", "Int64", false)
+	id := ydbColumn("id", "Int64", "NO")
 	id.IsPrimaryKey = true
 	id.IsAutoIncrement = true
 	return &catalog.Database{
@@ -33,15 +30,15 @@ func ydbTable() *catalog.Database {
 			Schema: "shop",
 			Columns: []catalog.Column{
 				id,
-				ydbColumn("small", "Int8", false),
-				ydbColumn("count", "Uint32", true),
-				ydbColumn("ratio", "Float", false),
-				ydbColumn("raw", "String", true),
-				ydbColumn("name", "Utf8", false),
-				ydbColumn("doc", "JsonDocument", true),
-				ydbColumn("created", "Timestamp64", false),
-				ydbColumn("ttl", "Interval", true),
-				ydbColumn("total", "Decimal(22,9)", true),
+				ydbColumn("small", "Int8", "NO"),
+				ydbColumn("count", "Uint32", "YES"),
+				ydbColumn("ratio", "Float", "NO"),
+				ydbColumn("raw", "String", "YES"),
+				ydbColumn("name", "Utf8", "NO"),
+				ydbColumn("doc", "JsonDocument", "YES"),
+				ydbColumn("created", "Timestamp64", "NO"),
+				ydbColumn("ttl", "Interval", "YES"),
+				ydbColumn("total", "Decimal(22,9)", "YES"),
 			},
 		}},
 		Constraints: []catalog.Constraint{{
@@ -116,7 +113,7 @@ func TestRender_FailurePath_YDBNullableKeyColumn(t *testing.T) {
 		{
 			name: "single-column key",
 			db: func() *catalog.Database {
-				key := ydbColumn("k", "Utf8", true)
+				key := ydbColumn("k", "Utf8", "YES")
 				key.IsPrimaryKey = true
 				return &catalog.Database{
 					Tables: []catalog.Table{{Name: "Nullable-Key", Columns: []catalog.Column{key}}},
@@ -132,9 +129,9 @@ func TestRender_FailurePath_YDBNullableKeyColumn(t *testing.T) {
 		{
 			name: "second column of a composite key",
 			db: func() *catalog.Database {
-				first := ydbColumn("a", "Uint64", false)
+				first := ydbColumn("a", "Uint64", "NO")
 				first.IsPrimaryKey = true
-				second := ydbColumn("b", "Utf8", true)
+				second := ydbColumn("b", "Utf8", "YES")
 				second.IsPrimaryKey = true
 				return &catalog.Database{
 					Tables: []catalog.Table{{Name: "pairs", Schema: "app", Columns: []catalog.Column{first, second}}},
