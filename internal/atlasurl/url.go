@@ -499,6 +499,12 @@ func networkDatabaseIdentity(parsed *url.URL, dialect string) (databaseIdentity,
 		// A dev realm is a database of its own to every reader and writer a
 		// connection to it builds, and the database that holds it leaves
 		// the realm out of everything it reads and resets.
+		//
+		// MayAddressSameDatabase leaves the endpoint out here as everywhere,
+		// and on YDB a host proves least: every node of a cluster answers for
+		// each of its databases. Two servers that both name /local are told
+		// apart by the dev realm a dev URL resolves to, and after connecting
+		// by their live identity.
 		database = ydbURL.Root()
 	}
 	return databaseIdentity{

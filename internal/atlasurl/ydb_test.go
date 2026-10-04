@@ -147,7 +147,10 @@ func TestSameDatabaseEndpoint_YDB_FailurePath(t *testing.T) {
 }
 
 // Hosts are not compared here, so the database alone decides, and an unknown
-// database fails closed.
+// database fails closed. On YDB that holds for a reason of its own: every
+// node of a cluster answers for each of its databases, so two hosts naming one
+// database path are often one database. A dev database on a second server that
+// names the same path is told apart by its dev realm.
 func TestMayAddressSameDatabase_YDB_HappyPath(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -165,6 +168,12 @@ func TestMayAddressSameDatabase_YDB_HappyPath(t *testing.T) {
 			name:  "one database spelled in the path and the parameter fails closed",
 			left:  "ydb://db-a:2136/?database=/local",
 			right: "ydbs://db-b:2135/local",
+			want:  true,
+		},
+		{
+			name:  "two nodes naming one database path may be one database",
+			left:  "ydb://node-1:2136/Root/shop",
+			right: "ydb://node-2:2136/Root/shop",
 			want:  true,
 		},
 		{

@@ -204,3 +204,71 @@ func TestYDBBinary_DevDatabaseIsARealm(t *testing.T) {
 		})
 	}
 }
+
+// devRealmRollback is the directory the rollback migrations below write to,
+// with their revision table, so a cleanup that drops it leaves the test
+// database as it was.
+const devRealmRollback = "ptah_ydb_devrealm_rollback"
+
+// TestYDBBinary_DevDatabaseOnAnotherServer points the dev and shadow URLs at
+// the other line's server. Both servers name their database /local, so the
+// database path cannot tell the two URLs apart, and the host cannot either:
+// one YDB database answers on every node of its cluster. Each URL a run
+// compares with the target therefore names a dev realm on the other server,
+// which no comparison confuses with the target's database, and the rollback
+// verification, the derived rollback and the rehearsal all run there.
+func TestYDBBinary_DevDatabaseOnAnotherServer(t *testing.T) {
+	c := qt.New(t)
+	binary := buildBinary(c, c.Context())
+	for i, line := range ydbLines {
+		other := ydbLines[(i+1)%len(ydbLines)]
+		t.Run(line.name, func(t *testing.T) {
+			url := dbtarget.URL(t, line.engine)
+			devURL := dbtarget.URL(t, other.engine)
+			c := qt.New(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+			conn := openYDB(c, line)
+			dropDirectory(c, conn, "ptah_ydb_devrealm", "items")
+			dropDirectory(c, conn, devRealmRollback, "notes")
+			c.Cleanup(func() {
+				dropDirectory(c, conn, "ptah_ydb_devrealm", "items")
+				dropDirectory(c, conn, devRealmRollback, "notes")
+			})
+			root := c.TempDir()
+			entities := filepath.Join(root, "entities")
+			migrations := filepath.Join(root, "migrations")
+			writeFiles(c, entities, map[string]string{"items.go": devRealmEntities})
+			writeFiles(c, migrations, map[string]string{
+				"0000000001_notes.up.sql": "CREATE TABLE `" + devRealmRollback + "/notes` " +
+					"(`id` Int64 NOT NULL, PRIMARY KEY (`id`));\n",
+				"0000000001_notes.down.sql": "DROP TABLE `" + devRealmRollback + "/notes`;\n",
+			})
+			migrationFlags := []string{"--db-url", url, "--migrations-dir", migrations,
+				"--migrations-schema", devRealmRollback}
+
+			up, upErr := runBinary(ctx, binary, append([]string{"migrations", "up"}, migrationFlags...)...)
+			verified, verifyErr := runBinary(ctx, binary, append([]string{"migrations", "down", "--target", "0",
+				"--shadow-db", devURL, "--confirm"}, migrationFlags...)...)
+			upAgain, upAgainErr := runBinary(ctx, binary, append([]string{"migrations", "up"}, migrationFlags...)...)
+			derived, deriveErr := runBinary(ctx, binary, append([]string{"migrations", "down", "--target", "0",
+				"--plan", "--shadow-db", devURL, "--confirm"}, migrationFlags...)...)
+			applied, applyErr := runBinary(ctx, binary, "schema", "apply", "--db-url", url, "--root-dir", entities,
+				"--dev-url", devURL, "--auto-approve")
+
+			c.Assert(upErr, qt.IsNil, qt.Commentf("%s", up))
+			c.Assert(verifyErr, qt.IsNil, qt.Commentf("%s", verified))
+			c.Assert(verified, qt.Contains, "Rollback plan verified on shadow database")
+			c.Assert(verified, qt.Contains, "Database is now at version: 0")
+			c.Assert(upAgainErr, qt.IsNil, qt.Commentf("%s", upAgain))
+			c.Assert(deriveErr, qt.IsNil, qt.Commentf("%s", derived))
+			c.Assert(derived, qt.Contains, "DROP TABLE `"+devRealmRollback+"/notes`")
+			c.Assert(applyErr, qt.IsNil, qt.Commentf("%s", applied))
+			c.Assert(applied, qt.Contains, "Schema apply completed successfully.")
+			c.Assert(directoryNames(c, ctx, line, "ptah_ydb_devrealm"), qt.DeepEquals, []string{"items"})
+			c.Assert(directoryNames(c, ctx, line, devRealmRollback), qt.Not(qt.Contains), "notes")
+			c.Assert(directoryNames(c, ctx, other), qt.Not(qt.Contains), ydburl.RealmDirectory)
+			c.Assert(tableNames(readScoped(c, openYDB(c, other), []string{"ptah_ydb_devrealm"})), qt.HasLen, 0)
+		})
+	}
+}
