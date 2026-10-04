@@ -159,11 +159,11 @@ func Compare(
 
 	references, columnTypes := declarationShape(req.Desired, declaration)
 	if platform.NormalizeDialect(conn.Info().Dialect) == platform.YDB {
-		var err error
-		columnTypes, desired, live, err = typedYDBRows(conn.Info().Capabilities, liveTable, columnTypes, desired, live)
+		typed, err := typedYDBRows(conn.Info().Capabilities, liveTable, columnTypes, desired, live)
 		if err != nil {
 			return nil, fmt.Errorf("compare declared rows of %s: %w", qualified, err)
 		}
+		columnTypes, desired, live = typed.columnTypes, typed.desired, typed.live
 	}
 	diff, err := datadiff.Compute(declaration.Schema, declaration.Table, declaration.Keys, desired, live)
 	if err != nil {
@@ -303,8 +303,8 @@ func typedYDBRows(
 	liveTable *catalog.Table,
 	declaredTypes map[string]string,
 	desired, live []map[string]any,
-) (columnTypes map[string]string, typedDesired, typedLive []map[string]any, err error) {
-	columnTypes = make(map[string]string, len(declaredTypes))
+) (typedRows, error) {
+	columnTypes := make(map[string]string, len(declaredTypes))
 	if liveTable != nil {
 		for _, column := range liveTable.Columns {
 			columnTypes[column.Name] = column.DataType
@@ -316,17 +316,26 @@ func typedYDBRows(
 		}
 		mapping, err := ydbtype.Map(declared, caps)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("column %q: %w", column, err)
+			return typedRows{}, fmt.Errorf("column %q: %w", column, err)
 		}
 		columnTypes[column] = mapping.Type
 	}
-	if typedDesired, err = canonicalRows(columnTypes, desired); err != nil {
-		return nil, nil, nil, fmt.Errorf("declared %w", err)
+	typedDesired, err := canonicalRows(columnTypes, desired)
+	if err != nil {
+		return typedRows{}, fmt.Errorf("declared %w", err)
 	}
-	if typedLive, err = canonicalRows(columnTypes, live); err != nil {
-		return nil, nil, nil, fmt.Errorf("live %w", err)
+	typedLive, err := canonicalRows(columnTypes, live)
+	if err != nil {
+		return typedRows{}, fmt.Errorf("live %w", err)
 	}
-	return columnTypes, typedDesired, typedLive, nil
+	return typedRows{columnTypes: columnTypes, desired: typedDesired, live: typedLive}, nil
+}
+
+// typedRows is a YDB table's column types and its declared and live rows in
+// canonical form.
+type typedRows struct {
+	columnTypes   map[string]string
+	desired, live []map[string]any
 }
 
 // canonicalRows returns copies of rows with every value of a typed column in

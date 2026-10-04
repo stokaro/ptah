@@ -30,17 +30,17 @@ func TestTypedYDBRows_HappyPath(t *testing.T) {
 	read := []map[string]any{{"code": "CZ", "rate": "1.5",
 		"joined": time.Date(2026, time.January, 2, 1, 0, 0, 0, time.FixedZone("CET", 3600))}}
 
-	types, typedDesired, typedLive, err := typedYDBRows(capability.YDB262(), live, declared, desired, read)
+	typed, err := typedYDBRows(capability.YDB262(), live, declared, desired, read)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(types, qt.DeepEquals, map[string]string{
+	c.Assert(typed.columnTypes, qt.DeepEquals, map[string]string{
 		"code": "Utf8", "rate": "Decimal(10,2)", "joined": "Timestamp", "since": "Date32",
 	})
 	midnight := time.Date(2026, time.January, 2, 0, 0, 0, 0, time.UTC)
-	c.Assert(typedDesired, qt.DeepEquals, []map[string]any{
+	c.Assert(typed.desired, qt.DeepEquals, []map[string]any{
 		{"code": "CZ", "rate": "1.5", "joined": midnight, "since": midnight},
 	})
-	c.Assert(typedLive, qt.DeepEquals, []map[string]any{{"code": "CZ", "rate": "1.5", "joined": midnight}})
+	c.Assert(typed.live, qt.DeepEquals, []map[string]any{{"code": "CZ", "rate": "1.5", "joined": midnight}})
 	// The canonical rows are copies: the caller's maps are left as they were.
 	c.Assert(desired[0]["rate"], qt.Equals, "1.50")
 }
@@ -49,13 +49,13 @@ func TestTypedYDBRows_HappyPath(t *testing.T) {
 // no declaration types keeps its value for the diff to refuse.
 func TestTypedYDBRows_HappyPath_NarrowLineAndUntypedColumn(t *testing.T) {
 	c := qt.New(t)
-	types, typedDesired, _, err := typedYDBRows(capability.YDB251(), nil,
+	typed, err := typedYDBRows(capability.YDB251(), nil,
 		map[string]string{"since": "DATE"},
 		[]map[string]any{{"since": "2026-01-02", "note": 7}}, nil)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(types, qt.DeepEquals, map[string]string{"since": "Date"})
-	c.Assert(typedDesired, qt.DeepEquals, []map[string]any{
+	c.Assert(typed.columnTypes, qt.DeepEquals, map[string]string{"since": "Date"})
+	c.Assert(typed.desired, qt.DeepEquals, []map[string]any{
 		{"since": time.Date(2026, time.January, 2, 0, 0, 0, 0, time.UTC), "note": 7},
 	})
 }
@@ -93,12 +93,11 @@ func TestTypedYDBRows_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			types, typedDesired, typedLive, err := typedYDBRows(capability.YDB262(), test.live, test.declared,
-				test.desired, test.read)
+			typed, err := typedYDBRows(capability.YDB262(), test.live, test.declared, test.desired, test.read)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(types, qt.IsNil)
-			c.Assert(typedDesired, qt.IsNil)
-			c.Assert(typedLive, qt.IsNil)
+			c.Assert(typed.columnTypes, qt.IsNil)
+			c.Assert(typed.desired, qt.IsNil)
+			c.Assert(typed.live, qt.IsNil)
 		})
 	}
 }

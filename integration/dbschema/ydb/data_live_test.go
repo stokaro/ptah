@@ -204,7 +204,7 @@ func diffDeclaration(schema string) *schemamodel.Database {
 			{StructName: "Country", Name: "ratio", Type: "DOUBLE PRECISION", Nullable: true},
 			{StructName: "Country", Name: "flag", Type: "BYTEA", Nullable: true},
 			{StructName: "Country", Name: "meta", Type: "JSONB", Nullable: true},
-			{StructName: "Country", Name: "token", Type: "UUID", Nullable: true},
+			{StructName: "Country", Name: "uid", Type: "UUID", Nullable: true},
 			{StructName: "Country", Name: "tiny", Type: "SMALLINT UNSIGNED", Nullable: true},
 		},
 	}
@@ -213,28 +213,29 @@ func diffDeclaration(schema string) *schemamodel.Database {
 }
 
 var diffColumns = []string{
-	"code", "rank", "population", "rate", "joined", "founded", "active", "ratio", "flag", "meta", "token", "tiny",
+	"code", "rank", "population", "rate", "joined", "founded", "active", "ratio", "flag", "meta", "uid", "tiny",
 }
 
 // diffRows is a declared row set, in the Go values a declaration resolves to:
 // an int for every integer column, the text a person writes for a decimal, a
 // moment, a UUID and a JSON document, and a float for a double.
-func diffRows(czRank int, withDE bool) []map[string]any {
-	rows := []map[string]any{{
+func diffRows(czRank int) []map[string]any {
+	return []map[string]any{{
 		"code": "CZ", "rank": czRank, "population": 10900000, "rate": "1.50", "joined": "2004-05-01T00:00:00Z",
 		"founded": "1993-01-01", "active": true, "ratio": 0.5, "flag": "\x01\xff", "meta": `{"b": 2, "a": 1.50}`,
-		"token": "550E8400-E29B-41D4-A716-446655440000", "tiny": 7,
+		"uid": "550E8400-E29B-41D4-A716-446655440000", "tiny": 7,
 	}, {
 		"code": "SK", "rank": 2, "population": 5400000, "rate": nil, "joined": nil, "founded": "1993-01-01",
-		"active": false, "ratio": nil, "flag": nil, "meta": nil, "token": nil, "tiny": nil,
+		"active": false, "ratio": nil, "flag": nil, "meta": nil, "uid": nil, "tiny": nil,
 	}}
-	if withDE {
-		rows = append(rows, map[string]any{
-			"code": "DE", "rank": 3, "population": 84000000, "rate": 0.25, "joined": "1995-01-01T00:00:00Z",
-			"founded": "1990-10-03", "active": true, "ratio": 1.25, "flag": nil, "meta": `{}`, "token": nil, "tiny": 0,
-		})
-	}
-	return rows
+}
+
+// diffRowsWithDE is diffRows with a third row.
+func diffRowsWithDE(czRank int) []map[string]any {
+	return append(diffRows(czRank), map[string]any{
+		"code": "DE", "rank": 3, "population": 84000000, "rate": 0.25, "joined": "1995-01-01T00:00:00Z",
+		"founded": "1990-10-03", "active": true, "ratio": 1.25, "flag": nil, "meta": `{}`, "uid": nil, "tiny": 0,
+	})
 }
 
 // compareDeclared asks managedrows for the diff that writes rows, with
@@ -280,18 +281,18 @@ func TestYDBDataDiff_RoundTrips(t *testing.T) {
 	db := diffDeclaration(dataDiffSchema)
 	apply(c, conn, planAgainst(c, conn, db, []string{dataDiffSchema}))
 
-	first := compareDeclared(c, conn, db, diffRows(1, false))
+	first := compareDeclared(c, conn, db, diffRows(1))
 	up, _, err := datadiff.RenderStatements(first, conn.Info().Dialect)
 	c.Assert(err, qt.IsNil)
 	apply(c, conn, up)
 	written := readSorted(c, conn, dataDiffSchema, "countries", diffColumns...)
-	converged := compareDeclared(c, conn, db, diffRows(1, false))
+	converged := compareDeclared(c, conn, db, diffRows(1))
 
-	moved := compareDeclared(c, conn, db, diffRows(9, true))
+	moved := compareDeclared(c, conn, db, diffRowsWithDE(9))
 	forward, backward, err := datadiff.RenderStatements(moved, conn.Info().Dialect)
 	c.Assert(err, qt.IsNil)
 	apply(c, conn, forward)
-	afterForward := compareDeclared(c, conn, db, diffRows(9, true))
+	afterForward := compareDeclared(c, conn, db, diffRowsWithDE(9))
 	movedRows := readSorted(c, conn, dataDiffSchema, "countries", diffColumns...)
 	apply(c, conn, backward)
 	afterBackward := readSorted(c, conn, dataDiffSchema, "countries", diffColumns...)
@@ -303,10 +304,10 @@ func TestYDBDataDiff_RoundTrips(t *testing.T) {
 	c.Assert(written, qt.DeepEquals, []map[string]any{{
 		"code": "CZ", "rank": int32(1), "population": int64(10900000), "rate": "1.5", "joined": day(2004, 5, 1),
 		"founded": day(1993, 1, 1), "active": true, "ratio": 0.5, "flag": []byte{0x01, 0xff},
-		"meta": `{"a":1.5,"b":2}`, "token": "550e8400-e29b-41d4-a716-446655440000", "tiny": uint16(7),
+		"meta": `{"a":1.5,"b":2}`, "uid": "550e8400-e29b-41d4-a716-446655440000", "tiny": uint16(7),
 	}, {
 		"code": "SK", "rank": int32(2), "population": int64(5400000), "rate": nil, "joined": nil,
-		"founded": day(1993, 1, 1), "active": false, "ratio": nil, "flag": nil, "meta": nil, "token": nil, "tiny": nil,
+		"founded": day(1993, 1, 1), "active": false, "ratio": nil, "flag": nil, "meta": nil, "uid": nil, "tiny": nil,
 	}})
 	c.Assert(changes(converged), qt.Equals, [3]int{0, 0, 0})
 	c.Assert(changes(moved), qt.Equals, [3]int{1, 1, 0})
@@ -333,7 +334,7 @@ func declaredRowsSchema(population string) *schemamodel.Database {
 			"active":     {Tag: "bool", Text: "true"},
 			"ratio":      {Tag: "float", Text: "0.5"},
 			"meta":       {Tag: "str", Text: `{"b": 2, "a": 1}`},
-			"token":      {Tag: "str", Text: "550E8400-E29B-41D4-A716-446655440000"},
+			"uid":        {Tag: "str", Text: "550E8400-E29B-41D4-A716-446655440000"},
 			"tiny":       {Tag: "int", Text: "7"},
 		}},
 	}}
@@ -374,7 +375,7 @@ func TestYDBDeclaredRows_ConvergeThroughSchemaApply(t *testing.T) {
 		"UPDATE `" + dataDeclaredSchema + "/countries` SET `active` = true, `founded` = " + dateLiteral(conn) +
 			", `joined` = " + timestampLiteral(conn) + ", `meta` = JsonDocument('{\"a\":1,\"b\":2}'), " +
 			"`population` = 11000000l, `rank` = 1, `rate` = Decimal('1.5', 22, 9), `ratio` = Double('0.5'), " +
-			"`tiny` = 7us, `token` = Uuid('550e8400-e29b-41d4-a716-446655440000') WHERE `code` = 'CZ'u;",
+			"`tiny` = 7us, `uid` = Uuid('550e8400-e29b-41d4-a716-446655440000') WHERE `code` = 'CZ'u;",
 	})
 	c.Assert(afterChange, qt.HasLen, 0)
 	c.Assert(stored, qt.DeepEquals, []map[string]any{{
@@ -427,7 +428,7 @@ func TestYDBDeclaredRows_RefuseAValueTheColumnCannotHold(t *testing.T) {
 			ownDirectory(c, conn, dataDiffSchema)
 			db := diffDeclaration(dataDiffSchema)
 			apply(c, conn, planAgainst(c, conn, db, []string{dataDiffSchema}))
-			rows := diffRows(1, false)[:1]
+			rows := diffRows(1)[:1]
 			rows[0][test.column] = test.value
 
 			diff, err := managedrows.Compare(c.Context(), conn, managedrows.Request{

@@ -96,42 +96,47 @@ func walkColumns(expr Expression, visit func(qualifier string)) {
 		if e != nil {
 			visit(e.Qualifier)
 		}
-	case *Comparison:
-		if e != nil {
-			walkColumns(e.Left, visit)
-			walkColumns(e.Right, visit)
-		}
-	case *InExpr:
-		if e != nil {
-			walkColumns(e.Operand, visit)
-			for _, value := range e.Values {
-				walkColumns(value, visit)
-			}
-		}
-	case *NullTest:
-		if e != nil {
-			walkColumns(e.Operand, visit)
-		}
-	case *LogicalExpr:
-		if e != nil {
-			for _, operand := range e.Operands {
-				walkColumns(operand, visit)
-			}
-		}
-	case *NotExpr:
-		if e != nil {
-			walkColumns(e.Operand, visit)
-		}
-	case *Arithmetic:
-		if e != nil {
-			walkColumns(e.Left, visit)
-			walkColumns(e.Right, visit)
-		}
 	case *FuncCall:
 		if e != nil {
 			walkFuncColumns(e, visit)
 		}
+	default:
+		for _, operand := range operands(expr) {
+			walkColumns(operand, visit)
+		}
 	}
+}
+
+// operands lists the expressions expr is built from. A subquery is a statement
+// of its own and is not among them, and neither is a nil node.
+func operands(expr Expression) []Expression {
+	switch e := expr.(type) {
+	case *Comparison:
+		if e != nil {
+			return []Expression{e.Left, e.Right}
+		}
+	case *InExpr:
+		if e != nil {
+			return append([]Expression{e.Operand}, e.Values...)
+		}
+	case *NullTest:
+		if e != nil {
+			return []Expression{e.Operand}
+		}
+	case *LogicalExpr:
+		if e != nil {
+			return e.Operands
+		}
+	case *NotExpr:
+		if e != nil {
+			return []Expression{e.Operand}
+		}
+	case *Arithmetic:
+		if e != nil {
+			return []Expression{e.Left, e.Right}
+		}
+	}
+	return nil
 }
 
 func walkFuncColumns(call *FuncCall, visit func(qualifier string)) {

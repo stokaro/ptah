@@ -990,11 +990,11 @@ func (r *selectRenderer) renderYQLLimitOffset(limit, offset *int64) error {
 	}
 	if limit != nil {
 		r.buf.WriteString(" LIMIT ")
-		r.buf.WriteString(r.bind(uint64(*limit)))
+		r.buf.WriteString(r.bind(uint64(*limit))) // #nosec G115 -- a negative bound is refused above
 	}
 	if offset != nil {
 		r.buf.WriteString(" OFFSET ")
-		r.buf.WriteString(r.bind(uint64(*offset)))
+		r.buf.WriteString(r.bind(uint64(*offset))) // #nosec G115 -- a negative bound is refused above
 	}
 	return nil
 }

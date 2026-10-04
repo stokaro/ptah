@@ -41,14 +41,16 @@ type decimalValue struct {
 	precision, scale uint32
 }
 
-func (d decimalValue) Decimal() ([16]byte, uint32, uint32) { return d.bytes, d.precision, d.scale }
+func (d decimalValue) Decimal() (bytes [16]byte, precision, scale uint32) {
+	return d.bytes, d.precision, d.scale
+}
 
 func scaledBytes(value int64) [16]byte {
 	var out [16]byte
-	binary.BigEndian.PutUint64(out[8:], uint64(value))
+	binary.BigEndian.PutUint64(out[8:], uint64(value)) // #nosec G115 -- the two's complement bits are the point
 	// The high half is the sign extension: all zero bits, or all one bits for
 	// a negative value, which an arithmetic shift by 63 produces.
-	binary.BigEndian.PutUint64(out[:8], uint64(value>>63))
+	binary.BigEndian.PutUint64(out[:8], uint64(value>>63)) // #nosec G115 -- the sign extension's bits are the point
 	return out
 }
 

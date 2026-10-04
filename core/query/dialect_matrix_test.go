@@ -356,10 +356,10 @@ func TestDMLDialectMatrix(t *testing.T) {
 		for i, verb := range verbs {
 			t.Run(row.dialect+"/"+verb.name, func(t *testing.T) {
 				c := qt.New(t)
-				sql, args, err := verb.render(row.dialect)
+				text, args, err := verb.render(row.dialect)
 				want := cells[i]
 				c.Assert(errorText(err), qt.Equals, want.err)
-				c.Assert(sql, qt.Equals, want.sql)
+				c.Assert(text, qt.Equals, want.sql)
 				c.Assert(args, argsEqual, want.args)
 			})
 		}
@@ -457,20 +457,31 @@ func onePlaceholderInsert() *query.InsertStatement {
 // fails on this line.
 func assertAgreesWithRebind(c *qt.C, dialect string) {
 	c.Helper()
-	sql, args, err := query.RenderInsert(onePlaceholderInsert(), dialect)
+	text, args, err := query.RenderInsert(onePlaceholderInsert(), dialect)
 	c.Assert(err, qt.IsNil)
-	c.Assert(args, qt.DeepEquals, []any{int64(1)})
+	c.Assert(args, qt.HasLen, 1)
+	c.Assert(boundValue(args[0]), qt.Equals, int64(1))
 	// sqlident.Ident, not sqlident.Quote: this assertion is about the
 	// placeholder, and the identifier spelling only has to match whatever the
 	// builder writes. They are the same function for every dialect but Oracle,
 	// where the builder writes a plain name bare so that it names the same
 	// object the DDL renderer created. See sqlident.Ident.
-	c.Assert(sql, qt.Equals, fmt.Sprintf(
+	c.Assert(text, qt.Equals, fmt.Sprintf(
 		"INSERT INTO %s (%s) VALUES (%s)",
 		sqlident.Ident(dialect, "users"),
 		sqlident.Ident(dialect, "id"),
 		sqlutil.Rebind(dialect, "?"),
 	))
+}
+
+// boundValue is the value an argument carries: the argument itself, or the
+// value of a sql.NamedArg, which is how a YDB argument arrives. The name is
+// pinned by the dialect matrix.
+func boundValue(arg any) any {
+	if named, ok := arg.(sql.NamedArg); ok {
+		return named.Value
+	}
+	return arg
 }
 
 // refusesButRebindKnows pins the pair for a dialect the builder has not been
@@ -515,16 +526,13 @@ func TestDMLPlaceholderAgreesWithRebind(t *testing.T) {
 		{dialect: "yugabytedb"},
 		{dialect: "spanner"},
 		{dialect: "oracle"},
+		{dialect: "ydb"},
 	}
-	// YDB is refused by name in every verb, which ydbCells pins; it has no
-	// placeholder to compare until the builder renders it.
-	refusedByName := []string{"ydb"}
 
-	names := make([]string, 0, len(rows)+len(refusedByName))
+	names := make([]string, 0, len(rows))
 	for _, row := range rows {
 		names = append(names, row.dialect)
 	}
-	names = append(names, refusedByName...)
 	c.Assert(names, qt.DeepEquals, renderer.SupportedDialects())
 
 	for _, dialect := range taughtDialects(rows) {
