@@ -274,6 +274,37 @@ It names what Ptah does **not** have as well. A pointer listing commands without
 saying the rest of the group has no counterpart would read as a full mapping,
 and send a reader looking for the other half.
 
+## Engines Beyond the CE Pin
+
+### `ydb://` and `ydbs://` are a Ptah extension
+
+No Atlas edition has a YDB driver ([atlasgo.io/features](https://atlasgo.io/features)).
+Measured on 2026-10-04 against Atlas CE v1.3.0 (`ptah-atlas-conformance/bin/atlas`)
+and `ptah-compat` on local-ydb 26.2.1.14 and 25.1.4.7, every exit status read
+from an unpiped invocation:
+
+| Invocation | Atlas CE v1.3.0 | `ptah-compat` | `ptah-compat`, strict |
+| --- | --- | --- | --- |
+| `schema inspect`, `schema apply`, `schema diff`, `schema clean`, `migrate apply`, `migrate status`, `migrate set` on `ydb://...` | 1, `sql/sqlclient: unknown driver "ydb". See: https://atlasgo.io/url` | 0 | 1, byte-identical |
+| the same on `ydbs://...` | 1, the same with `"ydbs"` | dials over TLS | 1, byte-identical |
+| `migrate validate --dev-url ydb://...` on a hashed directory | 1, `unknown driver "ydb"` | 1, a YDB dev database is not implemented yet | 1, byte-identical, after the integrity gate as on CE |
+| `migrate validate --dev-url ydb://...` on an unhashed directory | 1, `checksum file not found` | 1, the same | 1, the same |
+| an `atlas.hcl` env whose `url`, `dev` or `src` names YDB | 1, `unknown driver "ydb"` | 0 | 1, byte-identical |
+| a `data "sql"` source on `ydb://...` | 1, `data.sql.tenants: opening connection: sql/sqlclient: unknown driver "ydb"…` | 0 | 1, `data.sql.tenants: opening database: sql/sqlclient: unknown driver "ydb"…` |
+| `--dev-url docker://ydb/26.2.1.14/local` | 1, `unsupported docker image "ydb"` | 1, byte-identical | 1, byte-identical |
+
+The default profile serves YDB with no `PTAH_*` variable, because a YDB URL asks
+for an engine the binary lacks rather than making a mistake the binary catches.
+Each verb runs the native capability behind it. `schema inspect` writes YDB's
+own type names in HCL, which no Atlas binary reads: a Ptah extension that Ptah's
+own parser reads back. The strict profile refuses a YDB URL from a flag, from
+`atlas.hcl`, and from any connection the run would open, a data source
+included; a `PTAH_*` variable is refused as a variable before that. The data
+source row differs in its middle words on every engine, not only on YDB. What
+each verb does on YDB is on the [YDB page](./site/src/content/docs/databases/ydb.md#ptah-compat),
+and the divergence is recorded under
+[Compatibility differences](./site/src/content/docs/atlas/retained-divergences.md#a-ydb-database-url).
+
 ## Never a Copied Defect
 
 Matching the pinned Atlas CE binary is the floor, not the ceiling. Where its

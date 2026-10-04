@@ -318,6 +318,26 @@ func TestReportUndescribedSeparatesAReadThatCouldNotLook(t *testing.T) {
 	}
 }
 
+// TestReportUndescribedNamesAReaderThatReadsNoRoles pins the cause a reader
+// gives when it does not read roles at all, as the YDB reader does. The note
+// must not blame the account: a privilege granted to it changes nothing there.
+func TestReportUndescribedNamesAReaderThatReadsNoRoles(t *testing.T) {
+	c := qt.New(t)
+	var out bytes.Buffer
+
+	rolescope.ReportUndescribed(&out, platform.YDB, &catalog.Database{
+		NotDescribed: coverage.Set{}.With(coverage.Object{
+			Kind:       coverage.Role,
+			Reason:     coverage.Unsupported,
+			Provenance: coverage.DerivedFromTarget,
+		}),
+	})
+
+	c.Assert(out.String(), qt.Equals, "note: roles were not described, because Ptah does not read the roles of"+
+		" this database; comparison withholds every declared role rather than planning a CREATE ROLE it could"+
+		" not verify.\n")
+}
+
 // TestReportUndescribedNamesNoCatalogItCouldNotRead keeps the unreadable-catalog
 // note out of every read that succeeded. Silence has to keep meaning something.
 func TestReportUndescribedNamesNoCatalogItCouldNotRead(t *testing.T) {

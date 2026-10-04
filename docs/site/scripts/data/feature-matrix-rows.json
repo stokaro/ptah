@@ -1243,6 +1243,15 @@
   },
   {
     "area": "Database engines",
+    "feature": "YDB (ydb, ydbs)",
+    "ptah": "partial",
+    "atlas_oss": "no",
+    "atlas_pro": "no",
+    "note": "Row tables, global indexes, migrations, lint and data on both certified lines, natively and through ptah-compat. What YDB does not reach yet is refused by name.",
+    "evidence": "Measured 2026-10-04 on local-ydb 26.2.1.14 and 25.1.4.7 against the pinned Atlas CE v1.3.0 (ptah-atlas-conformance/bin/atlas) and ptah-compat built from the same tree. Atlas side: no edition has a YDB driver (https://atlasgo.io/features lists none; an external driver was declined in ariga/atlas#3682), and the pinned binary answers `sql/sqlclient: unknown driver \"ydb\". See: https://atlasgo.io/url` at exit 1 on schema inspect, schema apply, schema diff, schema clean, migrate apply, migrate status, migrate set, migrate diff, migrate lint and migrate validate --dev-url, with \"ydbs\" for a ydbs:// URL, and `unsupported docker image \"ydb\"` for docker://ydb, so both Atlas cells are no. Ptah side: the dialect renders, plans, reads and applies YDB row tables with global indexes (internal/dbschema/ydb, internal/planner/dialects/ydb), runs versioned migrations with both revision formats, lints YQL and writes declared rows, seeds and query-builder statements, each with a live round trip in integration/dbschema/ydb on both lines. ptah-compat takes a YDB URL on every verb in the default profile with no PTAH_* variable: integration/dbschema/ydb/compat_e2e_test.go applies an HCL document with a root table and a directory and finds it synced, inspects it as HCL that applies back as synced and as YQL, diffs it, records two migrations in the Atlas revision table and rolls one back, and waits for the ptah_schema_apply semaphore on the coordination node. PTAH_ATLAS_STRICT_COMPAT=1 refuses a YDB URL in the binary's words from a flag, atlas.hcl or a data source (internal/cli/atlas/compat_ydb_url_test.go, integration/atlascmd/compat_ydb_project_fs_test.go). The cell is partial, not yes: a YDB database cannot be a dev or shadow database yet, so migrate diff, migrate lint, migrate checkpoint and schema plan validate refuse it, and views, TTL, column families, changefeeds, users and permissions and the vector, full-text and column-table index kinds are refused by name. internal/ydbgap names each gap and the phase of stokaro/ptah#4015 that closes it."
+  },
+  {
+    "area": "Database engines",
     "feature": "Declared support level per database release line",
     "ptah": "yes",
     "atlas_oss": "unknown",

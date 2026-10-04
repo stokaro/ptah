@@ -126,6 +126,54 @@ script "exec" "purge" {
 	c.Assert(countUsers(c, db), qt.Equals, 0)
 }
 
+// A driver whose row count is not a measurement -- ydb-go-sdk on YDB -- leaves
+// expect_rows nothing to be judged against, so the assertion is refused and the
+// script rolls back, even where the number the driver gives would match. The
+// SQLite driver here counts honestly; the option is what says it does not.
+func TestRunExec_AnUnreportedRowCountRefusesExpectRows(t *testing.T) {
+	c := qt.New(t)
+	db := seeded(c)
+	scripts := parse(c, `
+script "exec" "purge" {
+  exec "delete" {
+    sql         = "DELETE FROM users"
+    expect_rows = 2
+  }
+}
+`)
+
+	_, err := atlasscript.RunExec(context.Background(), db, scripts[0],
+		atlasscript.RunOptions{Now: fixedClock(), RowCountsUnreported: true})
+
+	c.Assert(err, qt.ErrorMatches, `exec "delete" \(script\.hcl:3\): expect_rows is 2, and this driver does not `+
+		`report a row count, so the assertion cannot be made`)
+	c.Assert(countUsers(c, db), qt.Equals, 2)
+}
+
+// Without expect_rows the script runs and commits, and the report says the
+// count is unknown rather than printing the driver's number as fact.
+func TestRunExec_AnUnreportedRowCountIsReportedAsUnknown(t *testing.T) {
+	c := qt.New(t)
+	db := seeded(c)
+	scripts := parse(c, `
+script "exec" "purge" {
+  exec "delete" {
+    sql = "DELETE FROM users WHERE id = 1"
+  }
+}
+`)
+	var report strings.Builder
+
+	outcomes, err := atlasscript.RunExec(context.Background(), db, scripts[0],
+		atlasscript.RunOptions{Now: fixedClock(), Report: &report, RowCountsUnreported: true})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(outcomes, qt.HasLen, 1)
+	c.Assert(outcomes[0].Affected, qt.Equals, int64(-1))
+	c.Assert(report.String(), qt.Contains, "| row count not reported\n")
+	c.Assert(countUsers(c, db), qt.Equals, 1)
+}
+
 // A condition that does not hold stops the script, undoes nothing, and is not
 // a fault.
 //

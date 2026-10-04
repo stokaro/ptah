@@ -1,6 +1,7 @@
 package atlascompatpolicy_test
 
 import (
+	"regexp"
 	"testing"
 	"testing/fstest"
 
@@ -579,6 +580,43 @@ func TestStrictCEDatabaseDialectPolicy(t *testing.T) {
 			c.Assert(atlascompatpolicy.StrictCE().ValidateURL(rawURL), qt.IsNil)
 		})
 	}
+}
+
+// No Atlas edition has a YDB driver, so the strict profile answers a YDB URL
+// the way the pinned community binary answers it: `sql/sqlclient: unknown
+// driver`, with the scheme as the URL spells it. The default profile keeps it.
+func TestStrictCERefusesAYDBURLInTheBinarysWords(t *testing.T) {
+	tests := []struct {
+		name   string
+		rawURL string
+		want   string
+	}{
+		{name: "plaintext", rawURL: "ydb://localhost:2136/local",
+			want: `sql/sqlclient: unknown driver "ydb". See: https://atlasgo.io/url`},
+		{name: "TLS, spaced", rawURL: " ydbs://localhost:2135/local ",
+			want: `sql/sqlclient: unknown driver "ydbs". See: https://atlasgo.io/url`},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(atlascompatpolicy.StrictCE().ValidateURL(test.rawURL), qt.ErrorMatches, regexp.QuoteMeta(test.want))
+			c.Assert(atlascompatpolicy.Full().ValidateURL(test.rawURL), qt.IsNil)
+		})
+	}
+}
+
+// A connection's resolved dialect and a project env's URL meet the same
+// refusal, so a YDB URL that reaches strict mode by either path reads alike.
+func TestStrictCERefusesYDBFromEveryCheck(t *testing.T) {
+	c := qt.New(t)
+	const want = `sql/sqlclient: unknown driver "ydb". See: https://atlasgo.io/url`
+	project := projectconfig.Config{DevURL: "ydb://localhost:2136/local"}
+
+	c.Assert(atlascompatpolicy.StrictCE().ValidateDialect("ydb"), qt.ErrorMatches, regexp.QuoteMeta(want))
+	c.Assert(atlascompatpolicy.StrictCE().ValidateProjectConfig(project), qt.ErrorMatches, regexp.QuoteMeta(want))
+	c.Assert(atlascompatpolicy.Full().ValidateDialect("ydb"), qt.IsNil)
+	c.Assert(atlascompatpolicy.Full().ValidateProjectConfig(project), qt.IsNil)
 }
 
 func TestStrictCEValidatesProjectConfigDatabaseURLs(t *testing.T) {

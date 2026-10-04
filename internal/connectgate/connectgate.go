@@ -1,13 +1,15 @@
 // Package connectgate lets a command surface refuse a database dialect for
 // every connection opened under a context, before anything is dialed.
 //
-// A surface that does not reach a dialect yet cannot list every path that
-// opens a connection: a URL arrives through a flag, an environment variable, a
-// project file, a data source the project file reads, or a command the surface
-// forwards to. So the surface puts its refusal on the context it runs under,
-// and dbschema's connector asks it about the dialect of every URL it is handed.
+// A surface that refuses a dialect cannot list every path that opens a
+// connection: a URL arrives through a flag, an environment variable, a project
+// file, a data source the project file reads, or a command the surface forwards
+// to. So the surface puts its refusal on the context it runs under, and
+// dbschema's connector asks it about the dialect of every URL it is handed.
 // The refusal holds for whichever path the URL took, and a path added later is
-// covered without being named.
+// covered without being named. The strict profile of ptah-compat is the
+// surface that uses it, refusing the dialects the pinned Atlas community
+// binary has no driver for.
 package connectgate
 
 import "context"

@@ -17,7 +17,7 @@
 // declaration of one reaches the renderer by name, and a database holding one
 // reaches the reader, and each has to be refused there rather than handled as
 // something else. So are the commands that connect and then need a layer that
-// does not exist yet: the compatibility surface and inference.
+// does not exist yet: inference.
 package ydbgap
 
 import (
@@ -60,8 +60,6 @@ const (
 	// IndexFamilies is the index kinds beyond a row table's global indexes:
 	// vector, full-text and JSON indexes, and a column table's local ones.
 	IndexFamilies
-	// Compatibility is a YDB URL on the ptah-compat surface.
-	Compatibility
 	// Inference is an embedding generation on YDB: `ptah inference` and the
 	// agent surface's inference tools. The run state and the vectors they
 	// work on are a PostgreSQL vertical built on pgvector, and the YDB design
@@ -101,8 +99,6 @@ func (l Layer) work() string {
 		return "setting YDB table options (TTL, partitioning, column families, changefeeds)"
 	case IndexFamilies:
 		return "reading or creating a YDB vector, full-text, JSON or column-table index"
-	case Compatibility:
-		return "using a YDB database through ptah-compat"
 	case Inference:
 		return "running an embedding generation against YDB"
 	default:
@@ -118,8 +114,6 @@ func (l Layer) Phase() int {
 		return 9
 	case SchemaFiles, Comments, Views, AccessControl, TableSettings, IndexFamilies:
 		return 10
-	case Compatibility:
-		return 11
 	case Inference:
 		return 12
 	default:
@@ -155,8 +149,6 @@ func (l Layer) Unsupported() string {
 		return "a table's own settings: TTL, partitioning, column families and changefeeds"
 	case IndexFamilies:
 		return "vector, full-text, JSON and column-table indexes"
-	case Compatibility:
-		return "every `ptah-compat` command with a YDB URL, from any source"
 	case Inference:
 		return "`ptah inference` and the inference tools of `ptah mcp`, which wait for the vector index family"
 	default:

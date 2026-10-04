@@ -416,18 +416,25 @@ func (p Policy) ValidateURL(rawURL string) error {
 	if err != nil {
 		return nil
 	}
-	dialect := platform.NormalizeDialect(parsed.Scheme)
 	if atlasurl.IsDockerScheme(parsed.Scheme) {
-		dialect, err = atlasurl.DialectFromURL(rawURL)
+		dialect, err := atlasurl.DialectFromURL(rawURL)
 		if err != nil {
 			return nil
 		}
+		return p.ValidateDialect(dialect)
 	}
-	return p.ValidateDialect(dialect)
+	if platform.NormalizeDialect(parsed.Scheme) == platform.YDB {
+		return strictUnknownDriver(parsed.Scheme)
+	}
+	return p.ValidateDialect(parsed.Scheme)
 }
 
 // ValidateDialect applies the pinned CE database-family inventory. Empty and
 // unknown dialects remain the owning command's validation responsibility.
+//
+// YDB is refused in the pinned binary's own words, because no Atlas edition
+// has a YDB driver and a script that meets the refusal should read what that
+// binary prints. The other dialects keep the sentence that names the policy.
 func (p Policy) ValidateDialect(dialect string) error {
 	if !p.strictCE {
 		return nil
@@ -436,12 +443,22 @@ func (p Policy) ValidateDialect(dialect string) error {
 	switch normalized {
 	case "", platform.Postgres, platform.MySQL, platform.MariaDB, platform.SQLite:
 		return nil
+	case platform.YDB:
+		return strictUnknownDriver(normalized)
 	default:
 		return fmt.Errorf(
 			"Atlas Community Edition strict compatibility does not support database dialect %q",
 			normalized,
 		)
 	}
+}
+
+// strictUnknownDriver is the pinned community binary's answer to a URL whose
+// scheme names no driver it has, with the scheme as the URL spells it.
+// Measured on v1.3.0: `ydb://` answers `sql/sqlclient: unknown driver "ydb".
+// See: https://atlasgo.io/url`, and `ydbs://` the same with "ydbs".
+func strictUnknownDriver(scheme string) error {
+	return fmt.Errorf("sql/sqlclient: unknown driver %q. See: https://atlasgo.io/url", scheme)
 }
 
 // ValidateMigrationSource refuses authored migration formats and directives

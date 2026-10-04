@@ -2,251 +2,170 @@ package atlas_test
 
 import (
 	"bytes"
-	"regexp"
+	"os"
+	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/cli/atlas"
-	"ptah.run/internal/cli/atlas/internal/atlastest"
 )
 
-// A YDB URL on this surface is a Ptah extension, as no Atlas edition has a
-// YDB driver, and the verbs here do not reach YDB yet. The default mode
-// refuses it in the words of the gap, before anything is opened, so no row
-// needs a server. Strict mode keeps its own refusal, which
-// TestStrictCompatKeepsItsRefusalOfYDB pins.
-func TestCompatRefusesAYDBURL(t *testing.T) {
+// ydbConnectorRefusedURL names a YDB database with a parameter Ptah's YDB
+// connector refuses. A run that reaches the connector fails there, offline and
+// at once, naming the parameter. That failure is the proof that the
+// compatibility surface handed the URL on: a refusal on this surface would
+// answer before the connector is asked.
+const ydbConnectorRefusedURL = "ydb://127.0.0.1:1/local?bogus=1"
+
+// ydbConnectorRefusal is what the connector answers for ydbConnectorRefusedURL.
+const ydbConnectorRefusal = `invalid YDB URL: parameter "bogus" is not one Ptah reads on a YDB URL`
+
+// ydbUnknownDriver is what the pinned community binary answers for a ydb://
+// URL on every verb, and what the strict profile answers with it.
+const ydbUnknownDriver = "Error: sql/sqlclient: unknown driver \"ydb\". See: https://atlasgo.io/url\n"
+
+// runCompatWithPolicy runs the compatibility tree under policy.
+func runCompatWithPolicy(policy atlascompatpolicy.Policy, args ...string) (stdout, stderr string, err error) {
+	cmd := atlas.NewCompatCommandWithPolicy("atlas", policy)
+	var out, errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs(args)
+	err = cmd.Execute()
+	return out.String(), errOut.String(), err
+}
+
+// ydbCompatFixture writes a hashed migration directory, a desired schema in
+// HCL and a query script into a new directory, and returns their paths.
+func ydbCompatFixture(c *qt.C) (migrations, schema, script string) {
+	c.Helper()
+	dir := c.TempDir()
+	migrations = filepath.Join(dir, "migrations")
+	c.Assert(os.Mkdir(migrations, 0o750), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrations, "20260101000000_init.sql"),
+		[]byte("CREATE TABLE `users` (`id` Int64 NOT NULL, PRIMARY KEY (`id`));\n"), 0o600), qt.IsNil)
+	_, _, err := runCompatWithPolicy(atlascompatpolicy.Full(), "migrate", "hash", "--dir", "file://"+filepath.ToSlash(migrations))
+	c.Assert(err, qt.IsNil)
+	schema = filepath.Join(dir, "schema.hcl")
+	c.Assert(os.WriteFile(schema, []byte(`table "users" {
+  column "id" {
+    type = Int64
+  }
+  primary_key {
+    columns = [column.id]
+  }
+}
+`), 0o600), qt.IsNil)
+	script = filepath.Join(dir, "script.hcl")
+	c.Assert(os.WriteFile(script, []byte(`script "query" "report" {
+  query "rows" {
+    sql = "SELECT 1"
+  }
+}
+
+script "exec" "fix" {
+  exec "upd" {
+    sql = "UPDATE users SET id = id WHERE id = 1"
+  }
+}
+`), 0o600), qt.IsNil)
+	return migrations, schema, script
+}
+
+// A YDB URL on this surface is a Ptah extension, since no Atlas edition has a
+// YDB driver, and the default policy keeps it: every verb that takes a database
+// URL hands it to the connector, whichever flag carries it. The rows run
+// offline, and the connector's own refusal of the URL is what they read.
+func TestCompatHandsAYDBURLToTheConnector(t *testing.T) {
+	c := qt.New(t)
+	migrations, schema, script := ydbCompatFixture(c)
+	dir := "file://" + filepath.ToSlash(migrations)
+	to := "file://" + filepath.ToSlash(schema)
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "schema inspect --url", args: []string{"schema", "inspect", "--url", ydbConnectorRefusedURL}},
+		{name: "schema apply --url", args: []string{"schema", "apply", "--url", ydbConnectorRefusedURL,
+			"--to", to, "--dry-run"}},
+		{name: "schema diff --from", args: []string{"schema", "diff", "--from", ydbConnectorRefusedURL, "--to", to,
+			"--dev-url", ydbConnectorRefusedURL}},
+		{name: "schema clean --url", args: []string{"schema", "clean", "--url", ydbConnectorRefusedURL, "--dry-run"}},
+		{name: "schema stats inspect --db-url", args: []string{"schema", "stats", "inspect", "--db-url",
+			ydbConnectorRefusedURL}},
+		{name: "migrate apply --url", args: []string{"migrate", "apply", "--url", ydbConnectorRefusedURL, "--dir", dir}},
+		{name: "migrate status --url", args: []string{"migrate", "status", "--url", ydbConnectorRefusedURL, "--dir", dir}},
+		{name: "migrate set --url", args: []string{"migrate", "set", "--url", ydbConnectorRefusedURL, "--dir", dir,
+			"20260101000000"}},
+		{name: "migrate down --url", args: []string{"migrate", "down", "--url", ydbConnectorRefusedURL, "--dir", dir}},
+		{name: "script query --url", args: []string{"script", "query", "--url", ydbConnectorRefusedURL,
+			"--file", script}},
+		{name: "script exec --url", args: []string{"script", "exec", "--url", ydbConnectorRefusedURL,
+			"--file", script}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			stdout, stderr, err := runCompatWithPolicy(atlascompatpolicy.Full(), test.args...)
+
+			c.Assert(err, qt.ErrorMatches, `(?s).*`+ydbConnectorRefusal+`.*`)
+			c.Assert(stderr, qt.Not(qt.Contains), "unknown driver")
+			c.Assert(stdout, qt.Not(qt.Contains), "CREATE")
+		})
+	}
+}
+
+// The strict profile reproduces the pinned community binary, which has no
+// YDB driver, so it refuses a YDB URL in that binary's words before anything
+// is opened, with the scheme as the URL spells it. A strict run of the same
+// arguments the default run hands to the connector stops here instead.
+func TestStrictCompatRefusesAYDBURL(t *testing.T) {
+	c := qt.New(t)
+	migrations, schema, _ := ydbCompatFixture(c)
+	dir := "file://" + filepath.ToSlash(migrations)
+	to := "file://" + filepath.ToSlash(schema)
 	tests := []struct {
 		name string
 		args []string
 		want string
 	}{
-		{
-			name: "schema inspect --url",
-			args: []string{"schema", "inspect", "--url", "ydb://localhost:2136/local"},
-			want: "Error: --url names a YDB database: using a YDB database through ptah-compat is not implemented yet " +
-				"(stokaro/ptah#4015, phase 11)\n",
-		},
-		{
-			name: "schema diff --to over TLS",
-			args: []string{"schema", "diff", "--from", "file://schema.hcl", "--to", "ydbs://localhost:2135/local",
-				"--dev-url", "sqlite://dev?mode=memory"},
-			want: "Error: --to names a YDB database: using a YDB database through ptah-compat is not implemented yet " +
-				"(stokaro/ptah#4015, phase 11)\n",
-		},
-		{
-			name: "migrate apply --url",
-			args: []string{"migrate", "apply", "--url", "ydb://localhost:2136/local"},
-			want: "Error: --url names a YDB database: using a YDB database through ptah-compat is not implemented yet " +
-				"(stokaro/ptah#4015, phase 11)\n",
-		},
-		{
-			name: "schema stats inspect --db-url",
-			args: []string{"schema", "stats", "inspect", "--db-url", "ydb://localhost:2136/local"},
-			want: "Error: --db-url names a YDB database: using a YDB database through ptah-compat is not implemented yet " +
-				"(stokaro/ptah#4015, phase 11)\n",
-		},
-		{
-			name: "script query --url",
-			args: []string{"script", "query", "--url", "ydb://localhost:2136/local", "--file", "absent.hcl"},
-			want: "Error: --url names a YDB database: using a YDB database through ptah-compat is not implemented yet " +
-				"(stokaro/ptah#4015, phase 11)\n",
-		},
-		{
-			name: "schema apply --dev-url",
-			args: []string{"schema", "apply", "--url", "sqlite://target?mode=memory", "--to", "file://schema.hcl",
-				"--dev-url", "ydb://localhost:2136/local"},
-			want: "Error: --dev-url names a YDB database: using a YDB database through ptah-compat is not implemented yet " +
-				"(stokaro/ptah#4015, phase 11)\n",
-		},
+		{name: "schema inspect --url", args: []string{"schema", "inspect", "--url", ydbConnectorRefusedURL},
+			want: ydbUnknownDriver},
+		{name: "schema inspect --url over TLS", args: []string{"schema", "inspect", "--url", "ydbs://127.0.0.1:1/local"},
+			want: "Error: sql/sqlclient: unknown driver \"ydbs\". See: https://atlasgo.io/url\n"},
+		{name: "schema apply --url", args: []string{"schema", "apply", "--url", ydbConnectorRefusedURL,
+			"--to", to, "--dry-run"}, want: ydbUnknownDriver},
+		{name: "schema apply --dev-url", args: []string{"schema", "apply", "--url", "sqlite://target?mode=memory",
+			"--to", to, "--dev-url", ydbConnectorRefusedURL}, want: ydbUnknownDriver},
+		{name: "schema diff --from", args: []string{"schema", "diff", "--from", ydbConnectorRefusedURL, "--to", to,
+			"--dev-url", "sqlite://dev?mode=memory"}, want: ydbUnknownDriver},
+		{name: "schema clean --url", args: []string{"schema", "clean", "--url", ydbConnectorRefusedURL, "--dry-run"},
+			want: ydbUnknownDriver},
+		{name: "migrate apply --url", args: []string{"migrate", "apply", "--url", ydbConnectorRefusedURL, "--dir", dir},
+			want: ydbUnknownDriver},
+		{name: "migrate status --url", args: []string{"migrate", "status", "--url", ydbConnectorRefusedURL,
+			"--dir", dir}, want: ydbUnknownDriver},
+		{name: "migrate set --url", args: []string{"migrate", "set", "--url", ydbConnectorRefusedURL, "--dir", dir,
+			"20260101000000"}, want: ydbUnknownDriver},
+		// After the integrity gate, as the binary orders it: the directory is
+		// hashed, so the dev URL is what this run answers.
+		{name: "migrate validate --dev-url", args: []string{"migrate", "validate", "--dir", dir,
+			"--dev-url", ydbConnectorRefusedURL}, want: ydbUnknownDriver},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			stdout, stderr, err := atlastest.RunCompat(test.args...)
+			stdout, stderr, err := runCompatWithPolicy(atlascompatpolicy.StrictCE(), test.args...)
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(stdout, qt.Equals, "")
 			c.Assert(stderr, qt.Equals, test.want)
-		})
-	}
-}
-
-// The strict CE policy refuses a YDB URL with its own refusal of a dialect the
-// community edition lacks, and the default mode's refusal does not replace it.
-func TestStrictCompatKeepsItsRefusalOfYDB(t *testing.T) {
-	c := qt.New(t)
-	cmd := atlas.NewCompatCommandWithPolicy("atlas", atlascompatpolicy.StrictCE())
-	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
-	cmd.SetArgs([]string{"schema", "inspect", "--url", "ydb://localhost:2136/local"})
-
-	err := cmd.Execute()
-
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(stdout.String(), qt.Equals, "")
-	c.Assert(stderr.String(), qt.Equals,
-		"Error: Atlas Community Edition strict compatibility does not support database dialect \"ydb\"\n")
-}
-
-// The phrase every refusal on this surface ends with, so each row below names
-// only where the URL came from.
-const ydbGap = "names a YDB database: using a YDB database through ptah-compat is not implemented yet " +
-	"(stokaro/ptah#4015, phase 11)"
-
-// A YDB URL is refused whichever variable carries it, here the PTAH_* twin of
-// a flag this surface parses, which reads as the flag. None of these rows
-// reaches a server.
-func TestCompatRefusesAYDBURLFromAVariable(t *testing.T) {
-	const ydbURL = "ydb://localhost:2136/local"
-	tests := []struct {
-		name     string
-		variable string
-		args     []string
-		want     string
-	}{
-		{name: "the --url twin of schema inspect", variable: "PTAH_URL",
-			args: []string{"schema", "inspect"}, want: "Error: --url " + ydbGap + "\n"},
-		{name: "the --dev-url twin of schema inspect", variable: "PTAH_DEV_URL",
-			args: []string{"schema", "inspect", "--url", "sqlite://target?mode=memory"},
-			want: "Error: --dev-url " + ydbGap + "\n"},
-		{name: "the --to twin of schema diff", variable: "PTAH_TO",
-			args: []string{"schema", "diff", "--from", "file://schema.hcl", "--dev-url", "sqlite://dev?mode=memory"},
-			want: "Error: --to " + ydbGap + "\n"},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			c.Setenv(test.variable, ydbURL)
-
-			stdout, stderr, err := atlastest.RunCompat(test.args...)
-
-			c.Assert(err, qt.IsNotNil)
-			c.Assert(stdout, qt.Equals, "")
-			c.Assert(stderr, qt.Equals, test.want)
-		})
-	}
-}
-
-// A forwarded verb is refused a YDB URL in any variable that reaches its
-// native command: the twin of an Atlas flag the verb maps, and a variable the
-// native command binds to one of its own flags. A forwarded verb returns its
-// error to the process, which prints it, so the rows read the error. The
-// directories they name do not exist, because the refusal comes before
-// anything is read.
-func TestCompatRefusesAYDBURLFromAVariableOnAForwardedVerb(t *testing.T) {
-	const ydbURL = "ydb://localhost:2136/local"
-	tests := []struct {
-		name     string
-		variable string
-		args     []string
-		wantErr  string
-	}{
-		{name: "the --url twin of migrate down", variable: "PTAH_URL",
-			args: []string{"migrate", "down", "--dir", "file://absent"}, wantErr: "--db-url " + ydbGap},
-		{name: "the native --db-url variable of migrate down", variable: "PTAH_DB_URL",
-			args: []string{"migrate", "down", "--dir", "file://absent"}, wantErr: "PTAH_DB_URL " + ydbGap},
-		{name: "the native --source-db-url variable of schema test", variable: "PTAH_SOURCE_DB_URL",
-			args:    []string{"schema", "test", "--dev-url", "sqlite://dev?mode=memory", "--url", "file://absent.sql"},
-			wantErr: "PTAH_SOURCE_DB_URL " + ydbGap},
-		{name: "the --dev-url twin of migrate validate", variable: "PTAH_DEV_URL",
-			args: []string{"migrate", "validate", "--dir", "file://absent"}, wantErr: "--dev-url " + ydbGap},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			c.Setenv(test.variable, ydbURL)
-
-			stdout, _, err := atlastest.RunCompat(test.args...)
-
-			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(test.wantErr))
-			c.Assert(stdout, qt.Equals, "")
-		})
-	}
-}
-
-// A forwarded verb is refused a YDB URL in any flag that reaches its native
-// command, Atlas or native, and so are the branches that run on this surface
-// instead of forwarding. A validation of an empty directory would otherwise
-// accept the URL in silence, because it never connects.
-func TestCompatRefusesAYDBURLOnAForwardedVerb(t *testing.T) {
-	const ydbURL = "ydb://localhost:2136/local"
-	tests := []struct {
-		name    string
-		args    []string
-		wantErr string
-	}{
-		{name: "migrate validate --dev-url", args: []string{"migrate", "validate", "--dir", "file://absent",
-			"--dev-url", ydbURL}, wantErr: "--dev-url " + ydbGap},
-		{name: "migrate checkpoint --dev-url", args: []string{"migrate", "checkpoint", "--dir", "file://absent",
-			"--dev-url", ydbURL}, wantErr: "--dev-url " + ydbGap},
-		{name: "schema test --dev-url", args: []string{"schema", "test", "--dev-url", ydbURL,
-			"--url", "file://absent.sql"}, wantErr: "--dev-url " + ydbGap},
-		{name: "a native --db-url typed on migrate down", args: []string{"migrate", "down", "--dir", "file://absent",
-			"--db-url=" + ydbURL}, wantErr: "--db-url " + ydbGap},
-		{name: "migrate down --format", args: []string{"migrate", "down", "--dir", "file://absent",
-			"--url", ydbURL, "--format", "{{ .Status }}"}, wantErr: "--url " + ydbGap},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			stdout, _, err := atlastest.RunCompat(test.args...)
-
-			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(test.wantErr))
-			c.Assert(stdout, qt.Equals, "")
-		})
-	}
-}
-
-// The converted-directory branch of migrate validate runs on this surface and
-// prints its own error.
-func TestCompatRefusesAYDBDevURLOverAConvertedDirectory(t *testing.T) {
-	c := qt.New(t)
-
-	stdout, stderr, err := atlastest.RunCompat("migrate", "validate", "--dir", "file://absent",
-		"--dir-format", "golang-migrate", "--dev-url", "ydb://localhost:2136/local")
-
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(stdout, qt.Equals, "")
-	c.Assert(stderr, qt.Equals, "Error: --dev-url "+ydbGap+"\n")
-}
-
-// The controls for the variable rows: a variable the native command binds to a
-// flag the arguments already set is not read, and a PTAH_* variable no flag
-// binds is an ordinary user input atlas.hcl may read through getenv. Neither is
-// refused, so each run fails later, on the directory that does not exist.
-func TestCompatLeavesAYDBURLItDoesNotRead(t *testing.T) {
-	const ydbURL = "ydb://localhost:2136/local"
-	tests := []struct {
-		name     string
-		variable string
-		args     []string
-	}{
-		{name: "a twin the typed flag overrides", variable: "PTAH_DB_URL",
-			args: []string{"migrate", "down", "--dir", "file://absent", "--db-url", "sqlite://target?mode=memory"}},
-		{name: "a variable no flag binds", variable: "PTAH_TENANT_DATABASE",
-			args: []string{"migrate", "down", "--dir", "file://absent", "--url", "sqlite://target?mode=memory"}},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			c.Setenv(test.variable, ydbURL)
-
-			_, stderr, err := atlastest.RunCompat(test.args...)
-
-			c.Assert(err, qt.ErrorMatches, `(?s).*absent.*`)
-			c.Assert(err, qt.Not(qt.ErrorMatches), `(?s).*YDB.*`)
-			c.Assert(stderr, qt.Not(qt.Contains), "YDB")
 		})
 	}
 }

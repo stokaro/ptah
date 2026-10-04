@@ -207,7 +207,7 @@ func runExecStep(
 	}
 
 	outcome := ExecOutcome{Name: step.Name, Affected: -1, Elapsed: now().Sub(started)}
-	if affected, err := result.RowsAffected(); err == nil {
+	if affected, err := result.RowsAffected(); err == nil && !opts.RowCountsUnreported {
 		outcome.Affected = affected
 	}
 	reportf(opts.Report, "-- ok (%s) | %s\n", outcome.Elapsed, describeAffected(outcome.Affected))

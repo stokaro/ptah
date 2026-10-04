@@ -573,7 +573,7 @@ func applyCurrentState(
 	if err != nil {
 		return applyRead{}, fmt.Errorf("read database schema: %w", err)
 	}
-	readScope := applyReadScope(requested, urlScope, desired)
+	readScope := applyReadScope(conn.Info(), requested, urlScope, desired)
 	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, readScope)
 	if err != nil {
 		return applyRead{}, fmt.Errorf("read database schema: %w", err)
@@ -611,14 +611,15 @@ func applyCurrentState(
 //
 // The desired state's own schemas are still added on top, because a URL pinned
 // to one schema by `search_path` covers less than a document may name, and a
-// creation planned for an object that exists fails the run.
+// creation planned for an object that exists fails the run. On YDB the base is
+// already every directory, and [schemascope.Widen] keeps it that way.
 //
 // An explicit `--schema` outranks both: it is the operator naming the scope.
-func applyReadScope(requested, base []string, desired *schemamodel.Database) []string {
+func applyReadScope(info catalog.ServerInfo, requested, base []string, desired *schemamodel.Database) []string {
 	if names := SplitSchemaNames(requested); len(names) > 0 {
 		return names
 	}
-	return schemascope.Union(base, schemascope.DeclaredSchemaNames(desired))
+	return schemascope.Widen(info, base, schemascope.DeclaredSchemaNames(desired))
 }
 
 // loadDesiredApplySchema materializes the desired schema for apply planning.
