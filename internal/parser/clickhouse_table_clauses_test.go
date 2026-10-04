@@ -273,10 +273,25 @@ func TestClickHouseColumnsAreNotNullUnlessTheTypeSaysOtherwise(t *testing.T) {
 			wantNullable: true,
 		},
 		{
-			name:         "the marker nests",
+			name:         "a nullable low-cardinality type is nullable",
 			dialect:      platform.ClickHouse,
 			column:       "a LowCardinality(Nullable(String))",
 			wantNullable: true,
+		},
+		{
+			// The elements admit NULL and the column does not, and the reader
+			// says the same of the type system.columns reports
+			// (stokaro/ptah#4105).
+			name:         "an array of a nullable type is NOT NULL",
+			dialect:      platform.ClickHouse,
+			column:       "a Array(Nullable(Int32))",
+			wantNullable: false,
+		},
+		{
+			name:         "a map of nullable values is NOT NULL",
+			dialect:      platform.ClickHouse,
+			column:       "a Map(String, Nullable(Int32))",
+			wantNullable: false,
 		},
 		{
 			name:         "an explicit NULL still wins",

@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/sqlutil"
+	"ptah.run/internal/chtype"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/mysqlindex"
@@ -3343,7 +3344,7 @@ func (p *Parser) parseColumnDefinitionAfterName(table *ast.CreateTableNode, colu
 	if table != nil {
 		table.AddColumn(column)
 	}
-	if p.dialect == platform.ClickHouse && !isClickHouseNullableType(columnType) {
+	if p.dialect == platform.ClickHouse && !chtype.AdmitsNull(columnType) {
 		// ClickHouse inverts SQL's default: a bare type is NOT NULL, and
 		// nullability is spelled in the type as Nullable(T). Reading a column
 		// the ClickHouse renderer wrote -- which omits NOT NULL for exactly
@@ -5452,14 +5453,6 @@ func isCreateTableOptionBoundary(option string) bool {
 	default:
 		return false
 	}
-}
-
-// isClickHouseNullableType reports whether a ClickHouse column type admits
-// NULL. Only Nullable(T) does, and it nests -- LowCardinality(Nullable(String))
-// is nullable -- so the marker is looked for anywhere in the type rather than
-// only at the front.
-func isClickHouseNullableType(columnType string) bool {
-	return strings.Contains(strings.ToUpper(columnType), "NULLABLE(")
 }
 
 // isPostgreSQLPartitionStrategy reports whether value is one of the three

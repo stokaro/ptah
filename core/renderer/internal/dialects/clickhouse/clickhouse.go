@@ -37,6 +37,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer/internal/dialects/internal/bufwriter"
 	"ptah.run/internal/chrefresh"
+	"ptah.run/internal/chtype"
 	"ptah.run/internal/defaultlit"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/tableref"
@@ -169,111 +170,21 @@ type typeMapping struct {
 	jsonMapped bool
 }
 
-// directTypeMap is a lookup table of base SQL type names (UPPER, parameter
-// stripped) to their direct ClickHouse equivalents. Types whose mapping
-// depends on parameters or warrants a notice are handled in mapColumnType
-// rather than going through this table.
-var directTypeMap = map[string]string{
-	"TEXT": "String", "VARCHAR": "String", "CHAR": "String",
-	"CHARACTER": "String", "STRING": "String",
-	"CHARACTER VARYING": "String", "CITEXT": "String",
-	"BYTEA": "String", "BLOB": "String",
-	"BOOLEAN": "Bool", "BOOL": "Bool",
-	"SMALLINT": "Int16", "INT2": "Int16",
-	"INTEGER": "Int32", "INT": "Int32", "INT4": "Int32",
-	"BIGINT": "Int64", "INT8": "Int64",
-	"REAL": "Float32", "FLOAT4": "Float32",
-	"DOUBLE": "Float64", "DOUBLE PRECISION": "Float64",
-	"FLOAT": "Float64", "FLOAT8": "Float64",
-	"DATE": "Date",
-	"UUID": "UUID",
-}
-
 // mapColumnType translates a generic SQL column type spelling into the
-// ClickHouse equivalent. Type names not recognized are returned verbatim;
-// callers may legitimately write native ClickHouse type names in their
-// annotations (e.g. `LowCardinality(String)`), and this function must not
-// mangle them.
-//
-// The matcher is intentionally narrow: it splits the type on '(' so a
-// `VARCHAR(255)` still maps to `String`, but anything that doesn't look like
-// a known SQL type is passed through untouched.
+// ClickHouse equivalent through [chtype.Map], which the schema comparison asks
+// too, so the type it compares a live column with is the type written here.
 func mapColumnType(t string) (typeMapping, error) {
-	upper := strings.ToUpper(strings.TrimSpace(t))
-	if upper == "" {
-		return typeMapping{}, fmt.Errorf("clickhouse: column type is empty")
+	mapping, err := chtype.Map(t)
+	if err != nil {
+		return typeMapping{}, err
 	}
-
-	// Strip parametrisation for the base lookup, keeping it around for the
-	// (small number of) types where the precision actually matters.
-	base := upper
-	var params string
-	if idx := strings.Index(upper, "("); idx >= 0 {
-		base = strings.TrimSpace(upper[:idx])
-		params = strings.TrimSpace(upper[idx:])
+	// The JSON notice is finalized in renderColumnType, so it names the type
+	// after the Nullable wrap (e.g. Nullable(String)).
+	result := typeMapping{mapped: mapping.Type, jsonMapped: mapping.JSON}
+	if mapping.Unrecognized {
+		result.notice = fmt.Sprintf("unrecognized SQL type %q passed through verbatim; verify it is a native ClickHouse type", t)
 	}
-
-	if direct, ok := directTypeMap[base]; ok {
-		return typeMapping{mapped: direct}, nil
-	}
-
-	switch base {
-	case "SERIAL", "BIGSERIAL", "SMALLSERIAL":
-		return typeMapping{}, fmt.Errorf("clickhouse: %s has no auto-increment equivalent; use UUID/Int64 + an explicit value or use a ReplacingMergeTree pattern", upper)
-	case "NUMERIC", "DECIMAL":
-		if params == "" {
-			return typeMapping{mapped: "Decimal(38, 10)"}, nil
-		}
-		return typeMapping{mapped: "Decimal" + params}, nil
-	case "TIMESTAMPTZ", "TIMESTAMP WITH TIME ZONE":
-		// Pin TZ-aware columns to UTC so the round-trip with a TZ-naive
-		// DateTime64 doesn't silently drop time-zone information.
-		return typeMapping{mapped: "DateTime64(3, 'UTC')"}, nil
-	case "TIMESTAMP", "DATETIME", "TIMESTAMP WITHOUT TIME ZONE":
-		return typeMapping{mapped: "DateTime64(3)"}, nil
-	case "TIME":
-		// ClickHouse has no plain TIME type; surface this rather than silently
-		// pick something lossy.
-		return typeMapping{}, fmt.Errorf("clickhouse: TIME has no direct equivalent; map to String or DateTime64 explicitly via platform.clickhouse.type")
-	case "JSON", "JSONB":
-		// Treat JSON as a String; ClickHouse's native JSON type is still
-		// experimental. Users who want it can override via platform.clickhouse.type.
-		// The notice is finalized in renderColumnType so it reflects the
-		// post-Nullable-wrap final type (e.g. Nullable(String)).
-		return typeMapping{
-			mapped:     "String",
-			jsonMapped: true,
-		}, nil
-	}
-
-	// Pass through native ClickHouse types untouched. Flag pass-throughs that
-	// don't look like a CH-native composite type so users see when an unknown
-	// spelling has been forwarded as-is.
-	mapping := typeMapping{mapped: t}
-	if !looksLikeClickHouseNativeType(t) {
-		mapping.notice = fmt.Sprintf("unrecognized SQL type %q passed through verbatim; verify it is a native ClickHouse type", t)
-	}
-	return mapping, nil
-}
-
-// looksLikeClickHouseNativeType is a heuristic that recognizes common
-// ClickHouse-native type spellings (LowCardinality, Array, Map, Nullable,
-// Enum8/16, FixedString, Tuple, Nested, ...). It only needs to avoid
-// false-positively warning on legitimate native types; precise validation is
-// the database's job.
-func looksLikeClickHouseNativeType(t string) bool {
-	t = strings.TrimSpace(t)
-	if t == "" {
-		return false
-	}
-	// Native CH types are conventionally PascalCase; treat the presence of an
-	// uppercase letter followed by lowercase as a strong hint.
-	for i := 0; i < len(t)-1; i++ {
-		if t[i] >= 'A' && t[i] <= 'Z' && t[i+1] >= 'a' && t[i+1] <= 'z' {
-			return true
-		}
-	}
-	return false
+	return result, nil
 }
 
 // columnTypeOptions controls renderColumnType's behavior.
@@ -335,8 +246,9 @@ func renderColumnType(col *ast.ColumnNode, opts columnTypeOptions) (typeMapping,
 		return typeMapping{}, err
 	}
 	if rendersNullable(col) && !opts.forceNotNull {
-		// Don't wrap if already wrapped (e.g. user supplied native CH type).
-		if !strings.HasPrefix(mapping.mapped, "Nullable(") {
+		// A type that already admits NULL is not wrapped again: ClickHouse
+		// refuses a Nullable around LowCardinality(Nullable(T)).
+		if !chtype.AdmitsNull(mapping.mapped) {
 			mapping.mapped = "Nullable(" + mapping.mapped + ")"
 		}
 	}

@@ -72,6 +72,37 @@ func TestCreateTable_ATypeNamedForThisTargetIsWrittenAsItStands(t *testing.T) {
 			column: &ast.ColumnNode{Name: "created_at", Type: "DateTime", TypeRawSQL: true, Nullable: true},
 			want:   "created_at Nullable(DateTime)\n",
 		},
+		{
+			// ClickHouse's own names reach the renderer without a marker from a
+			// schema file, and upper-cased they are portable names meaning
+			// something else: DateTime became DateTime64(3) and Int8 became
+			// Int64 (stokaro/ptah#4105).
+			name:   "a native DateTime in a schema file",
+			column: &ast.ColumnNode{Name: "created_at", Type: "DateTime"},
+			want:   "created_at DateTime\n",
+		},
+		{
+			name:   "a native DateTime with a time zone in a schema file",
+			column: &ast.ColumnNode{Name: "created_at", Type: "DateTime('UTC')"},
+			want:   "created_at DateTime('UTC')\n",
+		},
+		{
+			name:   "a native Int8 in a schema file",
+			column: &ast.ColumnNode{Name: "created_at", Type: "Int8"},
+			want:   "created_at Int8\n",
+		},
+		{
+			name:   "a portable INT8",
+			column: &ast.ColumnNode{Name: "created_at", Type: "INT8"},
+			want:   "created_at Int64\n",
+		},
+		{
+			// ClickHouse refuses a Nullable around LowCardinality, so a type
+			// that already admits NULL is not wrapped again.
+			name:   "a nullable low-cardinality type",
+			column: &ast.ColumnNode{Name: "created_at", Type: "LowCardinality(Nullable(String))", Nullable: true},
+			want:   "created_at LowCardinality(Nullable(String))\n",
+		},
 	}
 
 	for _, tt := range tests {

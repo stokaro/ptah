@@ -117,6 +117,34 @@ the column's type and, when the column declares one, its default. The default
 is in the statement because a `MODIFY COLUMN` that names only a type keeps the
 default the column already had.
 
+A column's type is compared as the server stores it, width included. A live
+`Int32` declared `Int64`, `UInt8` declared `UInt16`, `Float32` declared
+`Float64`, `Decimal(9, 2)` declared `Decimal(18, 2)` and `DateTime` declared
+`DateTime64(3)` are each planned as a `MODIFY COLUMN`, and so is a change inside
+`Nullable(...)`, `LowCardinality(...)`, `Array(...)` or `Map(...)`. A spelling
+the server stores under another name is the same type: `Decimal32(2)` is
+`Decimal(9, 2)`, `Boolean` is `Bool`, `SMALLINT UNSIGNED` is `UInt16`, and
+`Enum('a', 'b')` is `Enum8('a' = 1, 'b' = 2)`.
+
+A portable type name is compared as the type Ptah writes for it, which is not
+always the type ClickHouse makes from the same word. A declared `DATETIME` is
+written as `DateTime64(3)`, so a live `DateTime` column declared `DATETIME` is
+planned as a change. A ClickHouse type name, spelled the way ClickHouse spells
+it, is written as it stands: `Int8` is an 8-bit column and `DateTime` a
+second-precision one, while the portable `INT8` is `Int64`.
+
+A narrowing is planned as well. Measured on 24.10 and 26.9, the server accepts
+`MODIFY COLUMN d Int32` over an `Int64` column and stores a value that does not
+fit wrapped: `30000000000` becomes `-64771072`. A decimal narrowing whose values
+do not fit fails the conversion and leaves the column unreadable. The plan's
+safety report marks an integer narrowing between ClickHouse type names, and a
+decimal narrowing, as destructive; check the values before applying either.
+
+A type that already admits NULL, such as `LowCardinality(Nullable(String))`, is
+not wrapped in a second `Nullable`, which ClickHouse refuses. A `Nullable` inside
+an array, a map or a tuple makes the elements nullable and not the column, so
+`Array(Nullable(Int32))` is a column that is never NULL itself.
+
 A default the declaration takes away is removed with its own statement, written
 before the one that states the type:
 

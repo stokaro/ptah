@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/catalogfield"
 	"ptah.run/internal/chkey"
+	"ptah.run/internal/chtype"
 	"ptah.run/internal/constraintowner"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/normalize"
@@ -706,8 +707,11 @@ func columnTypeChange(
 		return ""
 	}
 
-	if platform.NormalizeDialect(dialect) == platform.YDB {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.YDB:
 		return ydbColumnTypeChange(genCol, dbCol, dbRawType)
+	case platform.ClickHouse:
+		return clickHouseColumnTypeChange(genCol, dbCol, dbRawType)
 	}
 	genType, dbType := normalizeColumnTypesForDialect(genCol, dbRawType, dialect)
 	switch {
@@ -1147,6 +1151,52 @@ func ydbColumnTypeChange(genCol schemamodel.Field, dbCol catalog.Column, dbRawTy
 		return ""
 	}
 	return fmt.Sprintf("%s -> %s", currentType, desiredType)
+}
+
+// clickHouseColumnTypeChange compares a ClickHouse column's type as the
+// server stores it, width included.
+//
+// The generic comparison folds every type whose name contains "int" to
+// "integer" and asks about width in SQL's terms, where Int8 is PostgreSQL's
+// 64-bit int8. A live Int32 against a declared Int64 recorded no change that
+// way, and neither did UInt8 against UInt16 or Int32 against UInt32
+// (stokaro/ptah#4105). Measured on 24.10 and 26.9, the server takes
+// `MODIFY COLUMN d Int64` over an Int32 and keeps every value.
+//
+// Each side is spelled the way the renderer writes it: as it stands when it
+// came verbatim from a catalog or from sql(), and through [chtype.Map]
+// otherwise. The current side is asked too, because a file-to-file comparison
+// hands it a declaration rather than a catalog type. The two spellings are
+// then compared as [chtype.Canonical] keys, so a name the server stores under
+// another, Decimal32(2) for Decimal(9, 2), is not a change.
+//
+// Nullability is compared on its own, so an outer Nullable is taken off both
+// sides first: a declaration that writes Nullable(Int64) and one that writes
+// Int64 with the nullable flag set ask for the same type.
+func clickHouseColumnTypeChange(genCol schemamodel.Field, dbCol catalog.Column, dbRawType string) string {
+	declared := strings.TrimSpace(genCol.Type)
+	if !genCol.TypeIsDeclaredText && !genCol.TypeRawSQL {
+		declared = clickHouseMappedType(declared)
+	}
+	current := strings.TrimSpace(dbRawType)
+	if !dbCol.TypeIsDeclaredText {
+		current = clickHouseMappedType(current)
+	}
+	declared, current = chtype.StripNullable(declared), chtype.StripNullable(current)
+	if chtype.Canonical(declared) == chtype.Canonical(current) {
+		return ""
+	}
+	return fmt.Sprintf("%s -> %s", current, declared)
+}
+
+// clickHouseMappedType is the type the ClickHouse renderer writes for a
+// portable declaration. A type the map refuses is compared as written.
+func clickHouseMappedType(declared string) string {
+	mapping, err := chtype.Map(declared)
+	if err != nil {
+		return declared
+	}
+	return mapping.Type
 }
 
 // ydbDefaultChange compares a YDB column's default as YQL literals. YDB
