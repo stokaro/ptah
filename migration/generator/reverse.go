@@ -291,13 +291,17 @@ func reverseSchemaDiffWithSchemaForDialect(
 		RLSForceChanged:         reverseRLSForceChanges(diff.RLSForceChanged),
 
 		// Reverse role operations
-		RolesAdded:          diff.RolesRemoved, // Roles to remove become roles to add
-		RolesRemoved:        diff.RolesAdded,   // Roles to add become roles to remove
-		RolesModified:       reverseRoleDiffs(diff.RolesModified, prior),
-		GrantsAdded:         diff.GrantsRemoved,       // Grants to remove become grants to add
-		GrantsRemoved:       diff.GrantsAdded,         // Grants to add become grants to revoke
-		GrantOptionsAdded:   diff.GrantOptionsRevoked, // Revoked grant options become grant-option additions
-		GrantOptionsRevoked: diff.GrantOptionsAdded,   // Grant-option additions become grant-option revocations
+		RolesAdded:    diff.RolesRemoved, // Roles to remove become roles to add
+		RolesRemoved:  diff.RolesAdded,   // Roles to add become roles to remove
+		RolesModified: reverseRoleDiffs(diff.RolesModified, prior),
+		// A membership carries both of its roles, so the swap needs nothing
+		// from the schema beside it.
+		RoleMembershipsAdded:   diff.RoleMembershipsRemoved,
+		RoleMembershipsRemoved: diff.RoleMembershipsAdded,
+		GrantsAdded:            diff.GrantsRemoved,       // Grants to remove become grants to add
+		GrantsRemoved:          diff.GrantsAdded,         // Grants to add become grants to revoke
+		GrantOptionsAdded:      diff.GrantOptionsRevoked, // Revoked grant options become grant-option additions
+		GrantOptionsRevoked:    diff.GrantOptionsAdded,   // Grant-option additions become grant-option revocations
 
 		// A default privilege reverses like a grant: both directions are
 		// statements the server accepts, and each entry carries its whole
@@ -367,9 +371,10 @@ func reverseSchemaDiffWithSchemaForDialect(
 	// A rollback runs against the same database, whose read declined the same
 	// settings.
 	reversed.CurrentNotDescribed = diff.CurrentNotDescribed
-	// A rollback runs against the same database, so it names the objects YDB
-	// takes by absolute path under the same root.
+	// The same database's path and grants: a rollback names an object by the
+	// same absolute path, and a table it rebuilds held the same grants.
 	reversed.CurrentDatabasePath = diff.CurrentDatabasePath
+	reversed.CurrentGrants = diff.CurrentGrants
 	return reversed
 }
 

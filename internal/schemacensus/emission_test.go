@@ -118,7 +118,9 @@ func TestMeasureEmissions_TheGuardsBlindSpotsAreWrittenDown(t *testing.T) {
 		// A rule about objects nobody has created yet. It creates none itself,
 		// so the guard has no name to count.
 		"ALTER DEFAULT PRIVILEGES",
-		// Alterations of an object something else created.
+		// Alterations of an object something else created: a member added
+		// to a YDB group, a sequence, a table.
+		"ALTER GROUP `READERS`",
 		"ALTER SEQUENCE \"PUBLIC\".\"ORDER_SEQ\"",
 		"ALTER TABLE \"B\"",
 		"ALTER TABLE \"T\"",
@@ -147,6 +149,7 @@ func TestMeasureEmissions_TheGuardsBlindSpotsAreWrittenDown(t *testing.T) {
 		"END",
 		// SQL Server's spelling of a comment.
 		"EXEC SP_ADDEXTENDEDPROPERTY @NAME",
+		"GRANT 'YDB.DATABASE.CONNECT' ON",
 		"GRANT EXECUTE ON",
 		"GRANT SELECT ON",
 		"GRANT UPDATE (\"LABEL\")",

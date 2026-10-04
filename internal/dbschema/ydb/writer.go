@@ -453,7 +453,8 @@ type grpcScheme struct {
 }
 
 func (s grpcScheme) ListDirectory(ctx context.Context, absolute string) ([]*Ydb_Scheme.Entry, error) {
-	return (&grpcSource{scheme: s.client}).ListDirectory(ctx, absolute)
+	_, children, err := (&grpcSource{scheme: s.client}).ListDirectory(ctx, absolute)
+	return children, err
 }
 
 func (s grpcScheme) RemoveDirectory(ctx context.Context, absolute string) error {

@@ -1472,13 +1472,29 @@ type SchemaDiff struct {
 	CurrentNotDescribed coverage.Set `json:"-"`
 
 	// CurrentDatabasePath is the DatabasePath of the catalog read this plan
-	// runs against, carried once for the whole diff and off the wire:
-	// the absolute path a YDB plan names a Serial column's sequence under,
-	// since ALTER SEQUENCE takes no other form. Empty where the current side
-	// came from no live read, and a plan that would need it refuses instead.
+	// runs against, carried once for the whole diff and off the wire: the
+	// absolute path a YDB plan names an object by where a statement takes no
+	// other form -- a Serial column's sequence in ALTER SEQUENCE, the database
+	// itself in GRANT on every line, and an object at the database root in
+	// GRANT on a line without relative_grant_paths. Empty where the current
+	// side came from no live read, and a plan that would need it refuses
+	// instead.
 	//
 	// A reversal runs against the same database and carries the same path.
 	CurrentDatabasePath string `json:"-"`
+
+	// CurrentGrants is YDB's: every privilege the read of the database this
+	// plan runs against reported, carried once for the whole diff and off the
+	// wire. Only the YDB planner reads it.
+	//
+	// A comparison plans only the grants that differ, so no entry above
+	// carries the ones that agree. A plan that recreates a table needs them,
+	// though: on YDB the table's permissions live in the table's own access
+	// list, which the rebuild drops with the old table, and the new one has
+	// none. This is how a planner gives them back.
+	//
+	// A reversal runs against the same database and carries the same grants.
+	CurrentGrants []GrantRef `json:"-"`
 
 	// RLSEnabledTablesAdded is the tables that need RLS enabled, each carried
 	// as its declaration; see [RLSEnabledTableChanges].
@@ -1512,6 +1528,18 @@ type SchemaDiff struct {
 	// RolesModified contains detailed information about roles that exist in both
 	// schemas but have different definitions (attributes, passwords, etc.)
 	RolesModified []RoleDiff `json:"roles_modified"`
+
+	// RoleMembershipsAdded is every membership of a role in another the
+	// target schema declares and the current database does not hold. Only a
+	// target with capability.RoleMembership fills it, which is YDB alone
+	// today.
+	RoleMembershipsAdded []RoleMembershipRef `json:"role_memberships_added,omitempty"`
+
+	// RoleMembershipsRemoved is every membership the current database holds
+	// between two roles the target schema declares, and the schema does not.
+	// A membership in a role the schema does not declare is left alone; see
+	// [RoleMembershipRef].
+	RoleMembershipsRemoved []RoleMembershipRef `json:"role_memberships_removed,omitempty"`
 
 	// GrantsAdded contains PostgreSQL privilege grants that exist in the target
 	// schema but not in the current database schema.
@@ -1992,6 +2020,8 @@ func (d *SchemaDiff) hasRoleChanges() bool {
 	return len(d.RolesAdded) > 0 ||
 		len(d.RolesRemoved) > 0 ||
 		len(d.RolesModified) > 0 ||
+		len(d.RoleMembershipsAdded) > 0 ||
+		len(d.RoleMembershipsRemoved) > 0 ||
 		len(d.GrantsAdded) > 0 ||
 		len(d.GrantsRemoved) > 0 ||
 		len(d.GrantOptionsAdded) > 0 ||
@@ -4006,6 +4036,22 @@ type RLSPolicyConflict struct {
 
 	// Second is the one that resolved to the same identity.
 	Second schemamodel.RLSPolicy
+}
+
+// RoleMembershipRef is one membership of a role in another: Member holds
+// every privilege Role holds. On YDB, Role is a group and Member a user or a
+// group, and the statement is `ALTER GROUP role ADD USER member`.
+//
+// A comparison removes a membership only when the schema declares both roles.
+// A cluster adds every new YDB user to its all-users group, USERS on a default
+// cluster, and removing that membership takes the user's right to connect, so
+// a membership in a group the schema does not declare is added when declared
+// and otherwise left as the server holds it.
+type RoleMembershipRef struct {
+	// Role is the role, on YDB the group, that has the member.
+	Role string `json:"role"`
+	// Member is the role that holds Role's privileges.
+	Member string `json:"member"`
 }
 
 // GrantRef identifies one PostgreSQL privilege grant.

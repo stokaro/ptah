@@ -188,3 +188,26 @@ func RefuseTopics(dialect string, diff *difftypes.SchemaDiff) error {
 			"only a YDB plan creates, drops or changes a topic", subject, capability.Topics, dialect),
 	}
 }
+
+// RefuseRoleMemberships refuses a diff that adds or removes the membership of
+// a role in another, for a planner of dialect that plans none. The comparison
+// records memberships only on a target with capability.RoleMembership, which
+// only YDB has, so another planner reaches one only through a diff built by
+// hand, and planning nothing would leave the member holding what it held and
+// report the two sides equal.
+func RefuseRoleMemberships(dialect string, diff *difftypes.SchemaDiff) error {
+	switch {
+	case diff == nil:
+		return nil
+	case len(diff.RoleMembershipsAdded) > 0:
+		membership := diff.RoleMembershipsAdded[0]
+		return fmt.Errorf("%w: the diff makes %q a member of %q, and the %s planner plans no role membership",
+			ptaherr.ErrUnsupportedFeature, membership.Member, membership.Role, dialect)
+	case len(diff.RoleMembershipsRemoved) > 0:
+		membership := diff.RoleMembershipsRemoved[0]
+		return fmt.Errorf("%w: the diff takes %q out of %q, and the %s planner plans no role membership",
+			ptaherr.ErrUnsupportedFeature, membership.Member, membership.Role, dialect)
+	default:
+		return nil
+	}
+}

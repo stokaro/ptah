@@ -10,6 +10,10 @@ import (
 	"ptah.run/internal/ydbgap"
 )
 
+// defaultPrivilegeReason is why YDB refuses a default privilege.
+const defaultPrivilegeReason = "YDB has no default privileges; a permission granted on a directory " +
+	"is inherited by every object created in it"
+
 // VisitNode renders node, or reports why YDB cannot hold it.
 //
 // The switch is this renderer's whole decision table: every concrete node kind
@@ -113,22 +117,29 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.AlterSerialSequenceNode:
 		return r.renderAlterSerialSequence(n)
 
-	// Users, groups and permissions are YDB's own access model, a family of
-	// its own in a later phase.
+	// Users, groups, memberships and permissions: YDB's own access model.
+	// Default privileges do not exist, because a permission on a directory
+	// is inherited by what is created in it.
 	case *ast.CreateRoleNode:
-		return refuseGap(ydbgap.AccessControl, "role "+n.Name)
+		return r.renderCreateRole(n)
 	case *ast.AlterRoleNode:
-		return refuseGap(ydbgap.AccessControl, "ALTER ROLE "+n.Name)
+		return r.renderAlterRole(n)
 	case *ast.DropRoleNode:
-		return refuseGap(ydbgap.AccessControl, "DROP ROLE "+n.Name)
+		return r.renderDropRole(n)
+	case *ast.GrantRoleMembershipNode:
+		return r.renderRoleMembership(n.Role, n.Member, n.Comment, "ADD USER",
+			fmt.Sprintf("adding %s to group %s", n.Member, n.Role))
+	case *ast.RevokeRoleMembershipNode:
+		return r.renderRoleMembership(n.Role, n.Member, n.Comment, "DROP USER",
+			fmt.Sprintf("dropping %s from group %s", n.Member, n.Role))
 	case *ast.GrantPrivilegeNode:
-		return refuseGap(ydbgap.AccessControl, "GRANT on "+n.ObjectName)
+		return r.renderGrantPrivilege(n)
 	case *ast.RevokePrivilegeNode:
-		return refuseGap(ydbgap.AccessControl, "REVOKE on "+n.ObjectName)
+		return r.renderRevokePrivilege(n)
 	case *ast.DefaultPrivilegeNode:
-		return refuseGap(ydbgap.AccessControl, "default privileges")
+		return refuseFact("default privileges for "+n.Grantor, defaultPrivilegeReason)
 	case *ast.RevokeDefaultPrivilegeNode:
-		return refuseGap(ydbgap.AccessControl, "revoked default privileges")
+		return refuseFact("revoked default privileges for "+n.Grantor, defaultPrivilegeReason)
 
 	// Row-level security does not exist.
 	case *ast.CreatePolicyNode:

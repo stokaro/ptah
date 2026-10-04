@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 
 	"ptah.run/core/platform"
@@ -62,8 +63,11 @@ type session struct {
 	// where the namespace is session state the enter statements set once.
 	prefix string
 	// roles are cluster-scoped objects the probe created; dropping the
-	// namespace does not remove them.
+	// namespace does not remove them. On YDB they are groups.
 	roles []string
+	// users are the YDB users the probe created, which DROP GROUP does not
+	// reach.
+	users []string
 	// rowPolicies are the same kind of leftover on ClickHouse. Measured on
 	// 26.7.3.19: dropping the database a policy names leaves the policy behind
 	// in system.row_policies, so a run that forgot them would make the next one
@@ -561,9 +565,11 @@ func (s *session) dropRole(ctx context.Context, role string) []Attempt {
 		return []Attempt{s.exec(ctx, "DROP ROLE "+role)}
 	case platform.YDB:
 		// The YDB role is a group, and a group owns nothing a drop would
-		// have to reassign: the grant it holds sits on a table in the
-		// namespace, which leaves with the directory.
-		return []Attempt{s.exec(ctx, "DROP GROUP IF EXISTS "+role)}
+		// have to reassign. Its grants on the namespace leave with the
+		// directory; the one on the database does not, and DROP GROUP
+		// leaves it behind (measured on 25.1.4.7 and 26.2.1.14), so it is
+		// revoked first.
+		return []Attempt{s.revokeOnDatabase(ctx, role), s.exec(ctx, "DROP GROUP IF EXISTS "+role)}
 	}
 	return []Attempt{
 		s.exec(ctx, "DROP OWNED BY "+role),
@@ -579,10 +585,20 @@ func (s *session) dropRoles(ctx context.Context) []Attempt {
 	for _, statement := range s.rowPolicies {
 		attempts = append(attempts, s.exec(ctx, statement))
 	}
+	for _, user := range s.users {
+		attempts = append(attempts, s.revokeOnDatabase(ctx, user), s.exec(ctx, "DROP USER IF EXISTS "+user))
+	}
 	for _, role := range s.roles {
 		attempts = append(attempts, s.dropRole(ctx, role)...)
 	}
 	return attempts
+}
+
+// revokeOnDatabase takes every permission principal holds on the YDB database
+// itself. Revoking what a principal does not hold succeeds, so it runs whether
+// or not a grant was made.
+func (s *session) revokeOnDatabase(ctx context.Context, principal string) Attempt {
+	return s.exec(ctx, "REVOKE ALL ON "+sqlident.Quote(platform.YDB, s.database)+" FROM "+principal)
 }
 
 // leave removes the throwaway namespace: the statement namespaceSQL returned,
@@ -638,15 +654,21 @@ func (s *session) leftovers(ctx context.Context, removal []Attempt) ([]Attempt, 
 	case tables > 0:
 		remaining = append(remaining, fmt.Sprintf("%d table(s) under %s", tables, directory))
 	}
-	for _, group := range s.roles {
-		groups, read := s.query(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE Sid = %s",
-			ydbSystemView(s.database, "auth_groups"), ydbString(group)))
-		reads = append(reads, read)
-		switch {
-		case !read.Accepted:
-			remaining = append(remaining, "group "+group+", which the server would not look up")
-		case groups > 0:
-			remaining = append(remaining, "group "+group)
+	for _, principal := range slices.Concat(s.roles, s.users) {
+		for _, view := range []struct{ name, what string }{
+			{"auth_groups", "group " + principal},
+			{"auth_users", "user " + principal},
+			{"auth_permissions", "the permissions of " + principal},
+		} {
+			found, read := s.query(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE Sid = %s",
+				ydbSystemView(s.database, view.name), ydbString(principal)))
+			reads = append(reads, read)
+			switch {
+			case !read.Accepted:
+				remaining = append(remaining, view.what+", which the server would not look up")
+			case found > 0:
+				remaining = append(remaining, view.what)
+			}
 		}
 	}
 	return reads, remaining

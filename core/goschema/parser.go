@@ -2077,6 +2077,8 @@ func (s *schemaParseState) parseRoleComment(comment *ast.Comment, structName str
 		Inherit:     kv["inherit"] != "false", // Default to true unless explicitly set to false
 		Replication: kv["replication"] == "true",
 		Comment:     kv["comment"],
+		Group:       kv["group"] == "true",
+		MemberOf:    splitCommaList(kv["member_of"]),
 		Dialects:    scope,
 	})
 	return nil
@@ -2103,6 +2105,7 @@ func (s *schemaParseState) parseGrantComment(comment *ast.Comment, structName st
 		OnTable:    kv["on_table"],
 		OnSchema:   kv["on_schema"],
 		OnSequence: kv["on_sequence"],
+		OnDatabase: kv["on_database"] == "true",
 		WithOption: kv["with_option"] == "true" || kv["grant_option"] == "true",
 		Comment:    kv["comment"],
 		Dialects:   scope,
@@ -2155,6 +2158,7 @@ func (s *schemaParseState) parseRevokeComment(comment *ast.Comment, structName s
 		OnTable:    kv["on_table"],
 		OnSchema:   kv["on_schema"],
 		OnSequence: kv["on_sequence"],
+		OnDatabase: kv["on_database"] == "true",
 		Comment:    kv["comment"],
 		Dialects:   scope,
 	}

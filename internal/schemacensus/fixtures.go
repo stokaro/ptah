@@ -115,6 +115,8 @@ func Fixtures() []Fixture {
 		{Name: "topic", Schema: topicFixture()},
 		{Name: "extended-property", Schema: extendedPropertyFixture()},
 		{Name: "role", Schema: roleFixture()},
+		{Name: "ydb-group-membership", Schema: ydbGroupMembershipFixture()},
+		{Name: "ydb-grant-database", Schema: ydbGrantDatabaseFixture()},
 		{Name: "grant-table", Schema: grantTableFixture()},
 		{Name: "grant-schema", Schema: grantSchemaFixture()},
 		{Name: "grant-sequence", Schema: grantSequenceFixture()},
@@ -1354,6 +1356,30 @@ func roleFixture() schemamodel.Database {
 		StructName: "RO", Name: "app_reader", Login: true, Password: "s3cret",
 		Superuser: true, CreateDB: true, CreateRole: true, Inherit: true, Replication: true,
 		Comment: "reader", Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
+	}}
+	return db
+}
+
+// ydbGroupMembershipFixture declares a YDB group and a user that is a member
+// of it, which only a target with groups and memberships renders.
+func ydbGroupMembershipFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Roles = []schemamodel.Role{
+		{StructName: "RO", Name: "readers", Group: true, Inherit: true, Dialects: []string{"ydb"}},
+		{StructName: "RO", Name: "app", Login: true, Inherit: true, MemberOf: []string{"readers"}, Dialects: []string{"ydb"}},
+	}
+	return db
+}
+
+// ydbGrantDatabaseFixture grants a permission on the database itself, which a
+// YDB render names by the path of the database a read was made from, and
+// refuses without one.
+func ydbGrantDatabaseFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.DatabasePath = "/local"
+	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app", Login: true, Inherit: true, Dialects: []string{"ydb"}}}
+	db.Grants = []schemamodel.Grant{{
+		StructName: "G", Role: "app", Privileges: []string{"CONNECT"}, OnDatabase: true, Dialects: []string{"ydb"},
 	}}
 	return db
 }

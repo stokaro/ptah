@@ -277,6 +277,13 @@ func RoleDefinitions(desired schemamodel.Role, database catalog.Role) difftypes.
 		roleDiff.Changes["replication"] = fmt.Sprintf("%t -> %t", database.Replication, desired.Replication)
 	}
 
+	// Compare the kind: on YDB a user and a group are two kinds of principal,
+	// and no statement turns one into the other. Every other reader reports
+	// false, and a declared group is refused before a comparison there.
+	if desired.Group != database.Group {
+		roleDiff.Changes["group"] = fmt.Sprintf("%t -> %t", database.Group, desired.Group)
+	}
+
 	return roleDiff
 }
 

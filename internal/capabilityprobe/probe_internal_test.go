@@ -130,7 +130,12 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 		want: []capability.Capability{
 			capability.CatalogVectorInfo,
 			capability.ContinuousAggregates,
+			// DatabaseGrants, GroupPrincipals, RelativeGrantPaths and
+			// RoleMembership name what Ptah's planner plans, which only the
+			// YDB planner does, as IndexRename below does.
+			capability.DatabaseGrants,
 			capability.DDLInsideTransaction,
+			capability.GroupPrincipals,
 			// Hypertables is the second, and its reason is about the EXTENSION
 			// rather than the probe: every PostgreSQL image on this ladder
 			// refuses create_hypertable because TimescaleDB is not installed,
@@ -142,6 +147,8 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.IndexRename,
 			capability.MigrationLockTimeout,
 			capability.MigrationStatementTimeout,
+			capability.RelativeGrantPaths,
+			capability.RoleMembership,
 			// The key names YDB's unit clause, which no engine of this
 			// family has a spelling of.
 			capability.RowDeletionPolicyEpochColumn,
@@ -169,11 +176,13 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.CatalogVectorInfo,
 			capability.CompositeTypes,
 			capability.ContinuousAggregates,
+			capability.DatabaseGrants,
 			capability.DDLInsideTransaction,
 			capability.DomainComments,
 			capability.DomainTypes,
 			capability.ExtensionComments,
 			capability.FunctionComments,
+			capability.GroupPrincipals,
 			capability.Hypertables,
 			capability.IndexRename,
 			capability.MaterializedViewComments,
@@ -184,7 +193,9 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.PostgresCatalogFunctions,
 			capability.ProcedureComments,
 			capability.RangeTypes,
+			capability.RelativeGrantPaths,
 			capability.RoleManagement,
+			capability.RoleMembership,
 			capability.RowDeletionPolicy,
 			capability.RowDeletionPolicyEpochColumn,
 			capability.RowLevelTTL,
@@ -211,11 +222,13 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.CatalogVectorInfo,
 			capability.CompositeTypes,
 			capability.ContinuousAggregates,
+			capability.DatabaseGrants,
 			capability.DDLInsideTransaction,
 			capability.DomainComments,
 			capability.DomainTypes,
 			capability.ExtensionComments,
 			capability.FunctionComments,
+			capability.GroupPrincipals,
 			capability.Hypertables,
 			capability.IndexRename,
 			capability.MaterializedViewComments,
@@ -226,7 +239,9 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.PostgresCatalogFunctions,
 			capability.ProcedureComments,
 			capability.RangeTypes,
+			capability.RelativeGrantPaths,
 			capability.RoleManagement,
+			capability.RoleMembership,
 			capability.RowDeletionPolicy,
 			capability.RowDeletionPolicyEpochColumn,
 			capability.RowLevelTTL,
@@ -256,11 +271,13 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.CatalogVectorInfo,
 			capability.CompositeTypes,
 			capability.ContinuousAggregates,
+			capability.DatabaseGrants,
 			capability.DDLInsideTransaction,
 			capability.DomainComments,
 			capability.DomainTypes,
 			capability.ExtensionComments,
 			capability.FunctionComments,
+			capability.GroupPrincipals,
 			capability.Hypertables,
 			capability.IndexRename,
 			capability.MaterializedViewComments,
@@ -271,6 +288,8 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.ProcedureComments,
 			capability.Procedures,
 			capability.RangeTypes,
+			capability.RelativeGrantPaths,
+			capability.RoleMembership,
 			capability.RowDeletionPolicy,
 			capability.RowDeletionPolicyEpochColumn,
 			capability.SchemaComments,
@@ -402,9 +421,8 @@ func TestUninspectableIndexIncludeSPGiSTObservation(t *testing.T) {
 }
 
 // TestDecidable_IsDerivedFromThePlanAndTheLine pins the floor's derivation
-// against the current registry, plan and preset prerequisites: postgres:17
-// owes 25 decisions, mysql:9.7 owes 24, mariadb:10.11 owes 23, and CockroachDB
-// 25.4 owes 24 because generic DROP CONSTRAINT is absent there.
+// against the current registry, plan and preset prerequisites, each row
+// naming what its plan declares undecidable and what its preset lacks.
 func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 	registered := len(capability.All())
 	for _, tc := range []struct {
@@ -413,37 +431,37 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps capability.Capabilities
 		want int
 	}{{
-		name: "postgres owes twelve fewer: the probe cannot ask whether a privilege exists, none of the three runtime policies nor the transaction wrapper is a statement it can send, TimescaleDB — hypertables and continuous aggregates both — is an extension none of these images has, the Oracle vector catalog column is not a relation it carries, index_rename and the two serial sequence keys name what Ptah's planner plans rather than what the server does, and no engine of the family has a spelling of a TTL unit",
+		name: "postgres owes sixteen fewer: the probe cannot ask whether a privilege exists, none of the three runtime policies nor the transaction wrapper is a statement it can send, TimescaleDB — hypertables and continuous aggregates both — is an extension none of these images has, the Oracle vector catalog column is not a relation it carries, index_rename, the two serial sequence keys and the four access keys only YDB plans name what Ptah's planner plans rather than what the server does, and no engine of the family has a spelling of a TTL unit",
 		cell: measuredCell,
 		caps: capability.Postgres17(),
-		want: registered - 12,
+		want: registered - 16,
 	}, {
-		name: "mysql owes thirty-eight fewer: role_management, row_level_ttl, row_deletion_policy and its epoch column, named_not_null_constraints, schema_comments, index_rename, the two serial sequence keys, the ten object-comment keys, the two TimescaleDB keys, the seven catalog keys, the three user-type kinds, the four runtime properties and the sequence grammar restriction name surfaces no MySQL path reads or no statement decides",
+		name: "mysql owes forty-two fewer: role_management, row_level_ttl, row_deletion_policy and its epoch column, named_not_null_constraints, schema_comments, index_rename, the two serial sequence keys, the four access keys only YDB plans, the ten object-comment keys, the two TimescaleDB keys, the seven catalog keys, the three user-type kinds, the four runtime properties and the sequence grammar restriction name surfaces no MySQL path reads or no statement decides",
 		cell: Cell{
 			Dialect: platform.MySQL, Line: "9.7",
 			Preset: capability.MySQL84, PresetName: "MySQL84",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MySQL84(),
-		want: registered - 38,
+		want: registered - 42,
 	}, {
-		name: "mariadb owes thirty-eight fewer: COMMENT ON SCHEMA and the ten object-comment forms are not statements it has, the three user-type kinds have no MariaDB spelling, the four runtime properties are not statements, neither pg_class nor pg_default_acl nor pg_get_triggerdef nor the Oracle vector catalog column is something it has, the sequence grammar restriction has no control statement here, row_deletion_policy and its epoch column are Spanner and YDB clauses it has no spelling of, named_not_null_constraints is a PostgreSQL 18 catalog behavior, index_rename and the two serial sequence keys name what Ptah's planner plans, and sequences is asked now that Ptah renders, reads and plans one",
+		name: "mariadb owes forty-two fewer: COMMENT ON SCHEMA and the ten object-comment forms are not statements it has, the three user-type kinds have no MariaDB spelling, the four runtime properties are not statements, neither pg_class nor pg_default_acl nor pg_get_triggerdef nor the Oracle vector catalog column is something it has, the sequence grammar restriction has no control statement here, row_deletion_policy and its epoch column are Spanner and YDB clauses it has no spelling of, named_not_null_constraints is a PostgreSQL 18 catalog behavior, index_rename, the two serial sequence keys and the four access keys only YDB plans name what Ptah's planner plans, and sequences is asked now that Ptah renders, reads and plans one",
 		cell: Cell{
 			Dialect: platform.MariaDB, Line: "10.11",
 			Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MariaDB1011(),
-		want: registered - 38,
+		want: registered - 42,
 	}, {
-		name: "cockroachdb 26.2 owes every row its preset enables a prerequisite for, less the twelve its plan declares undecidable and the domain comment row, whose domain prerequisite is absent",
+		name: "cockroachdb 26.2 owes every row its preset enables a prerequisite for, less the sixteen its plan declares undecidable and the domain comment row, whose domain prerequisite is absent",
 		cell: Cell{
 			Dialect: platform.CockroachDB, Line: "26.2",
 			Preset: capability.CockroachDB26, PresetName: "CockroachDB26",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.CockroachDB26(),
-		want: registered - 13,
+		want: registered - 17,
 	}, {
 		name: "cockroachdb 25.4 excludes the guarded drop row and the domain comment row, whose prerequisites are absent",
 		cell: Cell{
@@ -452,7 +470,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.CockroachDB25(),
-		want: registered - 14,
+		want: registered - 18,
 	}, {
 		name: "ydb 26.2 owes every row but the eight it declares and the seven whose prerequisite the preset lacks: " +
 			"guarded DROP CONSTRAINT, CREATE OR REPLACE TRIGGER, SET EXPRESSION, the three reference policies " +
@@ -1421,4 +1439,31 @@ func TestReportErr_ConnectionRefinement_FailurePath(t *testing.T) {
 	c.Assert(report.Err(), qt.ErrorMatches, `wide_date_time_types: the cluster's feature flags make it false `+
 		`where preset YDB262 says true; the rows compared the server with the flags' set, so this run `+
 		`measured nothing about the YDB262 preset for that key`)
+}
+
+// TestReadBack_AnswersFromTheStatementAndTheRead pins how a YDB access key is
+// answered: a statement the server refused is false and names the statement,
+// one the reader did not report is false and names what it missed, and one it
+// reported is true. The refusal and the missing read both read false, so only
+// the note tells an operator which of the two happened.
+func TestReadBack_AnswersFromTheStatementAndTheRead(t *testing.T) {
+	tests := []struct {
+		name string
+		back readBack
+		want observation
+	}{
+		{name: "refused", back: readBack{statement: "GRANT x", what: "the grant"},
+			want: observation{note: `the server refused "GRANT x"`}},
+		{name: "not read back", back: readBack{accepted: true, statement: "GRANT x", what: "the grant"},
+			want: observation{note: "Ptah's YDB reader does not report the grant"}},
+		{name: "read back", back: readBack{accepted: true, found: true, statement: "GRANT x", what: "the grant"},
+			want: observation{does: true}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(test.back.observation(), qt.Equals, test.want)
+		})
+	}
 }

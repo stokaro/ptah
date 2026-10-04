@@ -737,7 +737,6 @@ var Cells = []Cell{
 		Preset: capability.YDB262, PresetName: "YDB262",
 		Refinement: RefinedByVersion, Support: capability.Certified,
 		Image: "ydbplatform/local-ydb:26.2", ResolveNewestPatch: true,
-		Understates: ydbUnderstates,
 		Note: ydbProbedNote("26.2.1.14") + " The current YDB release, and the first line that sets and drops " +
 			"a column default in place.",
 	},
@@ -746,17 +745,15 @@ var Cells = []Cell{
 		Preset: capability.YDB261, PresetName: "YDB261",
 		Refinement: RefinedByVersion, Support: capability.BestEffort,
 		Image: "ydbplatform/local-ydb:26.1", ResolveNewestPatch: true,
-		Unprobed:    ydbUnprobed,
-		Understates: ydbUnderstates,
-		Note:        ydbUnprobedNote("26.1.1.22") + " The first line that adds a column with a default to a table holding rows.",
+		Unprobed: ydbUnprobed,
+		Note:     ydbUnprobedNote("26.1.1.22") + " The first line that adds a column with a default to a table holding rows.",
 	},
 	{
 		Dialect: platform.YDB, Line: capabilityline.YDB254,
 		Preset: capability.YDB254, PresetName: "YDB254",
 		Refinement: RefinedByVersion, Support: capability.BestEffort,
 		Image: "ydbplatform/local-ydb:25.4", ResolveNewestPatch: true,
-		Unprobed:    ydbUnprobed,
-		Understates: ydbUnderstates,
+		Unprobed: ydbUnprobed,
 		Note: ydbUnprobedNote("25.4.1.15") + " The first line whose topic consumer takes availability_period, " +
 			"and it reports its version as `stable-25-4-1`.",
 	},
@@ -765,17 +762,15 @@ var Cells = []Cell{
 		Preset: capability.YDB253, PresetName: "YDB253",
 		Refinement: RefinedByVersion, Support: capability.BestEffort,
 		Image: "ydbplatform/local-ydb:25.3", ResolveNewestPatch: true,
-		Unprobed:    ydbUnprobed,
-		Understates: ydbUnderstates,
-		Note:        ydbUnprobedNote("25.3.1.25") + " The first line that takes a literal default on JsonDocument and DyNumber.",
+		Unprobed: ydbUnprobed,
+		Note:     ydbUnprobedNote("25.3.1.25") + " The first line that takes a literal default on JsonDocument and DyNumber.",
 	},
 	{
 		Dialect: platform.YDB, Line: capabilityline.YDB252,
 		Preset: capability.YDB252, PresetName: "YDB252",
 		Refinement: RefinedByVersion, Support: capability.BestEffort,
 		Image: "ydbplatform/local-ydb:25.2", ResolveNewestPatch: true,
-		Unprobed:    ydbUnprobed,
-		Understates: ydbUnderstates,
+		Unprobed: ydbUnprobed,
 		Note: ydbUnprobedNote("25.2.1.24") + " The first line with the 64-bit date and time types and a Decimal " +
 			"of any precision.",
 	},
@@ -784,7 +779,6 @@ var Cells = []Cell{
 		Preset: capability.YDB251, PresetName: "YDB251",
 		Refinement: RefinedByVersion, Support: capability.Certified,
 		Image: "ydbplatform/local-ydb:25.1", ResolveNewestPatch: true,
-		Understates: ydbUnderstates,
 		Note: ydbProbedNote("25.1.4.7") + " The line Yandex Enterprise Database 25.1 is certified on, and the " +
 			"oldest measured: no 64-bit date types, Decimal(22,9) only, and no default on a 16-bit integer.",
 	},
@@ -799,23 +793,13 @@ const ydbUnprobed = "YDB publishes no support period for its open-source lines, 
 // ydbProbedNote opens the note of a YDB cell the probe runs.
 func ydbProbedNote(version string) string {
 	return "probed on every run of the tiered workflows. Measured on " + version + " through this cell's " +
-		"launch recipe: 113 rows, 97 agree, 1 is understated on purpose, 15 are undecidable and none disagrees."
+		"launch recipe: 117 rows, 102 agree, 15 are undecidable and none disagrees."
 }
 
 // ydbUnprobedNote opens the note of a YDB cell the probe skips.
 func ydbUnprobedNote(version string) string {
 	return "best-effort: the preset was measured by hand on " + version + ", and the probe agreed on one run " +
 		"through this cell's launch recipe (80 of 80 promised rows decided, none disagreeing); no job runs it."
-}
-
-// ydbUnderstates are the keys every YDB preset claims less than the server
-// does, on purpose. YDB has each object, the probe creates one and uses it,
-// and the key stays false because a key names what Ptah renders, reads and
-// plans: until the YDB object family lands, Ptah refuses the declaration
-// rather than emitting a statement its reader would never see again.
-var ydbUnderstates = map[capability.Capability]string{
-	capability.RoleManagement: "YDB creates a group and stores a GRANT; Ptah does not read or plan YDB's " +
-		"access model, which is open work in stokaro/ptah#4015",
 }
 
 // PresetsWithoutCell names every capability preset Ptah ships that no cell

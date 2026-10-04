@@ -1,6 +1,6 @@
 ---
 title: YDB
-description: YDB in Ptah - connecting with ydb:// URLs, what renders and plans for row tables and views, type mappings, keys, defaults and indexes, what each release line can do, linting YQL, seeds, declared rows and the query builder, and what is not supported yet.
+description: YDB in Ptah - connecting with ydb:// URLs, what renders and plans for row tables and views, type mappings, keys, defaults and indexes, users, groups and permissions, what each release line can do, linting YQL, seeds, declared rows and the query builder, and what is not supported yet.
 type: reference
 audience:
   - "database-engineer"
@@ -21,7 +21,8 @@ owns:
   - dialect-ydb
 ---
 
-Ptah renders YQL for YDB row tables, views and topics, plans a migration between two schemas,
+Ptah renders YQL for YDB row tables, views, topics and the users, groups and
+permissions of a database, plans a migration between two schemas,
 connects to a live database, reads its tables back, applies DDL to it, runs
 versioned migrations against it, lints YQL for it, and writes data to it:
 seeds, declared rows and the statements the query builder renders. The
@@ -352,8 +353,69 @@ comment on a view waits for comment support.
 
 YDB records no dependency on a view. It drops a table or a view that another
 view reads, and the reading view fails from then on. A plan drops views before
-anything else and creates them last, and lint rule `YD106` reports a migration
-that drops a table a view still reads.
+anything else and creates them after every table change, and lint rule `YD106`
+reports a migration that drops a table a view still reads.
+
+## Users, groups and permissions
+
+A role is a YDB user, and a role declared with `group="true"` is a group.
+`member_of` names the groups a user or a group joins. A grant is on the
+database (`on_database="true"`), a directory (`on_schema`) or a table
+(`on_table`), and names YDB permissions, by name or as `GRANT` spells them:
+
+```go
+//ptah:schema:role name="readers" group="true"
+//ptah:schema:role name="app" login="true" password="Secret1!" member_of="readers,DATA-READERS"
+//ptah:schema:grant role="readers" privilege="SELECT ROW,ydb.generic.list" on_table="shop.orders"
+//ptah:schema:grant role="app" privilege="CONNECT" on_database="true"
+type Access struct{}
+```
+
+renders as:
+
+```sql
+CREATE GROUP `readers`;
+CREATE USER `app` PASSWORD 'Secret1!';
+ALTER GROUP `readers` ADD USER `app`;
+ALTER GROUP `DATA-READERS` ADD USER `app`;
+GRANT 'ydb.granular.select_row', 'ydb.generic.list' ON `shop/orders` TO `readers`;
+GRANT 'ydb.database.connect' ON `/local` TO `app`;
+```
+
+A user that does not log in is `CREATE USER ... NOLOGIN`. A password is
+written as declared, under a warning that it sits in the file in plain text;
+a password hash, the JSON object YDB keeps, is written with `HASH` instead.
+The read never asks for a password, so a declared password is set once and
+never compared. A name holds lower-case letters and digits only, as YDB
+requires. `superuser`, `createdb`, `createrole`, `replication` and
+`with_option` are refused: YDB keeps the grant option as the permission
+`ydb.access.grant`, which a grant names instead. YDB has no `PUBLIC` and no
+default privileges; a permission on a directory is inherited by every object
+created in it. A grant on a view is refused, because Ptah does not read a
+view's permissions yet; grant on the view's directory instead.
+
+A grant names its object by a path relative to the database root, so a
+migration applies to a database of another name. A grant on the database
+itself, and on 25.1 to 25.4 a grant on a table or a directory at the database
+root, takes an absolute path, which a plan reads from the database it runs
+against and `ptah schema render` cannot know; such a render is refused.
+
+The read reports every user and group from `.sys/auth_users`, `.sys/auth_groups`
+and `.sys/auth_group_members`, and the permissions and the owner of the
+database, each directory and each table the read covers. A description leaves
+out, while knowing they exist, the principals no migration run there could have
+made: the cluster's own groups, such as `ADMINS` and `DATA-READERS`, whose names
+no declaration could create; the database's owner, such as local-ydb's `root`,
+which exists before any migration runs; and every user and group when the read
+is of a dev realm, which shares them with its database. Reading the users and
+groups needs a connection that may read rows of the database; one that may only
+list it, such as a member of `METADATA-READERS` alone, reads the rest of the
+database and plans no user or group.
+
+A plan removes a membership only when the schema declares both its group and
+its member, so a user keeps the cluster's `USERS` group, which grants the right
+to connect. It grants a rebuilt table the permissions the old table held.
+[Planning changes](#planning-changes) says where each statement goes.
 
 ## TTL
 
@@ -571,26 +633,32 @@ statement needs one that has not run yet:
 
 1. Drop the views the plan removes or replaces, a view before the view it
    reads.
-2. Drop the removed topics, so a table created at a topic's path finds it free.
-3. Create the added tables, with their indexes and changefeeds, each followed
+2. Revoke the permissions and remove the memberships the plan takes away, then
+   create and change users and groups.
+3. Drop the removed topics, so a table created at a topic's path finds it free.
+4. Create the added tables, with their indexes and changefeeds, each followed
    by the `ALTER SEQUENCE` that gives a Serial column its declared start and
    increment.
-4. Drop the indexes the plan removes, before any column they name. YDB refuses
+5. Drop the indexes the plan removes, before any column they name. YDB refuses
    to drop an indexed or a covered column.
-5. Rename the indexes the declaration renames, then change the partitioning of
+6. Rename the indexes the declaration renames, then change the partitioning of
    the indexes that keep their definition.
-6. Per table: add columns, then change columns in place, then set or reset
+7. Per table: add columns, then change columns in place, then set or reset
    the TTL, then drop columns. YDB refuses to drop the column a TTL reads.
-7. Change the start and the increment of the Serial columns of existing tables.
-8. Add the new indexes of existing tables.
-9. Per table: drop changefeeds, then add changefeeds with their consumers, then
-   change topics in place. Drops come first, so a table that swaps one
-   changefeed for another stays within YDB's limit.
-10. Drop the removed tables.
-11. Create the added topics, then change the changed ones, so a topic created
+8. Change the start and the increment of the Serial columns of existing tables.
+9. Add the new indexes of existing tables.
+10. Per table: drop changefeeds, then add changefeeds with their consumers,
+    then change topics in place. Drops come first, so a table that swaps one
+    changefeed for another stays within YDB's limit.
+11. Drop the removed tables.
+12. Create the added topics, then change the changed ones, so a topic created
     at a dropped table's path finds it free.
-12. Create the added and replaced views, a view after the view it reads. YDB
+13. Create the added and replaced views, a view after the view it reads. YDB
     checks a view's query against the schema when it creates the view.
+14. Add memberships and grants, once the tables they name exist.
+15. Drop the removed users and groups, after revoking what they hold:
+    `DROP USER` leaves its permissions behind, and a user created later under
+    the name would hold them.
 
 Each statement runs as its own query. A query of several schema statements is
 not atomic on YDB, and each of its statements compiles against the schema as it
@@ -672,7 +740,7 @@ or `stable-25-4-1`:
 | --- | --- | --- |
 | `YDB262` | 26.2 | — |
 | `YDB261` | 26.1 | `SET DEFAULT` and `DROP DEFAULT` on an existing column |
-| `YDB254` | 25.4 | a column added with a default, a changefeed's `USER_SIDS` |
+| `YDB254` | 25.4 | a column added with a default, a changefeed's `USER_SIDS`, a `GRANT` on a root object by its relative name |
 | `YDB253` | 25.3 | a consumer's `availability_period` |
 | `YDB252` | 25.2 | a `JsonDocument` or `DyNumber` default, `UPDATE ... RETURNING` on a table with a unique index, a changefeed's `SCHEMA_CHANGES` |
 | `YDB251` | 25.1 | the 64-bit date and time types, `Decimal` precision other than 22,9, an `Int16` or `Uint16` default, an auto-partitioned changefeed topic |
@@ -740,8 +808,9 @@ database read every row table under the database root, its columns, defaults,
 `Serial` columns with their sequence's start, increment and last restart,
 primary key, TTL and global indexes, with each index's partitioning and read
 replicas, its changefeeds, each with the retention and the consumers of its
-topic, every view with the query the server stores, and every topic with its
-settings and consumers.
+topic, every view with the query the server stores, every topic with its
+settings and consumers, and the users, groups and permissions; see
+[Users, groups and permissions](#users-groups-and-permissions).
 
 What Ptah does not model yet is recorded rather than dropped:
 column-oriented tables, sequences other than a `Serial` column's, the settings
@@ -789,10 +858,13 @@ Migration lint reports the statements YDB refuses, or runs with an effect the
 statement does not state, under the `YD` family: a unique index added to an
 existing table, a block that mixes schema and data statements, an `ADD COLUMN`
 the line refuses, a dropped column an index or the TTL uses, a partitioning
-change that resets the minimum partition count, a table a view reads that
-is dropped or renamed, a renamed table that carries a changefeed, a topic
-setting reset that changes nothing, and a topic setting YDB keeps as nothing.
-`DS107` reports a `DROP TOPIC`.
+change that resets the minimum partition count, a table a view reads that is
+dropped or renamed, a renamed table that carries a changefeed,
+a `REVOKE GRANT OPTION FOR`, which takes the permission too, a dropped user
+or group, which leaves its permissions behind, a topic setting reset that
+changes nothing, and a topic setting YDB keeps as nothing. `DS107` reports a
+dropped user or group as it reports a dropped role elsewhere, and a dropped
+topic.
 [Lint rules](../../reference/lint-rules/#ydb) lists each rule with its
 meaning.
 
@@ -1060,8 +1132,13 @@ for the path `shop/items`, so a view over a view links to the view it reads,
 and a double-quoted text is a YQL string, which feeds no column. YDB has no
 routines, so a directory without views has nothing to trace.
 
-`ptah schema security --db-url ydb://...` is refused: the analysis reads the
-access model, and Ptah does not read YDB users, groups and permissions yet.
+`ptah schema security --db-url ydb://...` analyzes the users, groups,
+memberships, permissions and owners the reader reports: a group nobody is a
+member of, two groups held by one member that grant nearly the same
+permissions, and an object owned by a user who logs in. `--schemas` names the
+directories whose permissions it reads. A connection that may not read the
+users and groups is refused, naming what it needs, rather than reported as a
+clean access model.
 
 `ptah viz --dialect ydb` draws a declared schema with its YDB types. With
 `--security`, the rules run under the capabilities of the line
@@ -1089,7 +1166,6 @@ These are refused with a message that names what is missing:
 <!-- BEGIN GENERATED YDB GAPS -->
 - a YQL file as the desired schema (Go structs and YAML schemas work);
 - comments on tables, columns and indexes;
-- users, groups and permissions;
 - a table's own settings: partitioning and column families;
 - vector, full-text, JSON and column-table indexes;
 - `ptah inference` and the inference tools of `ptah mcp`, which wait for the vector index family.

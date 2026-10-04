@@ -11,9 +11,10 @@
 //
 // The renderer, the planner, the connection, the schema reader, the schema
 // writer, the versioned migrator, both linters, the query builder, the data
-// layer -- the data diff, declared rows and seeds -- and the dev databases
-// exist. The object families they do not carry yet -- comments, access
-// control, table settings, the index kinds beyond global ones -- are layers
+// layer -- the data diff, declared rows and seeds -- the dev databases, views,
+// a table's TTL and the access model -- users, groups, memberships and
+// permissions -- exist. The object families they do not carry yet -- comments,
+// the other table settings, the index kinds beyond global ones -- are layers
 // here too, because a declaration of one reaches the renderer by name, and a
 // database holding one reaches the reader, and each has to be refused there
 // rather than handled as something else. So are the commands that connect and
@@ -43,8 +44,6 @@ const (
 	// no COMMENT statement; the comments family stores them as table
 	// attributes through the scheme API.
 	Comments
-	// AccessControl is users, groups, membership and permissions.
-	AccessControl
 	// TableSettings is a table's YDB settings beyond its TTL, which is its
 	// row deletion policy, and its changefeeds: partitioning and column
 	// families.
@@ -79,8 +78,6 @@ func (l Layer) work() string {
 		return "reading a YDB schema file"
 	case Comments:
 		return "storing a comment on a YDB object"
-	case AccessControl:
-		return "managing YDB users, groups and permissions"
 	case TableSettings:
 		return "setting YDB table options (partitioning, column families)"
 	case IndexFamilies:
@@ -96,7 +93,7 @@ func (l Layer) work() string {
 // that names no layer.
 func (l Layer) Phase() int {
 	switch l {
-	case SchemaFiles, Comments, AccessControl, TableSettings, IndexFamilies:
+	case SchemaFiles, Comments, TableSettings, IndexFamilies:
 		return 10
 	case Inference:
 		return 12
@@ -120,8 +117,6 @@ func (l Layer) Unsupported() string {
 		return "a YQL file as the desired schema (Go structs and YAML schemas work)"
 	case Comments:
 		return "comments on tables, columns and indexes"
-	case AccessControl:
-		return "users, groups and permissions"
 	case TableSettings:
 		return "a table's own settings: partitioning and column families"
 	case IndexFamilies:

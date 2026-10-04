@@ -100,3 +100,12 @@ func TestYDBRules_SayWhatATopicStatementKeeps(t *testing.T) {
 		})
 	}
 }
+
+// DS107 reports DROP TOPIC on YDB, as it reports DROP USER and DROP GROUP:
+// the topic goes with every message it holds and every consumer's position in
+// it.
+func TestYDBRules_DS107ReportsADroppedTopic(t *testing.T) {
+	c := qt.New(t)
+	sites := ydbLint(c, map[string]string{"0001_t.up.sql": "DROP TOPIC `shop/events`;\n"}, "")
+	c.Assert(sites, qt.Contains, "0001_t.up.sql:1:DS107")
+}

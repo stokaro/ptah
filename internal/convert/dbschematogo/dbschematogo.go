@@ -12,6 +12,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/catalogfield"
@@ -69,7 +70,8 @@ func ConvertDBSchemaToGoSchema(dbSchema *catalog.Database, dialect string) *sche
 	convertSynonyms(database, dbSchema.Synonyms)
 	convertTopics(database, dbSchema.Topics)
 	convertExtendedProperties(database, dbSchema.ExtendedProperties)
-	convertRoles(database, dbSchema.Roles)
+	convertRoles(database, dbSchema.Roles, membershipsFor(dbSchema.RoleMemberships, dialect))
+	database.DatabasePath = dbSchema.DatabasePath
 	database.Grants = convertGrants(dbSchema.Grants, replayedColumnSequences(dbSchema.Tables))
 	database.RevokedGrants = revokedPublicExecute(dbSchema.Grants)
 	database.DefaultPrivileges = convertDefaultPrivileges(dbSchema.DefaultPrivileges)
@@ -670,7 +672,24 @@ func convertTriggers(database *schemamodel.Database, dbTriggers []catalog.Trigge
 	}
 }
 
-func convertRoles(database *schemamodel.Database, dbRoles []catalog.Role) {
+// membershipsFor is the memberships a description declares: those of a read
+// on a target where a declared membership is planned, and none elsewhere. A
+// PostgreSQL read reports its role graph for analysis, and a description that
+// declared it would be refused by the target it was read from.
+func membershipsFor(memberships []catalog.RoleMembership, dialect string) []catalog.RoleMembership {
+	if !capability.ForDialect(dialect).Has(capability.RoleMembership) {
+		return nil
+	}
+	return memberships
+}
+
+// convertRoles describes the roles of a read, each with the groups it is a
+// member of.
+func convertRoles(database *schemamodel.Database, dbRoles []catalog.Role, memberships []catalog.RoleMembership) {
+	memberOf := make(map[string][]string)
+	for _, membership := range memberships {
+		memberOf[membership.Member] = append(memberOf[membership.Member], membership.Role)
+	}
 	for _, dbRole := range dbRoles {
 		role := schemamodel.Role{
 			StructName:  "", // Roles are not associated with specific structs in DB schema
@@ -683,6 +702,8 @@ func convertRoles(database *schemamodel.Database, dbRoles []catalog.Role) {
 			Inherit:     dbRole.Inherit,
 			Replication: dbRole.Replication,
 			Comment:     dbRole.Comment,
+			Group:       dbRole.Group,
+			MemberOf:    memberOf[dbRole.Name],
 		}
 		database.Roles = append(database.Roles, role)
 	}
@@ -1181,6 +1202,8 @@ func convertGrants(dbGrants []catalog.Grant, replayed map[string]string) []schem
 			GrantedBy:  dbGrant.GrantedBy,
 		}
 		switch {
+		case strings.EqualFold(dbGrant.ObjectType, "DATABASE"):
+			grant.OnDatabase = true
 		case strings.EqualFold(dbGrant.ObjectType, "SCHEMA"):
 			grant.OnSchema = dbGrant.ObjectName
 		case routineGrantObjectTypes[strings.ToUpper(dbGrant.ObjectType)]:

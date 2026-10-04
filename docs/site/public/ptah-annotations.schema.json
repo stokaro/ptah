@@ -990,6 +990,14 @@
               "type": "string",
               "x-ptah-alias-for": "with_option"
             },
+            "on_database": {
+              "description": "Targets the database itself. YDB only.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            },
             "on_function": {
               "description": "Target function with its argument types, such as purge(uuid). PostgreSQL only.",
               "type": "string"
@@ -1435,6 +1443,14 @@
               "description": "Comma-separated target dialects this object belongs to. Omitted means every dialect; a target the scope excludes leaves the object out of its desired state entirely, so nothing compares or plans it there.",
               "type": "string"
             },
+            "on_database": {
+              "description": "Targets the database itself. YDB only.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            },
             "on_function": {
               "description": "Target function with its argument types, such as purge(uuid). PostgreSQL only.",
               "type": "string"
@@ -1629,6 +1645,14 @@
               "description": "Comma-separated target dialects this object belongs to. Omitted means every dialect; a target the scope excludes leaves the object out of its desired state entirely, so nothing compares or plans it there.",
               "type": "string"
             },
+            "group": {
+              "description": "Declares a group, which never logs in and has members. YDB only.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            },
             "inherit": {
               "description": "Controls role inheritance; defaults to true.",
               "enum": [
@@ -1643,6 +1667,10 @@
                 "true",
                 "false"
               ],
+              "type": "string"
+            },
+            "member_of": {
+              "description": "Comma-separated groups the role is a member of. YDB only.",
               "type": "string"
             },
             "name": {

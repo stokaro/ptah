@@ -46,6 +46,10 @@
 // partitioning from an ALTER INDEX the renderer writes after it, because no
 // statement that creates an index takes the settings.
 //
+// Users, groups, memberships and permissions are planned around these phases:
+// revokes, removed memberships and new or changed principals before them, new
+// memberships and grants after them, and dropped principals last.
+//
 // Each node renders as statements of its own, and the executor runs one per
 // query: YDB compiles a query against the schema as it stood before the query,
 // so a statement that needs another's effect fails when the two share one.
@@ -183,8 +187,14 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 		return nil, err
 	}
 
+	access, err := p.planAccess(diff, removedTables, addedTables, slices.Sorted(maps.Keys(rebuilds)), semantics)
+	if err != nil {
+		return nil, err
+	}
+
 	var result []ast.Node
 	result = append(result, p.dropViews(diff)...)
+	result = append(result, access.before...)
 	result = append(result, dropTopics(diff)...)
 	result = append(result, p.createTables(diff, inlineIndexes, sequences.created, semantics)...)
 	result = append(result, dropIndexes(diff.IndexRemovals(), removedTables, rebuilds, semantics)...)
@@ -203,6 +213,8 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	}
 	result = append(result, changeTopics(diff)...)
 	result = append(result, p.createViews(diff)...)
+	result = append(result, access.after...)
+	result = append(result, access.last...)
 	return result, nil
 }
 

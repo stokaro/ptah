@@ -403,10 +403,11 @@ such as `EXECUTE` on functions from `PUBLIC`.
 
 ## Schema Objects
 
-YAML input supports these schema objects. Extensions, functions, RLS, roles,
-grants, and default privileges are PostgreSQL-specific. Materialized views also
-render on ClickHouse; views and triggers are also rendered for MySQL/MariaDB
-with dialect-specific trigger bodies.
+YAML input supports these schema objects. Extensions, functions, RLS and
+default privileges are PostgreSQL-specific. Roles and grants render on the
+PostgreSQL family, ClickHouse and YDB, where a role is a user or a group.
+Materialized views also render on ClickHouse; views and triggers are also
+rendered for MySQL/MariaDB with dialect-specific trigger bodies.
 
 - `extensions`: `name`, `schema`, `if_not_exists`, `version`, `comment`
 - `functions`: `name`, `params` or `parameters`, `returns`, `language`,
@@ -419,8 +420,10 @@ with dialect-specific trigger bodies.
 - `rls_policies`: `name`, `table`, `for`, `to`, `using`, `with_check`,
   `comment`
 - `roles`: `name`, `login`, `password`, `superuser`, `create_db`,
-  `create_role`, `inherit`, `replication`, `comment`
+  `create_role`, `inherit`, `replication`, `comment`, and on YDB `group` and
+  `member_of`
 - `grants`: `role`, `privilege` or `privileges`, `on_table`, `on_schema`,
+  `on_sequence`, `on_function`, `on_procedure`, `on_database` (YDB),
   `with_option`, `comment`
 - `default_privileges`: `for_role`, `schema`, `object_type`, `grantee`,
   `privileges`, `grantable`, `comment`, `dialects`

@@ -30,14 +30,25 @@ type fakeSource struct {
 	tables      map[string]*Ydb_Table.DescribeTableResult
 	topics      map[string]*Ydb_Topic.DescribeTopicResult
 	views       map[string]*Ydb_View.DescribeViewResult
+	// selves are the directories' own entries, which carry their owner and
+	// permission entries; a directory without one has neither.
+	selves map[string]*Ydb_Scheme.Entry
+	// principals is what .sys/auth_* reports, and principalsErr how reading
+	// it fails.
+	principals    ydbschema.Principals
+	principalsErr error
 }
 
-func (f fakeSource) ListDirectory(_ context.Context, path string) ([]*Ydb_Scheme.Entry, error) {
+func (f fakeSource) ListDirectory(_ context.Context, path string) (*Ydb_Scheme.Entry, []*Ydb_Scheme.Entry, error) {
 	entries, ok := f.directories[path]
 	if !ok {
-		return nil, fmt.Errorf("listed %s, which the fixture does not hold", path)
+		return nil, nil, fmt.Errorf("listed %s, which the fixture does not hold", path)
 	}
-	return entries, nil
+	return f.selves[path], entries, nil
+}
+
+func (f fakeSource) Principals(context.Context) (ydbschema.Principals, error) {
+	return f.principals, f.principalsErr
 }
 
 func (f fakeSource) DescribeTable(_ context.Context, path string) (*Ydb_Table.DescribeTableResult, error) {
@@ -346,8 +357,7 @@ func TestReader_Indexes(t *testing.T) {
 }
 
 // Every object Ptah does not model is recorded by its path, so a description's
-// silence about it is not read as its absence. The access model is recorded
-// as a whole kind, because the reader does not read it.
+// silence about it is not read as its absence.
 func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 	c := qt.New(t)
 	settings := plainTable(&Ydb_Table.ColumnMeta{Name: "ts", Type: optional(primitive(Ydb.Type_TIMESTAMP))})
@@ -388,9 +398,6 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 	observed := func(kind coverage.Kind, name string) coverage.Object {
 		return coverage.Object{Kind: kind, Name: name, Reason: coverage.Unsupported, Provenance: coverage.Observed}
 	}
-	derived := func(kind coverage.Kind) coverage.Object {
-		return coverage.Object{Kind: kind, Reason: coverage.Unsupported, Provenance: coverage.DerivedFromTarget}
-	}
 	c.Assert(db.NotDescribed, qt.DeepEquals, coverage.Set{}.With(
 		observed(coverage.TTL, "app.t"),
 		observed(coverage.Changefeed, "app.t/feed"),
@@ -407,8 +414,6 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 		observed(coverage.ExternalDataSource, "src"),
 		observed(coverage.ColumnTable, "store"),
 		observed(coverage.Transfer, "xfer"),
-		derived(coverage.Role),
-		derived(coverage.Grant),
 	))
 	c.Assert(db.Tables, qt.HasLen, 2)
 	c.Assert(db.Views, qt.DeepEquals, []catalog.View{{Name: "v", Body: "SELECT 1 AS a"}})
@@ -916,8 +921,12 @@ func TestReader_FailurePath(t *testing.T) {
 // errorSource fails every call, which is how a read with no server ends.
 type errorSource struct{}
 
-func (errorSource) ListDirectory(context.Context, string) ([]*Ydb_Scheme.Entry, error) {
-	return nil, errors.New("connection refused")
+func (errorSource) ListDirectory(context.Context, string) (*Ydb_Scheme.Entry, []*Ydb_Scheme.Entry, error) {
+	return nil, nil, errors.New("connection refused")
+}
+
+func (errorSource) Principals(context.Context) (ydbschema.Principals, error) {
+	return ydbschema.Principals{}, errors.New("connection refused")
 }
 
 func (errorSource) DescribeTable(context.Context, string) (*Ydb_Table.DescribeTableResult, error) {
@@ -1006,8 +1015,6 @@ func TestReader_LeavesPtahsLockNodeOut(t *testing.T) {
 	c.Assert(db.NotDescribed, qt.DeepEquals, coverage.Set{}.With(
 		coverage.Object{Kind: coverage.CoordinationNode, Name: "app.ptah_locks", Reason: coverage.Unsupported,
 			Provenance: coverage.Observed},
-		coverage.Object{Kind: coverage.Role, Reason: coverage.Unsupported, Provenance: coverage.DerivedFromTarget},
-		coverage.Object{Kind: coverage.Grant, Reason: coverage.Unsupported, Provenance: coverage.DerivedFromTarget},
 	))
 }
 

@@ -8,6 +8,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"ptah.run/core/platform/capability"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/txrequire"
 )
@@ -970,7 +971,7 @@ func databaseObjectDroppedRule() Rule {
 		Title:    "database object dropped",
 		Severity: SeverityError,
 		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !scanDestructiveObjectDrop(stmt.Words) {
+			if !scanDestructiveObjectDrop(stmt.Words) && !scanPrincipalDrop(stmt.Words, stmt.Target) {
 				return false, ""
 			}
 			return true, "dropping a database object removes existing schema behavior, principals or data; verify all dependent code and data paths are retired first"
@@ -2124,6 +2125,17 @@ func scanDestructiveObjectDrop(w []string) bool {
 	default:
 		return false
 	}
+}
+
+// scanPrincipalDrop reports DROP USER and DROP GROUP on a target whose
+// principals are users and groups ([capability.GroupPrincipals]), which is
+// YDB: there a user or a group is the principal a role is elsewhere, and
+// dropping one removes what it was granted as DROP ROLE does.
+func scanPrincipalDrop(w []string, target Target) bool {
+	if len(w) < 2 || w[0] != "DROP" || !target.Capabilities.Has(capability.GroupPrincipals) {
+		return false
+	}
+	return w[1] == "USER" || w[1] == "GROUP"
 }
 
 // scanConvertCharset reports whether an ALTER TABLE statement converts the

@@ -18,16 +18,24 @@ import (
 	"ptah.run/internal/ydburl"
 )
 
-// Reader describes a YDB database's row tables, views and topics.
+// Reader describes a YDB database's row tables, views, topics and access
+// model.
 //
 // A Ptah schema is a directory on YDB, and "" is the database root, so a table
 // at /local/app/users is table users in schema app. The reader walks the whole
 // tree with the scheme service, skipping every directory whose name begins
 // with a dot (.sys, .metadata, .tmp, .sys_health, ...), and describes each row
 // table with the table service, each view with the view service and each topic
-// with the topic service. It never reads a system view. A changefeed's topic
-// sits under its table rather than in a directory, so the walk does not meet
-// it as a topic.
+// with the topic service. A changefeed's topic sits under its table rather
+// than in a directory, so the walk does not meet it as a topic.
+//
+// The access model is read where YDB keeps it. The owner and the permission
+// entries of the database, of each directory and of each table come with the
+// scheme service's own answer for the object, so they cover exactly what the
+// read walks; the users, groups and memberships come from .sys/auth_users,
+// .sys/auth_groups and .sys/auth_group_members, the only place YDB reports
+// them. A password is never read: the query names the columns it reads, and
+// the password hash is not one of them.
 //
 // A view is read only on a server with [capability.Views], and a topic only on
 // one with [capability.Topics]; every YDB line Ptah measured has both. On a
@@ -39,10 +47,8 @@ import (
 // coordination node, a topic of the older persistent queue kind, and the rest
 // of [coverage]'s YDB kinds -- is recorded in [catalog.Database.NotDescribed]
 // by its path, as is a table setting such as a changefeed or a TTL run
-// interval. The access model is recorded as a whole kind, because the reader
-// does not read it. An object or an index kind the reader does not know is
-// refused by name rather than read as the nearest
-// known one.
+// interval. An object or an index kind the reader does not know is refused by
+// name rather than read as the nearest known one.
 type Reader struct {
 	open     func(context.Context) (Source, func(), error)
 	database string
@@ -108,23 +114,20 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	if err := r.walk(ctx, source, "", db); err != nil {
 		return nil, err
 	}
-	// The access model lives in .sys/auth_* and in each object's ACL, and the
-	// reader reads neither, so the description holds no users, groups or
-	// grants whatever the database has.
-	db.NotDescribed = db.NotDescribed.With(
-		coverage.Object{Kind: coverage.Role, Reason: coverage.Unsupported, Provenance: coverage.DerivedFromTarget},
-		coverage.Object{Kind: coverage.Grant, Reason: coverage.Unsupported, Provenance: coverage.DerivedFromTarget},
-	)
+	if err := r.principals(ctx, source, db); err != nil {
+		return nil, err
+	}
 	return db, nil
 }
 
 // walk reads the directory schema, relative to the database root, and the
 // directories under it.
 func (r *Reader) walk(ctx context.Context, source Source, schema string, db *catalog.Database) error {
-	entries, err := source.ListDirectory(ctx, r.absolute(schema, ""))
+	self, entries, err := source.ListDirectory(ctx, r.absolute(schema, ""))
 	if err != nil {
 		return err
 	}
+	r.directoryAccess(schema, self, db)
 	slices.SortFunc(entries, func(a, b *Ydb_Scheme.Entry) int { return strings.Compare(a.GetName(), b.GetName()) })
 	for _, entry := range entries {
 		if err := r.entry(ctx, source, schema, entry, db); err != nil {
@@ -277,7 +280,7 @@ func (r *Reader) TableColumns(ctx context.Context, schema, name string) (columns
 	}
 	defer end()
 
-	entries, err := source.ListDirectory(ctx, r.absolute(schema, ""))
+	_, entries, err := source.ListDirectory(ctx, r.absolute(schema, ""))
 	if isSchemeError(err) {
 		return nil, false, nil
 	}

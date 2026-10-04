@@ -39,8 +39,8 @@
 // type and exposure metadata.
 //
 // A grant or revoke names its target with on_table, on_schema, on_sequence,
-// or on_function and on_procedure, whose value carries the argument types:
-// purge(uuid). A revokes entry says the role must not hold the privileges,
+// on_database, or on_function and on_procedure, whose value carries the
+// argument types: purge(uuid). A revokes entry says the role must not hold the privileges,
 // and a privilege both granted and revoked to one role on one object is
 // refused.
 //
@@ -500,6 +500,10 @@ type roleSpec struct {
 	Inherit     *bool        `yaml:"inherit"`
 	Replication bool         `yaml:"replication"`
 	Comment     stringScalar `yaml:"comment"`
+	// Group declares a YDB group, and MemberOf the groups the role is a
+	// member of; see [schemamodel.Role].
+	Group    bool       `yaml:"group"`
+	MemberOf stringList `yaml:"member_of"`
 }
 
 type grantSpec struct {
@@ -515,6 +519,7 @@ type grantSpec struct {
 	// them.
 	OnFunction  stringScalar `yaml:"on_function"`
 	OnProcedure stringScalar `yaml:"on_procedure"`
+	OnDatabase  bool         `yaml:"on_database"`
 	WithOption  bool         `yaml:"with_option"`
 	Comment     stringScalar `yaml:"comment"`
 }
@@ -532,6 +537,7 @@ type revokeSpec struct {
 	OnSequence  stringScalar `yaml:"on_sequence"`
 	OnFunction  stringScalar `yaml:"on_function"`
 	OnProcedure stringScalar `yaml:"on_procedure"`
+	OnDatabase  bool         `yaml:"on_database"`
 	Comment     stringScalar `yaml:"comment"`
 }
 
@@ -1133,6 +1139,11 @@ func (d document) addRoles(db *schemamodel.Database) {
 		if spec.Inherit != nil {
 			inherit = *spec.Inherit
 		}
+		// Nil for none, as the annotation parser leaves it.
+		var memberOf []string
+		if groups := cleanStrings(spec.MemberOf); len(groups) > 0 {
+			memberOf = groups
+		}
 		db.Roles = append(db.Roles, schemamodel.Role{
 			StructName:  string(spec.StructName),
 			Name:        valueOrDefault(spec.Name, key),
@@ -1144,6 +1155,8 @@ func (d document) addRoles(db *schemamodel.Database) {
 			Inherit:     inherit,
 			Replication: spec.Replication,
 			Comment:     string(spec.Comment),
+			Group:       spec.Group,
+			MemberOf:    memberOf,
 		})
 	}
 }
@@ -1154,7 +1167,8 @@ func (d document) addGrants(db *schemamodel.Database) error {
 		grant, err := buildGrant("grant", key, revokeSpec{
 			StructName: spec.StructName, Role: spec.Role, Privilege: spec.Privilege, Privileges: spec.Privileges,
 			OnTable: spec.OnTable, OnSchema: spec.OnSchema, OnSequence: spec.OnSequence,
-			OnFunction: spec.OnFunction, OnProcedure: spec.OnProcedure, Comment: spec.Comment,
+			OnFunction: spec.OnFunction, OnProcedure: spec.OnProcedure, OnDatabase: spec.OnDatabase,
+			Comment: spec.Comment,
 		})
 		if err != nil {
 			return err
@@ -1194,6 +1208,7 @@ func buildGrant(kind, key string, spec revokeSpec) (schemamodel.Grant, error) {
 		OnTable:    string(spec.OnTable),
 		OnSchema:   string(spec.OnSchema),
 		OnSequence: string(spec.OnSequence),
+		OnDatabase: spec.OnDatabase,
 		Comment:    string(spec.Comment),
 	}
 	for _, routine := range []struct {

@@ -60,6 +60,7 @@ import (
 	"ptah.run/core/renderer/internal/dialects/sqlite"
 	"ptah.run/core/renderer/internal/dialects/ydb"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/accessscope"
 	"ptah.run/internal/clickhouserbac"
 	"ptah.run/internal/crdbttl"
 	"ptah.run/internal/foreignkeyscope"
@@ -413,11 +414,62 @@ func prepareASTNodeForRendering(
 		return node, refuseTopic(dialect, caps, "ALTER TOPIC "+typed.Name)
 	case *ast.DropTopicNode:
 		return node, refuseTopic(dialect, caps, "DROP TOPIC "+typed.Name)
+	case *ast.CreateRoleNode, *ast.DropRoleNode, *ast.GrantPrivilegeNode, *ast.RevokePrivilegeNode:
+		if isNilInterface(node) {
+			return nil, invalidASTForeignKeyError(dialect, "AST node is nil")
+		}
+		return node, refuseAccessNode(dialect, caps, node)
 	default:
 		if isNilInterface(node) {
 			return nil, invalidASTForeignKeyError(dialect, "AST node is nil")
 		}
 		return node, nil
+	}
+}
+
+// refuseAccessNode refuses a group, or a grant or revoke on the database
+// itself, on a target without the key that holds it, and returns nil for every
+// other role or grant node. The declaration gate refuses the same in a schema;
+// this is the half that sees a node built by hand.
+func refuseAccessNode(dialect string, caps capability.Capabilities, node ast.Node) error {
+	var (
+		key     capability.Capability
+		subject string
+	)
+	switch typed := node.(type) {
+	case *ast.CreateRoleNode:
+		if !typed.Group {
+			return nil
+		}
+		key, subject = capability.GroupPrincipals, "CREATE GROUP "+typed.Name
+	case *ast.DropRoleNode:
+		if !typed.Group {
+			return nil
+		}
+		key, subject = capability.GroupPrincipals, "DROP GROUP "+typed.Name
+	case *ast.GrantPrivilegeNode:
+		if !strings.EqualFold(strings.TrimSpace(typed.ObjectType), "DATABASE") {
+			return nil
+		}
+		key, subject = capability.DatabaseGrants, "GRANT on the database to "+typed.Role
+	case *ast.RevokePrivilegeNode:
+		if !strings.EqualFold(strings.TrimSpace(typed.ObjectType), "DATABASE") {
+			return nil
+		}
+		key, subject = capability.DatabaseGrants, "REVOKE on the database from "+typed.Role
+	default:
+		return nil
+	}
+	if caps.Has(key) {
+		return nil
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: string(key),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
+			subject, key, normalized),
 	}
 }
 
@@ -1750,18 +1802,7 @@ func validateDatabaseDeclarations(
 	if err := validateExtensionInstallationSchemas(dialect, database.Extensions); err != nil {
 		return err
 	}
-	// A reserved PostgreSQL role name renders into a CREATE ROLE the server is
-	// guaranteed to reject, so it is refused here, in the validation phase both
-	// whole-schema rendering and migration planning run before they emit
-	// anything (stokaro/ptah#1312).
-	if err := reservedrole.ValidateDeclared(dialect, database.Roles); err != nil {
-		return &ptaherr.RenderError{
-			Dialect: dialect,
-			Err:     err,
-			Message: err.Error(),
-		}
-	}
-	if err := mysqllike.ValidateDeclaredRoles(dialect, caps, database.Roles); err != nil {
+	if err := validateDeclaredRoleNames(dialect, caps, database); err != nil {
 		return err
 	}
 	// A domain, composite or range type the target cannot create is refused
@@ -1771,19 +1812,8 @@ func validateDatabaseDeclarations(
 	if err := usertypescope.ValidateDeclared(dialect, caps, database); err != nil {
 		return err
 	}
-	// ClickHouse roles and grants are real, and a narrower set of declarations
-	// is representable there than in PostgreSQL: a role carries no attributes
-	// at all, and the server absorbs a narrower grant into a broader one, so a
-	// schema declaring both can never converge. The empty default database is
-	// deliberate — a render is offline and has no current database, so an
-	// unqualified on_table is refused rather than attached to a database
-	// nobody named. See internal/clickhouserbac (stokaro/ptah#1025).
-	if err := clickhouserbac.ValidateDeclared(dialect, database.Roles, database.Grants, ""); err != nil {
-		return &ptaherr.RenderError{
-			Dialect: dialect,
-			Err:     err,
-			Message: err.Error(),
-		}
+	if err := validateDeclaredAccess(dialect, caps, database); err != nil {
+		return err
 	}
 	// Row-level TTL is refused here as well as at the table it belongs to,
 	// because these are the refusals that must arrive before ANY statement is
@@ -1847,6 +1877,66 @@ func validateDeclaredKeysAndConstraints(
 		return err
 	}
 	return validateDeclaredEnforcementAndMatch(dialect, caps, database)
+}
+
+// validateDeclaredRoleNames refuses a role whose name or attributes the
+// target cannot create.
+func validateDeclaredRoleNames(
+	dialect string,
+	caps capability.Capabilities,
+	database *schemamodel.Database,
+) error {
+	// A reserved PostgreSQL role name renders into a CREATE ROLE the server is
+	// guaranteed to reject, so it is refused here, in the validation phase both
+	// whole-schema rendering and migration planning run before they emit
+	// anything (stokaro/ptah#1312).
+	if err := reservedrole.ValidateDeclared(dialect, database.Roles); err != nil {
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     err,
+			Message: err.Error(),
+		}
+	}
+	if err := mysqllike.ValidateDeclaredRoles(dialect, caps, database.Roles); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateDeclaredAccess refuses the roles, memberships and grants the target
+// cannot hold together.
+func validateDeclaredAccess(
+	dialect string,
+	caps capability.Capabilities,
+	database *schemamodel.Database,
+) error {
+	// ClickHouse roles and grants are real, and a narrower set of declarations
+	// is representable there than in PostgreSQL: a role carries no attributes
+	// at all, and the server absorbs a narrower grant into a broader one, so a
+	// schema declaring both can never converge. The empty default database is
+	// deliberate — a render is offline and has no current database, so an
+	// unqualified on_table is refused rather than attached to a database
+	// nobody named. See internal/clickhouserbac (stokaro/ptah#1025).
+	if err := clickhouserbac.ValidateDeclared(dialect, database.Roles, database.Grants, ""); err != nil {
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     err,
+			Message: err.Error(),
+		}
+	}
+	// A group, a membership of one role in another and a grant on the
+	// database are refused where the target cannot hold them, and on YDB
+	// whatever its users, groups and permissions cannot carry: before any
+	// statement, because a skipped principal leaves the grants that name it
+	// without one.
+	if err := accessscope.ValidateDeclared(dialect, caps, database); err != nil {
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     err,
+			Message: err.Error(),
+		}
+	}
+	return nil
 }
 
 // validateDeclaredPrimaryKeyOptions refuses options the target cannot write,

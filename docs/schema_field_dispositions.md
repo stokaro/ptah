@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-444 fields are reachable from the desired schema, and each one carries
+448 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 382 | reaches rendered SQL on at least one target |
+| `ddl` | 386 | reaches rendered SQL on at least one target |
 | `comparison` | 7 | read when two schemas are compared, and written into no statement |
 | `planning` | 7 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -172,6 +172,7 @@ None.
 | `schemamodel.Database.CompositeTypes` | `ddl` | — |
 | `schemamodel.Database.Constraints` | `ddl` | — |
 | `schemamodel.Database.ContinuousAggregates` | `ddl` | — |
+| `schemamodel.Database.DatabasePath` | `ddl` | — |
 | `schemamodel.Database.DefaultPrivileges` | `ddl` | — |
 | `schemamodel.Database.Dependencies` | `derived` | table creation order, derived by Finalize from the declared foreign keys |
 | `schemamodel.Database.Domains` | `ddl` | — |
@@ -316,6 +317,7 @@ None.
 | `schemamodel.Grant.Comment` | `ddl` | — |
 | `schemamodel.Grant.Dialects` | `ddl` | — |
 | `schemamodel.Grant.GrantedBy` | `export` | the grantor a catalog read observed, carried so that a generated document can report it cannot represent one; PostgreSQL accepts GRANTED BY only for the role that IS the current user, so rendering the observed grantor would fail on every apply by another role |
+| `schemamodel.Grant.OnDatabase` | `ddl` | — |
 | `schemamodel.Grant.OnRoutine` | `ddl` | — |
 | `schemamodel.Grant.OnSchema` | `ddl` | — |
 | `schemamodel.Grant.OnSequence` | `ddl` | — |
@@ -414,8 +416,10 @@ None.
 | `schemamodel.Role.CreateDB` | `ddl` | — |
 | `schemamodel.Role.CreateRole` | `ddl` | — |
 | `schemamodel.Role.Dialects` | `ddl` | — |
+| `schemamodel.Role.Group` | `ddl` | — |
 | `schemamodel.Role.Inherit` | `ddl` | — |
 | `schemamodel.Role.Login` | `ddl` | — |
+| `schemamodel.Role.MemberOf` | `ddl` | — |
 | `schemamodel.Role.Name` | `ddl` | — |
 | `schemamodel.Role.Password` | `ddl` | — |
 | `schemamodel.Role.Replication` | `ddl` | — |
