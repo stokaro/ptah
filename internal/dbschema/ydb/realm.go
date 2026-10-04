@@ -299,3 +299,40 @@ func (w *Writer) RealmIdentity(ctx context.Context) (string, error) {
 	}
 	return identity, nil
 }
+
+// TablesNamed lists the row tables under the writer's root whose name is one
+// of names, in every directory [Writer.DropAllTables] enters, each with its
+// directory relative to the root as its schema. It is how a cleanup plan
+// names the migrator's tables, which the reader leaves out of every directory
+// and DropAllTables drops with the rest.
+func (w *Writer) TablesNamed(ctx context.Context, names []string) ([]dbreset.Object, error) {
+	if w.scheme == nil {
+		return nil, errors.New("no YDB scheme connection")
+	}
+	var found []dbreset.Object
+	var walk func(dir string) error
+	walk = func(dir string) error {
+		listed, err := w.scheme.ListDirectory(ctx, path.Join(w.root, dir))
+		if err != nil {
+			return err
+		}
+		slices.SortFunc(listed, func(a, b *Ydb_Scheme.Entry) int { return strings.Compare(a.GetName(), b.GetName()) })
+		for _, entry := range listed {
+			name := entry.GetName()
+			switch {
+			case entry.GetType() == Ydb_Scheme.Entry_TABLE && slices.Contains(names, name):
+				found = append(found, dbreset.Object{Kind: objectKind(entry.GetType()), Schema: dir, Name: name})
+			case entry.GetType() == Ydb_Scheme.Entry_DIRECTORY && !strings.HasPrefix(name, ".") &&
+				(dir != "" || name != ydburl.RealmDirectory):
+				if err := walk(path.Join(dir, name)); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	if err := walk(""); err != nil {
+		return nil, err
+	}
+	return found, nil
+}

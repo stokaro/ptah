@@ -16,6 +16,7 @@ import (
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/migrateclean"
+	"ptah.run/internal/schemaclean"
 	"ptah.run/internal/ydbrealm"
 	"ptah.run/internal/ydburl"
 )
@@ -167,4 +168,42 @@ func TestYDBDevRealm_Identity(t *testing.T) {
 	c.Assert(databaseErr, qt.IsNil)
 	c.Assert(realmAndDatabase, qt.IsFalse)
 	c.Assert(waitedErr, qt.ErrorMatches, `acquire dev database realm lock: .*`)
+}
+
+// A cleanup plan names every table the writer's DropAllTables drops: the
+// migrator's tables, which the reader leaves out of every directory, in each
+// directory that holds one. Without the probe the plan names users alone, and
+// the cleanup drops four tables.
+func TestYDBSchemaClean_NamesTheMigratorsTables(t *testing.T) {
+	c := qt.New(t)
+	ctx := c.Context()
+	realm := connect(c, enterRealm(c))
+	for _, table := range []string{"users", "schema_migrations", "app/schema_migrations", "app/ptah_migration_tags"} {
+		c.Assert(realm.SchemaWriter().ExecuteSQL(ctx,
+			"CREATE TABLE `"+table+"` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))"), qt.IsNil)
+	}
+
+	plan, inspectErr := schemaclean.Inspect(ctx, realm)
+	executed, executeErr := schemaclean.Execute(ctx, realm, schemaclean.Options{})
+	left, readErr := dbschema.ReadSchemaWithSchemasContext(ctx, realm, nil)
+	lister, ok := realm.SchemaWriter().(interface {
+		TablesNamed(context.Context, []string) ([]dbreset.Object, error)
+	})
+	c.Assert(ok, qt.IsTrue)
+	bookkeeping, findErr := lister.TablesNamed(ctx, []string{"schema_migrations", "ptah_migration_tags"})
+
+	c.Assert(inspectErr, qt.IsNil)
+	var planned []string
+	for _, object := range plan.Objects {
+		planned = append(planned, object.Type+" "+path.Join(object.Schema, object.Name))
+	}
+	c.Assert(planned, qt.ContentEquals, []string{
+		"table users", "table schema_migrations", "table app/schema_migrations", "table app/ptah_migration_tags",
+	})
+	c.Assert(executeErr, qt.IsNil)
+	c.Assert(executed.Objects, qt.HasLen, 4)
+	c.Assert(readErr, qt.IsNil)
+	c.Assert(left.Tables, qt.HasLen, 0)
+	c.Assert(findErr, qt.IsNil)
+	c.Assert(bookkeeping, qt.HasLen, 0)
 }
