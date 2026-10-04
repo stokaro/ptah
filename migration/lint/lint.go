@@ -9,6 +9,8 @@
 //   - BC — breaking-change safety (renames breaking deployed readers)
 //   - PG — PostgreSQL-specific hazards
 //   - MY — MySQL/MariaDB-specific hazards
+//   - YD — YDB statements the server refuses, or runs with an effect the
+//     statement does not state
 //
 // # How statements are matched
 //
@@ -16,7 +18,8 @@
 // string literals, quoted identifiers, comments (including the MySQL-family
 // # line comments and /*!...*/ executable comments) and PostgreSQL
 // dollar-quoted bodies never confuse the splitter, and Options.Dialect
-// selects which of those syntaxes apply. Every statement is then checked through
+// selects which of those syntaxes apply. A YDB file is read by the YQL lexer
+// the migrator splits it with. Every statement is then checked through
 // the token form exposed to rules:
 //
 //   - Statement.Words — the token-word sequence rules scan,
@@ -239,10 +242,11 @@ type Options struct {
 	// is native Ptah behavior.
 	Compatibility CompatibilityProfile
 	// Dialect gates dialect-specific rules — "postgres" enables PG rules,
-	// "mysql"/"mariadb" enable MY rules — and selects the dialect's lexing
-	// behavior (comment forms, string escape rules, dollar quotes). Empty
-	// runs every rule under a hybrid lexer — maximum visibility when the
-	// target is unknown.
+	// "mysql"/"mariadb" enable MY rules, "ydb" enables YD rules — and selects
+	// the dialect's lexing behavior (comment forms, string escape rules,
+	// dollar quotes, YQL). Empty runs every rule under a hybrid lexer —
+	// maximum visibility when the target is unknown — except the YD rules,
+	// which read YQL and say nothing about text the hybrid lexer read.
 	//
 	// The value must be a canonical dialect name. [AnalyzeFS] and [LintFS]
 	// take it as given rather than alias-folding it, so a spelling such as
@@ -706,9 +710,7 @@ func splitStatementsWithLines(
 	var activeSuppressions []atlaslint.Target
 	compound := sqlcompound.New(mode.dialect)
 	for _, tok := range scanSQL(raw, mode) {
-		if tok.kind == tokWord {
-			compound.Word(tok.text)
-		}
+		observeCompoundToken(&compound, tok, mode)
 		switch tok.kind {
 		case tokSemicolon:
 			if compound.KeepSemicolonInsideStatement() {
@@ -779,6 +781,22 @@ func splitStatementsWithLines(
 		})
 	}
 	return statements
+}
+
+// observeCompoundToken feeds one token to the compound-body tracker the way
+// core/sqlutil feeds it the same text, so the linter and the migrator cut a
+// statement at the same semicolon. Words are fed on every dialect. YQL also
+// needs its punctuation, for the braces around a lambda's body, and its
+// backticked names, which core/sqlutil feeds as words because the YQL lexer
+// reads them as identifiers; neither changes the answer for another dialect,
+// whose quoted names were never fed.
+func observeCompoundToken(compound *sqlcompound.State, tok lintToken, mode scanMode) {
+	switch {
+	case tok.kind == tokWord, mode.yql && tok.kind == tokQuotedIdent:
+		compound.Word(tok.text)
+	case mode.yql && tok.kind == tokOp:
+		compound.Symbol(tok.text)
+	}
 }
 
 func parseNoLintDirective(

@@ -85,7 +85,7 @@ func ResolveTarget(dialect, version string) (Target, error) {
 	// engine it aliases.
 	canonical, ok := lintdialect.Canonical(dialect)
 	if !ok {
-		return Target{}, fmt.Errorf("unsupported lint dialect %q: %s", dialect, lintdialect.Refusal(dialect))
+		return Target{}, fmt.Errorf("unsupported lint dialect %q: expected %s", dialect, lintdialect.Expected)
 	}
 	if version != "" && canonical == "" {
 		return Target{}, fmt.Errorf(

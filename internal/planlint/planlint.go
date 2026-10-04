@@ -45,7 +45,7 @@ func Analyze(sql, dialect string) (lint.Analysis, error) {
 	canonical, ok := lintdialect.Canonical(dialect)
 	if !ok {
 		return lint.Analysis{}, fmt.Errorf(
-			"unsupported lint dialect %q; %s", dialect, lintdialect.Refusal(dialect))
+			"unsupported lint dialect %q; expected %s", dialect, lintdialect.Expected)
 	}
 	snapshot, err := fsnapshot.FromFiles(map[string][]byte{sourceName: []byte(sql)})
 	if err != nil {

@@ -91,6 +91,7 @@ func builtinRules() []Rule {
 	rules = append(rules, transactionRules()...)
 	rules = append(rules, onlineRules()...)
 	rules = append(rules, atlasGapRules()...)
+	rules = append(rules, ydbRules()...)
 	return rules
 }
 

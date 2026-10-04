@@ -176,10 +176,11 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `SA` | Atlas | static analysis of routine bodies a migration defines |
 | `SQL` | Ptah | the SQL linter could not read or model the statement |
 | `TX` | Atlas | transaction shape of a migration |
+| `YD` | Ptah | YDB statements the server refuses, or runs with an effect the statement does not state |
 
 ## Migration lint rules
 
-93 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings unless the policy's `gate` section names more families, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
+99 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings unless the policy's `gate` section names more families, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
 
 ### Every dialect
 
@@ -314,9 +315,59 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | --- | --- | --- | --- |
 | `LT101` | SQLite cannot enforce NOT NULL on existing nullable data without a rebuild | both | Atlas |
 
+### ydb
+
+| Rule | Meaning | Surface | Origin |
+| --- | --- | --- | --- |
+| `YD101` | a unique index added to a table that exists, which a YDB line without `unique_index_on_existing_table` refuses | both | Ptah |
+| `YD102` | a block or an action call that runs a scheme statement and a statement reading or writing a table in one query, which YDB refuses whole | both | Ptah |
+| `YD103` | an `ADD COLUMN` YDB refuses: NOT NULL without a default on every line, or a default where `add_column_with_default` is false | both | Ptah |
+| `YD104` | a `DROP COLUMN` of a column an index keys or covers, or the TTL reads, which YDB refuses until the index or the TTL is gone | both | Ptah |
+| `YD105` | turning auto partitioning by size or by load on resets the minimum partition count to 1 unless the same statement sets it | both | Ptah |
+| `YD106` | a `DROP TABLE` of a table a view reads: YDB drops the table, keeps the view, and every read of the view fails | both | Ptah |
+
+### What the rules for every dialect do on YDB
+
+A YDB run reads migrations as YQL. The `YD` family above is YDB's own, and every rule with no dialect restriction runs there too. This table says what each of those does on YDB: it applies, the statement it reads does not exist in YQL, a `YD` rule replaces it, or it needs a dev database, which a YDB database cannot be yet, and the run names it as unmet.
+
+| Rule | On YDB | What it rests on |
+| --- | --- | --- |
+| `AC101` | no such statement in YQL | YQL stores no routine |
+| `BC101` | applies | `ALTER TABLE ... RENAME TO` |
+| `BC103` | applies | `DROP TABLE` |
+| `BC104` | applies | `ALTER TABLE ... DROP COLUMN` |
+| `CD101` | no such statement in YQL | YDB has no foreign key |
+| `CD102` | no such statement in YQL | YDB has no `CHECK` constraint |
+| `CD103` | no such statement in YQL | YDB cannot drop a primary key |
+| `DD101` | replaced | `YD103`, since YDB refuses a NOT NULL column without a default even on an empty table |
+| `DD102` | no such statement in YQL | YQL stores no routine |
+| `DS101` | applies | `DROP TABLE` |
+| `DS102` | applies | `ALTER TABLE ... DROP COLUMN` |
+| `DS103` | no such statement in YQL | YQL changes no column type; `ALTER COLUMN ... TYPE` is a syntax error |
+| `DS104` | applies | `ALTER TABLE ... ALTER COLUMN ... DROP NOT NULL` |
+| `DS105` | no such statement in YQL | YDB has no named constraint to drop |
+| `DS106` | no such statement in YQL | YDB has no enum type |
+| `DS107` | no such statement in YQL | YDB has none of the objects it reads; it does not read `DROP USER` or `DROP GROUP` |
+| `DS108` | applies | `TRUNCATE TABLE`, on lines with `truncate_table` |
+| `DS109` | no such statement in YQL | YDB has no row-level security |
+| `DS110P` | needs a dev database | what reads a column comes from a dev database replay |
+| `DS111P` | no such statement in YQL | YDB has no row-level security |
+| `MF101` | applies | `ADD INDEX ... UNIQUE` where the target adds one to an existing table; `YD101` replaces it where it does not |
+| `MF101P` | applies | the migration directory's files |
+| `MF102` | applies | `DROP INDEX` then `ADD INDEX ... UNIQUE`, where the target adds one; `YD101` replaces it where it does not |
+| `MF102P` | applies | the migration directory's files |
+| `MF103` | applies | the migration directory's files |
+| `NM101` | no such statement in YQL | YDB has no schema to create |
+| `NM102` | applies | `CREATE TABLE` and `RENAME TO`, judged on the unquoted path |
+| `NM103` | applies | the columns of `CREATE TABLE` and `ADD COLUMN` |
+| `NM104` | applies | `INDEX` in `CREATE TABLE`, `ADD INDEX` and `RENAME INDEX` |
+| `NM105` | no such statement in YQL | YDB has no foreign key |
+| `NM106` | no such statement in YQL | YDB has no `CHECK` constraint |
+| `SA101` | no such statement in YQL | YQL stores no routine |
+
 ## SQL lint rules
 
-7 rules, reported by `ptah sql lint` over standalone SQL files, on every dialect. The compatibility surface has no verb that reaches them.
+7 rules, reported by `ptah sql lint` over standalone SQL files, on every dialect. The compatibility surface has no verb that reaches them. A YDB file is read as YQL rather than by the SQL parser, which has no YQL grammar, and can report `SQL002`, `DDL001`, `CAP001` and `SQL004` only.
 
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |
@@ -330,7 +381,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## Default severities
 
-21 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `DS111P`, `MY146`, `ON101`, `ON102`, `ON103`, `SQL001`, `SQL002`. The other 79 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
+26 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `DS111P`, `MY146`, `ON101`, `ON102`, `ON103`, `SQL001`, `SQL002`, `YD101`, `YD102`, `YD103`, `YD104`, `YD106`. The other 80 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
 
 ## What ptah-compat prints
 

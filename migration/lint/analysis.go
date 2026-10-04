@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform"
 	"ptah.run/internal/atlaslint"
 	"ptah.run/internal/fsnapshot"
 	"ptah.run/internal/migrationsnapshot"
@@ -248,6 +249,10 @@ type File struct {
 	baseline baselineColumns
 	// dependents is what reads each column in that same starting state.
 	dependents baselineDependents
+	// ydbBefore is the YDB schema the directory's own up migrations leave
+	// before this file runs, for the YD rules that read it; see
+	// [ydbHistory]. It is nil on every other dialect.
+	ydbBefore *ydbSchema
 }
 
 // VersionSelection selects migration versions while preserving the difference
@@ -503,6 +508,9 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 			return Analysis{}, err
 		}
 		files = append(files, file)
+	}
+	if opts.Dialect == platform.YDB {
+		ydbHistory(files)
 	}
 
 	var findings []Finding

@@ -14,7 +14,6 @@ import (
 
 	"ptah.run/internal/cli/internal/exitcode"
 	cmdlint "ptah.run/internal/cli/lint"
-	"ptah.run/internal/ydbgap"
 	migrationlint "ptah.run/migration/lint"
 )
 
@@ -1046,20 +1045,47 @@ func TestRunLint_FailOnThresholds(t *testing.T) {
 	c.Assert(stdout, qt.Contains, "PG101")
 }
 
-// YDB is a dialect Ptah accepts and lint does not analyze yet. The refusal
-// says so and names the plan, rather than listing the dialects as if ydb were
-// a typo.
-func TestRunLint_RefusesYDB(t *testing.T) {
-	for _, dialect := range []string{"ydb", "ydbs"} {
-		t.Run(dialect, func(t *testing.T) {
+// YDB migrations are read as YQL and judged by the YD rules against the line
+// --server-version names: 26.2 adds a column with a default and 25.1 does not.
+func TestRunLint_LintsYQLForYDB(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		version string
+		want    []string
+		absent  []string
+	}{
+		{name: "the newest line", dialect: "ydb", version: "26.2.1.14", want: []string{"YD101", "YD104"}, absent: []string{"YD103"}},
+		{name: "a line without a column default, by the TLS spelling", dialect: "ydbs", version: "25.1.4.7", want: []string{"YD101", "YD103", "YD104"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
+			dir := t.TempDir()
+			writeLintTestFile(c, dir, "0000000001_users.up.sql",
+				"CREATE TABLE `shop/users` (id Uint64 NOT NULL, email Utf8, PRIMARY KEY (id), INDEX users_email GLOBAL ON (email));\n")
+			writeLintTestFile(c, dir, "0000000001_users.down.sql", "DROP TABLE `shop/users`;\n")
+			writeLintTestFile(c, dir, "0000000002_change.up.sql",
+				"ALTER TABLE `shop/users` ADD COLUMN score Int32 DEFAULT 0;\n"+
+					"ALTER TABLE `shop/users` ADD INDEX users_score GLOBAL UNIQUE SYNC ON (score);\n"+
+					"ALTER TABLE `shop/users` DROP COLUMN email;\n")
+			writeLintTestFile(c, dir, "0000000002_change.down.sql", "ALTER TABLE `shop/users` DROP COLUMN score;\n")
 
-			stdout, stderr, err := execute("--dir", "testdata/clean", "--dialect", dialect)
+			stdout, stderr, err := execute("--dir", dir, "--dialect", test.dialect, "--server-version", test.version, "--fail-on", "none")
 
-			c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
-			c.Assert(stderr, qt.Contains,
-				`invalid --dialect value "`+dialect+`": `+ydbgap.Linting.Message())
-			c.Assert(stdout, qt.Equals, "")
+			c.Assert(err, qt.IsNil)
+			// A YDB database cannot be a dev database yet, so the rules that
+			// read the starting state say they went without it.
+			c.Assert(stderr, qt.Equals, "warning: DS110P ran without the baseline schema it reads, so this analysis is "+
+				"thinner than the same directory would get against a dev database the run can read\n"+
+				"warning: MF101, MF102 ran without the baseline schema that refines the statement text it reads, so this "+
+				"analysis is thinner than the same directory would get against a dev database the run can read\n")
+			for _, code := range test.want {
+				c.Assert(stdout, qt.Contains, code)
+			}
+			for _, code := range test.absent {
+				c.Assert(stdout, qt.Not(qt.Contains), code)
+			}
 		})
 	}
 }
