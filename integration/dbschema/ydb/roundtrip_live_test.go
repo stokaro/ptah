@@ -6,7 +6,6 @@ import (
 	"context"
 	"slices"
 	"testing"
-	"time"
 
 	qt "github.com/frankban/quicktest"
 
@@ -14,7 +13,6 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
-	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -36,77 +34,113 @@ var roundTripSchemas = []string{roundTripSchema, roundTripArchiveSchema}
 // the reader and compared with the declaration plans nothing, and the same
 // declaration applied again plans nothing too.
 //
-// The schema carries every type the YDB type map writes on the line CI runs, a
-// literal default of each kind the renderer writes, a Serial key, a composite
-// key, unique, asynchronous and covering indexes, a table in a nested
-// directory, and a table and a column whose names need escaping.
+// The schema carries every type the YDB type map writes on the line under
+// test, a literal default of each kind the renderer writes, a Serial key, a
+// composite key, unique, asynchronous and covering indexes, a table in a
+// nested directory, and a table and a column whose names need escaping.
 func TestYDBRoundTrip_NothingLeftToPlan(t *testing.T) {
-	c := qt.New(t)
-	conn := openYDB(c)
-	dropTables(c, conn, roundTripSchemas)
-	c.Cleanup(func() { dropTables(c, conn, roundTripSchemas) })
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			dropTables(c, conn, roundTripSchemas)
+			c.Cleanup(func() { dropTables(c, conn, roundTripSchemas) })
 
-	declared := roundTripDeclaration(conn.Info().Capabilities)
-	first := planAgainst(c, conn, declared, roundTripSchemas)
-	c.Assert(first, qt.Not(qt.HasLen), 0)
-	apply(c, conn, first)
+			declared := roundTripDeclaration(conn.Info().Capabilities)
+			first := planAgainst(c, conn, declared, roundTripSchemas)
+			c.Assert(first, qt.Not(qt.HasLen), 0)
+			apply(c, conn, first)
 
-	c.Assert(planAgainst(c, conn, declared, roundTripSchemas), qt.HasLen, 0)
-	// The same declaration applied a second time changes nothing and plans
-	// nothing after it.
-	apply(c, conn, planAgainst(c, conn, declared, roundTripSchemas))
-	c.Assert(planAgainst(c, conn, declared, roundTripSchemas), qt.HasLen, 0)
+			c.Assert(planAgainst(c, conn, declared, roundTripSchemas), qt.HasLen, 0)
+			// The same declaration applied a second time changes nothing and
+			// plans nothing after it.
+			apply(c, conn, planAgainst(c, conn, declared, roundTripSchemas))
+			c.Assert(planAgainst(c, conn, declared, roundTripSchemas), qt.HasLen, 0)
+		})
+	}
+}
+
+// dateTimeSpellings is how the reader reports the round-trip schema's
+// TIMESTAMP, INTERVAL and DATE columns, keyed by whether the line has
+// [capability.WideDateTimeTypes]. The renderer writes the 64-bit types where
+// the line has them and the 32-bit ones where it does not, and the server
+// reports the type it built in the default it stores.
+var dateTimeSpellings = map[bool]struct {
+	createdAtDefault string
+	lifetimeDefault  string
+	birthdayType     string
+}{
+	true:  {"Timestamp64('2026-01-02T03:04:05Z')", "Interval64('P1DT2H')", "Date32"},
+	false: {"Timestamp('2026-01-02T03:04:05Z')", "Interval('P1DT2H')", "Date"},
+}
+
+// balanceDefault is the default the reader reports on the DECIMAL(10,2)
+// column, keyed by whether the line has [capability.ParameterizedDecimal]. A
+// line without it has Decimal(22,9) alone, the declaration leaves the column
+// out there, and the read has no such column.
+var balanceDefault = map[bool]string{
+	true:  "Decimal('12.5', 10, 2)",
+	false: "",
 }
 
 // TestYDBRoundTrip_ReadsWhatTheServerBuilt pins what the reader reports for
 // the round-trip schema, read from the server rather than restated from the
 // declaration: the Serial key, the composite key, the index kinds, the
 // defaults in the spelling the renderer writes, and the escaped names. The
-// spellings are the CI line's, which has the 64-bit date and time types and
-// a Decimal of any precision.
+// date and time types and the Decimal precisions differ between the lines,
+// and the spellings above say how; TestYDBConnection_DescribesTheServer pins
+// which line each server is.
 func TestYDBRoundTrip_ReadsWhatTheServerBuilt(t *testing.T) {
-	c := qt.New(t)
-	conn := openYDB(c)
-	dropTables(c, conn, roundTripSchemas)
-	c.Cleanup(func() { dropTables(c, conn, roundTripSchemas) })
-	apply(c, conn, planAgainst(c, conn, roundTripDeclaration(conn.Info().Capabilities), roundTripSchemas))
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			caps := conn.Info().Capabilities
+			dropTables(c, conn, roundTripSchemas)
+			c.Cleanup(func() { dropTables(c, conn, roundTripSchemas) })
+			apply(c, conn, planAgainst(c, conn, roundTripDeclaration(caps), roundTripSchemas))
 
-	live := readScoped(c, conn, roundTripSchemas)
+			live := readScoped(c, conn, roundTripSchemas)
 
-	c.Assert(tableNames(live), qt.DeepEquals, []string{
-		"ptah_ydb_roundtrip/archive|events",
-		"ptah_ydb_roundtrip|accounts",
-		"ptah_ydb_roundtrip|orders",
-		"ptah_ydb_roundtrip|tick`name.with.dot",
-	})
+			c.Assert(tableNames(live), qt.DeepEquals, []string{
+				"ptah_ydb_roundtrip/archive|events",
+				"ptah_ydb_roundtrip|accounts",
+				"ptah_ydb_roundtrip|orders",
+				"ptah_ydb_roundtrip|tick`name.with.dot",
+			})
 
-	accounts := tableNamed(c, live, roundTripSchema, "accounts")
-	id := columnNamed(c, accounts, "id")
-	c.Assert(id.DataType, qt.Equals, "Int64")
-	c.Assert(id.IsAutoIncrement, qt.IsTrue)
-	c.Assert(id.IsNullable, qt.Equals, "NO")
-	c.Assert(defaultOf(columnNamed(c, accounts, "status")), qt.Equals, "'active'u")
-	c.Assert(defaultOf(columnNamed(c, accounts, "created_at")), qt.Equals, "Timestamp64('2026-01-02T03:04:05Z')")
-	c.Assert(defaultOf(columnNamed(c, accounts, "lifetime")), qt.Equals, "Interval64('P1DT2H')")
-	c.Assert(defaultOf(columnNamed(c, accounts, "balance")), qt.Equals, "Decimal('12.5', 10, 2)")
-	c.Assert(defaultOf(columnNamed(c, accounts, "token")), qt.Equals,
-		"Uuid('550e8400-e29b-41d4-a716-446655440000')")
-	c.Assert(columnNamed(c, accounts, "email").DataType, qt.Equals, "Utf8")
-	c.Assert(columnNamed(c, accounts, "birthday").DataType, qt.Equals, "Date32")
+			accounts := tableNamed(c, live, roundTripSchema, "accounts")
+			id := columnNamed(c, accounts, "id")
+			c.Assert(id.DataType, qt.Equals, "Int64")
+			c.Assert(id.IsAutoIncrement, qt.IsTrue)
+			c.Assert(id.IsNullable, qt.Equals, "NO")
+			dateTime := dateTimeSpellings[caps.Has(capability.WideDateTimeTypes)]
+			c.Assert(defaultOf(columnNamed(c, accounts, "status")), qt.Equals, "'active'u")
+			c.Assert(defaultOf(columnNamed(c, accounts, "created_at")), qt.Equals, dateTime.createdAtDefault)
+			c.Assert(defaultOf(columnNamed(c, accounts, "lifetime")), qt.Equals, dateTime.lifetimeDefault)
+			c.Assert(columnNamed(c, accounts, "birthday").DataType, qt.Equals, dateTime.birthdayType)
+			c.Assert(defaultOfAny(accounts, "balance"), qt.Equals, balanceDefault[caps.Has(capability.ParameterizedDecimal)])
+			c.Assert(defaultOf(columnNamed(c, accounts, "token")), qt.Equals,
+				"Uuid('550e8400-e29b-41d4-a716-446655440000')")
+			c.Assert(columnNamed(c, accounts, "email").DataType, qt.Equals, "Utf8")
 
-	c.Assert(primaryKeyOf(live, roundTripSchema, "orders"), qt.DeepEquals, []string{"tenant", "id"})
+			orders := tableNamed(c, live, roundTripSchema, "orders")
+			c.Assert(primaryKeyOf(live, roundTripSchema, "orders"), qt.DeepEquals, []string{"tenant", "id"})
+			c.Assert(defaultOf(columnNamed(c, orders, "amount")), qt.Equals, "Decimal('1.5', 22, 9)")
 
-	email := indexNamed(c, live, "uq_accounts_email")
-	c.Assert(email.IsUnique, qt.IsTrue)
-	c.Assert(email.Method, qt.Equals, "GLOBAL SYNC")
-	status := indexNamed(c, live, "idx_accounts_status")
-	c.Assert(status.Method, qt.Equals, "GLOBAL ASYNC")
-	created := indexNamed(c, live, "idx_accounts_created")
-	c.Assert(created.Columns, qt.DeepEquals, []string{"created_at"})
-	c.Assert(created.IncludeColumns, qt.DeepEquals, []string{"status", "visits"})
+			email := indexNamed(c, live, "uq_accounts_email")
+			c.Assert(email.IsUnique, qt.IsTrue)
+			c.Assert(email.Method, qt.Equals, "GLOBAL SYNC")
+			status := indexNamed(c, live, "idx_accounts_status")
+			c.Assert(status.Method, qt.Equals, "GLOBAL ASYNC")
+			created := indexNamed(c, live, "idx_accounts_created")
+			c.Assert(created.Columns, qt.DeepEquals, []string{"created_at"})
+			c.Assert(created.IncludeColumns, qt.DeepEquals, []string{"status", "visits"})
 
-	tick := tableNamed(c, live, roundTripSchema, "tick`name.with.dot")
-	c.Assert(columnNamed(c, tick, "weird-col").DataType, qt.Equals, "Utf8")
+			tick := tableNamed(c, live, roundTripSchema, "tick`name.with.dot")
+			c.Assert(columnNamed(c, tick, "weird-col").DataType, qt.Equals, "Utf8")
+		})
+	}
 }
 
 // roundTripDeclaration is the representative schema for a server with caps.
@@ -199,18 +233,6 @@ func lineHas(caps capability.Capabilities, field schemamodel.Field) bool {
 	}
 }
 
-// openYDB connects to the YDB database the run names.
-func openYDB(c *qt.C) *dbschema.DatabaseConnection {
-	c.Helper()
-	url := dbtarget.URL(c, dbtarget.YDB)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	conn, err := dbschema.ConnectToDatabase(ctx, url)
-	c.Assert(err, qt.IsNil)
-	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
-	return conn
-}
-
 // readScoped reads the directories a test owns.
 func readScoped(c *qt.C, conn *dbschema.DatabaseConnection, schemas []string) *catalog.Database {
 	c.Helper()
@@ -292,6 +314,16 @@ func defaultOf(column catalog.Column) string {
 		return ""
 	}
 	return *column.ColumnDefault
+}
+
+// defaultOfAny is the default of the column named name, and the empty string
+// when the table has no such column or the column has no default.
+func defaultOfAny(table catalog.Table, name string) string {
+	index := slices.IndexFunc(table.Columns, func(column catalog.Column) bool { return column.Name == name })
+	if index < 0 {
+		return ""
+	}
+	return defaultOf(table.Columns[index])
 }
 
 func indexNamed(c *qt.C, live *catalog.Database, name string) catalog.Index {

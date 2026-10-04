@@ -25,9 +25,9 @@ connects to a live database, reads its tables back, applies DDL to it and runs
 versioned migrations against it. The
 dialect name is `ydb`. YDB is its own dialect rather than a PostgreSQL-family
 one: Ptah writes YQL and talks to the server through the YDB Go SDK. A schema
-Ptah applies reads back as itself, which the integration suite checks against a
-live YDB 26.2 in CI. The nightly capability matrix runs the same suite on each
-YDB line it probes.
+Ptah applies reads back as itself, which the integration suite checks in CI
+against live YDB 26.2 and 25.1 servers. The nightly capability matrix runs the
+same suite on each YDB line it probes.
 
 Data changes, lint, dev databases, `ptah-compat` and the YDB object families
 such as TTL, column families, changefeeds, views and vector indexes are not

@@ -318,6 +318,34 @@ jobs:
           - 2136:2136
           - 8765:8765
 
+      # YDB 25.1, the one line with a published support date. The YDB live
+      # tests run against this server and the one above, through
+      # YDB251_TEST_URL. local-ydb advertises GRPC_PORT through discovery, so
+      # the server listens on the port the runner reaches it on rather than
+      # behind a remapped one, which would advertise the other server's port.
+      # EnableVectorIndex is off by default on 25.1, and the reader's refusal
+      # of a vector index needs a table that holds one; the flag decides no
+      # capability, so every flag that does stays at the line's default.
+      #
+      # The tag names a patch: local-ydb's short tags are branch builds, and
+      # `25.1.4` is a build of stable-25-1-4 rather than a release.
+      ydb-25-1:
+        image: ydbplatform/local-ydb:25.1.4.7
+        env:
+          YDB_USE_IN_MEMORY_PDISKS: "true"
+          GRPC_PORT: "2137"
+          MON_PORT: "8766"
+          YDB_FEATURE_FLAGS: enable_vector_index
+        options: >-
+          --hostname localhost
+          --health-cmd "sh /health_check"
+          --health-interval 5s
+          --health-timeout 20s
+          --health-retries 30
+        ports:
+          - 2137:2137
+          - 8766:8766
+
       registry:
         image: registry:3
         ports:
@@ -602,6 +630,7 @@ jobs:
           MYSQL_DEV_SERVER_URL: "mysql://root:root_password@127.0.0.1:3316/"
           MARIADB_DEV_SERVER_URL: "mariadb://root:root_password@127.0.0.1:3317/"
           YDB_TEST_URL: "ydb://localhost:2136/local"
+          YDB251_TEST_URL: "ydb://localhost:2137/local"
           CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
           PTAH_CLICKHOUSE_REALM_TEST_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
           PTAH_CLICKHOUSE_LEGACY_REALM_TEST_URL: "clickhouse://ptah_user:ptah_password@localhost:9001/ptah_test"

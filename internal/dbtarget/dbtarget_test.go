@@ -565,6 +565,12 @@ func TestLookupDriverDSN_KeepsASchemeItsDriverParses(t *testing.T) {
 			set:    func(t *testing.T) { t.Setenv("YDB_TEST_URL", "ydbs://ydb.example:2135/local") },
 			want:   "grpcs://ydb.example:2135/local",
 		},
+		{
+			name:   "the YDB 25.1 server is read the same way",
+			engine: dbtarget.YDB251,
+			set:    func(t *testing.T) { t.Setenv("YDB251_TEST_URL", "ydb://localhost:2137/local") },
+			want:   "grpc://localhost:2137/local",
+		},
 	}
 
 	for _, test := range tests {

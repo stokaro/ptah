@@ -706,9 +706,10 @@ var Cells = []Cell{
 	// YDB: six release lines with a measured preset. The probe runs two of them
 	// on every run of the tiered workflows, 26.2 and 25.1, which certifies
 	// them, and the nightly tier runs the integration suite's YDB scenarios
-	// against both; the integration workflow also runs the YDB live tests
-	// against 26.2. The other four are best-effort, and their Unprobed reason
-	// says why no job is spent on them.
+	// against both. The integration workflow starts a server on each of the
+	// two as well, and runs the YDB live tests against both. The other four
+	// are best-effort, and their Unprobed reason says why no job is spent on
+	// them.
 	//
 	// Read 2026-10-03 (ydb.tech/docs/en/devops/concepts/versioning and the
 	// tags of ydb-platform/ydb): YDB names testing, stable and lts version

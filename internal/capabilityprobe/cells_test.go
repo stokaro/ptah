@@ -839,6 +839,8 @@ type renovatePackageRule struct {
 	MatchPackageNames           []string `json:"matchPackageNames"`
 	MatchFileNames              []string `json:"matchFileNames"`
 	MatchUpdateTypes            []string `json:"matchUpdateTypes"`
+	MatchCurrentValue           string   `json:"matchCurrentValue"`
+	AllowedVersions             string   `json:"allowedVersions"`
 	AutoMerge                   *bool    `json:"automerge"`
 	Enabled                     *bool    `json:"enabled"`
 	DependencyDashboardApproval *bool    `json:"dependencyDashboardApproval"`
@@ -923,6 +925,70 @@ func TestRenovate_HoldsANewYDBLineForApproval(t *testing.T) {
 	c.Assert(rules[0].MatchUpdateTypes, qt.ContentEquals, []string{"major", "minor"},
 		qt.Commentf("a line change is a major or minor update; holding a patch as well would stop "+
 			"the pinned line from receiving its fixes"))
+}
+
+// TestRenovate_KeepsTheYDB251ServiceOnItsLine keeps a bot from moving the
+// integration workflow's second YDB server off 25.1.
+//
+// The workflow pins local-ydb twice, once per certified line, and when a new
+// line appears Renovate files both pins in one branch: the 26.2 pin moves to
+// it as a minor update and the 25.1 pin as a major one. Approving the first
+// on the Dependency Dashboard would then move the second, and the YDB live
+// tests would stop running on 25.1. The rule matches the 25.1 pin alone and
+// allows it a patch inside its line and nothing else.
+func TestRenovate_KeepsTheYDB251ServiceOnItsLine(t *testing.T) {
+	c := qt.New(t)
+
+	tags := tagsStarted(c, integrationWorkflow, ydbImage)
+	c.Assert(tags, qt.HasLen, 2,
+		qt.Commentf("%s starts %v from %s; this test reads one pin per certified YDB line",
+			integrationWorkflow, tags, ydbImage))
+
+	rules := rulesPinningTheCurrentLine(c, ydbImage)
+	c.Assert(rules, qt.HasLen, 1,
+		qt.Commentf("%s must carry exactly one rule that keeps a %s pin on its line", renovateConfig, ydbImage))
+	c.Assert(rules[0].AllowedVersions, qt.Equals, rules[0].MatchCurrentValue)
+	current, err := regexp.Compile(strings.TrimSuffix(strings.TrimPrefix(rules[0].MatchCurrentValue, "/"), "/"))
+	c.Assert(err, qt.IsNil)
+	matched := slices.DeleteFunc(slices.Clone(tags), func(tag string) bool { return !current.MatchString(tag) })
+	c.Assert(matched, qt.HasLen, 1, qt.Commentf("the rule matches %v of the pins %v", matched, tags))
+	c.Assert(matched[0], qt.Matches, regexp.QuoteMeta(capabilityline.YDB251)+`\..+`)
+}
+
+// tagsStarted returns the tag of every container a file starts from the
+// repository.
+func tagsStarted(c *qt.C, path, repository string) []string {
+	c.Helper()
+
+	var tags []string
+	for _, ref := range startedImages(c, path) {
+		if started, tag := splitImageRef(ref); started == repository {
+			tags = append(tags, tag)
+		}
+	}
+	return tags
+}
+
+// rulesPinningTheCurrentLine returns the rules that cover the package and
+// restrict the versions a pin matching their current value may move to.
+func rulesPinningTheCurrentLine(c *qt.C, name string) []renovatePackageRule {
+	c.Helper()
+
+	body, err := os.ReadFile(renovateConfig)
+	c.Assert(err, qt.IsNil)
+
+	var config struct {
+		PackageRules []renovatePackageRule `json:"packageRules"`
+	}
+	c.Assert(json.Unmarshal(body, &config), qt.IsNil)
+
+	var matching []renovatePackageRule
+	for _, rule := range config.PackageRules {
+		if rule.MatchCurrentValue != "" && rule.AllowedVersions != "" && renovateRuleCovers(c, rule, name) {
+			matching = append(matching, rule)
+		}
+	}
+	return matching
 }
 
 // rulesHoldingForApproval returns the rules that cover the package and make
