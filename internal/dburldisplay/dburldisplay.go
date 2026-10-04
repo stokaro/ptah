@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"ptah.run/core/platform"
 	"ptah.run/internal/atlasurl"
@@ -28,7 +29,16 @@ const redactedQueryValue = "redacted"
 // one that was missed would print its password.
 var mySQLTCPPasswordPattern = regexp.MustCompile(`^([^:/?#]+://[^:@/?#]+):([^@/?#]+)@`)
 
-// Format formats a database URL for display (hiding secrets).
+// Format formats a database URL for display, with its password and every
+// secret query parameter hidden.
+//
+// It hides more than a URL parser reads, never less. A password with a
+// reserved character written as it is -- `#`, `?`, `/`, or a `%` that starts
+// no escape -- makes net/url refuse the URL or read part of the password as a
+// host, a path, a fragment or a query, and the text before the last `@` is then
+// hidden as credentials. A libpq keyword/value string, which the PostgreSQL drivers
+// accept in place of a URL, keeps its text and loses the values of its
+// secret keywords.
 func Format(dbURL string) string {
 	// Handle MySQL/MariaDB URLs specially since they have a different format
 	if _, mysqlFamily := atlasurl.CutMySQLScheme(dbURL); mysqlFamily && strings.Contains(dbURL, "@tcp(") {
@@ -36,10 +46,13 @@ func Format(dbURL string) string {
 		// Redact only the leading authority credentials, not DSN-like values in query params.
 		return redactURLQuery(mySQLTCPPasswordPattern.ReplaceAllString(dbURL, "$1:***@"))
 	}
+	if keywords, ok := redactKeywordValue(dbURL); ok {
+		return keywords
+	}
 
 	parsedURL, err := url.Parse(dbURL)
-	if err != nil {
-		return dbURL
+	if err != nil || misreadCredentials(parsedURL) {
+		return redactUnparsedUserInfo(dbURL)
 	}
 	parsedURL.RawQuery = redactRawQuery(parsedURL.RawQuery, urlValuedParameter(parsedURL.Scheme))
 
@@ -51,6 +64,79 @@ func Format(dbURL string) string {
 	}
 
 	return parsedURL.String()
+}
+
+// misreadCredentials reports a parse that left an @ where a URL written with
+// its password escaped has none: in the host, the path, the fragment, the
+// opaque part or a query key. Each is the end of credentials net/url did not
+// read as such, because a reserved character in the password ended the
+// authority early. An @ in a query value is a value.
+func misreadCredentials(parsedURL *url.URL) bool {
+	if strings.Contains(parsedURL.Host+parsedURL.Path+parsedURL.Fragment+parsedURL.Opaque, "@") {
+		return true
+	}
+	query, _ := url.ParseQuery(parsedURL.RawQuery)
+	for key := range query {
+		if strings.Contains(key, "@") {
+			return true
+		}
+	}
+	return false
+}
+
+// redactUnparsedUserInfo hides the credentials of a URL net/url cannot read
+// as written: everything between the scheme and the last `@` when that text
+// holds a password, that is a `:`. The last `@` rather than the first, since a
+// password may hold one too. A query the text still has is redacted as the
+// MySQL tcp() form's is.
+func redactUnparsedUserInfo(dbURL string) string {
+	scheme, rest, found := strings.Cut(dbURL, "://")
+	if !found {
+		return dbURL
+	}
+	at := strings.LastIndex(rest, "@")
+	if at < 0 {
+		return redactURLQuery(dbURL)
+	}
+	user, _, hasPassword := strings.Cut(rest[:at], ":")
+	if !hasPassword {
+		return redactURLQuery(dbURL)
+	}
+	return redactURLQuery(scheme + "://" + user + ":***@" + rest[at+1:])
+}
+
+// keywordValuePair is one `keyword=value` setting of a libpq connection
+// string, with where its value starts and ends.
+var keywordValuePair = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*('(?:[^'\\]|\\.)*'|(?:[^\s'\\]|\\.)*)`)
+
+// redactKeywordValue hides the secret values of a libpq keyword/value
+// connection string, such as `host=db user=app password=s3cret`, and keeps
+// the rest of the text as it was written. It answers false for anything that
+// does not read as such a string from end to end, a URL included.
+func redactKeywordValue(dsn string) (string, bool) {
+	if strings.TrimSpace(dsn) == "" || strings.Contains(dsn, "://") {
+		return "", false
+	}
+	var out strings.Builder
+	rest := dsn
+	for strings.TrimSpace(rest) != "" {
+		match := keywordValuePair.FindStringSubmatchIndex(rest)
+		if match == nil {
+			return "", false
+		}
+		end := match[1]
+		if end < len(rest) && !unicode.IsSpace(rune(rest[end])) {
+			return "", false
+		}
+		if isSecretQueryParam(rest[match[2]:match[3]]) {
+			out.WriteString(rest[:match[4]] + redactedQueryValue)
+		} else {
+			out.WriteString(rest[:end])
+		}
+		rest = rest[end:]
+	}
+	out.WriteString(rest)
+	return out.String(), true
 }
 
 func formatURLWithRedactedUserPassword(parsedURL *url.URL) string {
