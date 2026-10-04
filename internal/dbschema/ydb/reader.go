@@ -146,7 +146,7 @@ func (r *Reader) entry(
 		}
 		return r.walk(ctx, source, path.Join(schema, name), db)
 	case Ydb_Scheme.Entry_TABLE:
-		if !r.inScope(schema) || revisiontable.IsDefault(name) || name == revisiontable.Tags {
+		if !r.inScope(schema) || revisiontable.IsDefault(name) {
 			// The migrator's own tables are its bookkeeping, not the
 			// schema, as every other reader treats its revision tables.
 			// The tag table is one of them: measured on 26.2.1.14, a read
