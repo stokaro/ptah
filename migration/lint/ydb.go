@@ -55,6 +55,7 @@ func ydbRules() []Rule {
 		ydbPrincipalDropRule(),
 		ydbTopicResetRule(),
 		ydbTopicSettingIgnoredRule(),
+		ydbSecretInClearRule(),
 	}
 }
 
