@@ -106,6 +106,16 @@ func TestQualifierValidateScope_FailurePath(t *testing.T) {
 			`(?s)atlas migrate diff --qualifier is not supported for dialect "sqlite": SQLite.s qualified form names an ATTACHed database.*`)
 	})
 
+	t.Run("ydb", func(t *testing.T) {
+		c := qt.New(t)
+		qualifier, err := atlasmigrate.ParseQualifier("tenant")
+		c.Assert(err, qt.IsNil)
+		c.Assert(qualifier.ValidateScope(platform.YDB, nil), qt.ErrorMatches,
+			`(?s)atlas migrate diff --qualifier is not supported for dialect "ydb": a YDB schema is a directory .*`)
+		c.Assert(qualifier.ApplyToPlan(platform.YDB, &schemamodel.Database{}, []ast.Node{ast.NewCreateTable("users")}),
+			qt.ErrorMatches, `(?s)atlas migrate diff --qualifier is not supported for dialect "ydb": a YDB schema is a directory .*`)
+	})
+
 	t.Run("multiple schema scope", func(t *testing.T) {
 		c := qt.New(t)
 		qualifier, err := atlasmigrate.ParseQualifier("tenant")
