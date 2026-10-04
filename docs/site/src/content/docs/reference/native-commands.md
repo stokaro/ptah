@@ -623,12 +623,16 @@ job that did not run inside it holds a privilege the rule will name. Grants to
 `ROL03` and `ROL04` read the server's role graph — who holds which role — so they
 run against a live database and report themselves skipped anywhere that graph was
 not read. The PostgreSQL family reads it from `pg_auth_members`, MySQL from
-`mysql.role_edges`, MariaDB from `mysql.roles_mapping`, and SQL Server from
+`mysql.role_edges`, MariaDB from `mysql.roles_mapping`, SQL Server from
 `sys.database_role_members` — where the fixed roles every database ships with,
 and `public`, are excluded on the role side, because a membership nobody wrote
-is not a finding.
+is not a finding — and YDB from `.sys/auth_group_members`. On YDB a role is a
+user or a group and only a group has members, so `ROL04` names a group nobody
+is in and a user that may not log in.
 
-`OWN01` reads ownership from the PostgreSQL family and SQL Server. MySQL has no
+`OWN01` reads ownership from the PostgreSQL family, SQL Server and YDB, where
+the scheme service reports the owner of the database, each directory and each
+table, and `.sys/auth_users` whether that owner may log in. MySQL has no
 object owner to read — a routine has a `DEFINER` and a table has nothing — so the
 rule reports itself skipped there rather than answering from a concept the engine
 does not have.

@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer/internal/dialects/internal/bufwriter"
+	"ptah.run/core/renderer/internal/dialects/internal/grantrefusal"
 	"ptah.run/core/renderer/internal/dialects/internal/nodedispatch"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/defaultlit"
@@ -543,6 +544,10 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderGrantPrivilege(n)
 	case *ast.RevokePrivilegeNode:
 		return r.renderRevokePrivilege(n)
+	case *ast.GrantRoleMembershipNode:
+		return grantrefusal.Membership(r.dialect, r.capabilities(), "ADD "+n.Member+" TO "+n.Role)
+	case *ast.RevokeRoleMembershipNode:
+		return grantrefusal.Membership(r.dialect, r.capabilities(), "DROP "+n.Member+" FROM "+n.Role)
 	case *ast.DefaultPrivilegeNode:
 		return r.renderDefaultPrivilege(n)
 	case *ast.RevokeDefaultPrivilegeNode:

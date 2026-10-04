@@ -294,11 +294,11 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"DS107": {
 		// Broader than Atlas DS101, which is the schema drop alone: this rule
 		// also fires on DROP TYPE, EXTENSION, FUNCTION, PROCEDURE, TRIGGER,
-		// ROLE, and POLICY, so the rule is ours even though it covers the Atlas
-		// one.
-		Summary: "dropping a schema, type, extension, function, procedure, trigger, role, or policy removes behavior",
-		YDB:     YDBNoSuchStatement,
-		YDBNote: "YDB has none of the objects it reads; it does not read `DROP USER` or `DROP GROUP`",
+		// ROLE, and POLICY, and on YDB on DROP USER and DROP GROUP, so the rule
+		// is ours even though it covers the Atlas one.
+		Summary: "dropping a schema, type, extension, function, procedure, trigger, role, policy, or YDB user or group removes behavior",
+		YDB:     YDBApplies,
+		YDBNote: "`DROP USER` and `DROP GROUP`, YDB's principals",
 	},
 	"AC101": {
 		Summary: "the migration defines a routine whose body is not analyzed, so a clean result says nothing about what the body does",
@@ -617,6 +617,12 @@ var migrationRuleMeta = map[string]ruleMeta{
 	},
 	"YD109": {
 		Summary: "a `RENAME TO` of a table that carries a changefeed, which YDB refuses until every changefeed is dropped",
+	},
+	"YD110": {
+		Summary: "`REVOKE GRANT OPTION FOR` on YDB takes the permission it names as well, since YDB keeps the grant option as the permission `ydb.access.grant`",
+	},
+	"YD111": {
+		Summary: "`DROP USER` or `DROP GROUP` on YDB leaves the principal's permissions behind, and a principal created later under the name holds them",
 	},
 }
 

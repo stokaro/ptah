@@ -66,6 +66,7 @@ var ydbAppliesFixtures = map[string]map[string]string{
 	"DS102":  withVersion("ALTER TABLE `shop/users` DROP COLUMN email;\n", "-- nothing\n"),
 	"BC104":  withVersion("ALTER TABLE `shop/users` DROP COLUMN email;\n", "-- nothing\n"),
 	"DS104":  withVersion("ALTER TABLE `shop/users` ALTER COLUMN email DROP NOT NULL;\n", "-- nothing\n"),
+	"DS107":  withVersion("DROP GROUP readers;\n", "-- nothing\n"),
 	"DS108":  withVersion("TRUNCATE TABLE `shop/users`;\n", "-- nothing\n"),
 	"BC101":  withVersion("ALTER TABLE `shop/users` RENAME TO `shop/accounts`;\n", "-- nothing\n"),
 	"MF101P": withVersion("ALTER TABLE `shop/users` ADD COLUMN zz Utf8;\n", ""),

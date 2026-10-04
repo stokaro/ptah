@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -156,7 +157,7 @@ func ydbPlan() plan {
 			"ALTER TABLE rls ENABLE ROW LEVEL SECURITY",
 			"CREATE POLICY rls_p ON rls USING (true)",
 		),
-		ydbRoleManagement(t),
+		ydbAccessControl(t),
 		foreignKeys(
 			[]string{t.table("fk_parent", "id Int64 NOT NULL", "id"), t.table("fk_child", "id Int64 NOT NULL", "id")},
 			"ALTER TABLE fk_child ADD CONSTRAINT fk_child_fk FOREIGN KEY (id) REFERENCES fk_parent (id)",
@@ -319,52 +320,137 @@ func ydbUndecided() map[capability.Capability]string {
 	}
 }
 
-// ydbRoleManagement decides RoleManagement in YDB's own access model: a group,
-// a GRANT of a YDB permission on a table, and the grant read back from
-// .sys/auth_permissions, where the access model lives.
+// ydbAccessControl decides the access keys in YDB's own model: a group and a
+// user, the user made a member of the group, and three grants -- on a table of
+// the namespace by its absolute path, on the database itself, and on the
+// namespace directory by its single relative name -- each read back through
+// Ptah's YDB reader, which is the question a plan asks.
 //
-// Three measurements shape it. A group name takes no underscore (`Name is not
-// allowed`), so the group is named from the namespace without them. GRANT
-// ignores the namespace pragma and needs the table's absolute path: a relative
-// one answers `Path does not exist` on 26.2 and `wrong path format` on 25.1.
-// And a group outlives the namespace, so it is recorded for the teardown.
-func ydbRoleManagement(t tableSpelling) experiment {
+// Measurements shape it. A user or group name takes lower-case letters and
+// digits only (`Name is not allowed`), so the principals are named from the
+// namespace without its underscores. GRANT ignores the namespace pragma and
+// resolves a relative path against the database root; a single name resolves
+// on 26.1 and later and answers `wrong path format` on 25.1 to 25.4. And the
+// principals and the database grant outlive the namespace, so they are recorded
+// for the teardown, which revokes the grant before it drops them: DROP USER
+// and DROP GROUP leave a principal's entries behind.
+func ydbAccessControl(t tableSpelling) experiment {
+	keys := []capability.Capability{
+		capability.RoleManagement, capability.GroupPrincipals, capability.RoleMembership,
+		capability.DatabaseGrants, capability.RelativeGrantPaths,
+	}
 	return experiment{
-		decides: []capability.Capability{capability.RoleManagement},
+		decides: keys,
 		setup:   []string{t.table("rm_t", "n Int64 NOT NULL", "n")},
 		decide: func(ctx context.Context, s *session) (verdicts, []Attempt) {
-			group := strings.ReplaceAll(s.namespace, "_", "")
+			principal := strings.ReplaceAll(s.namespace, "_", "")
+			group, user := principal+"g", principal+"u"
 			created := s.exec(ctx, "CREATE GROUP "+group)
 			attempts := []Attempt{created}
 			if !created.Accepted {
-				return verdicts{capability.RoleManagement: decided(false)}, attempts
+				return allDecided(keys, false), attempts
 			}
 			s.roles = append(s.roles, group)
-			table := path.Join(s.database, s.namespace, "rm_t")
-			granted := s.exec(ctx, "GRANT SELECT ON "+sqlident.Quote(platform.YDB, table)+" TO "+group)
-			attempts = append(attempts, granted)
-			if !granted.Accepted {
-				return verdicts{capability.RoleManagement: decided(false)}, attempts
+			createdUser := s.exec(ctx, "CREATE USER "+user+" NOLOGIN")
+			attempts = append(attempts, createdUser)
+			if createdUser.Accepted {
+				s.users = append(s.users, user)
 			}
-			stored, read := s.query(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE Sid = %s AND Path = %s",
-				ydbSystemView(s.database, "auth_permissions"), ydbString(group), ydbString(table)))
+			table := path.Join(s.database, s.namespace, "rm_t")
+			statements := []string{
+				"ALTER GROUP " + group + " ADD USER " + user,
+				"GRANT 'ydb.generic.read' ON " + sqlident.Quote(platform.YDB, table) + " TO " + group,
+				"GRANT 'ydb.generic.list' ON " + sqlident.Quote(platform.YDB, s.database) + " TO " + group,
+				"GRANT 'ydb.granular.describe_schema' ON " + sqlident.Quote(platform.YDB, s.namespace) + " TO " + group,
+			}
+			accepted := make([]bool, len(statements))
+			for i, statement := range statements {
+				attempt := s.exec(ctx, statement)
+				attempts = append(attempts, attempt)
+				accepted[i] = attempt.Accepted
+			}
+			read := Attempt{Statement: "read the users, groups, memberships and grants of " +
+				path.Join(s.database, s.namespace) + " through Ptah's YDB reader"}
+			db, err := dbschema.ReadSchemaWithSchemasContext(ctx, s.conn, []string{s.namespace})
+			if err != nil {
+				read.ServerErr = err.Error()
+				attempts = append(attempts, read)
+				return allUndecided(keys, "the read-back was refused (%s)", collapse(err.Error())), attempts
+			}
+			read.Accepted = true
 			attempts = append(attempts, read)
-			return verdicts{capability.RoleManagement: grantObservation(read, stored)}, attempts
+			held := func(grant catalog.Grant) bool { return slices.Contains(db.Grants, grant) }
+			return verdicts{
+				capability.RoleManagement: readBack{
+					accepted: true, what: "the grant on the table",
+					found: held(catalog.Grant{Role: group, Privilege: "ydb.generic.read",
+						ObjectType: "TABLE", Schema: s.namespace, ObjectName: "rm_t"}),
+				}.observation(),
+				capability.GroupPrincipals: readBack{
+					accepted: createdUser.Accepted, statement: createdUser.Statement, what: "a group beside a user",
+					found: slices.Contains(db.Roles, catalog.Role{Name: group, Inherit: true, Group: true}) &&
+						slices.Contains(db.Roles, catalog.Role{Name: user, Inherit: true}),
+				}.observation(),
+				capability.RoleMembership: readBack{
+					accepted: accepted[0], statement: statements[0], what: "the member",
+					found: slices.Contains(db.RoleMemberships, catalog.RoleMembership{Role: group, Member: user}),
+				}.observation(),
+				capability.DatabaseGrants: readBack{
+					accepted: accepted[2], statement: statements[2], what: "the grant on the database",
+					found: held(catalog.Grant{Role: group, Privilege: "ydb.generic.list", ObjectType: "DATABASE"}),
+				}.observation(),
+				capability.RelativeGrantPaths: readBack{
+					accepted: accepted[3], statement: statements[3],
+					what: "the grant on the directory named by its single relative name",
+					found: held(catalog.Grant{Role: group, Privilege: "ydb.granular.describe_schema",
+						ObjectType: "SCHEMA", ObjectName: s.namespace}),
+				}.observation(),
+			}, attempts
 		},
 	}
 }
 
-// grantObservation reads the read-back after an accepted GRANT: a row is a
-// grant the access model holds, and none is one the server took and dropped.
-func grantObservation(read Attempt, stored int64) observation {
-	if !read.Accepted {
-		return cannotDecide("the GRANT was accepted and the read-back %q was refused (%s)",
-			collapse(read.Statement), collapse(read.ServerErr))
+// readBack is a key a statement and its read-back settle together.
+type readBack struct {
+	// accepted is whether the server took the statement, and statement is
+	// the statement, which a refusal names.
+	accepted  bool
+	statement string
+	// found is whether Ptah's reader reported what the statement made, and
+	// what names it in a note.
+	found bool
+	what  string
+}
+
+// observation is the key's answer: a refused statement is false, and an
+// accepted one is what the reader reported.
+func (r readBack) observation() observation {
+	switch {
+	case !r.accepted:
+		return annotated(false, fmt.Sprintf("the server refused %q", collapse(r.statement)))
+	case !r.found:
+		return annotated(false, "Ptah's YDB reader does not report "+r.what)
+	default:
+		return decided(true)
 	}
-	if stored < 1 {
-		return annotated(false, "the server accepted the GRANT and .sys/auth_permissions does not report it")
+}
+
+// allDecided answers every key alike.
+func allDecided(keys []capability.Capability, does bool) verdicts {
+	answered := make(verdicts, len(keys))
+	for _, key := range keys {
+		answered[key] = decided(does)
 	}
-	return decided(true)
+	return answered
+}
+
+// allUndecided leaves every key undecided for one reason.
+func allUndecided(keys []capability.Capability, format string, args ...any) verdicts {
+	answered := make(verdicts, len(keys))
+	for _, key := range keys {
+		answered[key] = cannotDecide(format, args...)
+	}
+	return answered
 }
 
 // ydbRowDeletionPolicy decides RowDeletionPolicy with YDB's TTL, the same idea

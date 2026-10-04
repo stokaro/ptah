@@ -180,6 +180,10 @@ func TestRenderGrantsRoundTripThroughParser(t *testing.T) {
 			name:       "schema target",
 			annotation: `//ptah:schema:grant role="app_user" privilege="USAGE" on_schema="app"`,
 		},
+		{
+			name:       "database target",
+			annotation: `//ptah:schema:grant role="app" privilege="CONNECT" on_database="true"`,
+		},
 	}
 
 	for _, test := range tests {
@@ -524,4 +528,33 @@ func mustReadFile(c *qt.C, path string) string {
 	data, err := os.ReadFile(path)
 	c.Assert(err, qt.IsNil)
 	return strings.TrimSpace(string(data))
+}
+
+// TestRenderRolesRoundTripThroughParser compares the roles the parser read
+// with the roles it reads back off the export: a group, and a role's member_of
+// list, which an exporter that dropped either would lose on the way back.
+func TestRenderRolesRoundTripThroughParser(t *testing.T) {
+	c := qt.New(t)
+	sourceDir := t.TempDir()
+	writeSource(c, filepath.Join(sourceDir, "schema.go"), "package models\n\n"+
+		`//ptah:schema:role name="app" login="true" member_of="readers,DATA-READERS"`+"\n"+
+		`//ptah:schema:role name="readers" group="true"`+"\n"+
+		`//ptah:schema:revoke role="app" privilege="DROP" on_database="true"`+"\n"+
+		"type PtahSchemaObjects struct{}\n")
+	before, err := goschema.ParseDir(sourceDir)
+	c.Assert(err, qt.IsNil)
+	c.Assert(before.Roles, qt.HasLen, 2)
+
+	files, err := goschematogo.Render(
+		&schemamodel.Database{Roles: before.Roles, RevokedGrants: before.RevokedGrants},
+		goschematogo.Options{PackageName: "models", SingleFile: true},
+	)
+	c.Assert(err, qt.IsNil)
+	dir := t.TempDir()
+	c.Assert(goschematogo.WriteDir(dir, files), qt.IsNil)
+	after, err := goschema.ParseDir(dir)
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(after.Roles, qt.DeepEquals, before.Roles)
+	c.Assert(after.RevokedGrants, qt.DeepEquals, before.RevokedGrants)
 }

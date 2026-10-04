@@ -94,6 +94,14 @@ type Database struct {
 	// does not do. A description that declares no limits must encode exactly as
 	// it did before this field existed.
 	NotDescribed coverage.Set `json:",omitzero"`
+
+	// DatabasePath is the absolute path of the database a description was
+	// read from, such as /local, on YDB, whose GRANT takes the database itself,
+	// and on its older lines an object at the database root, only by that
+	// path. A render of the description names those objects with it. It is
+	// empty for a declaration, which is not about one database, and never
+	// serialized, so it reaches no fingerprint and no document.
+	DatabasePath string `json:"-"`
 }
 
 // Schema represents a database schema/namespace.
@@ -1866,6 +1874,22 @@ type Role struct {
 	Replication bool   // Whether role can initiate replication (default: false)
 	Comment     string // Optional comment for documentation
 
+	// Group is YDB's: it declares the role as a group, a principal of its own
+	// kind that never logs in and is the only kind with members, as YDB's
+	// CREATE GROUP makes one. False declares a role, which on YDB is a user. A
+	// target without [ptah.run/core/platform/capability.GroupPrincipals]
+	// refuses a declared group, because its roles are of one kind and it could
+	// not keep the distinction.
+	Group bool `json:",omitempty"`
+
+	// MemberOf is YDB's today, the one target with
+	// [ptah.run/core/platform/capability.RoleMembership]: it names the groups
+	// this role is a member of, holding every permission they hold. A named
+	// group need not be declared here: YDB's own groups, such as DATA-READERS,
+	// are groups a declaration can join. A target without the key refuses the
+	// list.
+	MemberOf []string `json:",omitempty"`
+
 	// Dialects scopes this declaration to the named target dialects. See
 	// [ScopeToDialect].
 	Dialects []string `json:",omitempty"`
@@ -1903,6 +1927,13 @@ type Grant struct {
 	OnRoutine        string `json:",omitempty"`
 	RoutineArguments string `json:",omitempty"`
 	RoutineKind      string `json:",omitempty"`
+
+	// OnDatabase is YDB's today, the one target with
+	// [ptah.run/core/platform/capability.DatabaseGrants]: it names the
+	// database itself as the target, mutually exclusive with the other
+	// targets: the database the schema is applied to, whatever its name. A
+	// target without the key refuses it.
+	OnDatabase bool `json:",omitempty"`
 
 	// Columns limits the privileges to these columns of the OnTable target:
 	// GRANT UPDATE (a, b) ON t. Empty means the whole table. A column
@@ -1966,6 +1997,8 @@ func (g *Grant) Canonicalize() {
 // comparison against a database normalizes both sides on its own.
 func (g Grant) TargetKey() string {
 	switch {
+	case g.OnDatabase:
+		return "DATABASE"
 	case strings.TrimSpace(g.OnSchema) != "":
 		return "SCHEMA " + strings.TrimSpace(g.OnSchema)
 	case strings.TrimSpace(g.OnSequence) != "":

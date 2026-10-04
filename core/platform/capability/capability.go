@@ -369,7 +369,52 @@ const (
 	// a declared role and grant can be planned, rendered, introspected and
 	// compared — not that any particular attribute exists. A ClickHouse role
 	// carries no attributes at all, and ClickHouse still has this capability.
+	//
+	// YDB satisfies it with users, groups and permission entries on its
+	// objects: a role is a user, a group is a role declared as one (see
+	// [GroupPrincipals]), and a privilege is a YDB permission such as
+	// ydb.granular.select_row. Measured on every line from 25.1.4.7 to
+	// 26.2.1.14.
 	RoleManagement Capability = "role_management"
+
+	// RoleMembership marks a target on which Ptah declares, reads, compares
+	// and plans the membership of one role in another: a role's member_of
+	// list, and on YDB `ALTER GROUP g ADD USER m` and `DROP USER m`.
+	//
+	// It describes Ptah rather than the engine. PostgreSQL, MySQL and
+	// ClickHouse grant a role to a role too, and the key is false there
+	// because their planners plan no membership; their readers report one for
+	// analysis only. Measured on YDB 25.1.4.7 to 26.2.1.14: a member can be a
+	// user or a group, a group can be a member of itself, and adding a member
+	// twice or dropping one that is not a member succeeds with a notice.
+	RoleMembership Capability = "role_membership"
+
+	// GroupPrincipals marks a target on which a group is a principal of its
+	// own kind, made by CREATE GROUP, never able to log in and the only kind
+	// with members, and on which Ptah declares one. YDB's users and groups
+	// share one namespace (`Account already exists`), and DROP USER refuses a
+	// group (`User not found`). Every other engine Ptah renders has roles of
+	// one kind, where a group is a role that cannot log in.
+	GroupPrincipals Capability = "group_principals"
+
+	// DatabaseGrants marks a target on which Ptah declares, reads and plans a
+	// privilege on the database itself, the database the schema is applied to.
+	// YDB holds one in the database root's access list and grants it with
+	// `GRANT ... ON `/db``. PostgreSQL's GRANT ... ON DATABASE exists and is
+	// not modeled, so the key is false there.
+	DatabaseGrants Capability = "database_grants"
+
+	// RelativeGrantPaths marks a YDB line whose GRANT and REVOKE resolve a
+	// relative path of a single name against the database root, as they do
+	// a path with a directory part on every line.
+	//
+	// Measured: 26.1.1.22 and 26.2.1.14 take `GRANT ... ON `t``, and 25.1.4.7,
+	// 25.2.1.24, 25.3.1.25 and 25.4.1.15 answer `wrong path format 't'`. No
+	// line applies `PRAGMA TablePathPrefix` to a grant. Where the key is false,
+	// a plan names an object at the database root by its absolute path, which
+	// a render with no database connection cannot know. It is false on every
+	// engine but YDB, which has no paths to resolve.
+	RelativeGrantPaths Capability = "relative_grant_paths"
 
 	// ForeignKeys marks support for declarative FOREIGN KEY constraints.
 	// PostgreSQL, CockroachDB, YugabyteDB, Spanner's PostgreSQL interface,
@@ -1561,7 +1606,23 @@ var registry = map[Capability]spec{
 		doc: "the catalog has pg_get_triggerdef, which prints a trigger's WHEN condition",
 	},
 	RoleManagement: {
-		doc: "named roles plus GRANT/REVOKE of object privileges (PostgreSQL family, ClickHouse)",
+		doc: "named roles plus GRANT/REVOKE of object privileges (PostgreSQL family, ClickHouse, YDB users and groups)",
+	},
+	RoleMembership: {
+		doc:      "Ptah plans a declared membership of a role in another (YDB's ALTER GROUP ... ADD USER)",
+		requires: []Capability{RoleManagement},
+	},
+	GroupPrincipals: {
+		doc:      "a group is a principal of its own kind, made by CREATE GROUP and never able to log in (YDB)",
+		requires: []Capability{RoleManagement},
+	},
+	DatabaseGrants: {
+		doc:      "Ptah plans a privilege on the database itself (YDB's database root)",
+		requires: []Capability{RoleManagement},
+	},
+	RelativeGrantPaths: {
+		doc:      "GRANT and REVOKE resolve a single-name relative path against the YDB database root",
+		requires: []Capability{RoleManagement},
 	},
 	ForeignKeys: {
 		doc: "declarative FOREIGN KEY constraints",
@@ -2024,7 +2085,13 @@ func MySQL84() Capabilities {
 		// takes a name and nothing else here: LOGIN and PASSWORD are ERROR 1064,
 		// because what they ask for is a USER, and a declaration carrying one is
 		// refused rather than created without it.
-		RoleManagement:                     true,
+		RoleManagement: true,
+		// Membership, groups, database grants and relative grant paths are
+		// YDB's: this planner plans none of them.
+		RoleMembership:                     false,
+		GroupPrincipals:                    false,
+		DatabaseGrants:                     false,
+		RelativeGrantPaths:                 false,
 		ForeignKeys:                        true,
 		ForeignKeysRequireUniqueReference:  true,
 		ForeignKeysRequireIndexedReference: false,
@@ -2241,7 +2308,13 @@ func MariaDB1011() Capabilities {
 		// takes a name and nothing else here: LOGIN and PASSWORD are ERROR 1064,
 		// because what they ask for is a USER, and a declaration carrying one is
 		// refused rather than created without it.
-		RoleManagement:                     true,
+		RoleManagement: true,
+		// Membership, groups, database grants and relative grant paths are
+		// YDB's: this planner plans none of them.
+		RoleMembership:                     false,
+		GroupPrincipals:                    false,
+		DatabaseGrants:                     false,
+		RelativeGrantPaths:                 false,
 		ForeignKeys:                        true,
 		ForeignKeysRequireUniqueReference:  false,
 		ForeignKeysRequireIndexedReference: true,
@@ -2377,38 +2450,44 @@ func MariaDBLegacy() Capabilities {
 // stored rather than recomputed.
 func Postgres16() Capabilities {
 	return Capabilities{
-		DropConstraintGeneric:              true,
-		DropConstraintIfExists:             true,
-		DropIndexIfExists:                  true,
-		ObjectExistenceGuards:              true,
-		CheckConstraintsEnforced:           true,
-		DropCheckClause:                    false,
-		EnumInlineColumn:                   false,
-		EnumCustomType:                     true,
-		CreateIndexConcurrently:            true,
-		DropIndexConcurrently:              true,
-		IndexIncludeSPGiST:                 true,
-		Views:                              true,
-		CreateOrReplaceView:                true,
-		MaterializedViews:                  true,
-		DomainTypes:                        true,
-		CompositeTypes:                     true,
-		RangeTypes:                         true,
-		Functions:                          true,
-		Procedures:                         true,
-		Triggers:                           true,
-		CreateOrReplaceTrigger:             true,
-		AlterGeneratedColumnExpression:     false,
-		RowLevelSecurity:                   true,
-		Hypertables:                        false,
-		ContinuousAggregates:               false,
-		PostgresCatalogFunctions:           true,
-		CatalogRowStatistics:               true,
-		CatalogVectorInfo:                  false,
-		CatalogDependencies:                true,
-		CatalogDefaultPrivileges:           true,
-		CatalogTriggerDefinitions:          true,
-		RoleManagement:                     true,
+		DropConstraintGeneric:          true,
+		DropConstraintIfExists:         true,
+		DropIndexIfExists:              true,
+		ObjectExistenceGuards:          true,
+		CheckConstraintsEnforced:       true,
+		DropCheckClause:                false,
+		EnumInlineColumn:               false,
+		EnumCustomType:                 true,
+		CreateIndexConcurrently:        true,
+		DropIndexConcurrently:          true,
+		IndexIncludeSPGiST:             true,
+		Views:                          true,
+		CreateOrReplaceView:            true,
+		MaterializedViews:              true,
+		DomainTypes:                    true,
+		CompositeTypes:                 true,
+		RangeTypes:                     true,
+		Functions:                      true,
+		Procedures:                     true,
+		Triggers:                       true,
+		CreateOrReplaceTrigger:         true,
+		AlterGeneratedColumnExpression: false,
+		RowLevelSecurity:               true,
+		Hypertables:                    false,
+		ContinuousAggregates:           false,
+		PostgresCatalogFunctions:       true,
+		CatalogRowStatistics:           true,
+		CatalogVectorInfo:              false,
+		CatalogDependencies:            true,
+		CatalogDefaultPrivileges:       true,
+		CatalogTriggerDefinitions:      true,
+		RoleManagement:                 true,
+		// Membership, groups, database grants and relative grant paths are
+		// YDB's: this planner plans none of them.
+		RoleMembership:                     false,
+		GroupPrincipals:                    false,
+		DatabaseGrants:                     false,
+		RelativeGrantPaths:                 false,
 		ForeignKeys:                        true,
 		ForeignKeysRequireUniqueReference:  true,
 		ForeignKeysRequireIndexedReference: false,
@@ -2697,7 +2776,13 @@ func ClickHouse24() Capabilities {
 		// attributes of any kind (system.roles is name, id, storage), users,
 		// role membership, quotas, row policies and settings profiles.
 		// internal/clickhouserbac refuses what cannot be represented.
-		RoleManagement:                     true,
+		RoleManagement: true,
+		// Membership, groups, database grants and relative grant paths are
+		// YDB's: this planner plans none of them.
+		RoleMembership:                     false,
+		GroupPrincipals:                    false,
+		DatabaseGrants:                     false,
+		RelativeGrantPaths:                 false,
 		ForeignKeys:                        false,
 		ForeignKeysRequireUniqueReference:  false,
 		ForeignKeysRequireIndexedReference: false,
@@ -2836,38 +2921,44 @@ func ClickHouse2411() Capabilities {
 // sqlite3_create_function, so there is no DDL object for one to plan.
 func SQLite3() Capabilities {
 	return Capabilities{
-		DomainTypes:                        false,
-		CompositeTypes:                     false,
-		RangeTypes:                         false,
-		DropConstraintGeneric:              false,
-		DropConstraintIfExists:             false,
-		DropIndexIfExists:                  true,
-		ObjectExistenceGuards:              true,
-		CheckConstraintsEnforced:           true,
-		DropCheckClause:                    false,
-		EnumInlineColumn:                   false,
-		EnumCustomType:                     false,
-		CreateIndexConcurrently:            false,
-		DropIndexConcurrently:              false,
-		IndexIncludeSPGiST:                 false,
-		Views:                              true,
-		CreateOrReplaceView:                false,
-		MaterializedViews:                  false,
-		Functions:                          false,
-		Procedures:                         false,
-		Triggers:                           true,
-		CreateOrReplaceTrigger:             false,
-		AlterGeneratedColumnExpression:     false,
-		RowLevelSecurity:                   false,
-		Hypertables:                        false,
-		ContinuousAggregates:               false,
-		PostgresCatalogFunctions:           false,
-		CatalogRowStatistics:               false,
-		CatalogVectorInfo:                  false,
-		CatalogDependencies:                false,
-		CatalogDefaultPrivileges:           false,
-		CatalogTriggerDefinitions:          false,
-		RoleManagement:                     false,
+		DomainTypes:                    false,
+		CompositeTypes:                 false,
+		RangeTypes:                     false,
+		DropConstraintGeneric:          false,
+		DropConstraintIfExists:         false,
+		DropIndexIfExists:              true,
+		ObjectExistenceGuards:          true,
+		CheckConstraintsEnforced:       true,
+		DropCheckClause:                false,
+		EnumInlineColumn:               false,
+		EnumCustomType:                 false,
+		CreateIndexConcurrently:        false,
+		DropIndexConcurrently:          false,
+		IndexIncludeSPGiST:             false,
+		Views:                          true,
+		CreateOrReplaceView:            false,
+		MaterializedViews:              false,
+		Functions:                      false,
+		Procedures:                     false,
+		Triggers:                       true,
+		CreateOrReplaceTrigger:         false,
+		AlterGeneratedColumnExpression: false,
+		RowLevelSecurity:               false,
+		Hypertables:                    false,
+		ContinuousAggregates:           false,
+		PostgresCatalogFunctions:       false,
+		CatalogRowStatistics:           false,
+		CatalogVectorInfo:              false,
+		CatalogDependencies:            false,
+		CatalogDefaultPrivileges:       false,
+		CatalogTriggerDefinitions:      false,
+		RoleManagement:                 false,
+		// Membership, groups, database grants and relative grant paths are
+		// YDB's: this planner plans none of them.
+		RoleMembership:                     false,
+		GroupPrincipals:                    false,
+		DatabaseGrants:                     false,
+		RelativeGrantPaths:                 false,
 		ForeignKeys:                        true,
 		ForeignKeysRequireUniqueReference:  true,
 		ForeignKeysRequireIndexedReference: false,
@@ -3103,7 +3194,13 @@ func SQLServer2022() Capabilities {
 		// `Incorrect syntax near 'LOGIN'` on 17.0.4075.5 -- so a declaration
 		// carrying one gets the role and a line naming what was not honored
 		// (stokaro/ptah#1698).
-		RoleManagement:                     true,
+		RoleManagement: true,
+		// Membership, groups, database grants and relative grant paths are
+		// YDB's: this planner plans none of them.
+		RoleMembership:                     false,
+		GroupPrincipals:                    false,
+		DatabaseGrants:                     false,
+		RelativeGrantPaths:                 false,
 		ForeignKeys:                        true,
 		ForeignKeysRequireUniqueReference:  true,
 		ForeignKeysRequireIndexedReference: false,
@@ -3826,7 +3923,13 @@ func Oracle23() Capabilities {
 		// unprivileged run reports a declared role as undecided rather than
 		// planning a statement it cannot execute.
 		RoleManagement: true,
-		ForeignKeys:    true,
+		// Membership, groups, database grants and relative grant paths are
+		// YDB's: this planner plans none of them.
+		RoleMembership:     false,
+		GroupPrincipals:    false,
+		DatabaseGrants:     false,
+		RelativeGrantPaths: false,
+		ForeignKeys:        true,
 		// A foreign key onto a column with no unique or primary key ->
 		// ORA-02270: no matching unique or primary key for this column-list.
 		ForeignKeysRequireUniqueReference: true,
@@ -3986,9 +4089,8 @@ func Oracle21() Capabilities {
 // describes a server running with default feature flags; a cluster that turns
 // a flag on can do more than its line's preset says.
 //
-// A key is true only where Ptah's renderer and planner reach the feature. The
-// object families arrive in later phases of stokaro/ptah#4015, so roles read
-// false here whatever the server can do.
+// A key is true only where Ptah's renderer and planner reach the feature, so
+// a key reads false where the server has a feature Ptah does not plan yet.
 func YDB262() Capabilities {
 	return Capabilities{
 		// Constraints. The grammar has no CHECK, FOREIGN KEY, UNIQUE
@@ -4070,9 +4172,17 @@ func YDB262() Capabilities {
 		TriggerComments:          false,
 		PolicyComments:           false,
 
-		// Access control is YDB's own model (users, groups, permissions) and
-		// is a later phase. Row-level security does not exist.
-		RoleManagement:      false,
+		// Access control is YDB's own model: users and groups, the membership
+		// of one in a group, and permission entries on the database, its
+		// directories and its tables, read through .sys/auth_* and the scheme
+		// service. Measured alike on 25.1.4.7 to 26.2.1.14, except that a
+		// GRANT naming a single relative name resolves it against the database
+		// root on 26.1 and 26.2 only. Row-level security does not exist.
+		RoleManagement:      true,
+		RoleMembership:      true,
+		GroupPrincipals:     true,
+		DatabaseGrants:      true,
+		RelativeGrantPaths:  true,
 		RowLevelSecurity:    false,
 		CheckGrantStatement: false,
 
@@ -4229,17 +4339,21 @@ func YDB261() Capabilities {
 	return YDB262().With(AlterColumnDefault, false)
 }
 
-// YDB254 is the preset for YDB 25.4. It differs from [YDB261] in two keys,
+// YDB254 is the preset for YDB 25.4. It differs from [YDB261] in three keys,
 // each measured on 25.4.1.15:
 //
 //   - ADD COLUMN with a default is refused on an empty table and on one
 //     holding rows, as `Adding columns with defaults is disabled`;
 //   - a changefeed's USER_SIDS answers `Unknown changefeed setting:
-//     USER_SIDS`.
+//     USER_SIDS`;
+//   - a GRANT naming a table at the database root by its relative name
+//     answers `wrong path format 't'`, where 26.1.1.22 resolves it. 25.1,
+//     25.2 and 25.3 answer the same.
 func YDB254() Capabilities {
 	return YDB261().
 		With(AddColumnWithDefault, false).
-		With(ChangefeedUserSIDs, false)
+		With(ChangefeedUserSIDs, false).
+		With(RelativeGrantPaths, false)
 }
 
 // YDB253 is the preset for YDB 25.3. It differs from [YDB254] in one key: a

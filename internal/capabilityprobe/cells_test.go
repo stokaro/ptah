@@ -1312,13 +1312,14 @@ func TestCells_EveryDeclaredUnderstatementIsStillOne(t *testing.T) {
 		}
 	}
 
-	// The YDB cells declare the understatements today: views, roles and the
-	// TTL policy exist on the server and not yet in Ptah's YDB renderer and
-	// reader. Spanner declared one once and earned it away: the endpoint's
-	// sequences turned out to be readable through the quoted spelling of the
-	// catalog view, so the preset claims the key now (stokaro/ptah#1856).
+	// No cell declares an understatement: YDB's views, users and groups and
+	// TTL policy are rendered, read and planned, so each YDB preset claims
+	// what the server does. Spanner declared one once and earned it away: the
+	// endpoint's sequences turned out to be readable through the quoted
+	// spelling of the catalog view, so the preset claims the key now
+	// (stokaro/ptah#1856).
 	//
-	// The rule is also exercised on a declaration built here, so it is seen to
+	// The rule is exercised on a declaration built here, so it is seen to
 	// catch a stale one whatever the cells declare.
 	t.Run("the rule still catches a stale declaration", func(t *testing.T) {
 		c := qt.New(t)
@@ -1337,9 +1338,6 @@ func TestCells_EveryDeclaredUnderstatementIsStillOne(t *testing.T) {
 		}
 	})
 
-	c := qt.New(t)
-	c.Assert(declarations, qt.Not(qt.HasLen), 0,
-		qt.Commentf("the YDB cells declare understatements; an empty list means the read below stopped seeing them"))
 	for _, d := range declarations {
 		t.Run(capabilityprobe.CellID(d.cell)+" "+string(d.key), func(t *testing.T) {
 			c := qt.New(t)

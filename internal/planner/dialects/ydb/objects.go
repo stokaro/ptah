@@ -21,11 +21,12 @@ type objectChange struct {
 // has [capability.Views] and refused by the key where it does not.
 //
 // The named families come first so a refusal says what it refused. The last
-// check is a catch-all over [difftypes.SchemaDiff.HasChanges]: with the
-// tables, indexes and views this planner does plan taken out -- additions,
-// removals, index renames and changes of partitioning -- a diff that still
-// reports a change carries a family nobody named here, and planning nothing
-// for it would report the database synced.
+// check is a catch-all over [difftypes.SchemaDiff.HasChanges]: with the tables,
+// indexes, views and access changes this planner does plan taken out --
+// additions, removals, renames and changes of partitioning, and the users,
+// groups, memberships and permissions [Planner.planAccess] plans or refuses --
+// a diff that still reports a change carries a family nobody named here, and
+// planning nothing for it would report the database synced.
 func (p *Planner) refuseObjects(diff *difftypes.SchemaDiff) error {
 	for _, change := range p.objectChanges(diff) {
 		if change.present {
@@ -37,6 +38,11 @@ func (p *Planner) refuseObjects(diff *difftypes.SchemaDiff) error {
 	rest.IndexesAdded, rest.IndexesRemoved = nil, nil
 	rest.IndexesRenamed, rest.IndexPartitioningChanged = nil, nil
 	rest.ViewsAdded, rest.ViewsRemoved, rest.ViewsModified = nil, nil, nil
+	rest.RolesAdded, rest.RolesRemoved, rest.RolesModified = nil, nil, nil
+	rest.RoleMembershipsAdded, rest.RoleMembershipsRemoved = nil, nil
+	rest.GrantsAdded, rest.GrantsRemoved, rest.GrantOptionsAdded, rest.GrantOptionsRevoked = nil, nil, nil, nil
+	rest.DefaultPrivilegesAdded, rest.DefaultPrivilegesRemoved = nil, nil
+	rest.DefaultPrivilegeOptionsAdded, rest.DefaultPrivilegeOptionsRevoked = nil, nil
 	if rest.HasChanges() {
 		return refuseFact("the plan", "it changes objects the YDB planner does not plan")
 	}
@@ -75,8 +81,6 @@ func (p *Planner) objectChanges(diff *difftypes.SchemaDiff) []objectChange {
 		{len(diff.RLSPoliciesAdded)+len(diff.RLSPoliciesRemoved)+len(diff.RLSPoliciesModified)+
 			len(diff.RLSEnabledTablesAdded)+len(diff.RLSEnabledTablesRemoved)+len(diff.RLSForceChanged) > 0,
 			keyed(capability.RowLevelSecurity, "row-level security", "the plan changes row-level security")},
-		{roleChanges(diff),
-			gap(ydbgap.AccessControl, "the plan changes a role or a privilege")},
 		{len(diff.SynonymsAdded)+len(diff.SynonymsRemoved)+len(diff.SynonymsModified) > 0,
 			func() error { return refuseFact("the plan changes a synonym", "YDB has no synonyms") }},
 		{len(diff.HypertablesAdded)+len(diff.HypertablesRemoved)+len(diff.HypertablesModified) > 0,
@@ -102,16 +106,6 @@ func (p *Planner) objectChanges(diff *difftypes.SchemaDiff) []objectChange {
 				return p.constraintRefusal(diff.ConstraintsRemoved[0].Type, diff.ConstraintsRemoved[0].Name, "dropping")
 			}},
 	}
-}
-
-// roleChanges reports a diff that changes a role, a grant or a default
-// privilege.
-func roleChanges(diff *difftypes.SchemaDiff) bool {
-	return len(diff.RolesAdded)+len(diff.RolesRemoved)+len(diff.RolesModified)+
-		len(diff.GrantsAdded)+len(diff.GrantsRemoved)+
-		len(diff.GrantOptionsAdded)+len(diff.GrantOptionsRevoked)+
-		len(diff.DefaultPrivilegesAdded)+len(diff.DefaultPrivilegesRemoved)+
-		len(diff.DefaultPrivilegeOptionsAdded)+len(diff.DefaultPrivilegeOptionsRevoked) > 0
 }
 
 // constraintRefusal names the key a constraint change of this type needs. A

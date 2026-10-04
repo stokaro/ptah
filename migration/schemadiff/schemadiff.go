@@ -306,6 +306,9 @@ func compareReportingUndecidedAdditions(
 		// A UNIQUE constraint is a unique index on YDB, which is what the
 		// reader reports for one a plan applied.
 		desired = schemaprep.UniqueConstraintsAsIndexesFor(desired, opts.Dialect, caps)
+		// A YDB privilege spelled as GRANT does is the permission name the
+		// reader reports.
+		desired = schemaprep.YDBPermissionNamesFor(desired, opts.Dialect)
 		database = suppressScopedAway(database, omitted)
 	}
 
@@ -413,6 +416,10 @@ func compareReportingUndecidedAdditions(
 	// Compare roles (PostgreSQL-specific feature)
 	compare.Roles(desired, database, diff, cov)
 
+	// Compare the membership of each role in another, where a planner plans
+	// one.
+	compare.RoleMemberships(desired, database, diff, caps)
+
 	// Compare role privilege grants (PostgreSQL-specific feature)
 	compare.GrantsWithSemantics(desired, database, diff, identifierSemantics)
 
@@ -434,8 +441,10 @@ func compareReportingUndecidedAdditions(
 	// rebuilds a table and must not drop a setting nobody compared.
 	diff.CurrentNotDescribed = database.NotDescribed
 	// Where the read happened, for the statements YDB takes only with an
-	// absolute path.
+	// absolute path, and every grant it reported, for a plan that recreates a
+	// table and must give the table its grants back.
 	diff.CurrentDatabasePath = database.DatabasePath
+	diff.CurrentGrants = compare.CurrentGrants(database)
 
 	// Comments on the objects that take theirs through a statement of its
 	// own, compared only where the target stores and reports them.
