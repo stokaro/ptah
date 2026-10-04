@@ -104,57 +104,61 @@ func readSorted(c *qt.C, conn *dbschema.DatabaseConnection, schema, table string
 // and new rows, a join paged with LIMIT and OFFSET, an IN subquery, an
 // uncorrelated EXISTS, a grouped count -- and reads each answer back.
 func TestYDBQueryBuilder_RunsWhatItRenders(t *testing.T) {
-	c := qt.New(t)
-	conn := openYDB(c)
-	caps := conn.Info().Capabilities
-	ownDirectory(c, conn, dataQuerySchema)
-	users, orders := dataQuerySchema+"/users", dataQuerySchema+"/orders"
-	apply(c, conn, []string{
-		"CREATE TABLE `" + users + "` (id Int64 NOT NULL, name Utf8, age Int32, PRIMARY KEY (id))",
-		"CREATE TABLE `" + orders + "` (id Int64 NOT NULL, user_id Int64, total Double, PRIMARY KEY (id))",
-	})
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			caps := conn.Info().Capabilities
+			ownDirectory(c, conn, dataQuerySchema)
+			users, orders := dataQuerySchema+"/users", dataQuerySchema+"/orders"
+			apply(c, conn, []string{
+				"CREATE TABLE `" + users + "` (id Int64 NOT NULL, name Utf8, age Int32, PRIMARY KEY (id))",
+				"CREATE TABLE `" + orders + "` (id Int64 NOT NULL, user_id Int64, total Double, PRIMARY KEY (id))",
+			})
 
-	execRendered(c, conn)(query.RenderInsertWithCapabilities(query.InsertInto(users).
-		Columns("id", "name", "age").Values(int64(1), "alice", int32(30)).Values(int64(2), "bob", int32(40)).
-		Build(), platform.YDB, caps))
-	execRendered(c, conn)(query.RenderInsertWithCapabilities(query.InsertInto(orders).
-		Columns("id", "user_id", "total").
-		Values(int64(10), int64(1), 5.5).Values(int64(11), int64(1), 7.0).Values(int64(12), int64(2), 1.0).
-		Build(), platform.YDB, caps))
-	// The UPSERT writes the name of user 1 over the stored one, keeps the age
-	// it does not name, and inserts user 3.
-	execRendered(c, conn)(query.RenderInsertWithCapabilities(query.UpsertInto(users).
-		Columns("id", "name").Values(int64(1), "alicia").Values(int64(3), "carol").
-		Build(), platform.YDB, caps))
+			execRendered(c, conn)(query.RenderInsertWithCapabilities(query.InsertInto(users).
+				Columns("id", "name", "age").Values(int64(1), "alice", int32(30)).Values(int64(2), "bob", int32(40)).
+				Build(), platform.YDB, caps))
+			execRendered(c, conn)(query.RenderInsertWithCapabilities(query.InsertInto(orders).
+				Columns("id", "user_id", "total").
+				Values(int64(10), int64(1), 5.5).Values(int64(11), int64(1), 7.0).Values(int64(12), int64(2), 1.0).
+				Build(), platform.YDB, caps))
+			// The UPSERT writes the name of user 1 over the stored one, keeps the age
+			// it does not name, and inserts user 3.
+			execRendered(c, conn)(query.RenderInsertWithCapabilities(query.UpsertInto(users).
+				Columns("id", "name").Values(int64(1), "alicia").Values(int64(3), "carol").
+				Build(), platform.YDB, caps))
 
-	c.Assert(readSorted(c, conn, dataQuerySchema, "users", "name", "id", "age"), qt.DeepEquals, []map[string]any{
-		{"id": int64(1), "name": "alicia", "age": int32(30)},
-		{"id": int64(2), "name": "bob", "age": int32(40)},
-		{"id": int64(3), "name": "carol", "age": nil},
-	})
-	c.Assert(queryRendered(c, conn)(query.RenderSelectWithCapabilities(query.Select().
-		Columns(query.Col("u", "name"), query.Col("o", "total")).
-		FromAs(users, "u").
-		InnerJoin(orders, "o", query.Col("o", "user_id").EqCol(query.Col("u", "id"))).
-		Where(query.Col("o", "total").Gt(2.0)).
-		OrderBy(query.Col("o", "total").Desc()).
-		Limit(1).Offset(1).
-		Build(), platform.YDB, caps)), qt.DeepEquals, [][]any{{"alicia", 5.5}})
-	c.Assert(queryRendered(c, conn)(query.RenderSelectWithCapabilities(query.Select("id").From(users).
-		Where(query.InQuery("id", query.Select("user_id").From(orders))).
-		OrderBy(query.Asc("id")).
-		Build(), platform.YDB, caps)), qt.DeepEquals, [][]any{{int64(1)}, {int64(2)}})
-	c.Assert(queryRendered(c, conn)(query.RenderSelectWithCapabilities(query.Select("id").From(users).
-		Where(query.Exists(query.Select("id").From(orders).Where(query.Gt("total", 6.0)))).
-		OrderBy(query.Asc("id")).
-		Build(), platform.YDB, caps)), qt.DeepEquals, [][]any{{int64(1)}, {int64(2)}, {int64(3)}})
-	c.Assert(queryRendered(c, conn)(query.RenderSelectWithCapabilities(query.Select().
-		Columns(query.Col("o", "user_id")).
-		ExprAs(query.CountStar(), "n").
-		FromAs(orders, "o").
-		GroupBy(query.Col("o", "user_id")).
-		Having(query.Expr(query.CountStar()).Gt(uint64(1))).
-		Build(), platform.YDB, caps)), qt.DeepEquals, [][]any{{int64(1), uint64(2)}})
+			c.Assert(readSorted(c, conn, dataQuerySchema, "users", "name", "id", "age"), qt.DeepEquals, []map[string]any{
+				{"id": int64(1), "name": "alicia", "age": int32(30)},
+				{"id": int64(2), "name": "bob", "age": int32(40)},
+				{"id": int64(3), "name": "carol", "age": nil},
+			})
+			c.Assert(queryRendered(c, conn)(query.RenderSelectWithCapabilities(query.Select().
+				Columns(query.Col("u", "name"), query.Col("o", "total")).
+				FromAs(users, "u").
+				InnerJoin(orders, "o", query.Col("o", "user_id").EqCol(query.Col("u", "id"))).
+				Where(query.Col("o", "total").Gt(2.0)).
+				OrderBy(query.Col("o", "total").Desc()).
+				Limit(1).Offset(1).
+				Build(), platform.YDB, caps)), qt.DeepEquals, [][]any{{"alicia", 5.5}})
+			c.Assert(queryRendered(c, conn)(query.RenderSelectWithCapabilities(query.Select("id").From(users).
+				Where(query.InQuery("id", query.Select("user_id").From(orders))).
+				OrderBy(query.Asc("id")).
+				Build(), platform.YDB, caps)), qt.DeepEquals, [][]any{{int64(1)}, {int64(2)}})
+			c.Assert(queryRendered(c, conn)(query.RenderSelectWithCapabilities(query.Select("id").From(users).
+				Where(query.Exists(query.Select("id").From(orders).Where(query.Gt("total", 6.0)))).
+				OrderBy(query.Asc("id")).
+				Build(), platform.YDB, caps)), qt.DeepEquals, [][]any{{int64(1)}, {int64(2)}, {int64(3)}})
+			c.Assert(queryRendered(c, conn)(query.RenderSelectWithCapabilities(query.Select().
+				Columns(query.Col("o", "user_id")).
+				ExprAs(query.CountStar(), "n").
+				FromAs(orders, "o").
+				GroupBy(query.Col("o", "user_id")).
+				Having(query.Expr(query.CountStar()).Gt(uint64(1))).
+				Build(), platform.YDB, caps)), qt.DeepEquals, [][]any{{int64(1), uint64(2)}})
+		})
+	}
 }
 
 // TestYDBQueryBuilder_ReturningFollowsTheLine holds returning_clause to the
@@ -162,28 +166,32 @@ func TestYDBQueryBuilder_RunsWhatItRenders(t *testing.T) {
 // sent to this one: it runs exactly where this line's preset holds the key,
 // and the builder refuses it for this line exactly where it does not.
 func TestYDBQueryBuilder_ReturningFollowsTheLine(t *testing.T) {
-	c := qt.New(t)
-	conn := openYDB(c)
-	caps := conn.Info().Capabilities
-	ownDirectory(c, conn, dataQuerySchema)
-	accounts := dataQuerySchema + "/accounts"
-	apply(c, conn, []string{
-		"CREATE TABLE `" + accounts + "` (id Int64 NOT NULL, email Utf8, plan Utf8, PRIMARY KEY (id), " +
-			"INDEX accounts_email GLOBAL UNIQUE SYNC ON (email))",
-	})
-	inserted := queryRendered(c, conn)(query.RenderInsertWithCapabilities(query.InsertInto(accounts).
-		Columns("id", "email", "plan").Values(int64(1), "a@x", "free").Returning("id").
-		Build(), platform.YDB, capability.YDB262()))
-	update := query.Update(accounts).Set("plan", "paid").Where(query.Eq("id", int64(1))).Returning("plan").Build()
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			caps := conn.Info().Capabilities
+			ownDirectory(c, conn, dataQuerySchema)
+			accounts := dataQuerySchema + "/accounts"
+			apply(c, conn, []string{
+				"CREATE TABLE `" + accounts + "` (id Int64 NOT NULL, email Utf8, plan Utf8, PRIMARY KEY (id), " +
+					"INDEX accounts_email GLOBAL UNIQUE SYNC ON (email))",
+			})
+			inserted := queryRendered(c, conn)(query.RenderInsertWithCapabilities(query.InsertInto(accounts).
+				Columns("id", "email", "plan").Values(int64(1), "a@x", "free").Returning("id").
+				Build(), platform.YDB, capability.YDB262()))
+			update := query.Update(accounts).Set("plan", "paid").Where(query.Eq("id", int64(1))).Returning("plan").Build()
 
-	text, args, err := query.RenderUpdateWithCapabilities(update, platform.YDB, capability.YDB262())
-	c.Assert(err, qt.IsNil)
-	_, serverErr := scanAll(c.Context(), conn, text, args)
-	_, _, builderErr := query.RenderUpdateWithCapabilities(update, platform.YDB, caps)
+			text, args, err := query.RenderUpdateWithCapabilities(update, platform.YDB, capability.YDB262())
+			c.Assert(err, qt.IsNil)
+			_, serverErr := scanAll(c.Context(), conn, text, args)
+			_, _, builderErr := query.RenderUpdateWithCapabilities(update, platform.YDB, caps)
 
-	c.Assert(inserted, qt.DeepEquals, [][]any{{int64(1)}})
-	c.Assert(serverErr == nil, qt.Equals, caps.Has(capability.ReturningClause), qt.Commentf("server: %v", serverErr))
-	c.Assert(builderErr == nil, qt.Equals, caps.Has(capability.ReturningClause))
+			c.Assert(inserted, qt.DeepEquals, [][]any{{int64(1)}})
+			c.Assert(serverErr == nil, qt.Equals, caps.Has(capability.ReturningClause), qt.Commentf("server: %v", serverErr))
+			c.Assert(builderErr == nil, qt.Equals, caps.Has(capability.ReturningClause))
+		})
+	}
 }
 
 // diffDeclaration is a reference table whose columns cover the YDB types a
@@ -275,46 +283,50 @@ func changes(diff *datadiff.DataDiff) [3]int {
 // the declared `1.50` never pairs with the 1.5 a Decimal reads back, so the
 // second comparison plans an UPDATE again.
 func TestYDBDataDiff_RoundTrips(t *testing.T) {
-	c := qt.New(t)
-	conn := openYDB(c)
-	ownDirectory(c, conn, dataDiffSchema)
-	db := diffDeclaration(dataDiffSchema)
-	apply(c, conn, planAgainst(c, conn, db, []string{dataDiffSchema}))
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			ownDirectory(c, conn, dataDiffSchema)
+			db := diffDeclaration(dataDiffSchema)
+			apply(c, conn, planAgainst(c, conn, db, []string{dataDiffSchema}))
 
-	first := compareDeclared(c, conn, db, diffRows(1))
-	up, _, err := datadiff.RenderStatements(first, conn.Info().Dialect)
-	c.Assert(err, qt.IsNil)
-	apply(c, conn, up)
-	written := readSorted(c, conn, dataDiffSchema, "countries", diffColumns...)
-	converged := compareDeclared(c, conn, db, diffRows(1))
+			first := compareDeclared(c, conn, db, diffRows(1))
+			up, _, err := datadiff.RenderStatements(first, conn.Info().Dialect)
+			c.Assert(err, qt.IsNil)
+			apply(c, conn, up)
+			written := readSorted(c, conn, dataDiffSchema, "countries", diffColumns...)
+			converged := compareDeclared(c, conn, db, diffRows(1))
 
-	moved := compareDeclared(c, conn, db, diffRowsWithDE(9))
-	forward, backward, err := datadiff.RenderStatements(moved, conn.Info().Dialect)
-	c.Assert(err, qt.IsNil)
-	apply(c, conn, forward)
-	afterForward := compareDeclared(c, conn, db, diffRowsWithDE(9))
-	movedRows := readSorted(c, conn, dataDiffSchema, "countries", diffColumns...)
-	apply(c, conn, backward)
-	afterBackward := readSorted(c, conn, dataDiffSchema, "countries", diffColumns...)
+			moved := compareDeclared(c, conn, db, diffRowsWithDE(9))
+			forward, backward, err := datadiff.RenderStatements(moved, conn.Info().Dialect)
+			c.Assert(err, qt.IsNil)
+			apply(c, conn, forward)
+			afterForward := compareDeclared(c, conn, db, diffRowsWithDE(9))
+			movedRows := readSorted(c, conn, dataDiffSchema, "countries", diffColumns...)
+			apply(c, conn, backward)
+			afterBackward := readSorted(c, conn, dataDiffSchema, "countries", diffColumns...)
 
-	day := func(year int, month time.Month, d int) time.Time {
-		return time.Date(year, month, d, 0, 0, 0, 0, time.UTC)
+			day := func(year int, month time.Month, d int) time.Time {
+				return time.Date(year, month, d, 0, 0, 0, 0, time.UTC)
+			}
+			c.Assert(changes(first), qt.Equals, [3]int{2, 0, 0})
+			c.Assert(written, qt.DeepEquals, []map[string]any{{
+				"code": "CZ", "rank": int32(1), "population": int64(10900000), "rate": "1.5", "joined": day(2004, 5, 1),
+				"founded": day(1993, 1, 1), "active": true, "ratio": 0.5, "flag": []byte{0x01, 0xff},
+				"meta": `{"a":1.5,"b":2}`, "uid": "550e8400-e29b-41d4-a716-446655440000", "tiny": uint16(7),
+			}, {
+				"code": "SK", "rank": int32(2), "population": int64(5400000), "rate": nil, "joined": nil,
+				"founded": day(1993, 1, 1), "active": false, "ratio": nil, "flag": nil, "meta": nil, "uid": nil, "tiny": nil,
+			}})
+			c.Assert(changes(converged), qt.Equals, [3]int{0, 0, 0})
+			c.Assert(changes(moved), qt.Equals, [3]int{1, 1, 0})
+			c.Assert(changes(afterForward), qt.Equals, [3]int{0, 0, 0})
+			c.Assert(movedRows, qt.HasLen, 3)
+			c.Assert(movedRows[1]["rate"], qt.Equals, "0.25")
+			c.Assert(afterBackward, qt.DeepEquals, written)
+		})
 	}
-	c.Assert(changes(first), qt.Equals, [3]int{2, 0, 0})
-	c.Assert(written, qt.DeepEquals, []map[string]any{{
-		"code": "CZ", "rank": int32(1), "population": int64(10900000), "rate": "1.5", "joined": day(2004, 5, 1),
-		"founded": day(1993, 1, 1), "active": true, "ratio": 0.5, "flag": []byte{0x01, 0xff},
-		"meta": `{"a":1.5,"b":2}`, "uid": "550e8400-e29b-41d4-a716-446655440000", "tiny": uint16(7),
-	}, {
-		"code": "SK", "rank": int32(2), "population": int64(5400000), "rate": nil, "joined": nil,
-		"founded": day(1993, 1, 1), "active": false, "ratio": nil, "flag": nil, "meta": nil, "uid": nil, "tiny": nil,
-	}})
-	c.Assert(changes(converged), qt.Equals, [3]int{0, 0, 0})
-	c.Assert(changes(moved), qt.Equals, [3]int{1, 1, 0})
-	c.Assert(changes(afterForward), qt.Equals, [3]int{0, 0, 0})
-	c.Assert(movedRows, qt.HasLen, 3)
-	c.Assert(movedRows[1]["rate"], qt.Equals, "0.25")
-	c.Assert(afterBackward, qt.DeepEquals, written)
 }
 
 // declaredRowsSchema is a reference table carried by a declaration, with its
@@ -357,31 +369,35 @@ func declaredRowsPlan(c *qt.C, conn *dbschema.DatabaseConnection, desired *schem
 // nothing, then changes one declared value and finds exactly the one UPDATE
 // that writes it.
 func TestYDBDeclaredRows_ConvergeThroughSchemaApply(t *testing.T) {
-	c := qt.New(t)
-	conn := openYDB(c)
-	ownDirectory(c, conn, dataDeclaredSchema)
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			ownDirectory(c, conn, dataDeclaredSchema)
 
-	first := declaredRowsPlan(c, conn, declaredRowsSchema("10900000"))
-	apply(c, conn, first)
-	again := declaredRowsPlan(c, conn, declaredRowsSchema("10900000"))
-	changed := declaredRowsPlan(c, conn, declaredRowsSchema("11000000"))
-	apply(c, conn, changed)
-	afterChange := declaredRowsPlan(c, conn, declaredRowsSchema("11000000"))
-	stored := readSorted(c, conn, dataDeclaredSchema, "countries", "code", "rank", "population", "joined")
+			first := declaredRowsPlan(c, conn, declaredRowsSchema("10900000"))
+			apply(c, conn, first)
+			again := declaredRowsPlan(c, conn, declaredRowsSchema("10900000"))
+			changed := declaredRowsPlan(c, conn, declaredRowsSchema("11000000"))
+			apply(c, conn, changed)
+			afterChange := declaredRowsPlan(c, conn, declaredRowsSchema("11000000"))
+			stored := readSorted(c, conn, dataDeclaredSchema, "countries", "code", "rank", "population", "joined")
 
-	c.Assert(first, qt.HasLen, 2)
-	c.Assert(again, qt.HasLen, 0)
-	c.Assert(changed, qt.DeepEquals, []string{
-		"UPDATE `" + dataDeclaredSchema + "/countries` SET `active` = true, `founded` = " + dateLiteral(conn) +
-			", `joined` = " + timestampLiteral(conn) + ", `meta` = JsonDocument('{\"a\":1,\"b\":2}'), " +
-			"`population` = 11000000l, `rank` = 1, `rate` = Decimal('1.5', 22, 9), `ratio` = Double('0.5'), " +
-			"`tiny` = 7us, `uid` = Uuid('550e8400-e29b-41d4-a716-446655440000') WHERE `code` = 'CZ'u;",
-	})
-	c.Assert(afterChange, qt.HasLen, 0)
-	c.Assert(stored, qt.DeepEquals, []map[string]any{{
-		"code": "CZ", "rank": int32(1), "population": int64(11000000),
-		"joined": time.Date(2004, time.May, 1, 0, 0, 0, 0, time.UTC),
-	}})
+			c.Assert(first, qt.HasLen, 2)
+			c.Assert(again, qt.HasLen, 0)
+			c.Assert(changed, qt.DeepEquals, []string{
+				"UPDATE `" + dataDeclaredSchema + "/countries` SET `active` = true, `founded` = " + dateLiteral(conn) +
+					", `joined` = " + timestampLiteral(conn) + ", `meta` = JsonDocument('{\"a\":1,\"b\":2}'), " +
+					"`population` = 11000000l, `rank` = 1, `rate` = Decimal('1.5', 22, 9), `ratio` = Double('0.5'), " +
+					"`tiny` = 7us, `uid` = Uuid('550e8400-e29b-41d4-a716-446655440000') WHERE `code` = 'CZ'u;",
+			})
+			c.Assert(afterChange, qt.HasLen, 0)
+			c.Assert(stored, qt.DeepEquals, []map[string]any{{
+				"code": "CZ", "rank": int32(1), "population": int64(11000000),
+				"joined": time.Date(2004, time.May, 1, 0, 0, 0, 0, time.UTC),
+			}})
+		})
+	}
 }
 
 // dateLiteral and timestampLiteral are the literals the declared day and
@@ -421,29 +437,35 @@ func TestYDBDeclaredRows_RefuseAValueTheColumnCannotHold(t *testing.T) {
 				`time.Time, which is not a Utf8 value`},
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
 			c := qt.New(t)
-			conn := openYDB(c)
+			conn := openYDB(c, line)
 			ownDirectory(c, conn, dataDiffSchema)
 			db := diffDeclaration(dataDiffSchema)
 			apply(c, conn, planAgainst(c, conn, db, []string{dataDiffSchema}))
-			rows := diffRows(1)[:1]
-			rows[0][test.column] = test.value
+			live := readScoped(c, conn, []string{dataDiffSchema})
+			for _, test := range tests {
+				t.Run(test.name, func(t *testing.T) {
+					c := qt.New(t)
+					rows := diffRows(1)[:1]
+					rows[0][test.column] = test.value
 
-			diff, err := managedrows.Compare(c.Context(), conn, managedrows.Request{
-				Desired: db,
-				Declaration: schemamodel.ManagedData{
-					StructName: "Country", Table: "countries", Schema: dataDiffSchema, Keys: []string{"code"},
-				},
-				Rows:              rows,
-				Live:              readScoped(c, conn, []string{dataDiffSchema}),
-				CatalogIsComplete: true,
-				Intent:            managedrows.Write,
-			})
+					diff, err := managedrows.Compare(c.Context(), conn, managedrows.Request{
+						Desired: db,
+						Declaration: schemamodel.ManagedData{
+							StructName: "Country", Table: "countries", Schema: dataDiffSchema, Keys: []string{"code"},
+						},
+						Rows:              rows,
+						Live:              live,
+						CatalogIsComplete: true,
+						Intent:            managedrows.Write,
+					})
 
-			c.Assert(err, qt.ErrorMatches, `compare declared rows of .*countries: `+test.wantErr)
-			c.Assert(diff, qt.IsNil)
+					c.Assert(err, qt.ErrorMatches, `compare declared rows of .*countries: `+test.wantErr)
+					c.Assert(diff, qt.IsNil)
+				})
+			}
 		})
 	}
 }
