@@ -163,20 +163,95 @@ A default is a literal, written as the typed YQL literal YDB reads back: `0`,
 such as a function call is refused, because YDB takes literals only.
 
 Indexes are global. A plain index is `GLOBAL SYNC`, a unique one
-`GLOBAL UNIQUE SYNC`, an asynchronous one `GLOBAL ASYNC`, and `INCLUDE` columns
-become `COVER (...)`. A unique index treats NULLs as distinct, as PostgreSQL
-does by default.
+`GLOBAL UNIQUE SYNC`, an asynchronous one (`type="async"`) `GLOBAL ASYNC`, and
+`include` columns become `COVER (...)`. A unique index treats NULLs as
+distinct, as PostgreSQL does by default.
 
 YDB has no `CREATE INDEX` statement, which the `create_index_statement` key
 records, so the indexes of a new table are written inside its `CREATE TABLE`. YDB keeps
 adding a unique index to a table that already exists behind a feature flag that
 is off by default, so Ptah refuses that change and declares a unique index with
 the table instead. A cluster that turns the flag on takes the change when the
-URL names its monitoring endpoint (see [Feature flags](#feature-flags)). Other indexes added to an existing table get one
-`ALTER TABLE ... ADD INDEX` each, because YDB adds one index per statement.
+URL names its monitoring endpoint (see [Feature flags](#feature-flags)). Other
+indexes added to an existing table get one `ALTER TABLE ... ADD INDEX` each,
+because YDB adds one index per statement.
 
-A foreign key, a `CHECK` constraint and a `UNIQUE` constraint are refused. A
-`UNIQUE` refusal points to a unique index, which enforces the same rule.
+A foreign key and a `CHECK` constraint are refused. YDB has no `UNIQUE`
+constraint, so a declared one becomes the global unique index that holds the
+same rows: a second row with the same value is refused, and rows whose value
+is NULL are not. The index takes the constraint's name. A column's own
+`UNIQUE` and an unnamed `UNIQUE` take `<table>_<columns>_key`, as PostgreSQL
+names them. A `UNIQUE` over the primary key columns needs no index, because the
+key holds those rows unique already. The comparison reads the declared
+constraint as that index, so a database holding the index plans nothing, and a
+`UNIQUE` added to a table that exists needs the same flag as any unique index.
+A deferrable, `NOT ENFORCED`, partial or commented `UNIQUE` is refused.
+
+### Index partitioning
+
+Each global index is a table of its own, which YDB splits into partitions as it
+grows. An index declares how, with the attributes YDB names its settings by:
+
+| Attribute | Setting | Value |
+| --- | --- | --- |
+| `auto_partitioning_by_size` | `AUTO_PARTITIONING_BY_SIZE` | `ENABLED` or `DISABLED` |
+| `auto_partitioning_partition_size_mb` | `AUTO_PARTITIONING_PARTITION_SIZE_MB` | megabytes, at least 1 |
+| `auto_partitioning_by_load` | `AUTO_PARTITIONING_BY_LOAD` | `ENABLED` or `DISABLED` |
+| `auto_partitioning_min_partitions_count` | `AUTO_PARTITIONING_MIN_PARTITIONS_COUNT` | at least 1 |
+| `auto_partitioning_max_partitions_count` | `AUTO_PARTITIONING_MAX_PARTITIONS_COUNT` | at least 1 |
+| `read_replicas_settings` | `READ_REPLICAS_SETTINGS` | `PER_AZ:<n>` or `ANY_AZ:<n>` |
+
+The same keys work on an index in a YAML schema. A setting an index leaves out
+is the value YDB gives a new index: split by size at 2048 MB, not by load, at
+least one partition, no maximum and no read replicas. An index does not take
+its table's settings.
+
+This index:
+
+```go
+//ptah:schema:index name="orders_customer_ix" fields="customer" include="status,total" type="async" auto_partitioning_by_load="ENABLED" auto_partitioning_min_partitions_count="4" auto_partitioning_max_partitions_count="16"
+```
+
+renders as:
+
+```sql
+INDEX `orders_customer_ix` GLOBAL ASYNC ON (`customer`) COVER (`status`, `total`)
+```
+
+inside its table's `CREATE TABLE`, followed by:
+
+```sql
+ALTER TABLE `orders` ALTER INDEX `orders_customer_ix` SET (AUTO_PARTITIONING_BY_SIZE = ENABLED, AUTO_PARTITIONING_PARTITION_SIZE_MB = 2048, AUTO_PARTITIONING_BY_LOAD = ENABLED, AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4, AUTO_PARTITIONING_MAX_PARTITIONS_COUNT = 16);
+```
+
+No statement that creates an index takes the settings, so they are an
+`ALTER INDEX` of their own, which runs as its own query. That statement names
+every setting, because setting one can reset another: setting
+`AUTO_PARTITIONING_BY_LOAD` resets the minimum partition count to 1, and
+setting `AUTO_PARTITIONING_BY_SIZE` resets the size and the minimum.
+
+A change of the settings is made in place with the same statement, and read
+back from the index's implementation table. YDB cannot remove a maximum
+partition count, so an index that drops its maximum is rebuilt: dropped,
+added again and given the rest of its settings. A partition size on an index
+that does not split by size is refused, as YDB refuses it. Other dialects
+refuse an index that declares its partitioning.
+
+### Renaming an index
+
+An index the declaration renames, on the same table with the same columns,
+kind, cover and uniqueness, is renamed in place rather than dropped and built
+again:
+
+```sql
+ALTER TABLE `orders` RENAME INDEX `orders_customer_ix` TO `orders_by_customer`;
+```
+
+The index keeps its rows, its kind, its cover and its partitioning. A rename
+that also changes the partitioning is a rename followed by an `ALTER INDEX`. A
+pair of indexes that swap names, or an index renamed onto a name the table
+still holds, is dropped and built again. The rollback of a planned migration
+renames the index back.
 
 ## Planning changes
 
@@ -188,9 +263,11 @@ statement needs one that has not run yet:
 1. Create the added tables, with their indexes.
 2. Drop the indexes the plan removes, before any column they name. YDB refuses
    to drop an indexed or a covered column.
-3. Per table: add columns, then change columns in place, then drop columns.
-4. Add the new indexes of existing tables.
-5. Drop the removed tables.
+3. Rename the indexes the declaration renames, then change the partitioning of
+   the indexes that keep their definition.
+4. Per table: add columns, then change columns in place, then drop columns.
+5. Add the new indexes of existing tables.
+6. Drop the removed tables.
 
 Each statement runs as its own query. A query of several schema statements is
 not atomic on YDB, and each of its statements compiles against the schema as it
@@ -304,7 +381,8 @@ the [support matrix](../support-matrix/).
 
 `ptah db read --db-url ydb://...` and the commands that compare against a
 database read every row table under the database root, its columns, defaults,
-`Serial` columns, primary key and global indexes.
+`Serial` columns, primary key and global indexes, with each index's
+partitioning and read replicas.
 
 What Ptah does not model yet is recorded rather than dropped: views, topics,
 column-oriented tables, sequences other than a `Serial` column's, and the
