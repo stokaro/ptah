@@ -269,6 +269,8 @@ func (r *validatingRenderer) prepared(node ast.Node) (ast.Node, error) {
 		return prepareExtensionNode(r.dialect, n)
 	case *ast.CreateMaterializedViewNode:
 		return prepareCreateMaterializedViewNode(r.dialect, n)
+	case ast.AlterOperation:
+		return prepareStandaloneAlterOperation(r.dialect, r.capabilities, n)
 	default:
 		return node, nil
 	}
@@ -423,8 +425,49 @@ func prepareASTNodeForRendering(
 		if isNilInterface(node) {
 			return nil, invalidASTForeignKeyError(dialect, "AST node is nil")
 		}
+		if operation, ok := node.(ast.AlterOperation); ok {
+			return prepareStandaloneAlterOperation(dialect, caps, operation)
+		}
 		return node, nil
 	}
+}
+
+// prepareStandaloneAlterOperation answers an alter operation that arrived
+// without the ALTER TABLE that carries it.
+//
+// Every dialect renderer refuses such an operation by saying that the statement
+// carrying it renders it. That is true only where the statement would: a
+// changefeed on PostgreSQL is refused inside an ALTER TABLE as well, for a
+// capability the target lacks, and answering that it needs its parent sends
+// the caller to a wrapper that cannot help. So the operation is first rendered
+// inside an ALTER TABLE that names no table, by a renderer built for the same
+// target and then discarded. That ALTER TABLE goes through the whole path a
+// real one takes -- this wrapper's capability checks, then the dialect's own
+// handler -- so the refusal it returns carries the sentinel and the reason the
+// real one would. Only an operation that renders there continues to the
+// dialect, which then says it needs its parent.
+//
+// The check is here, once, rather than in each dialect's needs-parent arm: the
+// capability checks a dialect relies on live in this package, and a check in
+// the dialect could not see them. A nil operation passes through unchanged, so
+// each caller answers it the way it answers any other absent node.
+func prepareStandaloneAlterOperation(
+	dialect string,
+	caps capability.Capabilities,
+	operation ast.AlterOperation,
+) (ast.Node, error) {
+	if isNilInterface(operation) {
+		return operation, nil
+	}
+	probe, err := NewRendererWithCapabilities(dialect, caps)
+	if err != nil {
+		return nil, err
+	}
+	carrier := &ast.AlterTableNode{Operations: []ast.AlterOperation{operation}}
+	if err := probe.VisitNode(carrier); err != nil {
+		return nil, err
+	}
+	return operation, nil
 }
 
 // refuseAccessNode refuses a group, or a grant or revoke on the database
@@ -652,13 +695,13 @@ func refuseRowDeletionPolicy(dialect string, caps capability.Capabilities, table
 	if spec.IsZero() {
 		return nil
 	}
-	key, subject := capability.RowDeletionPolicy, fmt.Sprintf("table %q declares a row deletion policy", table)
+	key, subject := capability.RowDeletionPolicy, tableref.Phrase(table)+" declares a row deletion policy"
 	if caps.Has(key) {
 		if strings.TrimSpace(spec.Unit) == "" {
 			return nil
 		}
 		key, subject = capability.RowDeletionPolicyEpochColumn, fmt.Sprintf(
-			"table %q declares a row deletion policy on an integer column counting %s", table, spec.Unit)
+			"%s declares a row deletion policy on an integer column counting %s", tableref.Phrase(table), spec.Unit)
 		if caps.Has(key) {
 			return nil
 		}
@@ -872,7 +915,7 @@ func validateTableSettingOperation(
 		spec := &ast.RowDeletionPolicySpec{Column: policy.Column, Interval: policy.Interval, Unit: policy.Unit}
 		return refuseRowDeletionPolicy(dialect, caps, table, spec)
 	}
-	return refuseChangefeeds(dialect, caps, fmt.Sprintf("changing the changefeeds of table %q", table))
+	return refuseChangefeeds(dialect, caps, "changing the changefeeds of "+tableref.Phrase(table))
 }
 
 // validateIndexOperation refuses an index operation that asks for an

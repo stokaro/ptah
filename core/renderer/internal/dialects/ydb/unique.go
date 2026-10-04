@@ -53,7 +53,7 @@ func (r *Renderer) uniqueIndexes(node *ast.CreateTableNode, keyColumns []string)
 // uniqueConstraintIndex is the unique index a UNIQUE constraint on table
 // renders as, refusing what the constraint says that an index cannot carry.
 func uniqueConstraintIndex(table string, constraint *ast.ConstraintNode) (*ast.IndexNode, error) {
-	subject := fmt.Sprintf("UNIQUE constraint %q on table %q", constraint.Name, table)
+	subject := fmt.Sprintf("UNIQUE constraint %q on %s", constraint.Name, tableref.Phrase(table))
 	switch {
 	case constraint.Deferrable || constraint.Initially != "":
 		return nil, refuseKey(capability.DeferrableConstraints, subject+" is deferrable, and YDB checks a unique index at every write")

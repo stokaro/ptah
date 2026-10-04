@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/renderdiag"
+	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbgap"
 	"ptah.run/internal/ydbsequence"
@@ -279,9 +280,9 @@ func (r *Renderer) refuseTableConstraints(node *ast.CreateTableNode) error {
 // that renders, and it renders as the PRIMARY KEY clause keyColumns builds.
 func (r *Renderer) refuseConstraint(table string, constraint *ast.ConstraintNode) error {
 	if constraint == nil {
-		return refuseFact(fmt.Sprintf("table %q", table), "a constraint is nil")
+		return refuseFact(tableref.Phrase(table), "a constraint is nil")
 	}
-	subject := fmt.Sprintf("constraint %q on table %q", constraint.Name, table)
+	subject := fmt.Sprintf("constraint %q on %s", constraint.Name, tableref.Phrase(table))
 	switch constraint.Type {
 	case ast.PrimaryKeyConstraint:
 		return r.refuseKeyAttributes(table, constraint)
@@ -308,7 +309,7 @@ func (r *Renderer) refuseKeyAttributes(table string, constraint *ast.ConstraintN
 	if constraint.Name != "" {
 		r.sink.Record(renderdiag.PropertyOmission(renderdiag.TableKind, table, "primary key name", constraint.Name))
 	}
-	subject := fmt.Sprintf("the primary key of table %q", table)
+	subject := "the primary key of " + tableref.Phrase(table)
 	if constraint.Comment != "" {
 		return refuseGap(ydbgap.Comments, "the comment on "+subject)
 	}
@@ -366,11 +367,11 @@ func checkKeyTypes(table string, keyColumns []string, columnTypes map[string]str
 	for _, column := range keyColumns {
 		ydbType, declared := columnTypes[column]
 		if !declared {
-			return refuseFact(fmt.Sprintf("the primary key of table %q", table),
+			return refuseFact("the primary key of "+tableref.Phrase(table),
 				fmt.Sprintf("it names column %q, which the table does not declare", column))
 		}
 		if !ydbtype.KeyComparable(ydbType) {
-			return refuseFact(fmt.Sprintf("the primary key of table %q", table),
+			return refuseFact("the primary key of "+tableref.Phrase(table),
 				fmt.Sprintf("column %q is %s, which YDB refuses in a key (`wrong key type %s`)", column, ydbType, ydbType))
 		}
 	}
@@ -425,7 +426,7 @@ func (r *Renderer) renderConstraintNode(constraint *ast.ConstraintNode) error {
 func (r *Renderer) columnDefinition(table string, column *ast.ColumnNode, key bool) (definition, ydbType string, err error) {
 	subject := fmt.Sprintf("column %q", column.Name)
 	if table != "" {
-		subject = fmt.Sprintf("column %q of table %q", column.Name, table)
+		subject = fmt.Sprintf("column %q of %s", column.Name, tableref.Phrase(table))
 	}
 	if err := r.refuseColumnDeclarations(subject, column); err != nil {
 		return "", "", err

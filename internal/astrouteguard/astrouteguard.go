@@ -46,8 +46,9 @@ type NodeKind struct {
 	// Name is the type name without a package qualifier, as a type switch
 	// case writes it after the package selector.
 	Name string
-	// File is where the Accept method is declared, relative to the module
-	// root.
+	// File is where the method that identified the kind is declared, relative
+	// to the module root: Accept for [NodeKinds], the marker for
+	// [AlterOperationKinds].
 	File string
 	// Line is that method's line.
 	Line int
@@ -92,6 +93,66 @@ func NodeKinds(root string) ([]NodeKind, error) {
 
 	slices.SortFunc(kinds, func(a, b NodeKind) int { return strings.Compare(a.Name, b.Name) })
 	return kinds, nil
+}
+
+// alterOperationMarker is the unexported method that makes a node an
+// ast.AlterOperation. The interface is ast.Node plus this method, so a type
+// declaring it, with no parameters and no results, is an alter operation.
+const alterOperationMarker = "alterOperation"
+
+// AlterOperationKinds returns every concrete type in core/ast that implements
+// ast.AlterOperation, sorted by name.
+//
+// It reads the same files [NodeKinds] reads, for the same reason, and matches
+// the marker method rather than type-checking the package. A test that has to
+// hold every alter operation to a rule asks here rather than keeping a list,
+// because a list is a second place to forget the operation a change adds.
+func AlterOperationKinds(root string) ([]NodeKind, error) {
+	files, err := trackedFiles(root, "core/ast/*.go")
+	if err != nil {
+		return nil, err
+	}
+
+	fileSet := token.NewFileSet()
+	var kinds []NodeKind
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+		parsed, parseErr := parser.ParseFile(fileSet, filepath.Join(root, file), nil, 0)
+		if parseErr != nil {
+			return nil, fmt.Errorf("astrouteguard: parsing %s: %w", file, parseErr)
+		}
+		kinds = append(kinds, markerReceivers(fileSet, parsed, file)...)
+	}
+
+	slices.SortFunc(kinds, func(a, b NodeKind) int { return strings.Compare(a.Name, b.Name) })
+	return kinds, nil
+}
+
+// markerReceivers collects the receiver type of every alterOperation marker
+// method in one file.
+func markerReceivers(fileSet *token.FileSet, file *ast.File, path string) []NodeKind {
+	var kinds []NodeKind
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok || function.Name.Name != alterOperationMarker || function.Recv == nil || len(function.Recv.List) != 1 {
+			continue
+		}
+		if function.Type.Params.NumFields() != 0 || function.Type.Results.NumFields() != 0 {
+			continue
+		}
+		name, ok := receiverTypeName(function.Recv.List[0].Type)
+		if !ok {
+			continue
+		}
+		kinds = append(kinds, NodeKind{
+			Name: name,
+			File: path,
+			Line: fileSet.Position(function.Pos()).Line,
+		})
+	}
+	return kinds
 }
 
 // acceptReceivers collects the receiver type of every Accept method in one file.

@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/crdbttl"
 	"ptah.run/internal/spannerttl"
+	"ptah.run/internal/tableref"
 )
 
 // renderRowTTL returns the ` WITH (...)` clause a CREATE TABLE carries for its
@@ -45,11 +46,11 @@ func (r *Renderer) renderRowTTL(node *ast.CreateTableNode) (string, error) {
 // there is none.
 func (r *Renderer) rowTTLUnsupported(table string) error {
 	return unsupportedFeaturef(
-		"%s: table %q declares row-level TTL: it is a CockroachDB table storage parameter, and this "+
+		"%s: %s declares row-level TTL: it is a CockroachDB table storage parameter, and this "+
 			"target does not have it — PostgreSQL answers `unrecognized parameter %q` and YugabyteDB "+
 			"warns that it is ignoring the parameter, so Ptah refuses the declaration rather than "+
 			"emitting a statement whose retention policy the server may drop",
-		r.dialect, table, crdbttl.ExpirationExpressionParameter)
+		r.dialect, tableref.Phrase(table), crdbttl.ExpirationExpressionParameter)
 }
 
 // writeRowTTLOperation renders whichever of the two row-level TTL operations it
@@ -140,9 +141,9 @@ func (r *Renderer) refuseEpochColumn(table, unit string) error {
 	if strings.TrimSpace(unit) == "" || r.capabilities().Has(capability.RowDeletionPolicyEpochColumn) {
 		return nil
 	}
-	return unsupportedFeaturef("%s: table %q declares a row deletion policy on an integer column counting %s, which "+
+	return unsupportedFeaturef("%s: %s declares a row deletion policy on an integer column counting %s, which "+
 		"requires target capability %s; this target's clause reads a timestamp column only",
-		r.dialect, table, unit, capability.RowDeletionPolicyEpochColumn)
+		r.dialect, tableref.Phrase(table), unit, capability.RowDeletionPolicyEpochColumn)
 }
 
 // rowDeletionPolicyUnsupported is the refusal a target without the capability
@@ -150,11 +151,11 @@ func (r *Renderer) refuseEpochColumn(table, unit string) error {
 // whether some other spelling would work on this engine.
 func (r *Renderer) rowDeletionPolicyUnsupported(table string) error {
 	return unsupportedFeaturef(
-		"%s: table %q declares a row deletion policy: it is a Spanner table clause, and this target "+
+		"%s: %s declares a row deletion policy: it is a Spanner table clause, and this target "+
 			"does not have it — on a PostgreSQL-wire engine that is not Spanner the row-expiry "+
 			"spelling is CockroachDB's row-level TTL storage parameters, so Ptah refuses the "+
 			"declaration rather than emitting a statement that silently keeps every row",
-		r.dialect, table)
+		r.dialect, tableref.Phrase(table))
 }
 
 // writeRowExpiryOperation renders whichever row-expiry operation it is handed,

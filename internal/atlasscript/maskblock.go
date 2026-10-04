@@ -86,7 +86,7 @@ func parseMaskBody(block *hclsyntax.Block) (Mask, error) {
 		mask.KeepRight = int(keep)
 	}
 	if attr := block.Body.Attributes["columns"]; attr != nil {
-		columns, listErr := rawList(attr)
+		columns, listErr := stringList(attr, "columns")
 		if listErr != nil {
 			return Mask{}, listErr
 		}

@@ -122,6 +122,73 @@ installation renamed for a drop-in completes under the name it was invoked as.
 The [Atlas compatibility overview](../../atlas/overview/) documents that
 rename.
 
+## Script commands
+
+`ptah-compat script query`, `script exec` and `script loop` run one `script`
+block from `--file` against `--url`. `--run` names the block when the file
+declares more than one of that kind. Strict mode removes the group.
+
+### Placeholder arguments
+
+A statement takes its values through `args`, one element per placeholder, in
+the order written. The SQL uses the driver's own placeholder: `?` on SQLite and
+the MySQL family, `$1` on the PostgreSQL family, and `$p1` on YDB.
+
+A constant binds as its own type. A whole number binds as a 64-bit integer, any
+other number as a float, a string as a string, and `true` or `false` as a
+boolean. An engine that types its parameters, such as YDB, refuses a number
+bound as text.
+
+What an element may read depends on where it is written:
+
+| Where | What an element reads |
+| --- | --- |
+| A step of a `query` or `exec` script, and the iterator's `init` | Constants only. |
+| The iterator's `next` | `cursor.<col>`, the last row of the previous page. |
+| A step inside a loop's `do` | `iterator.keyset.cursor.<col>`, the last row of the page; `iterator.keyset.batch[*].<col>`, the page as a list; `self.index`, the 0-based iteration. |
+
+A list fills no placeholder by itself, so bind the page through `jsonencode`
+and read it in SQL, as SQLite's `json_each` does. `length` counts it. These are
+the only two functions an element may call.
+
+```hcl
+script "loop" "mark" {
+  iterator "keyset" {
+    cursor {
+      id = int
+    }
+    init {
+      sql = "SELECT id FROM items ORDER BY id LIMIT 100"
+    }
+    next {
+      sql  = "SELECT id FROM items WHERE id > ? ORDER BY id LIMIT 100"
+      args = [cursor.id]
+    }
+  }
+  do {
+    exec "mark" {
+      sql  = "UPDATE items SET done = 1 WHERE id IN (SELECT value FROM json_each(?))"
+      args = [jsonencode(iterator.keyset.batch[*].id)]
+    }
+  }
+}
+```
+
+The `cursor` and `batch` blocks declare each column with a type: `int`,
+`number`, `string` or `bool`. `batch` is optional and defaults to the cursor's
+columns. A column is matched to the query result by name, so alias an
+expression in the `SELECT`. A page that lacks a declared column, or carries it
+as another type, stops the loop with an error that names the column.
+
+The script is refused before it connects when an element names something its
+place cannot read. The refused forms include:
+
+- the bare `cursor.<col>` inside `do`;
+- a column the `cursor` or `batch` block does not declare;
+- a list bound to one placeholder;
+- `null`;
+- a function other than `jsonencode` and `length`.
+
 ## Commands strict mode removes
 
 `PTAH_ATLAS_STRICT_COMPAT=1` selects a separate Atlas Community Edition policy,

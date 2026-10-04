@@ -153,3 +153,95 @@ func TestNodeKinds_FailurePath(t *testing.T) {
 		c.Assert(kinds, qt.IsNil)
 	})
 }
+
+// TestAlterOperationKinds_HappyPath holds the alter-operation corpus to the
+// node corpus: every alter operation is a node, so a kind found here and not
+// there is a parse that matched something other than the marker.
+func TestAlterOperationKinds_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	root, err := astrouteguard.ModuleRoot()
+	c.Assert(err, qt.IsNil)
+	operations, err := astrouteguard.AlterOperationKinds(root)
+	c.Assert(err, qt.IsNil)
+	nodes, err := astrouteguard.NodeKinds(root)
+	c.Assert(err, qt.IsNil)
+
+	isNode := make(map[string]bool, len(nodes))
+	for _, kind := range nodes {
+		isNode[kind.Name] = true
+	}
+	names := make([]string, 0, len(operations))
+	for _, kind := range operations {
+		names = append(names, kind.Name)
+		c.Assert(isNode[kind.Name], qt.IsTrue, qt.Commentf("%s carries the marker and is not a node", kind.Name))
+		c.Assert(path.Dir(kind.File), qt.Equals, "core/ast", qt.Commentf("%s is reported from %s", kind.Name, kind.File))
+	}
+
+	// A handful named as a control on the enumeration, for the reason the node
+	// corpus names its own: the complete list stays derived. EnumTypeDef is a
+	// node and a fragment, but it is part of a CREATE TYPE, not of an ALTER
+	// TABLE, so it must not appear.
+	for _, name := range []string{"AddColumnOperation", "AddChangefeedOperation", "DropRowDeletionPolicyOperation"} {
+		c.Assert(names, qt.Contains, name)
+	}
+	c.Assert(names, qt.Not(qt.Contains), "EnumTypeDef")
+	c.Assert(names, qt.Not(qt.Contains), "AlterTableNode")
+}
+
+// TestAlterOperationKinds_SelfTest is the parser's control: a marker method
+// with a parameter or a result is not the marker, and a test file's types are
+// not the package's.
+func TestAlterOperationKinds_SelfTest(t *testing.T) {
+	c := qt.New(t)
+
+	root := t.TempDir()
+	c.Assert(os.MkdirAll(filepath.Join(root, "core", "ast"), 0o750), qt.IsNil)
+	source := `package ast
+
+type RealOperation struct{}
+
+func (op *RealOperation) alterOperation() {}
+
+type TakesAnArgument struct{}
+
+func (op *TakesAnArgument) alterOperation(int) {}
+
+type ReturnsAValue struct{}
+
+func (op ReturnsAValue) alterOperation() error { return nil }
+
+type ValueReceiver struct{}
+
+func (op ValueReceiver) alterOperation() {}
+`
+	c.Assert(os.WriteFile(filepath.Join(root, "core", "ast", "operations.go"), []byte(source), 0o600), qt.IsNil)
+	testSource := `package ast
+
+type TestOnlyOperation struct{}
+
+func (op *TestOnlyOperation) alterOperation() {}
+`
+	c.Assert(os.WriteFile(filepath.Join(root, "core", "ast", "operations_test.go"), []byte(testSource), 0o600), qt.IsNil)
+	for _, arguments := range [][]string{{"init"}, {"add", "-A"}} {
+		command := exec.Command("git", arguments...)
+		command.Dir = root
+		c.Assert(command.Run(), qt.IsNil, qt.Commentf("git %v", arguments))
+	}
+
+	kinds, err := astrouteguard.AlterOperationKinds(root)
+	c.Assert(err, qt.IsNil)
+
+	names := make([]string, 0, len(kinds))
+	for _, kind := range kinds {
+		names = append(names, kind.Name)
+	}
+	c.Assert(names, qt.DeepEquals, []string{"RealOperation", "ValueReceiver"})
+}
+
+func TestAlterOperationKinds_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	kinds, err := astrouteguard.AlterOperationKinds(filepath.Join(t.TempDir(), "absent"))
+	c.Assert(err, qt.ErrorMatches, `astrouteguard: listing core/ast/\*\.go: .*`)
+	c.Assert(kinds, qt.IsNil)
+}
