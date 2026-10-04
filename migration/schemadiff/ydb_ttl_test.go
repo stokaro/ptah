@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/migration/schemadiff"
@@ -117,6 +118,64 @@ func TestCompare_YDBTTL_Changes(t *testing.T) {
 			c.Assert(diff.TablesModified[0].RowDeletionPolicyChange, qt.DeepEquals, &difftypes.RowDeletionPolicyChange{
 				Desired: test.declared, Current: test.read,
 			})
+		})
+	}
+}
+
+// A desired state that does not describe TTLs -- an HCL document says so in
+// its header, because HCL has no spelling for one -- is silent about a table's
+// TTL rather than asking for its removal, so nothing is planned for it.
+func TestCompare_YDBTTL_UndescribedIsNotRemoved(t *testing.T) {
+	tests := []struct {
+		name         string
+		notDescribed coverage.Set
+	}{
+		{name: "every TTL undescribed", notDescribed: coverage.Set{}.WithKind(coverage.TTL)},
+		{name: "this table's TTL undescribed", notDescribed: coverage.Set{}.WithObject(coverage.TTL, "events")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			declared := ydbTTLDeclaration(nil)
+			declared.NotDescribed = test.notDescribed
+
+			diff := schemadiff.CompareWithDialect(declared,
+				ydbTTLCatalog(&ast.RowDeletionPolicySpec{Column: "ts", Interval: "P30D"}), platform.YDB)
+
+			c.Assert(diff.TablesModified, qt.HasLen, 0)
+		})
+	}
+}
+
+// The gate withholds only the removal of an undescribed policy: a policy the
+// description declares is planned whatever it says about the others, and a
+// record about another table, or none, leaves the removal planned.
+func TestCompare_YDBTTL_UndescribedGatesOnlyItsRemoval(t *testing.T) {
+	read := &ast.RowDeletionPolicySpec{Column: "ts", Interval: "P30D"}
+	tests := []struct {
+		name         string
+		notDescribed coverage.Set
+		declared     *ast.RowDeletionPolicySpec
+	}{
+		{name: "another table's TTL undescribed", notDescribed: coverage.Set{}.WithObject(coverage.TTL, "other")},
+		{
+			name:         "a declared policy where TTLs are undescribed",
+			notDescribed: coverage.Set{}.WithKind(coverage.TTL),
+			declared:     &ast.RowDeletionPolicySpec{Column: "ts", Interval: "P1D"},
+		},
+		{name: "every TTL described"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			declared := ydbTTLDeclaration(test.declared)
+			declared.NotDescribed = test.notDescribed
+
+			diff := schemadiff.CompareWithDialect(declared, ydbTTLCatalog(read), platform.YDB)
+
+			c.Assert(diff.TablesModified, qt.HasLen, 1)
+			c.Assert(diff.TablesModified[0].RowDeletionPolicyChange, qt.DeepEquals,
+				&difftypes.RowDeletionPolicyChange{Desired: test.declared, Current: read})
 		})
 	}
 }

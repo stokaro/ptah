@@ -366,6 +366,11 @@ tables only, and a row table refuses it. A run interval set with
 records its run interval as not described, and refuses a change to the TTL that
 would reset it. Removing the TTL removes the run interval with it.
 
+HCL and DBML have no spelling for a TTL. `schema inspect` warns about each TTL
+it leaves out of an HCL document, on `ptah` and `ptah-compat` alike, and a
+desired state read from either format leaves every table's TTL as it is rather
+than reading its silence as a request to remove it.
+
 Spanner takes the same attributes, with its own interval spelling (`30 days`)
 and no unit. Every other dialect refuses a row deletion policy.
 

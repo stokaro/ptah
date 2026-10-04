@@ -214,10 +214,12 @@ const (
 	// Changefeed is a YDB changefeed, a stream of a table's changes. It is
 	// named by the table's path and the changefeed's name.
 	Changefeed Kind = "changefeed"
-	// TTL is what a YDB table's time to live carries beyond the table's row
-	// deletion policy, which Ptah models: the run interval, which only the SDK
-	// and the CLI set, and a column table's tiering policy. It is named by the
-	// table's path.
+	// TTL is a table's time to live, or the part of it a description does not
+	// describe. A YDB read records, by the table's path, what a TTL carries
+	// beyond the row deletion policy Ptah models: the run interval, which only
+	// the SDK and the CLI set, and a column table's tiering policy. A document
+	// in a format with no spelling for a TTL, HCL or DBML, records the whole
+	// kind, and the comparison then plans no removal of a table's policy.
 	TTL Kind = "ttl"
 	// ColumnFamily is a YDB table's column families beyond the default one,
 	// or a default family with its own storage pool or compression.
