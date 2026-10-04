@@ -56,6 +56,7 @@ func ydbRules() []Rule {
 		ydbTopicResetRule(),
 		ydbTopicSettingIgnoredRule(),
 		ydbSecretInClearRule(),
+		ydbDeprecatedSecretRule(),
 	}
 }
 
