@@ -1368,7 +1368,7 @@ func (r *Renderer) writeAlterTableOperations(node *ast.AlterTableNode, enums map
 			r.w.WriteLinef("-- %s: table TTL is ClickHouse-specific; ignored.", r.dialectUpper)
 
 		default:
-			return fmt.Errorf("unknown alter operation type: %T", operation)
+			return fmt.Errorf("%w: %s: this renderer has no ALTER TABLE spelling for %T", ptaherr.ErrUnsupportedFeature, r.dialect, operation)
 		}
 	}
 
@@ -1397,7 +1397,7 @@ func (r *Renderer) writeIndexAlteration(node *ast.AlterTableNode, operation ast.
 		r.writeAlterStatementf(node, "ALTER TABLE %s DROP INDEX %s, ADD %s",
 			table, escapeIdentifier(op.Index.Name), strings.Join(r.indexDefinition(op.Index, ""), " "))
 	default:
-		return fmt.Errorf("unknown index alter operation type: %T", operation)
+		return fmt.Errorf("%w: %s: this renderer has no ALTER TABLE spelling for %T", ptaherr.ErrUnsupportedFeature, r.dialect, operation)
 	}
 	return nil
 }

@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 )
 
@@ -19,12 +20,12 @@ func TestRenderSQL_ConstraintCommentOperation_FailurePath(t *testing.T) {
 		dialect string
 		want    string
 	}{
-		{dialect: "mysql", want: `unknown alter operation type: \*ast.SetConstraintCommentOperation`},
-		{dialect: "mariadb", want: `unknown alter operation type: \*ast.SetConstraintCommentOperation`},
+		{dialect: "mysql", want: `unsupported feature: mysql: this renderer has no ALTER TABLE spelling for \*ast.SetConstraintCommentOperation`},
+		{dialect: "mariadb", want: `unsupported feature: mariadb: this renderer has no ALTER TABLE spelling for \*ast.SetConstraintCommentOperation`},
 		{dialect: "sqlite", want: `.*unsupported alter table operation \*ast.SetConstraintCommentOperation`},
 		{dialect: "sqlserver", want: `.*unsupported alter table operation \*ast.SetConstraintCommentOperation`},
 		{dialect: "oracle", want: `.*unsupported alter table operation \*ast.SetConstraintCommentOperation`},
-		{dialect: "clickhouse", want: `clickhouse: unknown ALTER TABLE operation \*ast.SetConstraintCommentOperation`},
+		{dialect: "clickhouse", want: `unsupported feature: clickhouse: this renderer has no ALTER TABLE spelling for \*ast.SetConstraintCommentOperation`},
 	}
 	for _, test := range tests {
 		t.Run(test.dialect, func(t *testing.T) {
@@ -36,6 +37,7 @@ func TestRenderSQL_ConstraintCommentOperation_FailurePath(t *testing.T) {
 
 			sql, err := renderer.RenderSQL(test.dialect, alter)
 
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, test.want)
 			c.Assert(sql, qt.Equals, "")
 		})
