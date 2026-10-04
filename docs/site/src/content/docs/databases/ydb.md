@@ -328,7 +328,6 @@ These are refused with a message that names what is missing:
 - a YQL file as the desired schema (Go structs and YAML schemas work);
 - the query builder;
 - data changes: seeds, data plans and declared rows;
-- `ptah sql lint` and `ptah migrations lint` over YQL;
 - a scratch database for each case of `ptah migrations test` and `ptah schema test`, since YQL cannot create a database;
 - a YDB database as a dev or shadow database;
 - comments on tables, columns and indexes;
