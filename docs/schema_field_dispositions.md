@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-396 fields are reachable from the desired schema, and each one carries
+403 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 335 | reaches rendered SQL on at least one target |
+| `ddl` | 342 | reaches rendered SQL on at least one target |
 | `comparison` | 7 | read when two schemas are compared, and written into no statement |
 | `planning` | 7 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -65,6 +65,12 @@ None.
 
 | Field | Disposition | Why it is not rendered |
 | --- | --- | --- |
+| `ast.IndexPartitioningSpec.ByLoad` | `ddl` | — |
+| `ast.IndexPartitioningSpec.BySize` | `ddl` | — |
+| `ast.IndexPartitioningSpec.MaxPartitions` | `ddl` | — |
+| `ast.IndexPartitioningSpec.MinPartitions` | `ddl` | — |
+| `ast.IndexPartitioningSpec.PartitionSizeMB` | `ddl` | — |
+| `ast.IndexPartitioningSpec.ReadReplicas` | `ddl` | — |
 | `ast.MatViewRefreshSpec.Append` | `ddl` | — |
 | `ast.MatViewRefreshSpec.DependsOn` | `ddl` | — |
 | `ast.MatViewRefreshSpec.Interval` | `ddl` | — |
@@ -302,6 +308,7 @@ None.
 | `schemamodel.Index.NullsDistinct` | `ddl` | — |
 | `schemamodel.Index.Operator` | `ddl` | — |
 | `schemamodel.Index.Parser` | `ddl` | — |
+| `schemamodel.Index.Partitioning` | `ddl` | — |
 | `schemamodel.Index.Parts` | `ddl` | — |
 | `schemamodel.Index.RequiresExtensions` | `planning` | the same ordering fact for an index |
 | `schemamodel.Index.StorageParams` | `ddl` | — |

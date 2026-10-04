@@ -81,6 +81,8 @@ func (r *Renderer) alterStatement(table string, operation ast.AlterOperation) ([
 	case *ast.AlterIndexVisibilityOperation:
 		return nil, r.keyed(capability.InvisibleIndexes, "invisible index",
 			fmt.Sprintf("the visibility of index %q of %s", op.IndexName, subject))
+	case *ast.SetIndexPartitioningOperation:
+		return r.setIndexPartitioning(table, op)
 	case *ast.AddIndexOperation:
 		return r.addIndex(table, op.Index)
 	case *ast.ReplaceIndexOperation:
@@ -282,11 +284,7 @@ func (r *Renderer) addIndex(table string, index *ast.IndexNode) ([]string, error
 	}
 	withTable := *index
 	withTable.Table = table
-	statement, err := r.addIndexStatement(&withTable)
-	if err != nil {
-		return nil, err
-	}
-	return []string{statement}, nil
+	return r.addIndexStatements(&withTable)
 }
 
 // renderDropTable writes one DROP TABLE per table. DROP TABLE takes the table's

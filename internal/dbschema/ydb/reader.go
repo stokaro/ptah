@@ -158,7 +158,7 @@ func (r *Reader) entry(
 		if err != nil {
 			return err
 		}
-		return r.table(schema, name, described, db)
+		return r.table(ctx, source, schema, name, described, db)
 	case Ydb_Scheme.Entry_DATABASE:
 		// Another database whose root sits under this one. It is not part
 		// of the database this connection reads.

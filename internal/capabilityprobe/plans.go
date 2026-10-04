@@ -22,7 +22,7 @@ func planFor(dialect string) (plan, bool) {
 	}
 	withComments := withConstraintComments(withObjectComments(family, normalized), normalized)
 	withKeys := withInvisibleIndexes(withEnforcementAndMatch(withDeferrableKeys(withComments, normalized), normalized), normalized)
-	return withQueryKeys(withTypeKeys(withSchemaChanges(withKeys, normalized), normalized), normalized), true
+	return withIndexKeys(withQueryKeys(withTypeKeys(withSchemaChanges(withKeys, normalized), normalized), normalized), normalized), true
 }
 
 // familyPlan returns the experiments a dialect's family answers, before the

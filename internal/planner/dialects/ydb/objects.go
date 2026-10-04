@@ -21,7 +21,8 @@ type objectChange struct {
 //
 // The named families come first so a refusal says what it refused. The last
 // check is a catch-all over [difftypes.SchemaDiff.HasChanges]: with the tables
-// and indexes this planner does plan taken out, a diff that still reports a
+// and indexes this planner does plan taken out -- additions, removals, renames
+// and changes of partitioning -- a diff that still reports a
 // change carries a family nobody named here, and planning nothing for it would
 // report the database synced.
 func (p *Planner) refuseObjects(diff *difftypes.SchemaDiff) error {
@@ -33,6 +34,7 @@ func (p *Planner) refuseObjects(diff *difftypes.SchemaDiff) error {
 	rest := *diff
 	rest.TablesAdded, rest.TablesRemoved, rest.TablesModified = nil, nil, nil
 	rest.IndexesAdded, rest.IndexesRemoved = nil, nil
+	rest.IndexesRenamed, rest.IndexPartitioningChanged = nil, nil
 	if rest.HasChanges() {
 		return refuseFact("the plan", "it changes objects the YDB planner does not plan")
 	}

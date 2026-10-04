@@ -342,6 +342,7 @@ func reverseSchemaDiffWithSchemaForDialect(
 		change.Invisible = !change.Invisible
 		reversed.IndexVisibilityChanged = append(reversed.IndexVisibilityChanged, change)
 	}
+	reversed.IndexesRenamed, reversed.IndexPartitioningChanged = reverseIndexChangesInPlace(diff)
 	for _, restored := range constraintRestorations {
 		reversed.ConstraintsAdded = append(reversed.ConstraintsAdded, restored)
 	}
@@ -586,4 +587,33 @@ func reverseRLSForceChanges(changes difftypes.RLSForceChanges) difftypes.RLSForc
 		reversed = append(reversed, change)
 	}
 	return reversed
+}
+
+// reverseIndexChangesInPlace is the rollback of the renames and the changes of
+// partitioning a forward diff makes in place: each rename back to the name the
+// index had, and each index back to the settings it held, under the name it
+// has once the renames are undone. A forward change names the index as the
+// declaration does, after its rename; the rollback renames first too, so the
+// index it sets is the one the database held before the change.
+func reverseIndexChangesInPlace(diff *difftypes.SchemaDiff) ([]difftypes.IndexRename, []difftypes.IndexPartitioningChange) {
+	var renames []difftypes.IndexRename
+	formerName := make(map[difftypes.IndexRef]string, len(diff.IndexesRenamed))
+	for _, rename := range diff.IndexesRenamed {
+		renames = append(renames, difftypes.IndexRename{TableName: rename.TableName, From: rename.To, To: rename.From})
+		formerName[difftypes.IndexRef{TableName: rename.TableName, Name: rename.To}] = rename.From
+	}
+	var changes []difftypes.IndexPartitioningChange
+	for _, change := range diff.IndexPartitioningChanged {
+		name := change.Name
+		if former, renamed := formerName[difftypes.IndexRef{TableName: change.TableName, Name: change.Name}]; renamed {
+			name = former
+		}
+		changes = append(changes, difftypes.IndexPartitioningChange{
+			TableName:    change.TableName,
+			Name:         name,
+			Partitioning: change.Previous.Clone(),
+			Previous:     change.Partitioning.Clone(),
+		})
+	}
+	return renames, changes
 }

@@ -364,7 +364,7 @@ func compareReportingUndecidedAdditions(
 
 	// Compare database index definitions
 	compare.IndexesWithSemantics(
-		desired, database, diff, opts.Dialect, identifierSemantics, opts.IndexExpressions,
+		desired, database, diff, opts.Dialect, identifierSemantics, opts.IndexExpressions, caps,
 	)
 
 	// Compare PostgreSQL extensions with configuration options

@@ -137,6 +137,9 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			// and recording that refusal would answer a question about the
 			// image instead of the key (stokaro/ptah#1026).
 			capability.Hypertables,
+			// IndexRename names what Ptah's planner plans, and only the YDB
+			// planner plans a rename; the server's answer would not decide it.
+			capability.IndexRename,
 			capability.MigrationLockTimeout,
 			capability.MigrationStatementTimeout,
 			capability.ShowRoutinePrivilege,
@@ -164,6 +167,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.ExtensionComments,
 			capability.FunctionComments,
 			capability.Hypertables,
+			capability.IndexRename,
 			capability.MaterializedViewComments,
 			capability.MigrationLockTimeout,
 			capability.MigrationStatementTimeout,
@@ -202,6 +206,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.ExtensionComments,
 			capability.FunctionComments,
 			capability.Hypertables,
+			capability.IndexRename,
 			capability.MaterializedViewComments,
 			capability.MigrationLockTimeout,
 			capability.MigrationStatementTimeout,
@@ -243,6 +248,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.ExtensionComments,
 			capability.FunctionComments,
 			capability.Hypertables,
+			capability.IndexRename,
 			capability.MaterializedViewComments,
 			capability.MigrationLockTimeout,
 			capability.MigrationStatementTimeout,
@@ -390,37 +396,37 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps capability.Capabilities
 		want int
 	}{{
-		name: "postgres owes eight fewer: the probe cannot ask whether a privilege exists, none of the three runtime policies nor the transaction wrapper is a statement it can send, TimescaleDB — hypertables and continuous aggregates both — is an extension none of these images has, and the Oracle vector catalog column is not a relation it carries",
+		name: "postgres owes nine fewer: the probe cannot ask whether a privilege exists, none of the three runtime policies nor the transaction wrapper is a statement it can send, TimescaleDB — hypertables and continuous aggregates both — is an extension none of these images has, the Oracle vector catalog column is not a relation it carries, and index_rename names what Ptah's planner plans rather than what the server does",
 		cell: measuredCell,
 		caps: capability.Postgres17(),
-		want: registered - 8,
+		want: registered - 9,
 	}, {
-		name: "mysql owes thirty-four fewer: role_management, row_level_ttl, row_deletion_policy, named_not_null_constraints, schema_comments, the ten object-comment keys, the two TimescaleDB keys, the seven catalog keys, the three user-type kinds, the four runtime properties and the sequence grammar restriction name surfaces no MySQL path reads or no statement decides",
+		name: "mysql owes thirty-five fewer: role_management, row_level_ttl, row_deletion_policy, named_not_null_constraints, schema_comments, index_rename, the ten object-comment keys, the two TimescaleDB keys, the seven catalog keys, the three user-type kinds, the four runtime properties and the sequence grammar restriction name surfaces no MySQL path reads or no statement decides",
 		cell: Cell{
 			Dialect: platform.MySQL, Line: "9.7",
 			Preset: capability.MySQL84, PresetName: "MySQL84",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MySQL84(),
-		want: registered - 34,
+		want: registered - 35,
 	}, {
-		name: "mariadb owes thirty-four fewer: COMMENT ON SCHEMA and the ten object-comment forms are not statements it has, the three user-type kinds have no MariaDB spelling, the four runtime properties are not statements, neither pg_class nor pg_default_acl nor pg_get_triggerdef nor the Oracle vector catalog column is something it has, the sequence grammar restriction has no control statement here, row_deletion_policy is a Spanner clause it has no spelling of, named_not_null_constraints is a PostgreSQL 18 catalog behavior, and sequences is asked now that Ptah renders, reads and plans one",
+		name: "mariadb owes thirty-five fewer: COMMENT ON SCHEMA and the ten object-comment forms are not statements it has, the three user-type kinds have no MariaDB spelling, the four runtime properties are not statements, neither pg_class nor pg_default_acl nor pg_get_triggerdef nor the Oracle vector catalog column is something it has, the sequence grammar restriction has no control statement here, row_deletion_policy is a Spanner clause it has no spelling of, named_not_null_constraints is a PostgreSQL 18 catalog behavior, index_rename names what Ptah's planner plans, and sequences is asked now that Ptah renders, reads and plans one",
 		cell: Cell{
 			Dialect: platform.MariaDB, Line: "10.11",
 			Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MariaDB1011(),
-		want: registered - 34,
+		want: registered - 35,
 	}, {
-		name: "cockroachdb 26.2 owes every row its preset enables a prerequisite for, less the four the probe cannot ask and the domain comment row, whose domain prerequisite is absent",
+		name: "cockroachdb 26.2 owes every row its preset enables a prerequisite for, less the nine its plan declares undecidable and the domain comment row, whose domain prerequisite is absent",
 		cell: Cell{
 			Dialect: platform.CockroachDB, Line: "26.2",
 			Preset: capability.CockroachDB26, PresetName: "CockroachDB26",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.CockroachDB26(),
-		want: registered - 9,
+		want: registered - 10,
 	}, {
 		name: "cockroachdb 25.4 excludes the guarded drop row and the domain comment row, whose prerequisites are absent",
 		cell: Cell{
@@ -429,7 +435,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.CockroachDB25(),
-		want: registered - 10,
+		want: registered - 11,
 	}, {
 		name: "ydb 26.2 owes every row but the eight it declares and the seven whose prerequisite the preset lacks: " +
 			"guarded DROP CONSTRAINT, CREATE OR REPLACE TRIGGER, SET EXPRESSION, the three reference policies " +

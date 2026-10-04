@@ -90,3 +90,27 @@ func RefuseServerSchemas(dialect string, diff *difftypes.SchemaDiff) error {
 	return fmt.Errorf("%w: the diff creates, drops or changes a database, which only a MySQL or MariaDB plan of a whole server does; the %s planner plans none",
 		ptaherr.ErrUnsupportedFeature, dialect)
 }
+
+// RefuseIndexChangesInPlace refuses a diff that renames an index or changes an
+// index's partitioning in place, for a planner of dialect that plans neither.
+// The comparison records those changes only on a target with
+// capability.IndexRename or capability.IndexPartitioning, which only YDB has,
+// so another planner reaches one only through a diff built by hand, and
+// planning nothing would leave the index as it was and report the two sides
+// equal.
+func RefuseIndexChangesInPlace(dialect string, diff *difftypes.SchemaDiff) error {
+	switch {
+	case diff == nil:
+		return nil
+	case len(diff.IndexesRenamed) > 0:
+		rename := diff.IndexesRenamed[0]
+		return fmt.Errorf("%w: the diff renames index %q of table %q to %q, and the %s planner plans no index rename",
+			ptaherr.ErrUnsupportedFeature, rename.From, rename.TableName, rename.To, dialect)
+	case len(diff.IndexPartitioningChanged) > 0:
+		change := diff.IndexPartitioningChanged[0]
+		return fmt.Errorf("%w: the diff changes the partitioning of index %q of table %q, which only a YDB plan does; "+
+			"the %s planner plans none", ptaherr.ErrUnsupportedFeature, change.Name, change.TableName, dialect)
+	default:
+		return nil
+	}
+}

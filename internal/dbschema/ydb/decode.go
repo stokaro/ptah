@@ -1,7 +1,9 @@
 package ydb
 
 import (
+	"context"
 	"fmt"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -22,7 +24,13 @@ import (
 
 // table adds one described row table, its key, its indexes and the records
 // of the settings Ptah does not model.
-func (r *Reader) table(schema, name string, described *Ydb_Table.DescribeTableResult, db *catalog.Database) error {
+func (r *Reader) table(
+	ctx context.Context,
+	source Source,
+	schema, name string,
+	described *Ydb_Table.DescribeTableResult,
+	db *catalog.Database,
+) error {
 	subject := fmt.Sprintf("YDB table %s", r.absolute(schema, name))
 	if described.GetStoreType() == Ydb_Table.StoreType_STORE_TYPE_COLUMN {
 		// The scheme service lists a column table as one, so a row table that
@@ -61,7 +69,7 @@ func (r *Reader) table(schema, name string, described *Ydb_Table.DescribeTableRe
 	}
 
 	for _, described := range described.GetIndexes() {
-		index, err := r.index(schema, name, described)
+		index, err := r.index(ctx, source, schema, name, described)
 		if err != nil {
 			return fmt.Errorf("%s: %w", subject, err)
 		}
@@ -228,7 +236,17 @@ func decimalOf(t *Ydb.Type) (precision, scale int, ok bool) {
 // kind is refused: one the pinned protocol buffers model as a oneof Ptah does
 // not read yet, and one they do not model at all, whose type arrives empty and
 // whose data sits in fields they do not know.
-func (r *Reader) index(schema, table string, described *Ydb_Table.TableIndexDescription) (catalog.Index, error) {
+//
+// The index's partitioning is read from its implementation table, which the
+// description of the table leaves out: measured on 25.1.4.7 and 26.2.1.14, a
+// global index whose minimum partition count was set to 4 describes itself as
+// `globalIndex: {}`, and `<table>/<index>/indexImplTable` describes the 4.
+func (r *Reader) index(
+	ctx context.Context,
+	source Source,
+	schema, table string,
+	described *Ydb_Table.TableIndexDescription,
+) (catalog.Index, error) {
 	index := catalog.Index{
 		Name:           described.GetName(),
 		TableName:      table,
@@ -249,9 +267,78 @@ func (r *Reader) index(schema, table string, described *Ydb_Table.TableIndexDesc
 		return catalog.Index{}, fmt.Errorf("index %q is a %s: %s", described.GetName(),
 			unreadIndexKind(described), ydbgap.IndexFamilies.Message())
 	}
+	implementation, err := source.DescribeTable(ctx, r.absolute(schema, path.Join(table, described.GetName(), indexImplTable)))
+	if err != nil {
+		return catalog.Index{}, fmt.Errorf("index %q: %w", described.GetName(), err)
+	}
+	settings, err := indexSettings(implementation)
+	if err != nil {
+		return catalog.Index{}, fmt.Errorf("index %q: %w", described.GetName(), err)
+	}
 	index.Method = kind.Clause(false)
+	index.Partitioning = settings.Spec()
 	index.Definition = indexClause(index, kind)
 	return index, nil
+}
+
+// indexImplTable is the table YDB keeps a global index in, under the index's
+// own path: `<table>/<index>/indexImplTable`.
+const indexImplTable = "indexImplTable"
+
+// indexSettings reads the partitioning and the read replicas of a global
+// index from the description of its implementation table. A setting the
+// description leaves unspecified is YDB's default for it, and a setting the
+// pinned protocol buffers do not model is refused, because read as absent it
+// would be planned away on every run.
+func indexSettings(described *Ydb_Table.DescribeTableResult) (ydbindex.Settings, error) {
+	partitioning := described.GetPartitioningSettings()
+	replicas := described.GetReadReplicasSettings()
+	for _, message := range []protoreflect.ProtoMessage{partitioning, replicas} {
+		if unknown := unknownFields(message); len(unknown) > 0 {
+			return ydbindex.Settings{}, fmt.Errorf("its partitioning carries field %s, which this build of Ptah does not read",
+				joinNumbers(unknown))
+		}
+	}
+	settings := ydbindex.DefaultSettings()
+	var err error
+	if settings.BySize, err = featureFlag(partitioning.GetPartitioningBySize(), settings.BySize); err != nil {
+		return ydbindex.Settings{}, fmt.Errorf("partitioning by size: %w", err)
+	}
+	if settings.ByLoad, err = featureFlag(partitioning.GetPartitioningByLoad(), settings.ByLoad); err != nil {
+		return ydbindex.Settings{}, fmt.Errorf("partitioning by load: %w", err)
+	}
+	switch size := partitioning.GetPartitionSizeMb(); {
+	case !settings.BySize:
+		settings.PartitionSizeMB = 0
+	case size != 0:
+		settings.PartitionSizeMB = size
+	}
+	if minimum := partitioning.GetMinPartitionsCount(); minimum != 0 {
+		settings.MinPartitions = minimum
+	}
+	settings.MaxPartitions = partitioning.GetMaxPartitionsCount()
+	switch {
+	case replicas.GetPerAzReadReplicasCount() != 0:
+		settings.ReadReplicas = ydbindex.Replicas{PerAZ: true, Count: replicas.GetPerAzReadReplicasCount()}
+	case replicas.GetAnyAzReadReplicasCount() != 0:
+		settings.ReadReplicas = ydbindex.Replicas{Count: replicas.GetAnyAzReadReplicasCount()}
+	}
+	return settings, nil
+}
+
+// featureFlag reads a setting YDB reports as enabled, disabled or left
+// unspecified, which is the default.
+func featureFlag(flag Ydb.FeatureFlag_Status, unspecified bool) (bool, error) {
+	switch flag {
+	case Ydb.FeatureFlag_ENABLED:
+		return true, nil
+	case Ydb.FeatureFlag_DISABLED:
+		return false, nil
+	case Ydb.FeatureFlag_STATUS_UNSPECIFIED:
+		return unspecified, nil
+	default:
+		return false, fmt.Errorf("the value %d is not one this build of Ptah reads", int32(flag))
+	}
 }
 
 // unreadIndexFields names the index kinds by the field number ydb_table.proto

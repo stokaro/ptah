@@ -70,12 +70,16 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 		quotedKey = append(quotedKey, quote(column))
 	}
 	lines = append(lines, "PRIMARY KEY ("+strings.Join(quotedKey, ", ")+")")
+	var partitioning []string
 	for _, index := range node.Indexes {
 		clause, err := r.inlineIndex(node.Name, index, keyColumns, columnTypes)
 		if err != nil {
 			return err
 		}
-		lines = append(lines, clause)
+		lines = append(lines, clause.String())
+		if statement := clause.partitioningStatement(node.Name); statement != "" {
+			partitioning = append(partitioning, statement)
+		}
 	}
 
 	guard, err := r.createGuard(node)
@@ -86,9 +90,12 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	r.w.WriteLine("    " + strings.Join(lines, ",\n    "))
 	if custom := strings.TrimSpace(node.CustomSQL); custom != "" {
 		r.w.WriteLinef(") %s;", custom)
-		return nil
+	} else {
+		r.w.WriteLine(");")
 	}
-	r.w.WriteLine(");")
+	for _, statement := range partitioning {
+		r.w.WriteLine(statement)
+	}
 	return nil
 }
 

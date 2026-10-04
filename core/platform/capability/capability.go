@@ -1212,6 +1212,32 @@ const (
 	// on every YDB line from 25.1.4.7 to 26.2.1.14.
 	AsyncIndexes Capability = "async_indexes"
 
+	// IndexRename marks a target on which Ptah plans an index whose
+	// definition is unchanged and whose name changed as a rename in place,
+	// YDB's `ALTER TABLE ... RENAME INDEX old TO new`, rather than as a drop
+	// and a create that rebuilds the index.
+	//
+	// It describes Ptah rather than the engine: PostgreSQL, MySQL and others
+	// rename an index too, and the key is false there because their planners
+	// pair no removed index with an added one. Measured on YDB 25.1.4.7 and
+	// 26.2.1.14: the rename keeps the index's kind, its covered columns and
+	// its partitioning, and a rename onto a name the table already uses
+	// answers `Index ... exists, but overwrite flag has not been set`.
+	IndexRename Capability = "index_rename"
+
+	// IndexPartitioning marks a target on which Ptah declares, reads and
+	// changes how a global index's own table splits into partitions: YDB's
+	// `ALTER TABLE ... ALTER INDEX ... SET (AUTO_PARTITIONING_... = ...)`, and
+	// the index's read replicas, which the same statement sets.
+	//
+	// Measured on YDB 25.1.4.7 and 26.2.1.14: the settings are accepted only
+	// by ALTER INDEX after the index exists (a `WITH (...)` on an index in
+	// CREATE TABLE or ADD INDEX answers `Unknown index setting` on 26.2 and
+	// `with: alternative is not implemented yet` on 25.1), none of them can be
+	// reset, and DescribeTable reports them on the index's implementation
+	// table rather than on the index.
+	IndexPartitioning Capability = "index_partitioning"
+
 	// SerialColumns marks a target whose SERIAL column types fill the column
 	// on insert without the application naming a value: PostgreSQL's serial
 	// pseudo-types and YDB's Serial, BigSerial and SmallSerial, each backed by
@@ -1620,6 +1646,12 @@ var registry = map[Capability]spec{
 	AsyncIndexes: {
 		doc: "an index the server maintains asynchronously, YDB's GLOBAL ASYNC",
 	},
+	IndexRename: {
+		doc: "Ptah plans an index whose name alone changed as a rename in place (YDB's RENAME INDEX)",
+	},
+	IndexPartitioning: {
+		doc: "Ptah declares, reads and changes a global index's partitioning and read replicas (YDB's ALTER INDEX ... SET)",
+	},
 	SerialColumns: {
 		doc: "SERIAL column types fill the column from an implicit sequence (PostgreSQL serial, YDB Serial)",
 	},
@@ -1902,6 +1934,10 @@ func MySQL84() Capabilities {
 		WideDateTimeTypes:    false,
 		ParameterizedDecimal: true,
 		AsyncIndexes:         false,
+		// Only the YDB planner pairs a removed index with an added one, and
+		// index partitioning is YDB's, so both index keys are false here.
+		IndexRename:          false,
+		IndexPartitioning:    false,
 		SerialColumns:        true,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
@@ -2109,6 +2145,10 @@ func MariaDB1011() Capabilities {
 		WideDateTimeTypes:    false,
 		ParameterizedDecimal: true,
 		AsyncIndexes:         false,
+		// Only the YDB planner pairs a removed index with an added one, and
+		// index partitioning is YDB's, so both index keys are false here.
+		IndexRename:          false,
+		IndexPartitioning:    false,
 		SerialColumns:        true,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
@@ -2255,6 +2295,10 @@ func Postgres16() Capabilities {
 		WideDateTimeTypes:    false,
 		ParameterizedDecimal: true,
 		AsyncIndexes:         false,
+		// Only the YDB planner pairs a removed index with an added one, and
+		// index partitioning is YDB's, so both index keys are false here.
+		IndexRename:          false,
+		IndexPartitioning:    false,
 		SerialColumns:        true,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
@@ -2527,6 +2571,10 @@ func ClickHouse24() Capabilities {
 		WideDateTimeTypes:    false,
 		ParameterizedDecimal: true,
 		AsyncIndexes:         false,
+		// Only the YDB planner pairs a removed index with an added one, and
+		// index partitioning is YDB's, so both index keys are false here.
+		IndexRename:          false,
+		IndexPartitioning:    false,
 		SerialColumns:        false,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
@@ -2694,6 +2742,10 @@ func SQLite3() Capabilities {
 		WideDateTimeTypes:    false,
 		ParameterizedDecimal: false,
 		AsyncIndexes:         false,
+		// Only the YDB planner pairs a removed index with an added one, and
+		// index partitioning is YDB's, so both index keys are false here.
+		IndexRename:          false,
+		IndexPartitioning:    false,
 		SerialColumns:        false,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
@@ -2936,6 +2988,10 @@ func SQLServer2022() Capabilities {
 		WideDateTimeTypes:    false,
 		ParameterizedDecimal: true,
 		AsyncIndexes:         false,
+		// Only the YDB planner pairs a removed index with an added one, and
+		// index partitioning is YDB's, so both index keys are false here.
+		IndexRename:          false,
+		IndexPartitioning:    false,
 		SerialColumns:        false,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
@@ -3618,6 +3674,10 @@ func Oracle23() Capabilities {
 		WideDateTimeTypes:    false,
 		ParameterizedDecimal: true,
 		AsyncIndexes:         false,
+		// Only the YDB planner pairs a removed index with an added one, and
+		// index partitioning is YDB's, so both index keys are false here.
+		IndexRename:          false,
+		IndexPartitioning:    false,
 		SerialColumns:        false,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
@@ -3785,6 +3845,15 @@ func YDB262() Capabilities {
 		IndexCoveringColumns:       true,
 		AsyncIndexes:               true,
 		UniqueIndexOnExistingTable: false,
+		// `ALTER TABLE ... RENAME INDEX a TO b` renames an index and keeps its
+		// kind, cover and partitioning. `ALTER TABLE ... ALTER INDEX i SET
+		// (AUTO_PARTITIONING_...)` changes the partitioning of the index's own
+		// table, and of each setting only what ALTER INDEX takes: the five
+		// AUTO_PARTITIONING settings and READ_REPLICAS_SETTINGS. Both measured
+		// on 25.1.4.7 and 26.2.1.14 alike, so every line between them carries
+		// them too.
+		IndexRename:       true,
+		IndexPartitioning: true,
 
 		// Tables and their in-place changes. A table needs a key (`Primary
 		// key is required for ydb tables.`), and no ALTER changes it. A

@@ -105,7 +105,7 @@ func TestGenerateIncludesIndexCoveringColumns(t *testing.T) {
 	c.Assert(
 		include["description"],
 		qt.Equals,
-		"Comma-separated INCLUDE columns for covering indexes (PostgreSQL: default/BTREE/GIST, plus SPGIST on 14+; YugabyteDB: default/LSM, with BTREE as the default-LSM alias; Spanner PostgreSQL dialect: default only).",
+		"Comma-separated INCLUDE columns for covering indexes (PostgreSQL: default/BTREE/GIST, plus SPGIST on 14+; YugabyteDB: default/LSM, with BTREE as the default-LSM alias; Spanner PostgreSQL dialect: default only; YDB: COVER on a global index).",
 	)
 }
 

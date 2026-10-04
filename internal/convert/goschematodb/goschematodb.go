@@ -272,6 +272,7 @@ func toDBIndexes(
 			Method:         indexAccessMethod(index.Type, dialect),
 			IncludeColumns: append([]string(nil), index.IncludeColumns...),
 			StorageParams:  maps.Clone(index.StorageParams),
+			Partitioning:   index.Partitioning.Clone(),
 			Type:           index.Type,
 			Granularity:    index.Granularity,
 		})

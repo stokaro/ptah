@@ -226,6 +226,8 @@ func measuredLines() map[string]measuredLine {
 				capability.WideDateTimeTypes:          typeKeyCarried,
 				capability.ParameterizedDecimal:       typeKeyCarried,
 				capability.AsyncIndexes:               typeKeyCarried,
+				capability.IndexRename:                indexKeyCarried,
+				capability.IndexPartitioning:          indexKeyCarried,
 				capability.SerialColumns:              typeKeyCarried,
 				capability.SmallIntegerDefaults:       typeKeyCarried,
 				capability.DocumentTypeDefaults:       typeKeyCarried,
@@ -368,6 +370,8 @@ func measuredLines() map[string]measuredLine {
 				capability.WideDateTimeTypes:          typeKeyCarried,
 				capability.ParameterizedDecimal:       typeKeyCarried,
 				capability.AsyncIndexes:               typeKeyCarried,
+				capability.IndexRename:                indexKeyCarried,
+				capability.IndexPartitioning:          indexKeyCarried,
 				capability.SerialColumns:              typeKeyCarried,
 				capability.SmallIntegerDefaults:       typeKeyCarried,
 				capability.DocumentTypeDefaults:       typeKeyCarried,
@@ -511,6 +515,8 @@ func measuredLines() map[string]measuredLine {
 				capability.WideDateTimeTypes:          typeKeyCarried,
 				capability.ParameterizedDecimal:       typeKeyCarried,
 				capability.AsyncIndexes:               typeKeyCarried,
+				capability.IndexRename:                indexKeyCarried,
+				capability.IndexPartitioning:          indexKeyCarried,
 				capability.SerialColumns:              typeKeyCarried,
 				capability.SmallIntegerDefaults:       typeKeyCarried,
 				capability.DocumentTypeDefaults:       typeKeyCarried,
@@ -656,4 +662,11 @@ const typeKeyCarried = "this run predates the key and sent no type experiment; t
 // every run through its query experiments, each of which reads back what the
 // statement returned, and the value here is the preset's.
 const queryKeyCarried = "this run predates the key and sent no query experiment; the probe asks it " +
+	"on every run through those experiments, and the value here is the preset's"
+
+// indexKeyCarried is why the keys about planning a renamed index and an index's
+// partitioning are carried on every measured line: the run named there
+// predates them. The probe asks them on every run through its index
+// experiments, and the value here is the preset's.
+const indexKeyCarried = "this run predates the key and sent no index experiment; the probe asks it " +
 	"on every run through those experiments, and the value here is the preset's"

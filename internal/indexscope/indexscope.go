@@ -25,7 +25,26 @@ func validateDiff(dialect string, semantics identifier.Semantics, diff *difftype
 	if err := validateAdditionsAreDescribed(diff.IndexesAdded); err != nil {
 		return err
 	}
-	return validateRefs(dialect, semantics, "removed", diff.IndexesRemoved)
+	if err := validateRefs(dialect, semantics, "removed", diff.IndexesRemoved); err != nil {
+		return err
+	}
+	renamedFrom := make([]difftypes.IndexRef, 0, len(diff.IndexesRenamed))
+	renamedTo := make([]difftypes.IndexRef, 0, len(diff.IndexesRenamed))
+	for _, rename := range diff.IndexesRenamed {
+		renamedFrom = append(renamedFrom, difftypes.IndexRef{Name: rename.From, TableName: rename.TableName})
+		renamedTo = append(renamedTo, difftypes.IndexRef{Name: rename.To, TableName: rename.TableName})
+	}
+	if err := validateRefs(dialect, semantics, "renamed", renamedFrom); err != nil {
+		return err
+	}
+	if err := validateRefs(dialect, semantics, "rename target", renamedTo); err != nil {
+		return err
+	}
+	repartitioned := make([]difftypes.IndexRef, 0, len(diff.IndexPartitioningChanged))
+	for _, change := range diff.IndexPartitioningChanged {
+		repartitioned = append(repartitioned, difftypes.IndexRef{Name: change.Name, TableName: change.TableName})
+	}
+	return validateRefs(dialect, semantics, "repartitioned", repartitioned)
 }
 
 // ValidateDiff refuses an index reference a plan could not act on: an empty

@@ -1,6 +1,7 @@
 package goschema
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -25,6 +26,7 @@ import (
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/ydbindex"
 )
 
 // annotationErrorContext locates one annotation in the source being parsed, so
@@ -370,6 +372,10 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 	if err != nil {
 		return err
 	}
+	partitioning, err := s.indexPartitioning(kv, comment, structName)
+	if err != nil {
+		return err
+	}
 	s.schemaIndexes = append(s.schemaIndexes, schemamodel.Index{
 		StructName:     structName,
 		Name:           kv["name"],
@@ -385,8 +391,23 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 		NullsDistinct:  parseBoolPtr(kv["nulls_distinct"]),
 		TableName:      tableName,   // Target table name
 		Granularity:    granularity, // CH only: GRANULARITY n for data-skipping indexes
+		Partitioning:   partitioning,
 	})
 	return nil
+}
+
+// indexPartitioning reads the partitioning attributes of an index directive,
+// which YDB's global indexes carry; see [ydbindex.ParseDeclaration].
+func (s *schemaParseState) indexPartitioning(kv map[string]string, comment *ast.Comment, structName string) (*ptahast.IndexPartitioningSpec, error) {
+	partitioning, err := ydbindex.ParseDeclaration(kv)
+	if declaration, ok := errors.AsType[*ydbindex.DeclarationError](err); ok {
+		return nil, &ptaherr.ParseError{
+			File: s.filename, Line: s.annotationContext(comment, "//ptah:schema:index", structName).line,
+			Directive: "ptah:schema:index", Attribute: declaration.Attribute, Err: ptaherr.ErrInvalidAttributeValue,
+			Message: fmt.Sprintf("%s on //ptah:schema:index at %s", declaration.Error(), structName),
+		}
+	}
+	return partitioning, err
 }
 
 func firstNonEmpty(values ...string) string {
