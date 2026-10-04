@@ -40,8 +40,8 @@ func TestSurfaces_RenderTheSameBytesTwice(t *testing.T) {
 		for _, fixture := range Fixtures() {
 			t.Run(surface.name+" "+fixture.Name, func(t *testing.T) {
 				c := qt.New(t)
-				first := everyCell(surface.surface, fixture.Schema, capabilityprobe.Cells)
-				second := everyCell(surface.surface, fixture.Schema, capabilityprobe.Cells)
+				first := everyCell(surface.surface, fixture.Schema, fixture.Cells(capabilityprobe.Cells))
+				second := everyCell(surface.surface, fixture.Schema, fixture.Cells(capabilityprobe.Cells))
 				c.Assert(second, qt.DeepEquals, first)
 			})
 		}

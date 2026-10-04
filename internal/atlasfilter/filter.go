@@ -115,6 +115,8 @@ func excludeDatabase(
 	filtered.Synonyms = state.filterSynonyms(filtered.Synonyms)
 	filtered.Topics = state.filterTopics(filtered.Topics)
 	filtered.Secrets = state.filterSecrets(filtered.Secrets)
+	filtered.ExternalDataSources = state.filterExternalDataSources(filtered.ExternalDataSources)
+	filtered.ExternalTables = state.filterExternalTables(filtered.ExternalTables)
 	filtered.ExtendedProperties = state.filterExtendedProperties(filtered.ExtendedProperties)
 	filtered.ContinuousAggregates = state.filterContinuousAggregates(filtered.ContinuousAggregates)
 	filtered.Hypertables = state.filterHypertables(filtered.Hypertables)
@@ -1136,6 +1138,33 @@ func (s *exclusionState) filterSecrets(secrets []catalog.Secret) []catalog.Secre
 	return result
 }
 
+// filterExternalDataSources drops YDB external data sources an exclusion
+// selector names, and the ones whose directory is excluded.
+func (s *exclusionState) filterExternalDataSources(sources []catalog.ExternalDataSource) []catalog.ExternalDataSource {
+	result := make([]catalog.ExternalDataSource, 0, len(sources))
+	for _, source := range sources {
+		if s.matches("external_data_source", s.nameCandidates(source.Schema, source.Name)...) ||
+			s.schemaExcluded(source.Schema) {
+			continue
+		}
+		result = append(result, source)
+	}
+	return result
+}
+
+// filterExternalTables drops YDB external tables an exclusion selector names,
+// and the ones whose directory is excluded.
+func (s *exclusionState) filterExternalTables(tables []catalog.ExternalTable) []catalog.ExternalTable {
+	result := make([]catalog.ExternalTable, 0, len(tables))
+	for _, table := range tables {
+		if s.matches("external_table", s.nameCandidates(table.Schema, table.Name)...) || s.schemaExcluded(table.Schema) {
+			continue
+		}
+		result = append(result, table)
+	}
+	return result
+}
+
 // filterExtendedProperties drops the extended properties an exclusion selector
 // names, and the ones whose owner is excluded.
 //
@@ -1876,6 +1905,8 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		Synonyms:             slices.Clone(schema.Synonyms),
 		Topics:               slices.Clone(schema.Topics),
 		Secrets:              slices.Clone(schema.Secrets),
+		ExternalDataSources:  slices.Clone(schema.ExternalDataSources),
+		ExternalTables:       slices.Clone(schema.ExternalTables),
 		ExtendedProperties:   slices.Clone(schema.ExtendedProperties),
 		ContinuousAggregates: slices.Clone(schema.ContinuousAggregates),
 		Hypertables:          slices.Clone(schema.Hypertables),
@@ -1934,6 +1965,8 @@ func cloneGenerated(schema *schemamodel.Database) *schemamodel.Database {
 	filtered.Synonyms = slices.Clone(schema.Synonyms)
 	filtered.Topics = slices.Clone(schema.Topics)
 	filtered.Secrets = slices.Clone(schema.Secrets)
+	filtered.ExternalDataSources = slices.Clone(schema.ExternalDataSources)
+	filtered.ExternalTables = slices.Clone(schema.ExternalTables)
 	filtered.ExtendedProperties = slices.Clone(schema.ExtendedProperties)
 	filtered.MaterializedViews = slices.Clone(schema.MaterializedViews)
 	filtered.Triggers = slices.Clone(schema.Triggers)

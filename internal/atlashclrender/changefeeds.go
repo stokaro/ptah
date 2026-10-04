@@ -45,3 +45,23 @@ func (r *renderer) reportSecrets() {
 		})
 	}
 }
+
+// reportExternalObjects names every YDB external data source and external
+// table the document leaves out, because HCL has no block for either, for the
+// reasons [renderer.reportSecrets] gives.
+func (r *renderer) reportExternalObjects() {
+	for _, source := range r.db.ExternalDataSources {
+		r.diagnostics = append(r.diagnostics, Diagnostic{
+			Severity: SeverityWarning,
+			Path:     "external_data_source." + source.QualifiedName(),
+			Message:  fmt.Sprintf("external data source %s is not represented in HCL", source.QualifiedName()),
+		})
+	}
+	for _, table := range r.db.ExternalTables {
+		r.diagnostics = append(r.diagnostics, Diagnostic{
+			Severity: SeverityWarning,
+			Path:     "external_table." + table.QualifiedName(),
+			Message:  fmt.Sprintf("external table %s is not represented in HCL", table.QualifiedName()),
+		})
+	}
+}

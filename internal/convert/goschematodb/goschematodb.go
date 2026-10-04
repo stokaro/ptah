@@ -56,24 +56,26 @@ func ToDBSchema(db *schemamodel.Database, dialect string) *catalog.Database {
 	}
 
 	out := &catalog.Database{
-		Schemas:     toDBSchemas(db.Schemas),
-		Tables:      toDBTables(db.Tables, db.Fields, db.RLSEnabledTables, dialect),
-		Enums:       toDBEnums(db.Enums),
-		Indexes:     toDBIndexes(db.Indexes, tableByStruct, dialect),
-		Constraints: toDBConstraints(db.Tables, db.Fields, db.Constraints, tableByStruct, dialect),
-		Extensions:  toDBExtensions(db.Extensions),
-		Functions:   toDBFunctions(db.Functions),
-		Sequences:   toDBSequences(db.Sequences),
-		Domains:     toDBDomains(db.Domains),
-		Composites:  toDBCompositeTypes(db.CompositeTypes),
-		Ranges:      toDBRanges(db.Ranges),
-		Views:       toDBViews(db.Views),
-		MatViews:    toDBMaterializedViews(db.MaterializedViews),
-		Secrets:     toDBSecrets(db.Secrets),
-		Triggers:    toDBTriggers(db.Triggers, tableByStruct),
-		RLSPolicies: toDBRLSPolicies(db.RLSPolicies),
-		Roles:       toDBRoles(db.Roles),
-		Grants:      toDBGrants(db, dialect),
+		Schemas:             toDBSchemas(db.Schemas),
+		Tables:              toDBTables(db.Tables, db.Fields, db.RLSEnabledTables, dialect),
+		Enums:               toDBEnums(db.Enums),
+		Indexes:             toDBIndexes(db.Indexes, tableByStruct, dialect),
+		Constraints:         toDBConstraints(db.Tables, db.Fields, db.Constraints, tableByStruct, dialect),
+		Extensions:          toDBExtensions(db.Extensions),
+		Functions:           toDBFunctions(db.Functions),
+		Sequences:           toDBSequences(db.Sequences),
+		Domains:             toDBDomains(db.Domains),
+		Composites:          toDBCompositeTypes(db.CompositeTypes),
+		Ranges:              toDBRanges(db.Ranges),
+		Views:               toDBViews(db.Views),
+		MatViews:            toDBMaterializedViews(db.MaterializedViews),
+		Secrets:             toDBSecrets(db.Secrets),
+		ExternalDataSources: toDBExternalDataSources(db.ExternalDataSources),
+		ExternalTables:      toDBExternalTables(db.ExternalTables),
+		Triggers:            toDBTriggers(db.Triggers, tableByStruct),
+		RLSPolicies:         toDBRLSPolicies(db.RLSPolicies),
+		Roles:               toDBRoles(db.Roles),
+		Grants:              toDBGrants(db, dialect),
 
 		RoleMemberships: toDBRoleMemberships(db.Roles),
 		// A default privilege is an object family of its own rather than an
@@ -714,6 +716,43 @@ func toDBSecrets(secrets []schemamodel.Secret) []catalog.Secret {
 	out := make([]catalog.Secret, 0, len(secrets))
 	for _, secret := range secrets {
 		out = append(out, catalog.Secret{Name: secret.Name, Schema: secret.Schema})
+	}
+	return out
+}
+
+// toDBExternalDataSources keeps everything a declared YDB external data
+// source says, which is what a read of it describes.
+func toDBExternalDataSources(sources []schemamodel.ExternalDataSource) []catalog.ExternalDataSource {
+	if len(sources) == 0 {
+		return nil
+	}
+	out := make([]catalog.ExternalDataSource, 0, len(sources))
+	for _, source := range sources {
+		out = append(out, catalog.ExternalDataSource{
+			Name: source.Name, Schema: source.Schema, SourceType: source.SourceType, Location: source.Location,
+			AuthMethod: source.AuthMethod, Options: maps.Clone(source.Options),
+		})
+	}
+	return out
+}
+
+// toDBExternalTables keeps everything a declared YDB external table says.
+func toDBExternalTables(tables []schemamodel.ExternalTable) []catalog.ExternalTable {
+	if len(tables) == 0 {
+		return nil
+	}
+	out := make([]catalog.ExternalTable, 0, len(tables))
+	for _, table := range tables {
+		converted := catalog.ExternalTable{
+			Name: table.Name, Schema: table.Schema, DataSource: table.DataSource, Location: table.Location,
+			Options: maps.Clone(table.Options),
+		}
+		for _, column := range table.Columns {
+			converted.Columns = append(converted.Columns, catalog.ExternalColumn{
+				Name: column.Name, Type: column.Type, NotNull: column.NotNull,
+			})
+		}
+		out = append(out, converted)
 	}
 	return out
 }

@@ -21,6 +21,8 @@ func NewDatabase() *Database {
 		Synonyms:             make([]Synonym, 0),
 		Topics:               make([]Topic, 0),
 		Secrets:              make([]Secret, 0),
+		ExternalDataSources:  make([]ExternalDataSource, 0),
+		ExternalTables:       make([]ExternalTable, 0),
 		ExtendedProperties:   make([]ExtendedProperty, 0),
 		MaterializedViews:    make([]MaterializedView, 0),
 		Triggers:             make([]Trigger, 0),
@@ -73,6 +75,8 @@ func AppendDatabase(dst, src *Database) {
 	dst.Synonyms = append(dst.Synonyms, src.Synonyms...)
 	dst.Topics = append(dst.Topics, src.Topics...)
 	dst.Secrets = append(dst.Secrets, src.Secrets...)
+	dst.ExternalDataSources = append(dst.ExternalDataSources, src.ExternalDataSources...)
+	dst.ExternalTables = append(dst.ExternalTables, src.ExternalTables...)
 	dst.ExtendedProperties = append(dst.ExtendedProperties, src.ExtendedProperties...)
 	dst.MaterializedViews = append(dst.MaterializedViews, src.MaterializedViews...)
 	dst.Triggers = append(dst.Triggers, src.Triggers...)

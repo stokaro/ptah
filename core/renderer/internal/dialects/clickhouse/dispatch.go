@@ -110,6 +110,9 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return nodedispatch.RefuseSerialSequence(DialectName, n)
 	case *ast.CreateSecretNode, *ast.AlterSecretNode, *ast.DropSecretNode:
 		return nodedispatch.RefuseSecret(DialectName, n)
+	case *ast.CreateExternalDataSourceNode, *ast.DropExternalDataSourceNode,
+		*ast.CreateExternalTableNode, *ast.DropExternalTableNode:
+		return nodedispatch.RefuseExternal(DialectName, n)
 
 	// Roles and privileges. ClickHouse has both, with a syntax of its own, so
 	// rbac.go renders them and refuses only what the server cannot represent.

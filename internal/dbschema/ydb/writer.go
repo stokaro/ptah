@@ -233,96 +233,106 @@ func (t *transaction) Commit() error { return nil }
 // request is not wrong; YDB has nothing it could undo.
 func (t *transaction) Rollback() error { return nil }
 
-// DropAllTables drops every view, row table, topic and secret in the database
-// and then removes each directory that dropping them left empty, deepest first.
+// DropAllTables drops every view, row table, topic, secret, external table and
+// external data source in the database, and then removes each directory that
+// dropping them left empty, deepest first.
 //
 // It drops what the schema reader describes and nothing else. A column table
 // and the other objects the reader records as not described stay, and so does
 // the directory that holds one, so a cleanup planned from a read removes
 // exactly what the plan listed. Dot-directories are never entered, nor is
 // ydburl.RealmDirectory at the root, and a directory that was empty before is
-// left alone. A directory's views go before its tables; YDB would take either
-// order, since it records no dependency on a view or on the table a view
-// reads.
+// left alone.
+//
+// It walks the tree twice. The first walk drops the views and the external
+// tables everywhere, and the second the rest: YDB keeps no external data
+// source an external table reads (`Other entities depend on this data
+// source`), and the table may sit in another directory than its source. YDB
+// records no dependency on a view or on the table a view reads, so views go
+// first only for tidiness.
 func (w *Writer) DropAllTables(ctx context.Context) error {
 	if w.scheme == nil {
 		return fmt.Errorf("no YDB scheme connection")
 	}
-	_, err := w.dropDirectory(ctx, "")
+	changed := make(map[string]bool)
+	if _, err := w.dropDirectory(ctx, "", readersFirst, false, changed); err != nil {
+		return err
+	}
+	_, err := w.dropDirectory(ctx, "", objectsAfterReaders, true, changed)
 	return err
 }
 
-// dropDirectory drops the views, tables and topics in the directory dir,
-// relative to the database root, and the directories under it, and reports
-// whether it dropped or removed anything there.
-func (w *Writer) dropDirectory(ctx context.Context, dir string) (bool, error) {
+// readersFirst and objectsAfterReaders are the statements each walk of
+// DropAllTables drops each kind of entry with, the path in place of %s: the
+// objects that read another object first, and then the objects they read.
+var (
+	readersFirst = map[Ydb_Scheme.Entry_Type]string{
+		Ydb_Scheme.Entry_VIEW:           "DROP VIEW %s",
+		Ydb_Scheme.Entry_EXTERNAL_TABLE: "DROP EXTERNAL TABLE %s",
+	}
+	objectsAfterReaders = map[Ydb_Scheme.Entry_Type]string{
+		Ydb_Scheme.Entry_TABLE:                "DROP TABLE %s",
+		Ydb_Scheme.Entry_TOPIC:                "DROP TOPIC %s",
+		Ydb_Scheme.Entry_SECRET:               "DROP SECRET %s",
+		Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE: "DROP EXTERNAL DATA SOURCE %s",
+	}
+)
+
+// dropDirectory drops the entries of the kinds statements names in the
+// directory dir, relative to the database root, and in the directories under
+// it, and reports whether this walk or an earlier one dropped or removed
+// anything there, which changed records. With remove set it also removes each
+// directory a walk changed once nothing is left in it.
+func (w *Writer) dropDirectory(
+	ctx context.Context,
+	dir string,
+	statements map[Ydb_Scheme.Entry_Type]string,
+	remove bool,
+	changed map[string]bool,
+) (bool, error) {
 	entries, err := w.scheme.ListDirectory(ctx, path.Join(w.root, dir))
 	if err != nil {
 		return false, err
 	}
-	slices.SortFunc(entries, func(a, b *Ydb_Scheme.Entry) int {
-		if viewFirst := cmp.Compare(dropRank(a), dropRank(b)); viewFirst != 0 {
-			return viewFirst
-		}
-		return strings.Compare(a.GetName(), b.GetName())
-	})
-	changed := false
+	slices.SortFunc(entries, func(a, b *Ydb_Scheme.Entry) int { return strings.Compare(a.GetName(), b.GetName()) })
 	for _, entry := range entries {
 		name := entry.GetName()
-		switch {
-		case entry.GetType() == Ydb_Scheme.Entry_VIEW:
-			if err := w.ExecuteSQL(ctx, "DROP VIEW "+sqlident.Quote(platform.YDB, path.Join(dir, name))); err != nil {
-				return changed, err
+		child := path.Join(dir, name)
+		if statement, drops := statements[entry.GetType()]; drops {
+			if err := w.ExecuteSQL(ctx, fmt.Sprintf(statement, sqlident.Quote(platform.YDB, child))); err != nil {
+				return changed[dir], err
 			}
-			changed = true
-		case entry.GetType() == Ydb_Scheme.Entry_TABLE:
-			if err := w.ExecuteSQL(ctx, "DROP TABLE "+sqlident.Quote(platform.YDB, path.Join(dir, name))); err != nil {
-				return changed, err
-			}
-			changed = true
-		case entry.GetType() == Ydb_Scheme.Entry_TOPIC:
-			if err := w.ExecuteSQL(ctx, "DROP TOPIC "+sqlident.Quote(platform.YDB, path.Join(dir, name))); err != nil {
-				return changed, err
-			}
-			changed = true
-		case entry.GetType() == Ydb_Scheme.Entry_SECRET:
-			if err := w.ExecuteSQL(ctx, "DROP SECRET "+sqlident.Quote(platform.YDB, path.Join(dir, name))); err != nil {
-				return changed, err
-			}
-			changed = true
-		case entry.GetType() == Ydb_Scheme.Entry_DIRECTORY && !strings.HasPrefix(name, ".") &&
-			(dir != "" || name != ydburl.RealmDirectory):
-			child := path.Join(dir, name)
-			childChanged, err := w.dropDirectory(ctx, child)
-			if err != nil {
-				return changed, err
-			}
-			if !childChanged {
-				continue
-			}
-			changed = true
-			if err := w.removeIfEmpty(ctx, child); err != nil {
-				return changed, err
-			}
+			changed[dir] = true
+			continue
+		}
+		if entry.GetType() != Ydb_Scheme.Entry_DIRECTORY || strings.HasPrefix(name, ".") ||
+			(dir == "" && name == ydburl.RealmDirectory) {
+			continue
+		}
+		childChanged, err := w.dropDirectory(ctx, child, statements, remove, changed)
+		if err != nil {
+			return changed[dir], err
+		}
+		if !childChanged {
+			continue
+		}
+		changed[dir] = true
+		if !remove {
+			continue
+		}
+		if err := w.removeIfEmpty(ctx, child); err != nil {
+			return changed[dir], err
 		}
 	}
-	return changed, nil
-}
-
-// dropRank orders a directory's entries for DropAllTables: views first, then
-// everything else.
-func dropRank(entry *Ydb_Scheme.Entry) int {
-	if entry.GetType() == Ydb_Scheme.Entry_VIEW {
-		return 0
-	}
-	return 1
+	return changed[dir], nil
 }
 
 // DropDirectory drops dir, a directory relative to the database root, together
-// with everything in it: row and column tables, views, topics, secrets and
-// the directories below, deepest first. It is the teardown of a directory a
-// caller created for itself, such as the capability probe's namespace;
-// DropAllTables is the cleanup that keeps what the reader does not describe.
+// with everything in it: row and column tables, views, topics, secrets,
+// external tables and external data sources, and the directories below,
+// deepest first. It is the teardown of a directory a caller created for
+// itself, such as the capability probe's namespace; DropAllTables is the
+// cleanup that keeps what the reader does not describe.
 //
 // dir names a directory below the root and nothing else: a segment that
 // starts with a dot -- `.`, `..`, or a server directory such as `.sys` -- is
@@ -343,6 +353,12 @@ func (w *Writer) DropDirectory(ctx context.Context, dir string) error {
 	if err := w.planTree(ctx, relative, &steps); err != nil {
 		return err
 	}
+	// An external table goes before every other step, wherever the tree
+	// holds it, since YDB keeps no data source a table reads. Moving a drop
+	// earlier never moves it after the removal of its directory.
+	slices.SortStableFunc(steps, func(a, b treeStep) int {
+		return cmp.Compare(externalTableRank(a), externalTableRank(b))
+	})
 	for _, step := range steps {
 		if err := w.runTreeStep(ctx, step); err != nil {
 			return err
@@ -371,11 +387,21 @@ func (w *Writer) droppableDirectory(dir string) (string, error) {
 // removes, with the path in place of %s. A directory has none: the scheme
 // service removes it once it is empty.
 var treeStatements = map[Ydb_Scheme.Entry_Type]string{
-	Ydb_Scheme.Entry_TABLE:        "DROP TABLE %s",
-	Ydb_Scheme.Entry_COLUMN_TABLE: "DROP TABLE %s",
-	Ydb_Scheme.Entry_VIEW:         "DROP VIEW %s",
-	Ydb_Scheme.Entry_TOPIC:        "DROP TOPIC %s",
-	Ydb_Scheme.Entry_SECRET:       "DROP SECRET %s",
+	Ydb_Scheme.Entry_TABLE:                "DROP TABLE %s",
+	Ydb_Scheme.Entry_COLUMN_TABLE:         "DROP TABLE %s",
+	Ydb_Scheme.Entry_VIEW:                 "DROP VIEW %s",
+	Ydb_Scheme.Entry_TOPIC:                "DROP TOPIC %s",
+	Ydb_Scheme.Entry_SECRET:               "DROP SECRET %s",
+	Ydb_Scheme.Entry_EXTERNAL_TABLE:       "DROP EXTERNAL TABLE %s",
+	Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE: "DROP EXTERNAL DATA SOURCE %s",
+}
+
+// externalTableRank orders a teardown's steps: external table drops first.
+func externalTableRank(step treeStep) int {
+	if strings.HasPrefix(step.statement, "DROP EXTERNAL TABLE ") {
+		return 0
+	}
+	return 1
 }
 
 // treeStep is one step of a directory teardown: a statement that drops an

@@ -528,6 +528,9 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return nodedispatch.RefuseSerialSequence(r.dialect, n)
 	case *ast.CreateSecretNode, *ast.AlterSecretNode, *ast.DropSecretNode:
 		return nodedispatch.RefuseSecret(r.dialect, n)
+	case *ast.CreateExternalDataSourceNode, *ast.DropExternalDataSourceNode,
+		*ast.CreateExternalTableNode, *ast.DropExternalTableNode:
+		return nodedispatch.RefuseExternal(r.dialect, n)
 
 	// Extensions.
 	case *ast.ExtensionNode:

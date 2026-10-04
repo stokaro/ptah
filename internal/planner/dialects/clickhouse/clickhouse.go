@@ -104,6 +104,9 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := schemaprecondition.RefuseSecrets(platform.ClickHouse, diff); err != nil {
 		return nil, err
 	}
+	if err := schemaprecondition.RefuseExternalObjects(platform.ClickHouse, diff); err != nil {
+		return nil, err
+	}
 	if err := schemaprecondition.RefuseChangefeedChanges(platform.ClickHouse, diff); err != nil {
 		return nil, err
 	}

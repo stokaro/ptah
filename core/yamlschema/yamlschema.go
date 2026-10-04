@@ -29,14 +29,15 @@
 // The top level is a set of object collections, each keyed by name: tables,
 // indexes, constraints, enums, extensions, functions, rls_policies,
 // rls_enabled_tables (also accepted as rls_enabled), roles, grants, revokes,
-// default_privileges, views, matviews, triggers, topics, and secrets. A table
-// carries its columns in declaration order, along with its primary key,
-// checks, engine, comment, and per-platform overrides. A column carries the
-// type, its nullability, key and uniqueness flags, defaults, generated and
-// identity expressions, a foreign key with its referential actions, character
-// set and collation, and its own per-platform overrides. Tables and columns can also
-// declare shared and per-target API names; columns additionally carry API-only
-// type and exposure metadata.
+// default_privileges, views, matviews, triggers, topics, secrets,
+// external_data_sources and external_tables. A table carries its columns in
+// declaration order, along with its primary key, checks, engine, comment, and
+// per-platform overrides. A column carries the type, its nullability, key and
+// uniqueness flags, defaults, generated and identity expressions, a foreign
+// key with its referential actions, character set and collation, and its own
+// per-platform overrides. Tables and columns can also declare shared and
+// per-target API names; columns additionally carry API-only type and exposure
+// metadata.
 //
 // A grant or revoke names its target with on_table, on_schema, on_sequence,
 // on_database, or on_function and on_procedure, whose value carries the
@@ -149,6 +150,9 @@ type document struct {
 	Triggers          map[string]triggerSpec          `yaml:"triggers"`
 	Topics            map[string]topicSpec            `yaml:"topics"`
 	Secrets           map[string]secretSpec           `yaml:"secrets"`
+	// ExternalDataSources and ExternalTables are YDB's.
+	ExternalDataSources map[string]externalDataSourceSpec `yaml:"external_data_sources"`
+	ExternalTables      map[string]externalTableSpec      `yaml:"external_tables"`
 }
 
 type tableSpec struct {
@@ -618,6 +622,9 @@ func (d document) toDatabase() (*schemamodel.Database, error) {
 		return nil, err
 	}
 	if err := d.addSecrets(db); err != nil {
+		return nil, err
+	}
+	if err := d.addExternalObjects(db); err != nil {
 		return nil, err
 	}
 	d.addRLS(db)

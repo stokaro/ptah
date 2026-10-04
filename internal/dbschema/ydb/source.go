@@ -24,7 +24,8 @@ import (
 // Source is what the reader asks a YDB database: a directory's own entry and
 // the entries under it, the description of a row table or a view, the
 // description of a topic, which is how a standalone topic and a changefeed's
-// retention and consumers are read, and the database's users, groups and
+// retention and consumers are read, the description of an external data
+// source or an external table, and the database's users, groups and
 // memberships. A path is absolute.
 //
 // A directory's own entry and a table's description each carry the object's
@@ -35,6 +36,8 @@ type Source interface {
 	DescribeTable(ctx context.Context, path string) (*Ydb_Table.DescribeTableResult, error)
 	DescribeView(ctx context.Context, path string) (*Ydb_View.DescribeViewResult, error)
 	DescribeTopic(ctx context.Context, path string) (*Ydb_Topic.DescribeTopicResult, error)
+	DescribeExternalDataSource(ctx context.Context, path string) (*Ydb_Table.DescribeExternalDataSourceResult, error)
+	DescribeExternalTable(ctx context.Context, path string) (*Ydb_Table.DescribeExternalTableResult, error)
 	Principals(ctx context.Context) (Principals, error)
 }
 

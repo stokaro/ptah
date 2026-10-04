@@ -11,7 +11,10 @@
 // one that has not run yet:
 //
 //  1. DROP VIEW for every view the plan removes or replaces, dependents first,
-//     so no table goes while a view the plan touches still reads it;
+//     so no table goes while a view the plan touches still reads it, then
+//     DROP EXTERNAL TABLE and DROP EXTERNAL DATA SOURCE for every external
+//     object the plan removes or creates again, the tables first, since YDB
+//     keeps no data source an external table reads;
 //  2. DROP TOPIC for every removed topic and DROP SECRET for every removed
 //     secret, so a table created under the path of either finds the path
 //     free;
@@ -39,7 +42,10 @@
 //  10. CREATE TOPIC for every added topic and ALTER TOPIC for every changed
 //     one, then CREATE SECRET for every added secret and ALTER SECRET for
 //     every secret the caller asked to rotate, after the tables are dropped,
-//     so an object created under a dropped table's path finds the path free;
+//     so an object created under a dropped table's path finds the path free,
+//     then CREATE [OR REPLACE] EXTERNAL DATA SOURCE and EXTERNAL TABLE, after
+//     the secrets a data source names and before a view that reads an
+//     external table;
 //  11. CREATE VIEW for every view the plan adds or replaces, last, a view after
 //     the views it reads: YDB checks a view's query against the schema when
 //     the view is created, so the tables and columns it reads exist by then.
@@ -187,6 +193,10 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := p.refuseSecrets(diff); err != nil {
 		return nil, err
 	}
+	external, err := p.planExternal(diff)
+	if err != nil {
+		return nil, err
+	}
 	sequences, err := p.planSerialSequences(diff, rebuilds, semantics)
 	if err != nil {
 		return nil, err
@@ -200,6 +210,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	var result []ast.Node
 	result = append(result, p.dropViews(diff)...)
 	result = append(result, access.before...)
+	result = append(result, external.drops...)
 	result = append(result, dropTopics(diff)...)
 	result = append(result, dropSecrets(diff)...)
 	result = append(result, p.createTables(diff, inlineIndexes, sequences.created, semantics)...)
@@ -219,6 +230,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	}
 	result = append(result, changeTopics(diff)...)
 	result = append(result, changeSecrets(diff)...)
+	result = append(result, external.creations...)
 	result = append(result, p.createViews(diff)...)
 	result = append(result, access.after...)
 	result = append(result, access.last...)

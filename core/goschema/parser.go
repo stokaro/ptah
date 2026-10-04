@@ -712,6 +712,8 @@ type schemaParseState struct {
 	views                 []schemamodel.View
 	synonyms              []schemamodel.Synonym
 	secrets               []schemamodel.Secret
+	externalDataSources   []schemamodel.ExternalDataSource
+	externalTables        []schemamodel.ExternalTable
 	extendedProperties    []schemamodel.ExtendedProperty
 	materializedViews     []schemamodel.MaterializedView
 	triggers              []schemamodel.Trigger
@@ -857,6 +859,8 @@ var sharedDirectiveParsers = map[string]sharedDirectiveParser{
 	"ptah:schema:topic":               (*schemaParseState).parseTopicComment,
 	"ptah:schema:topic:consumer":      (*schemaParseState).parseTopicConsumerComment,
 	"ptah:schema:secret":              (*schemaParseState).parseSecretComment,
+	"ptah:schema:externaldatasource":  (*schemaParseState).parseExternalDataSourceComment,
+	"ptah:schema:externaltable":       (*schemaParseState).parseExternalTableComment,
 }
 
 // ignoringStruct adapts a parser that does not need the owning struct's name.
@@ -1034,6 +1038,8 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 		Synonyms:             state.synonyms,
 		Topics:               state.topics,
 		Secrets:              state.secrets,
+		ExternalDataSources:  state.externalDataSources,
+		ExternalTables:       state.externalTables,
 		ExtendedProperties:   state.extendedProperties,
 		MaterializedViews:    state.materializedViews,
 		Triggers:             state.triggers,

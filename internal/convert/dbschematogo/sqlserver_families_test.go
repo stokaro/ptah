@@ -236,6 +236,8 @@ var convertedFamilies = map[string]string{
 	"Synonyms":             "Synonyms",
 	"Topics":               "Topics",
 	"Secrets":              "Secrets",
+	"ExternalDataSources":  "ExternalDataSources",
+	"ExternalTables":       "ExternalTables",
 	"ExtendedProperties":   "ExtendedProperties",
 	"Triggers":             "Triggers",
 	"RLSPolicies":          "RLSPolicies",

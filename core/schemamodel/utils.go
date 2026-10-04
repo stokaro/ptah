@@ -1296,6 +1296,12 @@ func deduplicateComposite(r *Database) {
 	r.Secrets = deduplicateNamedDefinitions(r.Secrets, func(secret Secret) string {
 		return secret.QualifiedName()
 	})
+	r.ExternalDataSources = deduplicateNamedDefinitions(r.ExternalDataSources, func(source ExternalDataSource) string {
+		return source.QualifiedName()
+	})
+	r.ExternalTables = deduplicateNamedDefinitions(r.ExternalTables, func(table ExternalTable) string {
+		return table.QualifiedName()
+	})
 }
 
 type deduplicationScope func(tableScopeResolver, string, string) string

@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/uniquename"
 	"ptah.run/internal/ydbchangefeed"
+	"ptah.run/internal/ydbexternal"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbsecret"
 	"ptah.run/internal/ydbtopic"
@@ -363,7 +364,9 @@ func (ctx *renderContext) hasGlobalObjects() bool {
 		len(ctx.db.Ranges) > 0 ||
 		len(ctx.db.Sequences) > 0 ||
 		len(ctx.db.Topics) > 0 ||
-		len(ctx.db.Secrets) > 0
+		len(ctx.db.Secrets) > 0 ||
+		len(ctx.db.ExternalDataSources) > 0 ||
+		len(ctx.db.ExternalTables) > 0
 }
 
 func (ctx *renderContext) writeEnums(w *sourceWriter) {
@@ -451,6 +454,12 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 	}
 	for _, secret := range sortedSecrets(ctx.db.Secrets) {
 		w.writeComment(secretAnnotation(secret))
+	}
+	for _, source := range sortedByName(ctx.db.ExternalDataSources, schemamodel.ExternalDataSource.QualifiedName) {
+		w.writeComment(externalDataSourceAnnotation(source))
+	}
+	for _, table := range sortedByName(ctx.db.ExternalTables, schemamodel.ExternalTable.QualifiedName) {
+		w.writeComment(externalTableAnnotation(table))
 	}
 	for _, role := range sortedRoles(ctx.db.Roles) {
 		w.writeComment(roleAnnotation(role))
@@ -931,6 +940,44 @@ func secretAnnotation(secret schemamodel.Secret) string {
 		attr{name: ydbsecret.AttributeSchema, value: secret.Schema, set: secret.Schema != ""},
 		attr{name: ydbsecret.AttributeValueEnv, value: secret.ValueEnv, set: true},
 	)
+}
+
+// externalDataSourceAnnotation writes a YDB external data source as its
+// annotation. A credential is an option naming a secret, never a value.
+func externalDataSourceAnnotation(source schemamodel.ExternalDataSource) string {
+	return annotation("ptah:schema:externaldatasource",
+		attr{name: ydbexternal.AttributeName, value: source.Name, set: true},
+		attr{name: ydbexternal.AttributeSchema, value: source.Schema, set: source.Schema != ""},
+		attr{name: ydbexternal.AttributeSourceType, value: source.SourceType, set: true},
+		attr{name: ydbexternal.AttributeLocation, value: source.Location, set: source.Location != ""},
+		attr{name: ydbexternal.AttributeAuthMethod, value: source.AuthMethod, set: true},
+		attr{name: ydbexternal.AttributeOptions, value: ydbexternal.FormatOptions(source.Options),
+			set: len(source.Options) > 0},
+	)
+}
+
+// externalTableAnnotation writes a YDB external table as its annotation.
+func externalTableAnnotation(table schemamodel.ExternalTable) string {
+	columns := make([]ydbexternal.Column, 0, len(table.Columns))
+	for _, column := range table.Columns {
+		columns = append(columns, ydbexternal.Column{Name: column.Name, Type: column.Type, NotNull: column.NotNull})
+	}
+	return annotation("ptah:schema:externaltable",
+		attr{name: ydbexternal.AttributeName, value: table.Name, set: true},
+		attr{name: ydbexternal.AttributeSchema, value: table.Schema, set: table.Schema != ""},
+		attr{name: ydbexternal.AttributeDataSource, value: table.DataSource, set: true},
+		attr{name: ydbexternal.AttributeLocation, value: table.Location, set: true},
+		attr{name: ydbexternal.AttributeColumns, value: ydbexternal.FormatColumns(columns), set: true},
+		attr{name: ydbexternal.AttributeOptions, value: ydbexternal.FormatOptions(table.Options),
+			set: len(table.Options) > 0},
+	)
+}
+
+// sortedByName returns values ordered by the name each one has.
+func sortedByName[T any](values []T, name func(T) string) []T {
+	sorted := slices.Clone(values)
+	sort.SliceStable(sorted, func(i, j int) bool { return name(sorted[i]) < name(sorted[j]) })
+	return sorted
 }
 
 func roleAnnotation(role schemamodel.Role) string {

@@ -302,6 +302,8 @@ func validateDuplicateSchemaObjectDefinitions(r *Database) error {
 		validator.materializedViews,
 		validator.topics,
 		validator.secrets,
+		validator.externalDataSources,
+		validator.externalTables,
 		validator.triggers,
 		validator.rlsPolicies,
 		validator.rlsEnabledTables,
@@ -522,6 +524,38 @@ func (v compositeDefinitionValidator) secrets() error {
 		},
 		func(_ Secret, key string) error {
 			return fmt.Errorf("conflicting secret %q definitions", key)
+		},
+	)
+}
+
+// externalDataSources refuses two declarations of one YDB external data
+// source that differ. A data source is identified by its directory and name.
+func (v compositeDefinitionValidator) externalDataSources() error {
+	return validateNamedDefinitions(
+		v.database.ExternalDataSources,
+		func(source ExternalDataSource) string { return source.QualifiedName() },
+		func(source ExternalDataSource) ExternalDataSource {
+			source.StructName = ""
+			return source
+		},
+		func(_ ExternalDataSource, key string) error {
+			return fmt.Errorf("conflicting external data source %q definitions", key)
+		},
+	)
+}
+
+// externalTables refuses two declarations of one YDB external table that
+// differ. An external table is identified by its directory and name.
+func (v compositeDefinitionValidator) externalTables() error {
+	return validateNamedDefinitions(
+		v.database.ExternalTables,
+		func(table ExternalTable) string { return table.QualifiedName() },
+		func(table ExternalTable) ExternalTable {
+			table.StructName = ""
+			return table
+		},
+		func(_ ExternalTable, key string) error {
+			return fmt.Errorf("conflicting external table %q definitions", key)
 		},
 	)
 }

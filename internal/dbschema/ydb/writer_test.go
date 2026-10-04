@@ -33,6 +33,10 @@ type fakeDatabase struct {
 	// failures answers the statement at each position of the log with an
 	// error, where the slice holds one.
 	failures []error
+	// readers maps an external data source's absolute path to the external
+	// tables over it. A source is not dropped while one of them exists, as
+	// YDB refuses (`Other entities depend on this data source`).
+	readers map[string][]string
 }
 
 func (f *fakeDatabase) MakeDirectory(_ context.Context, dir string) error {
@@ -86,12 +90,21 @@ func (f *fakeDatabase) ExecContext(_ context.Context, query string, _ ...any) (s
 	if position < len(f.failures) && f.failures[position] != nil {
 		return nil, f.failures[position]
 	}
-	for _, verb := range []string{"DROP TABLE `", "DROP VIEW `", "DROP TOPIC `", "DROP SECRET `"} {
-		if object, dropped := strings.CutPrefix(query, verb); dropped {
-			full := path.Join("/local", strings.ReplaceAll(strings.TrimSuffix(object, "`"), "\\`", "`"))
-			parent, name := path.Split(full)
-			f.tree[strings.TrimSuffix(parent, "/")] = without(f.tree[strings.TrimSuffix(parent, "/")], name)
+	for _, verb := range []string{"DROP TABLE `", "DROP VIEW `", "DROP TOPIC `", "DROP SECRET `",
+		"DROP EXTERNAL TABLE `", "DROP EXTERNAL DATA SOURCE `"} {
+		object, dropped := strings.CutPrefix(query, verb)
+		if !dropped {
+			continue
 		}
+		full := path.Join("/local", strings.ReplaceAll(strings.TrimSuffix(object, "`"), "\\`", "`"))
+		for _, reader := range f.readers[full] {
+			if f.holds(reader) {
+				return nil, fmt.Errorf("Other entities depend on this data source, please remove them at the "+
+					"beginning: %s", reader)
+			}
+		}
+		parent, name := path.Split(full)
+		f.tree[strings.TrimSuffix(parent, "/")] = without(f.tree[strings.TrimSuffix(parent, "/")], name)
 	}
 	return driver.RowsAffected(0), nil
 }
@@ -102,6 +115,17 @@ func (f *fakeDatabase) QueryContext(context.Context, string, ...any) (*sql.Rows,
 func (f *fakeDatabase) QueryRow(string, ...any) *sql.Row { return nil }
 func (f *fakeDatabase) QueryRowContext(context.Context, string, ...any) *sql.Row {
 	return nil
+}
+
+// holds reports whether the tree holds an entry at the absolute path.
+func (f *fakeDatabase) holds(absolute string) bool {
+	parent, name := path.Split(absolute)
+	for _, held := range f.tree[strings.TrimSuffix(parent, "/")] {
+		if held.GetName() == name {
+			return true
+		}
+	}
+	return false
 }
 
 func newFake() *fakeDatabase {
@@ -285,11 +309,14 @@ func TestWriter_TransactionIsANoOp(t *testing.T) {
 	c.Assert(fake.executed, qt.DeepEquals, []string{"DROP TABLE `t`"})
 }
 
-// DropAllTables drops every view, row table and topic, a directory's views
-// first, and removes the directories that left empty. What the reader does not
-// describe stays, and so does the directory that holds it; a directory that
-// was empty before is not touched, and a dot-directory is never listed, nor
-// are the dev realms at the root.
+// DropAllTables drops every view, row table, topic, secret and external
+// object, and removes the directories that left empty. The views and the
+// external tables go in a first walk over the whole tree, so a data source in a
+// directory the walk meets before the directory of the table over it is
+// dropped after the table, as YDB requires. What the reader does not describe
+// stays, and so does the directory that holds it; a directory that was empty
+// before is not touched, and a dot-directory is never listed, nor are the dev
+// realms at the root.
 func TestWriter_DropAllTables(t *testing.T) {
 	c := qt.New(t)
 	fake := &fakeDatabase{tree: map[string][]*Ydb_Scheme.Entry{
@@ -303,9 +330,11 @@ func TestWriter_DropAllTables(t *testing.T) {
 			entry("ptah_dev", Ydb_Scheme.Entry_DIRECTORY),
 			entry("queues", Ydb_Scheme.Entry_DIRECTORY),
 			entry("v", Ydb_Scheme.Entry_VIEW),
+			entry("z", Ydb_Scheme.Entry_DIRECTORY),
 		},
 		"/local/app": {
 			entry("pw", Ydb_Scheme.Entry_SECRET),
+			entry("s3", Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE),
 			entry("sub", Ydb_Scheme.Entry_DIRECTORY),
 			entry("t2", Ydb_Scheme.Entry_TABLE),
 			entry("v2", Ydb_Scheme.Entry_VIEW),
@@ -314,16 +343,19 @@ func TestWriter_DropAllTables(t *testing.T) {
 		"/local/keep":    nil,
 		"/local/mixed":   {entry("t4", Ydb_Scheme.Entry_TABLE), entry("events", Ydb_Scheme.Entry_TOPIC)},
 		"/local/queues":  {entry("events", Ydb_Scheme.Entry_TOPIC), entry("olap", Ydb_Scheme.Entry_COLUMN_TABLE)},
-	}}
+		"/local/z":       {entry("files", Ydb_Scheme.Entry_EXTERNAL_TABLE)},
+	}, readers: map[string][]string{"/local/app/s3": {"/local/z/files"}}}
 	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
 
 	err := writer.DropAllTables(context.Background())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(fake.executed, qt.DeepEquals, []string{
-		"DROP VIEW `v`",
 		"DROP VIEW `app/v2`",
+		"DROP VIEW `v`",
+		"DROP EXTERNAL TABLE `z/files`",
 		"DROP SECRET `app/pw`",
+		"DROP EXTERNAL DATA SOURCE `app/s3`",
 		"DROP TABLE `app/sub/t\\`3`",
 		"DROP TABLE `app/t2`",
 		"DROP TOPIC `mixed/events`",
@@ -331,7 +363,7 @@ func TestWriter_DropAllTables(t *testing.T) {
 		"DROP TOPIC `queues/events`",
 		"DROP TABLE `t1`",
 	})
-	c.Assert(fake.removed, qt.DeepEquals, []string{"/local/app/sub", "/local/app", "/local/mixed"})
+	c.Assert(fake.removed, qt.DeepEquals, []string{"/local/app/sub", "/local/app", "/local/mixed", "/local/z"})
 	var left []string
 	for _, kept := range fake.tree["/local"] {
 		left = append(left, kept.GetName())
@@ -356,9 +388,10 @@ func TestWriter_DropAllTables_FailurePath(t *testing.T) {
 }
 
 // DropDirectory removes a directory a caller made for itself with everything
-// in it, deepest first: tables of both kinds, views, topics, and the
-// directories below.
-// What sits beside the directory is not touched.
+// in it, deepest first: tables of both kinds, views, topics, secrets, external
+// objects and the directories below. An external table goes first wherever the
+// tree holds it, so the data source it reads is dropped after it. What sits
+// beside the directory is not touched.
 func TestWriter_DropDirectory(t *testing.T) {
 	c := qt.New(t)
 	fake := &fakeDatabase{tree: map[string][]*Ydb_Scheme.Entry{
@@ -369,16 +402,21 @@ func TestWriter_DropDirectory(t *testing.T) {
 			entry("v", Ydb_Scheme.Entry_VIEW),
 			entry("sk", Ydb_Scheme.Entry_SECRET),
 			entry("rb", Ydb_Scheme.Entry_DIRECTORY),
+			entry("es", Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE),
+			entry("zz", Ydb_Scheme.Entry_DIRECTORY),
 		},
 		"/local/probe/rb": {entry("t`2", Ydb_Scheme.Entry_TABLE), entry("events", Ydb_Scheme.Entry_TOPIC)},
+		"/local/probe/zz": {entry("et", Ydb_Scheme.Entry_EXTERNAL_TABLE)},
 		"/local/app":      {entry("keep", Ydb_Scheme.Entry_TABLE)},
-	}}
+	}, readers: map[string][]string{"/local/probe/es": {"/local/probe/zz/et"}}}
 	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
 
 	err := writer.DropDirectory(context.Background(), "/probe/")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(fake.executed, qt.DeepEquals, []string{
+		"DROP EXTERNAL TABLE `probe/zz/et`",
+		"DROP EXTERNAL DATA SOURCE `probe/es`",
 		"DROP TABLE `probe/olap`",
 		"DROP TOPIC `probe/rb/events`",
 		"DROP TABLE `probe/rb/t\\`2`",
@@ -386,7 +424,7 @@ func TestWriter_DropDirectory(t *testing.T) {
 		"DROP TABLE `probe/t`",
 		"DROP VIEW `probe/v`",
 	})
-	c.Assert(fake.removed, qt.DeepEquals, []string{"/local/probe/rb", "/local/probe"})
+	c.Assert(fake.removed, qt.DeepEquals, []string{"/local/probe/rb", "/local/probe/zz", "/local/probe"})
 	c.Assert(fake.tree["/local/app"], qt.HasLen, 1)
 }
 

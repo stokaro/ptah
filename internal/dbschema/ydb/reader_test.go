@@ -30,6 +30,8 @@ type fakeSource struct {
 	tables      map[string]*Ydb_Table.DescribeTableResult
 	topics      map[string]*Ydb_Topic.DescribeTopicResult
 	views       map[string]*Ydb_View.DescribeViewResult
+	sources     map[string]*Ydb_Table.DescribeExternalDataSourceResult
+	external    map[string]*Ydb_Table.DescribeExternalTableResult
 	// selves are the directories' own entries, which carry their owner and
 	// permission entries; a directory without one has neither.
 	selves map[string]*Ydb_Scheme.Entry
@@ -71,6 +73,25 @@ func (f fakeSource) DescribeTopic(_ context.Context, path string) (*Ydb_Topic.De
 	described, ok := f.topics[path]
 	if !ok {
 		return nil, fmt.Errorf("described topic %s, which the fixture does not hold", path)
+	}
+	return described, nil
+}
+
+func (f fakeSource) DescribeExternalDataSource(
+	_ context.Context,
+	path string,
+) (*Ydb_Table.DescribeExternalDataSourceResult, error) {
+	described, ok := f.sources[path]
+	if !ok {
+		return nil, fmt.Errorf("described external data source %s, which the fixture does not hold", path)
+	}
+	return described, nil
+}
+
+func (f fakeSource) DescribeExternalTable(_ context.Context, path string) (*Ydb_Table.DescribeExternalTableResult, error) {
+	described, ok := f.external[path]
+	if !ok {
+		return nil, fmt.Errorf("described external table %s, which the fixture does not hold", path)
 	}
 	return described, nil
 }
@@ -991,6 +1012,14 @@ func (errorSource) DescribeView(context.Context, string) (*Ydb_View.DescribeView
 }
 
 func (errorSource) DescribeTopic(context.Context, string) (*Ydb_Topic.DescribeTopicResult, error) {
+	return nil, errors.New("connection refused")
+}
+
+func (errorSource) DescribeExternalDataSource(context.Context, string) (*Ydb_Table.DescribeExternalDataSourceResult, error) {
+	return nil, errors.New("connection refused")
+}
+
+func (errorSource) DescribeExternalTable(context.Context, string) (*Ydb_Table.DescribeExternalTableResult, error) {
 	return nil, errors.New("connection refused")
 }
 

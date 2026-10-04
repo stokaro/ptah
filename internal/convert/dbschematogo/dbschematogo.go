@@ -71,6 +71,7 @@ func ConvertDBSchemaToGoSchema(dbSchema *catalog.Database, dialect string) *sche
 	convertSynonyms(database, dbSchema.Synonyms)
 	convertTopics(database, dbSchema.Topics)
 	convertSecrets(database, dbSchema.Secrets)
+	convertExternalObjects(database, dbSchema)
 	convertExtendedProperties(database, dbSchema.ExtendedProperties)
 	convertRoles(database, dbSchema.Roles, membershipsFor(dbSchema.RoleMemberships, dialect))
 	database.DatabasePath = dbSchema.DatabasePath
@@ -591,6 +592,30 @@ func convertSecrets(database *schemamodel.Database, secrets []catalog.Secret) {
 			Schema:   secret.Schema,
 			ValueEnv: ydbsecret.DefaultValueEnv(secret.Schema, secret.Name),
 		})
+	}
+}
+
+// convertExternalObjects carries the YDB external data sources and external
+// tables a read found into the IR, as declarations of them: everything the
+// read describes of each is what a declaration writes.
+func convertExternalObjects(database *schemamodel.Database, dbSchema *catalog.Database) {
+	for _, source := range dbSchema.ExternalDataSources {
+		database.ExternalDataSources = append(database.ExternalDataSources, schemamodel.ExternalDataSource{
+			Name: source.Name, Schema: source.Schema, SourceType: source.SourceType, Location: source.Location,
+			AuthMethod: source.AuthMethod, Options: maps.Clone(source.Options),
+		})
+	}
+	for _, table := range dbSchema.ExternalTables {
+		converted := schemamodel.ExternalTable{
+			Name: table.Name, Schema: table.Schema, DataSource: table.DataSource, Location: table.Location,
+			Options: maps.Clone(table.Options),
+		}
+		for _, column := range table.Columns {
+			converted.Columns = append(converted.Columns, schemamodel.ExternalColumn{
+				Name: column.Name, Type: column.Type, NotNull: column.NotNull,
+			})
+		}
+		database.ExternalTables = append(database.ExternalTables, converted)
 	}
 }
 

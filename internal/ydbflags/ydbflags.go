@@ -120,6 +120,20 @@ var gates = []Gate{
 		Flag:     "EnableSchemaSecrets",
 		refusals: []string{"Secrets are disabled"},
 	},
+	{
+		// Off on every line. With the flag on, every line creates an external
+		// data source and an external table over it, and describes both.
+		Key:      capability.ExternalDataSources,
+		Flag:     "EnableExternalDataSources",
+		refusals: []string{"External data sources are disabled"},
+	},
+	{
+		// Off on every line. With the flag on, every line replaces an external
+		// data source and an external table with CREATE OR REPLACE.
+		Key:      capability.ExternalObjectReplace,
+		Flag:     "EnableReplaceIfExistsForExternalEntities",
+		refusals: []string{"feature flag EnableReplaceIfExistsForExternalEntities is off"},
+	},
 }
 
 // Gates returns every capability a flag decides, in a fixed order.

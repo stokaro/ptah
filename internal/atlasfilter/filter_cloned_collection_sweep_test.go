@@ -182,6 +182,18 @@ func clonedCollectionRows() []clonedCollectionRow {
 			},
 		},
 		{
+			field: "ExternalDataSources", present: "s3_bucket", absent: "nosuch_source",
+			seed: func(s *catalog.Database) {
+				s.ExternalDataSources = append(s.ExternalDataSources, catalog.ExternalDataSource{Name: "s3_bucket"})
+			},
+		},
+		{
+			field: "ExternalTables", present: "events_files", absent: "nosuch_external",
+			seed: func(s *catalog.Database) {
+				s.ExternalTables = append(s.ExternalTables, catalog.ExternalTable{Name: "events_files"})
+			},
+		},
+		{
 			field: "MatViews", present: "mv_users", absent: "nosuch_matview",
 			seed: func(s *catalog.Database) {
 				s.MatViews = append(s.MatViews, catalog.MaterializedView{Name: "mv_users"})

@@ -86,6 +86,12 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database)
 	out.Secrets = keep(db.Secrets, func(secret schemamodel.Secret) bool {
 		return s.selected(typeList("secret"), secret.Schema, secret.Name)
 	})
+	out.ExternalDataSources = keep(db.ExternalDataSources, func(source schemamodel.ExternalDataSource) bool {
+		return s.selected(typeList("external_data_source"), source.Schema, source.Name)
+	})
+	out.ExternalTables = keep(db.ExternalTables, func(table schemamodel.ExternalTable) bool {
+		return s.selected(typeList("external_table"), table.Schema, table.Name)
+	})
 	out.ExtendedProperties = keep(db.ExtendedProperties,
 		func(property schemamodel.ExtendedProperty) bool {
 			if property.Schema == "" {

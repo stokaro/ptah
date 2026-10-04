@@ -44,16 +44,16 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-453 fields are reachable from the desired schema, and each one carries
+472 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 390 | reaches rendered SQL on at least one target |
+| `ddl` | 407 | reaches rendered SQL on at least one target |
 | `comparison` | 7 | read when two schemas are compared, and written into no statement |
 | `planning` | 7 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
-| `source` | 18 | identifies the source text the declaration was read from |
+| `source` | 20 | identifies the source text the declaration was read from |
 | `export` | 10 | what a generated document carries, or reports that it cannot |
 | `data` | 11 | reference or seed rows, which are not DDL |
 
@@ -181,6 +181,8 @@ None.
 | `schemamodel.Database.Enums` | `ddl` | — |
 | `schemamodel.Database.ExtendedProperties` | `ddl` | — |
 | `schemamodel.Database.Extensions` | `ddl` | — |
+| `schemamodel.Database.ExternalDataSources` | `ddl` | — |
+| `schemamodel.Database.ExternalTables` | `ddl` | — |
 | `schemamodel.Database.Fields` | `ddl` | — |
 | `schemamodel.Database.FunctionDependencies` | `derived` | function creation order, derived by Finalize from the declared bodies |
 | `schemamodel.Database.Functions` | `ddl` | — |
@@ -256,6 +258,23 @@ None.
 | `schemamodel.Extension.Provides` | `planning` | what the extension supplies, so a declaration depending on it can be ordered after it |
 | `schemamodel.Extension.Schema` | `ddl` | — |
 | `schemamodel.Extension.Version` | `ddl` | — |
+| `schemamodel.ExternalColumn.Name` | `ddl` | — |
+| `schemamodel.ExternalColumn.NotNull` | `ddl` | — |
+| `schemamodel.ExternalColumn.Type` | `ddl` | — |
+| `schemamodel.ExternalDataSource.AuthMethod` | `ddl` | — |
+| `schemamodel.ExternalDataSource.Location` | `ddl` | — |
+| `schemamodel.ExternalDataSource.Name` | `ddl` | — |
+| `schemamodel.ExternalDataSource.Options` | `ddl` | — |
+| `schemamodel.ExternalDataSource.Schema` | `ddl` | — |
+| `schemamodel.ExternalDataSource.SourceType` | `ddl` | — |
+| `schemamodel.ExternalDataSource.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
+| `schemamodel.ExternalTable.Columns` | `ddl` | — |
+| `schemamodel.ExternalTable.DataSource` | `ddl` | — |
+| `schemamodel.ExternalTable.Location` | `ddl` | — |
+| `schemamodel.ExternalTable.Name` | `ddl` | — |
+| `schemamodel.ExternalTable.Options` | `ddl` | — |
+| `schemamodel.ExternalTable.Schema` | `ddl` | — |
+| `schemamodel.ExternalTable.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.Field.APIExpose` | `export` | whether the column reaches an exported API contract, and in which direction; Ptah emits no runtime that could enforce it |
 | `schemamodel.Field.APIName` | `export` | the name an exported API document carries when it differs from the database name |
 | `schemamodel.Field.APINames` | `export` | the per-format names an exported API document carries, overriding the general one |

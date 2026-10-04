@@ -22,12 +22,12 @@ type objectChange struct {
 //
 // The named families come first so a refusal says what it refused. The last
 // check is a catch-all over [difftypes.SchemaDiff.HasChanges]: with the tables,
-// indexes, views, topics, secrets and access changes this planner does plan
-// taken out -- additions, removals, renames, changes of partitioning, secret
-// rotations, and the users, groups, memberships and permissions
-// [Planner.planAccess] plans or refuses -- a diff that still reports a change
-// carries a family nobody named here, and planning nothing for it would report
-// the database synced.
+// indexes, views, topics, secrets, external objects and access changes this
+// planner does plan taken out -- additions, removals, renames, changes of
+// partitioning, secret rotations, replaced external objects, and the users,
+// groups, memberships and permissions [Planner.planAccess] plans or refuses --
+// a diff that still reports a change carries a family nobody named here, and
+// planning nothing for it would report the database synced.
 func (p *Planner) refuseObjects(diff *difftypes.SchemaDiff) error {
 	for _, change := range p.objectChanges(diff) {
 		if change.present {
@@ -46,6 +46,8 @@ func (p *Planner) refuseObjects(diff *difftypes.SchemaDiff) error {
 	rest.DefaultPrivilegesAdded, rest.DefaultPrivilegesRemoved = nil, nil
 	rest.DefaultPrivilegeOptionsAdded, rest.DefaultPrivilegeOptionsRevoked = nil, nil
 	rest.SecretsAdded, rest.SecretsRemoved, rest.SecretsRotated = nil, nil, nil
+	rest.ExternalDataSourcesAdded, rest.ExternalDataSourcesRemoved, rest.ExternalDataSourcesChanged = nil, nil, nil
+	rest.ExternalTablesAdded, rest.ExternalTablesRemoved, rest.ExternalTablesChanged = nil, nil, nil
 	if rest.HasChanges() {
 		return refuseFact("the plan", "it changes objects the YDB planner does not plan")
 	}

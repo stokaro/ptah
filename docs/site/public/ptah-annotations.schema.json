@@ -708,6 +708,105 @@
       ],
       "type": "object"
     },
+    "ptah.schema.externaldatasource": {
+      "additionalProperties": false,
+      "description": "Declares a YDB external data source: another system YDB reads from, such as an object storage bucket or a PostgreSQL database, and how YDB authenticates to it. A credential is named by the secret that holds it, never written.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "auth_method": {
+              "description": "AUTH_METHOD, such as NONE, BASIC or SERVICE_ACCOUNT.",
+              "type": "string"
+            },
+            "location": {
+              "description": "LOCATION: the bucket's address or the server's host and port.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Data source name, the last segment of its path.",
+              "type": "string"
+            },
+            "options": {
+              "description": "Every other option, `NAME=value` separated by `;`, such as `DATABASE_NAME=app;LOGIN=reader;PASSWORD_SECRET_PATH=ext/pg_password`.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Directory that holds the data source, relative to the database root.",
+              "type": "string"
+            },
+            "source_type": {
+              "description": "SOURCE_TYPE, such as ObjectStorage, PostgreSQL or ClickHouse.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "auth_method",
+            "name",
+            "source_type"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:externaldatasource"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "ptah.schema.externaltable": {
+      "additionalProperties": false,
+      "description": "Declares a YDB external table: columns over files that an external data source of type ObjectStorage holds. YDB stores no row of it.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "columns": {
+              "description": "Columns, `name Type [NOT NULL]` separated by commas, such as `id Int64 NOT NULL, amount Decimal(22,9)`.",
+              "type": "string"
+            },
+            "data_source": {
+              "description": "Path of the data source the table reads, relative to the database root.",
+              "type": "string"
+            },
+            "location": {
+              "description": "LOCATION: the files' path under the data source.",
+              "type": "string"
+            },
+            "name": {
+              "description": "External table name, the last segment of its path.",
+              "type": "string"
+            },
+            "options": {
+              "description": "Every other option, `NAME=value` separated by `;`, such as `FORMAT=json_each_row;COMPRESSION=gzip`.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Directory that holds the external table, relative to the database root.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "columns",
+            "data_source",
+            "location",
+            "name"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:externaltable"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
     "ptah.schema.field": {
       "additionalProperties": false,
       "description": "Maps a Go struct field to a database column.",
@@ -2384,6 +2483,12 @@
     },
     {
       "$ref": "#/$defs/ptah.schema.secret"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.externaldatasource"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.externaltable"
     },
     {
       "$ref": "#/$defs/ptah.schema.extendedproperty"

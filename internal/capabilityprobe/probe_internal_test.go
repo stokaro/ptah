@@ -308,11 +308,13 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 		// The PostgreSQL set, for the PostgreSQL reasons: YDB is asked in its
 		// own spelling or in the standard one everywhere else, and what is
 		// left is a property of the probe, of the migrator or of an extension
-		// no YDB has.
+		// no YDB has. A data source's secret path is the one YDB key besides:
+		// its statement needs a flag that is off on every line the probe runs.
 		want: []capability.Capability{
 			capability.CatalogVectorInfo,
 			capability.ContinuousAggregates,
 			capability.DDLInsideTransaction,
+			capability.ExternalDataSourceSecretPaths,
 			capability.Hypertables,
 			capability.MigrationLockTimeout,
 			capability.MigrationStatementTimeout,
@@ -472,7 +474,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps: capability.CockroachDB25(),
 		want: registered - 18,
 	}, {
-		name: "ydb 26.2 owes every row but the eight it declares and the seven whose prerequisite the preset lacks: " +
+		name: "ydb 26.2 owes every row but the nine it declares and the seven whose prerequisite the preset lacks: " +
 			"guarded DROP CONSTRAINT, CREATE OR REPLACE TRIGGER, SET EXPRESSION, the three reference policies " +
 			"and the sequence grammar restriction",
 		cell: Cell{
@@ -481,7 +483,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.YDB262(),
-		want: registered - 15,
+		want: registered - 16,
 	}, {
 		name: "a banner-refined line owes nothing because no observation can be credited to it",
 		cell: Cell{

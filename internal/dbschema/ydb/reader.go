@@ -121,9 +121,15 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		return nil, err
 	}
 	// The walk descends into a directory where its name sorts, so a secret
-	// in a directory can come before one at the root; a description lists
-	// them by directory and name, as it lists tables.
+	// or an external object in a directory can come before one at the root;
+	// a description lists them by directory and name, as it lists tables.
 	slices.SortFunc(db.Secrets, func(a, b catalog.Secret) int {
+		return cmp.Or(strings.Compare(a.Schema, b.Schema), strings.Compare(a.Name, b.Name))
+	})
+	slices.SortFunc(db.ExternalDataSources, func(a, b catalog.ExternalDataSource) int {
+		return cmp.Or(strings.Compare(a.Schema, b.Schema), strings.Compare(a.Name, b.Name))
+	})
+	slices.SortFunc(db.ExternalTables, func(a, b catalog.ExternalTable) int {
 		return cmp.Or(strings.Compare(a.Schema, b.Schema), strings.Compare(a.Name, b.Name))
 	})
 	return db, nil
@@ -188,7 +194,8 @@ func (r *Reader) entry(
 			return err
 		}
 		return r.view(schema, name, described, db)
-	case Ydb_Scheme.Entry_TOPIC, Ydb_Scheme.Entry_SECRET:
+	case Ydb_Scheme.Entry_TOPIC, Ydb_Scheme.Entry_SECRET,
+		Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE, Ydb_Scheme.Entry_EXTERNAL_TABLE:
 		if read, err := r.gatedObject(ctx, source, schema, entry, db); read {
 			return err
 		}
@@ -221,13 +228,15 @@ func (r *Reader) entry(
 // each kind it reads. On a server without it, the entry is recorded as not
 // described, so a plan never meets an object the renderer would refuse.
 var gatedEntryKeys = map[Ydb_Scheme.Entry_Type]capability.Capability{
-	Ydb_Scheme.Entry_TOPIC:  capability.Topics,
-	Ydb_Scheme.Entry_SECRET: capability.Secrets,
+	Ydb_Scheme.Entry_TOPIC:                capability.Topics,
+	Ydb_Scheme.Entry_SECRET:               capability.Secrets,
+	Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE: capability.ExternalDataSources,
+	Ydb_Scheme.Entry_EXTERNAL_TABLE:       capability.ExternalDataSources,
 }
 
-// gatedObject reads a topic or a secret on a server with the key it needs, in
-// the read's scope, and reports whether it read the entry; one it did not read
-// is recorded as not described.
+// gatedObject reads a topic, a secret, an external data source or an external
+// table on a server with the key it needs, in the read's scope, and reports
+// whether it read the entry; one it did not read is recorded as not described.
 func (r *Reader) gatedObject(
 	ctx context.Context,
 	source Source,
@@ -238,13 +247,17 @@ func (r *Reader) gatedObject(
 	if !r.caps.Has(gatedEntryKeys[entry.GetType()]) || !r.inScope(schema) {
 		return false, nil
 	}
-	if entry.GetType() == Ydb_Scheme.Entry_TOPIC {
+	switch entry.GetType() {
+	case Ydb_Scheme.Entry_TOPIC:
 		return true, r.topic(ctx, source, schema, entry.GetName(), db)
+	case Ydb_Scheme.Entry_SECRET:
+		// The listing is the whole description: a secret is its path, and
+		// nothing the server answers holds its value.
+		db.Secrets = append(db.Secrets, catalog.Secret{Name: entry.GetName(), Schema: schema})
+		return true, nil
+	default:
+		return true, r.externalObject(ctx, source, schema, entry, db)
 	}
-	// The listing is the whole description: a secret is its path, and
-	// nothing the server answers holds its value.
-	db.Secrets = append(db.Secrets, catalog.Secret{Name: entry.GetName(), Schema: schema})
-	return true, nil
 }
 
 // directory reads the directory name in schema, unless it belongs to the

@@ -10,6 +10,7 @@ import (
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/ydbchangefeed"
+	"ptah.run/internal/ydbexternal"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbsecret"
 	"ptah.run/internal/ydbtopic"
@@ -808,6 +809,44 @@ var directives = []Directive{
 				valueString, false, false),
 			attr(ydbsecret.AttributeValueEnv, "Environment variable that holds the value; its name starts with "+
 				ydbsecret.ValuePrefix+".", valueString, true, false),
+		},
+	},
+	{
+		Name: "ptah:schema:externaldatasource",
+		Description: "Declares a YDB external data source: another system YDB reads from, such as an object " +
+			"storage bucket or a PostgreSQL database, and how YDB authenticates to it. A credential is named " +
+			"by the secret that holds it, never written.",
+		Scopes: []Scope{ScopeStruct, ScopeField},
+		Attributes: []Attribute{
+			attr(ydbexternal.AttributeName, "Data source name, the last segment of its path.", valueString, true, false),
+			attr(ydbexternal.AttributeSchema, "Directory that holds the data source, relative to the database root.",
+				valueString, false, false),
+			attr(ydbexternal.AttributeSourceType, "SOURCE_TYPE, such as ObjectStorage, PostgreSQL or ClickHouse.",
+				valueString, true, false),
+			attr(ydbexternal.AttributeLocation, "LOCATION: the bucket's address or the server's host and port.",
+				valueString, false, false),
+			attr(ydbexternal.AttributeAuthMethod, "AUTH_METHOD, such as NONE, BASIC or SERVICE_ACCOUNT.",
+				valueString, true, false),
+			attr(ydbexternal.AttributeOptions, "Every other option, `NAME=value` separated by `;`, such as "+
+				"`DATABASE_NAME=app;LOGIN=reader;PASSWORD_SECRET_PATH=ext/pg_password`.", valueString, false, false),
+		},
+	},
+	{
+		Name: "ptah:schema:externaltable",
+		Description: "Declares a YDB external table: columns over files that an external data source of " +
+			"type ObjectStorage holds. YDB stores no row of it.",
+		Scopes: []Scope{ScopeStruct, ScopeField},
+		Attributes: []Attribute{
+			attr(ydbexternal.AttributeName, "External table name, the last segment of its path.", valueString, true, false),
+			attr(ydbexternal.AttributeSchema, "Directory that holds the external table, relative to the database root.",
+				valueString, false, false),
+			attr(ydbexternal.AttributeDataSource, "Path of the data source the table reads, relative to the "+
+				"database root.", valueString, true, false),
+			attr(ydbexternal.AttributeLocation, "LOCATION: the files' path under the data source.", valueString, true, false),
+			attr(ydbexternal.AttributeColumns, "Columns, `name Type [NOT NULL]` separated by commas, such as "+
+				"`id Int64 NOT NULL, amount Decimal(22,9)`.", valueString, true, false),
+			attr(ydbexternal.AttributeOptions, "Every other option, `NAME=value` separated by `;`, such as "+
+				"`FORMAT=json_each_row;COMPRESSION=gzip`.", valueString, false, false),
 		},
 	},
 	{

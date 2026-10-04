@@ -1607,8 +1607,9 @@ func TestParseDir_AllIntegrationFixturesRemainParsable(t *testing.T) {
 // Merge uses general reflection over all slice fields from ParseSource results (no hard-coded list).
 //
 // Fixture 023 carries every object kind a PostgreSQL render takes, refused or
-// skipped. A YDB topic and a YDB secret are refused by every target but YDB,
-// so each has a fixture of its own, and the guard reads them all.
+// skipped. A YDB topic, a YDB secret, an external data source and an external
+// table are refused by every target but YDB, so they have fixtures of their
+// own, and the guard reads them all.
 func TestParseDir_ReflectionGuard(t *testing.T) {
 	c := qt.New(t)
 
@@ -1616,6 +1617,7 @@ func TestParseDir_ReflectionGuard(t *testing.T) {
 		"../../integration/internal/fixtures/entities/023-go-annotations-objects",
 		"../../integration/internal/fixtures/entities/048-ydb-topics",
 		"../../integration/internal/fixtures/entities/052-ydb-secrets",
+		"../../integration/internal/fixtures/entities/053-ydb-external-sources",
 	}
 
 	merged := schemamodel.Database{}
@@ -1657,8 +1659,8 @@ func TestParseDir_ReflectionGuard(t *testing.T) {
 		name := typ.Field(i).Name
 		mLen := fvMerged.Field(i).Len()
 		if mLen == 0 {
-			c.Fatalf("%s is not exercised by the fixtures; add it to 023-go-annotations-objects, or to a YDB fixture "+
-				"such as 048-ydb-topics for a kind only YDB renders, so the walker append stays covered", name)
+			c.Fatalf("%s is not exercised by the fixtures; add it to 023-go-annotations-objects, or to a YDB "+
+				"fixture (048, 052, 053) for a kind only YDB renders, so the walker append stays covered", name)
 		}
 		dLen := fvDir.Field(i).Len()
 		c.Assert(dLen > 0, qt.IsTrue, qt.Commentf("%s populated by per-file parse (%d) but ParseDir/ParseFS gave %d — missing append in walker.go?", name, mLen, dLen))
