@@ -334,7 +334,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `YD103` | an `ADD COLUMN` YDB refuses: NOT NULL without a default on every line, or a default where `add_column_with_default` is false | both | Ptah |
 | `YD104` | a `DROP COLUMN` of a column an index keys or covers, or the TTL reads, which YDB refuses until the index or the TTL is gone | both | Ptah |
 | `YD105` | turning auto partitioning by size or by load on resets the minimum partition count to 1 unless the same statement sets it | both | Ptah |
-| `YD106` | a `DROP TABLE` of a table a view reads: YDB drops the table, keeps the view, and every read of the view fails | both | Ptah |
+| `YD106` | a `DROP TABLE` or `ALTER TABLE ... RENAME TO` of a table a view reads: YDB keeps the view, which reads its table by path, and every read of the view fails | both | Ptah |
 
 ### What the rules for every dialect do on YDB
 

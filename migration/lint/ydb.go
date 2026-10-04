@@ -325,48 +325,78 @@ func settingsSet(read yqlddl.Statement) []yqlddl.Setting {
 	return settings
 }
 
-// ydbViewOrphanedRule reports a DROP TABLE of a table a view reads. YDB drops
-// the table and keeps the view, and every read of the view then fails.
-// Measured on 26.2.1.14 and 25.1.4.7: after `CREATE VIEW vv WITH
-// (security_invoker = TRUE) AS SELECT id FROM vbase`, `DROP TABLE vbase`
-// succeeds, and `SELECT * FROM vv` answers `Cannot find table
-// 'db.[/local/vbase]' because it does not exist`.
+// ydbViewOrphanedRule reports a DROP TABLE of a table a view reads, and an
+// ALTER TABLE ... RENAME TO of one. A view reads its table by path when it is
+// read, so YDB keeps a view whose table is dropped or moved, and every read of
+// the view then fails. Measured on 26.2.1.14 and 25.1.4.7: after `CREATE VIEW
+// vv WITH (security_invoker = TRUE) AS SELECT id FROM vbase`, `DROP TABLE
+// vbase` succeeds, and `SELECT * FROM vv` answers `Cannot find table
+// 'db.[/local/vbase]' because it does not exist`. After `ALTER TABLE vbase
+// RENAME TO vmoved` the read answers the same, and renaming the table back
+// makes the view read it again.
+//
+// The renames of a table rebuild are left out (see [fileRebuilds]): the copy
+// takes the table's name back in the next statement, and the view reads it.
 func ydbViewOrphanedRule() Rule {
 	return Rule{
 		Code:     "YD106",
-		Title:    "table dropped while a view reads it",
+		Title:    "table dropped or renamed while a view reads it",
 		Severity: SeverityError,
 		Dialects: ydbOnly,
 		CheckFile: func(file *File) []Finding {
 			if !ydbRun(file.Target) {
 				return nil
 			}
+			rebuilds := fileRebuilds(file)
 			state := file.ydbBefore.clone()
 			var findings []Finding
 			for i := range file.Statements {
 				stmt := &file.Statements[i]
 				read := yqlddl.Read(stmt.SQL)
-				if read.Kind == yqlddl.DropTable {
-					if views := state.viewsReading(read.Name); len(views) > 0 {
-						findings = append(findings, Finding{
-							Rule:     "YD106",
-							Title:    "table dropped while a view reads it",
-							Severity: SeverityError,
-							File:     file.Path,
-							Line:     stmt.Line,
-							Message: fmt.Sprintf(
-								"DROP TABLE %s leaves %s reading a table that does not exist: YDB keeps a view whose table is dropped, "+
-									"and every read of it fails; drop or recreate %s first",
-								read.Name, viewList(views), pronounFor(views)),
-							Context: statementFindingContext(i, Subject{Kind: SubjectTable, Name: read.Name}),
-						})
+				views := state.viewsReading(read.Name)
+				var message string
+				switch {
+				case len(views) == 0:
+				case read.Kind == yqlddl.DropTable:
+					message = fmt.Sprintf(
+						"DROP TABLE %s leaves %s reading a table that does not exist: YDB keeps a view whose table is dropped, "+
+							"and every read of it fails; drop or recreate %s first",
+						read.Name, viewList(views), pronounFor(views))
+				case read.Kind == yqlddl.AlterTable && !rebuilds.renames[i]:
+					if newName, renamed := tableRenamedTo(read); renamed {
+						message = fmt.Sprintf(
+							"ALTER TABLE %s RENAME TO %s leaves %s reading a table that does not exist: a view reads its table "+
+								"by path, so every read of it fails until a table takes the name %s again; recreate %s over %s",
+							read.Name, newName, viewList(views), read.Name, pronounFor(views), newName)
 					}
+				}
+				if message != "" {
+					findings = append(findings, Finding{
+						Rule:     "YD106",
+						Title:    "table dropped or renamed while a view reads it",
+						Severity: SeverityError,
+						File:     file.Path,
+						Line:     stmt.Line,
+						Message:  message,
+						Context:  statementFindingContext(i, Subject{Kind: SubjectTable, Name: read.Name}),
+					})
 				}
 				state.apply(read)
 			}
 			return findings
 		},
 	}
+}
+
+// tableRenamedTo returns the name an ALTER TABLE moves its table to, and reports
+// whether it renames it.
+func tableRenamedTo(read yqlddl.Statement) (string, bool) {
+	for _, action := range read.Actions {
+		if action.Kind == yqlddl.RenameTable && action.NewName != "" {
+			return action.NewName, true
+		}
+	}
+	return "", false
 }
 
 func viewList(views []string) string {

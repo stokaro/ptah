@@ -456,8 +456,8 @@ Migration lint reports the statements YDB refuses, or runs with an effect the
 statement does not state, under the `YD` family: a unique index added to an
 existing table, a block that mixes schema and data statements, an `ADD COLUMN`
 the line refuses, a dropped column an index or the TTL uses, a partitioning
-change that resets the minimum partition count, and a dropped table a view
-reads. [Lint rules](../../reference/lint-rules/#ydb) lists each rule with its
+change that resets the minimum partition count, and a table a view reads that
+is dropped or renamed. [Lint rules](../../reference/lint-rules/#ydb) lists each rule with its
 meaning.
 
 `YD104` and `YD106` read the indexes, TTL and views the directory's own

@@ -155,6 +155,14 @@ func TestYDBRules_ReportWhatTheServerRefuses(t *testing.T) {
 			},
 			want: []string{"0002_drop.up.sql:1:YD106"},
 		},
+		{
+			name: "a table a view reads, renamed",
+			files: map[string]string{
+				"0001_v.up.sql":      "CREATE TABLE base (id Uint64 NOT NULL, PRIMARY KEY (id));\nCREATE VIEW v WITH (security_invoker = TRUE) AS SELECT id FROM base;\n",
+				"0002_rename.up.sql": "ALTER TABLE base RENAME TO moved;\n",
+			},
+			want: []string{"0002_rename.up.sql:1:YD106"},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -211,6 +219,17 @@ func TestYDBRules_LeaveWhatTheServerRuns(t *testing.T) {
 		{name: "a table no view reads, dropped", files: map[string]string{
 			"0001_v.up.sql":    "CREATE TABLE base (id Uint64 NOT NULL, PRIMARY KEY (id));\nCREATE VIEW v WITH (security_invoker = TRUE) AS SELECT 1 AS one;\n",
 			"0002_drop.up.sql": "DROP TABLE base;\n"}},
+		{name: "a table no view reads, renamed", files: map[string]string{
+			"0001_v.up.sql":      "CREATE TABLE base (id Uint64 NOT NULL, PRIMARY KEY (id));\nCREATE VIEW v WITH (security_invoker = TRUE) AS SELECT 1 AS one;\n",
+			"0002_rename.up.sql": "ALTER TABLE base RENAME TO moved;\n"}},
+		{name: "a rebuild of a table a view reads, whose copy takes the name back", files: map[string]string{
+			"0001_v.up.sql": "CREATE TABLE base (id Uint64 NOT NULL, n Int32, PRIMARY KEY (id));\n" +
+				"CREATE VIEW v WITH (security_invoker = TRUE) AS SELECT id FROM base;\n",
+			"0002_rebuild.up.sql": "CREATE TABLE __ptah_rebuild_base (id Uint64 NOT NULL, n Int64, PRIMARY KEY (id));\n" +
+				"INSERT INTO __ptah_rebuild_base (id, n) SELECT id, CAST(n AS Int64) AS n FROM base;\n" +
+				"ALTER TABLE base RENAME TO __ptah_replaced_base;\n" +
+				"ALTER TABLE __ptah_rebuild_base RENAME TO base;\n" +
+				"DROP TABLE __ptah_replaced_base;\n"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -394,6 +413,26 @@ func TestYDBRules_NameWhatTheStatementBreaks(t *testing.T) {
 		"(Can't drop TTL column, disable TTL first); run ALTER TABLE ... RESET (TTL) first")
 	c.Assert(messages, qt.Contains, "YD106: DROP TABLE shop/users leaves views shop/active, shop/named reading a table that does not exist: "+
 		"YDB keeps a view whose table is dropped, and every read of it fails; drop or recreate them first")
+}
+
+// A rename names the table it moves and the name to recreate the view over.
+func TestYDBRules_NameTheRenameThatOrphansAView(t *testing.T) {
+	c := qt.New(t)
+
+	findings, err := lint.LintFS(fixture(map[string]string{
+		"0001_users.up.sql": usersTable +
+			"CREATE VIEW `shop/active` WITH (security_invoker = TRUE) AS SELECT id FROM `shop/users`;\n",
+		"0002_rename.up.sql": "ALTER TABLE `shop/users` RENAME TO `shop/members`;\n",
+	}), lint.Options{Dialect: "ydb"})
+
+	c.Assert(err, qt.IsNil)
+	messages := make([]string, 0, len(findings))
+	for _, finding := range findings {
+		messages = append(messages, finding.Rule+": "+finding.Message)
+	}
+	c.Assert(messages, qt.Contains, "YD106: ALTER TABLE shop/users RENAME TO shop/members leaves view shop/active reading a "+
+		"table that does not exist: a view reads its table by path, so every read of it fails until a table takes the "+
+		"name shop/users again; recreate it over shop/members")
 }
 
 // statementTexts returns the statements the linter cut a one-file YDB

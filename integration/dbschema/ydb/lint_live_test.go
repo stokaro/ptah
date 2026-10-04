@@ -220,32 +220,43 @@ func TestYDBLint_RulesReportWhatTheServerRefuses(t *testing.T) {
 const usedColumnsTable = "CREATE TABLE `{dir}/t` (id Uint64 NOT NULL, k Utf8, c Utf8, ts Timestamp, free Utf8, " +
 	"PRIMARY KEY (id), INDEX t_k GLOBAL SYNC ON (k) COVER (c)) WITH (TTL = Interval(\"P1D\") ON ts)"
 
-// YDB runs a DROP TABLE a view reads and keeps the view, which then fails on
-// every read. YD106 reports the drop, and the server shows what it reports.
-func TestYDBLint_DroppedTableLeavesItsViewFailing(t *testing.T) {
+// YDB runs a DROP TABLE a view reads, and an ALTER TABLE ... RENAME TO of it,
+// and keeps the view, which reads its table by path and then fails on every
+// read. YD106 reports both, and the server shows what it reports.
+func TestYDBLint_DroppedOrRenamedTableLeavesItsViewFailing(t *testing.T) {
 	dir := lintDir + "/view"
 	setup := []string{
 		"CREATE TABLE `" + dir + "/base` (id Uint64 NOT NULL, PRIMARY KEY (id))",
 		"CREATE VIEW `" + dir + "/v` WITH (security_invoker = TRUE) AS SELECT id FROM `" + dir + "/base`",
 	}
-	statement := "DROP TABLE `" + dir + "/base`"
+	tests := []struct {
+		name      string
+		statement string
+	}{
+		{name: "dropped", statement: "DROP TABLE `" + dir + "/base`"},
+		{name: "renamed", statement: "ALTER TABLE `" + dir + "/base` RENAME TO `" + dir + "/moved`"},
+	}
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
-			c := qt.New(t)
-			conn := openYDB(c, line)
-			c.Cleanup(func() { dropLintDir(c, conn) })
-			for _, step := range setup {
-				c.Assert(conn.Writer().ExecuteSQL(c.Context(), step), qt.IsNil, qt.Commentf("setup: %s", step))
+			for _, test := range tests {
+				t.Run(test.name, func(t *testing.T) {
+					c := qt.New(t)
+					conn := openYDB(c, line)
+					c.Cleanup(func() { dropLintDir(c, conn) })
+					for _, step := range setup {
+						c.Assert(conn.Writer().ExecuteSQL(c.Context(), step), qt.IsNil, qt.Commentf("setup: %s", step))
+					}
+
+					reported := lintAgainst(c, conn, setup, test.statement)
+					runErr := conn.Writer().ExecuteSQL(c.Context(), test.statement)
+					var count int64
+					readErr := conn.QueryRowContext(c.Context(), "SELECT COUNT(*) FROM `"+dir+"/v`").Scan(&count)
+
+					c.Assert(reported, qt.Contains, "YD106")
+					c.Assert(runErr, qt.IsNil)
+					c.Assert(readErr, qt.ErrorMatches, `(?s).*Cannot find table 'db\.\[/local/`+regexp.QuoteMeta(dir)+`/base\]'.*`)
+				})
 			}
-
-			reported := lintAgainst(c, conn, setup, statement)
-			dropErr := conn.Writer().ExecuteSQL(c.Context(), statement)
-			var count int64
-			readErr := conn.QueryRowContext(c.Context(), "SELECT COUNT(*) FROM `"+dir+"/v`").Scan(&count)
-
-			c.Assert(reported, qt.Contains, "YD106")
-			c.Assert(dropErr, qt.IsNil)
-			c.Assert(readErr, qt.ErrorMatches, `(?s).*Cannot find table 'db\.\[/local/`+regexp.QuoteMeta(dir)+`/base\]'.*`)
 		})
 	}
 }
