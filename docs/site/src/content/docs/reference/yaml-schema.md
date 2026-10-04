@@ -83,6 +83,8 @@ Top-level objects are maps. Their keys are used as default object names when a
 | `default_privileges` | PostgreSQL default privileges: what a grantee receives on objects a role creates later. |
 | `topics` | YDB topics: the settings their annotation takes, and `consumers` keyed by name. See [Topics](../../databases/ydb/#topics). |
 | `secrets` | YDB secrets, each by its directory and the environment variable its value comes from; see [Secrets](#secrets). |
+| `external_data_sources` | YDB external data sources; see [External data sources and tables](#external-data-sources-and-tables). |
+| `external_tables` | YDB external tables over files in object storage; see [External data sources and tables](#external-data-sources-and-tables). |
 
 Unknown keys fail. Ptah does not silently ignore fields that look meaningful but
 are outside the supported schema.
@@ -329,6 +331,34 @@ secrets:
   pg_password:
     schema: ext
     value_env: PTAH_SECRET_PG_PASSWORD
+```
+
+## External data sources and tables
+
+A YDB external data source sits under `external_data_sources` and an external
+table under `external_tables`, each keyed by name, with the attributes of
+`//ptah:schema:externaldatasource` and `//ptah:schema:externaltable`. `options`
+is a map of option names, in any letter case, to values, and each column of a
+table has a `name`, a `type` and `not_null`. Every other dialect refuses both.
+See [external data sources](../../databases/ydb/#external-data-sources-and-external-tables).
+
+```yaml
+external_data_sources:
+  events_bucket:
+    schema: ext
+    source_type: ObjectStorage
+    location: https://storage.example.test/events/
+    auth_method: NONE
+external_tables:
+  events:
+    schema: ext
+    data_source: ext/events_bucket
+    location: 2026/
+    columns:
+      - {name: id, type: Int64, not_null: true}
+      - {name: kind, type: Utf8}
+    options:
+      FORMAT: json_each_row
 ```
 
 ## Platform overrides

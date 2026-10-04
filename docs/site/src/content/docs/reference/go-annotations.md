@@ -116,6 +116,8 @@ type StatusEnumMarker struct{}
 | [`ptah:schema:rls:enable`](#ptahschemarlsenable) | Row-level security enablement | file or struct |
 | [`ptah:schema:rls:policy`](#ptahschemarlspolicy) | A row-level security policy | file or struct |
 | [`ptah:schema:secret`](#ptahschemasecret) | A YDB secret, by the variable its value comes from | struct or field |
+| [`ptah:schema:externaldatasource`](#ptahschemaexternaldatasource) | A YDB external data source | struct or field |
+| [`ptah:schema:externaltable`](#ptahschemaexternaltable) | A YDB external table over files in object storage | struct or field |
 | [`ptah:schema:data`](#ptahschemadata) | Reference/seed row data for a table | struct |
 | [`ptah:schema:notdescribed`](#ptahschemanotdescribed) | What this schema does not describe | struct |
 
@@ -986,6 +988,38 @@ value itself. Every other dialect refuses a secret. See
 
 A `value` attribute is refused, and the error names the attribute and not what
 it held.
+
+### `//ptah:schema:externaldatasource`
+
+Declares a YDB external data source: another system YDB reads from, such as an
+object storage bucket or a PostgreSQL database, and how YDB authenticates to
+it. A credential is named by the secret that holds it, never written. Every
+other dialect refuses one. See
+[external data sources](../../databases/ydb/#external-data-sources-and-external-tables).
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `name` | Yes | Data source name, the last segment of its path. |
+| `schema` | No | Directory that holds the data source, relative to the database root. |
+| `source_type` | Yes | `SOURCE_TYPE`, such as `ObjectStorage`, `PostgreSQL` or `ClickHouse`. |
+| `location` | No | `LOCATION`: the bucket's address or the server's host and port. |
+| `auth_method` | Yes | `AUTH_METHOD`, such as `NONE`, `BASIC` or `SERVICE_ACCOUNT`. |
+| `options` | No | Every other option, `NAME=value` separated by `;`, such as `DATABASE_NAME=app;LOGIN=reader;PASSWORD_SECRET_PATH=ext/pg_password`. `\;` writes a semicolon into a value. |
+
+### `//ptah:schema:externaltable`
+
+Declares a YDB external table: columns over files that an external data source
+of type `ObjectStorage` holds. YDB stores no row of it. Every other dialect
+refuses one.
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `name` | Yes | External table name, the last segment of its path. |
+| `schema` | No | Directory that holds the external table, relative to the database root. |
+| `data_source` | Yes | Path of the data source the table reads, relative to the database root. |
+| `location` | Yes | `LOCATION`: the files' path under the data source. |
+| `columns` | Yes | Columns, `name Type [NOT NULL]` separated by commas, such as `id Int64 NOT NULL, amount Decimal(22,9)`. A default, a key or a column family is refused. |
+| `options` | No | Every other option, `NAME=value` separated by `;`, such as `FORMAT=json_each_row;COMPRESSION=gzip`. |
 
 ## Reference data
 

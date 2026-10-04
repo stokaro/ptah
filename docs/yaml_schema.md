@@ -439,6 +439,13 @@ rendered for MySQL/MariaDB with dialect-specific trigger bodies.
   `value_env`, the environment variable the value comes from. A `value` key is
   refused, so a document never holds a secret's value. See
   [secrets](site/src/content/docs/databases/ydb.md#secrets).
+- `external_data_sources`: YDB external data sources, keyed by name, with
+  `name`, `schema`, `source_type`, `location`, `auth_method` and `options`, a
+  map of the statement's other options. See
+  [external data sources](site/src/content/docs/databases/ydb.md#external-data-sources-and-external-tables).
+- `external_tables`: YDB external tables, keyed by name, with `name`,
+  `schema`, `data_source`, `location`, `columns` (each a `name`, a `type` and
+  `not_null`) and `options`.
 
 `matviews` accepts no refresh strategy. Ptah does not refresh materialized
 views: one is populated when it is created, a changed body is reconciled as a
