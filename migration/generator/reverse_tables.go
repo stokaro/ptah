@@ -114,6 +114,7 @@ func reverseTableDiffs(tableDiffs []difftypes.TableDiff, prior *schemamodel.Data
 			RowDeletionPolicyChange: reverseRowDeletionPolicyChange(tableDiff.RowDeletionPolicyChange),
 			YDBColumnFamiliesChange: reverseColumnFamiliesChange(tableDiff.YDBColumnFamiliesChange),
 			ChangefeedsChange:       reverseChangefeedsChange(tableDiff.ChangefeedsChange),
+			YDBPartitioningChange:   reversePartitioningChange(tableDiff.YDBPartitioningChange),
 		}
 	}
 	return reversed

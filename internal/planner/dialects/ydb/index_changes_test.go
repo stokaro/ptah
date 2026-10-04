@@ -53,9 +53,7 @@ func TestGenerateMigrationAST_IndexChangesInPlace_HappyPath(t *testing.T) {
 		"AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4);\n"+
 		"ALTER TABLE `items` ADD COLUMN `note` Utf8;\n"+
 		"ALTER TABLE `items` ADD INDEX `items_note` GLOBAL SYNC ON (`note`);\n"+
-		"ALTER TABLE `items` ALTER INDEX `items_note` SET (AUTO_PARTITIONING_BY_SIZE = ENABLED, "+
-		"AUTO_PARTITIONING_PARTITION_SIZE_MB = 2048, AUTO_PARTITIONING_BY_LOAD = ENABLED, "+
-		"AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 1);\n")
+		"ALTER TABLE `items` ALTER INDEX `items_note` SET (AUTO_PARTITIONING_BY_LOAD = ENABLED);\n")
 }
 
 // TestGenerateMigrationAST_IndexChangesInPlace_FailurePath refuses, before any
@@ -85,9 +83,6 @@ func TestGenerateMigrationAST_IndexChangesInPlace_FailurePath(t *testing.T) {
 		{name: "partitioning without the key", caps: capability.YDB262().With(capability.IndexPartitioning, false),
 			diff: change(&ast.IndexPartitioningSpec{MinPartitions: 2}, nil), wantFeature: string(capability.IndexPartitioning),
 			wantErr: `changing the partitioning of index "a" of table "items", which requires target capability index_partitioning, .*`},
-		{name: "a maximum removed in place", caps: capability.YDB262(),
-			diff: change(nil, &ast.IndexPartitioningSpec{MaxPartitions: 9}), wantFeature: `index "a" of table "items"`,
-			wantErr: `index "a" of table "items": its maximum of 9 partitions cannot be removed in place .*`},
 		{name: "a declaration YDB refuses", caps: capability.YDB262(),
 			diff: change(&ast.IndexPartitioningSpec{BySize: new(false), PartitionSizeMB: 64}, nil), wantFeature: `index "a" of table "items"`,
 			wantErr: `index "a" of table "items": auto_partitioning_partition_size_mb is set while .*`},
@@ -155,6 +150,6 @@ func TestGenerateMigrationAST_TableRebuild_CarriesIndexChangesInPlace(t *testing
 
 	c.Assert(got, qt.Not(qt.Contains), "RENAME INDEX")
 	c.Assert(got, qt.Not(qt.Contains), "ALTER TABLE `app/items` ALTER INDEX")
-	c.Assert(got, qt.Contains, "    INDEX `items_label` GLOBAL SYNC ON (`label`)\n);\n"+
+	c.Assert(got, qt.Contains, "    INDEX `items_label` GLOBAL SYNC ON (`label`)\n"+heldDefaults+
 		"ALTER TABLE `app/__ptah_rebuild_items` ALTER INDEX `items_label` SET (")
 }

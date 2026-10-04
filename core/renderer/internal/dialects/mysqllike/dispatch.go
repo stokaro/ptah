@@ -208,6 +208,7 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.AddChangefeedOperation,
 		*ast.DropChangefeedOperation,
 		*ast.AlterChangefeedTopicOperation,
+		*ast.SetYDBTablePartitioningOperation,
 		*ast.ReplaceIndexOperation,
 		*ast.AddIndexOperation,
 		*ast.AddSkippingIndexOperation,

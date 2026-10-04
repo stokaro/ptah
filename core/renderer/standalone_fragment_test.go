@@ -333,6 +333,9 @@ func alterOperationFixtures() map[string]func() ast.Node {
 		"SetRowTTLOperation": func() ast.Node {
 			return &ast.SetRowTTLOperation{Options: []string{"ttl_expiration_expression = 'created_at + INTERVAL ''1 day'''"}}
 		},
+		"SetYDBTablePartitioningOperation": func() ast.Node {
+			return &ast.SetYDBTablePartitioningOperation{Partitioning: &ast.YDBTablePartitioningSpec{MinPartitions: 2}}
+		},
 		"ValidateConstraintOperation": func() ast.Node {
 			return &ast.ValidateConstraintOperation{ConstraintName: "ck_c"}
 		},

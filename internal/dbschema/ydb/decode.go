@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/ydbgap"
 	"ptah.run/internal/ydbindex"
+	"ptah.run/internal/ydbpartition"
 	"ptah.run/internal/ydbttl"
 	"ptah.run/internal/ydbtype"
 )
@@ -67,6 +68,11 @@ func (r *Reader) table(
 	if !familiesRead {
 		db.NotDescribed = db.NotDescribed.With(unmodeled(coverage.ColumnFamily, schema, name))
 	}
+	settings, err := tableSettings(described)
+	if err != nil {
+		return fmt.Errorf("%s: %w", subject, err)
+	}
+	table.YDBPartitioning = ydbpartition.TableSpec(settings)
 	db.Tables = append(db.Tables, table)
 	db.NotDescribed = db.NotDescribed.With(unread...)
 
@@ -293,12 +299,12 @@ func (r *Reader) index(
 	if err != nil {
 		return catalog.Index{}, fmt.Errorf("index %q: %w", described.GetName(), err)
 	}
-	settings, err := indexSettings(implementation)
+	settings, err := partitionSettings(implementation)
 	if err != nil {
 		return catalog.Index{}, fmt.Errorf("index %q: %w", described.GetName(), err)
 	}
 	index.Method = kind.Clause(false)
-	index.Partitioning = settings.Spec()
+	index.Partitioning = ydbindex.Spec(settings)
 	index.Definition = indexClause(index, kind)
 	return index, nil
 }
@@ -307,27 +313,45 @@ func (r *Reader) index(
 // own path: `<table>/<index>/indexImplTable`.
 const indexImplTable = "indexImplTable"
 
-// indexSettings reads the partitioning and the read replicas of a global
-// index from the description of its implementation table. A setting the
-// description leaves unspecified is YDB's default for it, and a setting the
-// pinned protocol buffers do not model is refused, because read as absent it
-// would be planned away on every run.
-func indexSettings(described *Ydb_Table.DescribeTableResult) (ydbindex.Settings, error) {
+// tableSettings reads a row table's settings: its partitioning and read
+// replicas, see [partitionSettings], and its key bloom filter. Measured on
+// 25.1.4.7 and 26.2.1.14, a new table describes its key bloom filter as
+// unspecified and one created with KEY_BLOOM_FILTER = DISABLED as disabled,
+// and both keep no filter. YDB keeps no record of the partitions a table was
+// created with, so they are not read.
+func tableSettings(described *Ydb_Table.DescribeTableResult) (ydbpartition.TableSettings, error) {
+	settings, err := partitionSettings(described)
+	if err != nil {
+		return ydbpartition.TableSettings{}, err
+	}
+	filter, err := featureFlag(described.GetKeyBloomFilter(), false)
+	if err != nil {
+		return ydbpartition.TableSettings{}, fmt.Errorf("its key bloom filter: %w", err)
+	}
+	return ydbpartition.TableSettings{Settings: settings, KeyBloomFilter: filter}, nil
+}
+
+// partitionSettings reads the partitioning and the read replicas of a table,
+// or of a global index from the description of its implementation table. A
+// setting the description leaves unspecified is YDB's default for it, and a
+// setting the pinned protocol buffers do not model is refused, because read as
+// absent it would be planned away on every run.
+func partitionSettings(described *Ydb_Table.DescribeTableResult) (ydbpartition.Settings, error) {
 	partitioning := described.GetPartitioningSettings()
 	replicas := described.GetReadReplicasSettings()
 	for _, message := range []protoreflect.ProtoMessage{partitioning, replicas} {
 		if unknown := unknownFields(message); len(unknown) > 0 {
-			return ydbindex.Settings{}, fmt.Errorf("its partitioning carries field %s, which this build of Ptah does not read",
+			return ydbpartition.Settings{}, fmt.Errorf("its partitioning carries field %s, which this build of Ptah does not read",
 				joinNumbers(unknown))
 		}
 	}
-	settings := ydbindex.DefaultSettings()
+	settings := ydbpartition.DefaultSettings()
 	var err error
 	if settings.BySize, err = featureFlag(partitioning.GetPartitioningBySize(), settings.BySize); err != nil {
-		return ydbindex.Settings{}, fmt.Errorf("partitioning by size: %w", err)
+		return ydbpartition.Settings{}, fmt.Errorf("partitioning by size: %w", err)
 	}
 	if settings.ByLoad, err = featureFlag(partitioning.GetPartitioningByLoad(), settings.ByLoad); err != nil {
-		return ydbindex.Settings{}, fmt.Errorf("partitioning by load: %w", err)
+		return ydbpartition.Settings{}, fmt.Errorf("partitioning by load: %w", err)
 	}
 	switch size := partitioning.GetPartitionSizeMb(); {
 	case !settings.BySize:
@@ -341,9 +365,9 @@ func indexSettings(described *Ydb_Table.DescribeTableResult) (ydbindex.Settings,
 	settings.MaxPartitions = partitioning.GetMaxPartitionsCount()
 	switch {
 	case replicas.GetPerAzReadReplicasCount() != 0:
-		settings.ReadReplicas = ydbindex.Replicas{PerAZ: true, Count: replicas.GetPerAzReadReplicasCount()}
+		settings.ReadReplicas = ydbpartition.Replicas{PerAZ: true, Count: replicas.GetPerAzReadReplicasCount()}
 	case replicas.GetAnyAzReadReplicasCount() != 0:
-		settings.ReadReplicas = ydbindex.Replicas{Count: replicas.GetAnyAzReadReplicasCount()}
+		settings.ReadReplicas = ydbpartition.Replicas{Count: replicas.GetAnyAzReadReplicasCount()}
 	}
 	return settings, nil
 }
@@ -470,10 +494,9 @@ var epochUnits = map[Ydb_Table.ValueSinceUnixEpochModeSettings_Unit]string{
 // changefeed and the column families are read rather than recorded here; see
 // [Reader.changefeeds] and [Reader.columnFamilies]. A setting is recorded
 // where it differs from what a table created without one carries, measured on
-// local-ydb 26.2.1.14: no TTL run interval and no tiering policy;
-// partitioning by size at 2048 MB, not by load, with at least one partition;
-// no read replicas, no key bloom filter, and external blobs off with no
-// storage pools named.
+// local-ydb 26.2.1.14: no TTL run interval and no tiering policy, and external
+// blobs off with no storage pools named. A row table's partitioning, read
+// replicas and key bloom filter are read, by [tableSettings].
 //
 // The TTL itself is the table's row deletion policy. What is recorded under
 // [coverage.TTL] is what YQL cannot write about it: the run interval, which
@@ -485,36 +508,20 @@ func unmodeledSettings(schema, name string, described *Ydb_Table.DescribeTableRe
 	if described.GetTtlSettings().GetRunIntervalSeconds() != 0 || described.GetTiering() != "" {
 		records = append(records, unmodeled(coverage.TTL, schema, name))
 	}
-	if hasTableOptions(described) {
+	if hasStorageSettings(described) {
 		records = append(records, unmodeled(coverage.TableOption, schema, name))
 	}
 	return records
 }
 
-// hasTableOptions reports partitioning, read replica, key bloom filter or
-// storage settings other than a new table's.
-func hasTableOptions(described *Ydb_Table.DescribeTableResult) bool {
-	partitioning := described.GetPartitioningSettings()
-	if len(partitioning.GetPartitionBy()) > 0 ||
-		partitioning.GetPartitioningBySize() == Ydb.FeatureFlag_DISABLED ||
-		(partitioning.GetPartitionSizeMb() != 0 && partitioning.GetPartitionSizeMb() != defaultPartitionSizeMB) ||
-		partitioning.GetPartitioningByLoad() == Ydb.FeatureFlag_ENABLED ||
-		partitioning.GetMinPartitionsCount() > 1 ||
-		partitioning.GetMaxPartitionsCount() != 0 {
-		return true
-	}
-	replicas := described.GetReadReplicasSettings()
-	if replicas.GetPerAzReadReplicasCount() != 0 || replicas.GetAnyAzReadReplicasCount() != 0 {
-		return true
-	}
-	if described.GetKeyBloomFilter() == Ydb.FeatureFlag_ENABLED {
+// hasStorageSettings reports storage settings other than a new table's: its
+// tablet's commit log pools, an external pool, external blobs, or partitioning
+// by columns, which only a column table has.
+func hasStorageSettings(described *Ydb_Table.DescribeTableResult) bool {
+	if len(described.GetPartitioningSettings().GetPartitionBy()) > 0 {
 		return true
 	}
 	storage := described.GetStorageSettings()
 	return storage.GetTabletCommitLog0() != nil || storage.GetTabletCommitLog1() != nil ||
 		storage.GetExternal() != nil || storage.GetStoreExternalBlobs() == Ydb.FeatureFlag_ENABLED
 }
-
-// defaultPartitionSizeMB is the partition size YDB gives a table that names
-// none.
-const defaultPartitionSizeMB = 2048

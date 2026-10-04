@@ -834,6 +834,13 @@ type Table struct {
 	// for a target without capability.Changefeeds refuses a table declaring
 	// one rather than building the table without its stream.
 	Changefeeds []ast.ChangefeedSpec
+	// YDBPartitioning is YDB's, and every other target refuses it: how this
+	// row table splits into partitions, its read replicas, its key bloom
+	// filter and the partitions it is created with, nil for a table declaring
+	// none of them. It carries the ast type for the same reason RowTTL does.
+	// omitzero keeps the JSON of a table declaring none byte-identical, and
+	// with it the desired-schema fingerprint a plan records.
+	YDBPartitioning *ast.YDBTablePartitioningSpec `json:",omitzero"`
 
 	// DependsOn names tables this one must be created after, beyond the ones
 	// its foreign keys imply. See [BuildDependencyGraph] for what a declared

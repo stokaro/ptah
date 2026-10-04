@@ -237,9 +237,12 @@ const (
 	// whole kind, and the comparison then keeps the families the database
 	// holds for each table, through a rebuild too.
 	ColumnFamily Kind = "column_family"
-	// TableOption is a YDB table's partitioning, read replica, key bloom
-	// filter and storage settings, where they differ from what a table Ptah
-	// creates is given.
+	// TableOption is a YDB table's storage settings Ptah does not model,
+	// where they differ from what a new table is given: its tablet's commit
+	// log pools, an external pool, external blobs. A YDB read records them by
+	// the table's path. A table's partitioning, read replicas and key bloom
+	// filter are modeled, and a description that leaves them out, as HCL and
+	// DBML always do, keeps what the table holds.
 	TableOption Kind = "table_option"
 	// Grant is a permission granted on an object. A YDB read records the
 	// whole kind, since it does not read the access model.

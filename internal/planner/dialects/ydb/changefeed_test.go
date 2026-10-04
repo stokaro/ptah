@@ -132,7 +132,8 @@ func TestGenerateMigrationAST_Changefeeds_RebuildCarriesThem(t *testing.T) {
 			c.Assert(got, qt.Contains, " of table app/items is dropped before the swap and added again after it, "+
 				"because YDB moves no table that carries a changefeed. Its stream restarts: the records nobody read "+
 				"are lost, and its consumers start again from the beginning of the new stream.\n")
-			c.Assert(got, qt.Contains, "    INDEX `items_label` GLOBAL SYNC ON (`label`)\n);\nINSERT INTO")
+			c.Assert(got, qt.Contains, "    INDEX `items_label` GLOBAL SYNC ON (`label`)\n"+heldDefaults+
+				heldIndexDefaults("app/__ptah_rebuild_items", "items_label")+"INSERT INTO")
 			c.Assert(got, qt.Contains, test.want)
 		})
 	}

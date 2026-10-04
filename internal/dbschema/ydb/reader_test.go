@@ -376,7 +376,7 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 	settings.Changefeeds = []*Ydb_Table.ChangefeedDescription{{Name: "feed"}}
 	settings.ColumnFamilies = append(settings.ColumnFamilies,
 		&Ydb_Table.ColumnFamily{Name: "cold", Compression: 3})
-	settings.KeyBloomFilter = Ydb.FeatureFlag_ENABLED
+	settings.StorageSettings = &Ydb_Table.StorageSettings{StoreExternalBlobs: Ydb.FeatureFlag_ENABLED}
 	source := fakeSource{
 		directories: map[string][]*Ydb_Scheme.Entry{
 			"/local": {
@@ -428,15 +428,14 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 	c.Assert(db.Views, qt.DeepEquals, []catalog.View{{Name: "v", Body: "SELECT 1 AS a"}})
 }
 
-// A table setting is recorded only where it differs from what a table created
-// without settings carries, measured on local-ydb 26.2.1.14.
-func TestReader_RecordsEachTableOption(t *testing.T) {
+// A storage setting is recorded only where it differs from what a table
+// created without settings carries, measured on local-ydb 26.2.1.14, and so is
+// partitioning by columns, which only a column table has.
+func TestReader_RecordsEachStorageSetting(t *testing.T) {
 	tests := []struct {
 		name         string
 		partitioning *Ydb_Table.PartitioningSettings
-		replicas     *Ydb_Table.ReadReplicasSettings
 		storage      *Ydb_Table.StorageSettings
-		bloom        Ydb.FeatureFlag_Status
 	}{
 		{
 			name: "partitioning by key",
@@ -444,12 +443,6 @@ func TestReader_RecordsEachTableOption(t *testing.T) {
 				PartitioningBySize: Ydb.FeatureFlag_ENABLED, PartitionSizeMb: 2048,
 				PartitioningByLoad: Ydb.FeatureFlag_DISABLED, MinPartitionsCount: 1},
 			storage: defaultStorage(),
-		},
-		{
-			name:         "a key bloom filter",
-			partitioning: defaultPartitioning(),
-			storage:      defaultStorage(),
-			bloom:        Ydb.FeatureFlag_ENABLED,
 		},
 		{
 			name:         "a commit log on a named pool",
@@ -470,45 +463,6 @@ func TestReader_RecordsEachTableOption(t *testing.T) {
 				External: &Ydb_Table.StoragePool{Media: "hdd"}},
 		},
 		{
-			name: "partitioning by load",
-			partitioning: &Ydb_Table.PartitioningSettings{PartitioningBySize: Ydb.FeatureFlag_ENABLED,
-				PartitionSizeMb: 2048, PartitioningByLoad: Ydb.FeatureFlag_ENABLED, MinPartitionsCount: 1},
-			storage: defaultStorage(),
-		},
-		{
-			name: "partitioning by size off",
-			partitioning: &Ydb_Table.PartitioningSettings{PartitioningBySize: Ydb.FeatureFlag_DISABLED,
-				PartitionSizeMb: 2048, PartitioningByLoad: Ydb.FeatureFlag_DISABLED, MinPartitionsCount: 1},
-			storage: defaultStorage(),
-		},
-		{
-			name: "a partition size",
-			partitioning: &Ydb_Table.PartitioningSettings{PartitioningBySize: Ydb.FeatureFlag_ENABLED,
-				PartitionSizeMb: 512, PartitioningByLoad: Ydb.FeatureFlag_DISABLED, MinPartitionsCount: 1},
-			storage: defaultStorage(),
-		},
-		{
-			name: "a minimum partition count",
-			partitioning: &Ydb_Table.PartitioningSettings{PartitioningBySize: Ydb.FeatureFlag_ENABLED,
-				PartitionSizeMb: 2048, PartitioningByLoad: Ydb.FeatureFlag_DISABLED, MinPartitionsCount: 3},
-			storage: defaultStorage(),
-		},
-		{
-			name: "a maximum partition count",
-			partitioning: &Ydb_Table.PartitioningSettings{PartitioningBySize: Ydb.FeatureFlag_ENABLED,
-				PartitionSizeMb: 2048, PartitioningByLoad: Ydb.FeatureFlag_DISABLED, MinPartitionsCount: 1,
-				MaxPartitionsCount: 50},
-			storage: defaultStorage(),
-		},
-		{
-			name:         "read replicas",
-			partitioning: defaultPartitioning(),
-			replicas: &Ydb_Table.ReadReplicasSettings{
-				Settings: &Ydb_Table.ReadReplicasSettings_PerAzReadReplicasCount{PerAzReadReplicasCount: 1},
-			},
-			storage: defaultStorage(),
-		},
-		{
 			name:         "external blobs",
 			partitioning: defaultPartitioning(),
 			storage:      &Ydb_Table.StorageSettings{StoreExternalBlobs: Ydb.FeatureFlag_ENABLED},
@@ -520,9 +474,7 @@ func TestReader_RecordsEachTableOption(t *testing.T) {
 			c := qt.New(t)
 			described := plainTable()
 			described.PartitioningSettings = test.partitioning
-			described.ReadReplicasSettings = test.replicas
 			described.StorageSettings = test.storage
-			described.KeyBloomFilter = test.bloom
 			source := fakeSource{
 				directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
 				tables:      map[string]*Ydb_Table.DescribeTableResult{"/local/t": described},
@@ -532,6 +484,124 @@ func TestReader_RecordsEachTableOption(t *testing.T) {
 
 			c.Assert(db.NotDescribed.Describes(coverage.TableOption, "t"), qt.IsFalse)
 			c.Assert(db.NotDescribed.Describes(coverage.TTL, "t"), qt.IsTrue)
+		})
+	}
+}
+
+// A row table's partitioning, read replicas and key bloom filter are read as
+// the settings that differ from what a table created without settings
+// carries, measured on local-ydb 26.2.1.14 and 25.1.4.7, and none of them is
+// recorded as not described: a key bloom filter described as disabled is the
+// same as one left unspecified, and so are read replicas of zero.
+func TestReader_ReadsTableSettings(t *testing.T) {
+	tests := []struct {
+		name         string
+		partitioning *Ydb_Table.PartitioningSettings
+		replicas     *Ydb_Table.ReadReplicasSettings
+		bloom        Ydb.FeatureFlag_Status
+		want         *ast.YDBTablePartitioningSpec
+	}{
+		{name: "a table created without settings", partitioning: defaultPartitioning(), want: nil},
+		{
+			name: "partitioning by load",
+			partitioning: &Ydb_Table.PartitioningSettings{PartitioningBySize: Ydb.FeatureFlag_ENABLED,
+				PartitionSizeMb: 2048, PartitioningByLoad: Ydb.FeatureFlag_ENABLED, MinPartitionsCount: 1},
+			want: &ast.YDBTablePartitioningSpec{ByLoad: new(true)},
+		},
+		{
+			name: "partitioning by size off",
+			partitioning: &Ydb_Table.PartitioningSettings{PartitioningBySize: Ydb.FeatureFlag_DISABLED,
+				PartitioningByLoad: Ydb.FeatureFlag_DISABLED, MinPartitionsCount: 1},
+			want: &ast.YDBTablePartitioningSpec{BySize: new(false)},
+		},
+		{
+			name: "a partition size",
+			partitioning: &Ydb_Table.PartitioningSettings{PartitioningBySize: Ydb.FeatureFlag_ENABLED,
+				PartitionSizeMb: 512, PartitioningByLoad: Ydb.FeatureFlag_DISABLED, MinPartitionsCount: 1},
+			want: &ast.YDBTablePartitioningSpec{PartitionSizeMB: 512},
+		},
+		{
+			name: "a minimum and a maximum partition count",
+			partitioning: &Ydb_Table.PartitioningSettings{PartitioningBySize: Ydb.FeatureFlag_ENABLED,
+				PartitionSizeMb: 2048, PartitioningByLoad: Ydb.FeatureFlag_DISABLED, MinPartitionsCount: 3,
+				MaxPartitionsCount: 50},
+			want: &ast.YDBTablePartitioningSpec{MinPartitions: 3, MaxPartitions: 50},
+		},
+		{
+			name:         "read replicas in every zone",
+			partitioning: defaultPartitioning(),
+			replicas: &Ydb_Table.ReadReplicasSettings{
+				Settings: &Ydb_Table.ReadReplicasSettings_PerAzReadReplicasCount{PerAzReadReplicasCount: 1},
+			},
+			want: &ast.YDBTablePartitioningSpec{ReadReplicas: "PER_AZ:1"},
+		},
+		{
+			name:         "read replicas of zero",
+			partitioning: defaultPartitioning(),
+			replicas: &Ydb_Table.ReadReplicasSettings{
+				Settings: &Ydb_Table.ReadReplicasSettings_AnyAzReadReplicasCount{AnyAzReadReplicasCount: 0},
+			},
+			want: nil,
+		},
+		{name: "a key bloom filter", partitioning: defaultPartitioning(), bloom: Ydb.FeatureFlag_ENABLED,
+			want: &ast.YDBTablePartitioningSpec{KeyBloomFilter: new(true)}},
+		{name: "a key bloom filter described as disabled", partitioning: defaultPartitioning(),
+			bloom: Ydb.FeatureFlag_DISABLED, want: nil},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			described := plainTable()
+			described.PartitioningSettings = test.partitioning
+			described.ReadReplicasSettings = test.replicas
+			described.KeyBloomFilter = test.bloom
+			source := fakeSource{
+				directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
+				tables:      map[string]*Ydb_Table.DescribeTableResult{"/local/t": described},
+			}
+
+			db := readFrom(c, source)
+
+			c.Assert(db.Tables, qt.HasLen, 1)
+			c.Assert(db.Tables[0].YDBPartitioning, qt.DeepEquals, test.want)
+			c.Assert(db.NotDescribed.Describes(coverage.TableOption, "t"), qt.IsTrue)
+		})
+	}
+}
+
+// A table whose settings the reader cannot read is refused rather than read as
+// YDB's defaults, which a plan would then move the table back to.
+func TestReader_TableSettings_FailurePath(t *testing.T) {
+	withUnknownField := plainTable()
+	unknown := protowire.AppendTag(nil, 99, protowire.VarintType)
+	withUnknownField.PartitioningSettings.ProtoReflect().SetUnknown(protowire.AppendVarint(unknown, 1))
+	withUnknownFilter := plainTable()
+	withUnknownFilter.KeyBloomFilter = Ydb.FeatureFlag_Status(7)
+
+	tests := []struct {
+		name      string
+		described *Ydb_Table.DescribeTableResult
+		wantErr   string
+	}{
+		{name: "a field the protocol buffers do not model", described: withUnknownField,
+			wantErr: `YDB table /local/t: its partitioning carries field 99, which this build of Ptah does not read`},
+		{name: "a filter value the reader does not know", described: withUnknownFilter,
+			wantErr: `YDB table /local/t: its key bloom filter: the value 7 is not one this build of Ptah reads`},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			source := fakeSource{
+				directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
+				tables:      map[string]*Ydb_Table.DescribeTableResult{"/local/t": test.described},
+			}
+
+			db, err := ydbschema.NewReaderFromSource(source, "/local", capability.YDB262()).ReadSchemaContext(context.Background())
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(db, qt.IsNil)
 		})
 	}
 }

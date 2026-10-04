@@ -146,6 +146,10 @@ func toDBTables(
 			// declares, so a file-to-file comparison of one document against
 			// itself has nothing to plan for it.
 			RowDeletionPolicy: table.RowDeletionPolicy.Clone(),
+			// A database built from the document carries the YDB settings it
+			// declares, so a file-to-file comparison of one document against
+			// itself has nothing to plan for them.
+			YDBPartitioning: table.YDBPartitioning.Clone(),
 		})
 	}
 	return out

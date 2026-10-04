@@ -14,6 +14,7 @@ import (
 	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbgap"
+	"ptah.run/internal/ydbpartition"
 	"ptah.run/internal/ydbsequence"
 	"ptah.run/internal/ydbttl"
 	"ptah.run/internal/ydbtype"
@@ -22,7 +23,8 @@ import (
 // mysqlTableOptions are the table options a MySQL-family declaration carries
 // that describe MySQL's storage and nothing YDB has. They are dropped with a
 // record, as every non-MySQL renderer drops them. An option outside this set
-// is a YDB table setting, which is a later phase's work and is refused.
+// is refused: a table's YDB settings are typed fields of the declaration, never
+// options.
 var mysqlTableOptions = map[string]bool{
 	"ENGINE":            true,
 	"CHARSET":           true,
@@ -75,7 +77,7 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	if err := checkKeyTypes(node.Name, keyColumns, columnTypes); err != nil {
 		return err
 	}
-	settings, err := r.tableSettings(node, columnTypes)
+	settings, err := r.withSettings(node, keyColumns, columnTypes)
 	if err != nil {
 		return err
 	}
@@ -242,7 +244,8 @@ func (r *Renderer) refuseTableDeclarations(node *ast.CreateTableNode) error {
 		value := node.Options[key]
 		upper := strings.ToUpper(strings.TrimSpace(key))
 		if !mysqlTableOptions[upper] {
-			return refuseGap(ydbgap.TableSettings, fmt.Sprintf("the table option %s=%s on %s", key, value, subject))
+			return refuseFact(subject, fmt.Sprintf("the YDB renderer writes no table option %s=%s; a table's YDB "+
+				"settings are declared through the attributes named for them", key, value))
 		}
 		if dropped == nil {
 			dropped = make(map[string]string)
@@ -251,6 +254,21 @@ func (r *Renderer) refuseTableDeclarations(node *ast.CreateTableNode) error {
 	}
 	r.sink.RecordDroppedTableOptions(node.Name, dropped)
 	return r.refuseTableConstraints(node)
+}
+
+// withSettings writes everything the table's WITH clause carries: the TTL
+// first, then the partitioning, read replicas, key bloom filter and starting
+// layout.
+func (r *Renderer) withSettings(node *ast.CreateTableNode, keyColumns []string, columnTypes map[string]string) ([]string, error) {
+	settings, err := r.tableSettings(node, columnTypes)
+	if err != nil {
+		return nil, err
+	}
+	partitioning, err := r.partitioningSettings(node, keyColumns, columnTypes)
+	if err != nil {
+		return nil, err
+	}
+	return append(settings, partitioning...), nil
 }
 
 // tableSettings writes the settings the table's WITH clause carries: its TTL,
@@ -297,6 +315,50 @@ func (r *Renderer) ttlSetting(subject string, policy *ast.RowDeletionPolicySpec)
 		return "", refuseFact(subject, err.Error())
 	}
 	return setting, nil
+}
+
+// partitioningSettings writes the settings of a row table its WITH clause
+// carries: how it splits into partitions, its read replicas, its key bloom
+// filter, and the partitions it starts with, each as the declaration names it.
+// A setting the target has no key for is refused by the key, a declaration YDB
+// refuses is refused with YDB's reason, and a starting layout is held to the
+// table's key; see [ydbpartition.LayoutClause].
+func (r *Renderer) partitioningSettings(node *ast.CreateTableNode, keyColumns []string, columnTypes map[string]string) ([]string, error) {
+	spec := node.YDBPartitioning
+	if spec.IsZero() {
+		return nil, nil
+	}
+	subject := fmt.Sprintf("table %q", node.Name)
+	if err := r.refusePartitioningKeys(subject, spec); err != nil {
+		return nil, err
+	}
+	if _, err := ydbpartition.ResolveTable(spec, ydbpartition.DefaultTableSettings()); err != nil {
+		return nil, refuseFact(subject, err.Error())
+	}
+	keyTypes := make([]string, len(keyColumns))
+	for i, column := range keyColumns {
+		keyTypes[i] = columnTypes[column]
+	}
+	layout, err := ydbpartition.LayoutClause(spec, keyTypes, r.caps)
+	if err != nil {
+		return nil, refuseFact(subject, err.Error())
+	}
+	settings := ydbpartition.CreateClause(spec)
+	if layout != "" {
+		settings = append(settings, layout)
+	}
+	return settings, nil
+}
+
+// refusePartitioningKeys refuses the settings a declaration names that the
+// target has no capability key for; see [ydbpartition.Requirements].
+func (r *Renderer) refusePartitioningKeys(subject string, spec *ast.YDBTablePartitioningSpec) error {
+	for _, requirement := range ydbpartition.Requirements(spec) {
+		if !r.caps.Has(requirement.Key) {
+			return refuseKey(requirement.Key, subject+" declares its "+requirement.Settings)
+		}
+	}
+	return nil
 }
 
 // refuseTableConstraints refuses every table constraint but the key. YDB has

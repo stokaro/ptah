@@ -253,7 +253,7 @@ func TestGenerateMigrationAST_ColumnFamilies_RebuildCarriesThem(t *testing.T) {
 	c.Assert(got, qt.Contains, "    INDEX `items_label` GLOBAL SYNC ON (`label`),\n"+
 		"    FAMILY `cold` (COMPRESSION = 'lz4'),\n"+
 		"    FAMILY `default` (COMPRESSION = 'lz4'),\n"+
-		"    FAMILY `extra` (COMPRESSION = 'off')\n);\n")
+		"    FAMILY `extra` (COMPRESSION = 'off')\n"+heldDefaults)
 }
 
 // TestGenerateMigrationAST_ColumnFamilies_RebuildRefusesWhatItCannotRead

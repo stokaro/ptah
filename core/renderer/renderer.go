@@ -80,6 +80,7 @@ import (
 	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
+	"ptah.run/internal/ydbpartition"
 )
 
 // RenderVisitor defines the interface for rendering AST nodes to SQL statements.
@@ -681,6 +682,9 @@ func prepareCreateTableNode(
 	if err := refuseRowDeletionPolicy(dialect, caps, node.Name, node.RowDeletionPolicy); err != nil {
 		return nil, err
 	}
+	if err := refuseTablePartitioning(dialect, caps, declaring(node.Name), node.YDBPartitioning); err != nil {
+		return nil, err
+	}
 	return &cloned, nil
 }
 
@@ -760,6 +764,71 @@ func refuseDeclaredColumnFamilies(dialect string, caps capability.Capabilities, 
 func refuseDeclaredRowDeletionPolicies(dialect string, caps capability.Capabilities, tables []schemamodel.Table) error {
 	for _, table := range tables {
 		if err := refuseRowDeletionPolicy(dialect, caps, table.Name, table.RowDeletionPolicy); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// refuseTablePartitioning refuses subject's YDB settings -- how a row table
+// splits into partitions, its read replicas and its key bloom filter -- on a
+// target without the capability key each needs; see
+// [ydbpartition.Requirements]. A renderer that has no such setting writes the
+// table without it, and the table then splits, replicates and filters as the
+// server's defaults say, with nothing reporting the difference. A table
+// declaring none of them passes. subject names what is refused from the
+// settings a requirement names.
+func refuseTablePartitioning(
+	dialect string,
+	caps capability.Capabilities,
+	subject func(settings string) string,
+	spec *ast.YDBTablePartitioningSpec,
+) error {
+	for _, requirement := range ydbpartition.Requirements(spec) {
+		if caps.Has(requirement.Key) {
+			continue
+		}
+		normalized := platform.NormalizeDialect(dialect)
+		return &ptaherr.CapabilityError{
+			Dialect: normalized,
+			Feature: string(requirement.Key),
+			Err:     ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
+				subject(requirement.Settings), requirement.Key, normalized),
+		}
+	}
+	return nil
+}
+
+// refuseTablePartitioningChange refuses a change of a table's YDB settings on a
+// target without the key a setting either side holds needs: a change that
+// removes read replicas needs [capability.ReadReplicas] as one that adds them
+// does.
+func refuseTablePartitioningChange(
+	dialect string,
+	caps capability.Capabilities,
+	table string,
+	change *ast.SetYDBTablePartitioningOperation,
+) error {
+	subject := func(settings string) string { return "changing the " + settings + " of " + tableref.Phrase(table) }
+	if err := refuseTablePartitioning(dialect, caps, subject, change.Partitioning); err != nil {
+		return err
+	}
+	return refuseTablePartitioning(dialect, caps, subject, change.Previous)
+}
+
+// declaring names a table's settings as the table declares them, for
+// [refuseTablePartitioning].
+func declaring(table string) func(string) string {
+	return func(settings string) string { return fmt.Sprintf("table %q declares its %s", table, settings) }
+}
+
+// validateDeclaredPartitioning refuses the first declared table whose YDB
+// partitioning, read replicas or key bloom filter the target cannot carry; see
+// [refuseTablePartitioning].
+func validateDeclaredPartitioning(dialect string, caps capability.Capabilities, tables []schemamodel.Table) error {
+	for _, table := range tables {
+		if err := refuseTablePartitioning(dialect, caps, declaring(table.QualifiedName()), table.YDBPartitioning); err != nil {
 			return err
 		}
 	}
@@ -969,7 +1038,7 @@ func prepareAlterOperation(
 		}
 		return operation, nil
 	case *ast.AddChangefeedOperation, *ast.DropChangefeedOperation, *ast.AlterChangefeedTopicOperation,
-		*ast.SetRowDeletionPolicyOperation, *ast.SetYDBColumnFamiliesOperation:
+		*ast.SetRowDeletionPolicyOperation, *ast.SetYDBColumnFamiliesOperation, *ast.SetYDBTablePartitioningOperation:
 		// One arm for a table's YDB settings, for the reason the column arm
 		// gives.
 		if err := validateTableSettingOperation(dialect, caps, table, operation); err != nil {
@@ -984,8 +1053,9 @@ func prepareAlterOperation(
 	}
 }
 
-// validateTableSettingOperation refuses a change to a table's changefeeds,
-// row deletion policy or YDB column families on a target that cannot carry it.
+// validateTableSettingOperation refuses a change to a table's changefeeds, its
+// row deletion policy, its YDB column families, or its YDB partitioning, read
+// replicas or key bloom filter, on a target that cannot carry it.
 func validateTableSettingOperation(
 	dialect string,
 	caps capability.Capabilities,
@@ -995,11 +1065,15 @@ func validateTableSettingOperation(
 	if families, ok := operation.(*ast.SetYDBColumnFamiliesOperation); ok {
 		return refuseColumnFamilyChange(dialect, caps, table, families)
 	}
-	if policy, ok := operation.(*ast.SetRowDeletionPolicyOperation); ok {
-		spec := &ast.RowDeletionPolicySpec{Column: policy.Column, Interval: policy.Interval, Unit: policy.Unit}
+	switch typed := operation.(type) {
+	case *ast.SetRowDeletionPolicyOperation:
+		spec := &ast.RowDeletionPolicySpec{Column: typed.Column, Interval: typed.Interval, Unit: typed.Unit}
 		return refuseRowDeletionPolicy(dialect, caps, table, spec)
+	case *ast.SetYDBTablePartitioningOperation:
+		return refuseTablePartitioningChange(dialect, caps, table, typed)
+	default:
+		return refuseChangefeeds(dialect, caps, "changing the changefeeds of "+tableref.Phrase(table))
 	}
-	return refuseChangefeeds(dialect, caps, "changing the changefeeds of "+tableref.Phrase(table))
 }
 
 // validateIndexOperation refuses an index operation that asks for an
@@ -1056,8 +1130,9 @@ func refuseChangefeeds(dialect string, caps capability.Capabilities, subject str
 	}
 }
 
-// validateDeclaredTableSettings refuses a declared table's row deletion policy
-// or changefeeds on a target that cannot write them.
+// validateDeclaredTableSettings refuses a declared table's row deletion
+// policy, column families, changefeeds, or YDB partitioning, read replicas or
+// key bloom filter, on a target that cannot write them.
 func validateDeclaredTableSettings(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
 	if err := refuseDeclaredRowDeletionPolicies(dialect, caps, database.Tables); err != nil {
 		return err
@@ -1065,7 +1140,10 @@ func validateDeclaredTableSettings(dialect string, caps capability.Capabilities,
 	if err := refuseDeclaredColumnFamilies(dialect, caps, database.Tables); err != nil {
 		return err
 	}
-	return validateDeclaredChangefeeds(dialect, caps, database)
+	if err := validateDeclaredChangefeeds(dialect, caps, database); err != nil {
+		return err
+	}
+	return validateDeclaredPartitioning(dialect, caps, database.Tables)
 }
 
 // validateDeclaredChangefeeds refuses a declared table's changefeeds on a
@@ -2076,9 +2154,9 @@ func validateDatabaseDeclarations(
 			Message: err.Error(),
 		}
 	}
-	// A row deletion policy and a changefeed are refused here for the same
-	// reason: a target without them must refuse before the first statement,
-	// not at the CREATE TABLE that carries one.
+	// A row deletion policy, a changefeed and a YDB table's other settings are
+	// refused here for the same reason: a target without them must refuse
+	// before the first statement, not at the CREATE TABLE that carries one.
 	if err := validateDeclaredTableSettings(dialect, caps, database); err != nil {
 		return err
 	}
