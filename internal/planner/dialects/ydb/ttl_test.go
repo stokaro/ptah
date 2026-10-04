@@ -225,6 +225,26 @@ func TestGenerateMigrationAST_TableRebuild_CarriesTheTTL(t *testing.T) {
 	c.Assert(got, qt.Not(qt.Contains), "RESET (TTL)")
 }
 
+// A rebuilt table writes its TTL into the new CREATE TABLE, and on a target
+// without row deletion policies the plan is refused before any node is
+// returned rather than at render time.
+func TestGenerateMigrationAST_TableRebuild_TTLWithoutTheKey(t *testing.T) {
+	c := qt.New(t)
+	declaration := appItems(field("label", "TEXT", true), field("n", "BIGINT", true), field("ts", "TIMESTAMP", true))
+	declaration.Table.RowDeletionPolicy = &ast.RowDeletionPolicySpec{Column: "ts", Interval: "P30D"}
+	diff := modified(difftypes.TableDiff{
+		TableName: "app.items", Desired: declaration,
+		ColumnsModified:         []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}},
+		RowDeletionPolicyChange: &difftypes.RowDeletionPolicyChange{Desired: declaration.Table.RowDeletionPolicy},
+	})
+	caps := capability.YDB262().With(capability.RowDeletionPolicyEpochColumn, false).With(capability.RowDeletionPolicy, false)
+
+	nodes, err := ydb.NewWithCapabilities(caps).WithTableRebuild(true).GenerateMigrationAST(diff)
+
+	c.Assert(err, qt.ErrorMatches, `the row deletion policy of table "app.items", which requires target capability row_deletion_policy, .*`)
+	c.Assert(nodes, qt.IsNil)
+}
+
 // TestGenerateMigrationAST_NewTableTTL writes a new table's TTL inside its
 // CREATE TABLE.
 func TestGenerateMigrationAST_NewTableTTL(t *testing.T) {

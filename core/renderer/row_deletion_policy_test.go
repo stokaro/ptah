@@ -58,6 +58,13 @@ func TestRender_RowDeletionPolicy_FailurePath(t *testing.T) {
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(statements, qt.IsNil)
 
+			// The validation a plan runs before it compares: without it a
+			// planner that has no such statement leaves a table that exists
+			// without the declared policy, and reports the schema synced.
+			err = renderer.ValidateSchemaWithCapabilities(policySchema("TIMESTAMP", policy), test.dialect, test.caps)
+			c.Assert(err, qt.ErrorMatches, `table "t" declares a row deletion policy, which requires target capability `+
+				`row_deletion_policy, .*`)
+
 			change := &ast.AlterTableNode{Name: "t", Operations: []ast.AlterOperation{
 				&ast.SetRowDeletionPolicyOperation{Column: "c", Interval: "P30D"},
 			}}
