@@ -107,12 +107,12 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 195 capabilities below:
+Across the 196 capabilities below:
 
 | Reading | Count |
 | --- | --- |
 | Ptah supports it fully | 182 |
-| Ptah supports it with a stated limitation | 2 |
+| Ptah supports it with a stated limitation | 3 |
 | Ptah does not implement it | 0 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 11 |
 | Ptah and Atlas CE both support it | 64 |
@@ -356,6 +356,7 @@ seven of them as open capabilities regardless.
 | TiDB and LibSQL | ✅ | ✅ | ✅ | TiDB is reached through `mysql://`, which both binaries do and neither exposes as its own driver. `libsql://` and `libsql+ws://` resolve onto the SQLite dialect over the remote transport. |
 | Triggers | ✅ | ❌ | ✅ | Every engine spelling renders the same trigger DDL and four readers read them back. ClickHouse and Spanner have none and name the omission; MySQL statement triggers and SQL Server BEFORE do not exist. |
 | Views and materialized views | ✅ | ❌ | ✅ | Plain views work everywhere. Materialized views render on PostgreSQL, CockroachDB, YugabyteDB and ClickHouse, whose scheduled form carries its REFRESH EVERY\|AFTER clause. |
+| YDB (ydb, ydbs) | 🟡 | ❌ | ❌ | Row tables, global indexes, migrations, lint and data on both certified lines, natively and through ptah-compat. What YDB does not reach yet is refused by name. |
 | YugabyteDB (yugabytedb, ysql) | ✅ | ❌ | ✅ | Roles, grants, RLS, sequences, domains, views, matviews, functions, triggers and CREATE INDEX CONCURRENTLY are enabled. Three keys stay off because the server refuses them, not Ptah. |
 
 </div>

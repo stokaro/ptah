@@ -1340,8 +1340,8 @@ a duration, an empty one included, is refused by the flag parser with Atlas's
 fails the apply before the locked target reinspection; a strict target-policy
 refusal happens before the timeout is consulted. PostgreSQL and YugabyteDB (`pg_advisory_lock`),
 MySQL and MariaDB (`GET_LOCK`), and SQL Server (`sp_getapplock`) use real
-database locks. YDB, which this surface does not connect to, takes a
-coordination-node semaphore on the native surface.
+database locks, and YDB takes a semaphore on its coordination node
+`ptah_locks`.
 
 Every other dialect has no advisory-lock semantics: the apply proceeds without
 a lock, and an explicitly passed `--lock-timeout` prints a note on stderr. The

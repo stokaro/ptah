@@ -22,9 +22,11 @@ disposition: keep
 ---
 
 The drop-in rule has two directions and they are not symmetric. `ptah-compat`
-must never exit `0` where the pinned Atlas community binary v1.3.0 exits `1`;
-that direction is a correctness failure and there are no entries for it. The
-other direction — `ptah-compat` exits `1` where that binary exits `0` — is a
+must never exit `0` where the pinned Atlas community binary v1.3.0 exits `1`
+over a mistake in the invocation; that direction is a correctness failure and
+there are no entries for it. A database engine the binary has no driver for is
+not a mistake, and [A YDB database URL](#a-ydb-database-url) is the one entry
+of that kind. The other direction — `ptah-compat` exits `1` where that binary exits `0` — is a
 usability failure for a drop-in replacement, and it is allowed only where the
 refusal is more useful than the acceptance.
 
@@ -137,6 +139,7 @@ own measurement conditions.
 | [A whole server cleaned without an opt-in](#a-whole-server-cleaned-without-an-opt-in) | refuses `schema clean` on a MySQL or MariaDB URL naming no database unless `PTAH_ALLOW_SERVER_CLEAN=1`, and lists the databases | drops every user database at exit `0` |
 | [A dev server that is the `--to` side, or beside one database](#a-dev-server-that-is-the---to-side-or-beside-one-database) | refuses both on `migrate diff` before the replay | replays onto a `--to` server that holds no database, and diffs one database against a server |
 | [A dev database beside a whole server](#a-dev-database-beside-a-whole-server) | refuses it on `schema apply` for every desired schema, before the dev database is contacted | plans a document declaring one database, and replays SQL onto the dev database's server before it refuses |
+| [A YDB database URL](#a-ydb-database-url) | serves it on every verb in the default profile, and refuses it in the binary's words under `PTAH_ATLAS_STRICT_COMPAT=1` | has no YDB driver: `sql/sqlclient: unknown driver "ydb"` |
 | [A realm beside one database on a dev server](#a-realm-beside-one-database-on-a-dev-server) | refuses the pair on `schema diff`, with the binary's own `schema apply` sentence for it | plans databases the one-database side never read |
 
 ## A `--config` selection naming more than one file
@@ -1115,6 +1118,36 @@ before it connects. The divergence is stricter, not looser: `ptah-compat`
 exits `1` where the binary exits `0`, never the reverse.
 
 **Tracking.** [`stokaro/ptah#3885`](https://github.com/stokaro/ptah/issues/3885)
+
+## A YDB database URL
+
+**Type.** Ptah extension
+
+**Current boundary.** No Atlas edition has a YDB driver. The default profile
+takes a `ydb://` or `ydbs://` URL on every verb, with no `PTAH_*` variable to
+turn it on, and runs the native capability behind each verb. The strict profile
+refuses it in the binary's words, from a flag, `atlas.hcl` or a data source the
+file connects to.
+
+Measured on 2026-10-04 against local-ydb 26.2.1.14, every exit status read from
+an unpiped invocation:
+
+| Invocation | Pinned community binary v1.3.0 | `ptah-compat` | `ptah-compat` under `PTAH_ATLAS_STRICT_COMPAT=1` |
+| --- | --- | --- | --- |
+| `schema inspect`, `schema apply`, `schema diff`, `schema clean`, `migrate apply`, `migrate status` or `migrate set` with `--url ydb://...` | exit `1`, `sql/sqlclient: unknown driver "ydb". See: https://atlasgo.io/url` | exit `0` | exit `1`, the same sentence |
+| `schema inspect --url ydbs://...` | exit `1`, the same sentence naming `"ydbs"` | dials the server over TLS: a plaintext port answers `tls: first record does not look like a TLS handshake` | exit `1`, the same sentence naming `"ydbs"` |
+| `migrate diff`, `migrate lint` or `migrate validate` with `--dev-url ydb://...` | exit `1`, the same sentence | exit `1`, a YDB database cannot be a dev database yet | exit `1`, the same sentence |
+| `atlas.hcl` with a `data "sql"` source on a `ydb://` URL | exit `1`, `data.sql.tenants: opening connection: sql/sqlclient: unknown driver "ydb". See: https://atlasgo.io/url` | exit `0` | exit `1`, `data.sql.tenants: opening database: sql/sqlclient: unknown driver "ydb". See: https://atlasgo.io/url` |
+
+The never-looser rule is about an invocation the binary refuses because the
+user got something wrong. A YDB URL is a request for an engine the binary lacks,
+and refusing it in the default profile would remove a capability Ptah has.
+`docker://ydb/...` answers `unsupported docker image "ydb"` on both binaries and
+in both profiles, because Ptah does not start a YDB dev database yet. The data
+source row differs in its middle words, `opening database` where the binary
+says `opening connection`, on every engine.
+
+**Tracking.** [`stokaro/ptah#4015`](https://github.com/stokaro/ptah/issues/4015)
 
 ## Not on this page
 

@@ -31,8 +31,9 @@ Ptah applies reads back as itself, which the integration suite checks in CI
 against live YDB 26.2 and 25.1 servers. The nightly capability matrix runs the
 same suite on each YDB line it probes.
 
-Dev databases, `ptah-compat` and the YDB object families such as TTL, column
-families, changefeeds, views and vector indexes are not supported yet. See
+`ptah-compat` takes a YDB URL on every verb; see [ptah-compat](#ptah-compat).
+Dev databases and the YDB object families such as TTL, column families,
+changefeeds, views and vector indexes are not supported yet. See
 [What is not supported yet](#what-is-not-supported-yet).
 
 ## Connecting
@@ -423,6 +424,67 @@ condition other than equalities between the joined tables' columns, and no
 OFFSET without a LIMIT. The builder refuses each before it renders anything,
 with the capability key the target lacks, and `RETURNING` is refused on 25.1
 and 25.2; see the [query builder](../../extend/query-builder/#dialect-coverage).
+
+## ptah-compat
+
+No Atlas edition has a YDB driver, so YDB on `ptah-compat` is a Ptah
+extension. The default profile takes a `ydb://` or `ydbs://` URL on every verb,
+from a flag, its `PTAH_*` variable or `atlas.hcl`, with no variable to turn it
+on. Each verb runs the native capability behind it: the planner and the writer
+for `schema apply`, the reader for `schema inspect`, the migrator for the
+`migrate` verbs, and the data layer for declared rows and `script`.
+
+`migrate apply`, `status`, `set` and `down` keep the Atlas revision table
+`atlas_schema_revisions`, at the database root or in the directory
+`--revisions-schema` names. `schema apply` and `migrate apply` take their lock
+as a semaphore on the coordination node `ptah_locks`, and `--lock-timeout`
+bounds how long they wait for it.
+
+`schema inspect` writes YDB's own type names in its HCL, which no Atlas binary
+reads; Ptah reads it back. A type is written bare, `Decimal(22,9)` included, a
+`Serial` column as its integer type with `auto_increment = true`, and an index's
+kind as its `type`, such as `"GLOBAL SYNC"` or `"GLOBAL ASYNC"`. A directory is a
+`schema` block, and a table at the database root, which has no name, carries no
+`schema` attribute:
+
+```hcl
+schema "shop" {
+}
+
+table "users" {
+  column "id" {
+    type = Int64
+    auto_increment = true
+  }
+  primary_key {
+    columns = [column.id]
+  }
+}
+
+table "orders" {
+  schema = schema.shop
+  column "total" {
+    type = Decimal(22,9)
+  }
+}
+```
+
+The YDB driver reports a row count it did not measure, so a `script exec` or
+`script loop` step reports its count as not reported, and `expect_rows` is
+refused rather than judged against the number. A script spells parameters the
+way YQL reads them, `$p1`, `$p2` and so on; `?` is not YQL.
+
+Verbs that need a dev database are refused until YDB can be one: `migrate
+diff`, `migrate lint`, `migrate checkpoint`, `migrate validate --dev-url`,
+`schema plan validate` and `schema apply --plan`. Every local-ydb server serves
+the database `/local`, so two of them are refused as one database before that.
+
+`PTAH_ATLAS_STRICT_COMPAT=1` reproduces the community binary, which answers
+`sql/sqlclient: unknown driver "ydb". See: https://atlasgo.io/url` on every verb,
+with `ydbs` for a `ydbs://` URL. Strict mode refuses a YDB URL in those words
+wherever it comes from, a data source in `atlas.hcl` included; a `PTAH_*`
+variable is refused as a variable. See
+[Compatibility differences](../../atlas/retained-divergences/#a-ydb-database-url).
 
 ## What is not supported yet
 
