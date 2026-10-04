@@ -193,7 +193,7 @@ func TestYDBBinary_DevDatabaseIsARealm(t *testing.T) {
 				c.Cleanup(func() { dropDirectory(c, conn, "ptah_ydb_devrealm", "items") })
 
 				applied, err := runBinary(ctx, binary, "schema", "apply", "--db-url", url, "--root-dir", entities,
-					"--dev-url", url, "--auto-approve")
+					"--schemas", "ptah_ydb_devrealm", "--dev-url", url, "--auto-approve")
 
 				c.Assert(err, qt.IsNil, qt.Commentf("%s", applied))
 				c.Assert(applied, qt.Contains, "Schema apply completed successfully.")
@@ -211,7 +211,7 @@ func TestYDBBinary_DevDatabaseIsARealm(t *testing.T) {
 				writeFiles(c, entities, map[string]string{"items.go": devRealmEntities})
 
 				refused, err := runBinary(ctx, binary, "schema", "apply", "--db-url", url, "--root-dir", entities,
-					"--dev-url", url, "--auto-approve")
+					"--schemas", "ptah_ydb_devrealm", "--dev-url", url, "--auto-approve")
 
 				c.Assert(err, qt.IsNotNil)
 				c.Assert(refused, qt.Contains, "--dev-url must not point at the target database")
@@ -272,7 +272,7 @@ func TestYDBBinary_DevDatabaseOnAnotherServer(t *testing.T) {
 			derived, deriveErr := runBinary(ctx, binary, append([]string{"migrations", "down", "--target", "0",
 				"--plan", "--shadow-db", devURL, "--confirm"}, migrationFlags...)...)
 			applied, applyErr := runBinary(ctx, binary, "schema", "apply", "--db-url", url, "--root-dir", entities,
-				"--dev-url", devURL, "--auto-approve")
+				"--schemas", "ptah_ydb_devrealm", "--dev-url", devURL, "--auto-approve")
 
 			c.Assert(upErr, qt.IsNil, qt.Commentf("%s", up))
 			c.Assert(verifyErr, qt.IsNil, qt.Commentf("%s", verified))
