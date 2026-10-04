@@ -20,7 +20,7 @@ import (
 // lint output does not repeat what it reports.
 func ydbSecretInClearRule() Rule {
 	return Rule{
-		Code:          "YD120",
+		Code:          "YD140",
 		Title:         "secret value written in the migration",
 		Severity:      SeverityError,
 		Dialects:      ydbOnly,

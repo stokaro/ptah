@@ -8,10 +8,10 @@ import (
 	"ptah.run/migration/lint"
 )
 
-// TestYD120_ReportsASecretValueInTheMigration reports every statement that
+// TestYD140_ReportsASecretValueInTheMigration reports every statement that
 // writes a secret's value into the file, up and down alike, and none that
 // refers to a variable Ptah defines when the statement runs.
-func TestYD120_ReportsASecretValueInTheMigration(t *testing.T) {
+func TestYD140_ReportsASecretValueInTheMigration(t *testing.T) {
 	tests := []struct {
 		name  string
 		files map[string]string
@@ -22,14 +22,14 @@ func TestYD120_ReportsASecretValueInTheMigration(t *testing.T) {
 			files: map[string]string{
 				"0001_s.up.sql": "CREATE SECRET `ext/pw` WITH (value = 's3cr3t');\nALTER SECRET `ext/pw` WITH (value = \"rotated\");\n",
 			},
-			want: []string{"0001_s.up.sql:1:YD120", "0001_s.up.sql:2:YD120"},
+			want: []string{"0001_s.up.sql:1:YD140", "0001_s.up.sql:2:YD140"},
 		},
 		{
 			name: "a named expression Ptah does not define",
 			files: map[string]string{
 				"0001_s.up.sql": "$v = 's3cr3t';\nCREATE SECRET pw WITH (value = $v);\n",
 			},
-			want: []string{"0001_s.up.sql:2:YD120"},
+			want: []string{"0001_s.up.sql:2:YD140"},
 		},
 		{
 			name: "the deprecated secret object, in the down half too",
@@ -37,7 +37,7 @@ func TestYD120_ReportsASecretValueInTheMigration(t *testing.T) {
 				"0001_s.up.sql":   "CREATE OBJECT pw (TYPE SECRET) WITH value = 's3cr3t';\n",
 				"0001_s.down.sql": "UPSERT OBJECT pw (TYPE SECRET) WITH value = 'old';\n",
 			},
-			want: []string{"0001_s.down.sql:1:YD120", "0001_s.up.sql:1:YD120"},
+			want: []string{"0001_s.down.sql:1:YD140", "0001_s.up.sql:1:YD140"},
 		},
 		{
 			name: "the statements Ptah writes: a reference, a rotation and a drop",
@@ -57,9 +57,9 @@ func TestYD120_ReportsASecretValueInTheMigration(t *testing.T) {
 	}
 }
 
-// TestYD120_NamesTheSecretAndNeverTheValue says where the value should come
+// TestYD140_NamesTheSecretAndNeverTheValue says where the value should come
 // from, and repeats nothing the statement wrote after the secret's path.
-func TestYD120_NamesTheSecretAndNeverTheValue(t *testing.T) {
+func TestYD140_NamesTheSecretAndNeverTheValue(t *testing.T) {
 	c := qt.New(t)
 	target, err := lint.ResolveTarget("ydb", "")
 	c.Assert(err, qt.IsNil)

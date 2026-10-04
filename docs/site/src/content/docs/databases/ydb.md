@@ -699,7 +699,7 @@ disabled. Please contact your system administrator to enable it`). 25.1 and
 25.2 have only the deprecated `CREATE OBJECT ... (TYPE SECRET)`. A user cannot
 list such a secret, and the database administrator reads its value, and every
 value it ever held, in clear from `.metadata/secrets`. Ptah models it on no
-line, never reads `.metadata`, and lint rule `YD120` reports a migration that
+line, never reads `.metadata`, and lint rule `YD140` reports a migration that
 writes a secret's value, in either form. HCL, DBML and SQL documents cannot
 name a secret, so their silence does not plan a drop, and `schema inspect`
 warns about each secret it leaves out of an HCL document.
