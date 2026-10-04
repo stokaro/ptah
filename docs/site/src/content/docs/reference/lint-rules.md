@@ -367,7 +367,7 @@ A YDB run reads migrations as YQL. The `YD` family above is YDB's own, and every
 
 ## SQL lint rules
 
-7 rules, reported by `ptah sql lint` over standalone SQL files, on every dialect. The compatibility surface has no verb that reaches them.
+7 rules, reported by `ptah sql lint` over standalone SQL files, on every dialect. The compatibility surface has no verb that reaches them. A YDB file is read as YQL rather than by the SQL parser, which has no YQL grammar, and can report `SQL002`, `DDL001`, `CAP001` and `SQL004` only.
 
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |

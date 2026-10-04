@@ -1,5 +1,7 @@
 package sqllint
 
+import "slices"
+
 // CatalogRule is one identifier `ptah sql lint` can report.
 //
 // The SQL linter has no rule registry to enumerate: two of its identifiers come
@@ -31,6 +33,22 @@ var catalogRules = []CatalogRule{
 	{ID: RuleUnsupportedCapability, Title: "Statement requires unsupported capability", Severity: SeverityError},
 	{ID: RuleDynamicSQL, Title: "Dynamic SQL limits static analysis", Severity: SeverityInfo},
 	{ID: RuleStatementsNotAnalyzed, Title: "Statements no rule analyzed", Severity: SeverityInfo},
+}
+
+// yqlCatalogIDs are the identifiers a YDB source can draw, in catalog order.
+// A YDB source is read as YQL rather than by the parser (see lintYQL), so the
+// parse-path and parser-backed identifiers are not among them.
+var yqlCatalogIDs = []string{
+	RuleUnsupportedStatement,
+	RuleTableWithoutPrimaryKey,
+	RuleUnsupportedCapability,
+	RuleStatementsNotAnalyzed,
+}
+
+// YQLCatalogIDs returns the identifiers `ptah sql lint` can report on a YDB
+// source, in the order of [Catalog].
+func YQLCatalogIDs() []string {
+	return slices.Clone(yqlCatalogIDs)
 }
 
 // Catalog returns every identifier `ptah sql lint` can report.

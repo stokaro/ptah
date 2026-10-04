@@ -2,6 +2,7 @@ package sqllint_test
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -117,4 +118,52 @@ func TestLintSource_OtherDialectsKeepTheParser(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(yqlFindings(findings), qt.DeepEquals, []string{`1:14 DDL001 table "t" has no primary key`})
+}
+
+// yqlEmission is a YDB source that draws one identifier, with what the run
+// needs to draw it.
+type yqlEmission struct {
+	sql     string
+	version string
+}
+
+// yqlEmissions holds one fixture per identifier YQLCatalogIDs declares, and
+// its keys are compared with the declaration, so the documented list cannot
+// claim an identifier the YQL path does not emit or omit one it does.
+var yqlEmissions = map[string]yqlEmission{
+	"SQL002": {sql: "UPSERT INTO t (id) VALUES (1);"},
+	"DDL001": {sql: "CREATE TABLE t (id Uint64 NOT NULL);"},
+	"CAP001": {sql: "ALTER TABLE t ADD COLUMN a Int64 DEFAULT 7;", version: "25.1.4.7"},
+	"SQL004": {sql: "DROP TABLE t;"},
+}
+
+func TestYQLCatalogIDs_AreWhatTheYQLPathEmits(t *testing.T) {
+	c := qt.New(t)
+
+	var emitted []string
+	for code := range yqlEmissions {
+		emitted = append(emitted, code)
+	}
+	slices.Sort(emitted)
+	declared := sqllint.YQLCatalogIDs()
+	slices.Sort(declared)
+
+	c.Assert(declared, qt.DeepEquals, emitted)
+}
+
+func TestYQLCatalogIDs_EachIsEmitted(t *testing.T) {
+	for code, emission := range yqlEmissions {
+		t.Run(code, func(t *testing.T) {
+			c := qt.New(t)
+
+			findings, err := sqllint.LintSource(sqllint.Source{Name: "x.sql", SQL: emission.sql},
+				sqllint.Options{Dialect: "ydb", Version: emission.version})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(findings, qt.HasLen, 1)
+			c.Assert(findings[0].Rule, qt.Equals, code)
+			c.Assert(findings[0].Title, qt.Equals, sqllint.CatalogTitle(code))
+			c.Assert(findings[0].Severity, qt.Equals, sqllint.CatalogSeverity(code))
+		})
+	}
 }

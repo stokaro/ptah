@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/internal/migrationlintgate"
+	"ptah.run/internal/sqllint"
 )
 
 // WriteMarkdown renders the whole enumeration: the families, both rule tables,
@@ -161,8 +162,9 @@ func writeSQLRules(w io.Writer, entries []Entry) error {
 	out.WriteString("## SQL lint rules\n\n")
 	fmt.Fprintf(&out,
 		"%d rules, reported by `ptah sql lint` over standalone SQL files, on every dialect. "+
-			"The compatibility surface has no verb that reaches them.\n\n",
-		len(rules))
+			"The compatibility surface has no verb that reaches them. A YDB file is read as YQL rather than "+
+			"by the SQL parser, which has no YQL grammar, and can report %s only.\n\n",
+		len(rules), codeList(sqllint.YQLCatalogIDs()))
 	out.WriteString(ruleTable(rules))
 	_, err := io.WriteString(w, out.String())
 	return err
