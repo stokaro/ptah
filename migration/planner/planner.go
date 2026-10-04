@@ -140,8 +140,8 @@ type Options struct {
 	// explicit rebuild of the table: a new table written from the declaration,
 	// a copy of the rows, and a swap of the two. On YDB it covers a changed
 	// primary key, a column type change and a column made NOT NULL, and
-	// without it each of those is refused with an error naming the native
-	// --allow-table-rebuild flag.
+	// without it each of those is refused with an error naming the way to ask,
+	// [Options.TableRebuildRequest].
 	//
 	// The steps of a YDB rebuild are not atomic, and rows written to the table
 	// between the copy and the swap are lost, which the plan says above the
@@ -150,6 +150,11 @@ type Options struct {
 	// without such a rebuild plans as it would without this; SQLite rebuilds a
 	// table inside one transaction and needs no request.
 	AllowTableRebuild bool
+	// TableRebuildRequest is how the caller asks for AllowTableRebuild, and a
+	// refusal of a change only a rebuild can make names it. Empty names the
+	// native --allow-table-rebuild flag; a surface that has no such flag, such
+	// as ptah-compat, passes the spelling it reads instead.
+	TableRebuildRequest string
 }
 
 // CapabilitiesFor returns the configured capability set, falling back to the
@@ -314,7 +319,9 @@ func registerBuiltInPlanners() error {
 		return err
 	}
 	if err := registerPlannerFactory(platform.YDB, func(opts Options) Planner {
-		return ydb.NewWithCapabilities(opts.CapabilitiesFor(platform.YDB)).WithTableRebuild(opts.AllowTableRebuild)
+		return ydb.NewWithCapabilities(opts.CapabilitiesFor(platform.YDB)).
+			WithTableRebuild(opts.AllowTableRebuild).
+			WithTableRebuildRequest(opts.TableRebuildRequest)
 	}); err != nil {
 		return err
 	}

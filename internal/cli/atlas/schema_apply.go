@@ -423,6 +423,11 @@ func classifiedAtlasApplyTo(opts atlasSchemaApplyOptions, projectEnv atlassource
 }
 
 func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error {
+	// Before the first early return, so a malformed value fails every apply.
+	rebuild, err := atlasTableRebuildRequested()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	if err := sqlitevirtual.ValidateExplicitURLToggle(opts.url); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -464,6 +469,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		}
 		opts.lintPolicy = projectCfg.Lint
 	}
+	policy = withAtlasTableRebuild(policy, rebuild)
 	opts.formatOutput = formatOutput
 	// The toggle belongs to every SQLite apply invocation. Resolve it as soon
 	// as the effective target URL is known, before classifying or executing a

@@ -53,7 +53,8 @@ import (
 // above its steps.
 
 // TableRebuildFlag is the native command-line flag that asks for a rebuild. A
-// refusal names it so the operator learns how to ask; the command packages
+// refusal names it so the operator learns how to ask, unless the caller named
+// its own request with [Planner.WithTableRebuildRequest]; the command packages
 // declare their flag with this spelling.
 const TableRebuildFlag = "--allow-table-rebuild"
 

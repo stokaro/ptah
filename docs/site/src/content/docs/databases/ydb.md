@@ -277,14 +277,18 @@ stood before the query.
 
 YDB has no primary key change, no column type change and no `SET NOT NULL`. A
 plan refuses each of them, naming the capability the line lacks, unless the
-command was given `--allow-table-rebuild`. Where a release line cannot make
+command was given `--allow-table-rebuild`, or `ptah-compat` ran with
+`PTAH_ALLOW_TABLE_REBUILD=1`. Where a release line cannot make
 another change in place, the refusal names the capability that line lacks.
 
 ### Table rebuilds
 
 With `--allow-table-rebuild`, `ptah schema apply`, `schema plan`, `schema diff`,
 `schema compare`, `migrations plan` and `migrations generate` plan those three
-changes as a rebuild of the table:
+changes as a rebuild of the table. `ptah-compat` takes no flag the Atlas
+community CLI lacks, so its `schema apply`, `schema diff` and `schema plan new`
+ask with the variable `PTAH_ALLOW_TABLE_REBUILD=1` instead (see
+[ptah-compat](#ptah-compat)). The rebuild is the same:
 
 1. `CREATE TABLE` a scratch table, `__ptah_rebuild_<table>`, from the
    declaration, with its indexes inside it.
@@ -553,9 +557,12 @@ The YDB driver reports a row count it did not measure, so a `script exec` or
 refused rather than judged against the number. A script spells parameters the
 way YQL reads them, `$p1`, `$p2` and so on; `?` is not YQL.
 
-`ptah-compat` plans no table rebuild, so a primary key change, a column type
-change and `SET NOT NULL` are refused there; `--allow-table-rebuild` belongs to
-the native commands.
+A primary key change, a column type change and `SET NOT NULL` are refused
+unless `PTAH_ALLOW_TABLE_REBUILD=1` asks `schema apply`, `schema diff` or
+`schema plan new` for a [table rebuild](#table-rebuilds), and the refusal names
+the variable. `migrate diff` reads it too, and plans with it once YDB can be its
+dev database. A malformed value fails the run before it does anything, and
+strict mode refuses the variable.
 
 Verbs that need a dev database are refused until YDB can be one: `migrate
 diff`, `migrate lint`, `migrate checkpoint`, `migrate validate --dev-url`,
