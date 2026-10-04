@@ -83,31 +83,58 @@ type schemaApplyOptions struct {
 }
 
 // schemaApplyLockSession runs one apply with the lock held. The callback is
-// handed the pinned session and nothing else: whether that session carries a
-// real database lock is settled from --db-url before the connection is opened,
-// so no caller reads the lock back here.
+// handed the pinned session and a context that ends when the lock is lost:
+// whether that session carries a real database lock is settled from --db-url
+// before the connection is opened, so no caller reads the lock back here.
 type schemaApplyLockSession func(
 	context.Context,
 	*dbschema.DatabaseConnection,
 	string,
 	time.Duration,
-	func(*dbschema.DatabaseConnection) error,
+	applyLockScope,
+	func(context.Context, *dbschema.DatabaseConnection) error,
 ) (runErr, releaseErr error)
+
+// applyLockScope says what an apply may write, which decides how it takes
+// its lock.
+type applyLockScope int
+
+const (
+	// applyWrites is an apply that writes; taking its lock may create the
+	// state the lock lives on.
+	applyWrites applyLockScope = iota
+	// applyPreviews is a dry run, which writes nothing, and takes its lock
+	// only where that writes nothing either.
+	applyPreviews
+)
+
+// lockScope is the scope of the apply these options run.
+func (o schemaApplyOptions) lockScope() applyLockScope {
+	if o.dryRun {
+		return applyPreviews
+	}
+	return applyWrites
+}
 
 func withSchemaApplyLockSession(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	name string,
 	timeout time.Duration,
-	use func(*dbschema.DatabaseConnection) error,
+	scope applyLockScope,
+	use func(context.Context, *dbschema.DatabaseConnection) error,
 ) (runErr, releaseErr error) {
-	return atlasschema.WithApplyLockSession(
+	session := atlasschema.WithApplyLockSession
+	if scope == applyPreviews {
+		session = atlasschema.WithApplyPreviewLockSession
+	}
+	return session(
 		ctx,
 		conn,
 		name,
 		timeout,
-		func(session *dbschema.DatabaseConnection, _ *atlasschema.ApplyLock) error {
-			return use(session)
+		func(ctx context.Context, pinned *dbschema.DatabaseConnection, _ *atlasschema.ApplyLock) error {
+			return use(ctx, pinned)
 		},
 	)
 }
@@ -439,18 +466,23 @@ func applySchema(
 		}
 	}
 
-	// Lock ownership and every authoritative target action share one physical
-	// session. If that session disappears, the target operation fails with it;
-	// no pooled connection can continue the DDL after losing the lock.
+	// Every authoritative target action runs on one pinned session, under a
+	// context that ends when the lock is lost. Where the lock lives on that
+	// session (PostgreSQL, MySQL, MariaDB, SQL Server), losing the session
+	// loses both, and the DDL fails with it. A YDB lock is a semaphore held by
+	// a coordination session of its own, so losing it ends the context: the
+	// statement running then is canceled, no later one starts, and the apply
+	// fails with the loss.
 	var outcome atlasschema.ApplyOutcome
 	runErr, releaseErr := lockSession(
 		cmd.Context(),
 		conn,
 		"",
 		lockTimeout,
-		func(session *dbschema.DatabaseConnection) error {
+		opts.lockScope(),
+		func(ctx context.Context, session *dbschema.DatabaseConnection) error {
 			var applyErr error
-			outcome, applyErr = runSchemaApplyOnLockedSession(cmd, opts, session, desired, projectCfg, txMode, run)
+			outcome, applyErr = runSchemaApplyOnLockedSession(ctx, cmd, opts, session, desired, projectCfg, txMode, run)
 			return applyErr
 		},
 	)
@@ -462,6 +494,7 @@ func applySchema(
 }
 
 func runSchemaApplyOnLockedSession(
+	ctx context.Context,
 	cmd *cobra.Command,
 	opts schemaApplyOptions,
 	conn *dbschema.DatabaseConnection,
@@ -470,7 +503,7 @@ func runSchemaApplyOnLockedSession(
 	txMode migrator.MigrationTxMode,
 	run *applyRun,
 ) (atlasschema.ApplyOutcome, error) {
-	plan, err := atlasschema.PrepareApply(cmd.Context(), conn, atlasschema.ApplyRuntimeOptions{
+	plan, err := atlasschema.PrepareApply(ctx, conn, atlasschema.ApplyRuntimeOptions{
 		ProjectRoot:         schemaroot.Of(opts.rootDirs),
 		DevURL:              opts.devURL,
 		DevServerDisposable: opts.devServerDisposable,
@@ -497,7 +530,7 @@ func runSchemaApplyOnLockedSession(
 	sqlText := plan.SQL()
 	statements := plan.Statements()
 	if opts.edit {
-		edited, err := editSchemaApplySQL(cmd.Context(), sqlText)
+		edited, err := editSchemaApplySQL(ctx, sqlText)
 		if err != nil {
 			return "", err
 		}
@@ -516,7 +549,7 @@ func runSchemaApplyOnLockedSession(
 	// The dev database rehearses the exact ordered statements that would be
 	// applied — including edited SQL — and a failed rehearsal refuses the
 	// apply before the target is touched.
-	if err := plan.SimulateOnDev(cmd.Context(), atlasschema.SimulateOptions{
+	if err := plan.SimulateOnDev(ctx, atlasschema.SimulateOptions{
 		DevURL:              opts.devURL,
 		TargetURL:           opts.dbURL,
 		DesiredURLs:         opts.toURLs,
@@ -538,10 +571,10 @@ func runSchemaApplyOnLockedSession(
 	if opts.edit {
 		// The edited SQL replaces the prepared plan as the executable payload.
 		conn.SchemaWriter().SetDryRun(false)
-		if err := atlasschema.ApplySQL(cmd.Context(), conn, txMode, sqlText); err != nil {
+		if err := atlasschema.ApplySQL(ctx, conn, txMode, sqlText); err != nil {
 			return "", fmt.Errorf("apply schema changes: %w", err)
 		}
-	} else if err := plan.Execute(cmd.Context()); err != nil {
+	} else if err := plan.Execute(ctx); err != nil {
 		return "", fmt.Errorf("apply schema changes: %w", err)
 	}
 	return atlasschema.ApplyOutcomeApplied, nil
@@ -618,17 +651,18 @@ func applySchemaPlanFile(
 		return "", err
 	}
 
-	// Fingerprint verification and execution share the session that owns the
-	// lock, so no pooled connection can continue after that lock is lost.
+	// Fingerprint verification and execution share one pinned session, under
+	// a context that ends when the lock is lost; see applySchema.
 	var outcome atlasschema.ApplyOutcome
 	runErr, releaseErr := lockSession(
 		cmd.Context(),
 		conn,
 		"",
 		lockTimeout,
-		func(session *dbschema.DatabaseConnection) error {
+		opts.lockScope(),
+		func(ctx context.Context, session *dbschema.DatabaseConnection) error {
 			var applyErr error
-			outcome, applyErr = runSchemaApplyPlanFileOnLockedSession(cmd, opts, session, plan, txMode, run)
+			outcome, applyErr = runSchemaApplyPlanFileOnLockedSession(ctx, cmd, opts, session, plan, txMode, run)
 			return applyErr
 		},
 	)
@@ -640,6 +674,7 @@ func applySchemaPlanFile(
 }
 
 func runSchemaApplyPlanFileOnLockedSession(
+	ctx context.Context,
 	cmd *cobra.Command,
 	opts schemaApplyOptions,
 	conn *dbschema.DatabaseConnection,
@@ -647,7 +682,7 @@ func runSchemaApplyPlanFileOnLockedSession(
 	txMode migrator.MigrationTxMode,
 	run *applyRun,
 ) (atlasschema.ApplyOutcome, error) {
-	if err := atlasschema.VerifyPlanTarget(cmd.Context(), conn, plan); err != nil {
+	if err := atlasschema.VerifyPlanTarget(ctx, conn, plan); err != nil {
 		return "", err
 	}
 
@@ -672,7 +707,7 @@ func runSchemaApplyPlanFileOnLockedSession(
 
 	conn.SchemaWriter().SetDryRun(false)
 	run.evidence.Dispatched = true
-	if err := atlasschema.ApplySQL(cmd.Context(), conn, txMode, plan.SQL()); err != nil {
+	if err := atlasschema.ApplySQL(ctx, conn, txMode, plan.SQL()); err != nil {
 		return "", fmt.Errorf("apply schema changes: %w", err)
 	}
 	return atlasschema.ApplyOutcomeApplied, nil

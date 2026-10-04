@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/atlasretry"
+	"ptah.run/internal/revisiontable"
 )
 
 // defaultMigrationTagsTable is where the tag namespace lives.
@@ -28,7 +29,7 @@ import (
 // A table Ptah owns carries the extension without touching the contract, and it
 // works the same under both revision-table formats -- which a column could not,
 // since only one of the two layouts could have taken it (stokaro/ptah#1621).
-const defaultMigrationTagsTable = "ptah_migration_tags"
+const defaultMigrationTagsTable = revisiontable.Tags
 
 // MigrationTag records a directory tag and the schema version it selects.
 type MigrationTag struct {

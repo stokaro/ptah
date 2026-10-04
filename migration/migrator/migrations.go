@@ -860,6 +860,9 @@ func executeSQLStatements(ctx context.Context, conn *dbschema.DatabaseConnection
 		if migrationStatementAlreadyApplied(ctx, event.Index) {
 			continue
 		}
+		if err := migrationLockLost(ctx); err != nil {
+			return err
+		}
 		committed, err := commitStatement(ctx, event)
 		if err != nil {
 			return &MigrationExecutionError{
@@ -975,8 +978,13 @@ func runMigrationFileStatement(
 	interceptorDirectives map[string]string,
 	mode migrationExecutionMode,
 ) error {
-	// The committer is installed only on YDB, where no interceptor routes a
-	// statement, so a statement it claims has nothing to ask one about.
+	if err := migrationLockLost(ctx); err != nil {
+		return err
+	}
+	// The committer is installed only on YDB, and it claims every data query
+	// there. An interceptor is offered the schema queries alone: a data query
+	// commits in one transaction with its checkpoint, which an executor that
+	// runs the statement itself could not join (see StatementInterceptor).
 	committed, err := commitStatement(ctx, event)
 	if err != nil {
 		return migrationFileStatementError(err, event)

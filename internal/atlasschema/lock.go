@@ -98,6 +98,12 @@ type ApplyLock struct {
 // pool is used only for the independent PostgreSQL exclusion witness. The
 // lock is released before the pinned session is discarded.
 //
+// use runs under a context that ends when the lock is lost (see
+// [dblock.Lock.Guard]); only a YDB lock, which a coordination session of its
+// own holds, reports a loss. A lock lost while use ran is the run's error even
+// when use succeeded: another session may have taken the lock and changed the
+// schema the apply planned against.
+//
 // When use fails, its error and a secondary release error are returned
 // separately so callers can preserve the operation failure while reporting a
 // cleanup warning. A release failure after a successful callback is returned
@@ -107,7 +113,40 @@ func WithApplyLockSession(
 	conn *dbschema.DatabaseConnection,
 	name string,
 	timeout time.Duration,
-	use func(*dbschema.DatabaseConnection, *ApplyLock) error,
+	use func(context.Context, *dbschema.DatabaseConnection, *ApplyLock) error,
+) (runErr, releaseErr error) {
+	return withApplyLockSession(ctx, conn, name, timeout, dblock.WithLockSession, use)
+}
+
+// WithApplyPreviewLockSession is [WithApplyLockSession] for a run that writes
+// nothing, such as a dry run: it takes the lock only where taking it writes
+// nothing either (see [dblock.WithPreviewLockSession]).
+func WithApplyPreviewLockSession(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	name string,
+	timeout time.Duration,
+	use func(context.Context, *dbschema.DatabaseConnection, *ApplyLock) error,
+) (runErr, releaseErr error) {
+	return withApplyLockSession(ctx, conn, name, timeout, dblock.WithPreviewLockSession, use)
+}
+
+// lockSession is dblock.WithLockSession or dblock.WithPreviewLockSession.
+type lockSession func(
+	context.Context,
+	*dbschema.DatabaseConnection,
+	string,
+	time.Duration,
+	func(*dbschema.DatabaseConnection, *dblock.Lock) error,
+) (runErr, releaseErr error)
+
+func withApplyLockSession(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	name string,
+	timeout time.Duration,
+	session lockSession,
+	use func(context.Context, *dbschema.DatabaseConnection, *ApplyLock) error,
 ) (runErr, releaseErr error) {
 	if conn == nil {
 		return fmt.Errorf("acquire schema apply lock: %w",
@@ -118,14 +157,25 @@ func WithApplyLockSession(
 	}
 
 	callbackStarted := false
-	runErr, releaseErr = dblock.WithLockSession(
+	runErr, releaseErr = session(
 		ctx,
 		conn,
 		EffectiveApplyLockName(name),
 		timeout,
-		func(session *dbschema.DatabaseConnection, lock *dblock.Lock) error {
+		func(pinned *dbschema.DatabaseConnection, lock *dblock.Lock) error {
 			callbackStarted = true
-			return use(session, &ApplyLock{lock: lock})
+			guarded, stop := lock.Guard(ctx)
+			useErr := use(guarded, pinned, &ApplyLock{lock: lock})
+			lostErr := lock.Err()
+			stop()
+			if lostErr == nil {
+				return useErr
+			}
+			lostErr = fmt.Errorf("schema apply lock: %w; the apply stopped there", lostErr)
+			if useErr != nil && !dblock.IsLost(useErr) && !errors.Is(useErr, context.Canceled) {
+				return fmt.Errorf("%w (the apply reported: %v)", lostErr, useErr)
+			}
+			return lostErr
 		},
 	)
 	if runErr != nil && !callbackStarted {

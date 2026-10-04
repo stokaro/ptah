@@ -142,6 +142,15 @@ the flag to apply unlocked, which is what such a target does anyway.
 does lock acquires the lock and waits out the timeout, so the flag means the
 same thing there.
 
+On YDB the lock is a semaphore on the coordination node `ptah_locks`, which the
+first apply that locks creates. A dry run creates nothing: it takes the lock
+when the node exists, and runs unlocked when it does not, since no apply has
+locked that database yet. A coordination session of its own holds the
+semaphore, so the server can take it away while the apply goes on; the apply
+then cancels the statement it is running, starts no other, and fails with the
+loss. [Locking](../../versioned/apply/#locking-and---migration-lock-timeout)
+says when the server takes it.
+
 `PTAH_LOCK_TIMEOUT` fills the same flag, and a value that arrives that way
 writes a note to standard error and applies unlocked instead of refusing. The
 variable is shared: `ptah migrations up` and `ptah migrations down` read it as

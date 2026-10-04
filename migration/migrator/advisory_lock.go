@@ -113,15 +113,66 @@ func (m *Migrator) withMigrationLock(ctx context.Context, operation string, fn f
 	if err != nil {
 		return fmt.Errorf("failed to acquire migration lock for %s: %w", operation, err)
 	}
-	defer func() {
-		releaseCtx, cancel := context.WithTimeout(context.Background(), migrationAdvisoryUnlockTimeout)
-		defer cancel()
-		if err := lock.Release(releaseCtx); err != nil {
-			m.logger.Warn("failed to release migration lock", "operation", operation, "error", err)
-		}
-	}()
 
-	return fn(ctx)
+	guarded, stopGuard := lock.Guard(ctx)
+	runErr := fn(withHeldMigrationLock(guarded, lock))
+	// Read before the release, which is not a loss and hides one.
+	lostErr := lock.Err()
+	stopGuard()
+	releaseCtx, cancel := context.WithTimeout(context.Background(), migrationAdvisoryUnlockTimeout)
+	defer cancel()
+	releaseErr := lock.Release(releaseCtx)
+	return migrationLockOutcome(operation, runErr, lostErr, releaseErr)
+}
+
+// migrationLockOutcome is the error of a run that held the migration lock.
+//
+// A lost lock is the run's failure whatever else happened: another runner may
+// have taken the lock and gone on, so a run that finished its own statements
+// did not finish them alone. A failed release is the run's failure too, since
+// a lock the server may still hold keeps every other runner waiting until the
+// session times out.
+func migrationLockOutcome(operation string, runErr, lostErr, releaseErr error) error {
+	if lostErr != nil {
+		lostErr = fmt.Errorf("migration lock for %s: %w; the run stopped there, and the revision table "+
+			"records what it committed", operation, lostErr)
+		if runErr != nil && !dblock.IsLost(runErr) {
+			lostErr = fmt.Errorf("%w (the run reported: %v)", lostErr, runErr)
+		}
+		runErr = lostErr
+	}
+	switch {
+	case releaseErr == nil:
+		return runErr
+	case runErr == nil:
+		return fmt.Errorf("failed to release migration lock for %s: %w", operation, releaseErr)
+	default:
+		return fmt.Errorf("%w; additionally failed to release migration lock: %v", runErr, releaseErr)
+	}
+}
+
+// heldMigrationLockKey stores the migration lock a run holds in its context.
+type heldMigrationLockKey struct{}
+
+// heldLock is what the run asks of the migration lock it holds.
+type heldLock interface {
+	Err() error
+}
+
+func withHeldMigrationLock(ctx context.Context, lock heldLock) context.Context {
+	return context.WithValue(ctx, heldMigrationLockKey{}, lock)
+}
+
+// migrationLockLost returns an error once the migration lock the run holds
+// has been taken away, and nil while it is held or when the run holds none.
+// The run asks before each statement it runs and before each commit, so a
+// run that lost its lock starts nothing more and commits nothing more.
+func migrationLockLost(ctx context.Context) error {
+	lock, ok := ctx.Value(heldMigrationLockKey{}).(heldLock)
+	if !ok {
+		return nil
+	}
+	return lock.Err()
 }
 
 // acquireMigrationLock takes the shared session advisory lock through

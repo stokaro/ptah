@@ -122,6 +122,12 @@ func (r *Reader) walk(ctx context.Context, source Source, schema string, db *cat
 	return nil
 }
 
+// LockNode is the coordination node, at the database root, whose semaphores
+// are Ptah's locks (see internal/dblock). The reader leaves it out of every
+// schema, as it leaves out the migrator's tables: it is Ptah's bookkeeping,
+// and a plan that dropped it would only have the next run create it again.
+const LockNode = "ptah_locks"
+
 // entry reads one directory entry.
 func (r *Reader) entry(
 	ctx context.Context,
@@ -140,9 +146,12 @@ func (r *Reader) entry(
 		}
 		return r.walk(ctx, source, path.Join(schema, name), db)
 	case Ydb_Scheme.Entry_TABLE:
-		if !r.inScope(schema) || slices.Contains(revisiontable.DefaultNames(), name) {
+		if !r.inScope(schema) || slices.Contains(revisiontable.DefaultNames(), name) || name == revisiontable.Tags {
 			// The migrator's own tables are its bookkeeping, not the
-			// schema, as every other reader treats them.
+			// schema, as every other reader treats its revision tables.
+			// The tag table is one of them: measured on 26.2.1.14, a read
+			// of the migrations directory listed it, so a scoped plan
+			// would drop it.
 			return nil
 		}
 		described, err := source.DescribeTable(ctx, r.absolute(schema, name))
@@ -157,6 +166,10 @@ func (r *Reader) entry(
 	case Ydb_Scheme.Entry_SYS_VIEW:
 		// A system view outside a dot-directory belongs to the server too.
 		return nil
+	case Ydb_Scheme.Entry_COORDINATION_NODE:
+		if schema == "" && name == LockNode {
+			return nil
+		}
 	}
 	if !r.inScope(schema) {
 		return nil

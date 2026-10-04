@@ -371,6 +371,8 @@ func TestYDBMigrator_RecordsTagsAndTheLog(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(attempts, qt.HasLen, 1)
 	c.Assert(string(attempts[0].Outcome.State), qt.Equals, "applied")
+	c.Assert(directoryNames(c, c.Context(), dir), qt.Contains, "ptah_migration_tags")
+	c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.DeepEquals, []string{dir + "|t"})
 }
 
 // Progress is recorded after each query rather than once the file is done:
@@ -652,4 +654,90 @@ func TestYDBMigrator_RepairRunsADataQueryWithItsCheckpoint(t *testing.T) {
 	c.Assert(failedStatement, qt.Equals, "CREATE TABLE `"+dir+"/bad` (id NoSuchType NOT NULL, PRIMARY KEY (id))")
 	c.Assert(text(c, conn, "SELECT note FROM `"+dir+"/r` WHERE id = 1l"), qt.Equals, failedStatement)
 	c.Assert(revisionProgress(c, repaired), qt.DeepEquals, []progress{{Version: 1, State: "applied", Applied: 2, Total: 2}})
+}
+
+// A repair that resumes the body refuses what a run refuses, before any of the
+// resumed statements runs: the CREATE TABLE after the client delimiter, which
+// a splitter honoring the directive would run, is not run.
+func TestYDBMigrator_RepairRefusesWhatItCannotSplit(t *testing.T) {
+	c := qt.New(t)
+	conn := openYDB(c)
+	const dir = "ptah_ydb_mig_repair_refused"
+	dropDirectory(c, conn, dir, "r", "s")
+	c.Cleanup(func() { dropDirectory(c, conn, dir, "r", "s") })
+	head := "CREATE TABLE `" + dir + "/r` (id Int64 NOT NULL, PRIMARY KEY (id));\n"
+	broken := map[string]string{
+		"0000000001_r.up.sql":   head + "CREATE TABLE `" + dir + "/bad` (id NoSuchType NOT NULL, PRIMARY KEY (id));\n",
+		"0000000001_r.down.sql": "DROP TABLE `" + dir + "/r`;\n",
+	}
+	delimited := map[string]string{
+		"0000000001_r.up.sql": head + "DELIMITER //\n" +
+			"CREATE TABLE `" + dir + "/s` (id Int64 NOT NULL, PRIMARY KEY (id))//\n",
+		"0000000001_r.down.sql": broken["0000000001_r.down.sql"],
+	}
+	c.Assert(newMigrator(c, conn, broken, migrator.RevisionTableFormatPtah, dir).MigrateUp(c.Context()), qt.IsNotNil)
+
+	repaired := newMigrator(c, conn, delimited, migrator.RevisionTableFormatPtah, dir)
+	err := repaired.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 2})
+
+	c.Assert(err, qt.ErrorMatches,
+		`(?s)migration 1 cannot run up on ydb: client delimiter directive in YQL: "DELIMITER //".*`)
+	c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.DeepEquals, []string{dir + "|r"})
+	c.Assert(revisionProgress(c, repaired), qt.DeepEquals, []progress{{Version: 1, State: "failed", Applied: 1, Total: 2}})
+}
+
+// A block or an action that runs a scheme statement, and a BATCH statement,
+// run outside a transaction, as YDB requires of each: inside the transaction a
+// data query runs in, YDB refuses the first with `Scheme operations cannot be
+// executed inside transaction` and the second with `BATCH operation can be
+// executed only in the implicit transaction mode`.
+func TestYDBMigrator_RunsBlocksAndBatchStatementsOutsideATransaction(t *testing.T) {
+	c := qt.New(t)
+	conn := openYDB(c)
+	const dir = "ptah_ydb_mig_blocks"
+	dropDirectory(c, conn, dir, "a", "b", "c", "d")
+	c.Cleanup(func() { dropDirectory(c, conn, dir, "a", "b", "c", "d") })
+	m := newMigrator(c, conn, map[string]string{
+		"0000000001_blocks.up.sql": "DO BEGIN\n  CREATE TABLE `" + dir + "/a` (id Int64 NOT NULL, n Int64, PRIMARY KEY (id));\nEND DO;\n" +
+			"DEFINE ACTION $make($name) AS\n  CREATE TABLE $name (id Int64 NOT NULL, PRIMARY KEY (id));\nEND DEFINE;\n" +
+			"EVALUATE FOR $table IN AsList('" + dir + "/b', '" + dir + "/c') DO $make($table);\n" +
+			"UPSERT INTO `" + dir + "/a` (id, n) VALUES (1l, 1l), (2l, 2l), (3l, 3l);\n" +
+			"BATCH DELETE FROM `" + dir + "/a` WHERE id = 2l;\n" +
+			"BATCH UPDATE `" + dir + "/a` SET n = 0l WHERE id > 0l;\n" +
+			"DO $make('" + dir + "/d');\n",
+		"0000000001_blocks.down.sql": "DROP TABLE `" + dir + "/d`;\nDROP TABLE `" + dir + "/c`;\nDROP TABLE `" + dir +
+			"/b`;\nDROP TABLE `" + dir + "/a`;\n",
+	}, migrator.RevisionTableFormatPtah, dir)
+
+	c.Assert(m.MigrateUp(c.Context()), qt.IsNil)
+
+	c.Assert(revisionProgress(c, m), qt.DeepEquals, []progress{{Version: 1, State: "applied", Applied: 6, Total: 6}})
+	c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.DeepEquals,
+		[]string{dir + "|a", dir + "|b", dir + "|c", dir + "|d"})
+	c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+dir+"/a` WHERE n = 0l"), qt.Equals, int64(2))
+}
+
+// A dry run executes nothing, a data query included: the data query that
+// commits with its checkpoint is not run in a transaction of its own when the
+// writer only logs.
+func TestYDBMigrator_DryRunRunsNoDataQuery(t *testing.T) {
+	c := qt.New(t)
+	conn := openYDB(c)
+	const dir = "ptah_ydb_mig_dry"
+	dropDirectory(c, conn, dir, "q", "r")
+	c.Cleanup(func() { dropDirectory(c, conn, dir, "q", "r") })
+	c.Assert(conn.Writer().ExecuteSQL(c.Context(),
+		"CREATE TABLE `"+dir+"/q` (id Int64 NOT NULL, PRIMARY KEY (id))"), qt.IsNil)
+	dry := openYDB(c)
+	dry.SchemaWriter().SetDryRun(true)
+	m := newMigrator(c, dry, map[string]string{
+		"0000000001_q.up.sql": "INSERT INTO `" + dir + "/q` (id) VALUES (1l);\n" +
+			"CREATE TABLE `" + dir + "/r` (id Int64 NOT NULL, PRIMARY KEY (id));\n",
+		"0000000001_q.down.sql": "DROP TABLE `" + dir + "/r`;\n",
+	}, migrator.RevisionTableFormatPtah, dir)
+
+	c.Assert(m.MigrateUp(c.Context()), qt.IsNil)
+
+	c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+dir+"/q`"), qt.Equals, int64(0))
+	c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.DeepEquals, []string{dir + "|q"})
 }
