@@ -545,6 +545,72 @@ on 26.2 to `TRUNCATE` it. The consumers of a changefeed's topic belong to the
 changefeed, which creates and drops the topic; a topic made with `CREATE
 TOPIC` is a different object, which a read records.
 
+## Coordination nodes
+
+A coordination node holds an application's semaphores, which serve as
+distributed locks, and its rate limiter resources. Ptah declares, reads,
+creates, changes and drops a node and its configuration. The semaphores and the
+resources inside a node belong to the application. A Go annotation declares one:
+
+```go
+//ptah:schema:coordinationnode name="locks" schema="app" self_check_period="PT2S" read_consistency_mode="strict"
+type Locks struct{}
+```
+
+So does the `coordination_nodes` key of a YAML schema, with the same settings:
+
+```yaml
+coordination_nodes:
+  locks:
+    schema: app
+    self_check_period: PT2S
+    read_consistency_mode: strict
+```
+
+| Setting | Value | YDB's default |
+| --- | --- | --- |
+| `self_check_period` | how often the node checks that it is alive, from `PT0.5S` to `PT10S` | `PT1S` |
+| `session_grace_period` | how long a session keeps its semaphores while the node changes its leader, from the self-check period plus `PT1S` to `PT30S` | `PT10S` |
+| `read_consistency_mode` | `strict` or `relaxed` | `relaxed` |
+| `attach_consistency_mode` | `strict` or `relaxed` | `strict` |
+| `rate_limiter_counters_mode` | `aggregated` or `detailed` | `aggregated` |
+
+A setting left out takes YDB's default. YDB stores only the settings a node was
+given, so the comparison fills in the defaults on both sides: a declaration that
+names a default and a node that never had the setting are the same node. YDB
+stores a period outside its range and runs the node with the period moved into
+the range, so Ptah refuses such a period where it is written.
+
+YQL has no statement for a coordination node: `CREATE COORDINATION NODE` is a
+parse error, and YDB creates, changes and drops one through its coordination
+service. So Ptah writes a statement of its own, and Ptah's YDB connection runs
+it through that service instead of sending it to the server:
+
+```sql
+CREATE COORDINATION NODE `app/locks` WITH (self_check_period = Interval('PT2S'), read_consistency_mode = 'strict');
+ALTER COORDINATION NODE `app/locks` SET (read_consistency_mode = 'relaxed');
+DROP COORDINATION NODE `app/locks`;
+```
+
+A plan, a plan file and a migration file carry these statements as text, and
+`ptah migrations up` runs and records them like any other schema statement.
+Only Ptah runs them: another client, `ydb sql` included, answers with a parse
+error. The connection refuses one inside a transaction, beside another
+statement in one query, and for a node that already exists, because the
+service answers a second creation with success and keeps the node as it was.
+In a [dev realm](#dev-shadow-and-scratch-databases) a relative path names a node
+under the realm, as it names a table there.
+
+A change names only the settings that differ, and YDB keeps every setting a
+change leaves out. A node the declaration does not name is dropped with its
+semaphores and rate limiter resources, and YDB drops it even while a session
+holds a lock on it. The safety report counts such a drop as destructive, and
+`YD112` in `ptah migrations lint` reports it. A schema that leaves the nodes to
+the application declares `//ptah:schema:notdescribed kind="coordination_node"`.
+
+The node `ptah_locks` at the database root is Ptah's own lock. A declaration
+that names it is refused, and so is a statement that does.
+
 ## Planning changes
 
 YDB changes a table in place less than the SQL engines do, and runs a schema
@@ -570,11 +636,12 @@ statement needs one that has not run yet:
 9. Per table: drop changefeeds, then add changefeeds with their consumers, then
    change topics in place. Drops come first, so a table that swaps one
    changefeed for another stays within YDB's limit.
-10. Drop the removed tables.
-11. Create the added and replaced views, a view after the view it reads. YDB
+10. Create the added coordination nodes, and change the changed ones.
+11. Drop the removed tables, then the removed coordination nodes.
+12. Create the added and replaced views, a view after the view it reads. YDB
     checks a view's query against the schema when it creates the view.
-12. Add memberships and grants, once the tables they name exist.
-13. Drop the removed users and groups, after revoking what they hold:
+13. Add memberships and grants, once the tables they name exist.
+14. Drop the removed users and groups, after revoking what they hold:
     `DROP USER` leaves its permissions behind, and a user created later under
     the name would hold them.
 
@@ -726,8 +793,9 @@ database read every row table under the database root, its columns, defaults,
 `Serial` columns with their sequence's start, increment and last restart,
 primary key, TTL and global indexes, with each index's partitioning and read
 replicas, its changefeeds, each with the retention and the consumers of its
-topic, every view with the query the server stores, and the users, groups and
-permissions; see [Users, groups and permissions](#users-groups-and-permissions).
+topic, every view with the query the server stores, every coordination node
+with its configuration, and the users, groups and permissions; see
+[Users, groups and permissions](#users-groups-and-permissions).
 
 What Ptah does not model yet is recorded rather than dropped: topics,
 column-oriented tables, sequences other than a `Serial` column's, the settings
@@ -777,9 +845,9 @@ existing table, a block that mixes schema and data statements, an `ADD COLUMN`
 the line refuses, a dropped column an index or the TTL uses, a partitioning
 change that resets the minimum partition count, a table a view reads that is
 dropped or renamed, a renamed table that carries a changefeed,
-a `REVOKE GRANT OPTION FOR`, which takes the permission too, and a dropped user
-or group, which leaves its permissions behind. `DS107` reports a dropped user
-or group as it reports a dropped role elsewhere.
+a `REVOKE GRANT OPTION FOR`, which takes the permission too, a dropped user
+or group, which leaves its permissions behind, and a dropped coordination node.
+`DS107` reports a dropped user or group as it reports a dropped role elsewhere.
 [Lint rules](../../reference/lint-rules/#ydb) lists each rule with its
 meaning.
 
@@ -909,7 +977,8 @@ effect it does not confine:
 - external data sources and tables, async replication, transfers and streaming
   queries, which reach outside the server.
 
-A read outside the realm is allowed, since it leaves nothing behind.
+A read outside the realm is allowed, since it leaves nothing behind. A
+coordination node is confined like a table, and the realm's reset drops it.
 
 `docker://ydb/<tag>[/local]` starts `ydbplatform/local-ydb:<tag>` for one
 command and removes it afterwards. The image serves the one database `local`,

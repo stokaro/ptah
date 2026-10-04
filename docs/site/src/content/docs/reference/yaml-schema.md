@@ -81,6 +81,7 @@ Top-level objects are maps. Their keys are used as default object names when a
 | `grants` | Permission grants on a table, schema, sequence, function or procedure, and on YDB on the database with `on_database: true`. A routine is `on_function` or `on_procedure` with its argument types, such as `purge(uuid)`. |
 | `revokes` | Privileges a role must not hold, named like a grant: `role`, `privileges`, one target, and `comment`. |
 | `default_privileges` | PostgreSQL default privileges: what a grantee receives on objects a role creates later. |
+| `coordination_nodes` | YDB coordination nodes: `schema` and the settings of [`//ptah:schema:coordinationnode`](../go-annotations/#ptahschemacoordinationnode). |
 
 Unknown keys fail. Ptah does not silently ignore fields that look meaningful but
 are outside the supported schema.

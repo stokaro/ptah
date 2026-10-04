@@ -107,6 +107,7 @@ type StatusEnumMarker struct{}
 | [`ptah:schema:trigger`](#ptahschematrigger) | A database trigger | struct |
 | [`ptah:schema:view`](#ptahschemaview) | A database view | struct |
 | [`ptah:schema:matview`](#ptahschemamatview) | A materialized view | struct |
+| [`ptah:schema:coordinationnode`](#ptahschemacoordinationnode) | A YDB coordination node | struct |
 | [`ptah:schema:role`](#ptahschemarole) | A database role | struct |
 | [`ptah:schema:grant`](#ptahschemagrant) | Database grants | struct |
 | [`ptah:schema:revoke`](#ptahschemarevoke) | Privileges a role must not hold | struct |
@@ -720,6 +721,31 @@ parsed, with that reason, on every dialect -- including the bare form with no
 value, and including a view scoped away from the current target by `dialects`.
 The name stays recognized so the refusal explains itself instead of reading as
 a misspelling.
+
+### `//ptah:schema:coordinationnode`
+
+Declares a YDB coordination node, which holds an application's semaphores and
+rate limiter resources. A setting left out takes YDB's default.
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `attach_consistency_mode` | No | `strict` or `relaxed`. YDB's default is `strict`. |
+| `name` | Yes | Node name. |
+| `rate_limiter_counters_mode` | No | `aggregated` or `detailed`. YDB's default is `aggregated`. |
+| `read_consistency_mode` | No | `strict` or `relaxed`. YDB's default is `relaxed`. |
+| `schema` | No | Directory holding the node, relative to the database root. |
+| `self_check_period` | No | How often the node checks it is alive, as an ISO 8601 duration from `PT0.5S` to `PT10S`. YDB's default is `PT1S`. |
+| `session_grace_period` | No | How long a session keeps its semaphores while the node changes its leader, from the self-check period plus one second to `PT30S`. YDB's default is `PT10S`. |
+
+```go
+//ptah:schema:coordinationnode name="locks" schema="app" self_check_period="PT2S"
+type Locks struct{}
+```
+
+A coordination node is YDB's own object, and every other target refuses the
+declaration. `ptah_locks` at the database root is Ptah's lock node and is
+refused. [Coordination nodes](../../databases/ydb/#coordination-nodes) says how
+Ptah applies one.
 
 ## Security
 

@@ -427,6 +427,9 @@ rendered for MySQL/MariaDB with dialect-specific trigger bodies.
   `with_option`, `comment`
 - `default_privileges`: `for_role`, `schema`, `object_type`, `grantee`,
   `privileges`, `grantable`, `comment`, `dialects`
+- `coordination_nodes`: YDB only. `name`, `schema`, `self_check_period`,
+  `session_grace_period`, `read_consistency_mode`, `attach_consistency_mode`,
+  `rate_limiter_counters_mode`
 
 `matviews` accepts no refresh strategy. Ptah does not refresh materialized
 views: one is populated when it is created, a changed body is reconciled as a
