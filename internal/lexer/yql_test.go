@@ -464,3 +464,47 @@ func TestStringValue_YQL_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+func TestYQLIdentifierValue_HappyPath(t *testing.T) {
+	tests := []struct {
+		name  string
+		token string
+		want  string
+	}{
+		{name: "a bare name keeps its case", token: "Users", want: "Users"},
+		{name: "a backticked path", token: "`dir/sub/t`", want: "dir/sub/t"},
+		{name: "an escaped backtick", token: "`tick\\`name`", want: "tick`name"},
+		{name: "a doubled backtick", token: "`tick``name`", want: "tick`name"},
+		{name: "an escaped backslash", token: "`back\\\\slash`", want: "back\\slash"},
+		{name: "an empty backticked name", token: "``", want: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			got, ok := lexer.YQLIdentifierValue(test.token)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+func TestYQLIdentifierValue_FailurePath(t *testing.T) {
+	tests := []struct {
+		name  string
+		token string
+	}{
+		{name: "no token", token: ""},
+		{name: "a missing closing backtick", token: "`dir/t"},
+		{name: "text after the closing backtick", token: "`a`b"},
+		{name: "a trailing backslash", token: "`a\\"},
+		{name: "an escape short of its digits", token: "`a\\x1`"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			got, ok := lexer.YQLIdentifierValue(test.token)
+			c.Assert(ok, qt.IsFalse)
+			c.Assert(got, qt.Equals, "")
+		})
+	}
+}

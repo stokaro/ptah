@@ -373,3 +373,46 @@ func yqlEscape(text string) (string, int, bool) {
 	_, size := utf8.DecodeRuneInString(text)
 	return text[:size], size, true
 }
+
+// YQLIdentifierValue answers the name an identifier token stands for under
+// [Options.YQL]. A backticked name has its backticks removed, a doubled
+// backtick read as one and its backslash escapes decoded the way a string's
+// are, as the grammar's ID_QUOTED rule reads them; any other identifier is
+// its own name. It reports false for a backticked name whose closing backtick
+// is missing or whose escape the server refuses.
+//
+// YQL compares names case-sensitively whether or not they are quoted, so the
+// name keeps the case it was written in.
+func YQLIdentifierValue(token string) (string, bool) {
+	if !strings.HasPrefix(token, "`") {
+		return token, token != ""
+	}
+	var name strings.Builder
+	for i := 1; i < len(token); i++ {
+		switch token[i] {
+		case '`':
+			if i+1 < len(token) && token[i+1] == '`' {
+				name.WriteByte('`')
+				i++
+				continue
+			}
+			if i != len(token)-1 {
+				return "", false
+			}
+			return name.String(), true
+		case '\\':
+			if i+1 >= len(token) {
+				return "", false
+			}
+			decoded, width, ok := yqlEscape(token[i+1:])
+			if !ok {
+				return "", false
+			}
+			name.WriteString(decoded)
+			i += width
+		default:
+			name.WriteByte(token[i])
+		}
+	}
+	return "", false
+}
