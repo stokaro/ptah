@@ -33,7 +33,7 @@ same suite on each YDB line it probes.
 
 `ptah-compat` takes a YDB URL on every verb; see [ptah-compat](#ptah-compat).
 Inference and the YDB object families such as TTL, column families,
-changefeeds, views and vector indexes are not supported yet. See
+views and vector indexes are not supported yet. See
 [What is not supported yet](#what-is-not-supported-yet).
 
 ## Connecting
@@ -314,6 +314,73 @@ increment below 1. The read reports a sequence's start, increment and last
 restart. `YD107` and `YD108` in `ptah migrations lint` report the same traps in
 a migration written by hand.
 
+## Changefeeds
+
+A changefeed is YDB's stream of a row table's changes, kept in a topic at
+`<table>/<changefeed>` that readers read through consumers. A table declares
+one with `//ptah:schema:changefeed`, on its struct or on a holder field naming
+the table with `table` in the same file, and a consumer of its topic with
+`//ptah:schema:changefeed:consumer`:
+
+```go
+//ptah:schema:table name="orders"
+//ptah:schema:changefeed name="updates" mode="NEW_AND_OLD_IMAGES" format="JSON" retention_period="PT12H" initial_scan
+//ptah:schema:changefeed:consumer changefeed="updates" name="billing" important
+type Order struct {
+	//ptah:schema:field name="id" type="BIGINT UNSIGNED" primary="true"
+	ID uint64
+}
+```
+
+YDB adds a changefeed only to a table that exists, one per statement, so it
+follows the table's `CREATE TABLE`:
+
+```sql
+ALTER TABLE `orders` ADD CHANGEFEED `updates` WITH (MODE = 'NEW_AND_OLD_IMAGES', FORMAT = 'JSON', RETENTION_PERIOD = Interval('PT12H'), INITIAL_SCAN = TRUE);
+ALTER TOPIC `orders/updates` ADD CONSUMER `billing` WITH (important = TRUE);
+```
+
+The [annotation reference](../../reference/go-annotations/#ptahschemachangefeed)
+lists every attribute, and a YAML table takes the same keys under its
+`changefeeds` map. An interval is an ISO 8601 duration such as `PT12H`. YDB
+keeps whole seconds and drops a fraction without a word (`PT0.5S` resolved
+timestamps read back as none), so a fraction is refused. So is what YDB refuses
+on every line:
+
+- `DEBEZIUM_JSON` in `UPDATES` mode, or with virtual timestamps, resolved
+  timestamps or schema changes;
+- `DYNAMODB_STREAMS_JSON`, which YDB writes only for a document table;
+- a topic starting with several partitions on a first key column that is not
+  `Uint32` or `Uint64`;
+- a changefeed named like one of the table's indexes.
+
+A server with default settings holds a table to five changefeeds. Options that
+came in later releases each need a key: `user_sids` (26.1), `schema_changes`
+(25.3), `topic_auto_partitioning` (a flag on 25.1) and a consumer's
+`availability_period` (25.4). Other dialects refuse a table that declares a
+changefeed.
+
+### Changing a changefeed
+
+YDB changes a changefeed's retention and consumers in place, through
+`ALTER TOPIC` on its path, and nothing else about it. A retention left out is
+set to 24 hours, because `RESET` changes nothing on 26.2 and is refused on
+25.1. A consumer that is to take any codec again is dropped and added, since
+YDB keeps a consumer's codecs once set.
+
+Any other change drops the changefeed and adds it again (`MODE alter is not
+supported`). **The stream restarts: the records nobody read are lost, and every
+consumer starts again from the beginning of the new stream.** The plan says so
+above the statements. YDB has no statement that disables a changefeed (`ALTER
+CHANGEFEED ... DISABLE` answers `Name not found: quote`), so one the server
+disabled is added again too.
+
+`DROP TABLE` drops a table's changefeeds with it. YDB refuses to rename a table
+that carries one (`Cannot move table with cdc streams`, lint rule `YD109`), and
+on 26.2 to `TRUNCATE` it. The consumers of a changefeed's topic belong to the
+changefeed, which creates and drops the topic; a topic made with `CREATE
+TOPIC` is a different object, which a read records.
+
 ## Planning changes
 
 YDB changes a table in place less than the SQL engines do, and runs a schema
@@ -321,8 +388,9 @@ statement outside any transaction. A plan therefore refuses what the server
 cannot do before it emits anything, and orders what it emits so that no
 statement needs one that has not run yet:
 
-1. Create the added tables, with their indexes, each followed by the
-   `ALTER SEQUENCE` that gives a Serial column its declared start and increment.
+1. Create the added tables, with their indexes and changefeeds, each followed
+   by the `ALTER SEQUENCE` that gives a Serial column its declared start and
+   increment.
 2. Drop the indexes the plan removes, before any column they name. YDB refuses
    to drop an indexed or a covered column.
 3. Rename the indexes the declaration renames, then change the partitioning of
@@ -330,7 +398,10 @@ statement needs one that has not run yet:
 4. Per table: add columns, then change columns in place, then drop columns.
 5. Change the start and the increment of the Serial columns of existing tables.
 6. Add the new indexes of existing tables.
-7. Drop the removed tables.
+7. Per table: drop changefeeds, then add changefeeds with their consumers, then
+   change topics in place. Drops come first, so a table that swaps one
+   changefeed for another stays within YDB's limit.
+8. Drop the removed tables.
 
 Each statement runs as its own query. A query of several schema statements is
 not atomic on YDB, and each of its statements compiles against the schema as it
@@ -355,16 +426,22 @@ ask with the variable `PTAH_ALLOW_TABLE_REBUILD=1` instead (see
    declaration, with its indexes inside it.
 2. `INSERT INTO` the scratch table `SELECT` the old rows, converting each
    changed column.
-3. `ALTER TABLE` the old table `RENAME TO __ptah_replaced_<table>`.
-4. `ALTER TABLE` the scratch table `RENAME TO` the table's name.
-5. `DROP TABLE` the renamed old table.
+3. `ALTER TABLE` the old table `DROP CHANGEFEED`, for each changefeed it
+   carries, since YDB moves no table that carries one.
+4. `ALTER TABLE` the old table `RENAME TO __ptah_replaced_<table>`.
+5. `ALTER TABLE` the scratch table `RENAME TO` the table's name.
+6. `ALTER TABLE` the table `ADD CHANGEFEED`, for each changefeed the
+   declaration names, with its consumers. A declaration that cannot name one,
+   in HCL or DBML, keeps the database's.
+7. `DROP TABLE` the renamed old table.
 
 YDB has no transactional DDL, and YQL has no statement that swaps two tables
 at once, so the steps are not atomic. **Rows written to the table between the
 copy and the swap are lost, and YDB has no lock to stop them**: stop writing to
 the table until the last step has run. The plan says so in a comment above the
-steps. The old rows stay until step 5, and the table's name is free only between
-steps 3 and 4.
+steps. The old rows stay until step 7, and the table's name is free only between
+steps 4 and 5. A changefeed's stream restarts across steps 3 to 6, and the plan
+says that too.
 
 The copy is one data query, which commits whole or not at all:
 
@@ -388,9 +465,9 @@ Even with the flag, a rebuild is refused when it would damage the table:
 - a table with a Serial column. The new table's sequence would start at 1 while
   the copied rows keep their values, so the next insert would collide, and YDB's
   `ALTER SEQUENCE ... RESTART WITH` takes only a literal;
-- a table carrying a setting Ptah does not model yet: a TTL, changefeeds,
-  column families, or partitioning, read replica and key bloom filter options.
-  Recreating the table would drop them.
+- a table carrying a setting Ptah does not model yet: a TTL, column families,
+  partitioning, read replica and key bloom filter options, or a changefeed
+  holding a setting Ptah does not read. Recreating the table would drop them.
 
 ## What each release line does
 
@@ -402,9 +479,10 @@ or `stable-25-4-1`:
 | --- | --- | --- |
 | `YDB262` | 26.2 | — |
 | `YDB261` | 26.1 | `SET DEFAULT` and `DROP DEFAULT` on an existing column |
-| `YDB253` | 25.3, 25.4 | a column added with a default |
-| `YDB252` | 25.2 | a `JsonDocument` or `DyNumber` default, `UPDATE ... RETURNING` on a table with a unique index |
-| `YDB251` | 25.1 | the 64-bit date and time types, `Decimal` precision other than 22,9, an `Int16` or `Uint16` default |
+| `YDB254` | 25.4 | a column added with a default, a changefeed's `USER_SIDS` |
+| `YDB253` | 25.3 | a consumer's `availability_period` |
+| `YDB252` | 25.2 | a `JsonDocument` or `DyNumber` default, `UPDATE ... RETURNING` on a table with a unique index, a changefeed's `SCHEMA_CHANGES` |
+| `YDB251` | 25.1 | the 64-bit date and time types, `Decimal` precision other than 22,9, an `Int16` or `Uint16` default, an auto-partitioned changefeed topic |
 
 `ptah schema render --dialect ydb --server-version 25.1.4.7` renders for a line
 without a server. The capability probe measures 26.2, the current release, and
@@ -433,6 +511,7 @@ The flags decide these capabilities:
 | `EnableTableDatetime64` | `wide_date_time_types` |
 | `EnableParameterizedDecimal` | `parameterized_decimal` |
 | `EnableMoveIndex` | `index_rename` |
+| `EnableTopicAutopartitioningForCDC` | `changefeed_topic_auto_partitioning` |
 
 `EnableAsyncIndexes` decides no capability: a cluster with the flag off still
 builds a `GLOBAL ASYNC` index, so `async_indexes` keeps the preset's answer.
@@ -463,12 +542,15 @@ the [support matrix](../support-matrix/).
 database read every row table under the database root, its columns, defaults,
 `Serial` columns with their sequence's start, increment and last restart,
 primary key and global indexes, with each index's partitioning and read
-replicas.
+replicas, and its changefeeds, each with the retention and the consumers of
+its topic.
 
 What Ptah does not model yet is recorded rather than dropped: views, topics,
-column-oriented tables, sequences other than a `Serial` column's, and the
-settings of a table such as TTL, column families, partitioning options and
-changefeeds. A command reports them, and a plan neither drops nor changes them.
+column-oriented tables, sequences other than a `Serial` column's, the settings
+of a table such as TTL, column families and partitioning options, and a
+changefeed holding a setting Ptah does not read, such as attributes, an AWS
+region, trace identifiers or a shared consumer. A command reports them, and a
+plan neither drops nor changes them.
 
 An index kind Ptah cannot read, such as a vector or a full-text index, is
 refused by name rather than read as a plain index.
@@ -509,15 +591,17 @@ Migration lint reports the statements YDB refuses, or runs with an effect the
 statement does not state, under the `YD` family: a unique index added to an
 existing table, a block that mixes schema and data statements, an `ADD COLUMN`
 the line refuses, a dropped column an index or the TTL uses, a partitioning
-change that resets the minimum partition count, and a dropped table a view
-reads. [Lint rules](../../reference/lint-rules/#ydb) lists each rule with its
+change that resets the minimum partition count, a dropped table a view
+reads, and a renamed table that carries a changefeed.
+[Lint rules](../../reference/lint-rules/#ydb) lists each rule with its
 meaning.
 
-`YD104` and `YD106` read the indexes, TTL and views the directory's own
-earlier migrations declare; a table the directory never created is unknown to
-them. With `--dev-url`, lint first replays the directory in a
-[dev realm](#dev-shadow-and-scratch-databases), so a statement YDB refuses fails
-the run, and the rules that read a baseline schema read it there. The rules for
+`YD104`, `YD106` and `YD109` read the indexes, TTL, views and changefeeds the
+directory's own earlier migrations declare; a table the directory never
+created is unknown to them. With `--dev-url`, lint first replays the directory
+in a [dev realm](#dev-shadow-and-scratch-databases), so a statement YDB
+refuses fails the run, and the rules that read a baseline schema read it
+there. The rules for
 every dialect run too, and the
 [lint rules](../../reference/lint-rules/#what-the-rules-for-every-dialect-do-on-ydb)
 say what each does on YDB.
@@ -699,6 +783,12 @@ table "orders" {
 }
 ```
 
+HCL and DBML have no block for a changefeed, so a document in either says
+nothing about one. Applying it leaves the database's changefeeds as they are,
+and a rebuild adds them to the new table. `schema inspect` and `ptah schema
+export` warn about each changefeed they leave out, and `--cleanup-go-annotations`
+refuses to delete one.
+
 The YDB driver reports a row count it did not measure, so a `script exec` or
 `script loop` step reports its count as not reported, and `expect_rows` is
 refused rather than judged against the number. A script spells parameters the
@@ -798,7 +888,7 @@ These are refused with a message that names what is missing:
 - comments on tables, columns and indexes;
 - views;
 - users, groups and permissions;
-- a table's own settings: TTL, partitioning, column families and changefeeds;
+- a table's own settings: TTL, partitioning and column families;
 - vector, full-text, JSON and column-table indexes;
 - `ptah inference` and the inference tools of `ptah mcp`, which wait for the vector index family.
 <!-- END GENERATED YDB GAPS -->

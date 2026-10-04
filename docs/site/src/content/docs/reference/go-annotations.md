@@ -93,6 +93,8 @@ type StatusEnumMarker struct{}
 | [`ptah:embedded`](#ptahembedded) | Columns or relations from an embedded Go field | field |
 | [`ptah:schema:index`](#ptahschemaindex) | An index | struct or field |
 | [`ptah:schema:constraint`](#ptahschemaconstraint) | A table constraint | struct or field |
+| [`ptah:schema:changefeed`](#ptahschemachangefeed) | A YDB changefeed of a table | struct or field |
+| [`ptah:schema:changefeed:consumer`](#ptahschemachangefeedconsumer) | A consumer of a YDB changefeed's topic | struct or field |
 | [`ptah:schema:enum`](#ptahschemaenum) | A reusable enum type | struct |
 | [`ptah:schema:domain`](#ptahschemadomain) | A PostgreSQL domain type | struct |
 | [`ptah:schema:composite`](#ptahschemacomposite) | A PostgreSQL composite type | struct |
@@ -374,6 +376,44 @@ A PRIMARY KEY constraint's `name` is the name the key is built with on
 PostgreSQL; without one the server names it `<table>_pkey`. MySQL and MariaDB
 call every primary key `PRIMARY` whatever it is declared as, so there the
 comparison matches the key without its name.
+
+### `//ptah:schema:changefeed`
+
+Declares a YDB changefeed: a stream of a table's changes, which YDB keeps in a
+topic at `<table>/<name>`. It belongs to the table of the struct it is on, or
+to the one `table` names, which the same file declares. Every other dialect
+refuses a table that declares one. See
+[changefeeds](../../databases/ydb/#changefeeds).
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `name` | Yes | Changefeed name, unique among the table's changefeeds and indexes. |
+| `mode` | Yes | What a record carries: `KEYS_ONLY`, `UPDATES`, `NEW_IMAGE`, `OLD_IMAGE` or `NEW_AND_OLD_IMAGES`. |
+| `format` | Yes | How a record is written: `JSON` or `DEBEZIUM_JSON`. |
+| `table` | No | Table the changefeed belongs to, when not the struct's own. |
+| `virtual_timestamps` | No | Each record carries its change's virtual timestamp. `true`/`false`; bare form allowed. |
+| `resolved_timestamps` | No | Interval of the barrier records, an ISO 8601 duration of whole seconds. |
+| `retention_period` | No | How long the topic keeps a record; 24 hours when omitted. |
+| `initial_scan` | No | The stream opens with a record for every row. `true`/`false`; bare form allowed. |
+| `user_sids` | No | Each record names its change's user. Needs `changefeed_user_sids`. |
+| `schema_changes` | No | The stream carries schema change records. Needs `changefeed_schema_changes`. |
+| `topic_min_active_partitions` | No | Partitions the topic starts with, at least 1. |
+| `topic_auto_partitioning` | No | The topic gains partitions as writes grow. Needs `changefeed_topic_auto_partitioning`. |
+
+### `//ptah:schema:changefeed:consumer`
+
+Declares a consumer of a changefeed's topic: a named reader that keeps its own
+position in the stream.
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `name` | Yes | Consumer name, unique within the topic. |
+| `changefeed` | Yes | Changefeed whose topic the consumer reads. |
+| `table` | No | Table of the changefeed, when not the struct's own. |
+| `important` | No | The topic keeps what this consumer has not read past the retention. `true`/`false`; bare form allowed. |
+| `read_from` | No | RFC 3339 time a partition this consumer has not read is read from, in whole seconds. |
+| `supported_codecs` | No | Codecs the consumer reads: `raw`, `gzip`, `lzop`, `zstd`, `custom`. |
+| `availability_period` | No | How long the topic keeps what this consumer has not read past the retention. Needs `topic_consumer_availability_period`. |
 
 ## Reusable types
 
