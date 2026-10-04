@@ -196,9 +196,57 @@ Each statement runs as its own query. A query of several schema statements is
 not atomic on YDB, and each of its statements compiles against the schema as it
 stood before the query.
 
-A plan refuses a primary key change, a column type change and `SET NOT NULL`,
-none of which YDB has. Where a release line cannot make a change in place, the
-refusal names the capability that line lacks.
+YDB has no primary key change, no column type change and no `SET NOT NULL`. A
+plan refuses each of them, naming the capability the line lacks, unless the
+command was given `--allow-table-rebuild`. Where a release line cannot make
+another change in place, the refusal names the capability that line lacks.
+
+### Table rebuilds
+
+With `--allow-table-rebuild`, `ptah schema apply`, `schema plan`, `schema diff`,
+`schema compare`, `migrations plan` and `migrations generate` plan those three
+changes as a rebuild of the table:
+
+1. `CREATE TABLE` a scratch table, `__ptah_rebuild_<table>`, from the
+   declaration, with its indexes inside it.
+2. `INSERT INTO` the scratch table `SELECT` the old rows, converting each
+   changed column.
+3. `ALTER TABLE` the old table `RENAME TO __ptah_replaced_<table>`.
+4. `ALTER TABLE` the scratch table `RENAME TO` the table's name.
+5. `DROP TABLE` the renamed old table.
+
+YDB has no transactional DDL, and YQL has no statement that swaps two tables
+at once, so the steps are not atomic. **Rows written to the table between the
+copy and the swap are lost, and YDB has no lock to stop them**: stop writing to
+the table until the last step has run. The plan says so in a comment above the
+steps. The old rows stay until step 5, and the table's name is free only between
+steps 3 and 4.
+
+The copy is one data query, which commits whole or not at all:
+
+- A value the new type cannot hold fails it with a message that names the
+  column, because the conversion unwraps the `CAST` rather than writing NULL in
+  silence. A NULL row of a column that becomes NOT NULL fails it the same way.
+  Fix the rows and rerun; `migrations up --allow-dirty` resumes at the copy.
+- YDB refuses a copy that carries more than a limit. Measured with rows of about
+  80 bytes, 400000 rows copy and 600000 rows are refused, on 26.2 with `Out of
+  buffer memory. Used 74395928 bytes of 67108864 bytes` and on 25.1 with
+  `Datashard program size limit exceeded (56281409 > 50331648)`. Nothing is then
+  copied, and the old table keeps serving. A larger table has to be rebuilt by
+  hand.
+
+In a versioned migration each step is a query of its own, and progress is
+recorded after each. A run interrupted between two steps resumes at the next
+one with `migrations up --allow-dirty`.
+
+Even with the flag, a rebuild is refused when it would damage the table:
+
+- a table with a Serial column. The new table's sequence would start at 1 while
+  the copied rows keep their values, so the next insert would collide, and YDB's
+  `ALTER SEQUENCE ... RESTART WITH` takes only a literal;
+- a table carrying a setting Ptah does not model yet: a TTL, changefeeds,
+  column families, or partitioning, read replica and key bloom filter options.
+  Recreating the table would drop them.
 
 ## What each release line does
 

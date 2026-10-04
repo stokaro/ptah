@@ -136,6 +136,20 @@ type Options struct {
 	// review. Atlas CE v1.3.0 writes no fill, and ptah-compat sets this under
 	// its strict Community Edition policy to plan what that binary plans.
 	OmitNullBackfill bool
+	// AllowTableRebuild plans a change the target cannot make in place as an
+	// explicit rebuild of the table: a new table written from the declaration,
+	// a copy of the rows, and a swap of the two. On YDB it covers a changed
+	// primary key, a column type change and a column made NOT NULL, and
+	// without it each of those is refused with an error naming the native
+	// --allow-table-rebuild flag.
+	//
+	// The steps of a YDB rebuild are not atomic, and rows written to the table
+	// between the copy and the swap are lost, which the plan says above the
+	// steps. A table with a Serial column, or with a setting the read of the
+	// database did not describe, is refused even when this is set. A target
+	// without such a rebuild plans as it would without this; SQLite rebuilds a
+	// table inside one transaction and needs no request.
+	AllowTableRebuild bool
 }
 
 // CapabilitiesFor returns the configured capability set, falling back to the
@@ -300,7 +314,7 @@ func registerBuiltInPlanners() error {
 		return err
 	}
 	if err := registerPlannerFactory(platform.YDB, func(opts Options) Planner {
-		return ydb.NewWithCapabilities(opts.CapabilitiesFor(platform.YDB))
+		return ydb.NewWithCapabilities(opts.CapabilitiesFor(platform.YDB)).WithTableRebuild(opts.AllowTableRebuild)
 	}); err != nil {
 		return err
 	}

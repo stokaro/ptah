@@ -227,6 +227,14 @@ func ydbPlan() plan {
 			change: []string{"ALTER TABLE rnc_t RENAME COLUMN b TO c"},
 			after:  []check{accepts("INSERT INTO rnc_t (n, c) VALUES (1, 1)")},
 		}),
+		// The swap a planned table rebuild ends with. The new name resolves
+		// against the namespace's TablePathPrefix, as every name here does,
+		// and the table is read back under it and gone under the old one.
+		proven(capability.RenameTable, schemaChange{
+			setup:  []string{t.table("rnt", "n Int64 NOT NULL", "n")},
+			change: []string{renameTableStatement},
+			after:  []check{accepts("SELECT COUNT(*) FROM rnt2"), refuses("SELECT COUNT(*) FROM rnt")},
+		}),
 		ydbRowDeletionPolicy(t),
 		acceptanceNote(capability.NamedNotNullConstraints, nil,
 			t.table("nnn", "id Int64 CONSTRAINT nnn_named NOT NULL", "id"),

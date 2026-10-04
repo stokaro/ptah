@@ -352,6 +352,9 @@ func reverseSchemaDiffWithSchemaForDialect(
 	// (stokaro/ptah#2315).
 	reversed.DeclaredConstraintHosts = difftypes.ConstraintHostDeclarationsOf(
 		prior, reversed.ConstraintsAdded, reversed.ConstraintsRemoved, semantics)
+	// A rollback runs against the same database, whose read declined the same
+	// settings.
+	reversed.CurrentNotDescribed = diff.CurrentNotDescribed
 	return reversed
 }
 

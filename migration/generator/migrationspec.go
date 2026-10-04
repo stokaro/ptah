@@ -162,7 +162,9 @@ func bidirectionalPlanPolicy(policy DiffPolicy) BidirectionalPlanPolicy {
 	if policy.ConcurrentIndexDrop {
 		dropMode = ConcurrentIndexAll
 	}
-	return BidirectionalPlanPolicy{Create: createMode, Drop: dropMode, OnlineAlter: policy.OnlineAlter}
+	return BidirectionalPlanPolicy{
+		Create: createMode, Drop: dropMode, OnlineAlter: policy.OnlineAlter, AllowTableRebuild: policy.AllowTableRebuild,
+	}
 }
 
 // withSkipComments prepends the diff-policy omission comments to the first

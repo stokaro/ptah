@@ -444,7 +444,8 @@ func computeApplyPlan(
 			ConcurrentIndexRefs: declaredConcurrentIndexRefs(
 				opts.Policy, diff, desired, current, info.Dialect, info.Capabilities,
 			),
-			OmitNullBackfill: opts.OmitNullBackfill,
+			OmitNullBackfill:  opts.OmitNullBackfill,
+			AllowTableRebuild: opts.Policy.AllowTableRebuild,
 		})
 		if err != nil {
 			return applyComputation{}, fmt.Errorf("generate schema apply SQL: %w", err)

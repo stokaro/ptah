@@ -450,7 +450,8 @@ func diffResolvedStates(
 			ConcurrentIndexRefs: declaredConcurrentIndexRefs(
 				opts.Policy, diff, to, fromSide.database, dialect, capabilities,
 			),
-			OmitNullBackfill: opts.OmitNullBackfill,
+			OmitNullBackfill:  opts.OmitNullBackfill,
+			AllowTableRebuild: opts.Policy.AllowTableRebuild,
 		})
 
 		if err != nil {

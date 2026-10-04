@@ -25,6 +25,7 @@ import (
 	"ptah.run/internal/cli/internal/editor"
 	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/cli/internal/schemaroot"
+	"ptah.run/internal/cli/internal/tablerebuild"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemaload"
@@ -240,20 +241,26 @@ document. --json reads no environment variable and cannot be combined with
 	disableJSONEnvBinding(flags, applyJSONFlag)
 	cmd.MarkFlagsMutuallyExclusive(applyToFlag, applyRootDirFlag)
 	cmd.MarkFlagsMutuallyExclusive(applyToFlag, applySchemaFileFlag)
+	tablerebuild.Register(cmd)
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
 
-// nativeDiffPolicy maps the native project diff policy onto the shared
-// schema-apply planning policy.
-func nativeDiffPolicy(cfg projectconfig.Config) atlasschema.DiffPolicy {
+// nativeDiffPolicy maps the native project diff policy, and the command's
+// --allow-table-rebuild, onto the shared schema-apply planning policy.
+func nativeDiffPolicy(cmd *cobra.Command, cfg projectconfig.Config) (atlasschema.DiffPolicy, error) {
+	rebuild, err := tablerebuild.Requested(cmd)
+	if err != nil {
+		return atlasschema.DiffPolicy{}, err
+	}
 	return atlasschema.DiffPolicy{
 		SkipDropTable:                 slices.Contains(cfg.Diff.SkipChangeKinds(), diffpolicy.DropTable),
 		ConcurrentIndexCreate:         cfg.Diff.ConcurrentIndexCreate(),
 		ConcurrentIndexDrop:           cfg.Diff.ConcurrentIndexDrop(),
 		ConcurrentIndexCreateDisabled: cfg.Diff.ConcurrentIndexCreateDisabled(),
 		OnlineAlter:                   cfg.Diff.OnlineAlterRequested(),
-	}
+		AllowTableRebuild:             rebuild,
+	}, nil
 }
 
 func runSchemaApply(cmd *cobra.Command, opts schemaApplyOptions) error {
@@ -503,6 +510,10 @@ func runSchemaApplyOnLockedSession(
 	txMode migrator.MigrationTxMode,
 	run *applyRun,
 ) (atlasschema.ApplyOutcome, error) {
+	policy, err := nativeDiffPolicy(cmd, projectCfg)
+	if err != nil {
+		return "", err
+	}
 	plan, err := atlasschema.PrepareApply(ctx, conn, atlasschema.ApplyRuntimeOptions{
 		ProjectRoot:         schemaroot.Of(opts.rootDirs),
 		DevURL:              opts.devURL,
@@ -512,7 +523,7 @@ func runSchemaApplyOnLockedSession(
 		Exclude:             opts.exclude,
 		Schemas:             dbcli.ParseSchemas(opts.schemas),
 		Include:             opts.include,
-		Policy:              nativeDiffPolicy(projectCfg),
+		Policy:              policy,
 		ProtectedTables:     opts.protectedTables,
 		TxMode:              txMode,
 		DryRun:              opts.dryRun,

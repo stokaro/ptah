@@ -29,6 +29,7 @@
 package ydb
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -54,6 +55,9 @@ import (
 // Planner plans YDB migrations for one capability set.
 type Planner struct {
 	caps capability.Capabilities
+	// rebuild plans a change YDB cannot make in place as a table rebuild;
+	// see [Planner.WithTableRebuild].
+	rebuild bool
 }
 
 // New returns a planner for the newest YDB line Ptah measured.
@@ -63,6 +67,17 @@ func New() *Planner { return NewWithCapabilities(capability.YDB262()) }
 // The set is cloned, so a caller mutating it later does not change a plan.
 func NewWithCapabilities(caps capability.Capabilities) *Planner {
 	return &Planner{caps: caps.Clone()}
+}
+
+// WithTableRebuild returns a copy of the planner that, when allow is set,
+// plans a change YDB cannot make in place -- a changed primary key, a column
+// type change, a column made NOT NULL -- as a rebuild of the table: a new
+// table, a copy of the rows, and a swap. The steps are not atomic. Without it
+// such a change is refused, and the refusal names the flag that asks for it.
+func (p *Planner) WithTableRebuild(allow bool) *Planner {
+	copied := *p
+	copied.rebuild = allow
+	return &copied
 }
 
 // GenerateMigrationAST returns the nodes that take a YDB database from the
@@ -82,15 +97,24 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 		return nil, err
 	}
 	removedTables := tableSet(diff.TablesRemoved, semantics)
-	if err := p.refuseObjects(withoutKeysOfDroppedTables(diff, removedTables, semantics)); err != nil {
-		return nil, err
-	}
 	addedTables := make(map[string]bool, len(diff.TablesAdded))
 	for _, creation := range diff.TablesAdded {
 		addedTables[semantics.TableIdentityKey(creation.Name)] = true
 	}
+	rebuilds, err := p.planRebuilds(diff, removedTables, addedTables, semantics)
+	if err != nil {
+		return nil, err
+	}
+	scoped := withoutKeysOfRebuiltTables(withoutKeysOfDroppedTables(diff, removedTables, semantics), rebuilds, semantics)
+	if err := p.refuseObjects(scoped); err != nil {
+		return nil, err
+	}
 	for _, tableDiff := range diff.TablesModified {
-		if err := p.refuseTableChanges(tableDiff); err != nil {
+		refuse := p.refuseTableChanges
+		if _, rebuilt := rebuilds[semantics.TableIdentityKey(tableDiff.TableName)]; rebuilt {
+			refuse = p.refuseRebuiltTableChanges
+		}
+		if err := refuse(tableDiff); err != nil {
 			return nil, err
 		}
 	}
@@ -100,23 +124,71 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	// render` and a plan write a new table's indexes in the same place.
 	inlineIndexes := make(map[string]bool)
 	if schemaprep.DeclaresIndexesInCreateTable(p.caps) {
-		inlineIndexes = addedTables
+		inlineIndexes = maps.Clone(addedTables)
 	}
-	if err := p.refuseIndexAdditions(diff, inlineIndexes, semantics); err != nil {
+	// A rebuilt table's indexes are written into its new CREATE TABLE, which
+	// the rebuild writes from the whole declaration, so none of them is added
+	// on its own.
+	ownIndexes := maps.Clone(inlineIndexes)
+	for key := range rebuilds {
+		ownIndexes[key] = true
+	}
+	if err := p.refuseIndexAdditions(diff, ownIndexes, semantics); err != nil {
 		return nil, err
 	}
 
 	var result []ast.Node
 	result = append(result, p.createTables(diff, inlineIndexes, semantics)...)
-	result = append(result, dropIndexes(diff.IndexRemovals(), removedTables, semantics)...)
-	for _, tableDiff := range diff.TablesModified {
-		result = append(result, p.changeTable(tableDiff, diff.DeclaredUserTypes.Enums)...)
+	result = append(result, dropIndexes(diff.IndexRemovals(), removedTables, rebuilds, semantics)...)
+	rebuiltNodes, err := p.changeTables(diff, rebuilds, semantics)
+	if err != nil {
+		return nil, err
 	}
-	result = append(result, addIndexes(diff.IndexesAdded, inlineIndexes, semantics)...)
+	result = append(result, rebuiltNodes...)
+	result = append(result, addIndexes(diff.IndexesAdded, ownIndexes, semantics)...)
 	for _, name := range diff.TablesRemoved {
 		result = append(result, ast.NewDropTable(name))
 	}
 	return result, nil
+}
+
+// changeTables writes each modified table's changes, in place or as a
+// rebuild, and then the rebuilds of the tables whose key is their only change.
+func (p *Planner) changeTables(
+	diff *difftypes.SchemaDiff,
+	rebuilds map[string]*tableRebuild,
+	semantics identifier.Semantics,
+) ([]ast.Node, error) {
+	var nodes []ast.Node
+	written := make(map[string]bool, len(rebuilds))
+	writeRebuild := func(key string) error {
+		rebuilt, err := p.rebuildNodes(rebuilds[key])
+		if err != nil {
+			return err
+		}
+		nodes = append(nodes, rebuilt...)
+		written[key] = true
+		return nil
+	}
+	for _, tableDiff := range diff.TablesModified {
+		key := semantics.TableIdentityKey(tableDiff.TableName)
+		if _, rebuilt := rebuilds[key]; !rebuilt {
+			nodes = append(nodes, p.changeTable(tableDiff, diff.DeclaredUserTypes.Enums)...)
+			continue
+		}
+		if err := writeRebuild(key); err != nil {
+			return nil, err
+		}
+	}
+	for _, key := range slices.Sorted(maps.Keys(rebuilds)) {
+		if written[key] {
+			continue
+		}
+		if err := writeRebuild(key); err != nil {
+			return nil, err
+		}
+	}
+	return nodes, nil
 }
 
 // createTables writes each added table, with the indexes the plan gives it
@@ -149,11 +221,17 @@ func (p *Planner) createTables(
 }
 
 // dropIndexes drops each removed index through its table. An index of a table
-// the plan drops goes with the table.
-func dropIndexes(refs []difftypes.IndexRef, removedTables map[string]bool, semantics identifier.Semantics) []ast.Node {
+// the plan drops or rebuilds goes with the table.
+func dropIndexes(
+	refs []difftypes.IndexRef,
+	removedTables map[string]bool,
+	rebuilds map[string]*tableRebuild,
+	semantics identifier.Semantics,
+) []ast.Node {
 	var nodes []ast.Node
 	for _, ref := range refs {
-		if removedTables[semantics.TableIdentityKey(ref.TableName)] {
+		key := semantics.TableIdentityKey(ref.TableName)
+		if _, rebuilt := rebuilds[key]; rebuilt || removedTables[key] {
 			continue
 		}
 		nodes = append(nodes, ast.NewDropIndex(ref.Name).SetTable(ref.TableName))
@@ -324,15 +402,8 @@ func indexKeyColumns(index schemamodel.Index) []string {
 // this target.
 func (p *Planner) refuseTableChanges(tableDiff difftypes.TableDiff) error {
 	subject := fmt.Sprintf("table %q", tableDiff.TableName)
-	switch {
-	case tableDiff.CommentChange != nil:
-		return refuseGap(ydbgap.Comments, "the comment on "+subject)
-	case tableDiff.RowTTLChange != nil:
-		return p.keyed(capability.RowLevelTTL, "row-level TTL", "the row-level TTL of "+subject)
-	case tableDiff.RowDeletionPolicyChange != nil:
-		return refuseGap(ydbgap.TableSettings, "the row deletion policy of "+subject)
-	case len(tableDiff.ConstraintsAdded)+len(tableDiff.ConstraintsRemoved) > 0:
-		return refuseFact(subject, "YDB has no constraint but the key, and the key never changes")
+	if err := p.refuseTableSettings(tableDiff, subject); err != nil {
+		return err
 	}
 	if tableDiff.Desired.HasTable() && !declaresKey(tableDiff.Desired) {
 		return refuseKey(capability.PrimaryKeyRequired, fmt.Sprintf("table %q declares no primary key", tableDiff.TableName))
@@ -346,6 +417,22 @@ func (p *Planner) refuseTableChanges(tableDiff difftypes.TableDiff) error {
 		if err := p.refuseColumnChange(tableDiff.TableName, colDiff); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// refuseTableSettings refuses the table-level changes a YDB plan makes neither
+// in place nor through a rebuild.
+func (p *Planner) refuseTableSettings(tableDiff difftypes.TableDiff, subject string) error {
+	switch {
+	case tableDiff.CommentChange != nil:
+		return refuseGap(ydbgap.Comments, "the comment on "+subject)
+	case tableDiff.RowTTLChange != nil:
+		return p.keyed(capability.RowLevelTTL, "row-level TTL", "the row-level TTL of "+subject)
+	case tableDiff.RowDeletionPolicyChange != nil:
+		return refuseGap(ydbgap.TableSettings, "the row deletion policy of "+subject)
+	case len(tableDiff.ConstraintsAdded)+len(tableDiff.ConstraintsRemoved) > 0:
+		return refuseFact(subject, "YDB has no constraint but the key, and the key never changes")
 	}
 	return nil
 }
@@ -370,7 +457,7 @@ func (p *Planner) refuseColumnAddition(table string, column schemamodel.Field) e
 	hasDefault := column.DefaultSet || column.Default != "" || column.DefaultExpr != ""
 	switch {
 	case column.Primary:
-		return p.keyed(capability.PrimaryKeyAlterable, "key change", subject+" as part of the key")
+		return p.rebuildable(capability.PrimaryKeyAlterable, "key change", subject+" as part of the key")
 	case err == nil && mapping.Serial, column.AutoInc, column.IdentityGeneration != "":
 		return refuseFact(subject, "YDB adds no Serial column to an existing table (`Column addition with serial data type is unsupported`)")
 	case hasDefault && !p.caps.Has(capability.AddColumnWithDefault):
@@ -393,7 +480,7 @@ func (p *Planner) refuseColumnChange(table string, colDiff difftypes.ColumnDiff)
 	if colDiff.NotNullConstraintNameChange != nil {
 		return p.keyed(capability.NamedNotNullConstraints, "named NOT NULL constraint", "the NOT NULL name of "+subject)
 	}
-	for _, key := range slices.Sorted(maps.Keys(colDiff.Changes)) {
+	for _, key := range sortedKeys(colDiff.Changes) {
 		if err := p.refuseChangeKey(subject, key, colDiff); err != nil {
 			return err
 		}
@@ -406,16 +493,16 @@ func (p *Planner) refuseChangeKey(subject, key string, colDiff difftypes.ColumnD
 	change := colDiff.Changes[key]
 	switch key {
 	case "primary_key":
-		return p.keyed(capability.PrimaryKeyAlterable, "key change", "changing whether "+subject+" is part of the key ("+change+")")
+		return p.rebuildable(capability.PrimaryKeyAlterable, "key change", "changing whether "+subject+" is part of the key ("+change+")")
 	case "type":
-		return p.keyed(capability.AlterColumnType, "column type change", "changing the type of "+subject+" ("+change+")")
+		return p.rebuildable(capability.AlterColumnType, "column type change", "changing the type of "+subject+" ("+change+")")
 	case "unique":
 		return p.keyed(capability.UniqueConstraints, "UNIQUE constraint", "changing whether "+subject+" is UNIQUE ("+change+")")
 	case "generated":
 		return p.keyed(capability.GeneratedColumns, "generated column", "changing the generation of "+subject)
 	case "nullable":
 		if strings.HasSuffix(change, "-> false") && !p.caps.Has(capability.AlterColumnSetNotNull) {
-			return refuseKey(capability.AlterColumnSetNotNull, "making "+subject+" NOT NULL")
+			return p.rebuildable(capability.AlterColumnSetNotNull, "SET NOT NULL", "making "+subject+" NOT NULL")
 		}
 		if strings.HasSuffix(change, "-> true") && !p.caps.Has(capability.AlterColumnDropNotNull) {
 			return refuseKey(capability.AlterColumnDropNotNull, "making "+subject+" nullable")
@@ -432,6 +519,25 @@ func (p *Planner) refuseChangeKey(subject, key string, colDiff difftypes.ColumnD
 	default:
 		return refuseFact(subject, fmt.Sprintf("YDB cannot change %s of a column in place (%s)", key, change))
 	}
+}
+
+// rebuildable refuses a change YDB can make only by rebuilding the table, when
+// the plan was not asked to rebuild it. The refusal is the one [Planner.keyed]
+// gives, and it says how to ask for the rebuild.
+func (p *Planner) rebuildable(key capability.Capability, feature, subject string) error {
+	err := p.keyed(key, feature, subject)
+	refusal, ok := errors.AsType[*ptaherr.CapabilityError](err)
+	if !ok || p.caps.Has(key) {
+		return err
+	}
+	refusal.Message += "; YDB makes it by rebuilding the table, which Ptah plans when asked with " + TableRebuildFlag
+	return refusal
+}
+
+// sortedKeys returns the keys of changes in order, so a refusal names the same
+// change every time.
+func sortedKeys(changes map[string]string) []string {
+	return slices.Sorted(maps.Keys(changes))
 }
 
 // keyed refuses through refuseKey when the target lacks key and through

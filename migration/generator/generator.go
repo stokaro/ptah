@@ -153,6 +153,10 @@ type DiffPolicy struct {
 	// because a blocking drop there would undo the whole point of having built
 	// the index without a lock.
 	ConcurrentIndexDrop bool
+	// AllowTableRebuild plans a change the target cannot make in place as an
+	// explicit table rebuild, in both directions of the migration. See
+	// [planner.Options.AllowTableRebuild].
+	AllowTableRebuild bool
 }
 
 // MigrationFilePair represents one generated up/down migration file pair.

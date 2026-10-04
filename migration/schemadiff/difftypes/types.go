@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/coverage"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
@@ -1393,6 +1394,21 @@ type SchemaDiff struct {
 	// It is the schema the plan runs against, so a reversal carries the
 	// pre-change database's.
 	DeclaredFunctions FunctionOrdering `json:"-"`
+
+	// CurrentNotDescribed is what the read of the database this plan runs
+	// against declined to describe, carried once for the whole diff and off
+	// the wire.
+	//
+	// A comparison concludes nothing about what a read did not look at, so no
+	// entry above carries it. A plan that recreates a table writes the new one
+	// from the declaration, though, and a setting the reader left out -- on
+	// YDB a table's TTL, changefeeds, column families and partitioning
+	// options -- would go with the old table without a word. This is how a
+	// planner sees that the table has one, and refuses the recreation.
+	//
+	// It is the read the plan runs against, so a reversal carries the same
+	// read: a rollback recreates a table of that database too.
+	CurrentNotDescribed coverage.Set `json:"-"`
 
 	// RLSEnabledTablesAdded is the tables that need RLS enabled, each carried
 	// as its declaration; see [RLSEnabledTableChanges].

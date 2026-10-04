@@ -15,6 +15,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/serverversion"
+	"ptah.run/internal/cli/internal/tablerebuild"
 	"ptah.run/internal/devdocker"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -88,6 +89,7 @@ of reporting a synced schema to a CI check.`,
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterConfigFlag(flags, &opts.configPath)
 	dbcli.RegisterEnvFlag(flags, &opts.envName)
+	tablerebuild.Register(cmd)
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
@@ -109,7 +111,10 @@ func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
 		opts.devURL,
 		projectCfg.StringValue(projectconfig.StringDevURL),
 	)
-	policy := nativeDiffPolicy(projectCfg)
+	policy, err := nativeDiffPolicy(cmd, projectCfg)
+	if err != nil {
+		return err
+	}
 
 	format := strings.ToLower(strings.TrimSpace(opts.format))
 	switch format {

@@ -481,6 +481,7 @@ func postgresFamilyPlan(dialect string) plan {
 			[]string{t.table("rnc", "a int", "a"), t.table("rnc_t", "n int, b int", "n")},
 			"ALTER TABLE rnc_t RENAME COLUMN b TO c",
 		),
+		renameTable(t.table("rnt", "n int", "n")),
 		// The one key in this plan whose expected answer is FALSE on
 		// PostgreSQL itself, so the usual reading of a verdict is inverted:
 		// a refusal here is PostgreSQL behaving as its preset says, and an
@@ -759,6 +760,7 @@ func mysqlFamilyPlan(dialect string) plan {
 			[]string{"CREATE TABLE rnc_t (n int, b int)"},
 			"ALTER TABLE rnc_t RENAME COLUMN b TO c",
 		),
+		renameTable("CREATE TABLE rnt (n int)"),
 	}
 
 	undecided := mysqlFamilyUndecided()
@@ -1034,3 +1036,13 @@ func referencePolicy(stmts referencePolicyStatements) experiment {
 // undecided on an engine where the migrator applies no timeout at all.
 const runtimePolicyReason = "the key names a runtime policy the migrator applies around a migration, not a " +
 	"statement this probe can send"
+
+// renameTableStatement renames the table renameTable's setup creates.
+const renameTableStatement = "ALTER TABLE rnt RENAME TO rnt2"
+
+// renameTable asks whether ALTER TABLE ... RENAME TO renames a table setup
+// creates: the swap a planned table rebuild ends with, asked of every dialect
+// because the registry answers for every one.
+func renameTable(setup string) experiment {
+	return acceptance(capability.RenameTable, []string{setup}, renameTableStatement)
+}

@@ -774,6 +774,7 @@ Read the columns as follows.
 | --- | --- | --- | --- | --- |
 | `--allow-destructive` | `bool` | `false` | `PTAH_ALLOW_DESTRUCTIVE` | — |
 | `--allow-external-schema` | `bool` | `false` | `PTAH_ALLOW_EXTERNAL_SCHEMA` | — |
+| `--allow-table-rebuild` | `bool` | `false` | — | — |
 | `--check-destructive` | `bool` | `false` | `PTAH_CHECK_DESTRUCTIVE` | — |
 | `--config` | `string` | — | `PTAH_CONFIG` | — |
 | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
@@ -899,6 +900,7 @@ Read the columns as follows.
 | --- | --- | --- | --- | --- |
 | `--allow-destructive` | `bool` | `false` | `PTAH_ALLOW_DESTRUCTIVE` | — |
 | `--allow-external-schema` | `bool` | `false` | `PTAH_ALLOW_EXTERNAL_SCHEMA` | — |
+| `--allow-table-rebuild` | `bool` | `false` | — | — |
 | `--attach` | `bool` | `false` | `PTAH_ATTACH` | — |
 | `--check-destructive` | `bool` | `false` | `PTAH_CHECK_DESTRUCTIVE` | — |
 | `--config` | `string` | — | `PTAH_CONFIG` | — |
@@ -1346,6 +1348,7 @@ Read the columns as follows.
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
+| `--allow-table-rebuild` | `bool` | `false` | — | — |
 | `--allowed-signers` | `string` | — | `PTAH_ALLOWED_SIGNERS` | — |
 | `--auto-approve` | `bool` | `false` | — | — |
 | `--config` | `string` | — | `PTAH_CONFIG` | — |
@@ -1391,6 +1394,7 @@ Read the columns as follows.
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--allow-external-schema` | `bool` | `false` | `PTAH_ALLOW_EXTERNAL_SCHEMA` | — |
+| `--allow-table-rebuild` | `bool` | `false` | — | — |
 | `--config` | `string` | — | `PTAH_CONFIG` | — |
 | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
@@ -1414,6 +1418,7 @@ Read the columns as follows.
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
+| `--allow-table-rebuild` | `bool` | `false` | — | — |
 | `--config` | `string` | — | `PTAH_CONFIG` | — |
 | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
 | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
@@ -1548,6 +1553,7 @@ Read the columns as follows.
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
+| `--allow-table-rebuild` | `bool` | `false` | — | — |
 | `--config` | `string` | — | `PTAH_CONFIG` | — |
 | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
