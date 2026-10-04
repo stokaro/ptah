@@ -93,8 +93,8 @@ func TestYDBDevRealm_IsADatabaseOfItsOwn(t *testing.T) {
 	}
 }
 
-// The release removes the realm with everything in it, and the directory of
-// the realms with the last one.
+// The release removes the realm with everything in it, a topic included, and
+// the directory of the realms with the last one.
 func TestYDBDevRealm_ReleaseRemovesIt(t *testing.T) {
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
@@ -107,6 +107,7 @@ func TestYDBDevRealm_ReleaseRemovesIt(t *testing.T) {
 				"CREATE TABLE `app/t` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))"), qt.IsNil)
 			c.Assert(realm.SchemaWriter().ExecuteSQL(ctx,
 				"CREATE VIEW `v` WITH (security_invoker = TRUE) AS SELECT * FROM `app/t`"), qt.IsNil)
+			c.Assert(realm.SchemaWriter().ExecuteSQL(ctx, "CREATE TOPIC `app/events` (CONSUMER `reader`)"), qt.IsNil)
 			before := directoryNames(c, ctx, line, ydburl.RealmDirectory)
 
 			release()
@@ -117,8 +118,8 @@ func TestYDBDevRealm_ReleaseRemovesIt(t *testing.T) {
 	}
 }
 
-// A reset of a realm the run claimed empties it, a view and a directory
-// included, and the claim refuses a realm a run left something in.
+// A reset of a realm the run claimed empties it, a view, a topic and a
+// directory included, and the claim refuses a realm a run left something in.
 func TestYDBDevRealm_ClaimAndReset(t *testing.T) {
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
@@ -132,6 +133,7 @@ func TestYDBDevRealm_ClaimAndReset(t *testing.T) {
 				"CREATE TABLE `app/t` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))",
 				"CREATE TABLE `u` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))",
 				"CREATE VIEW `app/v` WITH (security_invoker = TRUE) AS SELECT * FROM `u`",
+				"CREATE TOPIC `app/events` (CONSUMER `reader`)",
 			} {
 				c.Assert(realm.SchemaWriter().ExecuteSQL(ctx, statement), qt.IsNil)
 			}
@@ -143,7 +145,7 @@ func TestYDBDevRealm_ClaimAndReset(t *testing.T) {
 			c.Assert(ok, qt.IsTrue)
 			left, listErr := lister.ResetObjects(ctx, dbreset.Scope{})
 
-			c.Assert(reclaimErr, qt.ErrorMatches, `connected database is not clean: found table "t" in schema "app"; .*`)
+			c.Assert(reclaimErr, qt.ErrorMatches, `connected database is not clean: found topic "events" in schema "app"; .*`)
 			c.Assert(resetErr, qt.IsNil)
 			c.Assert(listErr, qt.IsNil)
 			c.Assert(left, qt.HasLen, 0)

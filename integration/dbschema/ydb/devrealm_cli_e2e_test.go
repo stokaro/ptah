@@ -82,6 +82,26 @@ func TestYDBBinary_DevDatabaseIsARealm(t *testing.T) {
 				c.Assert(directoryNames(c, ctx, line), qt.Not(qt.Contains), ydburl.RealmDirectory)
 			})
 
+			t.Run("a topic replays in a realm and goes with it", func(t *testing.T) {
+				c := qt.New(t)
+				migrations := filepath.Join(c.TempDir(), "migrations")
+				writeFiles(c, migrations, map[string]string{
+					"0000000001_events.up.sql":   "CREATE TOPIC `ptah_ydb_devrealm_events` (CONSUMER `reader`);\n",
+					"0000000001_events.down.sql": "DROP TOPIC `ptah_ydb_devrealm_events`;\n",
+					"0000000002_audit.up.sql":    "ALTER TOPIC `ptah_ydb_devrealm_events` ADD CONSUMER `audit`;\n",
+					"0000000002_audit.down.sql":  "ALTER TOPIC `ptah_ydb_devrealm_events` DROP CONSUMER `audit`;\n",
+				})
+				hashed, hashErr := runBinary(ctx, binary, "migrations", "hash", "--dir", migrations)
+				c.Assert(hashErr, qt.IsNil, qt.Commentf("%s", hashed))
+
+				validated, err := runBinary(ctx, binary, "migrations", "validate", "--dir", migrations, "--dev-url", url)
+
+				c.Assert(err, qt.IsNil, qt.Commentf("%s", validated))
+				c.Assert(validated, qt.Contains, "OK: migration SQL validated on dev database")
+				c.Assert(directoryNames(c, ctx, line), qt.Not(qt.Contains), "ptah_ydb_devrealm_events")
+				c.Assert(directoryNames(c, ctx, line), qt.Not(qt.Contains), ydburl.RealmDirectory)
+			})
+
 			t.Run("lint replays in a realm and reads its baseline there", func(t *testing.T) {
 				c := qt.New(t)
 				migrations := filepath.Join(c.TempDir(), "migrations")
