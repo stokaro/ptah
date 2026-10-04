@@ -305,6 +305,15 @@ each verb does on YDB is on the [YDB page](./site/src/content/docs/databases/ydb
 and the divergence is recorded under
 [Compatibility differences](./site/src/content/docs/atlas/retained-divergences.md#a-ydb-database-url).
 
+A primary key change, a column type change or `SET NOT NULL` on YDB is refused
+on this surface unless `PTAH_ALLOW_TABLE_REBUILD=1` asks for a table rebuild,
+the variable twin of the native `--allow-table-rebuild` flag; the refusal names
+the variable. Measured on the same servers, `schema apply` of an `Int32` column
+widened to `Int64` without it exits 1 and leaves the column `Int32`, and with
+it rebuilds the table, keeps its rows and then reports the schema synced. The
+community binary plans no rebuild, so strict mode refuses the variable:
+`PTAH_ATLAS_STRICT_COMPAT does not allow PTAH_ALLOW_TABLE_REBUILD`.
+
 ## Never a Copied Defect
 
 Matching the pinned Atlas CE binary is the floor, not the ceiling. Where its
