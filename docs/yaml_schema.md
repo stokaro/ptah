@@ -435,6 +435,13 @@ rendered for MySQL/MariaDB with dialect-specific trigger bodies.
   `partition_write_speed_bytes_per_second`, `partition_write_burst_bytes`,
   `supported_codecs`, and `consumers`, a map of consumer names to `important`,
   `read_from`, `supported_codecs` and `availability_period`
+- `async_replications` (YDB only): `name`, `schema`, `connection_string`,
+  `token_secret_name`, `token_secret_path`, `user`, `password_secret_name`,
+  `password_secret_path`, `consistency_level`, `commit_interval`, and `items`,
+  a list of `source` and `target` pairs
+- `transfers` (YDB only): `name`, `schema`, `source`, `target`, `using`,
+  `consumer`, `batch_size_bytes`, `flush_interval`, and the connection keys of
+  `async_replications`
 
 `matviews` accepts no refresh strategy. Ptah does not refresh materialized
 views: one is populated when it is created, a changed body is reconciled as a

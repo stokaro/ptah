@@ -1,6 +1,6 @@
 ---
 title: YDB
-description: YDB in Ptah - connecting with ydb:// URLs, what renders and plans for row tables and views, type mappings, keys, defaults and indexes, users, groups and permissions, what each release line can do, linting YQL, seeds, declared rows and the query builder, and what is not supported yet.
+description: YDB in Ptah - connecting with ydb:// URLs, what renders and plans for row tables, views, topics, async replications and transfers, type mappings, keys, defaults and indexes, users, groups and permissions, what each release line can do, linting YQL, seeds, declared rows and the query builder, and what is not supported yet.
 type: reference
 audience:
   - "database-engineer"
@@ -21,8 +21,8 @@ owns:
   - dialect-ydb
 ---
 
-Ptah renders YQL for YDB row tables, views, topics and the users, groups and
-permissions of a database, plans a migration between two schemas,
+Ptah renders YQL for YDB row tables, views, topics, async replications,
+transfers and the users, groups and permissions of a database, plans a migration between two schemas,
 connects to a live database, reads its tables back, applies DDL to it, runs
 versioned migrations against it, lints YQL for it, and writes data to it:
 seeds, declared rows and the statements the query builder renders. The
@@ -624,6 +624,174 @@ read without it. YQL sets none of them outside a serverless database. Atlas HCL
 has no block for a topic, so a plan from an HCL document leaves every topic
 alone, and an HCL export reports each topic it leaves out.
 
+## Async replications and transfers
+
+An async replication copies tables of another YDB database into replica tables
+of this one and keeps them current. A transfer reads the messages of a topic
+and writes them as rows of a table through a YQL lambda. Ptah declares, reads,
+plans and applies both under the capability keys `async_replication` and
+`transfers`, which only the YDB presets carry, and every other target refuses a
+declared one by name.
+
+Declare a replication on a struct, with one item for each table or directory it
+copies, and a transfer on another:
+
+```go
+//ptah:schema:async_replication name="mirror" connection_string="grpcs://primary.example.com:2135/?database=/prod" user="replicator" password_secret_name="replicator_password" consistency_level="global" commit_interval="PT30S"
+//ptah:schema:async_replication:item replication="mirror" source="accounts" target="replica/accounts"
+//ptah:schema:async_replication:item replication="mirror" source="/prod/ledger" target="replica/ledger"
+type Mirror struct{}
+
+//ptah:schema:transfer name="order_transfer" source="orders/feed" target="order_log" using="($msg) -> { return [<| partition: $msg._partition, offset: $msg._offset, message: CAST($msg._data AS Utf8) |>]; }" flush_interval="PT10S"
+type OrderTransfer struct{}
+```
+
+The same objects in a YAML schema:
+
+```yaml
+async_replications:
+  mirror:
+    connection_string: grpcs://primary.example.com:2135/?database=/prod
+    user: replicator
+    password_secret_name: replicator_password
+    consistency_level: global
+    commit_interval: PT30S
+    items:
+      - { source: accounts, target: replica/accounts }
+      - { source: /prod/ledger, target: replica/ledger }
+transfers:
+  order_transfer:
+    source: orders/feed
+    target: order_log
+    using: "($msg) -> { return [<| partition: $msg._partition, offset: $msg._offset, message: CAST($msg._data AS Utf8) |>]; }"
+    flush_interval: PT10S
+```
+
+The [annotation reference](../../reference/go-annotations/#ptahschemaasync_replication)
+lists every attribute.
+
+### Connections and credentials
+
+A replication names the database it reads with `connection_string`, in the
+form `grpc://host:port/?database=/path` or `grpcs://...`; a transfer names one
+only to read a topic of another database. YDB's `ENDPOINT` and `DATABASE`
+settings are not declared: the connection string says the same. A connection
+string with the database in its path (`grpc://host:2136/prod`) is refused, since
+26.2 answers `Database is not specified` and 25.1 keeps a connection that
+cannot work.
+
+A credential names a secret and never holds a value. `token_secret_path`, or
+`user` with `password_secret_path`, names a schema secret by its path relative
+to the database root; YDB 25.4 and later take it (`replication_secret_paths`),
+and earlier lines answer `Unknown replication setting: TOKEN_SECRET_PATH`.
+`token_secret_name`, or `user` with `password_secret_name`, names a secret
+object made with `CREATE OBJECT ... (TYPE SECRET)`, which every line takes.
+Ptah carries that name as written and neither creates nor checks the object:
+it does not model secret objects, and refusing the name would leave the lines
+before 25.4 no way to declare a credential. A password or a token written as a
+value, which YDB accepts and does not read back, is refused, and so is
+`CA_CERT`, which YDB does not read back either. Lint rule `YD116` reports a
+value written in a migration file.
+
+Create the secret before the replication. YDB accepts a replication whose
+secret it cannot read and then stops it with an error: `secret
+/local/app/token not found` for a path, and `No such secret` for a name.
+
+### Replica tables
+
+YDB creates each replica table itself, so a schema that declares a replication
+does not declare the tables it creates, and a table declared at a replica's
+path is refused: YDB accepts a replication into a table that exists and then
+stops it (`Create dst error: StatusSchemeError, Empty replication config`).
+
+While the replication runs, its replica tables are read-only. A write answers
+`Can't execute write tx at replicated table`, and an `ALTER TABLE` answers
+`path is an async replica table`. The read records each replica table rather
+than describing it, so no plan drops, changes or creates one. The changefeed
+YDB adds to each source table of a replication of the same database is
+recorded the same way, and stays.
+
+### Changing a replication
+
+YDB reports a replication as running, paused, failed over or stopped on an
+error. Ptah reads the state and never changes it: pausing, resuming and
+failing over are operations on the data, not settings.
+
+A replication's items, consistency level and commit interval change in no
+replication (`CONSISTENCY_LEVEL is not supported in ALTER`), so a plan that
+changes them is refused. Drop the replication with `DROP ASYNC REPLICATION
+... CASCADE`, which drops its replica tables, and plan again. Its connection
+string and credential change with `ALTER ASYNC REPLICATION ... SET` only while
+it is paused (`Modifications are not allowed in StandBy state`). A plan for a
+running replication, or one stopped on an error, is refused with the statement
+that pauses it; resume it after the apply with `SET (STATE = 'StandBy')`. A
+credential is never taken away, since YDB has no statement for it. A `SET` that
+names one setting keeps the others, measured on 25.1 and 26.2, so a plan names
+only what changed.
+
+### Dropping a replication
+
+A replication dropped without `CASCADE` keeps its replica tables, and unless it
+was failed over first they stay read-only for good. So a plan drops a running,
+paused or stopped replication with `CASCADE`, which drops its replica tables
+too. A schema that removes the replication and still declares one of its
+tables is refused: fail the replication over first with `ALTER ASYNC
+REPLICATION ... SET (STATE = 'DONE', FAILOVER_MODE = 'FORCE')`, which makes its
+tables ordinary, and plan again. A failed-over replication is dropped without
+`CASCADE`, and its tables are compared as the ordinary tables they are.
+
+Failing over is one way: YDB answers `Cannot switch state` to any later state
+change. Lint rule `YD115` reports a `DROP ASYNC REPLICATION` without `CASCADE`
+for a replication the migration did not fail over, and `DS107` a `DROP ...
+CASCADE`.
+
+### Transfers
+
+A transfer reads a topic of this database, by its path relative to the
+database root, or of another database through `connection_string`. A topic of
+this database is declared as a topic or as a changefeed, whose topic is
+`<table>/<changefeed>`; a transfer of a topic the schema does not declare is
+refused, because YDB accepts one and then stops it (`Discovery error`). Its
+table is declared too, since YDB refuses a transfer into a missing table
+(`Path does not exist`).
+
+YDB stores the lambda as it was written, comments and spacing included, so the
+plan compares it as text and changes it with `ALTER TRANSFER ... SET USING` in
+any state. The batch size and the flush interval change in place too; a
+fraction of a second in the flush interval is refused, since YDB keeps whole
+seconds. A transfer's source, table and consumer change in no transfer
+(`CONSUMER is not supported in ALTER`), so a plan that changes them is refused.
+
+A transfer that names no consumer reads through one YDB creates with a
+generated name. The plan keeps that consumer on the changefeed or the topic
+that has it, and `DROP TRANSFER` drops it. A consumer the transfer names stays
+when the transfer is dropped, and YDB refuses a transfer through a consumer
+that does not exist.
+
+A plan creates a transfer after its table, changefeed and topic, and drops it
+before any of them goes. YDB keeps a transfer when its table or topic is
+dropped and stops it, so a plan that removes one of them while the schema keeps
+the transfer is refused, and so is a rebuild of its table.
+
+25.1 creates no transfer unless the cluster turns `EnableTopicTransfer` on
+(`Topic transfer creation is disabled`), so its preset lacks `transfers`; a
+connection that reads the cluster's [feature flags](#feature-flags) follows the
+flag.
+
+### Reading them back
+
+The read describes replications and transfers through YDB's replication
+service. The local-ydb image does not start that service unless
+`YDB_GRPC_SERVICES` names `replication`, and then the read records each
+replication and transfer rather than describing it, so a plan leaves them
+alone. A cluster whose configuration lists no services starts it with the
+rest.
+
+A dev database does not replay either; see
+[Dev, shadow and scratch databases](#dev-shadow-and-scratch-databases). In a
+dev realm a transfer's `FROM` and `TO` resolve at the database root rather
+than in the realm (`Path does not exist`).
+
 ## Planning changes
 
 YDB changes a table in place less than the SQL engines do, and runs a schema
@@ -631,32 +799,38 @@ statement outside any transaction. A plan therefore refuses what the server
 cannot do before it emits anything, and orders what it emits so that no
 statement needs one that has not run yet:
 
-1. Drop the views the plan removes or replaces, a view before the view it
+1. Drop the transfers the plan removes, then the async replications, before
+   anything a transfer reads or writes goes and before a table is created at
+   a path a replication held.
+2. Drop the views the plan removes or replaces, a view before the view it
    reads.
-2. Revoke the permissions and remove the memberships the plan takes away, then
+3. Revoke the permissions and remove the memberships the plan takes away, then
    create and change users and groups.
-3. Drop the removed topics, so a table created at a topic's path finds it free.
-4. Create the added tables, with their indexes and changefeeds, each followed
+4. Drop the removed topics, so a table created at a topic's path finds it free.
+5. Create the added tables, with their indexes and changefeeds, each followed
    by the `ALTER SEQUENCE` that gives a Serial column its declared start and
    increment.
-5. Drop the indexes the plan removes, before any column they name. YDB refuses
+6. Drop the indexes the plan removes, before any column they name. YDB refuses
    to drop an indexed or a covered column.
-6. Rename the indexes the declaration renames, then change the partitioning of
+7. Rename the indexes the declaration renames, then change the partitioning of
    the indexes that keep their definition.
-7. Per table: add columns, then change columns in place, then set or reset
+8. Per table: add columns, then change columns in place, then set or reset
    the TTL, then drop columns. YDB refuses to drop the column a TTL reads.
-8. Change the start and the increment of the Serial columns of existing tables.
-9. Add the new indexes of existing tables.
-10. Per table: drop changefeeds, then add changefeeds with their consumers,
+9. Change the start and the increment of the Serial columns of existing tables.
+10. Add the new indexes of existing tables.
+11. Per table: drop changefeeds, then add changefeeds with their consumers,
     then change topics in place. Drops come first, so a table that swaps one
     changefeed for another stays within YDB's limit.
-11. Drop the removed tables.
-12. Create the added topics, then change the changed ones, so a topic created
+12. Drop the removed tables.
+13. Create the added topics, then change the changed ones, so a topic created
     at a dropped table's path finds it free.
-13. Create the added and replaced views, a view after the view it reads. YDB
+14. Create the added async replications and change the changed ones, then
+    the transfers, once the tables, changefeeds and topics a transfer uses
+    exist.
+15. Create the added and replaced views, a view after the view it reads. YDB
     checks a view's query against the schema when it creates the view.
-14. Add memberships and grants, once the tables they name exist.
-15. Drop the removed users and groups, after revoking what they hold:
+16. Add memberships and grants, once the tables they name exist.
+17. Drop the removed users and groups, after revoking what they hold:
     `DROP USER` leaves its permissions behind, and a user created later under
     the name would hold them.
 
@@ -741,9 +915,9 @@ or `stable-25-4-1`:
 | `YDB262` | 26.2 | — |
 | `YDB261` | 26.1 | `SET DEFAULT` and `DROP DEFAULT` on an existing column |
 | `YDB254` | 25.4 | a column added with a default, a changefeed's `USER_SIDS`, a `GRANT` on a root object by its relative name |
-| `YDB253` | 25.3 | a consumer's `availability_period` |
+| `YDB253` | 25.3 | a consumer's `availability_period`, a replication or transfer secret named by its path |
 | `YDB252` | 25.2 | a `JsonDocument` or `DyNumber` default, `UPDATE ... RETURNING` on a table with a unique index, a changefeed's `SCHEMA_CHANGES` |
-| `YDB251` | 25.1 | the 64-bit date and time types, `Decimal` precision other than 22,9, an `Int16` or `Uint16` default, an auto-partitioned changefeed topic |
+| `YDB251` | 25.1 | the 64-bit date and time types, `Decimal` precision other than 22,9, an `Int16` or `Uint16` default, an auto-partitioned changefeed topic, a transfer |
 
 `ptah schema render --dialect ydb --server-version 25.1.4.7` renders for a line
 without a server. The capability probe measures 26.2, the current release, and
@@ -773,6 +947,8 @@ The flags decide these capabilities:
 | `EnableParameterizedDecimal` | `parameterized_decimal` |
 | `EnableMoveIndex` | `index_rename` |
 | `EnableTopicAutopartitioningForCDC` | `changefeed_topic_auto_partitioning` |
+| `EnableTopicTransfer` | `transfers` |
+| `EnableReplication` | `async_replication` |
 
 `EnableAsyncIndexes` decides no capability: a cluster with the flag off still
 builds a `GLOBAL ASYNC` index, so `async_indexes` keeps the preset's answer.
@@ -809,15 +985,17 @@ database read every row table under the database root, its columns, defaults,
 primary key, TTL and global indexes, with each index's partitioning and read
 replicas, its changefeeds, each with the retention and the consumers of its
 topic, every view with the query the server stores, every topic with its
-settings and consumers, and the users, groups and permissions; see
+settings and consumers, every async replication and transfer with its state,
+and the users, groups and permissions; see
 [Users, groups and permissions](#users-groups-and-permissions).
 
 What Ptah does not model yet is recorded rather than dropped:
 column-oriented tables, sequences other than a `Serial` column's, the settings
 of a table such as a TTL run interval, column families and partitioning
-options, and a changefeed holding a setting Ptah does not read, such as
-attributes, an AWS region, trace identifiers or a shared consumer. A command
-reports them, and a plan neither drops nor changes them.
+options, a changefeed holding a setting Ptah does not read, such as
+attributes, an AWS region, trace identifiers or a shared consumer, and the
+replica tables an async replication writes. A command reports them, and a plan
+neither drops nor changes them.
 
 An index kind Ptah cannot read, such as a vector or a full-text index, is
 refused by name rather than read as a plain index.
@@ -854,17 +1032,28 @@ string, a backslash escapes a quote, and a block or an action body is one
 statement. `--server-version` names the release line a capability is read
 from, and the newest line is used without it.
 
-Migration lint reports the statements YDB refuses, or runs with an effect the
-statement does not state, under the `YD` family: a unique index added to an
-existing table, a block that mixes schema and data statements, an `ADD COLUMN`
-the line refuses, a dropped column an index or the TTL uses, a partitioning
-change that resets the minimum partition count, a table a view reads that is
-dropped or renamed, a renamed table that carries a changefeed,
-a `REVOKE GRANT OPTION FOR`, which takes the permission too, a dropped user
-or group, which leaves its permissions behind, a topic setting reset that
-changes nothing, and a topic setting YDB keeps as nothing. `DS107` reports a
-dropped user or group as it reports a dropped role elsewhere, and a dropped
-topic.
+Migration lint reports, under the `YD` family, the statements YDB refuses or
+runs with an effect the statement does not state:
+
+- a unique index added to an existing table;
+- a block that mixes schema and data statements;
+- an `ADD COLUMN` the line refuses;
+- a dropped column an index or the TTL uses;
+- a partitioning change that resets the minimum partition count;
+- a table a view reads that is dropped or renamed;
+- a renamed table that carries a changefeed;
+- a `REVOKE GRANT OPTION FOR`, which takes the permission too;
+- a dropped user or group, which leaves its permissions behind;
+- a topic setting reset that changes nothing, and a topic setting YDB keeps as
+  nothing;
+- an async replication dropped without `CASCADE` before it was failed over,
+  which leaves its replica tables read-only for good;
+- a password or a token written as a value in an async replication or a
+  transfer.
+
+`DS107` reports a dropped user or group as it reports a dropped role
+elsewhere, a dropped topic, a dropped transfer and an async replication
+dropped with `CASCADE`.
 [Lint rules](../../reference/lint-rules/#ydb) lists each rule with its
 meaning.
 
