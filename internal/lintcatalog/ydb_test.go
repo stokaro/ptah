@@ -80,9 +80,9 @@ var ydbAppliesFixtures = map[string]map[string]string{
 	"NM104": withVersion("ALTER TABLE `shop/users` ADD INDEX Users_Score GLOBAL ON (email);\n", "-- nothing\n"),
 }
 
-// ydbAppliesWithTheFlagFixtures is the same for the two rules that read YQL's
-// unique index, which report on a target that adds one to an existing table;
-// a target that does not is YD101's.
+// ydbAppliesWithTheFlagFixtures is the same for MF101 and MF102, which read
+// YQL's unique index and report on a target that adds one to an existing
+// table; a target that does not is YD101's.
 var ydbAppliesWithTheFlagFixtures = map[string]map[string]string{
 	"MF101": withVersion("ALTER TABLE `shop/users` ADD INDEX users_email GLOBAL UNIQUE SYNC ON (email);\n", "-- nothing\n"),
 	"MF102": withVersion("ALTER TABLE `shop/users` DROP INDEX users_name;\n"+

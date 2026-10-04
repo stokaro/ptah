@@ -1,6 +1,7 @@
 package lint
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strings"
@@ -20,13 +21,13 @@ import (
 // it runs, which the server decides the same way in either direction, so each
 // one reads the down half of a migration as well.
 //
-// Two of them need to know what the table looks like before the statement:
-// whether an index uses a column, which column the TTL reads, which views read
-// a table. A YDB database cannot be a dev database yet (stokaro/ptah#4015), so
-// that state is read from the directory itself: the up migrations before the
-// analyzed version, in version order, then the statements of the file before
-// the one analyzed. A table created outside the directory is unknown to it,
-// and an unknown table reports nothing.
+// YD104 and YD106 need to know what the table looks like before the
+// statement: whether an index uses a column, which column the TTL reads,
+// which views read a table. A YDB database cannot be a dev database yet
+// (stokaro/ptah#4015), so that state is read from the directory itself: the
+// up migrations before the analyzed version, in version order, then the
+// statements of the file before the one analyzed. A table created outside the
+// directory is unknown to it, and an unknown table reports nothing.
 //
 // A run that names no dialect runs every rule, YD included, and reads the
 // text with the hybrid lexer, which does not read YQL, against a target that
@@ -538,16 +539,7 @@ func ydbHistory(files []File) {
 			ups = append(ups, i)
 		}
 	}
-	slices.SortStableFunc(ups, func(a, b int) int {
-		switch {
-		case files[a].Version < files[b].Version:
-			return -1
-		case files[a].Version > files[b].Version:
-			return 1
-		default:
-			return 0
-		}
-	})
+	slices.SortStableFunc(ups, func(a, b int) int { return cmp.Compare(files[a].Version, files[b].Version) })
 	state := (*ydbSchema)(nil).clone()
 	after := make(map[int64]*ydbSchema, len(ups))
 	for _, index := range ups {
