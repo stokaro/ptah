@@ -35,4 +35,4 @@ DROP INDEX IF EXISTS [users_name_ix] ON [users];
 -- render: a covering index
 -- refused: sqlserver does not support INCLUDE columns on index "users_name_ix"; target cockroachdb, postgres, spanner, ydb, or yugabytedb
 -- plan: the current schema to a covering index
-
+-- refused: sqlserver does not support INCLUDE columns on index "users_name_ix"; target cockroachdb, postgres, spanner, ydb, or yugabytedb

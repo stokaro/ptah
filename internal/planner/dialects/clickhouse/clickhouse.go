@@ -278,6 +278,11 @@ func (p *Planner) addNewIndexes(
 			node.Type = index.Type
 		}
 		node.Granularity = index.Granularity
+		// ClickHouse has no payload columns. The node carries them anyway, so
+		// the renderer refuses the index with the message a render of the same
+		// schema gives, instead of writing a skipping index without them
+		// (stokaro/ptah#4112).
+		node.IncludeColumns = append([]string(nil), index.IncludeColumns...)
 		result = append(result, node)
 	}
 	return result, nil

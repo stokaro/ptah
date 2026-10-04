@@ -8,6 +8,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/exprkey"
@@ -908,7 +909,8 @@ func indexDefinitionsChanged(
 		declaredPredicate = resolved.Predicate
 	}
 	if !nullsDistinctEqual(desired.NullsDistinct, database.NullsDistinct) ||
-		indexPredicateChanged(declaredPredicate, database.Condition, dialect) {
+		indexPredicateChanged(declaredPredicate, database.Condition, dialect) ||
+		indexPayloadChanged(desired.IncludeColumns, database.IncludeColumns, dialect, semantics) {
 		return true
 	}
 	// Every other property is compared per dialect, because "these two indexes
@@ -929,6 +931,30 @@ func indexDefinitionsChanged(
 	default:
 		return false
 	}
+}
+
+// indexPayloadChanged answers whether an index's payload columns -- INCLUDE on
+// the PostgreSQL family, STORING on CockroachDB, COVER on YDB -- differ, on
+// every dialect, since a target either carries the payload or refuses it.
+//
+// On a target whose preset has [capability.IndexCoveringColumns], Ptah renders
+// the payload and the reader reports it, so the two lists are compared as the
+// PostgreSQL comparison compares them, order included. CockroachDB, YugabyteDB
+// and Spanner kept the name-only comparison for everything past the predicate,
+// so an index that only gained a payload compared equal and the database never
+// got it (stokaro/ptah#4112).
+//
+// On a target without the key, the renderer refuses an index that declares a
+// payload, and the reader reports none. A declared payload is therefore a
+// change, so the plan writes the index and refuses it with the renderer's own
+// message, as a render of the same schema does. Comparing the read side there
+// too would turn an INCLUDE the server holds but Ptah does not render, such as
+// on SQL Server, into a rebuild that drops it.
+func indexPayloadChanged(desired, database []string, dialect string, semantics identifier.Semantics) bool {
+	if !capability.ForDialect(dialect).Has(capability.IndexCoveringColumns) {
+		return len(desired) > 0
+	}
+	return postgresIncludeColumnsChanged(desired, database, semantics)
 }
 
 // ydbIndexDefinitionChanged answers whether a YDB index has to be rebuilt to
