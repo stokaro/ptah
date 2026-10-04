@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/tablerebuild"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/planartifact"
 	"ptah.run/internal/revisiontable"
@@ -99,6 +100,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterIgnoreExtensionFlag(flags, &opts.ignoreExtensions)
 	dbcli.RegisterMigrationsTableFlag(flags, new(string))
 	dbcli.RegisterRevisionTableFormatFlag(flags, new(string))
+	tablerebuild.Register(cmd)
 }
 
 func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
@@ -227,8 +229,13 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	undecidednote.Report(cmd.ErrOrStderr(), undecided, "the database", "the desired schema")
 
 	// 4. Display differences summary
+	rebuild, err := tablerebuild.Requested(cmd)
+	if err != nil {
+		return err
+	}
 	astNodes, err := planner.GenerateSchemaDiffASTWithOptions(diff, info.Dialect, planner.Options{
-		Capabilities: info.Capabilities,
+		Capabilities:      info.Capabilities,
+		AllowTableRebuild: rebuild,
 	})
 
 	if err != nil {

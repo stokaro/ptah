@@ -194,6 +194,7 @@ func oraclePlan() plan {
 			[]string{"CREATE TABLE rcc (n NUMBER(10))"},
 			"ALTER TABLE rcc RENAME COLUMN n TO m",
 		),
+		renameTable("CREATE TABLE rnt (n NUMBER(10))"),
 		// UNIQUE as a CONSTRAINT, asked because two dialects in the registry
 		// refuse the spelling and Oracle is not expected to be one of them
 		// (stokaro/ptah#2585).

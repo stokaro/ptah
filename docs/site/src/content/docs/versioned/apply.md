@@ -807,6 +807,12 @@ The revision table, the migration log and the tag table sit in the directory
 `--migrations-schema` names, or at the database root. YDB has no
 `information_schema`, so Ptah asks the scheme service whether they exist.
 
+A primary key change, a column type change or `SET NOT NULL` is planned only as
+a table rebuild, and only when `migrations generate` is given
+`--allow-table-rebuild`; see [table rebuilds](../../databases/ydb/#table-rebuilds).
+Each step of the rebuild is a query of its own, so a run interrupted between two
+of them resumes at the next with `up --allow-dirty`.
+
 ### Statement timeouts on YDB
 
 YDB has no statement timeout a session can set, and a schema statement ignores

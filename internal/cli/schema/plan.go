@@ -16,6 +16,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/schemaroot"
+	"ptah.run/internal/cli/internal/tablerebuild"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/sqlitevirtual"
 )
@@ -113,6 +114,7 @@ environment variable.`,
 	disableJSONEnvBinding(flags, planJSONFlag)
 	cmd.MarkFlagsMutuallyExclusive(planSaveFlag, planDryRunFlag)
 	cmd.MarkFlagsMutuallyExclusive(planOutputFlag, planDryRunFlag)
+	tablerebuild.Register(cmd)
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
@@ -173,7 +175,10 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 		opts.devURL,
 		projectCfg.StringValue(projectconfig.StringDevURL),
 	)
-	policy := nativeDiffPolicy(projectCfg)
+	policy, err := nativeDiffPolicy(cmd, projectCfg)
+	if err != nil {
+		return atlasschema.PlanEvidence{}, err
+	}
 
 	if strings.TrimSpace(opts.dbURL) == "" {
 		return atlasschema.PlanEvidence{}, fmt.Errorf("database URL is required")

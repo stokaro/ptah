@@ -281,6 +281,8 @@ func clickHousePlan() plan {
 			[]string{t.table("rnc_t", "n Int64, b Int64", "n")},
 			"ALTER TABLE rnc_t RENAME COLUMN b TO c",
 		),
+		acceptanceNote(capability.RenameTable, []string{t.table("rnt", "n Int64", "n")}, renameTableStatement,
+			"ClickHouse renames a table through RENAME TABLE, a different statement from the ALTER clause this key names"),
 	}
 	return plan{experiments: experiments, undecided: map[capability.Capability]string{
 		capability.AlterTableAlgorithmLock: "the key names the MySQL-family ALGORITHM and LOCK clauses; " +

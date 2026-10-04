@@ -117,7 +117,7 @@ func (p *Planner) constraintRefusal(constraintType, name, verb string) error {
 	subject := verb + " constraint " + name
 	switch strings.ToUpper(strings.TrimSpace(constraintType)) {
 	case "PRIMARY KEY":
-		return p.keyed(capability.PrimaryKeyAlterable, "key change", subject+", the primary key")
+		return p.rebuildable(capability.PrimaryKeyAlterable, "key change", subject+", the primary key")
 	case "UNIQUE":
 		return p.keyed(capability.UniqueConstraints, "UNIQUE constraint", subject+" (declare a unique index instead)")
 	case "CHECK":

@@ -32,6 +32,12 @@ type DiffPolicy struct {
 	// explicit `false` in the project config rather than from an absent one --
 	// which is why the config's presence bit is read and not just its value.
 	ConcurrentIndexCreateDisabled bool
+
+	// AllowTableRebuild plans a change the target cannot make in place as an
+	// explicit table rebuild. The native commands set it from
+	// --allow-table-rebuild; the compatibility surface never does, because no
+	// Atlas dialect needs one.
+	AllowTableRebuild bool
 }
 
 // declaredConcurrentIndexRefs is the index additions the desired description

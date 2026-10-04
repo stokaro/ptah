@@ -20,6 +20,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/migrateflags"
+	"ptah.run/internal/cli/internal/tablerebuild"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devdocker"
@@ -102,6 +103,7 @@ repository alone.`,
 	dbcli.RegisterExternalSchemaOptInFlag(flags)
 	dbcli.RegisterMigrationsTableFlag(flags, new(string))
 	dbcli.RegisterRevisionTableFormatFlag(flags, new(string))
+	tablerebuild.Register(cmd)
 
 	cmdutil.ConfigureCommand(cmd)
 	return cmd
@@ -502,6 +504,10 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	allowTableRebuild, err := tablerebuild.Requested(cmd)
+	if err != nil {
+		return err
+	}
 	connectTimeoutValue, err := cmd.Flags().GetString(dbcli.ConnectTimeoutFlagName)
 	if err != nil {
 		return err
@@ -639,6 +645,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 			ConcurrentIndex:     projectCfg.Diff.ConcurrentIndexCreate(),
 			ConcurrentIndexDrop: projectCfg.Diff.ConcurrentIndexDrop(),
 			OnlineAlter:         projectCfg.Diff.OnlineAlterRequested(),
+			AllowTableRebuild:   allowTableRebuild,
 		},
 	}
 	outcome := &generateOutcome{current: "the database"}

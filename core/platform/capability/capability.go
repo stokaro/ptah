@@ -793,6 +793,26 @@ const (
 	// PostgreSQL interface with `Only <TABLE> is supported for renaming`.
 	RenameColumnClause Capability = "rename_column_clause"
 
+	// RenameTable marks support for renaming a table in place with ALTER
+	// TABLE ... RENAME TO <name>, which keeps its rows and its indexes.
+	//
+	// The YDB planner swaps a rebuilt table into place with it, so a target
+	// without it cannot take a planned table rebuild. On YDB the new name is
+	// a path from the database root, not from the table's own directory:
+	// measured on 26.2.1.14 and 25.1.4.7, `ALTER TABLE `d/b` RENAME TO c`
+	// moves the table to `/local/c`. Renaming onto a table that exists is
+	// refused (`path exist, request doesn't accept it`), and YQL has no
+	// statement that swaps two tables at once.
+	//
+	// Measured with `ALTER TABLE rnt RENAME TO rnt2` and a read of rnt2:
+	// accepted by PostgreSQL 18.6, MySQL 8.4.11, MariaDB 11.8.9, SQLite
+	// 3.51.0, CockroachDB v26.3.2, YugabyteDB 2026.1.2.0, Oracle 23.26.3, the
+	// Spanner PostgreSQL interface (PGAdapter emulator v0.56.1) and YDB;
+	// refused by SQL Server 2022 (`Incorrect syntax near 'RENAME'`), which
+	// renames through sp_rename, and ClickHouse 26.9.10.4 (`Expected
+	// COLUMN`), which has RENAME TABLE instead.
+	RenameTable Capability = "rename_table"
+
 	// CatalogCheckConstraintTableName marks targets whose
 	// information_schema.CHECK_CONSTRAINTS view carries a TABLE_NAME column,
 	// so a CHECK clause read out of it can be attributed to the table that
@@ -1497,6 +1517,9 @@ var registry = map[Capability]spec{
 	RenameColumnClause: {
 		doc: "ALTER TABLE ... RENAME COLUMN renames a column in place (SQLite 3.25+)",
 	},
+	RenameTable: {
+		doc: "ALTER TABLE ... RENAME TO renames a table in place, keeping its rows and indexes",
+	},
 	CatalogCheckConstraintTableName: {
 		doc: "information_schema.CHECK_CONSTRAINTS carries TABLE_NAME (MariaDB only)",
 	},
@@ -1845,6 +1868,7 @@ func MySQL84() Capabilities {
 		CatalogViewDependencies:         true,
 		ShowRoutinePrivilege:            true,
 		RenameColumnClause:              true,
+		RenameTable:                     true,
 		CatalogCheckConstraintTableName: false,
 		GeneratedColumns:                true,
 		DeferrableConstraints:           false,
@@ -2053,6 +2077,7 @@ func MariaDB1011() Capabilities {
 		CatalogViewDependencies:         false,
 		ShowRoutinePrivilege:            false,
 		RenameColumnClause:              true,
+		RenameTable:                     true,
 		CatalogCheckConstraintTableName: true,
 		GeneratedColumns:                true,
 		DeferrableConstraints:           false,
@@ -2197,6 +2222,7 @@ func Postgres16() Capabilities {
 		CatalogViewDependencies:         true,
 		ShowRoutinePrivilege:            false,
 		RenameColumnClause:              true,
+		RenameTable:                     true,
 		CatalogCheckConstraintTableName: false,
 		GeneratedColumns:                true,
 		DeferrableConstraints:           true,
@@ -2465,6 +2491,7 @@ func ClickHouse24() Capabilities {
 		CatalogViewDependencies:         false,
 		ShowRoutinePrivilege:            false,
 		RenameColumnClause:              true,
+		RenameTable:                     false,
 		CatalogCheckConstraintTableName: false,
 		GeneratedColumns:                false,
 		DeferrableConstraints:           false,
@@ -2625,6 +2652,7 @@ func SQLite3() Capabilities {
 		CatalogViewDependencies:         false,
 		ShowRoutinePrivilege:            false,
 		RenameColumnClause:              true,
+		RenameTable:                     true,
 		CatalogCheckConstraintTableName: false,
 		GeneratedColumns:                true,
 		DeferrableConstraints:           true,
@@ -2870,6 +2898,7 @@ func SQLServer2022() Capabilities {
 		CatalogViewDependencies:         true,
 		ShowRoutinePrivilege:            false,
 		RenameColumnClause:              false,
+		RenameTable:                     false,
 		CatalogCheckConstraintTableName: false,
 		GeneratedColumns:                false,
 		DeferrableConstraints:           false,
@@ -3551,6 +3580,7 @@ func Oracle23() Capabilities {
 		CatalogViewDependencies:         false,
 		ShowRoutinePrivilege:            false,
 		RenameColumnClause:              true,
+		RenameTable:                     true,
 		CatalogCheckConstraintTableName: false,
 		// GENERATED ALWAYS AS (expr) is ACCEPTED both VIRTUAL and STORED.
 		GeneratedColumns: true,
@@ -3765,7 +3795,8 @@ func YDB262() Capabilities {
 		// and DROP DEFAULT are accepted on this line and refused on 26.1.
 		// ADD COLUMN with a default fills the default into existing rows.
 		// A default is a literal: `DEFAULT CurrentUtcTimestamp()` answers
-		// `Unsupported type of literal`.
+		// `Unsupported type of literal`. A table is renamed with ALTER TABLE
+		// ... RENAME TO, which the planner's table rebuild swaps with.
 		PrimaryKeyRequired:      true,
 		PrimaryKeyAlterable:     false,
 		AlterColumnType:         false,
@@ -3775,6 +3806,7 @@ func YDB262() Capabilities {
 		AddColumnWithDefault:    true,
 		ExpressionDefaults:      false,
 		RenameColumnClause:      false,
+		RenameTable:             true,
 		AlterTableAlgorithmLock: false,
 
 		// Types. The wide date and time types, Decimal(p,s) with p up to 35,

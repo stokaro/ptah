@@ -25,6 +25,7 @@ import (
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/diffreport"
 	"ptah.run/internal/cli/internal/exitcode"
+	"ptah.run/internal/cli/internal/tablerebuild"
 	"ptah.run/internal/dbexprprobe"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/genexprprobe"
@@ -95,6 +96,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
 	dbcli.RegisterIgnoreExtensionFlag(flags, &opts.ignoreExtensions)
+	tablerebuild.Register(cmd)
 }
 
 func compareCommand(cmd *cobra.Command, opts *options) error {
@@ -209,8 +211,13 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 
 	// 4. Display differences: every category the comparator recorded, then the
 	// SQL that reconciles them.
+	rebuild, err := tablerebuild.Requested(cmd)
+	if err != nil {
+		return err
+	}
 	output, err := planner.GenerateSchemaDiffSQLWithOptions(diff, info.Dialect, planner.Options{
-		Capabilities: info.Capabilities,
+		Capabilities:      info.Capabilities,
+		AllowTableRebuild: rebuild,
 	})
 
 	if err != nil {

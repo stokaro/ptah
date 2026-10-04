@@ -212,6 +212,7 @@ func sqlServerPlan() plan {
 			"SQL Server renames a column through the sp_rename procedure, which is a different statement "+
 				"from the ALTER clause this key names",
 		),
+		acceptanceNote(capability.RenameTable, []string{"CREATE TABLE rnt (n int)"}, renameTableStatement, sqlServerRenameTableNote),
 		acceptance(capability.UniqueConstraints, nil,
 			"CREATE TABLE uqc (n int NOT NULL, CONSTRAINT uqc_uq UNIQUE (n))",
 		),
@@ -355,3 +356,7 @@ func sqlServerDeleteColumnListExperiment() experiment {
 			"REFERENCES fdc_parent (id) ON DELETE SET NULL (parent_id)",
 	)
 }
+
+// sqlServerRenameTableNote is why SQL Server refuses the rename_table row.
+const sqlServerRenameTableNote = "SQL Server renames a table through the sp_rename procedure, which is a " +
+	"different statement from the ALTER clause this key names"

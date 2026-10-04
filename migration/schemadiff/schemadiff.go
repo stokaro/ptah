@@ -424,6 +424,9 @@ func compareReportingUndecidedAdditions(
 	diff.DeclaredConstraintHosts = difftypes.ConstraintHostDeclarationsOf(
 		desired, diff.ConstraintsAdded, diff.ConstraintsRemoved, identifierSemantics,
 	)
+	// What the read of the database declined to describe, for a target that
+	// rebuilds a table and must not drop a setting nobody compared.
+	diff.CurrentNotDescribed = database.NotDescribed
 
 	// Comments on the objects that take theirs through a statement of its
 	// own, compared only where the target stores and reports them.
