@@ -73,6 +73,9 @@ type Statement struct {
 	PrimaryKey bool
 	// Indexes are the indexes a CREATE TABLE declares inline, in order.
 	Indexes []Index
+	// Families are the column families a CREATE TABLE declares with a FAMILY
+	// entry, in order.
+	Families []string
 	// TTLColumn is the column a CREATE TABLE's TTL setting reads, and empty
 	// when it sets none.
 	TTLColumn string
@@ -117,6 +120,9 @@ type Column struct {
 	NotNull bool
 	// Default reports a DEFAULT in the declaration.
 	Default bool
+	// Family is the column family the declaration puts the column in, and
+	// empty when it names none.
+	Family string
 }
 
 // Index is one index a statement declares or adds.
@@ -170,6 +176,12 @@ const (
 	SetConsumerSettings
 	// ResetConsumerSettings is an ALTER TOPIC's ALTER CONSUMER ... RESET (...).
 	ResetConsumerSettings
+	// AddFamily is ADD FAMILY.
+	AddFamily
+	// AlterFamily is ALTER FAMILY ... SET.
+	AlterFamily
+	// SetColumnFamily is ALTER COLUMN ... SET FAMILY.
+	SetColumnFamily
 )
 
 // Action is one action of an ALTER TABLE.
@@ -187,6 +199,9 @@ type Action struct {
 	// Changefeed is the changefeed ADD CHANGEFEED adds or DROP CHANGEFEED
 	// drops.
 	Changefeed string
+	// Family is the column family ADD FAMILY adds, ALTER FAMILY changes, or
+	// ALTER COLUMN ... SET FAMILY moves Column into.
+	Family string
 	// Settings are what SET sets or RESET resets, of the table, the topic or
 	// the consumer.
 	Settings []Setting
@@ -338,7 +353,11 @@ func readCreateTable(tokens []lexer.Token) Statement {
 			stmt.PrimaryKey = true
 		case startsWith(item, "INDEX"):
 			stmt.Indexes = append(stmt.Indexes, readIndex(item[1:]))
-		case startsWith(item, "FAMILY"), startsWith(item, "CHANGEFEED"):
+		case startsWith(item, "FAMILY"):
+			if name, _ := readName(item[1:]); name != "" {
+				stmt.Families = append(stmt.Families, name)
+			}
+		case startsWith(item, "CHANGEFEED"):
 		default:
 			if column, ok := readColumn(item); ok {
 				stmt.Columns = append(stmt.Columns, column)
@@ -393,7 +412,15 @@ func readAction(tokens []lexer.Token) Action {
 	case startsWith(tokens, "DROP", "CHANGEFEED"):
 		name, _ := readName(tokens[2:])
 		return Action{Kind: DropChangefeed, Changefeed: name}
-	case startsWith(tokens, "ADD", "FAMILY"), startsWith(tokens, "DROP", "FAMILY"):
+	case startsWith(tokens, "ADD", "FAMILY"):
+		name, _ := readName(tokens[2:])
+		return Action{Kind: AddFamily, Family: name}
+	case startsWith(tokens, "ALTER", "FAMILY"):
+		name, _ := readName(tokens[2:])
+		return Action{Kind: AlterFamily, Family: name}
+	case startsWith(tokens, "ALTER", "COLUMN"):
+		return readAlterColumn(tokens[2:])
+	case startsWith(tokens, "DROP", "FAMILY"):
 		return Action{}
 	case startsWith(tokens, "ADD"):
 		rest, _ := skipWords(tokens[1:], "COLUMN")
@@ -511,9 +538,22 @@ func readColumn(tokens []lexer.Token) (Column, bool) {
 			column.NotNull = true
 		case rest[i].MatchIdentifierValue("DEFAULT"):
 			column.Default = true
+		case rest[i].MatchIdentifierValue("FAMILY") && column.Family == "":
+			column.Family, _ = readName(rest[i+1:])
 		}
 	}
 	return column, true
+}
+
+// readAlterColumn reads ALTER COLUMN from the column's name on. Only SET
+// FAMILY is read; YDB's other column actions change no family.
+func readAlterColumn(tokens []lexer.Token) Action {
+	name, rest := readName(tokens)
+	if name == "" || !startsWith(rest, "SET", "FAMILY") {
+		return Action{}
+	}
+	family, _ := readName(rest[2:])
+	return Action{Kind: SetColumnFamily, Column: Column{Name: name}, Family: family}
 }
 
 // readAlterSequence reads ALTER SEQUENCE [IF EXISTS] path and the RESTART

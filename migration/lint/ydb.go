@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbsequence"
 	"ptah.run/internal/ydbtopic"
 	"ptah.run/internal/yqlddl"
@@ -55,6 +56,7 @@ func ydbRules() []Rule {
 		ydbPrincipalDropRule(),
 		ydbTopicResetRule(),
 		ydbTopicSettingIgnoredRule(),
+		ydbUndeclaredColumnFamilyRule(),
 	}
 }
 
@@ -614,6 +616,11 @@ type ydbTable struct {
 	restarts map[string]string
 	// changefeeds are the table's changefeeds, in the order they were added.
 	changefeeds []string
+	// families are the table's column families, the default one included,
+	// when familiesKnown: a table the directory created has them all, and one
+	// it only altered does not.
+	families      []string
+	familiesKnown bool
 }
 
 func (s *ydbSchema) clone() *ydbSchema {
@@ -628,6 +635,7 @@ func (s *ydbSchema) clone() *ydbSchema {
 			minPartitions: table.minPartitions, minKnown: table.minKnown,
 			serials: maps.Clone(table.serials), restarts: maps.Clone(table.restarts),
 			changefeeds: slices.Clone(table.changefeeds),
+			families:    slices.Clone(table.families), familiesKnown: table.familiesKnown,
 		}
 	}
 	for name, reads := range s.views {
@@ -676,6 +684,7 @@ func (s *ydbSchema) apply(read yqlddl.Statement) {
 		s.tables[read.Name] = ydbTable{
 			indexes: slices.Clone(read.Indexes), ttl: read.TTLColumn, columns: columns, columnsKnown: true,
 			minPartitions: minimum, minKnown: minKnown, serials: serialColumns(read),
+			families: append([]string{ydbfamily.Default}, read.Families...), familiesKnown: true,
 		}
 	case yqlddl.AlterTable:
 		table := s.table(read.Name)
@@ -875,6 +884,7 @@ func (t ydbTable) applyAction(action yqlddl.Action) ydbTable {
 	switch action.Kind {
 	case yqlddl.AddColumn:
 		t.columns = append(slices.Clone(t.columns), action.Column.Name)
+		t.families = t.withFamily(action.Column.Family)
 	case yqlddl.DropColumn:
 		t.columns = slices.DeleteFunc(slices.Clone(t.columns), func(name string) bool { return name == action.Column.Name })
 	case yqlddl.AddIndex:
@@ -900,6 +910,8 @@ func (t ydbTable) applyAction(action yqlddl.Action) ydbTable {
 				t.ttl = ""
 			}
 		}
+	case yqlddl.AddFamily, yqlddl.AlterFamily, yqlddl.SetColumnFamily:
+		t.families = t.withFamily(action.Family)
 	case yqlddl.AddChangefeed:
 		t.changefeeds = append(slices.Clone(t.changefeeds), action.Changefeed)
 	case yqlddl.DropChangefeed:

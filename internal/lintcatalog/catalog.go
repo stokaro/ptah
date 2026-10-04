@@ -630,6 +630,9 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"YD114": {
 		Summary: "a topic or consumer setting YDB accepts and keeps nothing of, such as a storage limit or a codec it does not know",
 	},
+	"YD119": {
+		Summary: "an `ALTER TABLE` that names a column family the table does not have, which YDB creates with its own settings rather than refusing, and YQL cannot drop",
+	},
 }
 
 // sqlRuleMeta declares the same facts for the standalone SQL linter, which
