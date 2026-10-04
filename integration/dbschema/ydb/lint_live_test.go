@@ -263,19 +263,31 @@ func TestYDBLint_DroppedOrRenamedTableLeavesItsViewFailing(t *testing.T) {
 
 // YD105 reports the ALTER TABLE that resets a table's minimum partition count,
 // and the count the server keeps afterwards, read back through the scheme
-// service, is what the rule says it is.
+// service, is what the rule says it is. A table whose minimum the directory
+// left at 1 loses nothing, and the rule stays silent there.
 func TestYDBLint_PartitioningChangeResetsTheMinimum(t *testing.T) {
+	const minimumOfFour = "AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4, AUTO_PARTITIONING_BY_SIZE = DISABLED, " +
+		"AUTO_PARTITIONING_BY_LOAD = DISABLED"
 	tests := []struct {
 		name     string
+		with     string
 		set      string
 		reported bool
 		minimum  uint64
 	}{
-		{name: "auto partitioning by size turned on", set: "SET (AUTO_PARTITIONING_BY_SIZE = ENABLED)", reported: true, minimum: 1},
-		{name: "auto partitioning by load turned on, without parentheses", set: "SET AUTO_PARTITIONING_BY_LOAD ENABLED", reported: true, minimum: 1},
-		{name: "turned on with the minimum in the same statement",
+		{name: "auto partitioning by size turned on", with: minimumOfFour,
+			set: "SET (AUTO_PARTITIONING_BY_SIZE = ENABLED)", reported: true, minimum: 1},
+		{name: "auto partitioning by load turned on, without parentheses", with: minimumOfFour,
+			set: "SET AUTO_PARTITIONING_BY_LOAD ENABLED", reported: true, minimum: 1},
+		{name: "turned on with the minimum in the same statement", with: minimumOfFour,
 			set: "SET (AUTO_PARTITIONING_BY_LOAD = ENABLED), SET (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4)", minimum: 4},
-		{name: "a size setting", set: "SET (AUTO_PARTITIONING_PARTITION_SIZE_MB = 100)", minimum: 4},
+		{name: "a size setting", with: minimumOfFour, set: "SET (AUTO_PARTITIONING_PARTITION_SIZE_MB = 100)", minimum: 4},
+		{name: "turned on for a table created with four uniform partitions",
+			with: "UNIFORM_PARTITIONS = 4, AUTO_PARTITIONING_BY_SIZE = DISABLED",
+			set:  "SET (AUTO_PARTITIONING_BY_LOAD = ENABLED)", reported: true, minimum: 1},
+		{name: "turned on for a table whose minimum is already 1",
+			with: "AUTO_PARTITIONING_BY_SIZE = DISABLED, AUTO_PARTITIONING_BY_LOAD = DISABLED",
+			set:  "SET (AUTO_PARTITIONING_BY_SIZE = ENABLED)", minimum: 1},
 	}
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
@@ -285,8 +297,7 @@ func TestYDBLint_PartitioningChangeResetsTheMinimum(t *testing.T) {
 					c := qt.New(t)
 					c.Cleanup(func() { dropLintDir(c, conn) })
 					name := fmt.Sprintf("%s/partitions_%d", lintDir, i)
-					create := "CREATE TABLE `" + name + "` (id Uint64 NOT NULL, PRIMARY KEY (id)) WITH (" +
-						"AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4, AUTO_PARTITIONING_BY_SIZE = DISABLED, AUTO_PARTITIONING_BY_LOAD = DISABLED)"
+					create := "CREATE TABLE `" + name + "` (id Uint64 NOT NULL, PRIMARY KEY (id)) WITH (" + test.with + ")"
 					c.Assert(conn.Writer().ExecuteSQL(c.Context(), create), qt.IsNil)
 					statement := "ALTER TABLE `" + name + "` " + test.set
 

@@ -141,11 +141,47 @@ func TestYDBRules_ReportWhatTheServerRefuses(t *testing.T) {
 			want: []string{"0001_t.down.sql:1:YD103", "0001_t.down.sql:2:YD101", "0001_t.down.sql:3:YD105"},
 		},
 		{
-			name: "auto partitioning turned on without the minimum",
+			// The first statement leaves the minimum at 1, so the second,
+			// which would reset it to 1, loses nothing.
+			name: "auto partitioning turned on without the minimum, then again",
 			files: map[string]string{
 				"0001_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = ENABLED);\nALTER TABLE t SET AUTO_PARTITIONING_BY_LOAD ENABLED;\n",
 			},
-			want: []string{"0001_t.up.sql:1:YD105", "0001_t.up.sql:2:YD105"},
+			want: []string{"0001_t.up.sql:1:YD105"},
+		},
+		{
+			name: "auto partitioning turned on for a table created with four uniform partitions",
+			files: map[string]string{
+				"0001_t.up.sql": "CREATE TABLE t (id Uint64 NOT NULL, PRIMARY KEY (id)) WITH (UNIFORM_PARTITIONS = 4);\n",
+				"0002_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_LOAD = ENABLED);\n",
+			},
+			want: []string{"0002_t.up.sql:1:YD105"},
+		},
+		{
+			name: "auto partitioning turned on after an earlier migration raised the minimum",
+			files: map[string]string{
+				"0001_t.up.sql": "CREATE TABLE t (id Uint64 NOT NULL, PRIMARY KEY (id));\n" +
+					"ALTER TABLE t SET (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 3);\n",
+				"0002_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = ENABLED);\n",
+			},
+			want: []string{"0002_t.up.sql:1:YD105"},
+		},
+		{
+			// One split point makes two partitions, and a minimum of 2.
+			name: "auto partitioning turned on for a table split at one key",
+			files: map[string]string{
+				"0001_t.up.sql": "CREATE TABLE t (id Uint64 NOT NULL, PRIMARY KEY (id)) WITH (PARTITION_AT_KEYS = (10));\n",
+				"0002_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = ENABLED);\n",
+			},
+			want: []string{"0002_t.up.sql:1:YD105"},
+		},
+		{
+			name: "auto partitioning turned on for a table split at two keys",
+			files: map[string]string{
+				"0001_t.up.sql": "CREATE TABLE t (id Uint64 NOT NULL, PRIMARY KEY (id)) WITH (PARTITION_AT_KEYS = (10, 20));\n",
+				"0002_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = ENABLED);\n",
+			},
+			want: []string{"0002_t.up.sql:1:YD105"},
 		},
 		{
 			name: "a table a view reads, dropped",
@@ -211,6 +247,17 @@ func TestYDBRules_LeaveWhatTheServerRuns(t *testing.T) {
 			"0001_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4, AUTO_PARTITIONING_BY_SIZE = ENABLED);\n"}},
 		{name: "auto partitioning turned on with the minimum in another SET of the statement", files: map[string]string{
 			"0001_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_LOAD = ENABLED), SET (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4);\n"}},
+		{name: "auto partitioning turned on for a table created with the default minimum", files: map[string]string{
+			"0001_t.up.sql": "CREATE TABLE t (id Uint64 NOT NULL, PRIMARY KEY (id));\n",
+			"0002_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = ENABLED);\n"}},
+		{name: "auto partitioning turned on for a table whose explicit minimum beside its split points is 1", files: map[string]string{
+			"0001_t.up.sql": "CREATE TABLE t (id Uint64 NOT NULL, PRIMARY KEY (id)) " +
+				"WITH (PARTITION_AT_KEYS = (10, 20), AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 1);\n",
+			"0002_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_LOAD = ENABLED);\n"}},
+		{name: "auto partitioning turned on after an earlier migration lowered the minimum to 1", files: map[string]string{
+			"0001_t.up.sql": "CREATE TABLE t (id Uint64 NOT NULL, PRIMARY KEY (id)) WITH (UNIFORM_PARTITIONS = 4);\n" +
+				"ALTER TABLE t SET (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 1);\n",
+			"0002_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = ENABLED);\n"}},
 		{name: "auto partitioning turned off", files: map[string]string{
 			"0001_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = DISABLED, AUTO_PARTITIONING_PARTITION_SIZE_MB = 100);\n"}},
 		{name: "a view dropped before its table", files: map[string]string{

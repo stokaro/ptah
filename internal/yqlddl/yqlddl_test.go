@@ -40,6 +40,10 @@ func TestRead_CreateTable(t *testing.T) {
 					{Name: "d1_u", Unique: true, Columns: []string{"c"}},
 				},
 				TTLColumn: "ts",
+				Settings: []yqlddl.Setting{
+					{Name: "AUTO_PARTITIONING_MIN_PARTITIONS_COUNT", Value: "4"},
+					{Name: "TTL", Value: "INTERVAL", Column: "ts"},
+				},
 			},
 		},
 		{
@@ -53,6 +57,25 @@ func TestRead_CreateTable(t *testing.T) {
 				IfExists:  true,
 				Columns:   []yqlddl.Column{{Name: "id"}, {Name: "ts"}},
 				TTLColumn: "ts",
+				Settings: []yqlddl.Setting{
+					{Name: "STORE", Value: "COLUMN"},
+					{Name: "TTL", Value: "INTERVAL", Column: "ts"},
+				},
+			},
+		},
+		{
+			name: "split points, single and composite",
+			sql: "CREATE TABLE t (a Uint64 NOT NULL, b Uint64 NOT NULL, PRIMARY KEY (a, b)) " +
+				"WITH (PARTITION_AT_KEYS = ((10, 1), (20, 2), (30, 3)), UNIFORM_PARTITIONS = 4)",
+			want: yqlddl.Statement{
+				Kind:       yqlddl.CreateTable,
+				Name:       "t",
+				Columns:    []yqlddl.Column{{Name: "a", NotNull: true}, {Name: "b", NotNull: true}},
+				PrimaryKey: true,
+				Settings: []yqlddl.Setting{
+					{Name: "PARTITION_AT_KEYS", Items: 3},
+					{Name: "UNIFORM_PARTITIONS", Value: "4"},
+				},
 			},
 		},
 		{

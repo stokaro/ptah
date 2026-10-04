@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"ptah.run/core/platform"
@@ -21,9 +22,9 @@ import (
 // it runs, which the server decides the same way in either direction, so each
 // one reads the down half of a migration as well.
 //
-// YD104 and YD106 need to know what the table looks like before the
+// YD104, YD105 and YD106 need to know what the table looks like before the
 // statement: whether an index uses a column, which column the TTL reads,
-// which views read a table. A YDB database cannot be a dev database yet
+// what its minimum partition count is, which views read a table. A YDB database cannot be a dev database yet
 // (stokaro/ptah#4015), so that state is read from the directory itself: the
 // up migrations before the analyzed version, in version order, then the
 // statements of the file before the one analyzed. A table created outside the
@@ -258,42 +259,139 @@ func ydbDropUsedColumnRule() Rule {
 //	SET (..._BY_LOAD = DISABLED), or a size or maximum setting      minimum 4
 //
 // With the minimum at 1, YDB may merge the table down to one partition. A
-// table whose minimum was 1 loses nothing, which the statement cannot say, so
-// the rule warns.
+// table whose minimum was 1 already loses nothing, so the rule stays silent
+// where the directory's own history says so (see [ydbTable.minPartitions]),
+// and warns where it does not know.
 func ydbPartitionMinimumResetRule() Rule {
 	return Rule{
-		Code:          "YD105",
-		Title:         "partitioning change resets the minimum partition count",
-		Severity:      SeverityWarning,
-		Dialects:      ydbOnly,
-		AppliesToDown: true,
-		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !ydbRun(stmt.Target) {
-				return false, ""
+		Code:     "YD105",
+		Title:    "partitioning change resets the minimum partition count",
+		Severity: SeverityWarning,
+		Dialects: ydbOnly,
+		CheckFile: func(file *File) []Finding {
+			if !ydbRun(file.Target) {
+				return nil
 			}
-			read := yqlddl.Read(stmt.SQL)
-			if read.Kind != yqlddl.AlterTable {
-				return false, ""
-			}
-			enabled := ""
-			for _, setting := range settingsSet(read) {
-				switch {
-				case setting.Name == ydbMinPartitions:
-					return false, ""
-				case enabled == "" && setting.Value == "ENABLED" &&
-					(setting.Name == "AUTO_PARTITIONING_BY_SIZE" || setting.Name == "AUTO_PARTITIONING_BY_LOAD"):
-					enabled = setting.Name
+			state := file.ydbBefore.clone()
+			var findings []Finding
+			for i := range file.Statements {
+				stmt := &file.Statements[i]
+				read := yqlddl.Read(stmt.SQL)
+				if message, resets := partitionMinimumReset(read, state.table(read.Name)); resets {
+					findings = append(findings, Finding{
+						Rule:     "YD105",
+						Title:    "partitioning change resets the minimum partition count",
+						Severity: SeverityWarning,
+						File:     file.Path,
+						Line:     stmt.Line,
+						Message:  message,
+						Context:  statementFindingContext(i, Subject{Kind: SubjectTable, Name: read.Name}),
+					})
 				}
+				state.apply(read)
 			}
-			if enabled == "" {
-				return false, ""
-			}
-			return true, fmt.Sprintf(
-				"setting %s = ENABLED resets %s of %s to 1, so YDB may merge its partitions down to one; "+
-					"set %s in the same ALTER TABLE to keep it",
-				enabled, ydbMinPartitions, read.Name, ydbMinPartitions)
+			return findings
 		},
 	}
+}
+
+// partitionMinimumReset says why an ALTER TABLE of table resets its minimum
+// partition count to 1, and reports whether it does. A table already at a
+// minimum of 1 has nothing to lose.
+func partitionMinimumReset(read yqlddl.Statement, table ydbTable) (string, bool) {
+	if read.Kind != yqlddl.AlterTable || (table.minKnown && table.minPartitions == 1) {
+		return "", false
+	}
+	enabled := ""
+	for _, setting := range settingsSet(read) {
+		switch {
+		case setting.Name == ydbMinPartitions:
+			return "", false
+		case enabled == "" && setting.Value == "ENABLED" &&
+			(setting.Name == "AUTO_PARTITIONING_BY_SIZE" || setting.Name == "AUTO_PARTITIONING_BY_LOAD"):
+			enabled = setting.Name
+		}
+	}
+	if enabled == "" {
+		return "", false
+	}
+	return fmt.Sprintf(
+		"setting %s = ENABLED resets %s of %s to 1, so YDB may merge its partitions down to one; "+
+			"set %s in the same ALTER TABLE to keep it",
+		enabled, ydbMinPartitions, read.Name, ydbMinPartitions), true
+}
+
+// createdMinPartitions is the minimum partition count a CREATE TABLE leaves,
+// and whether it is known. Measured on 26.2.1.14 and 25.1.4.7: a table
+// created with no partitioning setting, or with AUTO_PARTITIONING_BY_SIZE or
+// _BY_LOAD alone, has a minimum of 1; UNIFORM_PARTITIONS = 4 leaves 4, also
+// beside AUTO_PARTITIONING_BY_SIZE = ENABLED in either order;
+// PARTITION_AT_KEYS with two split points leaves 3, and with three composite
+// ones 4; and AUTO_PARTITIONING_MIN_PARTITIONS_COUNT wins over either, so
+// UNIFORM_PARTITIONS = 4 with a minimum of 2 leaves 2. A value the reader
+// cannot read, or both kinds of split together, leaves it unknown.
+func createdMinPartitions(settings []yqlddl.Setting) (int, bool) {
+	var explicit, uniform, atKeys int
+	for _, setting := range settings {
+		switch setting.Name {
+		case ydbMinPartitions:
+			value, ok := partitionCount(setting)
+			if !ok {
+				return 0, false
+			}
+			explicit = value
+		case "UNIFORM_PARTITIONS":
+			value, ok := partitionCount(setting)
+			if !ok {
+				return 0, false
+			}
+			uniform = value
+		case "PARTITION_AT_KEYS":
+			if setting.Items == 0 {
+				return 0, false
+			}
+			atKeys = setting.Items + 1
+		}
+	}
+	switch {
+	case explicit > 0:
+		return explicit, true
+	case uniform > 0 && atKeys > 0:
+		return 0, false
+	case uniform > 0:
+		return uniform, true
+	case atKeys > 0:
+		return atKeys, true
+	default:
+		return 1, true
+	}
+}
+
+// partitionCount reads a setting whose value is a count of partitions.
+func partitionCount(setting yqlddl.Setting) (int, bool) {
+	value, err := strconv.Atoi(setting.Value)
+	return value, err == nil && value > 0
+}
+
+// alteredMinPartitions is the minimum partition count an ALTER TABLE leaves
+// on table: the count it sets, wherever in the statement; 1 when it turns
+// auto partitioning by size or by load on without one; and the table's own
+// otherwise. YDB refuses RESET (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT) and
+// a change of UNIFORM_PARTITIONS, measured on both lines.
+func alteredMinPartitions(read yqlddl.Statement, table ydbTable) (int, bool) {
+	settings := settingsSet(read)
+	for _, setting := range settings {
+		if setting.Name == ydbMinPartitions {
+			return partitionCount(setting)
+		}
+	}
+	for _, setting := range settings {
+		if setting.Value == "ENABLED" &&
+			(setting.Name == "AUTO_PARTITIONING_BY_SIZE" || setting.Name == "AUTO_PARTITIONING_BY_LOAD") {
+			return 1, true
+		}
+	}
+	return table.minPartitions, table.minKnown
 }
 
 // missingRequirement returns the first action of a statement that needs key,
@@ -430,6 +528,11 @@ type ydbTable struct {
 	// the directory created has them all, and one it only altered does not.
 	columns      []string
 	columnsKnown bool
+	// minPartitions is the table's AUTO_PARTITIONING_MIN_PARTITIONS_COUNT
+	// when minKnown: set by the CREATE TABLE the directory ran, or by an
+	// ALTER TABLE that sets the count or resets it.
+	minPartitions int
+	minKnown      bool
 }
 
 func (s *ydbSchema) clone() *ydbSchema {
@@ -441,6 +544,7 @@ func (s *ydbSchema) clone() *ydbSchema {
 		cloned.tables[name] = ydbTable{
 			indexes: slices.Clone(table.indexes), ttl: table.ttl,
 			columns: slices.Clone(table.columns), columnsKnown: table.columnsKnown,
+			minPartitions: table.minPartitions, minKnown: table.minKnown,
 		}
 	}
 	for name, reads := range s.views {
@@ -485,14 +589,17 @@ func (s *ydbSchema) apply(read yqlddl.Statement) {
 		for _, column := range read.Columns {
 			columns = append(columns, column.Name)
 		}
+		minimum, minKnown := createdMinPartitions(read.Settings)
 		s.tables[read.Name] = ydbTable{
 			indexes: slices.Clone(read.Indexes), ttl: read.TTLColumn, columns: columns, columnsKnown: true,
+			minPartitions: minimum, minKnown: minKnown,
 		}
 	case yqlddl.AlterTable:
 		table := s.table(read.Name)
 		for _, action := range read.Actions {
 			table = table.applyAction(action)
 		}
+		table.minPartitions, table.minKnown = alteredMinPartitions(read, table)
 		s.store(read, table)
 	case yqlddl.DropTable:
 		delete(s.tables, read.Name)

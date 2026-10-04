@@ -460,9 +460,11 @@ change that resets the minimum partition count, and a table a view reads that
 is dropped or renamed. [Lint rules](../../reference/lint-rules/#ydb) lists each rule with its
 meaning.
 
-`YD104` and `YD106` read the indexes, TTL and views the directory's own
-earlier migrations declare, because a YDB database cannot be a dev database
-yet; a table the directory never created is unknown to them. The rules for
+`YD104`, `YD105` and `YD106` read the indexes, TTL, minimum partition count
+and views the directory's own earlier migrations declare, because a YDB
+database cannot be a dev database yet; a table the directory never created is
+unknown to them. `YD105` stays silent where that history left the minimum at 1,
+and warns where it does not know it. The rules for
 every dialect run too, and the
 [lint rules](../../reference/lint-rules/#what-the-rules-for-every-dialect-do-on-ydb)
 say what each does on YDB.

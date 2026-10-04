@@ -604,7 +604,7 @@ var migrationRuleMeta = map[string]ruleMeta{
 		Summary: "a `DROP COLUMN` of a column an index keys or covers, or the TTL reads, which YDB refuses until the index or the TTL is gone",
 	},
 	"YD105": {
-		Summary: "turning auto partitioning by size or by load on resets the minimum partition count to 1 unless the same statement sets it",
+		Summary: "turning auto partitioning by size or by load on resets the minimum partition count to 1 unless the same statement sets it; silent where the directory's own migrations left the minimum at 1",
 	},
 	"YD106": {
 		Summary: "a `DROP TABLE` or `ALTER TABLE ... RENAME TO` of a table a view reads: YDB keeps the view, which reads its table by path, and every read of the view fails",
