@@ -97,9 +97,8 @@ func ReportUndescribed(w io.Writer, dialect string, schema *catalog.Database) {
 	// that case, so this cannot be folded into the count below.
 	//
 	// A reader that does not read roles at all says so with the Unsupported
-	// reason, as the YDB reader does, and the note names that cause instead:
-	// blaming the account there would send the operator after a privilege that
-	// changes nothing.
+	// reason, and the note names that cause instead: blaming the account there
+	// would send the operator after a privilege that changes nothing.
 	if limit, limited := schema.NotDescribed.Limit(coverage.Role); limited {
 		cause := "this connection may not read the server's access catalog"
 		if limit.Reason == coverage.Unsupported {
@@ -114,12 +113,24 @@ func ReportUndescribed(w io.Writer, dialect string, schema *catalog.Database) {
 		return
 	}
 	fmt.Fprintf(w,
-		"note: %s Ptah manages on this server %s not described, because nothing in the inspected"+
-			" schemas refers to them; comparison still treats them as present, so none of them is"+
-			" planned as a CREATE ROLE.%s\n",
+		"note: %s Ptah manages on this server %s not described, because %s; comparison still treats"+
+			" them as present, so none of them is planned as a CREATE ROLE.%s\n",
 		countedRoles(len(schema.RolesOutOfScope)), pluralIs(len(schema.RolesOutOfScope)),
-		describeAllRemedy(dialect),
+		outOfScopeCause(dialect), describeAllRemedy(dialect),
 	)
+}
+
+// outOfScopeCause says why a reader left roles out of the description. The
+// YDB reader leaves out the users and groups the cluster made for itself, such
+// as ADMINS and DATA-READERS, the database's owner, and every user and group
+// when it reads a dev realm; the others leave out the roles nothing in the
+// inspected schemas refers to.
+func outOfScopeCause(dialect string) string {
+	if platform.NormalizeDialect(dialect) == platform.YDB {
+		return "the cluster made them or they own the database, or the read was of a dev realm," +
+			" which shares its database's users and groups"
+	}
+	return "nothing in the inspected schemas refers to them"
 }
 
 // describeAllRemedy returns the sentence naming the opt-out, and the empty

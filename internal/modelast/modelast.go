@@ -29,6 +29,7 @@ import (
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/unloggedtable"
+	"ptah.run/internal/ydbacl"
 )
 
 // escapeSQLStringLiteral properly escapes a string value for use in SQL string literals.
@@ -1844,9 +1845,23 @@ func FromRole(role schemamodel.Role) *ast.CreateRoleNode {
 		SetCreateRole(role.CreateRole).
 		SetInherit(role.Inherit).
 		SetReplication(role.Replication).
-		SetComment(role.Comment)
+		SetComment(role.Comment).
+		SetGroup(role.Group)
 
 	return roleNode
+}
+
+// FromRoleMemberships converts a role's member_of list to one
+// ast.GrantRoleMembershipNode per group, in the order the declaration lists
+// them.
+func FromRoleMemberships(role schemamodel.Role) []*ast.GrantRoleMembershipNode {
+	nodes := make([]*ast.GrantRoleMembershipNode, 0, len(role.MemberOf))
+	for _, group := range role.MemberOf {
+		if group = strings.TrimSpace(group); group != "" {
+			nodes = append(nodes, ast.NewGrantRoleMembership(group, role.Name))
+		}
+	}
+	return nodes
 }
 
 // FromGrant converts a schemamodel.Grant to an ast.GrantPrivilegeNode.
@@ -1880,6 +1895,8 @@ func FromRevokedGrant(grant schemamodel.Grant) *ast.RevokePrivilegeNode {
 // spells it.
 func grantObject(grant schemamodel.Grant) (objectType, objectName, arguments string) {
 	switch {
+	case grant.OnDatabase:
+		return "DATABASE", "", ""
 	case grant.OnSchema != "":
 		return "SCHEMA", grant.OnSchema, ""
 	case grant.OnSequence != "":
@@ -1889,6 +1906,28 @@ func grantObject(grant schemamodel.Grant) (objectType, objectName, arguments str
 	default:
 		return "TABLE", grant.OnTable, ""
 	}
+}
+
+// withGrantPath names a grant's object by the path [grantPath] gives it.
+func withGrantPath(node *ast.GrantPrivilegeNode, databasePath, targetPlatform string) *ast.GrantPrivilegeNode {
+	node.ObjectName = grantPath(node.ObjectType, node.ObjectName, databasePath, targetPlatform)
+	return node
+}
+
+// grantPath is how a grant names its object in a render of a description a
+// live YDB read made: by its absolute path where the database's path is known
+// and the object needs one on some line -- the database itself, and an object
+// at the database root -- so the render does not depend on the line. Every
+// other grant, and every target but YDB, keeps the name it has.
+func grantPath(objectType, objectName, databasePath, targetPlatform string) string {
+	if databasePath == "" || platform.NormalizeDialect(targetPlatform) != platform.YDB {
+		return objectName
+	}
+	path, err := ydbacl.StatementPath(objectType, objectName, databasePath, nil)
+	if err != nil || !strings.HasPrefix(path, "/") {
+		return objectName
+	}
+	return path
 }
 
 // FromDefaultPrivilege converts a schemamodel.DefaultPrivilege to an
@@ -2538,12 +2577,20 @@ func createStructToViewMap(views []schemamodel.MaterializedView) map[string]stri
 	return mapping
 }
 
-// appendRoleStatements appends every declared role, for every target. A target
-// that cannot host one says so through its renderer.
+// appendRoleStatements appends every declared role, for every target, and
+// then every membership the roles declare, once both ends of each exist. A
+// target that cannot host one says so through its renderer.
 func appendRoleStatements(visit func(ast.Node) error, database schemamodel.Database) error {
 	for _, role := range database.Roles {
 		if err := visit(FromRole(role)); err != nil {
 			return err
+		}
+	}
+	for _, role := range database.Roles {
+		for _, membership := range FromRoleMemberships(role) {
+			if err := visit(membership); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -2612,12 +2659,14 @@ func appendPostTableObjectStatements(
 	// a REVOKE of a table privilege also takes it off every column, measured
 	// on PostgreSQL 18, so after a column GRANT it would take that too.
 	for _, revoked := range database.RevokedGrants {
-		if err := visit(FromRevokedGrant(revoked)); err != nil {
+		node := FromRevokedGrant(revoked)
+		node.ObjectName = grantPath(node.ObjectType, node.ObjectName, database.DatabasePath, targetPlatform)
+		if err := visit(node); err != nil {
 			return err
 		}
 	}
 	for _, grant := range database.Grants {
-		if err := visit(FromGrant(grant)); err != nil {
+		if err := visit(withGrantPath(FromGrant(grant), database.DatabasePath, targetPlatform)); err != nil {
 			return err
 		}
 	}

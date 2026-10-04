@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/catalog"
+	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasschema"
@@ -18,7 +19,6 @@ import (
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/schemasecurity"
-	"ptah.run/internal/ydbgap"
 )
 
 const (
@@ -112,7 +112,8 @@ nothing else. It also reads only what Ptah models, so a clean report means
 	flags.StringVar(&opts.dbURL, securityDBURLFlag, "",
 		"Database URL to analyze (required). Example: postgres://localhost:5432/dbname")
 	flags.StringVar(&opts.schemas, securitySchemaFlag, "",
-		"Comma-separated schemas to analyze (PostgreSQL-family only). Empty uses the connection default.")
+		"Comma-separated schemas to analyze: PostgreSQL-family schemas, or YDB directories relative to the "+
+			"database root. Empty uses the connection default, and on YDB every directory.")
 	flags.StringVar(&opts.format, securityFormatFlag, "table", "Output format: table or json")
 	flags.StringVar(&opts.failOn, securityFailOnFlag, securityFailOnError,
 		"Failure threshold controlling the exit code: error, any or none")
@@ -147,15 +148,12 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 		return cmdutil.Fail(cmd, fmt.Errorf("connect to --%s: %w", securityDBURLFlag, err))
 	}
 	defer func() { _ = conn.Close() }()
-	// The YDB reader reads no users, groups or permissions, so an analysis of
-	// its description would report a clean access model it never saw.
-	if platform.NormalizeDialect(conn.Info().Dialect) == platform.YDB {
-		return cmdutil.Fail(cmd, fmt.Errorf("the analysis reads the access model: %s", ydbgap.AccessControl.Message()))
-	}
-
 	live, err := dbschema.ReadSchemaWithSchemasContext(cmd.Context(), conn, atlasschema.SplitSchemaNames([]string{opts.schemas}))
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("read schema: %w", err))
+	}
+	if err := refuseUnreadPrincipals(conn.Info().Dialect, live); err != nil {
+		return cmdutil.Fail(cmd, err)
 	}
 	// The connection's own set rather than the dialect default: it is what the
 	// session resolved, so a rule gated on a capability this server refines is
@@ -181,6 +179,23 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 			securityFailOnFlag, opts.failOn))
 	}
 	return nil
+}
+
+// refuseUnreadPrincipals refuses an analysis of a YDB database whose users
+// and groups the connection may not read. YDB reports them only through
+// .sys/auth_*, and a connection that may describe the tables but not read
+// .sys sees the permission entries and no principal: every rule about roles
+// would answer over an empty set and report a clean access model nobody saw.
+func refuseUnreadPrincipals(dialect string, live *catalog.Database) error {
+	if platform.NormalizeDialect(dialect) != platform.YDB {
+		return nil
+	}
+	if _, limited := live.NotDescribed.Limit(coverage.Role); !limited {
+		return nil
+	}
+	return fmt.Errorf("the analysis reads YDB's users and groups from .sys/auth_users, .sys/auth_groups and " +
+		".sys/auth_group_members, and this connection may not read them; connect as a user that may read " +
+		"rows of the database, such as a member of DATA-READERS")
 }
 
 // roleMemberships carries the live role graph into the analysis.

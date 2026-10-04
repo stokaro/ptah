@@ -97,6 +97,12 @@ func SurfaceDifferences() []SurfaceDifference {
 			Reason: "a leading `--` line the render writes above the statement; the statement itself is identical on both surfaces",
 		},
 		{
+			Field: "schemamodel.Database.DatabasePath", RenderOnly: true,
+			Reason: "the path of the database a description was read from, which a render writes a YDB grant on " +
+				"the database under; a plan names that object by the path of the database it reads, which the " +
+				"comparison carries from the read rather than from the declaration",
+		},
+		{
 			Field: "schemamodel.Grant.Comment", RenderOnly: true,
 			Reason: "the same leading `--` line, above GRANT",
 		},

@@ -89,6 +89,7 @@ func (r *Reader) table(
 	}
 
 	db.NotDescribed = db.NotDescribed.With(unmodeledSettings(schema, name, described)...)
+	r.tableAccess(schema, name, described.GetSelf(), db)
 	return nil
 }
 

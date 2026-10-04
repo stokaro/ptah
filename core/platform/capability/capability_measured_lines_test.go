@@ -228,6 +228,10 @@ func measuredLines() map[string]measuredLine {
 				capability.AsyncIndexes:                    typeKeyCarried,
 				capability.IndexRename:                     indexKeyCarried,
 				capability.IndexPartitioning:               indexKeyCarried,
+				capability.RoleMembership:                  accessKeyCarried,
+				capability.GroupPrincipals:                 accessKeyCarried,
+				capability.DatabaseGrants:                  accessKeyCarried,
+				capability.RelativeGrantPaths:              accessKeyCarried,
 				capability.Changefeeds:                     changefeedKeyCarried,
 				capability.ChangefeedUserSIDs:              changefeedKeyCarried,
 				capability.ChangefeedSchemaChanges:         changefeedKeyCarried,
@@ -382,6 +386,10 @@ func measuredLines() map[string]measuredLine {
 				capability.AsyncIndexes:                    typeKeyCarried,
 				capability.IndexRename:                     indexKeyCarried,
 				capability.IndexPartitioning:               indexKeyCarried,
+				capability.RoleMembership:                  accessKeyCarried,
+				capability.GroupPrincipals:                 accessKeyCarried,
+				capability.DatabaseGrants:                  accessKeyCarried,
+				capability.RelativeGrantPaths:              accessKeyCarried,
 				capability.Changefeeds:                     changefeedKeyCarried,
 				capability.ChangefeedUserSIDs:              changefeedKeyCarried,
 				capability.ChangefeedSchemaChanges:         changefeedKeyCarried,
@@ -537,6 +545,10 @@ func measuredLines() map[string]measuredLine {
 				capability.AsyncIndexes:                    typeKeyCarried,
 				capability.IndexRename:                     indexKeyCarried,
 				capability.IndexPartitioning:               indexKeyCarried,
+				capability.RoleMembership:                  accessKeyCarried,
+				capability.GroupPrincipals:                 accessKeyCarried,
+				capability.DatabaseGrants:                  accessKeyCarried,
+				capability.RelativeGrantPaths:              accessKeyCarried,
 				capability.Changefeeds:                     changefeedKeyCarried,
 				capability.ChangefeedUserSIDs:              changefeedKeyCarried,
 				capability.ChangefeedSchemaChanges:         changefeedKeyCarried,
@@ -719,3 +731,11 @@ const serialKeyCarried = "this run predates the key and sent no serial sequence 
 // consumers of its topic are carried on these lines: the run predates them.
 const changefeedKeyCarried = "this run predates the key and sent no changefeed experiment; the probe asks " +
 	"it on every run, and the value here is the preset's"
+
+// accessKeyCarried is why the keys about role membership, groups, grants on
+// the database and relative grant paths are carried on every measured line:
+// the run named there predates them. Each describes what Ptah's planner plans,
+// which only the YDB planner does, so the probe declares them undecided on
+// these engines, and the value here is the preset's.
+const accessKeyCarried = "this run predates the key; the probe declares it undecided on this engine, " +
+	"because only the YDB planner plans it, and the value here is the preset's"

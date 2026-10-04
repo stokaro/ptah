@@ -35,8 +35,9 @@ var supplementalDiffCategories = map[string]string{
 	"DeclaredSchemas":                 "every schema the declaration holds, carried so a CREATE SCHEMA the plan emits can carry the comment, character set and collation the author wrote for it. The plan reaches a schema through an object's qualifier, so the name arrives and nothing else does; on its own the list plans nothing, and TestGenerateSchemaDiffSQLStatements_ACreatedSchemaCarriesItsComment drives it through a table that names a schema, which is the only way it can be exercised (stokaro/ptah#2618)",
 	"DeclaredViewLikes":               "every declared view and materialized view, which a cascading DROP is resolved AGAINST rather than rendered from. The recreate it feeds belongs to the drop that cascaded, and several fixtures below carry it for exactly that reason; on its own it plans nothing (stokaro/ptah#2315)",
 	"DeclaredConstraintHosts":         "the declaration of every table a constraint change names, carried for a target that has to rebuild the table to change a constraint on it. PostgreSQL adds and drops constraints in place and never rebuilds, so this planner reads the field nowhere; a fixture here would assert that a list of table declarations plans nothing (stokaro/ptah#2315)",
+	"CurrentGrants":                   "every grant the read of the database reported, carried for a target that rebuilds a table and has to give the new one the grants the old one held. PostgreSQL changes its tables in place and never rebuilds one, so this planner reads the field nowhere",
 	"CurrentNotDescribed":             "what the read of the database declined to describe, carried for a target that rebuilds a table and must not drop a setting the read left out. PostgreSQL changes its tables in place and never rebuilds one, so this planner reads the field nowhere; a fixture here would assert that a coverage set plans nothing",
-	"CurrentDatabasePath":             "the absolute path of the database the read describes, carried for a target that names a Serial column's sequence by its absolute path. PostgreSQL addresses every object relative to the connection, so this planner reads the field nowhere; a fixture here would assert that a path plans nothing",
+	"CurrentDatabasePath":             "the absolute path of the database the read describes, carried for a target that names a Serial column's sequence, and some objects of a GRANT, by an absolute path. PostgreSQL addresses every object relative to the connection, so this planner reads the field nowhere; a fixture here would assert that a path plans nothing",
 	"ForeignKeysRemovedWithTables":    "supplements matching ConstraintsRemoved entries with column identities for MySQL/MariaDB drop ordering; it creates no operation by itself and PostgreSQL deliberately ignores it",
 	"FunctionsRemovedWithSignatures":  "the same removals FunctionsRemoved names, with the argument list that makes each one addressable; the planner reads this list and falls back to the bare names, so it creates no operation of its own and a fixture would exercise the same DROP twice (stokaro/ptah#2296)",
 	"ProceduresRemovedWithSignatures": "ProceduresRemoved with signatures, supplemental for the same reason",
@@ -72,6 +73,14 @@ var refusedDiffCategories = map[string]refusedFixture{
 		diff: &difftypes.SchemaDiff{HypertablesModified: []difftypes.HypertableDiff{{
 			Table: "readings", OldColumn: "ts", NewColumn: "created_at",
 		}}},
+	},
+	"RoleMembershipsAdded": {
+		why:  "the comparison records a membership only on a target with role_membership, which is YDB's, so a PostgreSQL plan reaches one only through a diff built by hand, and planning nothing would leave the member without what it was declared to hold",
+		diff: &difftypes.SchemaDiff{RoleMembershipsAdded: []difftypes.RoleMembershipRef{{Role: "readers", Member: "app"}}},
+	},
+	"RoleMembershipsRemoved": {
+		why:  "the comparison records a membership only on a target with role_membership, which is YDB's; planning nothing would leave the member holding what it was declared not to hold",
+		diff: &difftypes.SchemaDiff{RoleMembershipsRemoved: []difftypes.RoleMembershipRef{{Role: "readers", Member: "app"}}},
 	},
 	"IndexesRenamed": {
 		why:  "the comparison pairs a removed index with an added one only on a target with index_rename, which is YDB's, so a PostgreSQL plan reaches a rename only through a diff built by hand, and planning nothing would leave the index under its old name",

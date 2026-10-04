@@ -222,6 +222,16 @@ func TestYDBRules_ReportWhatTheServerRefuses(t *testing.T) {
 			},
 			want: []string{"0002_rename.up.sql:1:YD106"},
 		},
+		{
+			name:  "a grant option revoked, which takes the permission too",
+			files: map[string]string{"0001_t.up.sql": "REVOKE GRANT OPTION FOR SELECT ON `shop/users` FROM app;\n"},
+			want:  []string{"0001_t.up.sql:1:YD110"},
+		},
+		{
+			name:  "a user and a group dropped, each keeping its permissions",
+			files: map[string]string{"0001_t.up.sql": "DROP USER app;\nDROP GROUP IF EXISTS readers;\n"},
+			want:  []string{"0001_t.up.sql:1:YD111", "0001_t.up.sql:2:YD111"},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -297,6 +307,10 @@ func TestYDBRules_LeaveWhatTheServerRuns(t *testing.T) {
 		{name: "a view dropped before its table", files: map[string]string{
 			"0001_v.up.sql":    "CREATE TABLE base (id Uint64 NOT NULL, PRIMARY KEY (id));\nCREATE VIEW v WITH (security_invoker = TRUE) AS SELECT id FROM base;\n",
 			"0002_drop.up.sql": "DROP VIEW v;\nDROP TABLE base;\n"}},
+		{name: "the grant permission revoked on its own", files: map[string]string{
+			"0001_t.up.sql": "REVOKE 'ydb.access.grant' ON `shop/users` FROM app;\n"}},
+		{name: "a grant of a permission that names GRANT", files: map[string]string{
+			"0001_t.up.sql": "GRANT GRANT ON `shop/users` TO app;\n"}},
 		{name: "a table no view reads, dropped", files: map[string]string{
 			"0001_v.up.sql":    "CREATE TABLE base (id Uint64 NOT NULL, PRIMARY KEY (id));\nCREATE VIEW v WITH (security_invoker = TRUE) AS SELECT 1 AS one;\n",
 			"0002_drop.up.sql": "DROP TABLE base;\n"}},

@@ -295,7 +295,7 @@ func findPublicGrants(db *schemamodel.Database) []Finding {
 		if isShippedDefaultPublicGrant(grant) {
 			continue
 		}
-		object, kind := grantTarget(grant)
+		object, kind := grantTarget(db, grant)
 		if object == "" {
 			continue
 		}
@@ -491,7 +491,7 @@ func findGrantsOnUnusedObjects(db *schemamodel.Database, usage []RoleObjectUsage
 		if role == "" || strings.EqualFold(role, publicRole) {
 			continue
 		}
-		object, kind := grantTarget(grant)
+		object, kind := grantTarget(db, grant)
 		if object == "" {
 			continue
 		}
@@ -637,7 +637,7 @@ func privilegeSetOfRole(db *schemamodel.Database, role string) map[string]bool {
 		if strings.TrimSpace(grant.Role) != role {
 			continue
 		}
-		object, kind := grantTarget(grant)
+		object, kind := grantTarget(db, grant)
 		if object == "" {
 			continue
 		}
@@ -681,9 +681,16 @@ func setOf(byMember map[string][]string) map[string]bool {
 	return keys
 }
 
-// grantTarget names what a grant is on, and the kind of that object.
-func grantTarget(grant schemamodel.Grant) (name, kind string) {
+// grantTarget names what a grant is on, and the kind of that object. A grant
+// on the database itself is named by the path the read found it at, or by its
+// kind where the description came from no read.
+func grantTarget(db *schemamodel.Database, grant schemamodel.Grant) (name, kind string) {
 	switch {
+	case grant.OnDatabase:
+		if db.DatabasePath != "" {
+			return db.DatabasePath, "database"
+		}
+		return "database", "database"
 	case strings.TrimSpace(grant.OnTable) != "":
 		return strings.TrimSpace(grant.OnTable), "table"
 	case strings.TrimSpace(grant.OnSchema) != "":

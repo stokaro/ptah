@@ -21,15 +21,21 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// Source is what the reader asks a YDB database: the entries of a directory,
-// the description of a row table or a view, and the description of a topic,
-// which is how a changefeed's retention and consumers are read. Each takes
-// an absolute path.
+// Source is what the reader asks a YDB database: a directory's own entry and
+// the entries under it, the description of a row table or a view, the
+// description of a topic, which is how a changefeed's retention and consumers
+// are read, and the database's users, groups and memberships. A path is
+// absolute.
+//
+// A directory's own entry and a table's description each carry the object's
+// owner and its permission entries, which is where the reader reads them from:
+// the scheme service answers for exactly the objects the read walks.
 type Source interface {
-	ListDirectory(ctx context.Context, path string) ([]*Ydb_Scheme.Entry, error)
+	ListDirectory(ctx context.Context, path string) (self *Ydb_Scheme.Entry, children []*Ydb_Scheme.Entry, err error)
 	DescribeTable(ctx context.Context, path string) (*Ydb_Table.DescribeTableResult, error)
 	DescribeView(ctx context.Context, path string) (*Ydb_View.DescribeViewResult, error)
 	DescribeTopic(ctx context.Context, path string) (*Ydb_Topic.DescribeTopicResult, error)
+	Principals(ctx context.Context) (Principals, error)
 }
 
 // grpcSource answers through the SDK driver's gRPC connection with raw scheme
@@ -41,11 +47,12 @@ type Source interface {
 // one; the raw description leaves the type empty and the data in fields the
 // pinned protocol buffers do not know, and the reader refuses it.
 type grpcSource struct {
-	scheme  Ydb_Scheme_V1.SchemeServiceClient
-	table   Ydb_Table_V1.TableServiceClient
-	view    Ydb_View_V1.ViewServiceClient
-	topic   Ydb_Topic_V1.TopicServiceClient
-	session string
+	scheme   Ydb_Scheme_V1.SchemeServiceClient
+	table    Ydb_Table_V1.TableServiceClient
+	view     Ydb_View_V1.ViewServiceClient
+	topic    Ydb_Topic_V1.TopicServiceClient
+	session  string
+	database string
 }
 
 // newGRPCSource opens a table session for one read. The caller ends it with
@@ -53,10 +60,11 @@ type grpcSource struct {
 func newGRPCSource(ctx context.Context, driver *ydbsdk.Driver) (*grpcSource, func(), error) {
 	connection := ydbsdk.GRPCConn(driver)
 	source := &grpcSource{
-		scheme: Ydb_Scheme_V1.NewSchemeServiceClient(connection),
-		table:  Ydb_Table_V1.NewTableServiceClient(connection),
-		view:   Ydb_View_V1.NewViewServiceClient(connection),
-		topic:  Ydb_Topic_V1.NewTopicServiceClient(connection),
+		scheme:   Ydb_Scheme_V1.NewSchemeServiceClient(connection),
+		table:    Ydb_Table_V1.NewTableServiceClient(connection),
+		view:     Ydb_View_V1.NewViewServiceClient(connection),
+		topic:    Ydb_Topic_V1.NewTopicServiceClient(connection),
+		database: driver.Name(),
 	}
 	response, err := source.table.CreateSession(ctx, &Ydb_Table.CreateSessionRequest{})
 	if err != nil {
@@ -76,17 +84,58 @@ func newGRPCSource(ctx context.Context, driver *ydbsdk.Driver) (*grpcSource, fun
 	return source, end, nil
 }
 
-// ListDirectory lists the entries directly under path.
-func (s *grpcSource) ListDirectory(ctx context.Context, path string) ([]*Ydb_Scheme.Entry, error) {
+// ListDirectory returns the directory at path, with its owner and its
+// permission entries, and the entries directly under it.
+func (s *grpcSource) ListDirectory(ctx context.Context, path string) (*Ydb_Scheme.Entry, []*Ydb_Scheme.Entry, error) {
 	response, err := s.scheme.ListDirectory(ctx, &Ydb_Scheme.ListDirectoryRequest{Path: path})
 	if err != nil {
-		return nil, fmt.Errorf("list YDB directory %s: %w", path, WithoutStackFrames(err))
+		return nil, nil, fmt.Errorf("list YDB directory %s: %w", path, WithoutStackFrames(err))
 	}
 	var listed Ydb_Scheme.ListDirectoryResult
 	if err := operationResult(response.GetOperation(), &listed); err != nil {
-		return nil, fmt.Errorf("list YDB directory %s: %w", path, err)
+		return nil, nil, fmt.Errorf("list YDB directory %s: %w", path, err)
 	}
-	return listed.GetChildren(), nil
+	return listed.GetSelf(), listed.GetChildren(), nil
+}
+
+// Principals reads the database's users, groups and memberships from
+// .sys/auth_*, one snapshot read-only query each on the read's own session.
+//
+// The raw table service runs them, not the SDK's query client: the client
+// retries an ABORTED answer, and ABORTED is how YDB refuses .sys to a user who
+// may list the database and not read it, so the read would retry until its
+// context ended.
+func (s *grpcSource) Principals(ctx context.Context) (Principals, error) {
+	return readPrincipals(ctx, s.database, s.query)
+}
+
+// query runs one read-only statement and returns its first result set.
+func (s *grpcSource) query(ctx context.Context, statement string) (*Ydb.ResultSet, error) {
+	response, err := s.table.ExecuteDataQuery(ctx, &Ydb_Table.ExecuteDataQueryRequest{
+		SessionId: s.session,
+		TxControl: &Ydb_Table.TransactionControl{
+			TxSelector: &Ydb_Table.TransactionControl_BeginTx{BeginTx: &Ydb_Table.TransactionSettings{
+				TxMode: &Ydb_Table.TransactionSettings_SnapshotReadOnly{SnapshotReadOnly: &Ydb_Table.SnapshotModeSettings{}},
+			}},
+			CommitTx: true,
+		},
+		Query: &Ydb_Table.Query{Query: &Ydb_Table.Query_YqlText{YqlText: statement}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", statement, WithoutStackFrames(err))
+	}
+	operation := response.GetOperation()
+	if operation.GetReady() && isPrincipalsRefusal(operation.GetStatus(), issueText(operation.GetIssues())) {
+		return nil, fmt.Errorf("%w: %s: %s", ErrPrincipalsRefused, operation.GetStatus(), issueText(operation.GetIssues()))
+	}
+	var result Ydb_Table.ExecuteQueryResult
+	if err := operationResult(operation, &result); err != nil {
+		return nil, fmt.Errorf("%s: %w", statement, err)
+	}
+	if len(result.GetResultSets()) == 0 {
+		return &Ydb.ResultSet{}, nil
+	}
+	return result.GetResultSets()[0], nil
 }
 
 // DescribeTable describes the row table at path.

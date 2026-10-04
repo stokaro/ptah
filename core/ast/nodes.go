@@ -3570,6 +3570,10 @@ type CreateRoleNode struct {
 	Replication bool
 	// Comment is an optional comment for the role
 	Comment string
+	// Group is YDB's: it creates a group rather than a role, with YDB's
+	// CREATE GROUP, a principal that never logs in and is the only kind with
+	// members. A target without capability.GroupPrincipals refuses it.
+	Group bool
 }
 
 // NewCreateRole creates a new CREATE ROLE node with the specified name.
@@ -3672,6 +3676,16 @@ func (n *CreateRoleNode) SetComment(comment string) *CreateRoleNode {
 	return n
 }
 
+// SetGroup sets whether the node creates a group rather than a role.
+//
+// Example:
+//
+//	role.SetGroup(true)
+func (n *CreateRoleNode) SetGroup(group bool) *CreateRoleNode {
+	n.Group = group
+	return n
+}
+
 // Accept implements the Node interface for CreateRoleNode.
 func (n *CreateRoleNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
@@ -3686,6 +3700,9 @@ type DropRoleNode struct {
 	IfExists bool
 	// Comment is an optional comment for the drop operation
 	Comment string
+	// Group is YDB's: it drops a group rather than a role, with YDB's DROP
+	// GROUP, which a user's DROP USER does not reach (`User not found`).
+	Group bool
 }
 
 // NewDropRole creates a new DROP ROLE node with the specified name.
@@ -3729,8 +3746,71 @@ func (n *DropRoleNode) SetComment(comment string) *DropRoleNode {
 	return n
 }
 
+// SetGroup sets whether the node drops a group rather than a role.
+//
+// Example:
+//
+//	dropRole.SetGroup(true)
+func (n *DropRoleNode) SetGroup(group bool) *DropRoleNode {
+	n.Group = group
+	return n
+}
+
 // Accept implements the Node interface for DropRoleNode.
 func (n *DropRoleNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
+
+// GrantRoleMembershipNode makes Member a member of Role, holding every
+// privilege Role holds: YDB's `ALTER GROUP role ADD USER member`, where Role
+// is a group and Member a user or another group. Only the YDB renderer writes
+// it today; every other renderer refuses it.
+type GrantRoleMembershipNode struct {
+	// Role is the role, on YDB the group, that gains a member.
+	Role string
+	// Member is the role that becomes a member.
+	Member string
+	// Comment is an optional comment for the statement.
+	Comment string
+}
+
+// NewGrantRoleMembership creates a node that makes member a member of role.
+func NewGrantRoleMembership(role, member string) *GrantRoleMembershipNode {
+	return &GrantRoleMembershipNode{Role: role, Member: member}
+}
+
+// SetComment sets a comment for the statement.
+func (n *GrantRoleMembershipNode) SetComment(comment string) *GrantRoleMembershipNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for GrantRoleMembershipNode.
+func (n *GrantRoleMembershipNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
+
+// RevokeRoleMembershipNode takes Member out of Role: YDB's `ALTER GROUP role
+// DROP USER member`. Only the YDB renderer writes it today; every other
+// renderer refuses it.
+type RevokeRoleMembershipNode struct {
+	// Role is the role, on YDB the group, that loses a member.
+	Role string
+	// Member is the role that stops being a member.
+	Member string
+	// Comment is an optional comment for the statement.
+	Comment string
+}
+
+// NewRevokeRoleMembership creates a node that takes member out of role.
+func NewRevokeRoleMembership(role, member string) *RevokeRoleMembershipNode {
+	return &RevokeRoleMembershipNode{Role: role, Member: member}
+}
+
+// SetComment sets a comment for the statement.
+func (n *RevokeRoleMembershipNode) SetComment(comment string) *RevokeRoleMembershipNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for RevokeRoleMembershipNode.
+func (n *RevokeRoleMembershipNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // AlterRoleNode represents an ALTER ROLE statement for PostgreSQL role management.
 //

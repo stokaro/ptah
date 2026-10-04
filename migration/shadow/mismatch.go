@@ -208,6 +208,17 @@ func collectTriggerMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 	return mismatches
 }
 
+// membershipMismatches reports one mismatch per membership, naming the
+// member and the role it is a member of.
+func membershipMismatches(memberships []difftypes.RoleMembershipRef, kind, label string) []Mismatch {
+	mismatches := make([]Mismatch, 0, len(memberships))
+	for _, membership := range memberships {
+		object := membership.Member + " in " + membership.Role
+		mismatches = append(mismatches, Mismatch{Kind: kind, Object: object, Message: label + " " + object})
+	}
+	return mismatches
+}
+
 func collectAccessControlMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 	var mismatches []Mismatch
 	for _, ref := range sortedRLSPolicyRefs(diff.RLSPoliciesAdded) {
@@ -235,6 +246,8 @@ func collectAccessControlMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 		func(value difftypes.RoleDiff) string { return value.RoleName },
 		func(value difftypes.RoleDiff) map[string]string { return value.Changes },
 	)...)
+	mismatches = append(mismatches, membershipMismatches(diff.RoleMembershipsAdded, "missing_role_membership", "missing membership")...)
+	mismatches = append(mismatches, membershipMismatches(diff.RoleMembershipsRemoved, "extra_role_membership", "extra membership")...)
 	mismatches = append(mismatches, grantMismatches(diff.GrantsAdded, "missing_grant", "missing grant")...)
 	mismatches = append(mismatches, grantMismatches(diff.GrantsRemoved, "extra_grant", "extra grant")...)
 	mismatches = append(mismatches, grantMismatches(diff.GrantOptionsAdded, "missing_grant_option", "missing grant option")...)

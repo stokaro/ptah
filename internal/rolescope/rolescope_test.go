@@ -319,8 +319,8 @@ func TestReportUndescribedSeparatesAReadThatCouldNotLook(t *testing.T) {
 }
 
 // TestReportUndescribedNamesAReaderThatReadsNoRoles pins the cause a reader
-// gives when it does not read roles at all, as the YDB reader does. The note
-// must not blame the account: a privilege granted to it changes nothing there.
+// gives when it does not read roles at all. The note must not blame the
+// account: a privilege granted to it changes nothing there.
 func TestReportUndescribedNamesAReaderThatReadsNoRoles(t *testing.T) {
 	c := qt.New(t)
 	var out bytes.Buffer
@@ -349,4 +349,22 @@ func TestReportUndescribedNamesNoCatalogItCouldNotRead(t *testing.T) {
 	})
 
 	c.Assert(out.String(), qt.Equals, "")
+}
+
+// TestReportUndescribedNamesWhyYDBLeavesPrincipalsOut pins the cause a YDB
+// read gives for the principals it leaves out: the cluster made them, they own
+// the database, or the read was of a dev realm, rather than nothing referring
+// to them.
+func TestReportUndescribedNamesWhyYDBLeavesPrincipalsOut(t *testing.T) {
+	c := qt.New(t)
+	var out bytes.Buffer
+
+	rolescope.ReportUndescribed(&out, platform.YDB, &catalog.Database{
+		RolesOutOfScope: []catalog.Role{{Name: "ADMINS", Group: true}, {Name: "USERS", Group: true}},
+	})
+
+	c.Assert(out.String(), qt.Equals, "note: 2 roles Ptah manages on this server are not described, because the"+
+		" cluster made them or they own the database, or the read was of a dev realm, which shares its database's"+
+		" users and groups; comparison still treats them as present, so none of them is planned as a CREATE"+
+		" ROLE.\n")
 }

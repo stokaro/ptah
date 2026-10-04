@@ -14,8 +14,14 @@ import (
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
-// grantObjectTypeSchema is the one object type whose target is not a table.
+// grantObjectTypeSchema is the object type whose target is a schema rather
+// than a table: on YDB, a directory.
 const grantObjectTypeSchema = "SCHEMA"
+
+// grantObjectTypeDatabase is the object type whose target is the database
+// itself, YDB's database root, which has no name a comparison could tell
+// apart: it is the database being compared.
+const grantObjectTypeDatabase = "DATABASE"
 
 // Grants compares PostgreSQL role privilege grants using the identifier rules
 // its dialect name implies.
@@ -311,6 +317,9 @@ func grantRefsFromGenerated(grant schemamodel.Grant) []difftypes.GrantRef {
 	objectName := grant.OnTable
 	arguments := ""
 	switch {
+	case grant.OnDatabase:
+		objectType = grantObjectTypeDatabase
+		objectName = ""
 	case grant.OnSchema != "":
 		objectType = grantObjectTypeSchema
 		objectName = grant.OnSchema
@@ -340,6 +349,23 @@ func grantRefsFromGenerated(grant schemamodel.Grant) []difftypes.GrantRef {
 			})
 		}
 	}
+	return refs
+}
+
+// CurrentGrants returns every grant the read of the database reported, as the
+// references a plan names a grant with, sorted. A partial revoke is left out:
+// it subtracts a privilege rather than holding one.
+func CurrentGrants(database *catalog.Database) []difftypes.GrantRef {
+	if database == nil || len(database.Grants) == 0 {
+		return nil
+	}
+	refs := make([]difftypes.GrantRef, 0, len(database.Grants))
+	for _, grant := range database.Grants {
+		if !grant.IsPartialRevoke {
+			refs = append(refs, grantRefFromDatabase(grant))
+		}
+	}
+	sortGrantRefs(refs)
 	return refs
 }
 
