@@ -72,6 +72,8 @@ func Fixtures() []Fixture {
 		{Name: "table-override", Schema: tableOverrideFixture()},
 		{Name: "table-rowttl", Schema: tableRowTTLFixture()},
 		{Name: "table-row-deletion", Schema: tableRowDeletionFixture()},
+		{Name: "table-changefeed", Schema: tableChangefeedFixture()},
+		{Name: "table-changefeed-disabled", Schema: tableChangefeedDisabledFixture()},
 		{Name: "fk-field", Schema: foreignKeyFieldFixture()},
 		{Name: "fk-field-deferrable", Schema: foreignKeyDeferrableFixture()},
 		{Name: "fk-table", Schema: foreignKeyTableFixture()},
@@ -786,6 +788,36 @@ func tableRowDeletionFixture() schemamodel.Database {
 		Name:              "t",
 		RowDeletionPolicy: &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "30d"},
 	}, schemamodel.Field{StructName: "T", FieldName: "CreatedAt", Name: "created_at", Type: "TIMESTAMP", Nullable: true})
+}
+
+// tableChangefeedFixture sets every option of a YDB changefeed and every
+// setting of a consumer, on two consumers since YDB refuses one that is both
+// important and limited by an availability period. Its starting partition
+// count needs a Uint64 key, which an unsigned BIGINT maps to.
+func tableChangefeedFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{
+		Name: "t",
+		Changefeeds: []ast.ChangefeedSpec{{
+			Name: "updates", Mode: "NEW_IMAGE", Format: "JSON", VirtualTimestamps: true,
+			ResolvedTimestamps: "PT10S", InitialScan: true, UserSIDs: true, SchemaChanges: true,
+			TopicMinActivePartitions: 2, TopicAutoPartitioning: true, RetentionPeriod: "PT12H",
+			Consumers: []ast.TopicConsumerSpec{
+				{Name: "audit", Important: true, ReadFrom: "2026-01-01T00:00:00Z", SupportedCodecs: []string{"raw"}},
+				{Name: "late", AvailabilityPeriod: "PT1H"},
+			},
+		}},
+	})
+	db.Fields[0].Type = "BIGINT UNSIGNED"
+	return db
+}
+
+// tableChangefeedDisabledFixture is a changefeed only a reader reports, which
+// every target refuses to write: YDB has no statement that disables one.
+func tableChangefeedDisabledFixture() schemamodel.Database {
+	return oneTable("T", schemamodel.Table{
+		Name:        "t",
+		Changefeeds: []ast.ChangefeedSpec{{Name: "updates", Mode: "UPDATES", Format: "JSON", Disabled: true}},
+	})
 }
 
 func twoTables() schemamodel.Database {

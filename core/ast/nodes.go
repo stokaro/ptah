@@ -164,6 +164,10 @@ type CreateTableNode struct {
 	// clause on the table holding exactly one interval and one column, where a
 	// row-level TTL is a bag of storage parameters (stokaro/ptah#2236).
 	RowDeletionPolicy *RowDeletionPolicySpec
+	// Changefeeds are the YDB changefeeds the table carries. YDB adds each one
+	// with an ALTER TABLE of its own once the table exists, so a renderer
+	// writes them after the CREATE TABLE statement. See [ChangefeedSpec].
+	Changefeeds []ChangefeedSpec
 }
 
 // RowDeletionPolicySpec is a table's row deletion policy: the engine deletes a
@@ -207,6 +211,124 @@ func (s *RowDeletionPolicySpec) Clone() *RowDeletionPolicySpec {
 	}
 	out := *s
 	return &out
+}
+
+// ChangefeedSpec is a YDB changefeed: a stream of the changes made to one row
+// table, which YDB writes to a topic of its own at the path
+// `<table>/<changefeed>`.
+//
+// Most fields name an option of `ALTER TABLE ... ADD CHANGEFEED ... WITH
+// (...)`, and YDB changes none of them in place: `ALTER CHANGEFEED ... SET`
+// answers `MODE alter is not supported` for each. A change to one of them
+// drops the changefeed and adds it again, which restarts the stream.
+// RetentionPeriod and Consumers belong to the topic, and change in place
+// through `ALTER TOPIC`.
+//
+// A field left at its zero value declares nothing. The two intervals are ISO
+// 8601 durations that YDB keeps in whole seconds, and an empty one is YDB's
+// default: no resolved timestamps, and records kept for 24 hours.
+type ChangefeedSpec struct {
+	// Name is the changefeed's name, unique among the table's changefeeds
+	// and indexes, which share the table's path.
+	Name string `json:"name"`
+	// Mode is MODE, what a record carries: KEYS_ONLY, UPDATES, NEW_IMAGE,
+	// OLD_IMAGE or NEW_AND_OLD_IMAGES.
+	Mode string `json:"mode"`
+	// Format is FORMAT, how a record is written: JSON or DEBEZIUM_JSON.
+	Format string `json:"format"`
+	// VirtualTimestamps is VIRTUAL_TIMESTAMPS: each record carries the
+	// virtual timestamp of its change.
+	VirtualTimestamps bool `json:"virtual_timestamps,omitempty"`
+	// ResolvedTimestamps is RESOLVED_TIMESTAMPS, which YDB also spells
+	// BARRIERS_INTERVAL: the interval at which YDB writes a barrier record
+	// to every partition. Empty writes none.
+	ResolvedTimestamps string `json:"resolved_timestamps,omitempty"`
+	// InitialScan is INITIAL_SCAN: the stream opens with a record for every
+	// row the table holds when the changefeed is added.
+	InitialScan bool `json:"initial_scan,omitempty"`
+	// UserSIDs is USER_SIDS: each record names the user whose change it is.
+	UserSIDs bool `json:"user_sids,omitempty"`
+	// SchemaChanges is SCHEMA_CHANGES: the stream carries a record for each
+	// change of the table's schema.
+	SchemaChanges bool `json:"schema_changes,omitempty"`
+	// TopicMinActivePartitions is TOPIC_MIN_ACTIVE_PARTITIONS, the number of
+	// partitions the topic starts with. Zero declares none, and YDB then
+	// gives the topic one partition per partition of the table.
+	TopicMinActivePartitions uint64 `json:"topic_min_active_partitions,omitempty"`
+	// TopicAutoPartitioning is `TOPIC_AUTO_PARTITIONING = 'ENABLED'`: the
+	// topic gains partitions as the table's write rate grows.
+	TopicAutoPartitioning bool `json:"topic_auto_partitioning,omitempty"`
+	// RetentionPeriod is RETENTION_PERIOD, how long the topic keeps a record
+	// whether or not it was read. Empty keeps YDB's 24 hours.
+	RetentionPeriod string `json:"retention_period,omitempty"`
+	// Consumers are the consumers of the changefeed's topic. Each keeps its
+	// position in the stream, which a stream that restarts loses.
+	Consumers []TopicConsumerSpec `json:"consumers,omitempty"`
+	// Disabled reports a changefeed YDB no longer writes to. Only a reader
+	// sets it: YDB has no statement that disables one (`ALTER CHANGEFEED ...
+	// DISABLE` answers `Name not found: quote` on every measured line), so a
+	// declaration cannot ask for it, and a disabled changefeed differs from
+	// the declaration of the same one.
+	Disabled bool `json:"disabled,omitempty"`
+}
+
+// Clone returns an independent copy, so a spec handed to a comparator or a
+// planner cannot be changed through the consumer list it shares with the
+// schema it came from.
+func (s ChangefeedSpec) Clone() ChangefeedSpec {
+	out := s
+	if s.Consumers != nil {
+		out.Consumers = make([]TopicConsumerSpec, len(s.Consumers))
+		for i, consumer := range s.Consumers {
+			out.Consumers[i] = consumer.Clone()
+		}
+	}
+	return out
+}
+
+// CloneChangefeeds copies a list of changefeeds with [ChangefeedSpec.Clone].
+// Nil stays nil.
+func CloneChangefeeds(changefeeds []ChangefeedSpec) []ChangefeedSpec {
+	if changefeeds == nil {
+		return nil
+	}
+	out := make([]ChangefeedSpec, len(changefeeds))
+	for i, changefeed := range changefeeds {
+		out[i] = changefeed.Clone()
+	}
+	return out
+}
+
+// TopicConsumerSpec is one consumer of a YDB topic: a named reader that keeps
+// its own position in the topic. The settings are the ones `ALTER TOPIC ...
+// ADD CONSUMER ... WITH (...)` takes, and a field left at its zero value
+// declares nothing.
+type TopicConsumerSpec struct {
+	// Name is the consumer's name, unique within its topic.
+	Name string `json:"name"`
+	// Important is `important`: the topic keeps a record this consumer has
+	// not read even after the retention period.
+	Important bool `json:"important,omitempty"`
+	// ReadFrom is `read_from`, an RFC 3339 time: a partition this consumer
+	// has not read yet is read from the first record written at or after
+	// it. Empty reads from the beginning.
+	ReadFrom string `json:"read_from,omitempty"`
+	// SupportedCodecs is `supported_codecs`, the codecs this consumer can
+	// read: raw, gzip, lzop, zstd and custom. Empty takes any.
+	SupportedCodecs []string `json:"supported_codecs,omitempty"`
+	// AvailabilityPeriod is `availability_period`, an ISO 8601 interval for
+	// which the topic keeps a record this consumer has not read beyond the
+	// retention period. Empty sets none.
+	AvailabilityPeriod string `json:"availability_period,omitempty"`
+}
+
+// Clone returns an independent copy of the consumer.
+func (c TopicConsumerSpec) Clone() TopicConsumerSpec {
+	out := c
+	if c.SupportedCodecs != nil {
+		out.SupportedCodecs = append([]string(nil), c.SupportedCodecs...)
+	}
+	return out
 }
 
 // IndexPartitioningSpec is how a YDB global index's own table splits into

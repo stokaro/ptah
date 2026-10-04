@@ -330,6 +330,7 @@ func compareReportingUndecidedAdditions(
 	}
 	desired, database = normalizeInlineEnumsForCompare(desired, database, opts)
 	desired = normalizeGeneratedColumnsForCompare(desired, opts)
+	desired = compare.AdoptUndescribedChangefeeds(desired, database, opts.Dialect, identifierSemantics)
 
 	// What each side declined to describe travels with that side rather than
 	// with the options, so every caller that builds options from scratch still

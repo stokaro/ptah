@@ -11,6 +11,7 @@ import (
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Scheme"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Table"
+	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Topic"
 	"google.golang.org/protobuf/encoding/protowire"
 
 	"ptah.run/catalog"
@@ -26,6 +27,7 @@ import (
 type fakeSource struct {
 	directories map[string][]*Ydb_Scheme.Entry
 	tables      map[string]*Ydb_Table.DescribeTableResult
+	topics      map[string]*Ydb_Topic.DescribeTopicResult
 }
 
 func (f fakeSource) ListDirectory(_ context.Context, path string) ([]*Ydb_Scheme.Entry, error) {
@@ -40,6 +42,14 @@ func (f fakeSource) DescribeTable(_ context.Context, path string) (*Ydb_Table.De
 	described, ok := f.tables[path]
 	if !ok {
 		return nil, fmt.Errorf("described %s, which the fixture does not hold", path)
+	}
+	return described, nil
+}
+
+func (f fakeSource) DescribeTopic(_ context.Context, path string) (*Ydb_Topic.DescribeTopicResult, error) {
+	described, ok := f.topics[path]
+	if !ok {
+		return nil, fmt.Errorf("described topic %s, which the fixture does not hold", path)
 	}
 	return described, nil
 }
@@ -749,6 +759,10 @@ func (errorSource) ListDirectory(context.Context, string) ([]*Ydb_Scheme.Entry, 
 }
 
 func (errorSource) DescribeTable(context.Context, string) (*Ydb_Table.DescribeTableResult, error) {
+	return nil, errors.New("connection refused")
+}
+
+func (errorSource) DescribeTopic(context.Context, string) (*Ydb_Topic.DescribeTopicResult, error) {
 	return nil, errors.New("connection refused")
 }
 

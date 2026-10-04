@@ -25,7 +25,11 @@
 //  5. ADD INDEX for every index added to a table that already exists, one per
 //     statement (`Only one index can be added by one operation`), after the
 //     columns it names exist;
-//  6. DROP TABLE for every removed table, last.
+//  6. per table, DROP CHANGEFEED, then ADD CHANGEFEED with the consumers of
+//     its topic, then ALTER TOPIC for a retention or a consumer changed in
+//     place; a new table's changefeeds follow its CREATE TABLE instead, since
+//     YDB adds one only to a table that exists;
+//  7. DROP TABLE for every removed table, last, which drops its changefeeds.
 //
 // An index a plan creates, in CREATE TABLE or by ADD INDEX, takes its declared
 // partitioning from an ALTER INDEX the renderer writes after it, because no
@@ -160,6 +164,9 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := p.refuseIndexChangesInPlace(diff); err != nil {
 		return nil, err
 	}
+	if err := p.refuseChangefeedChanges(diff); err != nil {
+		return nil, err
+	}
 	sequences, err := p.planSerialSequences(diff, rebuilds, semantics)
 	if err != nil {
 		return nil, err
@@ -177,6 +184,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	result = append(result, rebuiltNodes...)
 	result = append(result, sequences.changed...)
 	result = append(result, addIndexes(diff.IndexesAdded, ownIndexes, semantics)...)
+	result = append(result, changeChangefeeds(diff, rebuilds, semantics)...)
 	for _, name := range diff.TablesRemoved {
 		result = append(result, ast.NewDropTable(name))
 	}

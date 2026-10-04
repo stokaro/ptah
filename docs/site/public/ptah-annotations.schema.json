@@ -71,6 +71,161 @@
       ],
       "type": "object"
     },
+    "ptah.schema.changefeed": {
+      "additionalProperties": false,
+      "description": "Declares a YDB changefeed: a stream of a table's changes, kept in a topic at <table>/<name>. It belongs to the struct's table, or to the table it names.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "description": "How a record is written: JSON or DEBEZIUM_JSON.",
+              "type": "string"
+            },
+            "initial_scan": {
+              "description": "The stream opens with a record for every row the table holds.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string",
+              "x-ptah-bare-boolean": true
+            },
+            "mode": {
+              "description": "What a record carries: KEYS_ONLY, UPDATES, NEW_IMAGE, OLD_IMAGE or NEW_AND_OLD_IMAGES.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Changefeed name, unique among the table's changefeeds and indexes.",
+              "type": "string"
+            },
+            "resolved_timestamps": {
+              "description": "Interval of the barrier records, an ISO 8601 duration such as PT10S.",
+              "type": "string"
+            },
+            "retention_period": {
+              "description": "How long the topic keeps a record, an ISO 8601 duration; 24 hours when omitted.",
+              "type": "string"
+            },
+            "schema_changes": {
+              "description": "The stream carries a record for each schema change.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string",
+              "x-ptah-bare-boolean": true
+            },
+            "table": {
+              "description": "Table the changefeed belongs to, when not the struct's own.",
+              "type": "string"
+            },
+            "topic_auto_partitioning": {
+              "description": "The topic gains partitions as writes grow.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string",
+              "x-ptah-bare-boolean": true
+            },
+            "topic_min_active_partitions": {
+              "description": "Partitions the topic starts with.",
+              "type": "string"
+            },
+            "user_sids": {
+              "description": "Each record names the user who made the change.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string",
+              "x-ptah-bare-boolean": true
+            },
+            "virtual_timestamps": {
+              "description": "Each record carries the virtual timestamp of its change.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string",
+              "x-ptah-bare-boolean": true
+            }
+          },
+          "required": [
+            "format",
+            "mode",
+            "name"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:changefeed"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "ptah.schema.changefeed.consumer": {
+      "additionalProperties": false,
+      "description": "Declares a consumer of a YDB changefeed's topic: a named reader that keeps its own position in the stream.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "availability_period": {
+              "description": "How long the topic keeps a record this consumer has not read past the retention period, an ISO 8601 duration.",
+              "type": "string"
+            },
+            "changefeed": {
+              "description": "Changefeed whose topic the consumer reads.",
+              "type": "string"
+            },
+            "important": {
+              "description": "The topic keeps a record this consumer has not read past the retention period.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string",
+              "x-ptah-bare-boolean": true
+            },
+            "name": {
+              "description": "Consumer name, unique within the topic.",
+              "type": "string"
+            },
+            "read_from": {
+              "description": "RFC 3339 time a partition this consumer has not read is read from.",
+              "type": "string"
+            },
+            "supported_codecs": {
+              "description": "Codecs the consumer reads: raw, gzip, lzop, zstd, custom.",
+              "type": "string"
+            },
+            "table": {
+              "description": "Table of the changefeed, when not the struct's own.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "changefeed",
+            "name"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:changefeed:consumer"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
     "ptah.schema.composite": {
       "additionalProperties": false,
       "description": "Declares a PostgreSQL composite type.",
@@ -1959,6 +2114,12 @@
     },
     {
       "$ref": "#/$defs/ptah.schema.index"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.changefeed"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.changefeed.consumer"
     },
     {
       "$ref": "#/$defs/ptah.schema.table"

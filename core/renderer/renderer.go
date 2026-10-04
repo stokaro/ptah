@@ -551,6 +551,13 @@ func prepareCreateTableNode(
 		}
 		cloned.Indexes[i] = prepared
 	}
+	if len(node.Changefeeds) > 0 {
+		subject := fmt.Sprintf("table %q declares changefeed %q", node.Name, node.Changefeeds[0].Name)
+		if err := refuseChangefeeds(dialect, caps, subject); err != nil {
+			return nil, err
+		}
+	}
+	cloned.Changefeeds = ast.CloneChangefeeds(node.Changefeeds)
 	if err := validateCreateTableForeignKeyColumns(dialect, &cloned); err != nil {
 		return nil, err
 	}
@@ -734,6 +741,11 @@ func prepareAlterOperation(
 			return nil, err
 		}
 		return operation, nil
+	case *ast.AddChangefeedOperation, *ast.DropChangefeedOperation, *ast.AlterChangefeedTopicOperation:
+		if err := refuseChangefeeds(dialect, caps, fmt.Sprintf("changing the changefeeds of table %q", table)); err != nil {
+			return nil, err
+		}
+		return operation, nil
 	default:
 		if isNilInterface(operation) {
 			return nil, invalidASTForeignKeyError(dialect, "alter-table operation is nil")
@@ -777,6 +789,38 @@ func refuseIndexPartitioning(dialect string, caps capability.Capabilities, subje
 		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
 			subject, capability.IndexPartitioning, normalized),
 	}
+}
+
+// refuseChangefeeds refuses subject, a table's changefeeds, on a target
+// without [capability.Changefeeds]. Built without them, the table would carry
+// no stream of its changes, and nothing would report the difference.
+func refuseChangefeeds(dialect string, caps capability.Capabilities, subject string) error {
+	if caps.Has(capability.Changefeeds) {
+		return nil
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: string(capability.Changefeeds),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
+			subject, capability.Changefeeds, normalized),
+	}
+}
+
+// validateDeclaredChangefeeds refuses a declared table's changefeeds on a
+// target without [capability.Changefeeds], before anything is rendered.
+func validateDeclaredChangefeeds(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
+	for _, table := range database.Tables {
+		if len(table.Changefeeds) == 0 {
+			continue
+		}
+		subject := fmt.Sprintf("table %q declares changefeed %q", table.QualifiedName(), table.Changefeeds[0].Name)
+		if err := refuseChangefeeds(dialect, caps, subject); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // refuseInvisibleIndexNode refuses index when the optimizer is not to use it
@@ -1643,6 +1687,9 @@ func validateDatabaseDeclarations(
 		return err
 	}
 	if err := validateDeclaredIndexOptions(dialect, caps, database); err != nil {
+		return err
+	}
+	if err := validateDeclaredChangefeeds(dialect, caps, database); err != nil {
 		return err
 	}
 	if err := validateDeclaredNullsDistinct(dialect, caps, database); err != nil {

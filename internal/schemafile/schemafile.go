@@ -329,11 +329,18 @@ var yamlOnlyExtensions = []string{".yaml", ".yml"}
 //     type or a range. A YAML schema declaring one table was measured planning
 //     `DROP SEQUENCE`, `DROP DOMAIN` and both `DROP TYPE`s against a database
 //     holding one of each.
+//   - HCL and DBML have no spelling for a YDB changefeed, which a Go schema
+//     and a YAML schema have. Measured on YDB 26.2.1.14, applying an HCL or a
+//     DBML document that declares a table carrying one planned `DROP
+//     CHANGEFEED`, and the records nobody read go with it.
 func withFormatLimits(database *schemamodel.Database, resolved string) *schemamodel.Database {
 	if database == nil {
 		return nil
 	}
 	extension := strings.ToLower(filepath.Ext(resolved))
+	if extension == dirHCLExtension || extension == dbmlExtension {
+		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(coverage.Changefeed)...)
+	}
 	if extension != dirSQLExtension {
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(coverage.VirtualTable)...)
 	}

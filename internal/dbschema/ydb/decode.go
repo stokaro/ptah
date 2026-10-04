@@ -16,7 +16,6 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/internal/sqlident"
-	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbgap"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbtype"
@@ -51,7 +50,13 @@ func (r *Reader) table(
 		column.IsPrimaryKey = slices.Contains(key, meta.GetName())
 		table.Columns = append(table.Columns, column)
 	}
+	changefeeds, unread, err := r.changefeeds(ctx, source, schema, name, described)
+	if err != nil {
+		return fmt.Errorf("%s: %w", subject, err)
+	}
+	table.Changefeeds = changefeeds
 	db.Tables = append(db.Tables, table)
+	db.NotDescribed = db.NotDescribed.With(unread...)
 
 	if len(key) > 0 {
 		// YDB names no key, so the constraint carries the name a renderer
@@ -393,6 +398,7 @@ func quotedList(names []string) string {
 }
 
 // unmodeledSettings records the table settings Ptah does not model yet. A
+// changefeed is read rather than recorded here; see [Reader.changefeeds]. A
 // setting is recorded where it differs from what a table created without one
 // carries, measured on local-ydb 26.2.1.14: one column family, `default`,
 // uncompressed and with no pool of its own; partitioning by size at 2048 MB,
@@ -402,14 +408,6 @@ func unmodeledSettings(schema, name string, described *Ydb_Table.DescribeTableRe
 	var records []coverage.Object
 	if described.GetTtlSettings() != nil || described.GetTiering() != "" {
 		records = append(records, unmodeled(coverage.TTL, schema, name))
-	}
-	for _, feed := range described.GetChangefeeds() {
-		records = append(records, coverage.Object{
-			Kind:       coverage.Changefeed,
-			Name:       tableref.Canonical(schema, name+"/"+feed.GetName()),
-			Reason:     coverage.Unsupported,
-			Provenance: coverage.Observed,
-		})
 	}
 	if hasColumnFamilies(described) {
 		records = append(records, unmodeled(coverage.ColumnFamily, schema, name))

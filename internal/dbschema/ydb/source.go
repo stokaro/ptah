@@ -8,20 +8,25 @@ import (
 
 	"github.com/ydb-platform/ydb-go-genproto/Ydb_Scheme_V1"
 	"github.com/ydb-platform/ydb-go-genproto/Ydb_Table_V1"
+	"github.com/ydb-platform/ydb-go-genproto/Ydb_Topic_V1"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Issue"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Operations"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Scheme"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Table"
+	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Topic"
 	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
 	"google.golang.org/protobuf/proto"
 )
 
 // Source is what the reader asks a YDB database: the entries of a directory,
-// and the description of a row table. Both take an absolute path.
+// the description of a row table, and the description of a topic, which is
+// how a changefeed's retention and consumers are read. Each takes an absolute
+// path.
 type Source interface {
 	ListDirectory(ctx context.Context, path string) ([]*Ydb_Scheme.Entry, error)
 	DescribeTable(ctx context.Context, path string) (*Ydb_Table.DescribeTableResult, error)
+	DescribeTopic(ctx context.Context, path string) (*Ydb_Topic.DescribeTopicResult, error)
 }
 
 // grpcSource answers through the SDK driver's gRPC connection with raw scheme
@@ -35,6 +40,7 @@ type Source interface {
 type grpcSource struct {
 	scheme  Ydb_Scheme_V1.SchemeServiceClient
 	table   Ydb_Table_V1.TableServiceClient
+	topic   Ydb_Topic_V1.TopicServiceClient
 	session string
 }
 
@@ -45,6 +51,7 @@ func newGRPCSource(ctx context.Context, driver *ydbsdk.Driver) (*grpcSource, fun
 	source := &grpcSource{
 		scheme: Ydb_Scheme_V1.NewSchemeServiceClient(connection),
 		table:  Ydb_Table_V1.NewTableServiceClient(connection),
+		topic:  Ydb_Topic_V1.NewTopicServiceClient(connection),
 	}
 	response, err := source.table.CreateSession(ctx, &Ydb_Table.CreateSessionRequest{})
 	if err != nil {
@@ -91,6 +98,22 @@ func (s *grpcSource) DescribeTable(ctx context.Context, path string) (*Ydb_Table
 	var described Ydb_Table.DescribeTableResult
 	if err := operationResult(response.GetOperation(), &described); err != nil {
 		return nil, fmt.Errorf("describe YDB table %s: %w", path, err)
+	}
+	return &described, nil
+}
+
+// DescribeTopic describes the topic at path. A changefeed's topic is
+// described at `<table>/<changefeed>`: measured on 25.1.4.7 and 26.2.1.14,
+// the path names the changefeed's stream, and DescribeTopic on it answers
+// with its retention, partitions and consumers.
+func (s *grpcSource) DescribeTopic(ctx context.Context, path string) (*Ydb_Topic.DescribeTopicResult, error) {
+	response, err := s.topic.DescribeTopic(ctx, &Ydb_Topic.DescribeTopicRequest{Path: path})
+	if err != nil {
+		return nil, fmt.Errorf("describe YDB topic %s: %w", path, WithoutStackFrames(err))
+	}
+	var described Ydb_Topic.DescribeTopicResult
+	if err := operationResult(response.GetOperation(), &described); err != nil {
+		return nil, fmt.Errorf("describe YDB topic %s: %w", path, err)
 	}
 	return &described, nil
 }

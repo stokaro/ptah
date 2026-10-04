@@ -28,15 +28,24 @@ import (
 //  1. CREATE TABLE a scratch table from the declaration, its indexes inside it;
 //  2. INSERT INTO the scratch table SELECT the rows of the old one, converting
 //     each changed column;
-//  3. ALTER TABLE the old table RENAME TO a second scratch name;
-//  4. ALTER TABLE the scratch table RENAME TO the table's name;
-//  5. DROP TABLE the renamed old table.
+//  3. ALTER TABLE the old table DROP CHANGEFEED, for each changefeed it holds,
+//     since YDB moves no table that carries one (`Cannot move table with cdc
+//     streams`, measured on 25.1.4.7 and 26.2.1.14);
+//  4. ALTER TABLE the old table RENAME TO a second scratch name;
+//  5. ALTER TABLE the scratch table RENAME TO the table's name;
+//  6. ALTER TABLE the table ADD CHANGEFEED, for each changefeed the
+//     declaration names, with the consumers of its topic;
+//  7. DROP TABLE the renamed old table.
+//
+// A changefeed's stream restarts across steps 3 to 6: the records nobody read
+// go with the old topic, and each consumer of the new one starts from its
+// beginning. The plan says so above its steps.
 //
 // YDB has no transactional DDL, and YQL has no statement that swaps two tables
 // at once, so the steps are not atomic. Each runs as a query of its own and the
 // migrator records progress after each, so an interrupted rebuild resumes at
-// the step that did not run. The old rows survive until step 5, and the table's
-// name is free only between steps 3 and 4.
+// the step that did not run. The old rows survive until step 7, and the table's
+// name is free only between steps 4 and 5.
 //
 // The copy is one data query, which commits whole or not at all. A failed
 // conversion fails it with a message that names the column, and a NULL bound
@@ -239,7 +248,7 @@ var settingKinds = []struct {
 	words string
 }{
 	{coverage.TTL, "a TTL"},
-	{coverage.Changefeed, "changefeeds"},
+	{coverage.Changefeed, "changefeeds with settings Ptah does not read"},
 	{coverage.ColumnFamily, "column families"},
 	{coverage.TableOption, "partitioning, read replica or key bloom filter options"},
 }
@@ -247,12 +256,21 @@ var settingKinds = []struct {
 // undescribedSettings names the settings of table that the read of the
 // database recorded as not described. A record naming the whole kind counts:
 // a read that did not look at any table's TTL cannot say this table has none.
+//
+// A format's limit does not count. It is what a document's loader records for
+// a family the format has no spelling for -- an HCL document standing for the
+// current state cannot say whether a table has a changefeed -- and it says
+// nothing about a table carrying one, where these records are read as exactly
+// that. A changefeed such a document leaves out still stops the rebuild: YDB
+// refuses to move the table (`Cannot move table with cdc streams`) before the
+// old one is dropped.
 func undescribedSettings(set coverage.Set, table schemamodel.Table) []string {
 	canonical := tableref.Canonical(table.Schema, table.Name)
 	var settings []string
 	for _, setting := range settingKinds {
 		if slices.ContainsFunc(set.Objects, func(object coverage.Object) bool {
-			return object.Kind == setting.kind &&
+			formatLimit := object.Reason == coverage.Unsupported && object.Provenance == coverage.DerivedFromFact
+			return object.Kind == setting.kind && !formatLimit &&
 				(object.WholeKind() || object.Name == canonical || strings.HasPrefix(object.Name, canonical+"/"))
 		}) {
 			settings = append(settings, setting.words)
@@ -336,7 +354,7 @@ func (p *Planner) refuseRebuiltColumnChange(table string, colDiff difftypes.Colu
 	return nil
 }
 
-// rebuildNodes writes one rebuild: the note above it, then its five steps.
+// rebuildNodes writes one rebuild: the notes above it, then its steps.
 func (p *Planner) rebuildNodes(rebuild *tableRebuild) ([]ast.Node, error) {
 	table := rebuild.declaration.Table
 	oldPath := sqlident.Qualified(platform.YDB, table.Schema, table.Name)
@@ -346,6 +364,11 @@ func (p *Planner) rebuildNodes(rebuild *tableRebuild) ([]ast.Node, error) {
 	create := modelast.FromTableWithConstraints(table, rebuild.declaration.Fields, rebuild.declaration.Enums,
 		platform.YDB, rebuild.declaration.Constraints)
 	create.Name = scratchName
+	// The scratch table takes no changefeed: YDB would refuse to move it into
+	// place (`Cannot move table with cdc streams`), so the changefeeds are
+	// added once it holds the table's name.
+	create.Changefeeds = nil
+	current, desired := rebuildChangefeeds(rebuild)
 	for _, index := range rebuild.declaration.Indexes {
 		index.TableName = scratchName
 		create.AddIndex(modelast.FromIndex(index))
@@ -355,19 +378,31 @@ func (p *Planner) rebuildNodes(rebuild *tableRebuild) ([]ast.Node, error) {
 		return nil, err
 	}
 	shown := strings.Trim(oldPath, "`")
-	return []ast.Node{
+	nodes := []ast.Node{
 		ast.NewComment(fmt.Sprintf("Rebuild of table %s: YDB cannot make this change in place, so the table is "+
 			"created anew, the rows are copied, and the two tables are swapped.", shown)),
 		ast.NewComment(fmt.Sprintf("The steps are not atomic. Rows written to %s between the copy and the swap are "+
 			"lost, and YDB has no lock to stop them: stop writing to the table until the last step has run.", shown)),
 		ast.NewComment("The copy is one query. YDB refuses one that carries more than about 48 MiB on 25.1 or " +
 			"64 MiB on 26.2; nothing is then copied, and the old table keeps serving."),
-		create,
-		ast.NewRawSQL(copyStatement),
-		ast.NewRawSQL("ALTER TABLE " + oldPath + " RENAME TO " + sqlident.Qualified(platform.YDB, table.Schema, rebuild.replaced)),
-		ast.NewRawSQL("ALTER TABLE " + sqlident.Qualified(platform.YDB, table.Schema, rebuild.scratch) + " RENAME TO " + oldPath),
-		ast.NewDropTable(replacedName),
-	}, nil
+	}
+	if len(current) > 0 {
+		nodes = append(nodes, ast.NewComment(rebuildChangefeedNote(shown, current)))
+	}
+	nodes = append(nodes, create, ast.NewRawSQL(copyStatement))
+	for _, changefeed := range current {
+		nodes = append(nodes, &ast.AlterTableNode{Name: rebuild.name,
+			Operations: []ast.AlterOperation{&ast.DropChangefeedOperation{Name: changefeed.Name}}})
+	}
+	nodes = append(nodes,
+		ast.NewRawSQL("ALTER TABLE "+oldPath+" RENAME TO "+sqlident.Qualified(platform.YDB, table.Schema, rebuild.replaced)),
+		ast.NewRawSQL("ALTER TABLE "+sqlident.Qualified(platform.YDB, table.Schema, rebuild.scratch)+" RENAME TO "+oldPath),
+	)
+	for _, changefeed := range desired {
+		nodes = append(nodes, &ast.AlterTableNode{Name: rebuild.name,
+			Operations: []ast.AlterOperation{&ast.AddChangefeedOperation{Changefeed: changefeed.Clone()}}})
+	}
+	return append(nodes, ast.NewDropTable(replacedName)), nil
 }
 
 // copyStatement writes the INSERT that copies the old table's rows into the

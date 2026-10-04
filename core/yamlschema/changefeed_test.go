@@ -1,0 +1,91 @@
+package yamlschema_test
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+
+	"ptah.run/core/ast"
+	"ptah.run/core/yamlschema"
+)
+
+// TestParse_YDBChangefeed_HappyPath reads a table's changefeeds in YAML, keyed
+// by name in the order written, each option and consumer under the key the
+// annotation reads.
+func TestParse_YDBChangefeed_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := yamlschema.Parse([]byte(`
+tables:
+  items:
+    columns:
+      id:
+        type: bigint
+        primary: true
+    changefeeds:
+      updates:
+        mode: updates
+        format: JSON
+        virtual_timestamps: true
+        retention_period: PT12H
+        consumers:
+          audit:
+            important: true
+          late:
+            supported_codecs: [raw, GZIP]
+            read_from: 2026-01-01T03:00:00+03:00
+      keys:
+        mode: KEYS_ONLY
+        format: JSON
+        topic_min_active_partitions: 2
+`))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Tables, qt.HasLen, 1)
+	c.Assert(db.Tables[0].Changefeeds, qt.DeepEquals, []ast.ChangefeedSpec{
+		{Name: "updates", Mode: "UPDATES", Format: "JSON", VirtualTimestamps: true, RetentionPeriod: "PT12H",
+			Consumers: []ast.TopicConsumerSpec{
+				{Name: "audit", Important: true},
+				{Name: "late", SupportedCodecs: []string{"raw", "gzip"}, ReadFrom: "2026-01-01T00:00:00Z"},
+			}},
+		{Name: "keys", Mode: "KEYS_ONLY", Format: "JSON", TopicMinActivePartitions: 2},
+	})
+}
+
+// TestParse_YDBChangefeed_FailurePath refuses a value YDB would refuse, an
+// empty one included, and a key no changefeed or consumer has.
+func TestParse_YDBChangefeed_FailurePath(t *testing.T) {
+	tests := []struct {
+		name       string
+		changefeed string
+		wantErr    string
+	}{
+		{name: "no format", changefeed: "mode: UPDATES",
+			wantErr: `table "items": changefeed "feed": invalid format "": takes one of JSON, DEBEZIUM_JSON`},
+		{name: "an empty retention", changefeed: "mode: UPDATES\n        format: JSON\n        retention_period: ''",
+			wantErr: `table "items": changefeed "feed": invalid retention_period "": takes an ISO 8601 duration .*`},
+		{name: "a consumer of both kinds", changefeed: "mode: UPDATES\n        format: JSON\n        consumers:\n" +
+			"          c:\n            important: true\n            availability_period: PT1H",
+			wantErr: `table "items": changefeed "feed": consumer "c": invalid availability_period "PT1H": .*`},
+		{name: "an unknown key", changefeed: "mode: UPDATES\n        format: JSON\n        barriers: PT1S",
+			wantErr: `(?s).*field barriers not found in type yamlschema.changefeedSpec`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db, err := yamlschema.Parse([]byte(`
+tables:
+  items:
+    columns:
+      id:
+        type: bigint
+        primary: true
+    changefeeds:
+      feed:
+        ` + test.changefeed + `
+`))
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(db, qt.IsNil)
+		})
+	}
+}

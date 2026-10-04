@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-403 fields are reachable from the desired schema, and each one carries
+422 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 342 | reaches rendered SQL on at least one target |
+| `ddl` | 361 | reaches rendered SQL on at least one target |
 | `comparison` | 7 | read when two schemas are compared, and written into no statement |
 | `planning` | 7 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -65,6 +65,19 @@ None.
 
 | Field | Disposition | Why it is not rendered |
 | --- | --- | --- |
+| `ast.ChangefeedSpec.Consumers` | `ddl` | — |
+| `ast.ChangefeedSpec.Disabled` | `ddl` | — |
+| `ast.ChangefeedSpec.Format` | `ddl` | — |
+| `ast.ChangefeedSpec.InitialScan` | `ddl` | — |
+| `ast.ChangefeedSpec.Mode` | `ddl` | — |
+| `ast.ChangefeedSpec.Name` | `ddl` | — |
+| `ast.ChangefeedSpec.ResolvedTimestamps` | `ddl` | — |
+| `ast.ChangefeedSpec.RetentionPeriod` | `ddl` | — |
+| `ast.ChangefeedSpec.SchemaChanges` | `ddl` | — |
+| `ast.ChangefeedSpec.TopicAutoPartitioning` | `ddl` | — |
+| `ast.ChangefeedSpec.TopicMinActivePartitions` | `ddl` | — |
+| `ast.ChangefeedSpec.UserSIDs` | `ddl` | — |
+| `ast.ChangefeedSpec.VirtualTimestamps` | `ddl` | — |
 | `ast.IndexPartitioningSpec.ByLoad` | `ddl` | — |
 | `ast.IndexPartitioningSpec.BySize` | `ddl` | — |
 | `ast.IndexPartitioningSpec.MaxPartitions` | `ddl` | — |
@@ -90,6 +103,11 @@ None.
 | `ast.RowTTLSpec.RowStatsPollInterval` | `ddl` | — |
 | `ast.RowTTLSpec.SelectBatchSize` | `ddl` | — |
 | `ast.RowTTLSpec.SelectRateLimit` | `ddl` | — |
+| `ast.TopicConsumerSpec.AvailabilityPeriod` | `ddl` | — |
+| `ast.TopicConsumerSpec.Important` | `ddl` | — |
+| `ast.TopicConsumerSpec.Name` | `ddl` | — |
+| `ast.TopicConsumerSpec.ReadFrom` | `ddl` | — |
+| `ast.TopicConsumerSpec.SupportedCodecs` | `ddl` | — |
 | `coverage.Object.Kind` | `comparison` | which kind the undescribed object is |
 | `coverage.Object.Name` | `comparison` | which object was not described |
 | `coverage.Object.Provenance` | `comparison` | how Ptah learned the object was not described |
@@ -416,6 +434,7 @@ None.
 | `schemamodel.Table.APIName` | `export` | the name an exported API document carries when it differs from the database name |
 | `schemamodel.Table.APINames` | `export` | the per-format names an exported API document carries, overriding the general one |
 | `schemamodel.Table.AutoIncrement` | `ddl` | — |
+| `schemamodel.Table.Changefeeds` | `ddl` | — |
 | `schemamodel.Table.Charset` | `ddl` | — |
 | `schemamodel.Table.Checks` | `ddl` | — |
 | `schemamodel.Table.Collate` | `ddl` | — |

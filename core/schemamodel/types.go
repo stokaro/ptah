@@ -808,6 +808,12 @@ type Table struct {
 	// a table declaring none. It carries the ast type for the same reason
 	// RowTTL does (stokaro/ptah#2236).
 	RowDeletionPolicy *ast.RowDeletionPolicySpec
+	// Changefeeds are the YDB changefeeds this table declares: the
+	// `//ptah:schema:changefeed` annotations and the YAML `changefeeds`
+	// list. It carries the ast type for the reason RowTTL does. A renderer
+	// for a target without capability.Changefeeds refuses a table declaring
+	// one rather than building the table without its stream.
+	Changefeeds []ast.ChangefeedSpec
 
 	// DependsOn names tables this one must be created after, beyond the ones
 	// its foreign keys imply. See [BuildDependencyGraph] for what a declared

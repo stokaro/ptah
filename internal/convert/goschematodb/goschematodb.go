@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
@@ -128,6 +129,9 @@ func toDBTables(
 			// output is read back. See stokaro/ptah#1028.
 			VirtualModule:    table.VirtualModule,
 			VirtualArguments: table.VirtualArguments,
+			// A declaration compared as the current side of a file-to-file
+			// comparison carries its changefeeds as a database would.
+			Changefeeds: ast.CloneChangefeeds(table.Changefeeds),
 		})
 	}
 	return out
