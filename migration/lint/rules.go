@@ -2122,6 +2122,14 @@ func scanDestructiveObjectDrop(w []string) bool {
 	// consumer's position in it.
 	case "TYPE", "EXTENSION", "FUNCTION", "PROCEDURE", "TRIGGER", "ROLE", "POLICY", "SCHEMA", "TOPIC":
 		return true
+	// TRANSFER and ASYNC REPLICATION are YDB's. Dropping a transfer stops it
+	// and drops the topic consumer YDB created for it, with its position; an
+	// async replication dropped with CASCADE drops its replica tables, and one
+	// dropped without it is YD115's question.
+	case "TRANSFER":
+		return true
+	case "ASYNC":
+		return len(w) > 2 && w[2] == "REPLICATION" && w[len(w)-1] == "CASCADE"
 	default:
 		return false
 	}

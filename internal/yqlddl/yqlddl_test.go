@@ -261,6 +261,81 @@ func TestRead_CreateTopic(t *testing.T) {
 	}
 }
 
+// TestRead_ReplicationsAndTransfers reads the settings of an async replication
+// and a transfer: a CREATE's as its settings, an ALTER's as one SET action,
+// and a DROP's CASCADE. A transfer's lambda, with semicolons, brackets and a
+// WITH of its own inside, is not read as a clause.
+func TestRead_ReplicationsAndTransfers(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+		want yqlddl.Statement
+	}{
+		{
+			name: "create replication",
+			sql: "CREATE ASYNC REPLICATION `dr/mirror` FOR a AS ra, `b` AS `rb` WITH (" +
+				"CONNECTION_STRING = 'grpc://p:2136/?database=/prod', PASSWORD = 'x', CONSISTENCY_LEVEL = 'GLOBAL')",
+			want: yqlddl.Statement{Kind: yqlddl.CreateAsyncReplication, Name: "dr/mirror", Settings: []yqlddl.Setting{
+				{Name: "CONNECTION_STRING", Text: "grpc://p:2136/?database=/prod"},
+				{Name: "PASSWORD", Text: "x"},
+				{Name: "CONSISTENCY_LEVEL", Text: "GLOBAL"},
+			}},
+		},
+		{
+			name: "alter replication",
+			sql:  "ALTER ASYNC REPLICATION mirror SET (STATE = 'DONE', FAILOVER_MODE = 'FORCE')",
+			want: yqlddl.Statement{Kind: yqlddl.AlterAsyncReplication, Name: "mirror", Actions: []yqlddl.Action{{
+				Kind: yqlddl.SetSettings, Settings: []yqlddl.Setting{
+					{Name: "STATE", Text: "DONE"},
+					{Name: "FAILOVER_MODE", Text: "FORCE"},
+				},
+			}}},
+		},
+		{
+			name: "drop replication with cascade",
+			sql:  "DROP ASYNC REPLICATION mirror CASCADE",
+			want: yqlddl.Statement{Kind: yqlddl.DropAsyncReplication, Name: "mirror", Cascade: true},
+		},
+		{
+			name: "drop replication",
+			sql:  "DROP ASYNC REPLICATION `dr/mirror`",
+			want: yqlddl.Statement{Kind: yqlddl.DropAsyncReplication, Name: "dr/mirror"},
+		},
+		{
+			name: "create transfer",
+			sql: "CREATE TRANSFER ingest FROM `orders/feed` TO log USING ($m) -> { $with = (1); " +
+				"return [<| a: $with, b: ListMap([1], ($x) -> { return $x; }) |>]; } WITH (TOKEN = 't', BATCH_SIZE_BYTES = 10)",
+			want: yqlddl.Statement{Kind: yqlddl.CreateTransfer, Name: "ingest", Settings: []yqlddl.Setting{
+				{Name: "TOKEN", Text: "t"},
+				{Name: "BATCH_SIZE_BYTES", Value: "10"},
+			}},
+		},
+		{
+			name: "alter transfer",
+			sql:  "ALTER TRANSFER ingest SET USING ($m) -> { return [<| a: 1 |>]; }, SET (FLUSH_INTERVAL = Interval('PT10S'))",
+			want: yqlddl.Statement{Kind: yqlddl.AlterTransfer, Name: "ingest", Actions: []yqlddl.Action{{
+				Kind: yqlddl.SetSettings, Settings: []yqlddl.Setting{{Name: "FLUSH_INTERVAL", Value: "INTERVAL"}},
+			}}},
+		},
+		{
+			name: "alter transfer lambda alone",
+			sql:  "ALTER TRANSFER ingest SET USING ($m) -> { return []; }",
+			want: yqlddl.Statement{Kind: yqlddl.AlterTransfer, Name: "ingest"},
+		},
+		{
+			name: "drop transfer",
+			sql:  "DROP TRANSFER `shop/ingest`",
+			want: yqlddl.Statement{Kind: yqlddl.DropTransfer, Name: "shop/ingest"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(yqlddl.Read(test.sql), qt.DeepEquals, test.want)
+		})
+	}
+}
+
 func TestRead_AlterTopic(t *testing.T) {
 	tests := []struct {
 		name string
