@@ -177,12 +177,18 @@ func fileRenames(file *File) []statementRename {
 	if !file.IsUp {
 		return nil
 	}
+	rebuilds := fileRebuilds(file)
 	var renames []statementRename
 	created := make(map[string]bool)
 	for i := range file.Statements {
 		stmt := &file.Statements[i]
 		if ref := createdTableRef(stmt.Words); ref != "" {
 			created[ref] = true
+			continue
+		}
+		if rebuilds.renames[i] {
+			// A table rebuild moves the old table aside and its copy into
+			// place, so the name is back when the file ends.
 			continue
 		}
 		var kept []renamedName

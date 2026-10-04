@@ -51,35 +51,52 @@ func statementTimeout(d time.Duration) migrationfile.Timeouts {
 // saying nothing was applied, the revision records the query as not run rather
 // than as an outcome nobody knows, and the table reads back with no index. The
 // same file run again without the timeout builds the index.
+//
+// The build is found by the table the statement names, read the way the server
+// reads it: a quoted name may carry a C escape, which the server decodes, so
+// `big\x2Descaped` alters the table big-escaped.
 func TestYDBMigrator_StatementTimeoutCancelsAnIndexBuild(t *testing.T) {
+	tests := []struct {
+		name    string
+		table   string
+		spelled string
+	}{
+		{name: "a plain name", table: "big", spelled: "big"},
+		{name: "a name written with an escape", table: "big-escaped", spelled: "big\\x2Descaped"},
+	}
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
-			c := qt.New(t)
-			conn := openYDB(c, line)
-			const dir = "ptah_ydb_mig_timeout_index"
-			dropDirectory(c, conn, dir, "big")
-			c.Cleanup(func() { dropDirectory(c, conn, dir, "big") })
-			fillRows(c, conn, dir+"/big", 1000000)
-			files := map[string]string{
-				"0000000001_index.up.sql":   "ALTER TABLE `" + dir + "/big` ADD INDEX big_v GLOBAL SYNC ON (v);\n",
-				"0000000001_index.down.sql": "ALTER TABLE `" + dir + "/big` DROP INDEX big_v;\n",
+			for _, test := range tests {
+				t.Run(test.name, func(t *testing.T) {
+					c := qt.New(t)
+					conn := openYDB(c, line)
+					const dir = "ptah_ydb_mig_timeout_index"
+					dropDirectory(c, conn, dir, test.table)
+					c.Cleanup(func() { dropDirectory(c, conn, dir, test.table) })
+					fillRows(c, conn, dir+"/"+test.table, 1000000)
+					files := map[string]string{
+						"0000000001_index.up.sql":   "ALTER TABLE `" + dir + "/" + test.spelled + "` ADD INDEX big_v GLOBAL SYNC ON (v);\n",
+						"0000000001_index.down.sql": "ALTER TABLE `" + dir + "/" + test.spelled + "` DROP INDEX big_v;\n",
+					}
+
+					failed := newMigrator(c, conn, files, migrator.RevisionTableFormatPtah, dir).
+						WithDefaultTimeouts(statementTimeout(300 * time.Millisecond)).MigrateUp(c.Context())
+
+					c.Assert(failed, qt.ErrorMatches, `(?s)failed to apply migration 1: .*the statement timeout of 300ms ran out, `+
+						`and YDB canceled the build it started on `+dir+`/`+test.table+`, so nothing of the query was applied.*`)
+					revision := revisionOf(c, newMigrator(c, conn, files, migrator.RevisionTableFormatPtah, dir))
+					c.Assert(revision.State, qt.Equals, "failed")
+					c.Assert(revision.Applied, qt.Equals, 0)
+					c.Assert(revision.StatementOutcomeUnknown(), qt.IsFalse)
+					c.Assert(indexNamesOf(readScoped(c, conn, []string{dir})), qt.HasLen, 0)
+
+					resumed := newMigrator(c, conn, files, migrator.RevisionTableFormatPtah, dir)
+					c.Assert(resumed.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true}), qt.IsNil)
+					c.Assert(revisionProgress(c, resumed), qt.DeepEquals,
+						[]progress{{Version: 1, State: "applied", Applied: 1, Total: 1}})
+					c.Assert(indexNamesOf(readScoped(c, conn, []string{dir})), qt.DeepEquals, []string{"big_v"})
+				})
 			}
-
-			failed := newMigrator(c, conn, files, migrator.RevisionTableFormatPtah, dir).
-				WithDefaultTimeouts(statementTimeout(300 * time.Millisecond)).MigrateUp(c.Context())
-
-			c.Assert(failed, qt.ErrorMatches, `(?s)failed to apply migration 1: .*the statement timeout of 300ms ran out, `+
-				`and YDB canceled the build it started on `+dir+`/big, so nothing of the query was applied.*`)
-			revision := revisionOf(c, newMigrator(c, conn, files, migrator.RevisionTableFormatPtah, dir))
-			c.Assert(revision.State, qt.Equals, "failed")
-			c.Assert(revision.Applied, qt.Equals, 0)
-			c.Assert(revision.StatementOutcomeUnknown(), qt.IsFalse)
-			c.Assert(indexNamesOf(readScoped(c, conn, []string{dir})), qt.HasLen, 0)
-
-			resumed := newMigrator(c, conn, files, migrator.RevisionTableFormatPtah, dir)
-			c.Assert(resumed.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true}), qt.IsNil)
-			c.Assert(revisionProgress(c, resumed), qt.DeepEquals, []progress{{Version: 1, State: "applied", Applied: 1, Total: 1}})
-			c.Assert(indexNamesOf(readScoped(c, conn, []string{dir})), qt.DeepEquals, []string{"big_v"})
 		})
 	}
 }

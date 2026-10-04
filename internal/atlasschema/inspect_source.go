@@ -543,12 +543,18 @@ func withMaterializedDevSchema(
 		}
 	}()
 
-	return devConn.WithSession(ctx, func(materializedConn *dbschema.DatabaseConnection) (resultErr error) {
+	ctx, settle := lock.Guard(ctx)
+	return settle(devConn.WithSession(ctx, func(materializedConn *dbschema.DatabaseConnection) (resultErr error) {
 		baseline, err := devclean.Claim(ctx, materializedConn)
 		if err != nil {
 			return err
 		}
 		defer func() {
+			if !devlock.MayClean(ctx) {
+				// The realm's lock was lost, and another run may hold the
+				// realm; settle says what was left. See devlock.MayClean.
+				return
+			}
 			cleanupCtx, release := devclean.CleanupContext(ctx, devclean.CleanupGrace)
 			defer release()
 			if cleanupErr := devclean.DatabaseRealmKeeping(cleanupCtx, materializedConn, baseline); cleanupErr != nil {
@@ -565,7 +571,7 @@ func withMaterializedDevSchema(
 			return err
 		}
 		return consume(materializedConn, baseline)
-	})
+	}))
 }
 
 // materializeOnDev executes the desired schema's ordered CREATE statements on

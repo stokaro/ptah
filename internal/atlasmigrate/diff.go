@@ -281,6 +281,13 @@ func generateDiff(
 	defer func() {
 		err = errors.Join(err, devLock.release())
 	}()
+	// Everything after this runs on the dev database the lock serializes, so
+	// it stops when the lock is lost, and the loss is the run's error. It is
+	// settled before the release above runs, which is not a loss.
+	ctx, settle := devLock.guard(ctx)
+	defer func() {
+		err = settle(err)
+	}()
 	desiredState, err := resolveDesiredState(ctx, conn, opts)
 	if err != nil {
 		return DiffResult{}, err

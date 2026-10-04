@@ -46,8 +46,11 @@ const (
 	LogSuffix = "_log"
 
 	// Tags is the table the migrator records directory tags in, beside the
-	// revision table in either layout. [DefaultNames] leaves it out: it holds
-	// no revision, and of the readers only YDB's hides it.
+	// revision table in either layout. It is Ptah's own bookkeeping as the
+	// native revision table is, so it is in [NativeNames] and every reader
+	// leaves it out: read as a table no declaration has, it made `schema
+	// apply` plan `DROP TABLE IF EXISTS "ptah_migration_tags"`, measured on
+	// SQLite, PostgreSQL 18 and MySQL 8.4.
 	Tags = "ptah_migration_tags"
 
 	// PtahOperatorVersion is the generic operator marker for migrations without
@@ -72,7 +75,8 @@ const (
 )
 
 // DefaultNames returns the migrator's bookkeeping tables for every supported
-// revision-table format, when no explicit table name is configured.
+// revision-table format, when no explicit table name is configured: the
+// revision tables of both formats, the native operation log and [Tags].
 //
 // Callers that enumerate bookkeeping tables in a live database must iterate all
 // of them rather than picking the one matching the current configuration: a
@@ -84,13 +88,14 @@ const (
 // these, so only these can go missing from a schema snapshot; a custom name is
 // read back as an ordinary table and needs no restoring.
 func DefaultNames() []string {
-	return []string{Atlas, Ptah, PtahLog}
+	return []string{Atlas, Ptah, PtahLog, Tags}
 }
 
-// NativeNames returns the tables Ptah's native revision layout writes under
-// their default names: the revision table and its operation log.
+// NativeNames returns the tables Ptah's own bookkeeping writes under their
+// default names: the native revision table, its operation log, and [Tags],
+// which either revision format writes and which only Ptah knows.
 func NativeNames() []string {
-	return []string{Ptah, PtahLog}
+	return []string{Ptah, PtahLog, Tags}
 }
 
 // IsNative reports whether name is one of [NativeNames].
@@ -113,7 +118,7 @@ func IsNative(name string) bool {
 }
 
 // IsDefault reports whether name is one of [DefaultNames]. The SQL Server and
-// YDB readers leave all three out, since the community binary has no such
+// YDB readers leave all of them out, since the community binary has no such
 // dialect whose `schema inspect` they would have to match.
 func IsDefault(name string) bool {
 	return slices.Contains(DefaultNames(), name)
@@ -123,11 +128,11 @@ func IsDefault(name string) bool {
 // for a reader that leaves them out in its catalog query:
 // `name NOT IN (` + NativeSQLNames + `)`. It is a constant so a query declared
 // as one can use it; TestSQLNamesMatchTheNameLists keeps it equal to the list.
-const NativeSQLNames = "'" + Ptah + "', '" + PtahLog + "'"
+const NativeSQLNames = "'" + Ptah + "', '" + PtahLog + "', '" + Tags + "'"
 
 // DefaultSQLNames is [DefaultNames] as SQL string literals separated by commas,
 // as [NativeSQLNames] is for the native set.
-const DefaultSQLNames = "'" + Atlas + "', '" + Ptah + "', '" + PtahLog + "'"
+const DefaultSQLNames = "'" + Atlas + "', '" + Ptah + "', '" + PtahLog + "', '" + Tags + "'"
 
 // Configured returns the bookkeeping tables a migrator configured with format
 // and table writes: the revision table, for Ptah's native format the operation

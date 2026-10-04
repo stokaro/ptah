@@ -233,6 +233,16 @@ records what the run committed, and a resume starts there. A run stopped for
 longer than that reads the loss as soon as it continues, before its next
 statement.
 
+On the other engines the lock belongs to a database session the run opens for
+the lock alone, and the migrations run on other connections. The server
+releases the lock when that session ends, and another runner can take it at
+once: `pg_terminate_backend` or `KILL` ends it, and so does a broken
+connection. The run pings that session every second, and asks
+it again before a statement once the last answer is a second old. A session
+that does not answer is treated as a lost lock, with the same result as on YDB:
+the statement running then is canceled, nothing more runs, and the run fails
+with the loss.
+
 Every spelling refuses. `PTAH_MIGRATION_LOCK_TIMEOUT` fills the flag on each of
 those commands, and `migration.migration_lock_timeout` in
 [the project config](../../reference/configuration/) fills it on `up` and
@@ -802,6 +812,7 @@ the run writes anything:
 | `DELIMITER` or `-- atlas:delimiter` | YQL has no client delimiter; every statement ends with a semicolon |
 | A `--!` setting other than `--!syntax_v1` | `--!ansi_lexer` changes how the text is read, and YDB refuses `--!syntax_pg`, `--!syntax_v0` and unknown settings |
 | `COMMIT`, `ROLLBACK` or `BEGIN` | YDB refuses `COMMIT` inside a query, and Ptah decides where each transaction begins and ends |
+| A `DO` block, an action call or an `EVALUATE` loop that runs a schema statement and a statement that reads or writes a table | YDB refuses such a query whole (`Queries with mixed data and scheme operations are not supported`), and the schema statements before it would already be applied |
 
 The revision table, the migration log and the tag table sit in the directory
 `--migrations-schema` names, or at the database root. YDB has no
@@ -994,14 +1005,20 @@ discarded session, so body-local temporary objects cannot shadow the metadata
 table.
 
 **A non-transactional statement was interrupted.** If the process exits, the
-context is canceled, or its deadline expires while an autocommit statement is
-in flight, the revision row preserves the last known completed statement and
-marks the interrupted statement's outcome as unknown. Inspect the database
-before repair. Both `repair --resume-from` and `up --allow-dirty` refuse the
-row while this marker is present, because the SQL may already have committed
-and neither verb can tell. The refusal holds when the marker sits on the first
-statement, where the row records no completed statement at all: zero says no
-checkpoint was written, not that nothing ran.
+context is canceled, its deadline expires, or the connection breaks while an
+autocommit statement is in flight, the revision row preserves the last known
+completed statement and marks the interrupted statement's outcome as unknown.
+
+A broken connection is a reset, an end of stream or a network error that
+arrives after the statement was sent, and on YDB a transport error: the server
+may have applied the statement and lost the way to say so. A refusal the server
+sent is an answer, and is recorded as an ordinary failure.
+
+Inspect the database before repair. Both `repair --resume-from` and `up
+--allow-dirty` refuse the row while this marker is present, because the SQL may
+already have committed and neither verb can tell. The refusal holds when the
+marker sits on the first statement, where the row records no completed
+statement at all: zero says no checkpoint was written, not that nothing ran.
 
 **A concurrent index build failed on PostgreSQL** (exit `2`). The invalid index
 left behind keeps the name, so re-issuing the generated `IF NOT EXISTS`

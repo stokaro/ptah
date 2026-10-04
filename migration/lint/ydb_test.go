@@ -153,11 +153,47 @@ func TestYDBRules_ReportWhatTheServerRefuses(t *testing.T) {
 			want: []string{"0001_t.down.sql:1:YD103", "0001_t.down.sql:2:YD101", "0001_t.down.sql:3:YD105"},
 		},
 		{
-			name: "auto partitioning turned on without the minimum",
+			// The first statement leaves the minimum at 1, so the second,
+			// which would reset it to 1, loses nothing.
+			name: "auto partitioning turned on without the minimum, then again",
 			files: map[string]string{
 				"0001_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = ENABLED);\nALTER TABLE t SET AUTO_PARTITIONING_BY_LOAD ENABLED;\n",
 			},
-			want: []string{"0001_t.up.sql:1:YD105", "0001_t.up.sql:2:YD105"},
+			want: []string{"0001_t.up.sql:1:YD105"},
+		},
+		{
+			name: "auto partitioning turned on for a table created with four uniform partitions",
+			files: map[string]string{
+				"0001_t.up.sql": "CREATE TABLE t (id Uint64 NOT NULL, PRIMARY KEY (id)) WITH (UNIFORM_PARTITIONS = 4);\n",
+				"0002_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_LOAD = ENABLED);\n",
+			},
+			want: []string{"0002_t.up.sql:1:YD105"},
+		},
+		{
+			name: "auto partitioning turned on after an earlier migration raised the minimum",
+			files: map[string]string{
+				"0001_t.up.sql": "CREATE TABLE t (id Uint64 NOT NULL, PRIMARY KEY (id));\n" +
+					"ALTER TABLE t SET (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 3);\n",
+				"0002_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = ENABLED);\n",
+			},
+			want: []string{"0002_t.up.sql:1:YD105"},
+		},
+		{
+			// One split point makes two partitions, and a minimum of 2.
+			name: "auto partitioning turned on for a table split at one key",
+			files: map[string]string{
+				"0001_t.up.sql": "CREATE TABLE t (id Uint64 NOT NULL, PRIMARY KEY (id)) WITH (PARTITION_AT_KEYS = (10));\n",
+				"0002_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = ENABLED);\n",
+			},
+			want: []string{"0002_t.up.sql:1:YD105"},
+		},
+		{
+			name: "auto partitioning turned on for a table split at two keys",
+			files: map[string]string{
+				"0001_t.up.sql": "CREATE TABLE t (id Uint64 NOT NULL, PRIMARY KEY (id)) WITH (PARTITION_AT_KEYS = (10, 20));\n",
+				"0002_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = ENABLED);\n",
+			},
+			want: []string{"0002_t.up.sql:1:YD105"},
 		},
 		{
 			name: "a table a view reads, dropped",
@@ -166,6 +202,14 @@ func TestYDBRules_ReportWhatTheServerRefuses(t *testing.T) {
 				"0002_drop.up.sql": "DROP TABLE base;\n",
 			},
 			want: []string{"0002_drop.up.sql:1:YD106"},
+		},
+		{
+			name: "a table a view reads, renamed",
+			files: map[string]string{
+				"0001_v.up.sql":      "CREATE TABLE base (id Uint64 NOT NULL, PRIMARY KEY (id));\nCREATE VIEW v WITH (security_invoker = TRUE) AS SELECT id FROM base;\n",
+				"0002_rename.up.sql": "ALTER TABLE base RENAME TO moved;\n",
+			},
+			want: []string{"0002_rename.up.sql:1:YD106"},
 		},
 	}
 	for _, test := range tests {
@@ -221,6 +265,17 @@ func TestYDBRules_LeaveWhatTheServerRuns(t *testing.T) {
 			"0001_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4, AUTO_PARTITIONING_BY_SIZE = ENABLED);\n"}},
 		{name: "auto partitioning turned on with the minimum in another SET of the statement", files: map[string]string{
 			"0001_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_LOAD = ENABLED), SET (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4);\n"}},
+		{name: "auto partitioning turned on for a table created with the default minimum", files: map[string]string{
+			"0001_t.up.sql": "CREATE TABLE t (id Uint64 NOT NULL, PRIMARY KEY (id));\n",
+			"0002_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = ENABLED);\n"}},
+		{name: "auto partitioning turned on for a table whose explicit minimum beside its split points is 1", files: map[string]string{
+			"0001_t.up.sql": "CREATE TABLE t (id Uint64 NOT NULL, PRIMARY KEY (id)) " +
+				"WITH (PARTITION_AT_KEYS = (10, 20), AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 1);\n",
+			"0002_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_LOAD = ENABLED);\n"}},
+		{name: "auto partitioning turned on after an earlier migration lowered the minimum to 1", files: map[string]string{
+			"0001_t.up.sql": "CREATE TABLE t (id Uint64 NOT NULL, PRIMARY KEY (id)) WITH (UNIFORM_PARTITIONS = 4);\n" +
+				"ALTER TABLE t SET (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 1);\n",
+			"0002_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = ENABLED);\n"}},
 		{name: "auto partitioning turned off", files: map[string]string{
 			"0001_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = DISABLED, AUTO_PARTITIONING_PARTITION_SIZE_MB = 100);\n"}},
 		{name: "a view dropped before its table", files: map[string]string{
@@ -229,6 +284,17 @@ func TestYDBRules_LeaveWhatTheServerRuns(t *testing.T) {
 		{name: "a table no view reads, dropped", files: map[string]string{
 			"0001_v.up.sql":    "CREATE TABLE base (id Uint64 NOT NULL, PRIMARY KEY (id));\nCREATE VIEW v WITH (security_invoker = TRUE) AS SELECT 1 AS one;\n",
 			"0002_drop.up.sql": "DROP TABLE base;\n"}},
+		{name: "a table no view reads, renamed", files: map[string]string{
+			"0001_v.up.sql":      "CREATE TABLE base (id Uint64 NOT NULL, PRIMARY KEY (id));\nCREATE VIEW v WITH (security_invoker = TRUE) AS SELECT 1 AS one;\n",
+			"0002_rename.up.sql": "ALTER TABLE base RENAME TO moved;\n"}},
+		{name: "a rebuild of a table a view reads, whose copy takes the name back", files: map[string]string{
+			"0001_v.up.sql": "CREATE TABLE base (id Uint64 NOT NULL, n Int32, PRIMARY KEY (id));\n" +
+				"CREATE VIEW v WITH (security_invoker = TRUE) AS SELECT id FROM base;\n",
+			"0002_rebuild.up.sql": "CREATE TABLE __ptah_rebuild_base (id Uint64 NOT NULL, n Int64, PRIMARY KEY (id));\n" +
+				"INSERT INTO __ptah_rebuild_base (id, n) SELECT id, CAST(n AS Int64) AS n FROM base;\n" +
+				"ALTER TABLE base RENAME TO __ptah_replaced_base;\n" +
+				"ALTER TABLE __ptah_rebuild_base RENAME TO base;\n" +
+				"DROP TABLE __ptah_replaced_base;\n"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -412,6 +478,26 @@ func TestYDBRules_NameWhatTheStatementBreaks(t *testing.T) {
 		"(Can't drop TTL column, disable TTL first); run ALTER TABLE ... RESET (TTL) first")
 	c.Assert(messages, qt.Contains, "YD106: DROP TABLE shop/users leaves views shop/active, shop/named reading a table that does not exist: "+
 		"YDB keeps a view whose table is dropped, and every read of it fails; drop or recreate them first")
+}
+
+// A rename names the table it moves and the name to recreate the view over.
+func TestYDBRules_NameTheRenameThatOrphansAView(t *testing.T) {
+	c := qt.New(t)
+
+	findings, err := lint.LintFS(fixture(map[string]string{
+		"0001_users.up.sql": usersTable +
+			"CREATE VIEW `shop/active` WITH (security_invoker = TRUE) AS SELECT id FROM `shop/users`;\n",
+		"0002_rename.up.sql": "ALTER TABLE `shop/users` RENAME TO `shop/members`;\n",
+	}), lint.Options{Dialect: "ydb"})
+
+	c.Assert(err, qt.IsNil)
+	messages := make([]string, 0, len(findings))
+	for _, finding := range findings {
+		messages = append(messages, finding.Rule+": "+finding.Message)
+	}
+	c.Assert(messages, qt.Contains, "YD106: ALTER TABLE shop/users RENAME TO shop/members leaves view shop/active reading a "+
+		"table that does not exist: a view reads its table by path, so every read of it fails until a table takes the "+
+		"name shop/users again; recreate it over shop/members")
 }
 
 // statementTexts returns the statements the linter cut a one-file YDB

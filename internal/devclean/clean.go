@@ -227,6 +227,11 @@ func Claim(ctx context.Context, conn *dbschema.DatabaseConnection) (Baseline, er
 	return baseline, nil
 }
 
+// NotCleanRemedy is the remedy [EnsureClean] names for a dev database that is
+// not clean, and the one a run that had to leave its dev database as it was
+// names for the refusal the next claim will give.
+const NotCleanRemedy = "point --dev-url at an empty database"
+
 // EnsureClean refuses a dev database that holds objects no run of Ptah put
 // there, before anything resets it.
 //
@@ -243,7 +248,7 @@ func Claim(ctx context.Context, conn *dbschema.DatabaseConnection) (Baseline, er
 func EnsureClean(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 	err := migrateclean.DevRefusal(ctx, conn)
 	if _, ok := errors.AsType[*migrateclean.NotCleanError](err); ok {
-		return fmt.Errorf("%w; Ptah resets a dev database before and after it uses one, so point --dev-url at an empty database", err)
+		return fmt.Errorf("%w; Ptah resets a dev database before and after it uses one, so %s", err, NotCleanRemedy)
 	}
 	if err != nil {
 		return fmt.Errorf("check that the dev database is clean: %w", err)

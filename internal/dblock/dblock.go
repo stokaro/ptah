@@ -159,10 +159,13 @@ func (l *Lock) Supported() bool {
 }
 
 // Done returns a channel that is closed when the server takes the lock away
-// from its holder. Only a YDB lock reports a loss: its semaphore belongs to a
-// coordination session of its own, which can end while the work it guards
-// goes on over other sessions. Every other lock returns nil, a channel that
-// never closes. A release is not a loss and closes nothing.
+// from its holder. A lock [Acquire] took reports a loss: it belongs to a
+// session of its own -- a coordination session on YDB, a database session on
+// every other dialect -- which can end while the work it guards goes on over
+// other sessions. A lock [WithLockSession] took returns nil, a channel that
+// never closes: the work runs on the session that holds the lock, so the end
+// of that session fails the work itself. So does a no-op lock. A release is
+// not a loss and closes nothing.
 func (l *Lock) Done() <-chan struct{} {
 	if l == nil || l.holding == nil {
 		return nil
@@ -174,10 +177,11 @@ func (l *Lock) Done() <-chan struct{} {
 // it may still be held, after it was released, and for a lock that reports no
 // loss (see [Lock.Done]).
 //
-// On YDB the answer is current, not the last one a background check saw: a
+// The answer is current, not the last one a background check saw. On YDB a
 // lock whose holder has not heard the server confirm it for half the session
-// timeout reads as lost, so a holder that was stopped and resumes learns it
-// here before it does anything else.
+// timeout reads as lost; on every other dialect a session that has not
+// answered for a second is asked again before Err answers. A holder that was
+// stopped and resumes learns of a loss here before it does anything else.
 func (l *Lock) Err() error {
 	if l == nil || l.holding == nil || l.holding.held() {
 		return nil
@@ -215,6 +219,24 @@ func (l *Lock) Guard(ctx context.Context) (context.Context, func()) {
 	}
 }
 
+// Settle returns the error of work that ran under a context [Lock.Guard]
+// returned. While the lock holds, it is workErr. Once the lock is lost, it is
+// the [LostError] as "<subject>: <loss>; <work> stopped there", followed by
+// what the work reported when that was something other than the loss or the
+// cancellation the loss sent. Settle before releasing the lock: a release is
+// not a loss, and a released lock reports none.
+func (l *Lock) Settle(subject, work string, workErr error) error {
+	lostErr := l.Err()
+	if lostErr == nil {
+		return workErr
+	}
+	lostErr = fmt.Errorf("%s: %w; %s stopped there", subject, lostErr, work)
+	if workErr != nil && !IsLost(workErr) && !errors.Is(workErr, context.Canceled) {
+		return fmt.Errorf("%w (%s reported: %v)", lostErr, work, workErr)
+	}
+	return lostErr
+}
+
 // Name returns the advisory lock name this lock was acquired under, after the
 // trimming [Acquire] applies. It is recorded on the no-op path too, so a
 // caller on a dialect without advisory locks can still report which lock it
@@ -242,13 +264,18 @@ func (l *Lock) Release(ctx context.Context) error {
 	conn := l.conn
 	l.conn = nil
 	releaseErr := release(ctx)
-	if conn == nil {
+	switch {
+	case conn == nil:
 		return releaseErr
-	}
-	if releaseErr != nil {
+	case errors.Is(releaseErr, errSessionEnded):
+		// The lock went with its session, so there is nothing to give back,
+		// and the connection is not returned to the pool.
+		return discardConnection(conn)
+	case releaseErr != nil:
 		return errors.Join(releaseErr, discardConnection(conn))
+	default:
+		return conn.Close()
 	}
-	return conn.Close()
 }
 
 // WithLockSession pins one physical database session, acquires name on that
@@ -399,6 +426,9 @@ func Acquire(
 		return nil, closeAfterFailedAcquisition(session, acquireErr)
 	}
 	lock.conn = session
+	hold := newSessionHold(session.PingContext, lock.release, time.Now)
+	lock.release = hold.release
+	lock.holding = hold
 	return lock, nil
 }
 
@@ -737,7 +767,9 @@ func discardConnection(conn *sql.Conn) error {
 	discardErr := conn.Raw(func(any) error {
 		return driver.ErrBadConn
 	})
-	if errors.Is(discardErr, driver.ErrBadConn) {
+	if errors.Is(discardErr, driver.ErrBadConn) || errors.Is(discardErr, sql.ErrConnDone) {
+		// Discarded now, or already gone: database/sql closes a connection
+		// whose driver reported it bad, such as a session the server ended.
 		discardErr = nil
 	}
 	closeErr := conn.Close()

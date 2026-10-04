@@ -488,7 +488,10 @@ The copy is one data query, which commits whole or not at all:
 
 In a versioned migration each step is a query of its own, and progress is
 recorded after each. A run interrupted between two steps resumes at the next
-one with `migrations up --allow-dirty`.
+one with `migrations up --allow-dirty`. `ptah migrations lint` reads the five
+steps as a rebuild, so it does not report the final `DROP TABLE` as a lost
+table; it does when the copy leaves out a column the directory's earlier
+migrations gave the table.
 
 Even with the flag, a rebuild is refused when it would damage the table:
 
@@ -620,13 +623,15 @@ Migration lint reports the statements YDB refuses, or runs with an effect the
 statement does not state, under the `YD` family: a unique index added to an
 existing table, a block that mixes schema and data statements, an `ADD COLUMN`
 the line refuses, a dropped column an index or the TTL uses, a partitioning
-change that resets the minimum partition count, and a dropped table a view
-reads. [Lint rules](../../reference/lint-rules/#ydb) lists each rule with its
+change that resets the minimum partition count, and a table a view reads that
+is dropped or renamed. [Lint rules](../../reference/lint-rules/#ydb) lists each rule with its
 meaning.
 
-`YD104` and `YD106` read the indexes, TTL and views the directory's own
-earlier migrations declare; a table the directory never created is unknown to
-them. With `--dev-url`, lint first replays the directory in a
+`YD104`, `YD105` and `YD106` read the indexes, TTL, minimum partition count
+and views the directory's own earlier migrations declare; a table the
+directory never created is unknown to them. `YD105` stays silent where that
+history left the minimum at 1, and warns where it does not know it. With
+`--dev-url`, lint first replays the directory in a
 [dev realm](#dev-shadow-and-scratch-databases), so a statement YDB refuses fails
 the run, and the rules that read a baseline schema read it there. The rules for
 every dialect run too, and the

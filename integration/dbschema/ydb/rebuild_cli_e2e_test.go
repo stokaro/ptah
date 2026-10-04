@@ -157,7 +157,10 @@ func TestYDBBinary_EveryPlanningCommandTakesTheFlag(t *testing.T) {
 }
 
 // `migrations generate` writes the rebuild into the migration file when
-// asked, and is refused with the flag's name when not.
+// asked, and is refused with the flag's name when not. `migrations lint`
+// reads the file it wrote as a rebuild: the copy keeps the rows under the old
+// name, so the final DROP TABLE is not reported as a lost table and the
+// renames are not reported as a retired name.
 func TestYDBBinary_MigrationsGenerateTakesTheFlag(t *testing.T) {
 	c := qt.New(t)
 	binary := buildBinary(c, c.Context())
@@ -190,6 +193,11 @@ func TestYDBBinary_MigrationsGenerateTakesTheFlag(t *testing.T) {
 			body, err := os.ReadFile(up[0])
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(body), qt.Contains, "Rows written to "+rebuildCommandsTable+" between the copy and the swap are lost")
+			linted, lintErr := runBinary(ctx, binary, "migrations", "lint", "--dir", generatedDir, "--dialect", "ydb")
+			c.Assert(lintErr, qt.IsNil, qt.Commentf("migrations lint:\n%s", linted))
+			c.Assert(linted, qt.Not(qt.Contains), "DS101")
+			c.Assert(linted, qt.Not(qt.Contains), "BC101")
+			c.Assert(linted, qt.Not(qt.Contains), "BC103")
 		})
 	}
 }

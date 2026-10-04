@@ -241,6 +241,14 @@ func TestYDBMigrator_RefusesWhatItCannotSplit(t *testing.T) {
 			wantErr: `(?s)migration 1 cannot run up on ydb: unsupported YQL translation setting "--!ansi_lexer".*`},
 		{name: "a commit", body: create + "INSERT INTO `" + dir + "/r` (id) VALUES (1l);\nCOMMIT;\n",
 			wantErr: `(?s)migration 1 cannot run up on ydb: "COMMIT" controls a transaction.*`},
+		// YDB refuses the block whole, with `Queries with mixed data and
+		// scheme operations are not supported`; the CREATE TABLE before it is
+		// a query of its own, which would stay applied if the block ran.
+		{name: "a block that writes and creates", body: create +
+			"DO BEGIN UPSERT INTO `" + dir + "/r` (id) VALUES (1l); " +
+			"CREATE TABLE `" + dir + "/m` (id Int64 NOT NULL, PRIMARY KEY (id)); END DO;\n",
+			wantErr: `(?s)migration 1 cannot run up on ydb: "DO BEGIN .*END DO;" runs a scheme statement and a ` +
+				`statement that reads or writes a table in one query, which YDB refuses whole.*`},
 	}
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
