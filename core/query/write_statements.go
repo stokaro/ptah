@@ -8,9 +8,9 @@ package query
 // ColumnRef, Comparison, and the boolean combinators), so every value still
 // reaches SQL as a placeholder and every identifier through dialect quoting.
 // Render them with RenderInsert, RenderUpdate, and RenderDelete; build them
-// fluently with InsertInto, Update, and DeleteFrom. The upsert this file models
-// is InsertStatement.OnConflict; core/ast's DDL-side UpsertNode is a separate,
-// unrelated node.
+// fluently with InsertInto, Update, and DeleteFrom. The upserts this file models
+// are InsertStatement.OnConflict and YDB's UPSERT INTO, InsertStatement.Upsert;
+// core/ast's DDL-side UpsertNode is a separate, unrelated node.
 //
 // Deliberately out of scope for now, and tracked as follow-ups on issue #98: a
 // WITH clause on a write statement, subqueries in a VALUES row or a SET value,
@@ -60,13 +60,20 @@ type InsertStatement struct {
 	// both.
 	Select *SelectStatement
 	// Returning is the optional RETURNING projection: the columns to return from
-	// the inserted rows. An empty slice emits no RETURNING. RETURNING is supported
-	// only on the PostgreSQL family and SQLite; the renderer rejects it on MySQL
-	// and MariaDB rather than emit SQL those engines cannot run.
+	// the inserted rows. An empty slice emits no RETURNING. RETURNING renders
+	// only where the target has capability.ReturningClause; the renderer
+	// rejects it elsewhere rather than emit SQL the engine cannot run.
 	Returning []ColumnRef
 	// OnConflict is the optional upsert clause. Nil emits none, and a row that
 	// collides then fails the statement as it always did.
 	OnConflict *OnConflict
+	// Upsert writes each row over the row with the same primary key, keeping
+	// the columns the statement does not name, and inserts it where there is
+	// none: YDB's UPSERT INTO. It renders on YDB only, where it is how an
+	// upsert is spelled; the other dialects name the key an upsert watches in
+	// OnConflict instead, and refuse it. A statement carrying both Upsert and
+	// OnConflict is refused.
+	Upsert bool
 }
 
 // OnConflict describes what an INSERT does when a row collides with an existing

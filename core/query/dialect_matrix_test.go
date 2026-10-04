@@ -1,17 +1,18 @@
 package query_test
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"ptah.run/core/query"
 	"ptah.run/core/renderer"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/sqlident"
-	"ptah.run/internal/ydbgap"
 )
 
 // This file is the dialect-coverage guard for the query builder's four render
@@ -118,6 +119,11 @@ func matrixWhereID() query.Expression {
 }
 
 func matrixInt64(v int64) *int64 { return new(v) }
+
+// argsEqual compares rendered arguments. A YDB argument is a sql.NamedArg,
+// whose unexported marker field qt.DeepEquals cannot walk, so the named ones
+// are compared with ==, which compares the name and the value.
+var argsEqual = qt.CmpEquals(cmpopts.EquateComparable(sql.NamedArg{}))
 
 // dmlMatrixRow pins all four cells for one dialect name. The cells are listed in
 // the order dmlVerbs() returns.
@@ -270,15 +276,26 @@ func dmlMatrixRows() []dmlMatrixRow {
 	}
 }
 
-// ydbCells pins the query builder's refusal of YDB. The DDL renderer accepts the
-// name, so it is in SupportedDialects; the builder is the data phase's work,
-// and each verb names that phase rather than answering with the generic
-// refusal a dialect nobody planned gets.
+// ydbCells is the YDB row: backtick quoting, YQL's named parameters $p1 and
+// $p2, and arguments that carry those names, because a YDB connection binds a
+// parameter by name. The LIMIT is bound as a uint64, the type YQL reads it as.
 func ydbCells(dialect string) dmlMatrixRow {
-	refusal := func(verb string) dmlCell {
-		return dmlCell{err: "renderer: " + verb + ` for dialect "ydb": ` + ydbgap.QueryBuilding.Message()}
+	return dmlMatrixRow{
+		dialect: dialect,
+		sel: dmlCell{
+			sql:  "SELECT `id`, `name` FROM `users` WHERE `id` = $p1 LIMIT $p2",
+			args: []any{sql.Named("p1", int64(1)), sql.Named("p2", uint64(10))},
+		},
+		ins: dmlCell{
+			sql:  "INSERT INTO `users` (`id`, `name`) VALUES ($p1, $p2)",
+			args: []any{sql.Named("p1", int64(1)), sql.Named("p2", "a")},
+		},
+		upd: dmlCell{
+			sql:  "UPDATE `users` SET `name` = $p1 WHERE `id` = $p2",
+			args: []any{sql.Named("p1", "a"), sql.Named("p2", int64(1))},
+		},
+		del: dmlCell{sql: "DELETE FROM `users` WHERE `id` = $p1", args: []any{sql.Named("p1", int64(1))}},
 	}
-	return dmlMatrixRow{dialect: dialect, sel: refusal("SELECT"), ins: refusal("INSERT"), upd: refusal("UPDATE"), del: refusal("DELETE")}
 }
 
 // dmlGenericRefusalQuarantine is the hand-written list of cells that still
@@ -343,7 +360,7 @@ func TestDMLDialectMatrix(t *testing.T) {
 				want := cells[i]
 				c.Assert(errorText(err), qt.Equals, want.err)
 				c.Assert(sql, qt.Equals, want.sql)
-				c.Assert(args, qt.DeepEquals, want.args)
+				c.Assert(args, argsEqual, want.args)
 			})
 		}
 	}

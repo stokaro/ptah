@@ -207,7 +207,7 @@ func TestRenderInsert_Errors(t *testing.T) {
 				Returning: []query.ColumnRef{{Name: "id"}},
 			},
 			dialect:     platform.MySQL,
-			wantErrLike: "renderer: mysql does not support RETURNING",
+			wantErrLike: "renderer: RETURNING, which requires target capability returning_clause, unavailable on this mysql target",
 		},
 		{
 			name: "returning on mariadb",
@@ -218,7 +218,7 @@ func TestRenderInsert_Errors(t *testing.T) {
 				Returning: []query.ColumnRef{{Name: "id"}},
 			},
 			dialect:     platform.MariaDB,
-			wantErrLike: "renderer: mariadb does not support RETURNING",
+			wantErrLike: "renderer: RETURNING, which requires target capability returning_clause, unavailable on this mariadb target",
 		},
 	}
 
@@ -393,7 +393,7 @@ func TestRenderUpdate_Errors(t *testing.T) {
 				Returning: []query.ColumnRef{{Name: "a"}},
 			},
 			dialect:     platform.MySQL,
-			wantErrLike: "renderer: mysql does not support RETURNING",
+			wantErrLike: "renderer: RETURNING, which requires target capability returning_clause, unavailable on this mysql target",
 		},
 	}
 
@@ -544,7 +544,7 @@ func TestRenderDelete_Errors(t *testing.T) {
 				Returning: []query.ColumnRef{{Name: "id"}},
 			},
 			dialect:     platform.MySQL,
-			wantErrLike: "renderer: mysql does not support RETURNING",
+			wantErrLike: "renderer: RETURNING, which requires target capability returning_clause, unavailable on this mysql target",
 		},
 	}
 
