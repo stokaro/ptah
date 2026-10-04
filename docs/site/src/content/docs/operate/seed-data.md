@@ -113,8 +113,8 @@ environment and the table is absent, and leaves an existing table in place. It
 holds the same columns on every engine: `seed_path`, `env`, `checksum` and
 `applied_at`.
 
-SQL Server, Oracle and Spanner do not take the statement the other engines get,
-so each has its own:
+SQL Server, Oracle, Spanner and YDB do not take the statement the other engines
+get, so each has its own:
 
 - On SQL Server the statement is guarded with `IF OBJECT_ID(...) IS NULL`, and
   `applied_at` is `DATETIME2`. In T-SQL, `TIMESTAMP` is a row version the
@@ -125,6 +125,16 @@ so each has its own:
 - On Spanner the statement is the portable one with two types changed:
   `checksum` is `TEXT` and `applied_at` is `TIMESTAMPTZ`. Its PostgreSQL
   interface has neither `CHAR(64)`, which arrives as `bpchar`, nor `TIMESTAMP`.
+- On YDB the key is declared in a `PRIMARY KEY` clause of its own, every text
+  column is `Utf8`, because YDB has no length-limited string, and `applied_at`
+  is a `Timestamp`. The table sits at the database root, and a seed is recorded
+  with `UPSERT` in the transaction the seed runs in.
+
+On YDB a seed file runs as one serializable transaction with the row that
+records it, and is run again when YDB aborts it for a conflicting transaction.
+A seed file holding a schema statement, or a `BATCH UPDATE` or `BATCH DELETE`,
+is refused before it runs, because YDB runs those only outside a transaction.
+[YDB](../../databases/ydb/#seeds) has the details.
 
 ## Protect production-like environments
 
@@ -168,8 +178,11 @@ records its new checksum.
   using a per-file savepoint, so `--force --idempotent` re-runs cleanly over
   existing rows. The savepoint is spelled for the engine: SQL Server gets
   `SAVE TRANSACTION` and `ROLLBACK TRANSACTION`, Oracle gets `SAVEPOINT` and
-  `ROLLBACK TO SAVEPOINT`, and neither has a statement that releases one. The
-  flag is refused on ClickHouse, which has neither transactions nor savepoints.
+  `ROLLBACK TO SAVEPOINT`, and neither has a statement that releases one. YDB
+  has no savepoint, and a conflict ends the transaction it happens in, so there
+  the whole file is rolled back and the seed is recorded in a transaction of
+  its own; either way nothing of the file is applied. The flag is refused on
+  ClickHouse, which has neither transactions nor savepoints.
 
 ## Limitations
 

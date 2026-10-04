@@ -1,6 +1,6 @@
 ---
 title: YDB
-description: YDB in Ptah - connecting with ydb:// URLs, what renders and plans for row tables, type mappings, keys, defaults and indexes, what each release line can do, linting YQL, and what is not supported yet.
+description: YDB in Ptah - connecting with ydb:// URLs, what renders and plans for row tables, type mappings, keys, defaults and indexes, what each release line can do, linting YQL, seeds, declared rows and the query builder, and what is not supported yet.
 type: reference
 audience:
   - "database-engineer"
@@ -23,16 +23,17 @@ owns:
 
 Ptah renders YQL for YDB row tables, plans a migration between two schemas,
 connects to a live database, reads its tables back, applies DDL to it, runs
-versioned migrations against it and lints YQL for it. The
+versioned migrations against it, lints YQL for it, and writes data to it:
+seeds, declared rows and the statements the query builder renders. The
 dialect name is `ydb`. YDB is its own dialect rather than a PostgreSQL-family
 one: Ptah writes YQL and talks to the server through the YDB Go SDK. A schema
 Ptah applies reads back as itself, which the integration suite checks in CI
 against live YDB 26.2 and 25.1 servers. The nightly capability matrix runs the
 same suite on each YDB line it probes.
 
-Data changes, dev databases, `ptah-compat` and the YDB object families such
-as TTL, column families, changefeeds, views and vector indexes are not
-supported yet. See [What is not supported yet](#what-is-not-supported-yet).
+Dev databases, `ptah-compat` and the YDB object families such as TTL, column
+families, changefeeds, views and vector indexes are not supported yet. See
+[What is not supported yet](#what-is-not-supported-yet).
 
 ## Connecting
 
@@ -210,7 +211,7 @@ or `stable-25-4-1`:
 | `YDB262` | 26.2 | — |
 | `YDB261` | 26.1 | `SET DEFAULT` and `DROP DEFAULT` on an existing column |
 | `YDB253` | 25.3, 25.4 | a column added with a default |
-| `YDB252` | 25.2 | a `JsonDocument` or `DyNumber` default |
+| `YDB252` | 25.2 | a `JsonDocument` or `DyNumber` default, `UPDATE ... RETURNING` on a table with a unique index |
 | `YDB251` | 25.1 | the 64-bit date and time types, `Decimal` precision other than 22,9, an `Int16` or `Uint16` default |
 
 `ptah schema render --dialect ydb --server-version 25.1.4.7` renders for a line
@@ -320,14 +321,67 @@ and a capability an `ALTER TABLE` needs that the line lacks as `CAP001`.
 `.ptah-lint.yaml` with `gate: { families: [YD] }` refuses a pending migration
 that carries a `YD` error before any migration runs.
 
+## Data
+
+YQL types every literal and converts few of them, so Ptah writes each value in
+the type of the column it lands in: `5` for an `Int32` column and `5l` for an
+`Int64` one, `'x'u` for `Utf8`, `Timestamp('2026-01-02T03:04:05Z')` for a
+`Timestamp`, and an escaped string for the bytes of a `String`. A value its
+column cannot hold is refused with the column and the type rather than
+wrapped: an integer outside the type's range, a negative one for an unsigned
+type, a moment more precise than the type or before 1970 in a narrow one.
+
+### Declared rows
+
+Rows declared with `//ptah:schema:data` reach YDB through `ptah schema plan`,
+`ptah schema apply`, `ptah migrations data` and the drift report. Each column's
+type comes from the live table, because YDB cannot change a column's type, or,
+for a table the same plan creates, from the type its declaration lands on for
+the server's release line. A declared row is compared with the stored one in
+the column's type, so `12.50` matches the `12.5` a `Decimal` stores and an
+upper-case UUID matches the lower-case one YDB keeps: a converged table plans
+nothing.
+
+### Seeds
+
+`ptah seed` creates the tracker `schema_seeds` at the database root, with the
+seed path as its key. A seed file runs as the queries YQL reads it into, so a
+`$name = ...` definition reaches the statements after it, and all of them run
+in one serializable transaction with the row that records the seed. When YDB
+aborts that transaction for a conflicting one (`Transaction locks
+invalidated`), nothing of it is applied, and Ptah runs it again, up to five
+times. A file that holds a schema statement, or a `BATCH UPDATE` or `BATCH
+DELETE`, is refused before it runs, because YDB runs those only outside a
+transaction; put them in a migration.
+
+YDB has no savepoint, and a key conflict ends the transaction it happens in. So
+`--idempotent` rolls the whole file back and records the seed in a transaction
+of its own: as on the other engines, nothing of the file is applied and the seed
+reads as applied. `--protected-table` is checked against the tables in the
+connection's directory.
+
+### Query builder
+
+`core/query` renders SELECT, INSERT, UPDATE, DELETE and YDB's `UPSERT INTO`,
+which `query.UpsertInto` builds: it writes each row over the row with the same
+primary key, keeps the columns it does not name, and inserts the row where there
+is none. Parameters are `$p1`, `$p2` and so on, and each argument is a
+`sql.NamedArg` of that name, so a YDB connection binds it by name. A Go
+`int64` binds as `Int64`, so a narrower column takes a value of its own Go type.
+LIMIT and OFFSET bind as `Uint64`.
+
+YQL has no `ON CONFLICT`, no `WITH` clause, no correlated subquery, no JOIN
+condition other than equalities between the joined tables' columns, and no
+OFFSET without a LIMIT. The builder refuses each before it renders anything,
+with the capability key the target lacks, and `RETURNING` is refused on 25.1
+and 25.2; see the [query builder](../../extend/query-builder/#dialect-coverage).
+
 ## What is not supported yet
 
 These are refused with a message that names what is missing:
 
 <!-- BEGIN GENERATED YDB GAPS -->
 - a YQL file as the desired schema (Go structs and YAML schemas work);
-- the query builder;
-- data changes: seeds, data plans and declared rows;
 - a scratch database for each case of `ptah migrations test` and `ptah schema test`, since YQL cannot create a database;
 - a YDB database as a dev or shadow database;
 - comments on tables, columns and indexes;
