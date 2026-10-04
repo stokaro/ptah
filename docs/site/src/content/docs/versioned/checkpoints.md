@@ -105,6 +105,12 @@ spelling: `'\x5cff41'::bytea` on PostgreSQL, CockroachDB and Spanner,
 database receives the bytes the history wrote, including bytes that are not
 valid text.
 
+On YDB every value is written in its column's type as the replayed table has
+it, `Decimal('1.5', 22, 9)` or `Timestamp('2026-01-02T03:04:05Z')`, because YQL
+does not convert a literal to the column's type. The shadow database is a dev
+realm in the database the URL names; see
+[YDB](../../databases/ydb/#dev-shadow-and-scratch-databases).
+
 A table that does not exist at the checkpoint's version is refused, and so is a
 table with no primary key: rows with no identity are not rows this mechanism can
 promise to reproduce.

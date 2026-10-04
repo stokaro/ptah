@@ -231,8 +231,8 @@ author order. Top-level maps render deterministically by sorted key.
 | `primary` | Marks the column as a primary key. |
 | `auto_increment` / `auto_inc` | Marks the column as auto-incrementing. |
 | `identity_generation` | PostgreSQL identity mode: `ALWAYS` or `BY_DEFAULT`. |
-| `identity_start` | PostgreSQL identity `START WITH` value. |
-| `identity_increment` | PostgreSQL identity `INCREMENT BY` value. |
+| `identity_start` | Identity `START WITH` value; on YDB, the start of a Serial column's sequence. |
+| `identity_increment` | Identity `INCREMENT BY` value; on YDB, the step of a Serial column's sequence. |
 | `identity_options` | Raw PostgreSQL identity option clause. |
 | `unique` | Adds a unique constraint. |
 | `unique_expr` | Uniqueness over an expression. Not implemented; rendering refuses it rather than enforcing uniqueness on the column instead. |

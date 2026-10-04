@@ -22,15 +22,19 @@ import (
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlrunner"
 	"ptah.run/internal/ydbflags"
+	"ptah.run/internal/ydburl"
 	"ptah.run/internal/yqlquery"
 )
 
 // Scheme is what the writer asks of YDB's scheme service: the entries of a
-// directory, and the removal of an empty one. There is no SQL that drops a
-// directory. Both take an absolute path.
+// directory, the creation of a directory and the removal of an empty one, and
+// the description of one path. There is no SQL that creates or drops a
+// directory. Each takes an absolute path.
 type Scheme interface {
 	ListDirectory(ctx context.Context, absolute string) ([]*Ydb_Scheme.Entry, error)
+	MakeDirectory(ctx context.Context, absolute string) error
 	RemoveDirectory(ctx context.Context, absolute string) error
+	DescribePath(ctx context.Context, absolute string) (*Ydb_Scheme.Entry, error)
 }
 
 // Writer applies schema changes to a YDB database.
@@ -49,9 +53,13 @@ type Scheme interface {
 // a transaction that claimed to hold DDL would promise an atomicity YDB does
 // not provide.
 type Writer struct {
-	runner   sqlrunner.Runner
-	scheme   Scheme
+	runner sqlrunner.Runner
+	scheme Scheme
+	// database is the absolute path of the database, and root the absolute
+	// path the writer treats as its database: the database itself, or the
+	// directory of the dev realm the connection named.
 	database string
+	root     string
 	dryRun   bool
 	// builds reaches the operation service, which cancels a build; nil for a
 	// writer made over a scheme alone.
@@ -61,12 +69,16 @@ type Writer struct {
 }
 
 // NewWriter returns a writer that executes through runner and reaches the
-// scheme and operation services through driver.
-func NewWriter(runner sqlrunner.Runner, driver *ydbsdk.Driver) *Writer {
+// scheme and operation services through driver. realm is the dev realm the
+// connection's URL named, or "" for none: the writer then treats the realm's
+// directory as its database, as runner does (see ydburl.RealmParameter).
+func NewWriter(runner sqlrunner.Runner, driver *ydbsdk.Driver, realm string) *Writer {
 	connection := ydbsdk.GRPCConn(driver)
 	writer := NewWriterFromScheme(runner, grpcScheme{client: Ydb_Scheme_V1.NewSchemeServiceClient(connection)},
-		driver.Name())
-	writer.builds = NewBuilds(Ydb_Operation_V1.NewOperationServiceClient(connection), writer.database)
+		driver.Name(), realm)
+	// A statement names a table relative to the root its connection resolves
+	// names against, so a build is found under the root.
+	writer.builds = NewBuilds(Ydb_Operation_V1.NewOperationServiceClient(connection), writer.root)
 	return writer
 }
 
@@ -81,12 +93,19 @@ func (w *Writer) CancelRunningBuild(ctx context.Context, table string, wait Buil
 }
 
 // NewWriterFromScheme returns a writer that executes through runner and asks
-// scheme about database, an absolute path such as /local.
-func NewWriterFromScheme(runner sqlrunner.Runner, scheme Scheme, database string) *Writer {
+// scheme about database, an absolute path such as /local, treating the dev
+// realm realm in it as its database, or the database itself when realm is "".
+func NewWriterFromScheme(runner sqlrunner.Runner, scheme Scheme, database, realm string) *Writer {
+	database = "/" + strings.Trim(database, "/")
+	root := database
+	if realm != "" {
+		root = path.Join(database, ydburl.RealmDirectory, realm)
+	}
 	return &Writer{
 		runner:   runner,
 		scheme:   scheme,
-		database: "/" + strings.Trim(database, "/"),
+		database: database,
+		root:     root,
 		pause:    retryPause,
 	}
 }
@@ -220,7 +239,8 @@ func (t *transaction) Rollback() error { return nil }
 // a view, a topic and the other objects the reader records as not described
 // stay, and so does the directory that holds one, so a cleanup planned from a
 // read removes exactly what the plan listed. Dot-directories are never
-// entered, and a directory that was empty before is left alone.
+// entered, nor is ydburl.RealmDirectory at the root, and a directory that was
+// empty before is left alone.
 func (w *Writer) DropAllTables(ctx context.Context) error {
 	if w.scheme == nil {
 		return fmt.Errorf("no YDB scheme connection")
@@ -233,7 +253,7 @@ func (w *Writer) DropAllTables(ctx context.Context) error {
 // database root, and the directories under it, and reports whether it dropped
 // or removed anything there.
 func (w *Writer) dropDirectory(ctx context.Context, dir string) (bool, error) {
-	entries, err := w.scheme.ListDirectory(ctx, path.Join(w.database, dir))
+	entries, err := w.scheme.ListDirectory(ctx, path.Join(w.root, dir))
 	if err != nil {
 		return false, err
 	}
@@ -247,7 +267,8 @@ func (w *Writer) dropDirectory(ctx context.Context, dir string) (bool, error) {
 				return changed, err
 			}
 			changed = true
-		case entry.GetType() == Ydb_Scheme.Entry_DIRECTORY && !strings.HasPrefix(name, "."):
+		case entry.GetType() == Ydb_Scheme.Entry_DIRECTORY && !strings.HasPrefix(name, ".") &&
+			(dir != "" || name != ydburl.RealmDirectory):
 			child := path.Join(dir, name)
 			childChanged, err := w.dropDirectory(ctx, child)
 			if err != nil {
@@ -304,12 +325,12 @@ func (w *Writer) droppableDirectory(dir string) (string, error) {
 	for segment := range strings.SplitSeq(dir, "/") {
 		if strings.HasPrefix(segment, ".") {
 			return "", fmt.Errorf("ydb: directory %q has the segment %q; DropDirectory removes a directory "+
-				"below the database root %s, named without dot segments", dir, segment, w.database)
+				"below the database root %s, named without dot segments", dir, segment, w.root)
 		}
 	}
 	relative := strings.Trim(path.Clean("/"+dir), "/")
 	if relative == "" {
-		return "", fmt.Errorf("ydb: the database root %s is not a directory DropDirectory removes", w.database)
+		return "", fmt.Errorf("ydb: the database root %s is not a directory DropDirectory removes", w.root)
 	}
 	return relative, nil
 }
@@ -334,7 +355,7 @@ type treeStep struct {
 // planTree appends the steps that drop what dir holds and then dir itself,
 // and refuses the whole tree at the first entry it cannot drop.
 func (w *Writer) planTree(ctx context.Context, dir string, steps *[]treeStep) error {
-	absolute := path.Join(w.database, dir)
+	absolute := path.Join(w.root, dir)
 	entries, err := w.scheme.ListDirectory(ctx, absolute)
 	if err != nil {
 		return err
@@ -380,7 +401,7 @@ func (w *Writer) runTreeStep(ctx context.Context, step treeStep) error {
 
 // removeIfEmpty removes the directory dir when nothing is left in it.
 func (w *Writer) removeIfEmpty(ctx context.Context, dir string) error {
-	absolute := path.Join(w.database, dir)
+	absolute := path.Join(w.root, dir)
 	if w.dryRun {
 		slog.Info("[DRY RUN] Would remove the directory if it is empty", "path", absolute)
 		return nil
@@ -413,4 +434,24 @@ func (s grpcScheme) RemoveDirectory(ctx context.Context, absolute string) error 
 		return WithoutStackFrames(err)
 	}
 	return operationStatus(response.GetOperation())
+}
+
+func (s grpcScheme) MakeDirectory(ctx context.Context, absolute string) error {
+	response, err := s.client.MakeDirectory(ctx, &Ydb_Scheme.MakeDirectoryRequest{Path: absolute})
+	if err != nil {
+		return err
+	}
+	return operationStatus(response.GetOperation())
+}
+
+func (s grpcScheme) DescribePath(ctx context.Context, absolute string) (*Ydb_Scheme.Entry, error) {
+	response, err := s.client.DescribePath(ctx, &Ydb_Scheme.DescribePathRequest{Path: absolute})
+	if err != nil {
+		return nil, fmt.Errorf("describe YDB path %s: %w", absolute, err)
+	}
+	var described Ydb_Scheme.DescribePathResult
+	if err := operationResult(response.GetOperation(), &described); err != nil {
+		return nil, fmt.Errorf("describe YDB path %s: %w", absolute, err)
+	}
+	return described.GetSelf(), nil
 }

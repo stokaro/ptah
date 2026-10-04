@@ -32,8 +32,8 @@ against live YDB 26.2 and 25.1 servers. The nightly capability matrix runs the
 same suite on each YDB line it probes.
 
 `ptah-compat` takes a YDB URL on every verb; see [ptah-compat](#ptah-compat).
-Dev databases, inference and the YDB object families such as TTL, column
-families, changefeeds, views and vector indexes are not supported yet. See
+Inference and the YDB object families such as TTL, column families,
+changefeeds, views and vector indexes are not supported yet. See
 [What is not supported yet](#what-is-not-supported-yet).
 
 ## Connecting
@@ -60,9 +60,11 @@ Credentials come from exactly one source:
 
 Besides `database`, `token` and `use_env_credentials`, a URL may carry the SDK
 parameters `go_balancer`, `go_default_idempotent` and
-`prefetch_query_result_parts`, and `monitoring`, which names the cluster's
-monitoring endpoint (see [Feature flags](#feature-flags)). Any other parameter
-is refused with the list of the accepted ones.
+`prefetch_query_result_parts`, `monitoring`, which names the cluster's
+monitoring endpoint (see [Feature flags](#feature-flags)), and `dev_realm`,
+which Ptah writes when it gives a run a dev database of its own (see
+[Dev, shadow and scratch databases](#dev-shadow-and-scratch-databases)). Any
+other parameter is refused with the list of the accepted ones.
 
 A server in a container on another host advertises its node through discovery
 as `localhost:2136`, which the client cannot reach. Connect to such a server
@@ -79,7 +81,9 @@ schema is a directory relative to the database root, and the root by default.
 A table `orders` in the schema `shop` is the path `shop/orders`, written as one
 backticked name. Creating the table creates its directories. Ptah never reads
 or writes a directory whose name starts with a dot, such as `.sys` or
-`.metadata`.
+`.metadata`. Two names at the database root are Ptah's own and never part of a
+schema it reads, plans or drops: the coordination node `ptah_locks` and the
+directory `ptah_dev`.
 
 Names are case-sensitive: `Users` and `users` are two tables. Ptah always
 quotes a name with backticks and escapes a backtick or a backslash inside it.
@@ -261,6 +265,55 @@ endpoint, Ptah reads the flag and plans the renamed index as dropped and added
 again, under the rules for adding an index to an existing table (see
 [Feature flags](#feature-flags)).
 
+### Serial columns and their sequences
+
+A Serial column fills itself from a sequence YDB creates with the column, at
+`<table>/_serial_column_<column>`. `SERIAL`, `BIGSERIAL` and `SMALLSERIAL` are
+Serial columns, and so is an integer column with `auto_increment`. The sequence
+starts at 1 and steps by 1 unless the column declares `identity_start` or
+`identity_increment`, in a Go annotation or a YAML schema:
+
+```go
+//ptah:schema:field name="id" type="BIGSERIAL" primary="true" identity_start="1000" identity_increment="10"
+```
+
+YDB sets both with `ALTER SEQUENCE` and nothing else, and that statement takes
+the sequence only by its absolute path, which begins with the database's own.
+So a plan made against a database writes it, after the table's `CREATE TABLE`:
+
+```sql
+ALTER SEQUENCE `/local/orders/_serial_column_id` START WITH 1000 INCREMENT BY 10 RESTART WITH 1000;
+```
+
+`START` alone changes the start YDB records and leaves the next value where it
+was, even on a new sequence, so a new table's sequence is restarted at the
+declared start. A sequence of a table that exists is never restarted, because a
+restart onto a value a row holds fails the next insert with `Conflict with
+existing key`. A changed start there is recorded and moves no value; a changed
+increment applies from the next value on.
+
+`ptah schema render` has no database to name, so it writes the table without
+the statement and reports the start and the increment as skipped. A migration
+file names the database it was planned against, and applying it to a database
+at another path fails with `Path does not exist`.
+
+A plan refuses a change to a sequence that YDB would turn against the table:
+
+- a start or an increment on a 16-bit or 32-bit Serial. Any `ALTER SEQUENCE`
+  raises its maximum to the Int64 maximum, and the column then stores the value
+  after 32767 or 2147483647 as a negative number without an error. A
+  `BIGSERIAL` has no such limit to lose. The `serial_sequence_keeps_range` key
+  is false on every YDB line;
+- a change to a sequence that was restarted, including the one of a table
+  created with a start other than 1. YDB replays the last restart on every
+  later `ALTER SEQUENCE`, so the next insert takes that value again and
+  collides with the row that holds it.
+
+`identity_options` and `GENERATED ALWAYS` are refused, and so is a start or an
+increment below 1. The read reports a sequence's start, increment and last
+restart. `YD107` and `YD108` in `ptah migrations lint` report the same traps in
+a migration written by hand.
+
 ## Planning changes
 
 YDB changes a table in place less than the SQL engines do, and runs a schema
@@ -268,14 +321,16 @@ statement outside any transaction. A plan therefore refuses what the server
 cannot do before it emits anything, and orders what it emits so that no
 statement needs one that has not run yet:
 
-1. Create the added tables, with their indexes.
+1. Create the added tables, with their indexes, each followed by the
+   `ALTER SEQUENCE` that gives a Serial column its declared start and increment.
 2. Drop the indexes the plan removes, before any column they name. YDB refuses
    to drop an indexed or a covered column.
 3. Rename the indexes the declaration renames, then change the partitioning of
    the indexes that keep their definition.
 4. Per table: add columns, then change columns in place, then drop columns.
-5. Add the new indexes of existing tables.
-6. Drop the removed tables.
+5. Change the start and the increment of the Serial columns of existing tables.
+6. Add the new indexes of existing tables.
+7. Drop the removed tables.
 
 Each statement runs as its own query. A query of several schema statements is
 not atomic on YDB, and each of its statements compiles against the schema as it
@@ -409,8 +464,9 @@ the [support matrix](../support-matrix/).
 
 `ptah db read --db-url ydb://...` and the commands that compare against a
 database read every row table under the database root, its columns, defaults,
-`Serial` columns, primary key and global indexes, with each index's
-partitioning and read replicas.
+`Serial` columns with their sequence's start, increment and last restart,
+primary key and global indexes, with each index's partitioning and read
+replicas.
 
 What Ptah does not model yet is recorded rather than dropped: views, topics,
 column-oriented tables, sequences other than a `Serial` column's, and the
@@ -461,10 +517,12 @@ is dropped or renamed. [Lint rules](../../reference/lint-rules/#ydb) lists each 
 meaning.
 
 `YD104`, `YD105` and `YD106` read the indexes, TTL, minimum partition count
-and views the directory's own earlier migrations declare, because a YDB
-database cannot be a dev database yet; a table the directory never created is
-unknown to them. `YD105` stays silent where that history left the minimum at 1,
-and warns where it does not know it. The rules for
+and views the directory's own earlier migrations declare; a table the
+directory never created is unknown to them. `YD105` stays silent where that
+history left the minimum at 1, and warns where it does not know it. With
+`--dev-url`, lint first replays the directory in a
+[dev realm](#dev-shadow-and-scratch-databases), so a statement YDB refuses fails
+the run, and the rules that read a baseline schema read it there. The rules for
 every dialect run too, and the
 [lint rules](../../reference/lint-rules/#what-the-rules-for-every-dialect-do-on-ydb)
 say what each does on YDB.
@@ -544,6 +602,64 @@ writes no such statement itself: declared rows are written with `INSERT`,
 `UPDATE` and `DELETE`, and the tables Ptah keeps for migrations and seeds have no
 secondary index.
 
+## Dev, shadow and scratch databases
+
+SQL cannot create a YDB database, so a dev, shadow or test database on YDB is a
+dev realm: a directory Ptah creates for the run under `ptah_dev` in the
+database the URL names, and removes when the run ends. Every query the run
+sends starts with `PRAGMA TablePathPrefix` naming the realm, and the run reads
+and resets only what is under it, so it works in an empty database of its own:
+
+```bash
+ptah migrations validate --dir migrations --dev-url "ydb://localhost:2136/local"
+```
+
+A run that reads or changes a database leaves `ptah_dev` out, as it leaves out
+`ptah_locks`. So a `--dev-url` or `--shadow-db` may name the target database
+itself: a realm is never part of the target's schema, of a plan against it or
+of a `ptah db drop-all`. It may also name a database on another server. Two
+local-ydb servers both serve `local`, and every node of a cluster serves each
+of its databases, so Ptah does not tell databases apart by their URLs; the
+realm keeps the dev database apart from the target on either server. `ptah migrations test` and `ptah schema test` run their
+cases in one realm, and a case marked `parallel` in a realm of its own.
+
+Creating a realm needs the `ydb.granular.create_directory` right on the
+database, and removing it needs `ydb.granular.remove_schema`. A run that is
+killed before it removes its realm leaves `ptah_dev/<name>` behind; remove it
+with `ydb scheme rmdir -r ptah_dev/<name>`.
+
+The prefix confines every relative path, and replay refuses a statement whose
+effect it does not confine:
+
+- a write whose target is an absolute path, climbs out with `..`, is named
+  through a `$` expression or names a cluster, an `ALTER TABLE ... RENAME TO`
+  either, and `PRAGMA TablePathPrefix`;
+- `DEFINE ACTION`, `DO` and `EVALUATE`, which run statements they compute;
+- users, groups, `GRANT` and `REVOKE`, secrets, resource pools, backups and
+  `ALTER DATABASE`, which belong to the whole database;
+- a topic, which the reset has no statement to drop;
+- external data sources and tables, async replication, transfers and streaming
+  queries, which reach outside the server.
+
+A read outside the realm is allowed, since it leaves nothing behind.
+
+`docker://ydb/<tag>[/local]` starts `ydbplatform/local-ydb:<tag>` for one
+command and removes it afterwards. The image serves the one database `local`,
+so another database name is refused. The server is the run's own, so replay
+there runs everything in the list above except what reaches outside the
+server. local-ydb takes every connection without a credential, so a container
+runtime on another machine, which would publish the port on every interface of
+its host, is refused before anything starts:
+
+```bash
+ptah migrations validate --dir migrations --dev-url docker://ydb/26.2.1.14/local
+```
+
+`PTAH_DEV_SERVER_DISPOSABLE=1` makes the server a YDB dev URL names the run's
+own in the same way. The run then gets no realm: the database is the dev
+database, and it has to be empty. Ptah connects to both databases and refuses
+a dev database that is the target's own.
+
 ## ptah-compat
 
 No Atlas edition has a YDB driver, so YDB on `ptah-compat` is a Ptah
@@ -600,14 +716,15 @@ the variable. `migrate diff` reads it too, and plans with it once YDB can be its
 dev database. A malformed value fails the run before it does anything, and
 strict mode refuses the variable.
 
-Verbs that need a dev database are refused until YDB can be one: `migrate
-diff`, `migrate lint`, `migrate checkpoint`, `migrate validate --dev-url`,
-`schema plan validate` and `schema apply --plan`. Every local-ydb server serves
-the database `/local`, so two of them are refused as one database before that.
+A `--dev-url` or a project `dev` URL naming a YDB database gets a dev realm, as
+on the native commands; see
+[Dev, shadow and scratch databases](#dev-shadow-and-scratch-databases).
+`docker://ydb` starts a local-ydb server for the run in the default profile.
 
 `PTAH_ATLAS_STRICT_COMPAT=1` reproduces the community binary, which answers
 `sql/sqlclient: unknown driver "ydb". See: https://atlasgo.io/url` on every verb,
-with `ydbs` for a `ydbs://` URL. Strict mode refuses a YDB URL in those words
+with `ydbs` for a `ydbs://` URL, and `unsupported docker image "ydb"` for a
+`docker://ydb` dev URL. Strict mode refuses a YDB URL in those words
 wherever it comes from, a data source in `atlas.hcl` included; a `PTAH_*`
 variable is refused as a variable. See
 [Compatibility differences](../../atlas/retained-divergences/#a-ydb-database-url).
@@ -683,8 +800,6 @@ These are refused with a message that names what is missing:
 
 <!-- BEGIN GENERATED YDB GAPS -->
 - a YQL file as the desired schema (Go structs and YAML schemas work);
-- a scratch database for each case of `ptah migrations test` and `ptah schema test`, since YQL cannot create a database;
-- a YDB database as a dev or shadow database;
 - comments on tables, columns and indexes;
 - views;
 - users, groups and permissions;

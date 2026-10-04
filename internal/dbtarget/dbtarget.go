@@ -133,6 +133,16 @@ const (
 	// endpoint too, in its monitoring parameter, because that is where the
 	// connection reads the cluster's feature flags, and a server's monitoring
 	// port is as much its own as its gRPC port.
+	//
+	// It has no dev or admin variant, unlike MySQL and Oracle. local-ydb
+	// serves the one database /local and SQL cannot create another, so a
+	// YDB dev, shadow or scratch database is a dev realm the run creates in
+	// the database its URL names (internal/ydbrealm). A test hands this same
+	// address as the dev URL, and the run works in a realm the target's reads
+	// and resets leave alone. A realm is a directory, which needs the
+	// ydb.granular.create_directory right on the database; local-ydb's
+	// anonymous account holds every right, so no second account is needed
+	// either.
 	YDB
 	// YDB251 is a YDB database on a second server, one that runs the 25.1
 	// release line.

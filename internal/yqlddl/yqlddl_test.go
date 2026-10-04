@@ -28,11 +28,11 @@ func TestRead_CreateTable(t *testing.T) {
 				Kind: yqlddl.CreateTable,
 				Name: "dir/d1",
 				Columns: []yqlddl.Column{
-					{Name: "id", NotNull: true},
-					{Name: "k"},
-					{Name: "c"},
-					{Name: "amount", Default: true},
-					{Name: "ts", NotNull: true, Default: true},
+					{Name: "id", Type: "Int64", NotNull: true},
+					{Name: "k", Type: "Utf8"},
+					{Name: "c", Type: "Utf8"},
+					{Name: "amount", Type: "Decimal", Default: true},
+					{Name: "ts", Type: "Timestamp", NotNull: true, Default: true},
 				},
 				PrimaryKey: true,
 				Indexes: []yqlddl.Index{
@@ -55,7 +55,7 @@ func TestRead_CreateTable(t *testing.T) {
 				Kind:      yqlddl.CreateTable,
 				Name:      "t",
 				IfExists:  true,
-				Columns:   []yqlddl.Column{{Name: "id"}, {Name: "ts"}},
+				Columns:   []yqlddl.Column{{Name: "id", Type: "Uint64"}, {Name: "ts", Type: "Timestamp"}},
 				TTLColumn: "ts",
 				Settings: []yqlddl.Setting{
 					{Name: "STORE", Value: "COLUMN"},
@@ -83,9 +83,49 @@ func TestRead_CreateTable(t *testing.T) {
 			sql:  "CREATE TABLE $t (id Int64 NOT NULL, PRIMARY KEY (id))",
 			want: yqlddl.Statement{
 				Kind:       yqlddl.CreateTable,
-				Columns:    []yqlddl.Column{{Name: "id", NotNull: true}},
+				Columns:    []yqlddl.Column{{Name: "id", Type: "Int64", NotNull: true}},
 				PrimaryKey: true,
 			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(yqlddl.Read(test.sql), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestRead_AlterSequence reads the path an ALTER SEQUENCE names and the
+// restart it makes: YDB takes START [WITH], INCREMENT [BY] and RESTART [[WITH]
+// n], in any order.
+func TestRead_AlterSequence(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+		want yqlddl.Statement
+	}{
+		{
+			name: "settings without a restart",
+			sql:  "ALTER SEQUENCE `/local/app/t/_serial_column_id` START WITH 100 INCREMENT BY 5;",
+			want: yqlddl.Statement{Kind: yqlddl.AlterSequence, Name: "/local/app/t/_serial_column_id"},
+		},
+		{
+			name: "a restart at a value",
+			sql:  "alter sequence if exists `/local/t/_serial_column_id` increment 2 restart with 500",
+			want: yqlddl.Statement{Kind: yqlddl.AlterSequence, Name: "/local/t/_serial_column_id", IfExists: true,
+				Restart: true, RestartWith: "500"},
+		},
+		{
+			name: "a restart at the start",
+			sql:  "ALTER SEQUENCE `/local/t/_serial_column_id` RESTART START 7",
+			want: yqlddl.Statement{Kind: yqlddl.AlterSequence, Name: "/local/t/_serial_column_id", Restart: true},
+		},
+		{
+			name: "a restart written without WITH",
+			sql:  "ALTER SEQUENCE `/local/t/_serial_column_id` RESTART 42",
+			want: yqlddl.Statement{Kind: yqlddl.AlterSequence, Name: "/local/t/_serial_column_id", Restart: true,
+				RestartWith: "42"},
 		},
 	}
 	for _, test := range tests {
@@ -106,8 +146,8 @@ func TestRead_AlterTable(t *testing.T) {
 			name: "columns",
 			sql:  "ALTER TABLE t ADD COLUMN a Int64 NOT NULL, ADD b Utf8 DEFAULT 'x'u, DROP COLUMN c, DROP d",
 			want: []yqlddl.Action{
-				{Kind: yqlddl.AddColumn, Column: yqlddl.Column{Name: "a", NotNull: true}},
-				{Kind: yqlddl.AddColumn, Column: yqlddl.Column{Name: "b", Default: true}},
+				{Kind: yqlddl.AddColumn, Column: yqlddl.Column{Name: "a", Type: "Int64", NotNull: true}},
+				{Kind: yqlddl.AddColumn, Column: yqlddl.Column{Name: "b", Type: "Utf8", Default: true}},
 				{Kind: yqlddl.DropColumn, Column: yqlddl.Column{Name: "c"}},
 				{Kind: yqlddl.DropColumn, Column: yqlddl.Column{Name: "d"}},
 			},

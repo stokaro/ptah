@@ -184,6 +184,18 @@ type Database struct {
 	// the module yields an empty list, so this describes the reader rather than
 	// the database, and a description that carried it would not be portable.
 	UnregisteredVirtualTables []VirtualTable `json:"-"`
+
+	// DatabasePath is the absolute path of the database this read describes,
+	// such as /local, on a target whose statements name some objects by an
+	// absolute path rather than relative to the connection: YDB, whose ALTER
+	// SEQUENCE takes the sequence behind a Serial column only by its absolute
+	// path. A plan built against this read names those objects with it.
+	//
+	// Empty from every other reader, and from a description that did not come
+	// from a live read. It describes where the database is rather than what
+	// it holds, so it is never serialized: a description applied to another
+	// database is planned against that database's path.
+	DatabasePath string `json:"-"`
 }
 
 // VirtualTable identifies one SQLite virtual table and the module that owns
@@ -584,9 +596,22 @@ type Column struct {
 	// refusing.
 	//
 	// Empty for a non-identity column, and for an identity column whose reader
-	// does not report them.
+	// does not report them. The YDB reader reports them for a Serial column
+	// whose sequence starts or steps at something other than 1, and leaves
+	// each empty where it is 1, the value a sequence nobody altered has.
 	IdentityStart     string `json:"identity_start,omitempty"`
 	IdentityIncrement string `json:"identity_increment,omitempty"`
+
+	// SequenceRestart is the value the last RESTART of a YDB Serial column's
+	// sequence moved it to, and empty for a sequence nobody restarted and for
+	// every other column.
+	//
+	// It is read because YDB replays that restart on every later ALTER
+	// SEQUENCE. Measured on 25.1.4.7 and 26.2.1.14: after `RESTART WITH 500`
+	// and a row holding 500, `ALTER SEQUENCE ... INCREMENT BY 1` moves the next
+	// value back to 500, and the next insert fails with `Conflict with
+	// existing key`. A plan refuses to alter a sequence that carries one.
+	SequenceRestart string `json:"sequence_restart,omitempty"`
 
 	// OwnedSequence names the sequence that is part of this column: the one a
 	// serial column draws its default from, or an identity column's own. The

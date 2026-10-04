@@ -141,8 +141,8 @@ func writeYDBVerdicts(w io.Writer, entries []Entry) error {
 	out.WriteString("### What the rules for every dialect do on YDB\n\n")
 	out.WriteString("A YDB run reads migrations as YQL. The `YD` family above is YDB's own, and every rule with no " +
 		"dialect restriction runs there too. This table says what each of those does on YDB: it applies, the statement " +
-		"it reads does not exist in YQL, a `YD` rule replaces it, or it needs a dev database, which a YDB database cannot " +
-		"be yet, and the run names it as unmet.\n\n")
+		"it reads does not exist in YQL, a `YD` rule replaces it, or it needs a dev database, and a run without " +
+		"`--dev-url` names it as unmet.\n\n")
 	out.WriteString("| Rule | On YDB | What it rests on |\n| --- | --- | --- |\n")
 	for _, entry := range entries {
 		if entry.YDB == "" {

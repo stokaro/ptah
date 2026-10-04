@@ -310,6 +310,35 @@ func CanonicalValue(ydbType string, value any) (any, error) {
 	return canonical, nil
 }
 
+// CanonicalRows returns copies of rows with every value of a column
+// columnTypes names in the form [CanonicalValue] gives it, for a caller that
+// compares rows, orders them or writes them through a data diff. A column the
+// map does not name keeps its value. A value its column cannot hold is an
+// error naming the row, counted from 1, and the column. A nil rows stays nil.
+func CanonicalRows(columnTypes map[string]string, rows []map[string]any) ([]map[string]any, error) {
+	if rows == nil {
+		return nil, nil
+	}
+	out := make([]map[string]any, len(rows))
+	for i, row := range rows {
+		typed := make(map[string]any, len(row))
+		for column, value := range row {
+			ydbType, ok := columnTypes[column]
+			if !ok {
+				typed[column] = value
+				continue
+			}
+			canonical, err := CanonicalValue(ydbType, value)
+			if err != nil {
+				return nil, fmt.Errorf("row %d, column %q: %w", i+1, column, err)
+			}
+			typed[column] = canonical
+		}
+		out[i] = typed
+	}
+	return out, nil
+}
+
 // canonicalFromText turns the text a canonical literal carries into the Go
 // value CanonicalValue documents for the type.
 func canonicalFromText(ydbType, text string) (any, error) {

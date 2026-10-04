@@ -106,6 +106,8 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderAlterSequence(n)
 	case *ast.DropSequenceNode:
 		return r.renderDropSequence(n)
+	case *ast.AlterSerialSequenceNode:
+		return nodedispatch.RefuseSerialSequence(DialectName, n)
 
 	// Roles and privileges. A role and a grant are Oracle objects; an ALTER
 	// ROLE describes attributes an Oracle role does not carry.

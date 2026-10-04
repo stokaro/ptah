@@ -114,3 +114,27 @@ func RefuseIndexChangesInPlace(dialect string, diff *difftypes.SchemaDiff) error
 		return nil
 	}
 }
+
+// RefuseSerialSequenceChanges refuses a diff that changes the start or the
+// increment of a Serial column's sequence, for a planner of dialect that plans
+// no such change. The comparison records one only on a target with
+// capability.SerialSequenceOptions, which only YDB has, so another planner
+// reaches one only through a diff built by hand, and planning nothing would
+// leave the sequence as it was and report the two sides equal.
+func RefuseSerialSequenceChanges(dialect string, diff *difftypes.SchemaDiff) error {
+	if diff == nil {
+		return nil
+	}
+	for _, table := range diff.TablesModified {
+		for _, column := range table.ColumnsModified {
+			for _, key := range []string{"identity_start", "identity_increment"} {
+				if change, changed := column.Changes[key]; changed {
+					return fmt.Errorf("%w: the diff changes %s of column %q of table %q (%s), which only a YDB plan "+
+						"does; the %s planner plans none", ptaherr.ErrUnsupportedFeature, key, column.ColumnName,
+						table.TableName, change, dialect)
+				}
+			}
+		}
+	}
+	return nil
+}

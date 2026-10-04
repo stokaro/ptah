@@ -43,6 +43,7 @@ func TestScopeDatabaseKeepsCoverage(t *testing.T) {
 					{Name: "dropped", Schema: "public"},
 				},
 				NotDescribed: coverage.Set{}.With(coverage.Refused(coverage.Extension)),
+				DatabasePath: "/local",
 			}
 
 			got, err := atlasfilter.ScopeDatabase(schema, test.scope)
@@ -50,6 +51,7 @@ func TestScopeDatabaseKeepsCoverage(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(got.NotDescribed, qt.DeepEquals,
 				coverage.Set{}.With(coverage.Refused(coverage.Extension)))
+			c.Assert(got.DatabasePath, qt.Equals, "/local")
 		})
 	}
 }

@@ -7,7 +7,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/atlasurl"
-	"ptah.run/internal/ydbgap"
 )
 
 // A YDB database is a path, and the URL may carry it in its path or in a
@@ -81,6 +80,24 @@ func TestSameDatabaseEndpoint_YDB_HappyPath(t *testing.T) {
 			right: "ydb://localhost:2136/",
 			want:  false,
 		},
+		{
+			name:  "a dev realm is not the database that holds it",
+			left:  "ydb://localhost:2136/local?dev_realm=r1",
+			right: "ydb://localhost:2136/local",
+			want:  false,
+		},
+		{
+			name:  "two dev realms in one database",
+			left:  "ydb://localhost:2136/local?dev_realm=r1",
+			right: "ydb://localhost:2136/local?dev_realm=r2",
+			want:  false,
+		},
+		{
+			name:  "one dev realm spelled twice",
+			left:  "ydb://localhost:2136/local?dev_realm=r1",
+			right: "ydb://localhost/?database=/local&dev_realm=r1",
+			want:  true,
+		},
 	}
 
 	for _, test := range tests {
@@ -130,7 +147,10 @@ func TestSameDatabaseEndpoint_YDB_FailurePath(t *testing.T) {
 }
 
 // Hosts are not compared here, so the database alone decides, and an unknown
-// database fails closed.
+// database fails closed. On YDB that holds for a reason of its own: every
+// node of a cluster answers for each of its databases, so two hosts naming one
+// database path are often one database. A dev database on a second server that
+// names the same path is told apart by its dev realm.
 func TestMayAddressSameDatabase_YDB_HappyPath(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -151,6 +171,12 @@ func TestMayAddressSameDatabase_YDB_HappyPath(t *testing.T) {
 			want:  true,
 		},
 		{
+			name:  "two nodes naming one database path may be one database",
+			left:  "ydb://node-1:2136/Root/shop",
+			right: "ydb://node-2:2136/Root/shop",
+			want:  true,
+		},
+		{
 			name:  "an unspecified database fails closed",
 			left:  "ydb://localhost:2136",
 			right: "ydb://localhost:2136/dev",
@@ -160,6 +186,12 @@ func TestMayAddressSameDatabase_YDB_HappyPath(t *testing.T) {
 			name:  "YDB and another dialect are distinct realms",
 			left:  "ydb://localhost:2136/local",
 			right: "postgres://localhost/local",
+			want:  false,
+		},
+		{
+			name:  "a dev realm and the database that holds it are distinct realms",
+			left:  "ydb://db-a:2136/local?dev_realm=r1",
+			right: "ydb://db-b:2136/local",
 			want:  false,
 		},
 	}
@@ -184,7 +216,7 @@ func TestWithDatabaseName_RefusesYDB(t *testing.T) {
 
 			got, err := atlasurl.WithDatabaseName(rawURL, "scratch")
 
-			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(ydbgap.CreatingDatabases.Message()))
+			c.Assert(err, qt.ErrorIs, atlasurl.ErrYDBDatabaseName)
 			c.Assert(got, qt.Equals, "")
 		})
 	}
@@ -199,6 +231,46 @@ func TestDialectFromURL_YDBSchemes(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, "ydb")
+		})
+	}
+}
+
+// docker://ydb starts local-ydb, a YDB server; the engine is matched as
+// written, as every docker engine is.
+func TestDialectFromURL_DockerYDB_HappyPath(t *testing.T) {
+	for _, rawURL := range []string{"docker://ydb/26.2.1.14/local", "docker://ydb/25.1.4.7", "docker://ydb"} {
+		t.Run(rawURL, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := atlasurl.DialectFromURL(rawURL)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, "ydb")
+		})
+	}
+}
+
+func TestDialectFromURL_DockerYDB_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	got, err := atlasurl.DialectFromURL("docker://YDB/26.2.1.14/local")
+
+	c.Assert(err, qt.ErrorMatches, `unsupported docker image "YDB"`)
+	c.Assert(got, qt.Equals, "")
+}
+
+// YDB is the one docker engine the pinned community binary does not start,
+// which is what strict compatibility reads to refuse it.
+func TestDockerEngineIsExtension_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	c.Assert(atlasurl.DockerEngineIsExtension("ydb"), qt.IsTrue)
+}
+
+func TestDockerEngineIsExtension_FailurePath(t *testing.T) {
+	for _, engine := range []string{"postgres", "postgis", "pgvector", "mysql", "maria", "mariadb", "YDB", "sqlite", ""} {
+		t.Run(engine, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(atlasurl.DockerEngineIsExtension(engine), qt.IsFalse)
 		})
 	}
 }

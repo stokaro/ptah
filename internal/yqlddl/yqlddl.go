@@ -1,6 +1,7 @@
 // Package yqlddl reads what one YQL schema statement does: the table or view
 // it names, the columns, key, indexes and TTL column a CREATE TABLE declares,
-// the actions an ALTER TABLE takes, and the tables a query reads.
+// the actions an ALTER TABLE takes, the restart an ALTER SEQUENCE makes, and
+// the tables a query reads.
 //
 // It is the reading both linters share, so `ptah migrations lint` and
 // `ptah sql lint` cannot disagree about what a YQL statement does. It reads
@@ -43,6 +44,10 @@ const (
 	CreateView
 	// DropView is DROP VIEW.
 	DropView
+	// AlterSequence is ALTER SEQUENCE, the one statement that changes the
+	// sequence behind a Serial column. Its name is the sequence's path as
+	// written.
+	AlterSequence
 )
 
 // Statement is what one YQL statement does.
@@ -74,12 +79,21 @@ type Statement struct {
 	// Reads are the tables the query of a CREATE VIEW reads; see
 	// [TablesRead].
 	Reads []string
+
+	// Restart reports RESTART in an ALTER SEQUENCE, and RestartWith the value
+	// it names, which is empty for a RESTART that names none and restarts at
+	// the start.
+	Restart     bool
+	RestartWith string
 }
 
 // Column is one column a statement declares or adds.
 type Column struct {
 	// Name is the column's name.
 	Name string
+	// Type is the first word of the column's type as written, such as Utf8,
+	// Decimal or SmallSerial, and empty when the type is not a word.
+	Type string
 	// NotNull reports a NOT NULL in the declaration.
 	NotNull bool
 	// Default reports a DEFAULT in the declaration.
@@ -214,6 +228,8 @@ func Read(statement string) Statement {
 		return readCreateView(tokens[2:])
 	case startsWith(tokens, "DROP", "VIEW"):
 		return readDrop(DropView, tokens[2:])
+	case startsWith(tokens, "ALTER", "SEQUENCE"):
+		return readAlterSequence(tokens[2:])
 	default:
 		return Statement{}
 	}
@@ -438,6 +454,9 @@ func readColumn(tokens []lexer.Token) (Column, bool) {
 		return Column{}, false
 	}
 	column := Column{Name: name}
+	if rest[0].Type == lexer.TokenIdentifier {
+		column.Type = rest[0].Value
+	}
 	for i := range rest {
 		switch {
 		case rest[i].MatchIdentifierValue("NOT") && i+1 < len(rest) && rest[i+1].MatchIdentifierValue("NULL"):
@@ -447,6 +466,26 @@ func readColumn(tokens []lexer.Token) (Column, bool) {
 		}
 	}
 	return column, true
+}
+
+// readAlterSequence reads ALTER SEQUENCE [IF EXISTS] path and the RESTART
+// among its actions: START [WITH] n, INCREMENT [BY] n and RESTART [[WITH] n],
+// the only ones YDB takes.
+func readAlterSequence(tokens []lexer.Token) Statement {
+	stmt := Statement{Kind: AlterSequence}
+	tokens, stmt.IfExists = skipWords(tokens, "IF", "EXISTS")
+	stmt.Name, tokens = readName(tokens)
+	for i := range tokens {
+		if !tokens[i].MatchIdentifierValue("RESTART") {
+			continue
+		}
+		stmt.Restart = true
+		rest, _ := skipWords(tokens[i+1:], "WITH")
+		if len(rest) > 0 && isDigits(rest[0].Value) {
+			stmt.RestartWith = rest[0].Value
+		}
+	}
+	return stmt
 }
 
 func readCreateView(tokens []lexer.Token) Statement {
@@ -567,6 +606,12 @@ func skipWords(tokens []lexer.Token, words ...string) ([]lexer.Token, bool) {
 		return tokens, false
 	}
 	return tokens[len(words):], true
+}
+
+// isDigits reports whether value is a whole number written in decimal digits,
+// which the YQL lexer reads as an identifier.
+func isDigits(value string) bool {
+	return value != "" && strings.Trim(value, "0123456789") == ""
 }
 
 // isNamedExpression reports whether token is a `$name`.

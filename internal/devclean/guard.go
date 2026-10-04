@@ -153,6 +153,8 @@ func (g *ReplayGuard) validate(stmt string, realm ReplayRealm) error {
 		return validateSQLServerReplayStatement(tokens)
 	case platform.ClickHouse:
 		return validateClickHouseReplayStatement(g.info.Schema, tokens)
+	case platform.YDB:
+		return validateYDBReplayStatement(tokens, realm)
 	default:
 		unsupportedDialect := strings.TrimSpace(g.info.Dialect)
 		if unsupportedDialect == "" {

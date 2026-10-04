@@ -2,6 +2,7 @@ package ydburl_test
 
 import (
 	"net/url"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -106,6 +107,172 @@ func monitoring(u ydburl.URL) string {
 	return u.Monitoring.String()
 }
 
+// A realm is taken out of the query, and it moves the root a connection reads
+// and writes into its directory under the database; without one the root is
+// the database.
+func TestParse_Realm_HappyPath(t *testing.T) {
+	tests := []struct {
+		name          string
+		raw           string
+		wantRealm     string
+		wantRealmPath string
+		wantRoot      string
+		wantQuery     url.Values
+	}{
+		{
+			name:          "a realm in the path's database",
+			raw:           "ydb://h:2136/local?dev_realm=k3j9&go_balancer=disable",
+			wantRealm:     "k3j9",
+			wantRealmPath: "ptah_dev/k3j9",
+			wantRoot:      "/local/ptah_dev/k3j9",
+			wantQuery:     url.Values{"go_balancer": {"disable"}},
+		},
+		{
+			name:          "a realm in the parameter's database",
+			raw:           "ydbs://h/?database=/Root/app&dev_realm=run_2",
+			wantRealm:     "run_2",
+			wantRealmPath: "ptah_dev/run_2",
+			wantRoot:      "/Root/app/ptah_dev/run_2",
+			wantQuery:     url.Values{},
+		},
+		{
+			name:          "no realm",
+			raw:           "ydb://h/Root/app",
+			wantRealm:     "",
+			wantRealmPath: "",
+			wantRoot:      "/Root/app",
+			wantQuery:     url.Values{},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := ydburl.Parse(test.raw)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got.Realm, qt.Equals, test.wantRealm)
+			c.Assert(got.RealmPath(), qt.Equals, test.wantRealmPath)
+			c.Assert(got.Root(), qt.Equals, test.wantRoot)
+			c.Assert(got.Query, qt.DeepEquals, test.wantQuery)
+		})
+	}
+}
+
+// WithRealm names the realm in place of any the URL names, and keeps the
+// user, the database and every other parameter.
+func TestWithRealm_HappyPath(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		// #nosec G101 -- a fixture with a made-up password, not credentials
+		{
+			name: "a URL with no realm",
+			raw:  "ydb://alice:s3cret@h:2136/local?go_balancer=disable",
+			want: "ydb://alice:s3cret@h:2136/local?dev_realm=r1&go_balancer=disable",
+		},
+		{
+			name: "a URL with another realm",
+			raw:  "ydbs://h/?database=/Root/app&dev_realm=old",
+			want: "ydbs://h/?database=%2FRoot%2Fapp&dev_realm=r1",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := ydburl.WithRealm(test.raw, "r1")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+// A realm name that is not one, and a URL that cannot hold a realm, are
+// refused rather than written.
+func TestWithRealm_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		realm   string
+		wantErr string
+	}{
+		{
+			name:    "a realm that names a path",
+			raw:     "ydb://h/local",
+			realm:   "../x",
+			wantErr: `the dev_realm parameter "../x" is not a realm name: use 1 to 64 lowercase letters, digits and underscores`,
+		},
+		{
+			name:    "a URL with no database",
+			raw:     "ydb://h:2136",
+			realm:   "r1",
+			wantErr: `the URL names a dev realm and no database to hold it`,
+		},
+		{
+			name:    "not a YDB URL",
+			raw:     "postgres://h/app",
+			realm:   "r1",
+			wantErr: `not a ydb:// or ydbs:// URL: "postgres"`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := ydburl.WithRealm(test.raw, test.realm)
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(got, qt.Equals, "")
+		})
+	}
+}
+
+// WithoutRealm names the database that holds the realm, and leaves a URL that
+// names none as it is written.
+func TestWithoutRealm_HappyPath(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		// #nosec G101 -- a fixture with a made-up password, not credentials
+		{
+			name: "a URL with a realm",
+			raw:  "ydb://alice:s3cret@h:2136/local?dev_realm=r1&go_balancer=disable",
+			want: "ydb://alice:s3cret@h:2136/local?go_balancer=disable",
+		},
+		{
+			name: "a URL with none",
+			raw:  "ydbs://h/?database=/Root/app&go_balancer=disable",
+			want: "ydbs://h/?database=/Root/app&go_balancer=disable",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := ydburl.WithoutRealm(test.raw)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+// A URL that is not a YDB one is refused rather than rewritten.
+func TestWithoutRealm_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	got, err := ydburl.WithoutRealm("postgres://h/app?dev_realm=r1")
+
+	c.Assert(err, qt.ErrorMatches, `not a ydb:// or ydbs:// URL: "postgres"`)
+	c.Assert(got, qt.Equals, "")
+}
+
 func TestParse_KeepsTheUser(t *testing.T) {
 	c := qt.New(t)
 
@@ -201,6 +368,42 @@ func TestParse_FailurePath(t *testing.T) {
 			name:    "the monitoring parameter is not a URL",
 			raw:     "ydb://h/local?monitoring=http://h:87%2565",
 			wantErr: `the monitoring parameter is not a URL: write monitoring=http://host:8765`,
+		},
+		{
+			name:    "the realm parameter is empty",
+			raw:     "ydb://h/local?dev_realm=",
+			wantErr: `the dev_realm parameter "" is not a realm name: use 1 to 64 lowercase letters, digits and underscores`,
+		},
+		{
+			name:    "the realm parameter names a path",
+			raw:     "ydb://h/local?dev_realm=a/b",
+			wantErr: `the dev_realm parameter "a/b" is not a realm name: use 1 to 64 lowercase letters, digits and underscores`,
+		},
+		{
+			name:    "the realm parameter leaves the realm directory",
+			raw:     "ydb://h/local?dev_realm=..",
+			wantErr: `the dev_realm parameter ".." is not a realm name: use 1 to 64 lowercase letters, digits and underscores`,
+		},
+		{
+			name:    "the realm parameter is not lowercase",
+			raw:     "ydb://h/local?dev_realm=Run1",
+			wantErr: `the dev_realm parameter "Run1" is not a realm name: use 1 to 64 lowercase letters, digits and underscores`,
+		},
+		{
+			name: "the realm parameter is too long",
+			raw:  "ydb://h/local?dev_realm=" + strings.Repeat("a", 65),
+			wantErr: `the dev_realm parameter "` + strings.Repeat("a", 65) +
+				`" is not a realm name: use 1 to 64 lowercase letters, digits and underscores`,
+		},
+		{
+			name:    "the realm parameter is given twice",
+			raw:     "ydb://h/local?dev_realm=a&dev_realm=a",
+			wantErr: `the dev_realm parameter is given more than once`,
+		},
+		{
+			name:    "a realm with no database to hold it",
+			raw:     "ydb://h:2136?dev_realm=a",
+			wantErr: `the URL names a dev realm and no database to hold it`,
 		},
 	}
 

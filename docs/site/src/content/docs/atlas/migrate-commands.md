@@ -1146,6 +1146,12 @@ server-level authorization required to replay migration history.
 matches it, so `POSTGRES` is refused. A `postgis` dev database is created empty;
 the image's extensions are created by a migration that needs them.
 
+`docker://ydb` starts a YDB server for native `ptah` (see
+[YDB](../../databases/ydb/#dev-shadow-and-scratch-databases)). It is a Ptah
+extension here: the verbs refuse it until they reach YDB, and strict
+compatibility refuses it as Atlas CE does, with `unsupported docker image
+"ydb"`.
+
 A `docker+<driver>://` URL starts the image it names instead, such as an image
 with an extension installed, or one that carries a provider's roles and
 schemas:

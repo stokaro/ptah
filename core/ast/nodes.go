@@ -1376,6 +1376,34 @@ func (n *AlterSequenceNode) SetComment(comment string) *AlterSequenceNode {
 // Accept implements the Node interface for AlterSequenceNode.
 func (n *AlterSequenceNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
+// AlterSerialSequenceNode sets the start and the increment of the sequence
+// behind a Serial column: YDB's ALTER SEQUENCE, which names that sequence by
+// its absolute path and takes START, INCREMENT and RESTART only.
+//
+// It is a node of its own rather than an [AlterSequenceNode] because the
+// sequence is not an object a declaration names. It belongs to the column,
+// the server names it, and a renderer that has no such sequence refuses the
+// node rather than reading it as a standalone sequence.
+type AlterSerialSequenceNode struct {
+	// Table is the table the column belongs to, as the plan names it.
+	Table string
+	// Column is the Serial column whose sequence this changes.
+	Column string
+	// Path is the sequence's absolute path, the database's own path
+	// included, such as /local/app/orders/_serial_column_id.
+	Path string
+	// Start is the value the sequence starts at. It is always written.
+	Start int64
+	// Increment is the step between two values. It is always written.
+	Increment int64
+	// Restart moves the sequence's next value to Start. Without it the next
+	// value stays where it is, whatever Start says.
+	Restart bool
+}
+
+// Accept implements the Node interface for AlterSerialSequenceNode.
+func (n *AlterSerialSequenceNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
+
 // DropSequenceNode represents a DROP SEQUENCE statement (PostgreSQL).
 type DropSequenceNode struct {
 	// Name is the sequence name to drop.

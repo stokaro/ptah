@@ -20,7 +20,6 @@ import (
 	"github.com/microsoft/go-mssqldb/msdsn"
 
 	"ptah.run/core/platform"
-	"ptah.run/internal/ydbgap"
 	"ptah.run/internal/ydburl"
 )
 
@@ -48,12 +47,32 @@ var dockerEngineDialects = map[string]string{
 	"mariadb":  platform.MariaDB,
 }
 
+// dockerExtensionEngines are the engines Ptah starts from a `docker://` URL
+// and the pinned community binary does not: measured on v1.3.0,
+// `docker://ydb/...` answers `unsupported docker image "ydb"`, since no Atlas
+// edition has a YDB driver. Strict compatibility refuses each in those words;
+// see [DockerEngineIsExtension].
+var dockerExtensionEngines = map[string]string{
+	"ydb": platform.YDB,
+}
+
 // DockerEngineDialect returns the dialect of the server a `docker://` URL
 // naming engine starts, and whether engine is one Ptah starts. engine is
 // compared as written.
 func DockerEngineDialect(engine string) (string, bool) {
-	dialect, ok := dockerEngineDialects[engine]
+	if dialect, ok := dockerEngineDialects[engine]; ok {
+		return dialect, true
+	}
+	dialect, ok := dockerExtensionEngines[engine]
 	return dialect, ok
+}
+
+// DockerEngineIsExtension reports whether engine is one Ptah starts from a
+// `docker://` URL and the pinned community binary refuses as an unsupported
+// image.
+func DockerEngineIsExtension(engine string) bool {
+	_, ok := dockerExtensionEngines[engine]
+	return ok
 }
 
 // dockerImageSchemePrefix begins the scheme that asks Ptah to start a dev
@@ -477,7 +496,16 @@ func networkDatabaseIdentity(parsed *url.URL, dialect string) (databaseIdentity,
 		// YDB, and a server listens for plaintext on one port and for TLS on
 		// another.
 		endpoint = networkEndpoint(ydbURL.Host, ydbURL.Port, platform.YDB)
-		database = ydbURL.Database
+		// A dev realm is a database of its own to every reader and writer a
+		// connection to it builds, and the database that holds it leaves
+		// the realm out of everything it reads and resets.
+		//
+		// MayAddressSameDatabase leaves the endpoint out here as everywhere,
+		// and on YDB a host proves least: every node of a cluster answers for
+		// each of its databases. Two servers that both name /local are told
+		// apart by the dev realm a dev URL resolves to, and after connecting
+		// by their live identity.
+		database = ydbURL.Root()
 	}
 	return databaseIdentity{
 		dialect:  identityDialect(dialect),
@@ -693,6 +721,10 @@ func NamesAFile(rawURL string) bool {
 	return err == nil && slices.Contains(fileSchemes, parsed.Scheme)
 }
 
+// ErrYDBDatabaseName is the refusal [WithDatabaseName] gives a YDB URL.
+var ErrYDBDatabaseName = errors.New("a YDB database cannot be created through SQL, so a URL renamed to a new " +
+	"database names one nothing can create; a YDB dev or scratch database is a dev realm in the database the URL names")
+
 // WithDatabaseName returns rawURL addressing the database name instead of the
 // one it names now.
 //
@@ -731,7 +763,7 @@ func WithDatabaseName(rawURL, name string) (string, error) {
 		// A YDB database cannot be created with SQL, so a URL naming a new one
 		// names a database nothing can make, and its name may also sit in a
 		// database parameter that a new path would not replace.
-		return "", errors.New(ydbgap.CreatingDatabases.Message())
+		return "", ErrYDBDatabaseName
 	}
 	parsed.Path = "/" + name
 	parsed.Opaque = ""

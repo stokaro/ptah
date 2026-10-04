@@ -1012,3 +1012,36 @@ func TestReverseSchemaDiff_AValidationHasNoReverse(t *testing.T) {
 
 	c.Assert(reversed.HasChanges(), qt.IsFalse, qt.Commentf("%+v", reversed))
 }
+
+// TestReverseSchemaDiff_ARolledBackSequenceChangeKeepsTheRestart holds the
+// rollback of a change to a Serial's sequence to the restart the database
+// carries. The rollback alters the same sequence, and YDB replays that restart
+// on its ALTER SEQUENCE as on the forward one, so the planner has to see it on
+// both directions to refuse both; the column diff is rebuilt as a fresh
+// literal here, which is the shape that drops a field in silence. The
+// exported plan refuses on the forward direction first, so only the builder
+// shows the reverse half.
+func TestReverseSchemaDiff_ARolledBackSequenceChangeKeepsTheRestart(t *testing.T) {
+	c := qt.New(t)
+
+	forward := &difftypes.SchemaDiff{
+		CurrentDatabasePath: "/local",
+		TablesModified: []difftypes.TableDiff{{
+			TableName: "items",
+			ColumnsModified: []difftypes.ColumnDiff{{
+				ColumnName:             "id",
+				Changes:                map[string]string{"identity_increment": "5 -> 10"},
+				CurrentSequenceRestart: "100",
+			}},
+		}},
+	}
+
+	reversed := reverseSchemaDiffWithSchema(forward, &schemamodel.Database{}, &catalog.Database{})
+
+	c.Assert(reversed.CurrentDatabasePath, qt.Equals, "/local")
+	c.Assert(reversed.TablesModified, qt.HasLen, 1)
+	c.Assert(reversed.TablesModified[0].ColumnsModified, qt.HasLen, 1)
+	column := reversed.TablesModified[0].ColumnsModified[0]
+	c.Assert(column.Changes, qt.DeepEquals, map[string]string{"identity_increment": "10 -> 5"})
+	c.Assert(column.CurrentSequenceRestart, qt.Equals, "100")
+}
