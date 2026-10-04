@@ -174,16 +174,23 @@ func TestRefine_MoveIndexFlagOffTurnsIndexRenameOff(t *testing.T) {
 
 // TestRefine_LeavesUngatedKeysAndItsInputAlone pins the rest of the set: a
 // flag decides only its own capability, and the caller's set is not written.
+//
+// EnableViews is not a gate. Turned off through the dynamic config, it
+// refuses CREATE VIEW, DROP VIEW and a read of a view on 25.1.4.7 (`Views are
+// disabled. Please contact your system administrator to enable the feature`)
+// and changes nothing on 26.2.1.14, which creates and reads views with the
+// flag off. Read as the key, it would take views away from a 26.2 cluster
+// that has them.
 func TestRefine_LeavesUngatedKeysAndItsInputAlone(t *testing.T) {
 	c := qt.New(t)
 	preset := capability.YDB262()
-	flags := ydbflags.Flags{"EnableAddUniqueIndex": true, "EnableAsyncIndexes": false, "EnableViews": true}
+	flags := ydbflags.Flags{"EnableAddUniqueIndex": true, "EnableAsyncIndexes": false, "EnableViews": false}
 
 	refined := flags.Refine(preset)
 
 	c.Assert(refined.Has(capability.UniqueIndexOnExistingTable), qt.IsTrue)
 	c.Assert(refined.Has(capability.AsyncIndexes), qt.IsTrue)
-	c.Assert(refined.Has(capability.Views), qt.IsFalse)
+	c.Assert(refined.Has(capability.Views), qt.IsTrue)
 	c.Assert(preset, qt.DeepEquals, capability.YDB262())
 }
 

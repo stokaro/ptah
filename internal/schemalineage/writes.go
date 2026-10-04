@@ -106,7 +106,7 @@ func nonWritingKind(kind ast.PostgresRoutineStatementKind) bool {
 
 // classifyRawStatement reads a plain statement's leading word.
 func classifyRawStatement(sql, routine, kind string) (writes []RoutineWrite, unresolved []string) {
-	tokens := tokenize(sql)
+	tokens := tokenize(sql, bodyReading{})
 	if len(tokens) == 0 {
 		return nil, nil
 	}

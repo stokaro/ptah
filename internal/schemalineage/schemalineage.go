@@ -61,16 +61,28 @@ type Result struct {
 // and a diff of two schemas is a diff of their lineage rather than of Go's map
 // iteration order.
 func Derive(db *schemamodel.Database) Result {
+	return DeriveForDialect(db, "")
+}
+
+// DeriveForDialect is [Derive] for bodies written in dialect's SQL, which
+// matters on YDB alone: a YQL body is read by the YQL lexer, where a
+// double-quoted text is a string rather than a name, and a YDB table is a
+// path, `dir/sub/t`, which a FROM names as one quoted identifier. The source
+// of an edge is then the table's Ptah name, `dir/sub.t`, the name a view in
+// that directory goes by too, so a view over a view links up. Every other
+// dialect reads as [Derive] does.
+func DeriveForDialect(db *schemamodel.Database, dialect string) Result {
 	if db == nil {
 		return Result{}
 	}
+	reading := readingFor(dialect)
 	columns := columnsByTable(db)
 	var result Result
 	for _, view := range db.Views {
-		result.absorb(deriveView(view.Name, view.Body, false, columns))
+		result.absorb(deriveView(view.Name, view.Body, false, columns, reading))
 	}
 	for _, view := range db.MaterializedViews {
-		result.absorb(deriveView(view.Name, view.Body, true, columns))
+		result.absorb(deriveView(view.Name, view.Body, true, columns, reading))
 	}
 	sort.Slice(result.Edges, func(i, j int) bool {
 		a, b := result.Edges[i], result.Edges[j]

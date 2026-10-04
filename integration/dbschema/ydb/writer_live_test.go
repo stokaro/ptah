@@ -14,8 +14,9 @@ import (
 
 // TestYDBWriter_DropAllTablesKeepsWhatItDoesNotDescribe pins what drop-all
 // leaves: an object the reader records as not described, and the directory
-// that holds it. A directory whose tables went, and whose subdirectory went,
-// is removed.
+// that holds it. A view, which the reader describes, goes with the tables, and
+// a directory whose tables and views went, and whose subdirectory went, is
+// removed.
 func TestYDBWriter_DropAllTablesKeepsWhatItDoesNotDescribe(t *testing.T) {
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
@@ -28,6 +29,9 @@ func TestYDBWriter_DropAllTablesKeepsWhatItDoesNotDescribe(t *testing.T) {
 			for _, statement := range []string{
 				"CREATE TABLE `ptah_ydb_dropall/gone/t1` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))",
 				"CREATE TABLE `ptah_ydb_dropall/gone/deeper/t2` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))",
+				"CREATE VIEW `ptah_ydb_dropall/gone/v` WITH (security_invoker = TRUE) AS " +
+					"SELECT `id` FROM `ptah_ydb_dropall/gone/t1`",
+				"CREATE VIEW `ptah_ydb_dropall/viewonly/v` WITH (security_invoker = TRUE) AS SELECT 1 AS a",
 				"CREATE TABLE `ptah_ydb_dropall/keep/t3` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))",
 				"CREATE TOPIC `ptah_ydb_dropall/keep/events`",
 			} {
@@ -39,6 +43,7 @@ func TestYDBWriter_DropAllTablesKeepsWhatItDoesNotDescribe(t *testing.T) {
 			live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, nil)
 			c.Assert(err, qt.IsNil)
 			c.Assert(live.Tables, qt.HasLen, 0)
+			c.Assert(live.Views, qt.HasLen, 0)
 			c.Assert(live.NotDescribed.Describes(coverage.Topic, "ptah_ydb_dropall/keep.events"), qt.IsFalse)
 			c.Assert(directoryNames(c, c.Context(), line, "ptah_ydb_dropall"), qt.DeepEquals, []string{"keep"})
 		})

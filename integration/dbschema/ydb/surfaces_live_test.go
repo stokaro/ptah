@@ -184,24 +184,39 @@ func TestYDBSchemaLineage_HappyPath_NoViews(t *testing.T) {
 	}
 }
 
-// The reader records a view and does not read it, so a lineage of a directory
-// holding one refuses in the words of the views gap rather than report nothing
-// for the view.
-func TestYDBSchemaLineage_FailurePath_AView(t *testing.T) {
+// A lineage of a YDB directory traces its views from the queries the server
+// stores: a view's source is its table's Ptah name, a view over a view links
+// to the view it reads, a star resolves to the table's columns, and a
+// double-quoted YQL string feeds no column.
+func TestYDBSchemaLineage_HappyPath_TracesViews(t *testing.T) {
 	const directory = "ptah_ydb_lineage_view"
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
 			c := qt.New(t)
 			conn := openYDB(c, line)
-			execute(c, conn, "DROP VIEW IF EXISTS `"+directory+"/v`")
-			c.Cleanup(func() { execute(c, conn, "DROP VIEW IF EXISTS `"+directory+"/v`") })
-			execute(c, conn, "CREATE VIEW `"+directory+"/v` WITH (security_invoker = TRUE) AS SELECT 1 AS a")
+			dropViewsAndTables(c, conn, []string{directory})
+			c.Cleanup(func() { dropViewsAndTables(c, conn, []string{directory}) })
+			execute(c, conn,
+				"CREATE TABLE `"+directory+"/items` (id Int64 NOT NULL, label Utf8, PRIMARY KEY (id))",
+				"CREATE VIEW `"+directory+"/named` WITH (security_invoker = TRUE) AS "+
+					"SELECT id, label AS name, \"fixed\" AS tag FROM `"+directory+"/items`",
+				"CREATE VIEW `"+directory+"/names` WITH (security_invoker = TRUE) AS "+
+					"SELECT name FROM `"+directory+"/named`",
+				"CREATE VIEW `"+directory+"/everything` WITH (security_invoker = TRUE) AS "+
+					"SELECT * FROM `"+directory+"/items`",
+			)
 
 			stdout, err := runCommand(schema.NewSchemaLineageCommand(),
 				"--db-url", dbtarget.URL(c, line.engine), "--schemas", directory)
 
-			c.Assert(err, qt.ErrorMatches, `view "`+directory+`.v": `+regexp.QuoteMeta(ydbgap.Views.Message()))
-			c.Assert(stdout, qt.Equals, "")
+			c.Assert(err, qt.IsNil)
+			c.Assert(stdout, qt.Equals, ""+
+				"SOURCE                             FEEDS                                   KIND\n"+
+				"ptah_ydb_lineage_view.items.id     ptah_ydb_lineage_view.everything.id     view\n"+
+				"ptah_ydb_lineage_view.items.label  ptah_ydb_lineage_view.everything.label  view\n"+
+				"ptah_ydb_lineage_view.items.id     ptah_ydb_lineage_view.named.id          view\n"+
+				"ptah_ydb_lineage_view.items.label  ptah_ydb_lineage_view.named.name        view\n"+
+				"ptah_ydb_lineage_view.named.name   ptah_ydb_lineage_view.names.name        view\n")
 		})
 	}
 }

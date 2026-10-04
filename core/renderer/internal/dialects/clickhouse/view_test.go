@@ -49,6 +49,7 @@ func TestViewDDL_HappyPath(t *testing.T) {
 func TestViewDDL_CapabilityDisabledNamesSkippedObject(t *testing.T) {
 	caps := capability.ClickHouse24().
 		With(capability.MaterializedViews, false).
+		With(capability.CreateOrReplaceView, false).
 		With(capability.Views, false)
 	tests := []struct {
 		name string
