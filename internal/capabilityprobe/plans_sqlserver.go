@@ -288,8 +288,8 @@ func sqlServerPlan() plan {
 			"accepted statement cannot show; it is decided by the engine's DDL semantics and by whether the " +
 			"migrator opens the wrapper, neither of which a statement here answers. The preset carries it " +
 			"true, measured on the engine and end to end through `--tx-mode all`",
-		capability.MigrationTimeouts: "the key names a runtime policy the migrator applies around a migration, not a " +
-			"statement this probe can send",
+		capability.MigrationLockTimeout:      runtimePolicyReason,
+		capability.MigrationStatementTimeout: runtimePolicyReason,
 		capability.ShowRoutinePrivilege: "the key names a MySQL global privilege. The probe connects as one account and " +
 			"cannot ask whether a privilege exists without granting it, and SQL Server has no SHOW_ROUTINE at all",
 	}}

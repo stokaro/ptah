@@ -533,8 +533,10 @@ func postgresFamilyUndecided() map[capability.Capability]string {
 			"having nor lacking it here would decide the key",
 		capability.DDLInsideTransaction: "the key names whether the server takes a schema statement inside an explicit transaction, " +
 			"which is a property of the wrapper the migrator opens rather than of any statement this probe sends",
-		capability.MigrationTimeouts: "the key names a runtime policy the migrator applies around a migration; " +
-			"this server accepting a timeout statement says nothing about whether Ptah sets and restores it",
+		capability.MigrationLockTimeout: "the key names a runtime policy the migrator applies around a migration; " +
+			"this server accepting a lock timeout statement says nothing about whether Ptah sets and restores it",
+		capability.MigrationStatementTimeout: "the key names a runtime policy the migrator applies around a migration; " +
+			"this server accepting a statement timeout statement says nothing about whether Ptah sets and restores it",
 		capability.TransactionalDDL: "the key names whether a failed migration rolls back as a unit, which is the engine's DDL semantics rather than one statement's answer",
 		capability.ShowRoutinePrivilege: "the probe cannot ask whether a privilege exists without granting it, " +
 			"and an acceptance test cannot separate an unknown privilege from an absent grantee",
@@ -820,8 +822,10 @@ func mysqlFamilyUndecided() map[capability.Capability]string {
 		// (stokaro/ptah#916 item 3).
 		capability.DDLInsideTransaction: "the key names whether the server takes a schema statement inside an explicit transaction, " +
 			"which is a property of the wrapper the migrator opens rather than of any statement this probe sends",
-		capability.MigrationTimeouts: "the key names a runtime policy the migrator applies around a migration; " +
-			"this server accepting a timeout statement says nothing about whether Ptah sets and restores it",
+		capability.MigrationLockTimeout: "the key names a runtime policy the migrator applies around a migration; " +
+			"this server accepting a lock timeout statement says nothing about whether Ptah sets and restores it",
+		capability.MigrationStatementTimeout: "the key names a runtime policy the migrator applies around a migration; " +
+			"this server accepting a statement timeout statement says nothing about whether Ptah sets and restores it",
 		capability.TransactionalDDL: "the key names whether a failed migration rolls back as a unit, which is the engine's DDL semantics rather than one statement's answer",
 		capability.ShowRoutinePrivilege: "the probe cannot ask whether a privilege exists without granting it, " +
 			"and an acceptance test cannot separate an unknown privilege from an absent grantee",
@@ -1025,3 +1029,8 @@ func referencePolicy(stmts referencePolicyStatements) experiment {
 		},
 	}
 }
+
+// runtimePolicyReason is why a probe leaves a migration timeout key
+// undecided on an engine where the migrator applies no timeout at all.
+const runtimePolicyReason = "the key names a runtime policy the migrator applies around a migration, not a " +
+	"statement this probe can send"

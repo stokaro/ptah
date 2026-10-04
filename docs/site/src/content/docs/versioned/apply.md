@@ -660,9 +660,11 @@ and pipelines share a directory:
   A migration that resolves to `none` takes its statement and lock timeouts
   on the database session that runs its statements, because `SET LOCAL`
   outside a transaction changes nothing. That session belongs to the one
-  migration, so the settings end with it. On a target with no timeout setting
-  Ptah can use, a migration that declares one is refused in every transaction
-  mode, before any SQL runs or the revision row changes.
+  migration, so the settings end with it. YDB has no such setting, and the
+  statement timeout there is a deadline on each query; see
+  [Statement timeouts on YDB](#statement-timeouts-on-ydb). On a target with no
+  way to honor a timeout, a migration that declares one is refused in every
+  transaction mode, before any SQL runs or the revision row changes.
   SQL-backed non-transactional migrations record a durable progress marker
   before and after each autocommit statement. A custom Go `MigrationFunc`
   remains opaque and is recorded only when it returns.
@@ -696,16 +698,16 @@ transaction commits itself first, so the rollback has nothing left to undo. A
 connected CockroachDB server on an older line reaches the capability through the
 version ladder and is accepted.
 
-Timeouts themselves are not tied to that capability and reach every target whose
-server takes a session or transaction timeout. On a target that takes none,
-`migrations up` and `migrations down` refuse `--lock-timeout` and
-`--statement-timeout`, naming the flag or the `ptah.yaml` key that set them and
-the engine, even when no migration is pending. Where the URL settles the answer
-the refusal comes before the command connects, so a `sqlite://` file is not
-created; a `postgres://` URL can reach Spanner, which takes none, and is
-refused once connected, before anything is read or written. YDB takes none: it
-has no lock wait to bound, and a timeout that gives up on a schema statement
-cannot promise the statement did not commit.
+Timeouts themselves are not tied to that capability. Each has a capability of
+its own, `migration_lock_timeout` and `migration_statement_timeout`, and a
+target can carry one and not the other. Where a target lacks one,
+`migrations up` and `migrations down` refuse the timeout it lacks, naming the
+flag or the `ptah.yaml` key that set it, the engine and the capability, even
+when no migration is pending. Where the URL settles the answer the refusal comes
+before the command connects, so a `sqlite://` file is not created; a
+`postgres://` URL can reach Spanner, which takes neither, and is refused once
+connected, before anything is read or written. YDB takes the statement timeout
+and refuses the lock timeout, because no statement there waits for a lock.
 
 A value from `PTAH_LOCK_TIMEOUT` or `PTAH_STATEMENT_TIMEOUT` is refused by the
 migrator instead, on the first migration that would run under it:
@@ -804,6 +806,32 @@ the run writes anything:
 The revision table, the migration log and the tag table sit in the directory
 `--migrations-schema` names, or at the database root. YDB has no
 `information_schema`, so Ptah asks the scheme service whether they exist.
+
+### Statement timeouts on YDB
+
+YDB has no statement timeout a session can set, and a schema statement ignores
+the operation timeout of a request. So `--statement-timeout`, the
+`statement_timeout` directive and `migration.statement_timeout` put a deadline
+on each query of the migration. What happens when it fires depends on the
+query:
+
+| Query | When the deadline fires |
+| --- | --- |
+| Data statements | YDB cancels the query. Its transaction holds the revision checkpoint and never commits, so nothing is applied and the revision records the query as not run. |
+| `ALTER TABLE ... ADD INDEX`, or `ADD COLUMN` with a default | YDB runs these as builds, which go on after the client stops waiting. Ptah cancels the build through the operation service and waits for it to end. A canceled build leaves no index and no column, and the revision records the query as not run. |
+| Any other schema statement, or a build that cannot be found or does not end | YDB keeps running it and cannot cancel it. The run stops, and the revision records the outcome as unknown: inspect the table, then repair the revision. |
+
+In each case the migration fails with a message that names the timeout and says
+which of these happened. A rerun with `up --allow-dirty` and a larger timeout,
+or none, resumes at the query that was stopped. The deadline bounds the
+migration's own queries. The revision row and the checkpoint written in a data
+query's transaction run without it, so a stopped query is still recorded.
+
+`--lock-timeout`, the `lock_timeout` directive and `migration.lock_timeout` are
+refused on YDB. No statement there waits for a lock: a schema statement on a
+table under another schema operation fails at once with `has been locked by
+tx`, and a schema change made while a transaction holds locks on the table
+succeeds at once and aborts that transaction at its commit.
 
 ## Operational hooks
 

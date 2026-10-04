@@ -109,16 +109,23 @@ func (m *Migrator) refuseTimeoutsTheTargetCannotCarry(migration *Migration, time
 // cannot do here. It does not outlive the migration: the caller restores it
 // after the last statement, and the pinned session is discarded afterward
 // either way.
+//
+// The returned context is the one the migration's statements run under. On a
+// target that bounds each query itself rather than through a session setting
+// (see [boundsEachQuery]) it carries the statement timeout to the executor.
 func (m *Migrator) applySessionTimeouts(
 	ctx context.Context,
 	migration *Migration,
 	timeouts migrationfile.Timeouts,
-) (restoreTimeoutsFunc, error) {
+) (context.Context, restoreTimeoutsFunc, error) {
 	restore, err := m.applyTimeoutsWithRestore(ctx, m.noTransactionConnection(), timeouts, timeoutScopeSession)
 	if err != nil {
-		return nil, fmt.Errorf("failed to apply timeouts for migration %d: %w", migration.Version, err)
+		return nil, nil, fmt.Errorf("failed to apply timeouts for migration %d: %w", migration.Version, err)
 	}
-	return restore, nil
+	if boundsEachQuery(m.connectionDialect()) {
+		ctx = withQueryTimeout(ctx, timeouts)
+	}
+	return ctx, restore, nil
 }
 
 func noopRestoreTimeouts(_ context.Context) error {
@@ -148,8 +155,9 @@ func (m *Migrator) restoreTimeoutsAfterFailure(ctx context.Context, version int6
 // timeoutStatements returns the statements that bound a migration on this
 // target, and the ones that put the session back afterwards.
 //
-// The decision is capability.MigrationTimeouts rather than a list of dialect
-// names. That list had three entries, and two of the engines it excluded --
+// The decision is capability.MigrationLockTimeout and
+// capability.MigrationStatementTimeout rather than a list of dialect names.
+// That list had three entries, and two of the engines it excluded --
 // CockroachDB and YugabyteDB -- accept `SET LOCAL statement_timeout` and
 // `SET LOCAL lock_timeout` exactly as PostgreSQL does. They speak the
 // PostgreSQL wire protocol, so what refused them was Ptah's switch rather than
@@ -157,9 +165,11 @@ func (m *Migrator) restoreTimeoutsAfterFailure(ctx context.Context, version int6
 // (stokaro/ptah#1713).
 //
 // The SPELLING still comes from the dialect, because it differs: PostgreSQL
-// sets two transaction-local GUCs, and the MySQL family sets and restores two
-// session variables. A target that carries the key and has no spelling here is
-// a programming error rather than an unsupported engine, and it says so.
+// sets two transaction-local GUCs, the MySQL family sets and restores two
+// session variables, and YDB has no setting at all -- the executor puts a
+// deadline on each query instead (see [boundsEachQuery]). A target that
+// carries a key and has no spelling here is a programming error rather than
+// an unsupported engine, and it says so.
 //
 // The scope matters only to the PostgreSQL family. `SET LOCAL` outside a
 // transaction block is a warning and changes nothing -- measured on PostgreSQL
@@ -173,16 +183,11 @@ func timeoutStatements(
 	timeouts migrationfile.Timeouts,
 	scope timeoutScope,
 ) (setupStatements, restoreStatements []string, err error) {
-	normalized := platform.NormalizeDialect(dialect)
-
-	if !caps.Has(capability.MigrationTimeouts) {
-		return nil, nil, fmt.Errorf(
-			"migration timeouts are not supported for dialect %q: this target has no session or "+
-				"transaction timeout Ptah sets and restores around a migration",
-			dialect)
+	if err := refuseTimeoutsWithoutCapability(dialect, caps, timeouts); err != nil {
+		return nil, nil, err
 	}
 
-	switch normalized {
+	switch platform.NormalizeDialect(dialect) {
 	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
 		if scope == timeoutScopeSession {
 			setup, restore := postgresSessionTimeoutStatements(timeouts)
@@ -193,12 +198,43 @@ func timeoutStatements(
 		return mysqlTimeoutStatements(timeouts)
 	case platform.MariaDB:
 		return mariaDBTimeoutStatements(timeouts)
+	case platform.YDB:
+		// No statement sets anything: the statement timeout travels in the
+		// context, and the executor bounds each query with it.
+		return nil, nil, nil
 	default:
 		return nil, nil, fmt.Errorf(
 			"migration timeouts are declared supported for dialect %q but no statement spelling is "+
 				"registered for it",
 			dialect)
 	}
+}
+
+// refuseTimeoutsWithoutCapability refuses a timeout the target has no
+// capability for. A target can carry one timeout and not the other, so each
+// is asked on its own, and the refusal names the key that is missing.
+func refuseTimeoutsWithoutCapability(
+	dialect string,
+	caps capability.Capabilities,
+	timeouts migrationfile.Timeouts,
+) error {
+	lockMissing := timeouts.HasLockTimeout && !caps.Has(capability.MigrationLockTimeout)
+	statementMissing := timeouts.HasStatementTimeout && !caps.Has(capability.MigrationStatementTimeout)
+	var reason string
+	switch {
+	case !caps.Has(capability.MigrationLockTimeout) && !caps.Has(capability.MigrationStatementTimeout) &&
+		(lockMissing || statementMissing):
+		reason = "this target has no session or transaction timeout Ptah sets and restores around a migration"
+	case lockMissing:
+		reason = fmt.Sprintf("this target has no lock wait Ptah bounds around a migration (capability %s), "+
+			"so a lock timeout cannot be honored; remove it", capability.MigrationLockTimeout)
+	case statementMissing:
+		reason = fmt.Sprintf("this target has no statement timeout Ptah sets around a migration (capability %s), "+
+			"so a statement timeout cannot be honored; remove it", capability.MigrationStatementTimeout)
+	default:
+		return nil
+	}
+	return fmt.Errorf("migration timeouts are not supported for dialect %q: %s", dialect, reason)
 }
 
 func postgresTimeoutStatements(timeouts migrationfile.Timeouts) []string {

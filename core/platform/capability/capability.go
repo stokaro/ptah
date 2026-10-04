@@ -638,19 +638,43 @@ const (
 	// present a measurement no run made.
 	NamedNotNullConstraints Capability = "named_not_null_constraints"
 
-	// MigrationTimeouts marks that Ptah can bound a migration with a lock and a
-	// statement timeout on this target.
+	// MigrationLockTimeout marks that Ptah can bound how long a migration's
+	// statements wait for a lock on this target.
 	//
 	// It names a runtime policy rather than an object: the migrator wraps a
-	// migration in the server's own timeout settings and restores them
-	// afterwards. Before this key the decision was a switch over three dialect
-	// names, so CockroachDB and YugabyteDB answered "migration timeouts are not
-	// supported" while both accept `SET LOCAL statement_timeout` and
-	// `SET LOCAL lock_timeout` -- measured on CockroachDB v25.4.0 and
-	// YugabyteDB 2026.1. A timeout is the safety belt on a migration that takes
-	// a lock, and those are the two deployments where a long lock hurts most
-	// (stokaro/ptah#1713).
-	MigrationTimeouts Capability = "migration_timeouts"
+	// migration in the server's own lock-wait setting and restores it
+	// afterwards. Before the timeout keys the decision was a switch over three
+	// dialect names, so CockroachDB and YugabyteDB answered "migration timeouts
+	// are not supported" while both accept `SET LOCAL lock_timeout` --
+	// measured on CockroachDB v25.4.0 and YugabyteDB 2026.1. A lock timeout is
+	// the safety belt on a migration that takes a lock, and those are the two
+	// deployments where a long lock hurts most (stokaro/ptah#1713).
+	//
+	// It is separate from [MigrationStatementTimeout] because a target can
+	// have one bound and not the other. YDB has no lock wait at all: a schema
+	// statement on a table under another schema operation fails at once with
+	// `path ... has been locked by tx`, and a schema change made while a
+	// transaction holds locks on the table succeeds at once and aborts that
+	// transaction at its commit (`Scheme changed`), measured on 26.2.1.14 and
+	// 25.1.4.7. There is no wait for a lock timeout to bound.
+	MigrationLockTimeout Capability = "migration_lock_timeout"
+
+	// MigrationStatementTimeout marks that Ptah can bound how long each
+	// statement of a migration runs on this target, and that a statement the
+	// bound stops is not left applied without the migrator saying so.
+	//
+	// It names a runtime policy rather than an object. On the PostgreSQL and
+	// MySQL families the migrator sets the server's statement timeout around
+	// a migration and restores it afterwards. YDB has no such setting, and its
+	// query service takes no operation timeout, so the migrator bounds each
+	// query of the migration with a deadline of its own and answers for what
+	// the server does when it fires: a data query is canceled and its
+	// transaction rolled back, and a schema statement that YDB runs as a build
+	// -- an index, or a column added with a default -- is canceled through
+	// the operation service. Any other schema statement keeps running after
+	// the client stops waiting, so a run stopped on one records its outcome
+	// as unknown rather than as not applied.
+	MigrationStatementTimeout Capability = "migration_statement_timeout"
 
 	// TransactionalDDL marks that this target runs schema changes inside a
 	// transaction that rolls back as a unit, which is what `--tx-mode all`
@@ -1357,8 +1381,11 @@ var registry = map[Capability]spec{
 	AdvisoryLocks: {
 		doc: "PostgreSQL advisory lock functions",
 	},
-	MigrationTimeouts: {
-		doc: "a migration can be bounded by a lock timeout and a statement timeout the migrator sets and restores",
+	MigrationLockTimeout: {
+		doc: "a migration can be bounded by a lock timeout, which limits how long a statement waits for a lock",
+	},
+	MigrationStatementTimeout: {
+		doc: "a migration can be bounded by a statement timeout, which limits how long each statement runs",
 	},
 	CatalogPartitions: {
 		doc: "the catalog has pg_inherits, which records partition parentage",
@@ -1709,7 +1736,8 @@ func MySQL84() Capabilities {
 		RowLevelTTL:                     false,
 		RowDeletionPolicy:               false,
 		NamedNotNullConstraints:         false,
-		MigrationTimeouts:               true,
+		MigrationLockTimeout:            true,
+		MigrationStatementTimeout:       true,
 		TransactionalDDL:                false,
 		CatalogPartitions:               true,
 		CatalogRecursiveCTE:             true,
@@ -1903,7 +1931,8 @@ func MariaDB1011() Capabilities {
 		RowLevelTTL:                     false,
 		RowDeletionPolicy:               false,
 		NamedNotNullConstraints:         false,
-		MigrationTimeouts:               true,
+		MigrationLockTimeout:            true,
+		MigrationStatementTimeout:       true,
 		TransactionalDDL:                false,
 		CatalogPartitions:               true,
 		CatalogRecursiveCTE:             true,
@@ -2036,7 +2065,8 @@ func Postgres16() Capabilities {
 		RowLevelTTL:                     false,
 		RowDeletionPolicy:               false,
 		NamedNotNullConstraints:         false,
-		MigrationTimeouts:               true,
+		MigrationLockTimeout:            true,
+		MigrationStatementTimeout:       true,
 		TransactionalDDL:                true,
 		CatalogPartitions:               true,
 		CatalogRecursiveCTE:             true,
@@ -2297,7 +2327,8 @@ func ClickHouse24() Capabilities {
 		RowLevelTTL:                     false,
 		RowDeletionPolicy:               false,
 		NamedNotNullConstraints:         false,
-		MigrationTimeouts:               false,
+		MigrationLockTimeout:            false,
+		MigrationStatementTimeout:       false,
 		TransactionalDDL:                false,
 		DDLInsideTransaction:            false,
 		CheckGrantStatement:             false,
@@ -2412,25 +2443,26 @@ func SQLite3() Capabilities {
 		Sequences:                          false,
 		SequenceStartCounterOnly:           false,
 		// SQLite has neither schemas in this sense nor comment statements.
-		SchemaComments:           false,
-		ViewComments:             false,
-		SequenceComments:         false,
-		TypeComments:             false,
-		DomainComments:           false,
-		ExtensionComments:        false,
-		FunctionComments:         false,
-		ProcedureComments:        false,
-		MaterializedViewComments: false,
-		TriggerComments:          false,
-		PolicyComments:           false,
-		ConstraintComments:       false,
-		XMLType:                  false,
-		AdvisoryLocks:            false,
-		RowLevelTTL:              false,
-		RowDeletionPolicy:        false,
-		NamedNotNullConstraints:  false,
-		MigrationTimeouts:        false,
-		TransactionalDDL:         true,
+		SchemaComments:            false,
+		ViewComments:              false,
+		SequenceComments:          false,
+		TypeComments:              false,
+		DomainComments:            false,
+		ExtensionComments:         false,
+		FunctionComments:          false,
+		ProcedureComments:         false,
+		MaterializedViewComments:  false,
+		TriggerComments:           false,
+		PolicyComments:            false,
+		ConstraintComments:        false,
+		XMLType:                   false,
+		AdvisoryLocks:             false,
+		RowLevelTTL:               false,
+		RowDeletionPolicy:         false,
+		NamedNotNullConstraints:   false,
+		MigrationLockTimeout:      false,
+		MigrationStatementTimeout: false,
+		TransactionalDDL:          true,
 		// Both keys name a PostgreSQL catalog, and SQLite has neither.
 		// Measured on 3.53.4: `SELECT COUNT(*) FROM pg_inherits` answers `no
 		// such table: pg_inherits`, and the recursive query over pg_class
@@ -2628,24 +2660,25 @@ func SQLServer2022() Capabilities {
 		Sequences:                true,
 		SequenceStartCounterOnly: false,
 		// SQL Server carries this as an extended property, not COMMENT ON.
-		SchemaComments:           false,
-		ViewComments:             false,
-		SequenceComments:         false,
-		TypeComments:             false,
-		DomainComments:           false,
-		ExtensionComments:        false,
-		FunctionComments:         false,
-		ProcedureComments:        false,
-		MaterializedViewComments: false,
-		TriggerComments:          false,
-		PolicyComments:           false,
-		ConstraintComments:       false,
-		XMLType:                  true,
-		AdvisoryLocks:            false,
-		RowLevelTTL:              false,
-		RowDeletionPolicy:        false,
-		NamedNotNullConstraints:  false,
-		MigrationTimeouts:        false,
+		SchemaComments:            false,
+		ViewComments:              false,
+		SequenceComments:          false,
+		TypeComments:              false,
+		DomainComments:            false,
+		ExtensionComments:         false,
+		FunctionComments:          false,
+		ProcedureComments:         false,
+		MaterializedViewComments:  false,
+		TriggerComments:           false,
+		PolicyComments:            false,
+		ConstraintComments:        false,
+		XMLType:                   true,
+		AdvisoryLocks:             false,
+		RowLevelTTL:               false,
+		RowDeletionPolicy:         false,
+		NamedNotNullConstraints:   false,
+		MigrationLockTimeout:      false,
+		MigrationStatementTimeout: false,
 		// TransactionalDDL is on because both halves the key needs are here.
 		// The engine rolls a schema change back: measured on 17.0.4075.5, one
 		// session inside a throwaway database, six DDL batches -- CREATE TABLE,
@@ -3150,7 +3183,8 @@ func SpannerPostgres() Capabilities {
 		// migrator excluded it from both before there were keys to say so.
 		// The key describes what Ptah supports on a target rather than what
 		// the wire protocol suggests (stokaro/ptah#1713).
-		With(MigrationTimeouts, false).
+		With(MigrationLockTimeout, false).
+		With(MigrationStatementTimeout, false).
 		With(TransactionalDDL, false).
 		With(Functions, false).
 		// A procedure is the same routine object with its return type removed,
@@ -3336,11 +3370,12 @@ func Oracle23() Capabilities {
 		XMLType:                  true,
 		// pg_advisory_lock is ORA-00904: invalid identifier. Oracle's lock
 		// package is not these functions.
-		AdvisoryLocks:           false,
-		RowLevelTTL:             false,
-		RowDeletionPolicy:       false,
-		NamedNotNullConstraints: false,
-		MigrationTimeouts:       false,
+		AdvisoryLocks:             false,
+		RowLevelTTL:               false,
+		RowDeletionPolicy:         false,
+		NamedNotNullConstraints:   false,
+		MigrationLockTimeout:      false,
+		MigrationStatementTimeout: false,
 		// A CREATE TABLE inside an explicit transaction survives ROLLBACK:
 		// Oracle commits the transaction in progress before every schema
 		// statement, so there is nothing left to roll back. --tx-mode all
@@ -3589,13 +3624,23 @@ func YDB262() Capabilities {
 		// Execution. DDL never runs inside a transaction: `Scheme operations
 		// cannot be executed inside transaction`. There is no advisory lock;
 		// internal/dblock locks YDB through a coordination-node semaphore
-		// instead. There is no lock wait for a timeout to bound, and a client
-		// that gives up on a scheme statement cannot say it did not commit,
-		// so the migrator sets no timeout.
+		// instead.
 		TransactionalDDL:     false,
 		DDLInsideTransaction: false,
 		AdvisoryLocks:        false,
-		MigrationTimeouts:    false,
+		// Timeouts. No statement waits for a lock: a schema change on a table
+		// under another schema operation answers `has been locked by tx` at
+		// once, and one made while a transaction holds locks succeeds at once
+		// and aborts that transaction at commit. So there is no lock wait to
+		// bound. A statement can run long, and the migrator bounds each query
+		// with a deadline: measured on 26.2.1.14 and 25.1.4.7, a data query
+		// stopped by it applies nothing, and an index build stopped by it is
+		// canceled through the operation service and leaves no index. A
+		// column backfill, which 25.1 does not run, is canceled the same way
+		// and leaves no column, measured on 26.2.1.14. The lines between them
+		// inherit the value unmeasured.
+		MigrationLockTimeout:      false,
+		MigrationStatementTimeout: true,
 
 		// Extensions of other engines.
 		Hypertables:          false,

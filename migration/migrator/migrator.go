@@ -3517,7 +3517,7 @@ func (m *Migrator) applyUpMigrationNoTransaction(
 		return err
 	}
 	return m.withNoTransactionSession(ctx, func(scoped *Migrator) error {
-		restoreTimeouts, err := scoped.applySessionTimeouts(ctx, migration, timeouts)
+		boundedCtx, restoreTimeouts, err := scoped.applySessionTimeouts(ctx, migration, timeouts)
 		if err != nil {
 			return err
 		}
@@ -3541,7 +3541,7 @@ func (m *Migrator) applyUpMigrationNoTransaction(
 				"resumeFromStatement", plan.resumeFrom,
 			)
 		}
-		executionCtx := withMigrationResume(ctx, plan.resumeFrom)
+		executionCtx := withMigrationResume(boundedCtx, plan.resumeFrom)
 		return scoped.applyUpMigrationNoTransactionOnSession(executionCtx, migration, startedAt, restoreTimeouts)
 	})
 }
@@ -3859,7 +3859,7 @@ func (m *Migrator) rollbackMigrationNoTransaction(
 		return err
 	}
 	return m.withNoTransactionSession(ctx, func(scoped *Migrator) error {
-		restoreTimeouts, err := scoped.applySessionTimeouts(ctx, migration, timeouts)
+		boundedCtx, restoreTimeouts, err := scoped.applySessionTimeouts(ctx, migration, timeouts)
 		if err != nil {
 			return err
 		}
@@ -3867,7 +3867,7 @@ func (m *Migrator) rollbackMigrationNoTransaction(
 			failure := fmt.Errorf("failed to record pending rollback %d: %w", migration.Version, err)
 			return scoped.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, failure)
 		}
-		return scoped.rollbackMigrationNoTransactionOnSession(ctx, migration, startedAt, deleteSQL, restoreTimeouts)
+		return scoped.rollbackMigrationNoTransactionOnSession(boundedCtx, migration, startedAt, deleteSQL, restoreTimeouts)
 	})
 }
 

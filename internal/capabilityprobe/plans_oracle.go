@@ -286,8 +286,8 @@ func oraclePlan() plan {
 		// about this key too.
 		capability.TransactionalDDL: "the key names whether a failed migration rolls back as a unit, which one accepted " +
 			"statement cannot show; it is decided by the engine's DDL semantics rather than by a statement",
-		capability.MigrationTimeouts: "the key names a runtime policy the migrator applies around a migration, not a " +
-			"statement this probe can send",
+		capability.MigrationLockTimeout:      runtimePolicyReason,
+		capability.MigrationStatementTimeout: runtimePolicyReason,
 		capability.ShowRoutinePrivilege: "the key names a MySQL global privilege. The probe connects as one account and " +
 			"cannot ask whether a privilege exists without granting it, and Oracle has no SHOW_ROUTINE at all",
 	}}
