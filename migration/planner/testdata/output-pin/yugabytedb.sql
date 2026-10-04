@@ -48,4 +48,5 @@ CREATE TABLE "users" (
 
 CREATE INDEX IF NOT EXISTS "users_name_ix" ON "users" ("name") INCLUDE ("email");
 -- plan: the current schema to a covering index
-
+DROP INDEX IF EXISTS "users_name_ix";
+CREATE INDEX IF NOT EXISTS "users_name_ix" ON "users" ("name") INCLUDE ("email");

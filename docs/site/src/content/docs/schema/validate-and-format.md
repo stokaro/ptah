@@ -237,8 +237,9 @@ first of those; the server stores none of it, which is why the report names it
 as well.
 
 A covering index's `INCLUDE` payload is the one property that is refused rather
-than reported. A target without the clause fails the render, which is the
-louder answer, so nothing is dropped for a report to name.
+than reported. A target without the clause fails the render, and a plan that
+adds the payload to an existing index fails the same way, which is the louder
+answer, so nothing is dropped for a report to name.
 
 Four declarations belong to a whole object rather than to a column or an index:
 

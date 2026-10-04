@@ -34,6 +34,4 @@ DROP INDEX IF EXISTS users_name_ix;
 -- render: a covering index
 -- refused: oracle does not support INCLUDE columns on index "users_name_ix"; target cockroachdb, postgres, spanner, ydb, or yugabytedb
 -- plan: the current schema to a covering index
--- Modify table: users
--- Modify column users.id: type: integer -> number(19)
-ALTER TABLE users MODIFY (id NUMBER(19));
+-- refused: oracle does not support INCLUDE columns on index "users_name_ix"; target cockroachdb, postgres, spanner, ydb, or yugabytedb
