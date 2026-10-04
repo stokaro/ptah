@@ -1,7 +1,8 @@
 // Package yqlddl reads what one YQL schema statement does: the table or view
 // it names, the columns, key, indexes and TTL column a CREATE TABLE declares,
-// the actions an ALTER TABLE takes, the restart an ALTER SEQUENCE makes, and
-// the tables a query reads.
+// the actions an ALTER TABLE takes, the restart an ALTER SEQUENCE makes, the
+// resource pool or backup collection a DROP names, the table an ANALYZE
+// names, and the tables a query reads.
 //
 // It is the reading both linters share, so `ptah migrations lint` and
 // `ptah sql lint` cannot disagree about what a YQL statement does. It reads
@@ -48,6 +49,15 @@ const (
 	// sequence behind a Serial column. Its name is the sequence's path as
 	// written.
 	AlterSequence
+	// DropResourcePool is DROP RESOURCE POOL. Its name is the pool's, which
+	// is not a path: a pool belongs to the database.
+	DropResourcePool
+	// DropBackupCollection is DROP BACKUP COLLECTION. Its name is the
+	// collection's.
+	DropBackupCollection
+	// Analyze is ANALYZE, which collects column statistics. Its name is the
+	// first table it names.
+	Analyze
 )
 
 // Statement is what one YQL statement does.
@@ -237,6 +247,16 @@ func Read(statement string) Statement {
 		return readDrop(DropView, tokens[2:])
 	case startsWith(tokens, "ALTER", "SEQUENCE"):
 		return readAlterSequence(tokens[2:])
+	case startsWith(tokens, "DROP", "RESOURCE", "POOL", "CLASSIFIER"):
+		// A classifier, which is no pool, whatever its name.
+		return Statement{}
+	case startsWith(tokens, "DROP", "RESOURCE", "POOL"):
+		return readDrop(DropResourcePool, tokens[3:])
+	case startsWith(tokens, "DROP", "BACKUP", "COLLECTION"):
+		return readDrop(DropBackupCollection, tokens[3:])
+	case startsWith(tokens, "ANALYZE"):
+		name, _ := readName(tokens[1:])
+		return Statement{Kind: Analyze, Name: name}
 	default:
 		return Statement{}
 	}

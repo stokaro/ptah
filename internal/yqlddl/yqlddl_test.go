@@ -215,6 +215,14 @@ func TestRead_DropsAndViews(t *testing.T) {
 			want: yqlddl.Statement{Kind: yqlddl.CreateView, Name: "dir/v", Reads: []string{"base", "dir/other", "third"}},
 		},
 		{name: "a statement this package does not read", sql: "UPSERT INTO t (id) VALUES (1)", want: yqlddl.Statement{}},
+		{name: "drop the pool default", sql: "drop resource pool default;",
+			want: yqlddl.Statement{Kind: yqlddl.DropResourcePool, Name: "default"}},
+		{name: "drop a pool named as YQL quotes it", sql: "DROP RESOURCE POOL `Default`",
+			want: yqlddl.Statement{Kind: yqlddl.DropResourcePool, Name: "Default"}},
+		{name: "a classifier is no pool", sql: "DROP RESOURCE POOL CLASSIFIER default", want: yqlddl.Statement{}},
+		{name: "drop a backup collection", sql: "DROP BACKUP COLLECTION `nightly`",
+			want: yqlddl.Statement{Kind: yqlddl.DropBackupCollection, Name: "nightly"}},
+		{name: "analyze", sql: "ANALYZE `dir/t` (v)", want: yqlddl.Statement{Kind: yqlddl.Analyze, Name: "dir/t"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

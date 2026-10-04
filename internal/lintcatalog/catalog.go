@@ -624,6 +624,15 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"YD111": {
 		Summary: "`DROP USER` or `DROP GROUP` on YDB leaves the principal's permissions behind, and a principal created later under the name holds them",
 	},
+	"YD120": {
+		Summary: "`DROP RESOURCE POOL default` on YDB, after which every query of the database fails with `Resource pool default not found`",
+	},
+	"YD121": {
+		Summary: "`DROP BACKUP COLLECTION` deletes every backup the collection holds, and stops a YDB 25.1 server",
+	},
+	"YD122": {
+		Summary: "`ANALYZE` in a migration, which YDB refuses unless `EnableColumnStatistics` is on, and on 25.1 refuses on a row table",
+	},
 }
 
 // sqlRuleMeta declares the same facts for the standalone SQL linter, which
