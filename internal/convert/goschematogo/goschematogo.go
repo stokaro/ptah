@@ -650,7 +650,25 @@ func fieldAttrs(field schemamodel.Field) []attr {
 }
 
 func indexAttrs(index schemamodel.Index) []attr {
-	return append(indexDefinitionAttrs(index), partitioningAttrs(index.Partitioning)...)
+	attrs := append(indexDefinitionAttrs(index), partitioningAttrs(index.Partitioning)...)
+	return append(attrs, vectorAttrs(index.Vector)...)
+}
+
+// vectorAttrs writes a YDB vector index's settings as the attributes the
+// annotation parser reads them from.
+func vectorAttrs(spec *ast.VectorIndexSpec) []attr {
+	if spec == nil {
+		return nil
+	}
+	count := func(n uint64) string { return strconv.FormatUint(n, 10) }
+	return []attr{
+		{name: ydbindex.AttributeDistance, value: spec.Distance, set: spec.Distance != ""},
+		{name: ydbindex.AttributeSimilarity, value: spec.Similarity, set: spec.Similarity != ""},
+		{name: ydbindex.AttributeVectorType, value: spec.VectorType, set: spec.VectorType != ""},
+		{name: ydbindex.AttributeVectorDimension, value: count(spec.Dimension), set: spec.Dimension != 0},
+		{name: ydbindex.AttributeLevels, value: count(spec.Levels), set: spec.Levels != 0},
+		{name: ydbindex.AttributeClusters, value: count(spec.Clusters), set: spec.Clusters != 0},
+	}
 }
 
 // partitioningAttrs writes a YDB global index's partitioning as the attributes

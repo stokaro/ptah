@@ -58,6 +58,11 @@ type Mapping struct {
 	// Serial reports a Serial, BigSerial or SmallSerial column, which YDB
 	// fills from a sequence it creates with the table.
 	Serial bool
+	// Dimension is the dimension a VECTOR(n) declaration names, and zero
+	// for every other declaration. YDB stores a vector as bytes in a String
+	// column and keeps no dimension on the column; a vector index over it
+	// declares its own, which has to agree.
+	Dimension uint64
 }
 
 // Refusal says why a declared type or default has no YDB counterpart on the
@@ -289,7 +294,8 @@ var noCounterpart = map[string]string{
 	"YEAR":                   "YDB has no year type; declare a SMALLINT",
 	"ENUM":                   "YDB has no enum type",
 	"SET":                    "YDB has no set type",
-	"VECTOR":                 "YDB has no vector column type",
+	"HALFVEC":                "YDB has no half-precision vector; a YDB vector index reads float, uint8, int8 or bit elements, so declare VECTOR(n)",
+	"SPARSEVEC":              "YDB has no sparse vector; a YDB vector index reads every element of a dense vector, so declare VECTOR(n)",
 	"INT4RANGE":              "YDB has no range type",
 	"INT8RANGE":              "YDB has no range type",
 	"NUMRANGE":               "YDB has no range type",
@@ -373,6 +379,8 @@ func mapNamed(declared, name string, arguments []string, caps capability.Capabil
 		return withoutArguments(declared, mapped, arguments)
 	}
 	switch {
+	case name == "VECTOR":
+		return vector(declared, arguments)
 	case name == "DECIMAL" || name == "NUMERIC" || name == "DEC":
 		return decimal(declared, arguments, caps)
 	case name == "DATE":
@@ -463,6 +471,43 @@ func decimal(declared string, arguments []string, caps capability.Capabilities) 
 			Reason: "this line has Decimal(22,9) only"}
 	}
 	return Mapping{Type: mapped}, nil
+}
+
+// MaxVectorDimension is the most elements a YDB vector index takes:
+// measured, 25.3.1.25 through 26.2.1.14 answer `Invalid vector_dimension:
+// 16385 should be between 1 and 16384`. 25.1.4.7 and 25.2.1.24 check no
+// dimension and build a 20000-element index; Ptah holds every line to the
+// later lines' limit, because the same index is refused there and a
+// declaration that applies would stop applying after an upgrade.
+const MaxVectorDimension = 16384
+
+// vector maps VECTOR(n), the spelling pgvector, MariaDB and SQL Server share,
+// to the String column a YDB vector index reads: the vector is bytes there,
+// `Knn::ToBinaryStringFloat` of its elements (measured, an index on a Utf8
+// column answers `Embedding column 'emb' expected type 'String' but got
+// Utf8`). The column keeps no dimension, so a declared one is reported as
+// dropped and carried in [Mapping.Dimension] for the index to agree with. A
+// second argument, Oracle's element format, is refused: on YDB the element
+// type is the index's vector_type.
+func vector(declared string, arguments []string) (Mapping, error) {
+	switch len(arguments) {
+	case 0:
+		return Mapping{Type: String}, nil
+	case 1:
+	default:
+		return Mapping{}, &Refusal{Declared: declared, Reason: "a YDB vector column takes a dimension only; " +
+			"the element type is the vector index's vector_type"}
+	}
+	dimension, err := strconv.ParseUint(arguments[0], 10, 64)
+	if err != nil || dimension < 1 || dimension > MaxVectorDimension {
+		return Mapping{}, &Refusal{Declared: declared,
+			Reason: fmt.Sprintf("the dimension must be between 1 and %d, the most a YDB vector index takes", MaxVectorDimension)}
+	}
+	return Mapping{
+		Type:      String,
+		Dropped:   "dimension " + arguments[0] + " (YDB stores a vector as bytes; its vector index keeps the dimension)",
+		Dimension: dimension,
+	}, nil
 }
 
 // timestamp maps an instant. YDB keeps microseconds, so a declared precision of

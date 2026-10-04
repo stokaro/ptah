@@ -80,6 +80,13 @@ func TestMap_HappyPath(t *testing.T) {
 		{name: "bigserial", declared: "BIGSERIAL", caps: capability.YDB251(), want: ydbtype.Mapping{Type: "BigSerial", Serial: true}},
 		{name: "serial2", declared: "serial2", caps: capability.YDB262(), want: ydbtype.Mapping{Type: "SmallSerial", Serial: true}},
 		{name: "surrounding space", declared: "  BIGINT  ", caps: capability.YDB262(), want: ydbtype.Mapping{Type: "Int64"}},
+		{name: "vector keeps its dimension apart", declared: "vector(3)", caps: capability.YDB262(),
+			want: ydbtype.Mapping{Type: "String", Dimension: 3,
+				Dropped: "dimension 3 (YDB stores a vector as bytes; its vector index keeps the dimension)"}},
+		{name: "vector at the largest dimension", declared: "VECTOR(16384)", caps: capability.YDB251(),
+			want: ydbtype.Mapping{Type: "String", Dimension: 16384,
+				Dropped: "dimension 16384 (YDB stores a vector as bytes; its vector index keeps the dimension)"}},
+		{name: "vector without a dimension", declared: "VECTOR", caps: capability.YDB262(), want: ydbtype.Mapping{Type: "String"}},
 	}
 
 	for _, test := range tests {
@@ -119,7 +126,16 @@ func TestMap_FailurePath(t *testing.T) {
 		{name: "network", declared: "INET", caps: capability.YDB262(), wantErr: `INET has no YDB counterpart: YDB has no network address type`},
 		{name: "geometric", declared: "POINT", caps: capability.YDB262(), wantErr: `POINT has no YDB counterpart: YDB has no geometric type`},
 		{name: "citext", declared: "CITEXT", caps: capability.YDB262(), wantErr: `CITEXT has no YDB counterpart: .*`},
-		{name: "vector", declared: "VECTOR(3)", caps: capability.YDB262(), wantErr: `VECTOR\(3\) has no YDB counterpart: .*`},
+		{name: "vector over the largest dimension", declared: "VECTOR(16385)", caps: capability.YDB251(),
+			wantErr: `VECTOR\(16385\) has no YDB counterpart: the dimension must be between 1 and 16384, the most a YDB vector index takes`},
+		{name: "vector of no dimension", declared: "VECTOR(0)", caps: capability.YDB262(),
+			wantErr: `VECTOR\(0\) has no YDB counterpart: the dimension must be between 1 and 16384, .*`},
+		{name: "vector with an element format", declared: "VECTOR(3, FLOAT32)", caps: capability.YDB262(),
+			wantErr: `VECTOR\(3, FLOAT32\) has no YDB counterpart: a YDB vector column takes a dimension only; the element type is the vector index's vector_type`},
+		{name: "half-precision vector", declared: "halfvec(3)", caps: capability.YDB262(),
+			wantErr: `halfvec\(3\) has no YDB counterpart: YDB has no half-precision vector; .*declare VECTOR\(n\)`},
+		{name: "sparse vector", declared: "SPARSEVEC(1000)", caps: capability.YDB262(),
+			wantErr: `SPARSEVEC\(1000\) has no YDB counterpart: YDB has no sparse vector; .*declare VECTOR\(n\)`},
 		{name: "postgres type in ydb", declared: "pgint4", caps: capability.YDB262(), wantErr: `pgint4 has no YDB counterpart: .*EnableTablePgTypes.*`},
 		{name: "unknown name", declared: "geography_point", caps: capability.YDB262(), wantErr: `geography_point has no YDB counterpart: YDB has no type of that name`},
 		{name: "mysql auto increment in the type", declared: "INT AUTO_INCREMENT", caps: capability.YDB262(), wantErr: `INT AUTO_INCREMENT has no YDB counterpart: .*`},
@@ -170,6 +186,10 @@ func TestRenderings(t *testing.T) {
 		{name: "a narrow native has one", declared: "Timestamp", want: []string{"Timestamp"}},
 		{name: "a decimal keeps its arguments", declared: "DECIMAL(10,2)", want: []string{"Decimal(10,2)"}},
 		{name: "no counterpart has none", declared: "TIME", want: nil},
+		// The comparison reads a declared vector and a catalog String as one
+		// type: the read-back column is a plain String, and a vector's
+		// dimension is the index's to keep.
+		{name: "a vector is a String", declared: "vector(1536)", want: []string{"String"}},
 	}
 
 	for _, test := range tests {

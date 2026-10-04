@@ -2,6 +2,7 @@ package ydb
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -16,6 +17,7 @@ import (
 // and in ALTER TABLE ... ADD INDEX alike:
 //
 //	INDEX `name` GLOBAL [UNIQUE] SYNC|ASYNC ON (`a`, `b`) [COVER (`c`)]
+//	INDEX `name` GLOBAL USING vector_kmeans_tree ON ([`prefix`, ] `v`) [COVER (`c`)] WITH (...)
 type indexClause struct {
 	name    string
 	kind    ydbindex.Kind
@@ -27,6 +29,9 @@ type indexClause struct {
 	// clause that creates it, so any other settings are written by an ALTER
 	// INDEX of their own after it; see [indexClause.partitioningStatement].
 	settings ydbindex.Settings
+	// vector is a vector index's settings, resolved; it is written as the
+	// clause's WITH (...), the one place YDB takes them.
+	vector ast.VectorIndexSpec
 }
 
 func (c indexClause) String() string {
@@ -41,7 +46,15 @@ func (c indexClause) String() string {
 	if len(c.cover) > 0 {
 		clause += " COVER (" + quoted(c.cover) + ")"
 	}
+	if c.kind == ydbindex.Vector {
+		clause += " " + ydbindex.VectorClause(c.vector)
+	}
 	return clause
+}
+
+// shape is the clause as [ydbindex.ShapeRefusal] reads it.
+func (c indexClause) shape() ydbindex.Shape {
+	return ydbindex.Shape{Kind: c.kind, Columns: c.columns, Cover: c.cover, Dimension: c.vector.Dimension}
 }
 
 // partitioningStatement is the ALTER INDEX that gives a new index on table the
@@ -94,12 +107,12 @@ func (r *Renderer) indexClauseOf(index *ast.IndexNode) (indexClause, error) {
 	if strings.TrimSpace(index.Name) == "" {
 		return indexClause{}, refuseFact("an index on "+index.Table, "YDB names every index, and this one has no name")
 	}
-	if err := r.refuseIndexDeclarations(subject, index); err != nil {
-		return indexClause{}, err
-	}
 	kind, err := ydbindex.KindOf(index.Type)
 	if err != nil {
 		return indexClause{}, refuseFact(subject, err.Error())
+	}
+	if err := r.refuseIndexDeclarations(subject, index, kind); err != nil {
+		return indexClause{}, err
 	}
 	switch {
 	case kind == ydbindex.Async && !r.caps.Has(capability.AsyncIndexes):
@@ -120,19 +133,53 @@ func (r *Renderer) indexClauseOf(index *ast.IndexNode) (indexClause, error) {
 				fmt.Sprintf("column %q is both a key and a covered column, which YDB refuses", covered))
 		}
 	}
-	settings, err := r.indexSettings(subject, index.Partitioning)
+	clause := indexClause{
+		name: index.Name, kind: kind, unique: index.Unique,
+		columns: columns, cover: slices.Clone(index.IncludeColumns), settings: ydbindex.DefaultSettings(),
+	}
+	if kind == ydbindex.Vector {
+		clause.vector, err = r.vectorSettings(subject, index)
+		return clause, err
+	}
+	clause.settings, err = r.indexSettings(subject, index.Partitioning)
 	if err != nil {
 		return indexClause{}, err
 	}
-	return indexClause{
-		name: index.Name, kind: kind, unique: index.Unique,
-		columns: columns, cover: slices.Clone(index.IncludeColumns), settings: settings,
-	}, nil
+	return clause, nil
 }
 
-// refuseIndexDeclarations refuses what an index may say that a YDB global
-// index has no clause for.
-func (r *Renderer) refuseIndexDeclarations(subject string, index *ast.IndexNode) error {
+// vectorSettings resolves a vector index's settings, refusing the index on a
+// target without [capability.VectorIndexes], and refusing what a vector index
+// cannot be.
+func (r *Renderer) vectorSettings(subject string, index *ast.IndexNode) (ast.VectorIndexSpec, error) {
+	switch {
+	case !r.caps.Has(capability.VectorIndexes):
+		return ast.VectorIndexSpec{}, refuseKey(capability.VectorIndexes, subject+" is a vector index")
+	case index.Unique:
+		return ast.VectorIndexSpec{}, refuseFact(subject,
+			"a vector index is not unique (`VECTOR_KMEANS_TREE index can only be GLOBAL [SYNC]`)")
+	case !index.Partitioning.IsZero():
+		return ast.VectorIndexSpec{}, refuseFact(subject, "a vector index keeps the partitioning YDB gives it "+
+			"(`ALTER INDEX ... SET` answers `Only index with one impl table is supported`)")
+	}
+	if names := slices.Sorted(maps.Keys(index.StorageParams)); len(names) > 0 {
+		return ast.VectorIndexSpec{}, refuseFact(subject, ydbindex.StorageParameterRefusal(names[0]))
+	}
+	spec, err := ydbindex.ResolveVector(index.Vector, index.Operator)
+	if err != nil {
+		return ast.VectorIndexSpec{}, refuseFact(subject, err.Error())
+	}
+	if spec.VectorType == ydbindex.BitVectorType && !r.caps.Has(capability.VectorBitType) {
+		return ast.VectorIndexSpec{}, refuseKey(capability.VectorBitType, subject+" stores bit vectors")
+	}
+	return spec, nil
+}
+
+// refuseIndexDeclarations refuses what an index may say that a YDB index of
+// kind has no clause for. A vector index's operator class and storage
+// parameters are read by [Renderer.vectorSettings] instead.
+func (r *Renderer) refuseIndexDeclarations(subject string, index *ast.IndexNode, kind ydbindex.Kind) error {
+	vector := kind == ydbindex.Vector
 	switch {
 	case strings.TrimSpace(index.Condition) != "":
 		return refuseFact(subject, "YDB has no partial index")
@@ -143,13 +190,16 @@ func (r *Renderer) refuseIndexDeclarations(subject string, index *ast.IndexNode)
 		return r.keyed(capability.InvisibleIndexes, "invisible index", subject+" is invisible")
 	case index.Parser != "":
 		return refuseFact(subject, "a FULLTEXT parser is MySQL's")
-	case index.Operator != "":
+	case index.Operator != "" && !vector:
 		return refuseFact(subject, "YDB has no index operator class")
 	case index.Granularity != 0:
 		return refuseFact(subject, "GRANULARITY is ClickHouse's")
-	case len(index.StorageParams) > 0:
+	case len(index.StorageParams) > 0 && !vector:
 		return refuseFact(subject, "a YDB global index takes no storage parameters; its settings are its "+
 			"partitioning and read replicas, declared with the auto_partitioning_* and read_replicas_settings attributes")
+	case index.Vector != nil && !vector:
+		return refuseFact(subject, fmt.Sprintf("it declares vector settings and is a %s index; declare type %q "+
+			"for a vector index", kind, ydbindex.VectorMethod))
 	case index.Comment != "":
 		return refuseGap(ydbgap.Comments, "the comment on "+subject)
 	}
@@ -185,16 +235,16 @@ func indexColumns(subject string, index *ast.IndexNode) ([]string, error) {
 // inlineIndex reads an index declared inside CREATE TABLE, where the table's
 // key and column types are known and the index is held to
 // [ydbindex.ShapeRefusal].
-func (r *Renderer) inlineIndex(table string, index *ast.IndexNode, keyColumns []string, columnTypes map[string]string) (indexClause, error) {
+func (r *Renderer) inlineIndex(table string, index *ast.IndexNode, keyColumns []string, columns map[string]ydbindex.Column) (indexClause, error) {
 	clause, err := r.indexClauseOf(index)
 	if err != nil {
 		return indexClause{}, err
 	}
-	columnType := func(column string) (string, bool) {
-		ydbType, declared := columnTypes[column]
-		return ydbType, declared
+	column := func(name string) (ydbindex.Column, bool) {
+		declared, ok := columns[name]
+		return declared, ok
 	}
-	if reason := ydbindex.ShapeRefusal(clause.columns, clause.cover, keyColumns, columnType); reason != "" {
+	if reason := ydbindex.ShapeRefusal(clause.shape(), keyColumns, column); reason != "" {
 		return indexClause{}, refuseFact(fmt.Sprintf("index %q on %s", index.Name, tableref.Phrase(table)), reason)
 	}
 	return clause, nil

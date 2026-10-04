@@ -1166,6 +1166,12 @@ func indexPayloadChanged(desired, database []string, dialect string, semantics i
 // which is removing a maximum partition count ([ydbindex.ChangeRefusal]); any
 // other change of it is made by ALTER INDEX and recorded as
 // [difftypes.SchemaDiff.IndexPartitioningChanged].
+//
+// A vector index's settings are fixed when it is built (`ALTER INDEX ... SET
+// (levels = 2)` answers `Unknown table setting: levels`), so a difference in
+// any of them is a rebuild too. The declaration is read through
+// [ydbindex.VectorEqual], which reads a metric named by pgvector's operator
+// class as the setting it names, the way the renderer writes it.
 func ydbIndexDefinitionChanged(
 	desired schemamodel.Index,
 	database catalog.Index,
@@ -1177,7 +1183,8 @@ func ydbIndexDefinitionChanged(
 		desiredErr != nil || databaseErr != nil || desiredKind != databaseKind ||
 		indexKeyPartsChanged(desired, database, semantics) ||
 		postgresIncludeColumnsChanged(desired.IncludeColumns, database.IncludeColumns, semantics) ||
-		ydbPartitioningNeedsRebuild(desired, database)
+		ydbPartitioningNeedsRebuild(desired, database) ||
+		(desiredKind == ydbindex.Vector && !ydbindex.VectorEqual(desired.Vector, desired.Operator, database.Vector))
 }
 
 // ydbPartitioningChanged reports whether a YDB index's partitioning differs

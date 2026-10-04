@@ -249,10 +249,13 @@ func decimalOf(t *Ydb.Type) (precision, scale int, ok bool) {
 
 // index decodes one index. A row table's global index is reported with its
 // kind in Method, `GLOBAL SYNC` or `GLOBAL ASYNC`, and its uniqueness in
-// IsUnique, which is how internal/ydbindex reads the catalog side. Any other
-// kind is refused: one the pinned protocol buffers model as a oneof Ptah does
-// not read yet, and one they do not model at all, whose type arrives empty and
-// whose data sits in fields they do not know.
+// IsUnique, which is how internal/ydbindex reads the catalog side. A vector
+// index, which the pinned protocol buffers do not model, is decoded from the
+// field it arrives in, and reported with `GLOBAL USING vector_kmeans_tree` in
+// Method and its settings in Vector; see [vectorIndex]. Any other kind is
+// refused: one the pinned protocol buffers model as a oneof Ptah does not read
+// yet, and one they do not model at all, whose type arrives empty and whose
+// data sits in fields they do not know.
 //
 // The index's partitioning is read from its implementation table, which the
 // description of the table leaves out: measured on 25.1.4.7 and 26.2.1.14, a
@@ -280,6 +283,19 @@ func (r *Reader) index(
 		index.IsUnique = true
 	case *Ydb_Table.TableIndexDescription_GlobalAsyncIndex:
 		kind = ydbindex.Async
+	case nil:
+		vector, isVector, err := vectorIndex(described)
+		switch {
+		case err != nil:
+			return catalog.Index{}, fmt.Errorf("index %q: %w", described.GetName(), err)
+		case !isVector:
+			return catalog.Index{}, fmt.Errorf("index %q is a %s: %s", described.GetName(),
+				unreadIndexKind(described), ydbgap.IndexFamilies.Message())
+		}
+		index.Method = ydbindex.Vector.Clause(false)
+		index.Vector = vector
+		index.Definition = indexClause(index, ydbindex.Vector) + " " + ydbindex.VectorClause(*vector)
+		return index, nil
 	default:
 		return catalog.Index{}, fmt.Errorf("index %q is a %s: %s", described.GetName(),
 			unreadIndexKind(described), ydbgap.IndexFamilies.Message())
@@ -303,13 +319,17 @@ func (r *Reader) index(
 const indexImplTable = "indexImplTable"
 
 // indexSettings reads the partitioning and the read replicas of a global
-// index from the description of its implementation table. A setting the
-// description leaves unspecified is YDB's default for it, and a setting the
-// pinned protocol buffers do not model is refused, because read as absent it
-// would be planned away on every run.
+// index from the description of its implementation table; see
+// [partitionSettings].
 func indexSettings(described *Ydb_Table.DescribeTableResult) (ydbindex.Settings, error) {
-	partitioning := described.GetPartitioningSettings()
-	replicas := described.GetReadReplicasSettings()
+	return partitionSettings(described.GetPartitioningSettings(), described.GetReadReplicasSettings())
+}
+
+// partitionSettings reads the partitioning and the read replicas of a table
+// an index is kept in. A setting the description leaves unspecified is YDB's
+// default for it, and a setting the pinned protocol buffers do not model is
+// refused, because read as absent it would be planned away on every run.
+func partitionSettings(partitioning *Ydb_Table.PartitioningSettings, replicas *Ydb_Table.ReadReplicasSettings) (ydbindex.Settings, error) {
 	for _, message := range []protoreflect.ProtoMessage{partitioning, replicas} {
 		if unknown := unknownFields(message); len(unknown) > 0 {
 			return ydbindex.Settings{}, fmt.Errorf("its partitioning carries field %s, which this build of Ptah does not read",
@@ -361,7 +381,6 @@ func featureFlag(flag Ydb.FeatureFlag_Status, unspecified bool) (bool, error) {
 // unreadIndexFields names the index kinds by the field number ydb_table.proto
 // gives each in TableIndexDescription's type oneof.
 var unreadIndexFields = map[protowire.Number]string{
-	9:  "vector_kmeans_tree index",
 	10: "fulltext_plain index",
 	11: "fulltext_relevance index",
 	12: "bloom_filter index",

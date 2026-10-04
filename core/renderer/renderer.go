@@ -590,6 +590,11 @@ func prepareIndexNode(dialect string, caps capability.Capabilities, node *ast.In
 			return nil, err
 		}
 	}
+	if node.Vector != nil {
+		if err := refuseVectorIndex(dialect, caps, node.Name); err != nil {
+			return nil, err
+		}
+	}
 	return node, nil
 }
 
@@ -949,6 +954,25 @@ func refuseIndexPartitioning(dialect string, caps capability.Capabilities, subje
 	}
 }
 
+// refuseVectorIndex refuses the vector settings of index name, which only
+// YDB's vector index carries, on a target without
+// [capability.VectorIndexes]. Rendered without them, the index would be a
+// plain one over the vector column, which answers no nearest-neighbour search,
+// and nothing would report the difference.
+func refuseVectorIndex(dialect string, caps capability.Capabilities, name string) error {
+	if caps.Has(capability.VectorIndexes) {
+		return nil
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: string(capability.VectorIndexes),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("index %q declares vector settings, which requires target capability %s, unavailable on this %s target",
+			name, capability.VectorIndexes, normalized),
+	}
+}
+
 // refuseChangefeeds refuses subject, a table's changefeeds, on a target
 // without [capability.Changefeeds]. Built without them, the table would carry
 // no stream of its changes, and nothing would report the difference.
@@ -1030,6 +1054,11 @@ func validateDeclaredIndexOptions(
 		}
 		if !index.Partitioning.IsZero() {
 			if err := refuseIndexPartitioning(dialect, caps, fmt.Sprintf("index %q declares its partitioning", index.Name)); err != nil {
+				return err
+			}
+		}
+		if index.Vector != nil {
+			if err := refuseVectorIndex(dialect, caps, index.Name); err != nil {
 				return err
 			}
 		}

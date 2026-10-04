@@ -255,6 +255,34 @@ type indexSpec struct {
 	AutoPartitioningMinPartitions   *stringScalar `yaml:"auto_partitioning_min_partitions_count"`
 	AutoPartitioningMaxPartitions   *stringScalar `yaml:"auto_partitioning_max_partitions_count"`
 	ReadReplicasSettings            *stringScalar `yaml:"read_replicas_settings"`
+
+	// The settings of a YDB vector index, keyed as the annotation keys them;
+	// see [ydbindex.ParseVectorDeclaration].
+	Distance        *stringScalar `yaml:"distance"`
+	Similarity      *stringScalar `yaml:"similarity"`
+	VectorType      *stringScalar `yaml:"vector_type"`
+	VectorDimension *stringScalar `yaml:"vector_dimension"`
+	Levels          *stringScalar `yaml:"levels"`
+	Clusters        *stringScalar `yaml:"clusters"`
+}
+
+// vectorValues are the vector attributes the index sets, keyed by attribute
+// name, read the way [indexSpec.partitioningValues] reads its own.
+func (spec indexSpec) vectorValues() map[string]string {
+	values := make(map[string]string)
+	for attribute, value := range map[string]*stringScalar{
+		ydbindex.AttributeDistance:        spec.Distance,
+		ydbindex.AttributeSimilarity:      spec.Similarity,
+		ydbindex.AttributeVectorType:      spec.VectorType,
+		ydbindex.AttributeVectorDimension: spec.VectorDimension,
+		ydbindex.AttributeLevels:          spec.Levels,
+		ydbindex.AttributeClusters:        spec.Clusters,
+	} {
+		if value != nil {
+			values[attribute] = string(*value)
+		}
+	}
+	return values
 }
 
 // partitioningValues are the partitioning attributes the index sets, keyed by
@@ -871,6 +899,10 @@ func buildIndex(key, structName string, spec indexSpec) (schemamodel.Index, erro
 	if err != nil {
 		return schemamodel.Index{}, fmt.Errorf("index %q: %w", key, err)
 	}
+	vector, err := ydbindex.ParseVectorDeclaration(spec.vectorValues())
+	if err != nil {
+		return schemamodel.Index{}, fmt.Errorf("index %q: %w", key, err)
+	}
 
 	return schemamodel.Index{
 		StructName:     structName,
@@ -885,6 +917,7 @@ func buildIndex(key, structName string, spec indexSpec) (schemamodel.Index, erro
 		TableName:      string(spec.TableName),
 		Granularity:    spec.Granularity,
 		Partitioning:   partitioning,
+		Vector:         vector,
 	}, nil
 }
 

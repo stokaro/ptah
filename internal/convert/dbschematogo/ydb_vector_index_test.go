@@ -1,0 +1,37 @@
+package dbschematogo_test
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+
+	"ptah.run/catalog"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform"
+	"ptah.run/internal/convert/dbschematogo"
+)
+
+// A vector index the YDB reader reports keeps its settings in the model, which
+// is what `ptah introspect` writes as annotations and what a rollback creates
+// the index again from: dropped here, the index would come back with none,
+// which the renderer refuses.
+func TestConvertDBSchemaToGoSchema_KeepsAYDBVectorIndex(t *testing.T) {
+	c := qt.New(t)
+	vector := &ast.VectorIndexSpec{Similarity: "inner_product", VectorType: "int8", Dimension: 8, Levels: 2, Clusters: 16}
+	read := &catalog.Database{
+		Tables: []catalog.Table{{Name: "t", Columns: []catalog.Column{
+			{Name: "id", DataType: "Int64", ColumnType: "Int64", IsNullable: "NO", IsPrimaryKey: true},
+			{Name: "emb", DataType: "String", ColumnType: "String", IsNullable: "YES"},
+		}}},
+		Indexes: []catalog.Index{{Name: "i", TableName: "t", Columns: []string{"emb"},
+			Method: "GLOBAL USING vector_kmeans_tree", Vector: vector}},
+	}
+
+	model := dbschematogo.ConvertDBSchemaToGoSchema(read, platform.YDB)
+
+	c.Assert(model.Indexes, qt.HasLen, 1)
+	c.Assert(model.Indexes[0].Type, qt.Equals, "GLOBAL USING vector_kmeans_tree")
+	c.Assert(model.Indexes[0].Vector, qt.DeepEquals, vector)
+	vector.Levels = 3
+	c.Assert(model.Indexes[0].Vector.Levels, qt.Equals, uint64(2))
+}

@@ -1083,8 +1083,8 @@ These are refused with a message that names what is missing:
 - a YQL file as the desired schema (Go structs and YAML schemas work);
 - comments on tables, columns and indexes;
 - a table's own settings: partitioning and column families;
-- vector, full-text, JSON and column-table indexes;
-- `ptah inference` and the inference tools of `ptah mcp`, which wait for the vector index family.
+- full-text, JSON and column-table indexes;
+- `ptah inference` and the inference tools of `ptah mcp`, which store their vectors through pgvector.
 <!-- END GENERATED YDB GAPS -->
 
 The work is planned in [#4015](https://github.com/stokaro/ptah/issues/4015).

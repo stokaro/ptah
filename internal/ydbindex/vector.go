@@ -1,0 +1,296 @@
+package ydbindex
+
+import (
+	"fmt"
+	"slices"
+	"strconv"
+	"strings"
+
+	"ptah.run/core/ast"
+	"ptah.run/internal/ydbtype"
+)
+
+// The attributes that declare a vector index's settings, spelled as YDB's
+// WITH (...) clause spells them. The annotation parser, the YAML reader, the
+// annotation registry and the Go writer all read these names.
+const (
+	AttributeDistance        = "distance"
+	AttributeSimilarity      = "similarity"
+	AttributeVectorType      = "vector_type"
+	AttributeVectorDimension = "vector_dimension"
+	AttributeLevels          = "levels"
+	AttributeClusters        = "clusters"
+)
+
+// VectorAttributes lists the vector attributes in the order a declaration's
+// errors are reported and an index's settings are written.
+func VectorAttributes() []string {
+	return []string{
+		AttributeDistance, AttributeSimilarity, AttributeVectorType,
+		AttributeVectorDimension, AttributeLevels, AttributeClusters,
+	}
+}
+
+// The values YDB takes for each named setting, measured on 25.1.4.7 and
+// 26.2.1.14: `distance=inner_product` answers `Invalid distance:
+// inner_product`, `similarity=euclidean` answers `Invalid similarity:
+// euclidean`, and `vector_type=double` answers `Invalid vector_type: double`.
+// The server reads a value in any case; Ptah keeps it in lower case, as the
+// reader reports it.
+var (
+	distances    = []string{"cosine", "euclidean", "manhattan"}
+	similarities = []string{"inner_product", "cosine"}
+	vectorTypes  = []string{"float", "uint8", "int8", "bit"}
+)
+
+// BitVectorType is the element type that stores a vector as bits, which only
+// some lines build an index over.
+const BitVectorType = "bit"
+
+// The limits YDB 25.3 and later hold an index to, measured on 25.3.1.25 to
+// 26.2.1.14: `Invalid levels: 17 should be between 1 and 16`, `Invalid
+// clusters: 2049 should be between 2 and 2048`, and `Invalid
+// clusters^levels: 1025^3 should be less than 1073741824` while 1024^3,
+// which equals it, is accepted. 25.1.4.7 and 25.2.1.24 check none of them,
+// and take levels = 100 or clusters = 1; Ptah holds every line to the limits,
+// for the reason [ydbtype.MaxVectorDimension] gives.
+const (
+	maxLevels       = 16
+	minClusters     = 2
+	maxClusters     = 2048
+	maxClusterCount = 1 << 30
+)
+
+// ParseVectorDeclaration reads the vector attributes of one index declaration
+// out of values, keyed by attribute name, and ignores every other key. It
+// returns nil where none is present.
+//
+// Each value is checked for the form YDB takes, so a typo is refused where it
+// was written: a metric and an element type YDB names, in either case and
+// kept in lower case, and a whole number of at least 1 for the counts. Whether
+// the declaration is complete, and its counts within YDB's limits, is
+// [ResolveVector]'s question, which every renderer and planner asks.
+func ParseVectorDeclaration(values map[string]string) (*ast.VectorIndexSpec, error) {
+	var spec ast.VectorIndexSpec
+	present := false
+	for _, attribute := range VectorAttributes() {
+		value, ok := values[attribute]
+		if !ok {
+			continue
+		}
+		present = true
+		if err := setVectorAttribute(&spec, attribute, strings.TrimSpace(value)); err != nil {
+			return nil, err
+		}
+	}
+	if !present {
+		return nil, nil
+	}
+	return &spec, nil
+}
+
+// setVectorAttribute reads one attribute's value into spec.
+func setVectorAttribute(spec *ast.VectorIndexSpec, attribute, value string) error {
+	switch attribute {
+	case AttributeDistance:
+		return parseName(attribute, value, distances, &spec.Distance)
+	case AttributeSimilarity:
+		return parseName(attribute, value, similarities, &spec.Similarity)
+	case AttributeVectorType:
+		return parseName(attribute, value, vectorTypes, &spec.VectorType)
+	case AttributeVectorDimension:
+		return parseCount(attribute, value, &spec.Dimension)
+	case AttributeLevels:
+		return parseCount(attribute, value, &spec.Levels)
+	default:
+		return parseCount(attribute, value, &spec.Clusters)
+	}
+}
+
+// parseName reads one of names, in either case, into target.
+func parseName(attribute, value string, names []string, target *string) error {
+	lower := strings.ToLower(value)
+	if !slices.Contains(names, lower) {
+		return &DeclarationError{Attribute: attribute, Value: value,
+			Reason: "write one of " + strings.Join(names, ", ")}
+	}
+	*target = lower
+	return nil
+}
+
+// pgvectorOperators are pgvector's operator classes for its float vector,
+// with the metric each names on YDB. A declaration written for PostgreSQL
+// names its metric through one of these, and YDB names the same metric with a
+// setting: `<=>` is cosine distance, `<->` Euclidean distance, `<+>` taxicab
+// distance and `<#>` the negative inner product, which orders as the inner
+// product similarity does.
+var pgvectorOperators = map[string]ast.VectorIndexSpec{
+	"vector_cosine_ops": {Distance: "cosine"},
+	"vector_l2_ops":     {Distance: "euclidean"},
+	"vector_l1_ops":     {Distance: "manhattan"},
+	"vector_ip_ops":     {Similarity: "inner_product"},
+}
+
+// pgvectorParameters are the build parameters of pgvector's indexes, which a
+// declaration written for PostgreSQL carries as storage parameters, with the
+// method each belongs to.
+var pgvectorParameters = map[string]string{
+	"m":               "hnsw",
+	"ef_construction": "hnsw",
+	"lists":           "ivfflat",
+}
+
+// ResolveVector reads a vector index's declaration as the settings it is
+// built with, and says why YDB would refuse it.
+//
+// operator is the operator class the declaration names, which a declaration
+// written for pgvector uses for its metric: vector_cosine_ops reads as
+// `distance=cosine`, vector_l2_ops as `distance=euclidean`, vector_l1_ops as
+// `distance=manhattan` and vector_ip_ops as `similarity=inner_product`. A class
+// that names a metric the settings name too has to agree with them. The
+// renderer and the comparison both resolve through here, so a declaration
+// naming its metric either way is one index, read back with the setting.
+//
+// The settings are then held to what YDB requires: one metric, an element
+// type, and a dimension, a depth and a width within the limits 25.3 and later
+// enforce. Every setting is required, because 25.3 and later refuse an index
+// that leaves one out (`levels should be set`), and 25.1 keeps no default it
+// reports back.
+func ResolveVector(spec *ast.VectorIndexSpec, operator string) (ast.VectorIndexSpec, error) {
+	if spec == nil {
+		return ast.VectorIndexSpec{}, fmt.Errorf("a %s index declares none of its settings; declare its distance or "+
+			"similarity, vector_type, vector_dimension, levels and clusters", VectorMethod)
+	}
+	resolved := *spec
+	resolved.Distance = strings.ToLower(resolved.Distance)
+	resolved.Similarity = strings.ToLower(resolved.Similarity)
+	resolved.VectorType = strings.ToLower(resolved.VectorType)
+	if err := resolveOperator(&resolved, operator); err != nil {
+		return ast.VectorIndexSpec{}, err
+	}
+	if reason := vectorRefusal(resolved); reason != "" {
+		return ast.VectorIndexSpec{}, fmt.Errorf("%s", reason)
+	}
+	return resolved, nil
+}
+
+// resolveOperator folds a pgvector operator class into the metric it names.
+func resolveOperator(spec *ast.VectorIndexSpec, operator string) error {
+	operator = strings.ToLower(strings.TrimSpace(operator))
+	if operator == "" {
+		return nil
+	}
+	metric, known := pgvectorOperators[operator]
+	if !known {
+		return fmt.Errorf("operator class %q has no YDB counterpart: a YDB vector index names its metric with "+
+			"distance (cosine, euclidean, manhattan) or similarity (inner_product, cosine), and its vectors are "+
+			"float, uint8, int8 or bit", operator)
+	}
+	switch {
+	case spec.Distance == "" && spec.Similarity == "":
+		spec.Distance, spec.Similarity = metric.Distance, metric.Similarity
+	case spec.Distance != metric.Distance || spec.Similarity != metric.Similarity:
+		return fmt.Errorf("operator class %q names %s, and the index's settings name %s", operator,
+			metricName(metric), metricName(*spec))
+	}
+	return nil
+}
+
+// metricName writes the metric a spec names as its setting.
+func metricName(spec ast.VectorIndexSpec) string {
+	if spec.Similarity != "" {
+		return AttributeSimilarity + "=" + spec.Similarity
+	}
+	return AttributeDistance + "=" + spec.Distance
+}
+
+// vectorRefusal says why YDB refuses a vector index with spec, quoting the
+// server, and answers "" for one it builds.
+func vectorRefusal(spec ast.VectorIndexSpec) string {
+	switch {
+	case spec.Distance != "" && spec.Similarity != "":
+		return "a vector index names one metric, distance or similarity, and this one names both " +
+			"(`only one of distance or similarity should be set, not both`)"
+	case spec.Distance == "" && spec.Similarity == "":
+		return "a vector index names its metric with distance or similarity (`either distance or similarity " +
+			"should be set`)"
+	case spec.Distance != "" && !slices.Contains(distances, spec.Distance):
+		return fmt.Sprintf("distance %q is not one YDB takes (`Invalid distance`)", spec.Distance)
+	case spec.Similarity != "" && !slices.Contains(similarities, spec.Similarity):
+		return fmt.Sprintf("similarity %q is not one YDB takes (`Invalid similarity`)", spec.Similarity)
+	case spec.VectorType == "":
+		return "a vector index names its element type with vector_type (`vector_type should be set`)"
+	case !slices.Contains(vectorTypes, spec.VectorType):
+		return fmt.Sprintf("vector_type %q is not one YDB takes (`Invalid vector_type`)", spec.VectorType)
+	case spec.Dimension < 1 || spec.Dimension > ydbtype.MaxVectorDimension:
+		return fmt.Sprintf("a vector index's vector_dimension is between 1 and %d (`Invalid vector_dimension: %d "+
+			"should be between 1 and %d`)", ydbtype.MaxVectorDimension, spec.Dimension, ydbtype.MaxVectorDimension)
+	case spec.Levels < 1 || spec.Levels > maxLevels:
+		return fmt.Sprintf("a vector index's levels are between 1 and %d (`Invalid levels: %d should be between "+
+			"1 and %d`)", maxLevels, spec.Levels, maxLevels)
+	case spec.Clusters < minClusters || spec.Clusters > maxClusters:
+		return fmt.Sprintf("a vector index's clusters are between %d and %d (`Invalid clusters: %d should be "+
+			"between %d and %d`)", minClusters, maxClusters, spec.Clusters, minClusters, maxClusters)
+	case clusterCount(spec.Clusters, spec.Levels) > maxClusterCount:
+		return fmt.Sprintf("a vector index's clusters to the power of its levels is at most %d (`Invalid "+
+			"clusters^levels: %d^%d should be less than %d`)", maxClusterCount, spec.Clusters, spec.Levels, maxClusterCount)
+	}
+	return ""
+}
+
+// clusterCount is clusters to the power of levels, stopping once it passes
+// the limit so a large product does not overflow.
+func clusterCount(clusters, levels uint64) uint64 {
+	count := uint64(1)
+	for range levels {
+		count *= clusters
+		if count > maxClusterCount {
+			return count
+		}
+	}
+	return count
+}
+
+// VectorClause writes a resolved spec as the WITH (...) clause of a vector
+// index, every setting named, in a fixed order.
+func VectorClause(spec ast.VectorIndexSpec) string {
+	settings := make([]string, 0, len(VectorAttributes())-1)
+	settings = append(settings, metricName(spec))
+	settings = append(settings,
+		AttributeVectorType+"="+spec.VectorType,
+		AttributeVectorDimension+"="+strconv.FormatUint(spec.Dimension, 10),
+		AttributeLevels+"="+strconv.FormatUint(spec.Levels, 10),
+		AttributeClusters+"="+strconv.FormatUint(spec.Clusters, 10),
+	)
+	return "WITH (" + strings.Join(settings, ", ") + ")"
+}
+
+// VectorEqual reports whether a declared vector index and a described one
+// are built with the same settings. The declared side is resolved through
+// [ResolveVector] with its operator class, so a metric named either way
+// compares as the setting; a declaration that does not resolve differs from
+// every index, so the plan reaches the renderer, which refuses it with the
+// reason.
+func VectorEqual(declared *ast.VectorIndexSpec, operator string, described *ast.VectorIndexSpec) bool {
+	if declared == nil && operator == "" && described == nil {
+		return true
+	}
+	if described == nil {
+		return false
+	}
+	resolved, err := ResolveVector(declared, operator)
+	return err == nil && resolved == *described
+}
+
+// StorageParameterRefusal says why a vector index cannot carry the storage
+// parameter name, a PostgreSQL WITH (...) entry, and names what YDB takes
+// instead. pgvector's build parameters are refused by the method they belong
+// to.
+func StorageParameterRefusal(name string) string {
+	if method, pgvector := pgvectorParameters[strings.ToLower(name)]; pgvector {
+		return fmt.Sprintf("storage parameter %q belongs to pgvector's %s index; a %s index is shaped by its "+
+			"levels and clusters", name, method, VectorMethod)
+	}
+	return fmt.Sprintf("storage parameter %q has no YDB counterpart: a %s index takes its settings as the "+
+		"distance or similarity, vector_type, vector_dimension, levels and clusters attributes", name, VectorMethod)
+}

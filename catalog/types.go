@@ -862,6 +862,9 @@ type Index struct {
 	// that differ from the ones YDB gives a new index, so an index nobody
 	// tuned carries nil.
 	Partitioning *ast.IndexPartitioningSpec `json:"partitioning,omitempty"`
+	// Vector is the settings a YDB vector index was built with, and nil for
+	// every other index. Its Method is vector_kmeans_tree.
+	Vector *ast.VectorIndexSpec `json:"vector,omitempty"`
 
 	// RequiresExtensions names the extensions this index cannot be built
 	// without, as the catalog resolved them rather than as the DDL spells them.

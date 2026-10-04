@@ -48,13 +48,15 @@ const (
 	// row deletion policy, and its changefeeds: partitioning and column
 	// families.
 	TableSettings
-	// IndexFamilies is the index kinds beyond a row table's global indexes:
-	// vector, full-text and JSON indexes, and a column table's local ones.
+	// IndexFamilies is the index kinds beyond a row table's global and
+	// vector indexes: full-text and JSON indexes, and a column table's local
+	// ones.
 	IndexFamilies
 	// Inference is an embedding generation on YDB: `ptah inference` and the
 	// agent surface's inference tools. The run state and the vectors they
-	// work on are a PostgreSQL vertical built on pgvector, and the YDB design
-	// waits for the vector index family.
+	// work on are a PostgreSQL vertical built on pgvector, and a YDB one
+	// needs the commands to reach the store through an engine boundary
+	// first.
 	Inference
 
 	// endOfLayers is one past the last layer and names none. It keeps
@@ -81,7 +83,7 @@ func (l Layer) work() string {
 	case TableSettings:
 		return "setting YDB table options (partitioning, column families)"
 	case IndexFamilies:
-		return "reading or creating a YDB vector, full-text, JSON or column-table index"
+		return "reading or creating a YDB full-text, JSON or column-table index"
 	case Inference:
 		return "running an embedding generation against YDB"
 	default:
@@ -120,9 +122,9 @@ func (l Layer) Unsupported() string {
 	case TableSettings:
 		return "a table's own settings: partitioning and column families"
 	case IndexFamilies:
-		return "vector, full-text, JSON and column-table indexes"
+		return "full-text, JSON and column-table indexes"
 	case Inference:
-		return "`ptah inference` and the inference tools of `ptah mcp`, which wait for the vector index family"
+		return "`ptah inference` and the inference tools of `ptah mcp`, which store their vectors through pgvector"
 	default:
 		return ""
 	}

@@ -112,6 +112,15 @@ var gates = []Gate{
 		Flag:     "EnableTopicAutopartitioningForCDC",
 		refusals: []string{"Topic autopartitioning for CDC is disabled"},
 	},
+	{
+		// Off on 25.1 and on from 25.2. 25.1 answers a vector index in
+		// CREATE TABLE and in ADD INDEX with this text, and with the flag on
+		// builds it over a table holding rows and answers a search through
+		// it.
+		Key:      capability.VectorIndexes,
+		Flag:     "EnableVectorIndex",
+		refusals: []string{"Vector index support is disabled"},
+	},
 }
 
 // Gates returns every capability a flag decides, in a fixed order.
