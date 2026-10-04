@@ -287,11 +287,11 @@ from an unpiped invocation:
 | --- | --- | --- | --- |
 | `schema inspect`, `schema apply`, `schema diff`, `schema clean`, `migrate apply`, `migrate status`, `migrate set` on `ydb://...` | 1, `sql/sqlclient: unknown driver "ydb". See: https://atlasgo.io/url` | 0 | 1, byte-identical |
 | the same on `ydbs://...` | 1, the same with `"ydbs"` | dials over TLS | 1, byte-identical |
-| `migrate validate --dev-url ydb://...` on a hashed directory | 1, `unknown driver "ydb"` | 1, a YDB dev database is not implemented yet | 1, byte-identical, after the integrity gate as on CE |
+| `migrate validate --dev-url ydb://...` on a hashed directory | 1, `unknown driver "ydb"` | 0, replayed in a dev realm | 1, byte-identical, after the integrity gate as on CE |
 | `migrate validate --dev-url ydb://...` on an unhashed directory | 1, `checksum file not found` | 1, the same | 1, the same |
 | an `atlas.hcl` env whose `url`, `dev` or `src` names YDB | 1, `unknown driver "ydb"` | 0 | 1, byte-identical |
 | a `data "sql"` source on `ydb://...` | 1, `data.sql.tenants: opening connection: sql/sqlclient: unknown driver "ydb"…` | 0 | 1, `data.sql.tenants: opening database: sql/sqlclient: unknown driver "ydb"…` |
-| `--dev-url docker://ydb/26.2.1.14/local` | 1, `unsupported docker image "ydb"` | 1, byte-identical | 1, byte-identical |
+| `--dev-url docker://ydb/26.2.1.14/local` | 1, `unsupported docker image "ydb"` | 0, on a local-ydb container started for the run | 1, byte-identical |
 
 The default profile serves YDB with no `PTAH_*` variable, because a YDB URL asks
 for an engine the binary lacks rather than making a mistake the binary catches.
@@ -300,7 +300,11 @@ own type names in HCL, which no Atlas binary reads: a Ptah extension that Ptah's
 own parser reads back. The strict profile refuses a YDB URL from a flag, from
 `atlas.hcl`, and from any connection the run would open, a data source
 included; a `PTAH_*` variable is refused as a variable before that. The data
-source row differs in its middle words on every engine, not only on YDB. What
+source row differs in its middle words on every engine, not only on YDB. A
+`docker://ydb` dev URL is checked before its dialect, so strict mode answers it
+as the pinned binary answers an image it does not start, not as it answers a
+`ydb://` URL; `internal/atlascompatpolicy/policy_test.go` and
+`internal/cli/atlas/compat_ydb_url_test.go` pin that answer. What
 each verb does on YDB is on the [YDB page](./site/src/content/docs/databases/ydb.md#ptah-compat),
 and the divergence is recorded under
 [Compatibility differences](./site/src/content/docs/atlas/retained-divergences.md#a-ydb-database-url).

@@ -1139,7 +1139,7 @@ https://atlasgo.io/url`, naming `"ydbs"` for a `ydbs://` URL:
 | --- | --- | --- | --- |
 | `--url ydb://...` | exit `1`, unknown driver | exit `0` | exit `1`, the same sentence |
 | `--url ydbs://...` | exit `1`, unknown driver | dials over TLS | exit `1`, the same sentence |
-| `--dev-url ydb://...` | exit `1`, unknown driver | exit `1`, not a dev database yet | exit `1`, the same sentence |
+| `--dev-url ydb://...` | exit `1`, unknown driver | exit `0`, in a dev realm | exit `1`, the same sentence |
 | a `data "sql"` source | exit `1`, unknown driver | exit `0` | exit `1`, unknown driver |
 
 A `ydbs://` URL reaches the server over TLS: on a plaintext port it fails with
@@ -1150,8 +1150,9 @@ connection: ...`, a difference in the middle words that every engine shows.
 The never-looser rule is about an invocation the binary refuses because the
 user got something wrong. A YDB URL is a request for an engine the binary lacks,
 and refusing it in the default profile would remove a capability Ptah has.
-`docker://ydb/...` answers `unsupported docker image "ydb"` on both binaries and
-in both profiles, because Ptah does not start a YDB dev database yet.
+`docker://ydb/...` starts a local-ydb container for the run in the default
+profile. The strict profile answers `unsupported docker image "ydb"`, as the
+binary does.
 
 **Tracking.** [`stokaro/ptah#4015`](https://github.com/stokaro/ptah/issues/4015)
 
