@@ -523,6 +523,18 @@ OFFSET without a LIMIT. The builder refuses each before it renders anything,
 with the capability key the target lacks, and `RETURNING` is refused on 25.1
 and 25.2; see the [query builder](../../extend/query-builder/#dialect-coverage).
 
+YDB 26.2 fails an `UPSERT` on a table with a unique index when the statement
+names no column that a synchronous global index is keyed on. The server answers
+`INTERNAL_ERROR` with
+`verification=!hasUniqIndex || !usedIndexes.empty();fline=kqp_opt_phy_upsert_index.cpp:359`
+and writes nothing. This is a defect in the server: 25.1 runs the same
+statement. The column list is the caller's, and the builder does not know the
+table's indexes, so it cannot refuse the statement. Name every column of the
+table in such an `UPSERT`, or use `UPDATE` or `INSERT`, which 26.2 runs. Ptah
+writes no such statement itself: declared rows are written with `INSERT`,
+`UPDATE` and `DELETE`, and the tables Ptah keeps for migrations and seeds have no
+secondary index.
+
 ## ptah-compat
 
 No Atlas edition has a YDB driver, so YDB on `ptah-compat` is a Ptah

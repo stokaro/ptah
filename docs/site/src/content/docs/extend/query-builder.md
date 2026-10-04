@@ -416,6 +416,11 @@ The other dialects refuse it. Each of them names the key an upsert watches in
 the statement, which the builder does not know for a table, so use
 `OnConflictDoUpdate` there.
 
+On a table with a unique index, name every column. YDB 26.2 fails an `UPSERT`
+that names no column a synchronous index is keyed on with `INTERNAL_ERROR`, and
+the builder cannot see the table's indexes to refuse it; see
+[YDB](../../databases/ydb/#query-builder).
+
 ### INSERT
 
 Declare the column list with `Columns` and add one row per `Values` call. A
