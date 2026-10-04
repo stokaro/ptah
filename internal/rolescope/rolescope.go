@@ -95,11 +95,19 @@ func ReportUndescribed(w io.Writer, dialect string, schema *catalog.Database) {
 	// for a non-administrative account -- and the description records it rather
 	// than failing the read (stokaro/ptah#1025). RolesOutOfScope is empty in
 	// that case, so this cannot be folded into the count below.
-	if !schema.NotDescribed.Describes(coverage.Role) {
-		fmt.Fprint(w,
-			"note: roles were not described, because this connection may not read the server's"+
-				" access catalog; comparison withholds every declared role rather than planning a"+
-				" CREATE ROLE it could not verify.\n")
+	//
+	// A reader that does not read roles at all says so with the Unsupported
+	// reason, as the YDB reader does, and the note names that cause instead:
+	// blaming the account there would send the operator after a privilege that
+	// changes nothing.
+	if limit, limited := schema.NotDescribed.Limit(coverage.Role); limited {
+		cause := "this connection may not read the server's access catalog"
+		if limit.Reason == coverage.Unsupported {
+			cause = "Ptah does not read the roles of this database"
+		}
+		fmt.Fprintf(w,
+			"note: roles were not described, because %s; comparison withholds every declared"+
+				" role rather than planning a CREATE ROLE it could not verify.\n", cause)
 		return
 	}
 	if len(schema.RolesOutOfScope) == 0 {
