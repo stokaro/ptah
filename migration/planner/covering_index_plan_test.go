@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -76,4 +77,52 @@ func TestCompareIndexPayloadOnlyTheServerHolds(t *testing.T) {
 	diff := schemadiff.CompareWithDialect(parsePinSchema(c, "current"), database, platform.SQLServer)
 
 	c.Assert(diff.HasChanges(), qt.IsFalse)
+}
+
+// withPayload returns schema with the users_name_ix payload set to columns.
+func withPayload(schema *schemamodel.Database, columns ...string) *schemamodel.Database {
+	for i := range schema.Indexes {
+		if schema.Indexes[i].Name == "users_name_ix" {
+			schema.Indexes[i].IncludeColumns = columns
+		}
+	}
+	return schema
+}
+
+// TestCompareIndexPayloadLeavesOutCockroachDBImplicitPrimaryKey declares a
+// payload that names the table's primary key. CockroachDB holds the primary
+// key in every secondary index and ignores it in STORING or INCLUDE, so the
+// live index reads back without it, and the comparison must not plan a rebuild
+// for it on every run.
+func TestCompareIndexPayloadLeavesOutCockroachDBImplicitPrimaryKey(t *testing.T) {
+	tests := []struct {
+		name     string
+		declared []string
+		live     []string
+	}{
+		{name: "the primary key alone", declared: []string{"id"}},
+		{name: "the primary key beside another column", declared: []string{"id", "email"}, live: []string{"email"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			database := goschematodb.ToDBSchema(withPayload(parsePinSchema(c, "current"), test.live...), platform.CockroachDB)
+
+			diff := schemadiff.CompareWithDialect(withPayload(parsePinSchema(c, "current"), test.declared...), database, platform.CockroachDB)
+
+			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("%+v", diff.IndexesAdded))
+		})
+	}
+}
+
+// TestCompareIndexPayloadKeepsAPrimaryKeyPayloadOnPostgreSQL is the control:
+// PostgreSQL keeps a primary-key column in INCLUDE as declared, so the same
+// declaration against a live index without it is a change there.
+func TestCompareIndexPayloadKeepsAPrimaryKeyPayloadOnPostgreSQL(t *testing.T) {
+	c := qt.New(t)
+	database := goschematodb.ToDBSchema(parsePinSchema(c, "current"), platform.Postgres)
+
+	diff := schemadiff.CompareWithDialect(withPayload(parsePinSchema(c, "current"), "id"), database, platform.Postgres)
+
+	c.Assert(diff.HasChanges(), qt.IsTrue)
 }

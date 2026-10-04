@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/constraintowner"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/indexbacking"
 	"ptah.run/internal/indexscope"
@@ -139,6 +140,9 @@ func IndexesWithSemantics(
 	indexes map[string]config.IndexExpression,
 ) {
 	genIndexes, ambiguousGenerated := collectGeneratedIndexes(desired, semantics)
+	if platform.NormalizeDialect(dialect) == platform.CockroachDB {
+		withoutImplicitPrimaryKeyPayload(genIndexes, desired, semantics)
+	}
 	owned := constraintBackedIndexIdentities(database, dialect, semantics)
 	dbIndexes := collectDatabaseIndexes(
 		database,
@@ -194,6 +198,66 @@ func collectGeneratedIndexes(
 		indexes[identity] = entry
 	}
 	return indexes, ambiguous
+}
+
+// withoutImplicitPrimaryKeyPayload removes the owning table's primary-key
+// columns from each declared CockroachDB index payload.
+//
+// CockroachDB holds the primary key in every secondary index already, so it
+// accepts a STORING or INCLUDE of a primary-key column and ignores it.
+// Measured on v26.3.2, `CREATE INDEX bad ON child (parent_id) STORING (id)`
+// answers `index "bad" already contains column "id" which is part of the
+// primary key and therefore implicit in all indexes`, and the index reads back
+// with no payload. Compared as declared, such an index differed from what the
+// server holds on every run and was planned again each time.
+//
+// The entries are rewritten with a fresh payload slice, so the desired schema
+// the caller handed in is not changed.
+func withoutImplicitPrimaryKeyPayload(
+	entries map[difftypes.IndexRef]generatedIndexEntry,
+	desired *schemamodel.Database,
+	semantics identifier.Semantics,
+) {
+	keys := declaredPrimaryKeys(desired, semantics)
+	for identity, entry := range entries {
+		key := keys[semantics.QualifiedTableIdentityKey(entry.ref.TableName)]
+		if len(key) == 0 || len(entry.index.IncludeColumns) == 0 {
+			continue
+		}
+		payload := make([]string, 0, len(entry.index.IncludeColumns))
+		for _, column := range entry.index.IncludeColumns {
+			if !slices.Contains(key, semantics.ColumnIdentityKey(column)) {
+				payload = append(payload, column)
+			}
+		}
+		entry.index.IncludeColumns = payload
+		entries[identity] = entry
+	}
+}
+
+// declaredPrimaryKeys returns each declared table's primary-key columns, keyed
+// by the table's identity, as column identities. A primary key is declared on
+// the table, on its columns, or as a PRIMARY KEY constraint, and each spelling
+// counts.
+func declaredPrimaryKeys(desired *schemamodel.Database, semantics identifier.Semantics) map[string][]string {
+	keys := make(map[string][]string, len(desired.Tables))
+	for _, table := range desired.Tables {
+		columns := slices.Concat(tablePrimaryKeyColumns(table), columnPrimaryKey(table, desired.Fields))
+		for _, constraint := range desired.Constraints {
+			if !strings.EqualFold(strings.TrimSpace(constraint.Type), "PRIMARY KEY") {
+				continue
+			}
+			if owner, found := constraintowner.Table(constraint, desired.Tables); found && owner.QualifiedName() == table.QualifiedName() {
+				columns = append(columns, constraint.Columns...)
+			}
+		}
+		identities := make([]string, 0, len(columns))
+		for _, column := range columns {
+			identities = append(identities, semantics.ColumnIdentityKey(column))
+		}
+		keys[semantics.QualifiedTableIdentityKey(table.QualifiedName())] = identities
+	}
+	return keys
 }
 
 // constraintOwnedIndexes is the database index identity of every constraint
