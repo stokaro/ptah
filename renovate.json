@@ -90,6 +90,17 @@
       "dependencyDashboardApproval": true
     },
     {
+      "description": "The ydb-25-1 integration service keeps YDB 25.1, the one line with a published support date, under the YDB live tests. The workflow pins local-ydb twice, and when a new line appears Renovate files both pins in one branch: the 26.2 pin moves to it as a minor update and the 25.1 pin as a major one, so approving the first would move the second. This rule lets a 25.1 patch through and nothing else, and matching on the current value leaves the 26.2 pin to the rule above. TestRenovate_KeepsTheYDB251ServiceOnItsLine requires it.",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "ydbplatform/local-ydb"
+      ],
+      "matchCurrentValue": "/^25\\.1\\./",
+      "allowedVersions": "/^25\\.1\\./"
+    },
+    {
       "description": "The clickhouse-legacy integration service is pinned below 24.11 deliberately: CHECK GRANT catalog visibility arrived in 24.11, and TestWriterDropDatabaseRealm_RejectsLegacyServerLive proves the realm-drop guard fails closed without it. Matching on the current value freezes only that pin and leaves the current clickhouse service free to update.",
       "matchDatasources": [
         "docker"
