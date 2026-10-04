@@ -372,7 +372,7 @@ type Refusal struct {
 // disabled changefeed, since no statement disables one. A spec built by hand
 // is held to the parse's rules too, because nothing else checks it.
 func Check(table string, spec ast.ChangefeedSpec, caps capability.Capabilities) *Refusal {
-	subject := fmt.Sprintf("changefeed %q of table %q", spec.Name, table)
+	subject := fmt.Sprintf("changefeed %q of %s", spec.Name, tableref.Phrase(table))
 	if !caps.Has(capability.Changefeeds) {
 		return &Refusal{Subject: subject, Key: capability.Changefeeds}
 	}

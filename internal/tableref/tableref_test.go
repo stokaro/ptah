@@ -97,3 +97,26 @@ func TestParse_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// TestPhrase pins both spellings. The quoted one is what every refusal naming
+// a table wrote before Phrase existed, so a change to it changes those
+// messages too.
+func TestPhrase(t *testing.T) {
+	tests := []struct {
+		name  string
+		table string
+		want  string
+	}{
+		{name: "named", table: "orders", want: `table "orders"`},
+		{name: "qualified", table: "audit.orders", want: `table "audit.orders"`},
+		{name: "quote in the name", table: `o"rders`, want: `table "o\"rders"`},
+		{name: "no name", table: "", want: "a table"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(tableref.Phrase(tt.table), qt.Equals, tt.want)
+		})
+	}
+}

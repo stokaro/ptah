@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbgap"
 	"ptah.run/internal/ydbindex"
 )
@@ -194,7 +195,7 @@ func (r *Renderer) inlineIndex(table string, index *ast.IndexNode, keyColumns []
 		return ydbType, declared
 	}
 	if reason := ydbindex.ShapeRefusal(clause.columns, clause.cover, keyColumns, columnType); reason != "" {
-		return indexClause{}, refuseFact(fmt.Sprintf("index %q on table %q", index.Name, table), reason)
+		return indexClause{}, refuseFact(fmt.Sprintf("index %q on %s", index.Name, tableref.Phrase(table)), reason)
 	}
 	return clause, nil
 }
@@ -204,7 +205,14 @@ func (r *Renderer) inlineIndex(table string, index *ast.IndexNode, keyColumns []
 // input 'CREATE INDEX'`). A unique one is refused on a target without
 // [capability.UniqueIndexOnExistingTable]; a new table's unique index is
 // written inside its CREATE TABLE instead, where every line accepts it.
+//
+// The index names its own table here, so an index naming none is refused here.
+// An index an ALTER TABLE carries takes the ALTER's table instead, and that
+// path does not repeat the check: the ALTER is what names the table.
 func (r *Renderer) renderIndex(index *ast.IndexNode) error {
+	if index != nil && strings.TrimSpace(index.Table) == "" {
+		return refuseFact(fmt.Sprintf("index %q", index.Name), "YDB adds an index through its table, and the index names none")
+	}
 	statements, err := r.addIndexStatements(index)
 	if err != nil {
 		return err
@@ -223,14 +231,12 @@ func (r *Renderer) addIndexStatements(index *ast.IndexNode) ([]string, error) {
 	}
 	subject := fmt.Sprintf("index %q", index.Name)
 	switch {
-	case strings.TrimSpace(index.Table) == "":
-		return nil, refuseFact(subject, "YDB adds an index through its table, and the index names none")
 	case index.IfNotExists:
 		return nil, refuseFact(subject, "YDB's ADD INDEX has no IF NOT EXISTS guard")
 	case index.Unique && !r.caps.Has(capability.UniqueIndexOnExistingTable):
 		return nil, refuseKey(capability.UniqueIndexOnExistingTable, fmt.Sprintf(
-			"unique %s is added to table %q, which exists already (declare it with the table, or enable the flag on the cluster)",
-			subject, index.Table))
+			"unique %s is added to %s, which exists already (declare it with the table, or enable the flag on the cluster)",
+			subject, tableref.Phrase(index.Table)))
 	}
 	clause, err := r.indexClauseOf(index)
 	if err != nil {
@@ -246,9 +252,9 @@ func (r *Renderer) addIndexStatements(index *ast.IndexNode) ([]string, error) {
 // setIndexPartitioning writes the ALTER INDEX that changes an existing index's
 // partitioning in place, refusing the change YDB cannot make that way.
 func (r *Renderer) setIndexPartitioning(table string, op *ast.SetIndexPartitioningOperation) ([]string, error) {
-	subject := fmt.Sprintf("index %q of table %q", op.IndexName, table)
+	subject := fmt.Sprintf("index %q of %s", op.IndexName, tableref.Phrase(table))
 	if strings.TrimSpace(op.IndexName) == "" {
-		return nil, refuseFact(fmt.Sprintf("table %q", table), "ALTER INDEX ... SET names no index")
+		return nil, refuseFact(tableref.Phrase(table), "ALTER INDEX ... SET names no index")
 	}
 	if !r.caps.Has(capability.IndexPartitioning) {
 		return nil, refuseKey(capability.IndexPartitioning, "changing the partitioning of "+subject)
