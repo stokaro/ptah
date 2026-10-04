@@ -14,6 +14,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/internal/dbreset"
+	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlrunner"
 )
@@ -501,7 +502,7 @@ func (w *Writer) listCleanupObjects(
 		WHERE schema = ?
 		  AND type IN ('table', 'view', 'virtual')
 		  AND name NOT LIKE 'sqlite\_%' ESCAPE '\'
-		  AND (? OR name NOT IN ('schema_migrations', 'schema_migrations_log'))
+		  AND (? OR name NOT IN (` + revisiontable.NativeSQLNames + `))
 		ORDER BY CASE type WHEN 'view' THEN 0 ELSE 1 END, name
 	`
 	rows, err := tx.QueryContext(ctx, query, w.cleanupSchema(), includeRevisionTable)

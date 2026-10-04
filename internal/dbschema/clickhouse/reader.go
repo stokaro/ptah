@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/chrefresh"
+	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/sqlrunner"
 )
 
@@ -105,12 +106,15 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: read materialized views: %w", err)
 	}
-	schema := &catalog.Database{
+	// Ptah's own revision tables are bookkeeping, not schema. Reported, they
+	// read as tables no declaration has, and `migrations generate` planned a
+	// DROP for both once a migration had been applied (stokaro/ptah#4029).
+	schema := revisiontable.Without(&catalog.Database{
 		Tables:   tables,
 		Indexes:  indexes,
 		Views:    views,
 		MatViews: matViews,
-	}
+	}, revisiontable.NativeNames())
 	if r.caps.Has(capability.RoleManagement) {
 		if err := r.readRBACInto(ctx, dbName, schema); err != nil {
 			// An account that may not read the access catalog must not lose the

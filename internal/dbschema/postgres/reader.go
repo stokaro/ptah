@@ -20,6 +20,7 @@ import (
 	"ptah.run/internal/pgdefaultacl"
 	"ptah.run/internal/pgindexstorage"
 	"ptah.run/internal/reservedrole"
+	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/rolescope"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
@@ -469,7 +470,7 @@ func (r *Reader) readTablesForSchema(ctx context.Context, schemaName string) ([]
 			` + r.rowStatisticsJoin() + `
 			WHERE t.table_schema = $1
 			AND t.table_type = 'BASE TABLE'
-			AND t.table_name NOT IN ('schema_migrations', 'schema_migrations_log')
+			AND t.table_name NOT IN (` + revisiontable.NativeSQLNames + `)
 			ORDER BY table_schema, table_name`
 
 	rows, err := r.db.QueryContext(ctx, tablesQuery, schemaName)
@@ -871,7 +872,7 @@ func (r *Reader) readColumnsForSchema(ctx context.Context, schemaName string) (m
 			AND NOT a.attisdropped
 		LEFT JOIN pg_attrdef ad ON ad.adrelid = a.attrelid AND ad.adnum = a.attnum
 		WHERE col.table_schema = $1
-		AND col.table_name NOT IN ('schema_migrations', 'schema_migrations_log')
+		AND col.table_name NOT IN (` + revisiontable.NativeSQLNames + `)
 		` + r.hiddenColumnFilter() + `
 		ORDER BY col.table_name, col.ordinal_position`
 
@@ -1671,7 +1672,7 @@ func (r *Reader) readIndexesForSchema(ctx context.Context, schemaName string) ([
 		JOIN pg_namespace n ON n.oid = t.relnamespace
 		JOIN pg_am am ON am.oid = i.relam
 		WHERE n.nspname = $1
-		AND t.relname NOT IN ('schema_migrations', 'schema_migrations_log')
+		AND t.relname NOT IN (` + revisiontable.NativeSQLNames + `)
 		ORDER BY t.relname, i.relname`
 
 	rows, err := r.db.QueryContext(ctx, indexesQuery, schemaName)
@@ -2228,7 +2229,7 @@ func (r *Reader) basicConstraintsQuery() string {
 			ON foreign_column.attrelid = pc.confrelid
 			AND foreign_column.attnum = foreign_key_columns.foreign_attnum
 		WHERE tc.table_schema = $1
-		AND tc.table_name NOT IN ('schema_migrations', 'schema_migrations_log')
+		AND tc.table_name NOT IN (` + revisiontable.NativeSQLNames + `)
 		-- A NOT NULL is the column's, and its name is read with the column; see
 		-- notNullConstraintNameExpr. PostgreSQL 18 catalogs each one in
 		-- pg_constraint as contype 'n', and information_schema lists it as a
@@ -2559,7 +2560,7 @@ func (r *Reader) readPostgreSQLConstraintsForSchema(ctx context.Context, schemaN
 		LEFT JOIN pg_class ic ON ic.oid = c.conindid
 		WHERE c.contype IN ('x')  -- 'x' = exclusion constraint (add more types as needed)
 		AND n.nspname = $1
-		AND cl.relname NOT IN ('schema_migrations', 'schema_migrations_log')
+		AND cl.relname NOT IN (` + revisiontable.NativeSQLNames + `)
 		ORDER BY cl.relname, c.conname`
 
 	rows, err := r.db.QueryContext(ctx, pgQuery, schemaName)
@@ -3438,7 +3439,7 @@ func (r *Reader) readViewsForSchema(ctx context.Context, schemaName string) ([]c
 			ON v.table_schema = n.nspname AND v.table_name = c.relname
 		WHERE n.nspname = $1
 		AND c.relkind = 'v'
-		AND c.relname NOT IN ('schema_migrations', 'schema_migrations_log')
+		AND c.relname NOT IN (` + revisiontable.NativeSQLNames + `)
 		ORDER BY c.relname`
 
 	rows, err := r.db.QueryContext(ctx, viewsQuery, schemaName)
