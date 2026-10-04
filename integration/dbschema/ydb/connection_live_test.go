@@ -11,6 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
@@ -281,7 +282,8 @@ func TestYDBWriter_StatementsSucceedByStatus(t *testing.T) {
 }
 
 // An object Ptah does not model is recorded by the read, not dropped from it
-// in silence, and a table setting is recorded the same way.
+// in silence, and a table setting is recorded the same way. The table's TTL
+// is its row deletion policy, which the read describes.
 func TestYDBReader_RecordsWhatItDoesNotModel(t *testing.T) {
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
@@ -295,7 +297,7 @@ func TestYDBReader_RecordsWhatItDoesNotModel(t *testing.T) {
 			})
 			for _, statement := range []string{
 				"CREATE TABLE `ptah_ydb_connection/base` (`id` Int64 NOT NULL, `ts` Timestamp, PRIMARY KEY (`id`)) " +
-					"WITH (TTL = Interval('P1D') ON `ts`)",
+					"WITH (TTL = Interval('P1D') ON `ts`, AUTO_PARTITIONING_BY_LOAD = ENABLED)",
 				"CREATE VIEW `ptah_ydb_connection/v` WITH (security_invoker = TRUE) AS SELECT 1 AS a",
 				"CREATE TOPIC `ptah_ydb_connection/events`",
 				"CREATE TABLE `ptah_ydb_connection/olap` (`id` Int64 NOT NULL, PRIMARY KEY (`id`)) " +
@@ -310,7 +312,10 @@ func TestYDBReader_RecordsWhatItDoesNotModel(t *testing.T) {
 			c.Assert(live.NotDescribed.Describes(coverage.View, "ptah_ydb_connection.v"), qt.IsFalse)
 			c.Assert(live.NotDescribed.Describes(coverage.Topic, "ptah_ydb_connection.events"), qt.IsFalse)
 			c.Assert(live.NotDescribed.Describes(coverage.ColumnTable, "ptah_ydb_connection.olap"), qt.IsFalse)
-			c.Assert(live.NotDescribed.Describes(coverage.TTL, "ptah_ydb_connection.base"), qt.IsFalse)
+			c.Assert(live.NotDescribed.Describes(coverage.TableOption, "ptah_ydb_connection.base"), qt.IsFalse)
+			c.Assert(live.NotDescribed.Describes(coverage.TTL, "ptah_ydb_connection.base"), qt.IsTrue)
+			c.Assert(tableNamed(c, live, connectionSchema, "base").RowDeletionPolicy, qt.DeepEquals,
+				&ast.RowDeletionPolicySpec{Column: "ts", Interval: "P1D"})
 		})
 	}
 }
