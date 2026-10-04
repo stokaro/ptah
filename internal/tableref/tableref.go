@@ -1,7 +1,11 @@
-// Package tableref parses and formats structural table references.
+// Package tableref parses and formats structural table references, and names
+// a table in a message.
 package tableref
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // Ref is a structural table reference.
 type Ref struct {
@@ -28,6 +32,21 @@ func CanonicalExact(schema, name string) string {
 		return canonicalExactPart(name)
 	}
 	return canonicalExactPart(schema) + "." + canonicalExactPart(name)
+}
+
+// Phrase is how a message names table: `table "orders"`, or `a table` when
+// the name is empty.
+//
+// An alter operation that reaches a renderer without its ALTER TABLE is
+// checked against an ALTER TABLE that names no table, and the refusal that
+// check returns is the one the caller sees. Written through Phrase, that
+// refusal reads `changing the changefeeds of a table` rather than naming a
+// table called "".
+func Phrase(table string) string {
+	if table == "" {
+		return "a table"
+	}
+	return fmt.Sprintf("table %q", table)
 }
 
 // Parse parses an unqualified or schema-qualified SQL identifier reference.

@@ -6,6 +6,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbgap"
 	"ptah.run/internal/ydbtype"
@@ -47,7 +48,7 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 //nolint:gocyclo // one arm per operation kind; splitting the table hides which kinds it answers
 func (r *Renderer) alterStatement(table string, operation ast.AlterOperation) ([]string, error) {
 	prefix := "ALTER TABLE " + tablePath(table) + " "
-	subject := fmt.Sprintf("table %q", table)
+	subject := tableref.Phrase(table)
 	switch op := operation.(type) {
 	case *ast.AddColumnOperation:
 		clause, err := r.addColumn(table, op)
@@ -158,9 +159,9 @@ func (r *Renderer) setRowDeletionPolicy(prefix, subject string, op *ast.SetRowDe
 // supported now` on 25.1).
 func (r *Renderer) addColumn(table string, op *ast.AddColumnOperation) (string, error) {
 	if op.Column == nil {
-		return "", refuseFact(fmt.Sprintf("table %q", table), "ADD COLUMN carries no column")
+		return "", refuseFact(tableref.Phrase(table), "ADD COLUMN carries no column")
 	}
-	subject := fmt.Sprintf("adding column %q to table %q", op.Column.Name, table)
+	subject := fmt.Sprintf("adding column %q to %s", op.Column.Name, tableref.Phrase(table))
 	mapping, err := ydbtype.Map(op.Column.Type, r.caps)
 	hasDefault := op.Column.Default != nil && (op.Column.Default.HasLiteral() || op.Column.Default.Expression != "")
 	switch {
@@ -206,9 +207,9 @@ func (r *Renderer) dropColumn(prefix, subject string, op *ast.DropColumnOperatio
 // which YDB has no counterpart for.
 func (r *Renderer) modifyColumn(prefix, table string, op *ast.ModifyColumnOperation) ([]string, error) {
 	if op.Column == nil {
-		return nil, refuseFact(fmt.Sprintf("table %q", table), "the column modification carries no column")
+		return nil, refuseFact(tableref.Phrase(table), "the column modification carries no column")
 	}
-	subject := fmt.Sprintf("column %q of table %q", op.Column.Name, table)
+	subject := fmt.Sprintf("column %q of %s", op.Column.Name, tableref.Phrase(table))
 	if !op.HasChanged {
 		return nil, refuseFact(subject, "YDB has no MODIFY COLUMN; a column changes only its NOT NULL and its default in place")
 	}
@@ -240,7 +241,7 @@ func (r *Renderer) modifyColumn(prefix, table string, op *ast.ModifyColumnOperat
 
 // alterColumn writes one ALTER COLUMN action.
 func (r *Renderer) alterColumn(prefix, table string, op *ast.AlterColumnOperation) ([]string, error) {
-	subject := fmt.Sprintf("column %q of table %q", op.ColumnName, table)
+	subject := fmt.Sprintf("column %q of %s", op.ColumnName, tableref.Phrase(table))
 	var statement string
 	var err error
 	switch op.Action {
@@ -317,7 +318,7 @@ func (r *Renderer) columnDefault(prefix, subject, column, declaredType string, v
 // changes and it has no other constraint.
 func (r *Renderer) addConstraint(table string, op *ast.AddConstraintOperation) ([]string, error) {
 	if op.Constraint != nil && op.Constraint.Type == ast.PrimaryKeyConstraint {
-		return nil, r.keyed(capability.PrimaryKeyAlterable, "key change", fmt.Sprintf("adding a primary key to table %q", table))
+		return nil, r.keyed(capability.PrimaryKeyAlterable, "key change", "adding a primary key to "+tableref.Phrase(table))
 	}
 	if err := r.refuseConstraint(table, op.Constraint); err != nil {
 		return nil, err
@@ -333,7 +334,7 @@ func (r *Renderer) addConstraint(table string, op *ast.AddConstraintOperation) (
 // names.
 func (r *Renderer) addIndex(table string, index *ast.IndexNode) ([]string, error) {
 	if index == nil {
-		return nil, refuseFact(fmt.Sprintf("table %q", table), "ADD INDEX carries no index")
+		return nil, refuseFact(tableref.Phrase(table), "ADD INDEX carries no index")
 	}
 	withTable := *index
 	withTable.Table = table
@@ -375,7 +376,7 @@ func (r *Renderer) renderDropTable(node *ast.DropTableNode) error {
 // AddChangefeedOperation after a DropChangefeedOperation, so an operation
 // built by hand cannot report an option changed while it is not.
 func (r *Renderer) alterChangefeedTopic(table string, op *ast.AlterChangefeedTopicOperation) ([]string, error) {
-	subject := fmt.Sprintf("changefeed %q of table %q", op.Changefeed.Name, table)
+	subject := fmt.Sprintf("changefeed %q of %s", op.Changefeed.Name, tableref.Phrase(table))
 	if err := r.checkChangefeed(table, op.Changefeed); err != nil {
 		return nil, err
 	}
