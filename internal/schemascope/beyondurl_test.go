@@ -47,6 +47,52 @@ func TestUnion(t *testing.T) {
 	}
 }
 
+// TestWiden pins how a read scope grows to cover a desired state's schemas. A
+// list of names grows as [schemascope.Union] grows it. The reader's default on
+// a connection that names no schema, which is every directory of a YDB
+// database, does not grow at all: naming the directory a document declares
+// would narrow the read to it and lose the tables at the database root.
+func TestWiden(t *testing.T) {
+	tests := []struct {
+		name string
+		info catalog.ServerInfo
+		base []string
+		more []string
+		want []string
+	}{
+		{
+			name: "a list of names gains the declared ones",
+			info: catalog.ServerInfo{Dialect: "postgres", URL: "postgres://localhost/db?search_path=public", Schema: "public"},
+			base: []string{"public"},
+			more: []string{"extra"},
+			want: []string{"extra", "public"},
+		},
+		{
+			name: "the reader's default on a connection naming no schema stays the default",
+			info: catalog.ServerInfo{Dialect: "ydb", URL: "ydb://localhost:2136/local"},
+			base: nil,
+			more: []string{"shop"},
+			want: nil,
+		},
+		{
+			// A whole MySQL server with no database yet lists no names, and
+			// the declared database is the one to read.
+			name: "a realm that listed nothing gains the declared names",
+			info: catalog.ServerInfo{Dialect: "mysql", URL: "mysql://localhost/", WholeServer: true},
+			base: nil,
+			more: []string{"app"},
+			want: []string{"app"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(schemascope.Widen(test.info, test.base, test.more), qt.DeepEquals, test.want)
+		})
+	}
+}
+
 // TestBeyondURL pins which schemas a saved plan has to carry for its
 // verification read to cover what its planning read did (stokaro/ptah#3285).
 //

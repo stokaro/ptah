@@ -99,6 +99,26 @@ func Union(base, more []string) []string {
 	return names
 }
 
+// Widen is the read scope that covers base and every schema in more, where base
+// is what [ReadNames] answered for the connection info describes.
+//
+// A connection whose dialect names no schema and is not at realm scope got no
+// names from ReadNames, which leaves the reader on its own default. That is
+// YDB, where a schema is a directory, the database root has no name to list,
+// and the reader's default is every directory of the database. Adding a name
+// to that default would narrow the read to the name, so a document declaring a
+// directory beside tables at the root would read only the directory, and plan
+// to create the root tables that are already there. The default therefore
+// stays the default. Every other base is a list of names, and Widen is
+// [Union].
+func Widen(info catalog.ServerInfo, base, more []string) []string {
+	if base == nil && connectedSchemaNames(info) == nil &&
+		!schemaselection.Realm(info.Dialect, info.URL, info.Schema) {
+		return nil
+	}
+	return Union(base, more)
+}
+
 // BeyondURL is the part of scope that asking [ReadNames] again later, with no
 // explicit selection, may not cover. urlScope is what ReadNames answered for the
 // same connection when scope was read.
