@@ -426,6 +426,7 @@ func TestRevisionTableCoverageMatchesWriterBehavior(t *testing.T) {
 		{name: "sqlserver hides both revision tables and drops them", dialect: "sqlserver", want: true},
 		{name: "sqlite hides schema_migrations but keeps it", dialect: "sqlite", want: false},
 		{name: "clickhouse hides nothing", dialect: "clickhouse", want: false},
+		{name: "ydb hides them in every directory and drops them", dialect: "ydb", want: true},
 		{name: "an unmeasured dialect probes nothing", dialect: "spanner", want: false},
 	}
 

@@ -108,8 +108,8 @@ func (q Qualifier) ValidateScope(dialect string, schemas []string) error {
 // the engine can do. The qualifier rewrites planned nodes -- table names, index
 // targets, drop targets -- into schema-qualified form, and the risk of turning
 // it on for a dialect is that it writes a name that dialect reads differently.
-// None of the four has been exercised against a server that way, so none of
-// them is enabled, and each says what enabling it would take.
+// None of these has been exercised against a server that way, so none of them
+// is enabled, and each says what enabling it would take.
 var qualifierDialectRefusals = map[string]string{
 	platform.SQLite: "SQLite's qualified form names an ATTACHed database rather than a schema inside one, " +
 		"so a qualifier would have to be established as an attachment before any statement referencing it runs; " +
@@ -122,6 +122,9 @@ var qualifierDialectRefusals = map[string]string{
 		"dialect added to a list",
 	platform.Spanner: "Spanner renders through the PostgreSQL path but has no live coverage at all " +
 		"(stokaro/ptah#942), so a qualified plan could not be shown to apply",
+	platform.YDB: "a YDB schema is a directory and a table one quoted path, `dir/t`, so a qualifier would have " +
+		"to be written into each path, while the qualifier writes a schema-qualified name, which YQL reads as a " +
+		"cluster and a table; enabling it needs path rewriting and a live round trip",
 }
 
 func qualifierSupportsDialect(dialect string) bool {

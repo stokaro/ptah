@@ -4,14 +4,15 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"path"
 	"strings"
-	"time"
 
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/internal/sqlident"
+	"ptah.run/internal/ydbready"
 	"ptah.run/internal/ydbtype"
 	"ptah.run/internal/ydburl"
 )
@@ -393,40 +394,28 @@ func (s *session) confirmNamespace(ctx context.Context) ([]Attempt, error) {
 // of the run, and returns every attempt it took.
 //
 // On YDB it waits out the moment a fresh server answers queries and refuses
-// to create a table. Measured on local-ydb 26.2.1.14, started three times: for
-// about a second after `SELECT Version()` first answers, a CREATE TABLE fails
-// with `database doesn't have storage pools at all`, and no read-only query
-// tells that second apart from the ones after it. The connection the matrix
-// waits for is therefore not yet a server that can be measured, and the
-// sentinel is retried while the server says so, a bounded number of times.
+// to create a table, through [ydbready.Until]: the connection the matrix waits
+// for is not yet a server that can be measured, and the sentinel is retried
+// while the server says so, a bounded number of times.
 func (s *session) createSentinel(ctx context.Context) []Attempt {
 	var attempts []Attempt
-	waits := platform.NormalizeDialect(s.dialect) == platform.YDB
-	for try := 0; ; try++ {
+	try := func(context.Context) error {
 		created := s.exec(ctx, sentinelTableSQL(s.dialect))
 		attempts = append(attempts, created)
-		if created.Accepted || !waits || try == sentinelRetries ||
-			!strings.Contains(created.ServerErr, ydbStorageNotReady) {
-			return attempts
+		if created.Accepted {
+			return nil
 		}
-		select {
-		case <-ctx.Done():
-			return attempts
-		case <-time.After(sentinelRetryInterval):
-		}
+		return errors.New(created.ServerErr)
 	}
+	// The attempts carry every answer, so the error each call returns, which
+	// repeats the last of them, is not kept.
+	if platform.NormalizeDialect(s.dialect) != platform.YDB {
+		_ = try(ctx)
+		return attempts
+	}
+	_ = ydbready.Until(ctx, try)
+	return attempts
 }
-
-// ydbStorageNotReady is the refusal a YDB database answers a CREATE TABLE
-// with before its storage is bound.
-const ydbStorageNotReady = "doesn't have storage pools"
-
-// sentinelRetries and sentinelRetryInterval bound the wait createSentinel
-// spends on a YDB database that is still binding its storage.
-const (
-	sentinelRetries       = 60
-	sentinelRetryInterval = time.Second
-)
 
 // occupancySQL counts the tables on the server that are not the catalog's own.
 // The sentinel is dropped before this runs, so a server the probe has to itself

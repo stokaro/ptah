@@ -207,6 +207,23 @@ type engine struct {
 	// database is created once the server is ready; see
 	// [Spec.CreatesDatabase].
 	createsDatabase bool
+	// defaultDatabase is the database a URL that names none connects to, when
+	// it is not [DefaultDatabase].
+	defaultDatabase string
+	// databases, when set, lists the only databases the image serves; a URL
+	// naming another is refused.
+	databases []string
+	// routing are the engine's own parameters that would point the
+	// connection away from the container, refused as [routingParams] are.
+	routing []string
+	// anonymous reports a server that takes every connection without a
+	// credential, which no password generated here can change. Such a
+	// server is started only by a container runtime on this machine, where
+	// its port is published on loopback; see [Provision].
+	anonymous bool
+	// ready, when set, is the engine's readiness probe in place of
+	// [Connectable].
+	ready ReadyFunc
 }
 
 // postgresEnv is the container environment of an image built on the official
@@ -304,6 +321,31 @@ var engines = map[string]engine{
 	},
 	"maria":   mariaEngine,
 	"mariadb": mariaEngine,
+	// local-ydb serves the one database /local and takes every connection
+	// without a credential. It advertises its node through discovery under
+	// the container's host name, which nothing outside the container
+	// resolves, so the URL disables the balancer and the SDK connects to the
+	// published port it was given; measured on 26.2.1.14 with a port the
+	// daemon chose and no --hostname, the connection reads the database at
+	// once. In-memory disks start the server fastest and hold nothing a
+	// throwaway database needs to keep.
+	"ydb": {
+		image: "ydbplatform/local-ydb",
+		port:  "2136",
+		env: func(_, _ string) []string {
+			return []string{"YDB_USE_IN_MEMORY_PDISKS=true"}
+		},
+		url: func(hostPort, database, _, query string) string {
+			return fmt.Sprintf("ydb://%s/%s%s", hostPort, url.PathEscape(database), querySuffix(query))
+		},
+		params:          map[string]string{"go_balancer": "disable"},
+		serverDatabase:  "local",
+		defaultDatabase: "local",
+		databases:       []string{"local"},
+		routing:         []string{"database", "dev_realm", "monitoring"},
+		anonymous:       true,
+		ready:           ydbReady,
+	},
 }
 
 // mariaEngine is shared by both spellings the pinned binary accepts for
@@ -355,8 +397,8 @@ var routingParams = []string{
 // 1 where that binary exits 0 here, which is a capability gap and not a safety
 // hole (AGENTS.md rule (a) runs the other way), and rule (b) is explicit that
 // matching is the floor.
-func refuseRoutingParams(operator url.Values) error {
-	for _, name := range routingParams {
+func refuseRoutingParams(operator url.Values, engineRouting []string) error {
+	for _, name := range slices.Concat(routingParams, engineRouting) {
 		if _, present := operator[name]; present {
 			return fmt.Errorf(
 				"docker --dev-url parameter %q would point the connection away from the"+
@@ -390,12 +432,13 @@ func querySuffix(query string) string {
 // who writes one has a reason the container cannot know. Keys the operator did
 // not mention survive, which is the half a naive "use the operator's query if
 // there is one" would drop.
-func mergeParams(defaults map[string]string, rawQuery string) (string, error) {
+func mergeParams(found engine, rawQuery string) (string, error) {
+	defaults := found.params
 	operator, err := url.ParseQuery(rawQuery)
 	if err != nil {
 		return "", fmt.Errorf("parse docker --dev-url parameters %q: %w", rawQuery, err)
 	}
-	if err := refuseRoutingParams(operator); err != nil {
+	if err := refuseRoutingParams(operator, found.routing); err != nil {
 		return "", err
 	}
 	merged := url.Values{}
@@ -505,6 +548,12 @@ func (s Spec) Port() string {
 	return s.engine.port
 }
 
+// Anonymous reports a server that takes every connection without a
+// credential, which is started only by a container runtime on this machine.
+func (s Spec) Anonymous() bool {
+	return s.engine.anonymous
+}
+
 // defaultParams encodes an engine's own parameters, with nothing merged in.
 func defaultParams(params map[string]string) string {
 	values := url.Values{}
@@ -574,7 +623,7 @@ func Parse(rawURL string) (Spec, error) {
 	if !ok || !known {
 		return Spec{}, unsupportedImageError(host)
 	}
-	tag, database, err := splitDockerPath(parsed.Path)
+	tag, database, err := splitDockerPath(parsed.Path, found)
 	if err != nil {
 		return Spec{}, err
 	}
@@ -583,7 +632,7 @@ func Parse(rawURL string) (Spec, error) {
 	// community binary v1.3.0 honors them, and a `?search_path=app` it answers
 	// `schema "app" was not found` (exit 1) was answered here by inspecting
 	// `public` and exiting 0 while they were being discarded.
-	query, err := mergeParams(found.params, parsed.RawQuery)
+	query, err := mergeParams(found, parsed.RawQuery)
 	if err != nil {
 		return Spec{}, err
 	}
@@ -620,7 +669,7 @@ func parseImageURL(parsed *url.URL, driver string) (Spec, error) {
 	if strings.Contains(database, "?") {
 		return Spec{}, fmt.Errorf("docker --dev-url database name %q contains a query separator", database)
 	}
-	query, err := mergeParams(found.params, parsed.RawQuery)
+	query, err := mergeParams(found, parsed.RawQuery)
 	if err != nil {
 		return Spec{}, err
 	}
@@ -662,10 +711,32 @@ func splitImagePath(host, urlPath string) (image, database string) {
 // One segment is a TAG, not a database: measured, `docker://postgres/dev` makes
 // the pinned binary look for the image `postgres:dev`. Reading it as a database
 // name would silently run a different image than the operator asked for.
-func splitDockerPath(urlPath string) (tag, database string, err error) {
+//
+// An engine whose image serves fixed databases defaults to its own and refuses
+// any other: local-ydb serves /local alone, so `docker://ydb/26.2.1.14/dev`
+// names a database nothing in the container can hold.
+func splitDockerPath(urlPath string, found engine) (tag, database string, err error) {
+	tag, database, err = splitDockerSegments(urlPath, found)
+	if err != nil {
+		return "", "", err
+	}
+	if len(found.databases) > 0 && !slices.Contains(found.databases, database) {
+		return "", "", fmt.Errorf("docker --dev-url database %q is not one the %s image serves: name %s",
+			database, found.image, strings.Join(found.databases, " or "))
+	}
+	return tag, database, nil
+}
+
+// splitDockerSegments reads the tag and database name out of a docker URL path,
+// with the engine's default database when it names none.
+func splitDockerSegments(urlPath string, found engine) (tag, database string, err error) {
+	defaultDatabase := DefaultDatabase
+	if found.defaultDatabase != "" {
+		defaultDatabase = found.defaultDatabase
+	}
 	trimmed := strings.Trim(urlPath, "/")
 	if trimmed == "" {
-		return DefaultTag, DefaultDatabase, nil
+		return DefaultTag, defaultDatabase, nil
 	}
 	segments := strings.Split(trimmed, "/")
 	if len(segments) > 2 {
@@ -675,7 +746,7 @@ func splitDockerPath(urlPath string) (tag, database string, err error) {
 	if tag == "" {
 		return "", "", fmt.Errorf("docker --dev-url image tag is empty")
 	}
-	database = DefaultDatabase
+	database = defaultDatabase
 	if len(segments) == 2 {
 		database = segments[1]
 		if database == "" {

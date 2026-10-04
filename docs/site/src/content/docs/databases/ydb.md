@@ -32,8 +32,8 @@ against live YDB 26.2 and 25.1 servers. The nightly capability matrix runs the
 same suite on each YDB line it probes.
 
 `ptah-compat` takes a YDB URL on every verb; see [ptah-compat](#ptah-compat).
-Dev databases, inference and the YDB object families such as TTL, column
-families, changefeeds, views and vector indexes are not supported yet. See
+Inference and the YDB object families such as TTL, column families,
+changefeeds, views and vector indexes are not supported yet. See
 [What is not supported yet](#what-is-not-supported-yet).
 
 ## Connecting
@@ -60,9 +60,11 @@ Credentials come from exactly one source:
 
 Besides `database`, `token` and `use_env_credentials`, a URL may carry the SDK
 parameters `go_balancer`, `go_default_idempotent` and
-`prefetch_query_result_parts`, and `monitoring`, which names the cluster's
-monitoring endpoint (see [Feature flags](#feature-flags)). Any other parameter
-is refused with the list of the accepted ones.
+`prefetch_query_result_parts`, `monitoring`, which names the cluster's
+monitoring endpoint (see [Feature flags](#feature-flags)), and `dev_realm`,
+which Ptah writes when it gives a run a dev database of its own (see
+[Dev, shadow and scratch databases](#dev-shadow-and-scratch-databases)). Any
+other parameter is refused with the list of the accepted ones.
 
 A server in a container on another host advertises its node through discovery
 as `localhost:2136`, which the client cannot reach. Connect to such a server
@@ -79,7 +81,9 @@ schema is a directory relative to the database root, and the root by default.
 A table `orders` in the schema `shop` is the path `shop/orders`, written as one
 backticked name. Creating the table creates its directories. Ptah never reads
 or writes a directory whose name starts with a dot, such as `.sys` or
-`.metadata`.
+`.metadata`. Two names at the database root are Ptah's own and never part of a
+schema it reads, plans or drops: the coordination node `ptah_locks` and the
+directory `ptah_dev`.
 
 Names are case-sensitive: `Users` and `users` are two tables. Ptah always
 quotes a name with backticks and escapes a backtick or a backslash inside it.
@@ -510,8 +514,10 @@ reads. [Lint rules](../../reference/lint-rules/#ydb) lists each rule with its
 meaning.
 
 `YD104` and `YD106` read the indexes, TTL and views the directory's own
-earlier migrations declare, because a YDB database cannot be a dev database
-yet; a table the directory never created is unknown to them. The rules for
+earlier migrations declare; a table the directory never created is unknown to
+them. With `--dev-url`, lint first replays the directory in a
+[dev realm](#dev-shadow-and-scratch-databases), so a statement YDB refuses fails
+the run, and the rules that read a baseline schema read it there. The rules for
 every dialect run too, and the
 [lint rules](../../reference/lint-rules/#what-the-rules-for-every-dialect-do-on-ydb)
 say what each does on YDB.
@@ -591,6 +597,64 @@ writes no such statement itself: declared rows are written with `INSERT`,
 `UPDATE` and `DELETE`, and the tables Ptah keeps for migrations and seeds have no
 secondary index.
 
+## Dev, shadow and scratch databases
+
+SQL cannot create a YDB database, so a dev, shadow or test database on YDB is a
+dev realm: a directory Ptah creates for the run under `ptah_dev` in the
+database the URL names, and removes when the run ends. Every query the run
+sends starts with `PRAGMA TablePathPrefix` naming the realm, and the run reads
+and resets only what is under it, so it works in an empty database of its own:
+
+```bash
+ptah migrations validate --dir migrations --dev-url "ydb://localhost:2136/local"
+```
+
+A run that reads or changes a database leaves `ptah_dev` out, as it leaves out
+`ptah_locks`. So a `--dev-url` or `--shadow-db` may name the target database
+itself: a realm is never part of the target's schema, of a plan against it or
+of a `ptah db drop-all`. It may also name a database on another server. Two
+local-ydb servers both serve `local`, and every node of a cluster serves each
+of its databases, so Ptah does not tell databases apart by their URLs; the
+realm keeps the dev database apart from the target on either server. `ptah migrations test` and `ptah schema test` run their
+cases in one realm, and a case marked `parallel` in a realm of its own.
+
+Creating a realm needs the `ydb.granular.create_directory` right on the
+database, and removing it needs `ydb.granular.remove_schema`. A run that is
+killed before it removes its realm leaves `ptah_dev/<name>` behind; remove it
+with `ydb scheme rmdir -r ptah_dev/<name>`.
+
+The prefix confines every relative path, and replay refuses a statement whose
+effect it does not confine:
+
+- a write whose target is an absolute path, climbs out with `..`, is named
+  through a `$` expression or names a cluster, an `ALTER TABLE ... RENAME TO`
+  either, and `PRAGMA TablePathPrefix`;
+- `DEFINE ACTION`, `DO` and `EVALUATE`, which run statements they compute;
+- users, groups, `GRANT` and `REVOKE`, secrets, resource pools, backups and
+  `ALTER DATABASE`, which belong to the whole database;
+- a topic, which the reset has no statement to drop;
+- external data sources and tables, async replication, transfers and streaming
+  queries, which reach outside the server.
+
+A read outside the realm is allowed, since it leaves nothing behind.
+
+`docker://ydb/<tag>[/local]` starts `ydbplatform/local-ydb:<tag>` for one
+command and removes it afterwards. The image serves the one database `local`,
+so another database name is refused. The server is the run's own, so replay
+there runs everything in the list above except what reaches outside the
+server. local-ydb takes every connection without a credential, so a container
+runtime on another machine, which would publish the port on every interface of
+its host, is refused before anything starts:
+
+```bash
+ptah migrations validate --dir migrations --dev-url docker://ydb/26.2.1.14/local
+```
+
+`PTAH_DEV_SERVER_DISPOSABLE=1` makes the server a YDB dev URL names the run's
+own in the same way. The run then gets no realm: the database is the dev
+database, and it has to be empty. Ptah connects to both databases and refuses
+a dev database that is the target's own.
+
 ## ptah-compat
 
 No Atlas edition has a YDB driver, so YDB on `ptah-compat` is a Ptah
@@ -647,14 +711,15 @@ the variable. `migrate diff` reads it too, and plans with it once YDB can be its
 dev database. A malformed value fails the run before it does anything, and
 strict mode refuses the variable.
 
-Verbs that need a dev database are refused until YDB can be one: `migrate
-diff`, `migrate lint`, `migrate checkpoint`, `migrate validate --dev-url`,
-`schema plan validate` and `schema apply --plan`. Every local-ydb server serves
-the database `/local`, so two of them are refused as one database before that.
+A `--dev-url` or a project `dev` URL naming a YDB database gets a dev realm, as
+on the native commands; see
+[Dev, shadow and scratch databases](#dev-shadow-and-scratch-databases).
+`docker://ydb` starts a local-ydb server for the run in the default profile.
 
 `PTAH_ATLAS_STRICT_COMPAT=1` reproduces the community binary, which answers
 `sql/sqlclient: unknown driver "ydb". See: https://atlasgo.io/url` on every verb,
-with `ydbs` for a `ydbs://` URL. Strict mode refuses a YDB URL in those words
+with `ydbs` for a `ydbs://` URL, and `unsupported docker image "ydb"` for a
+`docker://ydb` dev URL. Strict mode refuses a YDB URL in those words
 wherever it comes from, a data source in `atlas.hcl` included; a `PTAH_*`
 variable is refused as a variable. See
 [Compatibility differences](../../atlas/retained-divergences/#a-ydb-database-url).
@@ -730,8 +795,6 @@ These are refused with a message that names what is missing:
 
 <!-- BEGIN GENERATED YDB GAPS -->
 - a YQL file as the desired schema (Go structs and YAML schemas work);
-- a scratch database for each case of `ptah migrations test` and `ptah schema test`, since YQL cannot create a database;
-- a YDB database as a dev or shadow database;
 - comments on tables, columns and indexes;
 - views;
 - users, groups and permissions;

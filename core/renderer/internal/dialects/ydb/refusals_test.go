@@ -290,7 +290,7 @@ func TestRender_RefusesWhatYDBCannotHold_FailurePath(t *testing.T) {
 		{name: "an upsert", node: ast.NewUpsert("t"),
 			wantErr: `upsert into t: YDB's UPSERT INTO matches on the primary key .*; build the statement with core/query's UpsertInto`},
 		{name: "a database", node: &ast.CreateDatabaseNode{Name: "d"},
-			wantErr: `CREATE DATABASE d: creating a YDB database is not implemented yet .*`},
+			wantErr: `CREATE DATABASE d: YDB has no CREATE DATABASE statement; a YDB database is created by the cluster's administrators`},
 		{name: "a dropped table with CASCADE", node: &ast.DropTableNode{Name: "t", Cascade: true},
 			wantErr: `DROP TABLE t CASCADE: YDB's DROP TABLE has no CASCADE; .*`},
 		{name: "an extension", node: &ast.ExtensionNode{Name: "pg_trgm"},

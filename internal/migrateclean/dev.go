@@ -2,7 +2,6 @@ package migrateclean
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -10,7 +9,6 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/dbreset"
 	"ptah.run/internal/devdocker"
-	"ptah.run/internal/ydbgap"
 )
 
 // NotCleanError is the refusal of a dev database that already holds objects,
@@ -54,11 +52,13 @@ func (e *NotCleanError) Error() string {
 // An error that is not a *NotCleanError means the catalog could not be read,
 // and the caller must not treat the database as clean.
 //
-// A YDB database is refused outright: the reset, the clean check and the
-// realm identity a dev run needs are not implemented for it yet.
+// A YDB dev database is the root its connection treats as its database: a
+// dev realm Ptah created for the run, which starts empty, or a whole database
+// on a server the run owns. It is clean when its writer's reset would drop
+// nothing; see [ydbDevRefusal].
 func DevRefusal(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 	if conn != nil && platform.NormalizeDialect(conn.Info().Dialect) == platform.YDB {
-		return errors.New(ydbgap.DevDatabases.Message())
+		return ydbDevRefusal(ctx, conn)
 	}
 	if StartsFromDeclaredState(conn) {
 		return nil
@@ -80,6 +80,32 @@ func DevRefusal(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 		return fmt.Errorf("clean check: %w", err)
 	}
 	return scope.DevRefusal()
+}
+
+// ydbDevRefusal is [DevRefusal] for YDB. The writer lists every object its
+// reset would drop, or refuse to drop, under the connection's root, and the
+// first of them refuses the database: `found table "t"` at the root, and
+// `found view "v" in schema "app"` in a directory, a YDB schema being a
+// directory. A directory refuses too, empty or not, as an empty schema does
+// on PostgreSQL at realm scope: the reset would remove it, and the run did not
+// create it. There is no binary to match; Atlas has no YDB driver.
+func ydbDevRefusal(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+	lister, ok := conn.SchemaWriter().(resetObjectLister)
+	if !ok {
+		return fmt.Errorf("the %s writer cannot list what its reset drops", platform.YDB)
+	}
+	objects, err := lister.ResetObjects(ctx, dbreset.Scope{})
+	if err != nil {
+		return fmt.Errorf("clean check: %w", err)
+	}
+	if len(objects) == 0 {
+		return nil
+	}
+	object := objects[0]
+	if object.Schema == "" {
+		return &NotCleanError{Reason: fmt.Sprintf("found %s %q", object.Kind, object.Name)}
+	}
+	return &NotCleanError{Reason: fmt.Sprintf("found %s %q in schema %q", object.Kind, object.Name, object.Schema)}
 }
 
 // StartsFromDeclaredState reports whether conn is a PostgreSQL dev database an
@@ -217,6 +243,9 @@ func keptDefaultPrivileges(schema string) dbreset.DefaultPrivilegeScope {
 //     not open (`unknown driver`), and neither does it open `cockroachdb://`
 //     or `yugabytedb://`. There is no sentence of its to match, and the
 //     refusal uses the shape of its others.
+//   - YDB, which no Atlas edition opens either. Its dev database is a root
+//     the connection treats as its database, read through the writer; see
+//     [DevRefusal].
 //
 // Oracle is checked although no run resets an Oracle dev database: the
 // replay's lock and the rehearsal's identity check both refuse one first. The
@@ -225,7 +254,7 @@ func GovernsDev(dialect string) bool {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
 		platform.MySQL, platform.MariaDB, platform.SQLite,
-		platform.SQLServer, platform.ClickHouse, platform.Oracle:
+		platform.SQLServer, platform.ClickHouse, platform.Oracle, platform.YDB:
 		return true
 	default:
 		return false
