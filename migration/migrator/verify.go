@@ -150,9 +150,13 @@ func VerifyChecks(
 	}
 
 	info := conn.Info()
+	reads, err := checkReadProof(ctx, conn, info.Dialect)
+	if err != nil {
+		return VerifyReport{}, err
+	}
 	report := VerifyReport{Results: make([]VerifyResult, 0, len(checks))}
 	for _, check := range checks {
-		result, err := verifyOneCheck(ctx, conn, info.Dialect, info.Version, check)
+		result, err := verifyOneCheck(ctx, conn, reads, info.Dialect, info.Version, check)
 		if err != nil {
 			return VerifyReport{}, err
 		}
@@ -171,6 +175,7 @@ func VerifyChecks(
 func verifyOneCheck(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
+	reads readProof,
 	dialect,
 	serverVersion string,
 	check Check,
@@ -181,7 +186,7 @@ func verifyOneCheck(
 		ctx,
 		checkTransactionOptions(dialect),
 		func(queryer dbschema.IsolatedQueryer) error {
-			value, err := runCheckAssertion(ctx, queryer, dialect, serverVersion, check.Assert)
+			value, err := runCheckAssertion(ctx, queryer, reads, dialect, serverVersion, check.Assert)
 			if err != nil {
 				if cause := context.Cause(ctx); cause != nil {
 					// The run ended, rather than the assertion answering. A

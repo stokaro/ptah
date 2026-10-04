@@ -21,11 +21,13 @@ import (
 // sdk is the driver the connections belong to, which [DriverOf] hands back;
 // it is nil for a connector [NewBindingConnector] built. prefix is written in
 // front of every query the connections run, and is empty unless the URL named
-// a dev realm.
+// a dev realm. root is the directory a relative name in those queries means:
+// the realm's, or the database's.
 type connector struct {
 	inner   driver.Connector
 	sdk     *ydbsdk.Driver
 	prefix  string
+	root    string
 	onClose func() error
 }
 
@@ -65,7 +67,7 @@ func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
 		_ = opened.Close()
 		return nil, fmt.Errorf("the YDB driver's connection %T no longer offers what Ptah binds through", opened)
 	}
-	return conn{sdkConn: sdk, driver: c.sdk, prefix: c.prefix}, nil
+	return conn{sdkConn: sdk, driver: c.sdk, prefix: c.prefix, root: c.root}, nil
 }
 
 // Driver returns the SDK's driver.
@@ -95,6 +97,7 @@ type conn struct {
 	sdkConn
 	driver *ydbsdk.Driver
 	prefix string
+	root   string
 }
 
 // ExecContext runs a statement after the connection's prefix and returns its
