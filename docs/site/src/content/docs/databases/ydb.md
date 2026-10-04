@@ -255,6 +255,12 @@ pair of indexes that swap names, or an index renamed onto a name the table
 still holds, is dropped and built again. The rollback of a planned migration
 renames the index back.
 
+A cluster that turns `EnableMoveIndex` off refuses the rename with
+`Move index is not supported yet`. When the URL names the cluster's monitoring
+endpoint, Ptah reads the flag and plans the renamed index as dropped and added
+again, under the rules for adding an index to an existing table (see
+[Feature flags](#feature-flags)).
+
 ## Planning changes
 
 YDB changes a table in place less than the SQL engines do, and runs a schema
@@ -367,6 +373,7 @@ The flags decide these capabilities:
 | `EnableSetDropDefaultValue` | `alter_column_default` |
 | `EnableTableDatetime64` | `wide_date_time_types` |
 | `EnableParameterizedDecimal` | `parameterized_decimal` |
+| `EnableMoveIndex` | `index_rename` |
 
 `EnableAsyncIndexes` decides no capability: a cluster with the flag off still
 builds a `GLOBAL ASYNC` index, so `async_indexes` keeps the preset's answer.

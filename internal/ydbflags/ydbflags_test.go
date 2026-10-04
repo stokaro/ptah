@@ -83,6 +83,12 @@ func TestRefine_HappyPath(t *testing.T) {
 			key:   capability.ParameterizedDecimal,
 			want:  true,
 		},
+		{
+			name:  "renaming an index follows its flag",
+			flags: ydbflags.Flags{"EnableMoveIndex": false},
+			key:   capability.IndexRename,
+			want:  false,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -135,6 +141,33 @@ func TestRefine_AsyncIndexesFlagOffKeepsThePreset(t *testing.T) {
 
 			c.Assert(refined.Has(capability.AsyncIndexes), qt.IsTrue)
 			c.Assert(refined, qt.DeepEquals, test.preset())
+		})
+	}
+}
+
+// A cluster that turned EnableMoveIndex off refuses ALTER TABLE ... RENAME
+// INDEX, measured on both certified lines with the flag off in the startup
+// configuration, which is what these pages were recorded from. The flag turns
+// index_rename off, so Ptah plans a drop and a create the server takes, and
+// leaves every other key as the line's preset has it.
+func TestRefine_MoveIndexFlagOffTurnsIndexRenameOff(t *testing.T) {
+	for _, test := range []struct {
+		page   string
+		preset func() capability.Capabilities
+	}{
+		{page: "local-ydb-26.2.1.14-move-index-off.json", preset: capability.YDB262},
+		{page: "local-ydb-25.1.4.7-move-index-off.json", preset: capability.YDB251},
+	} {
+		t.Run(test.page, func(t *testing.T) {
+			c := qt.New(t)
+			flags, err := ydbflags.Decode(page(c, test.page), "/local")
+			c.Assert(err, qt.IsNil)
+			c.Assert(test.preset().Has(capability.IndexRename), qt.IsTrue)
+
+			refined := flags.Refine(test.preset())
+
+			c.Assert(refined.Has(capability.IndexRename), qt.IsFalse)
+			c.Assert(refined, qt.DeepEquals, test.preset().With(capability.IndexRename, false))
 		})
 	}
 }
@@ -342,6 +375,19 @@ func TestRefused_HappyPath(t *testing.T) {
 				"(EnableParameterizedDecimal feature flag is off), code: 2003",
 			wantKey:  capability.ParameterizedDecimal,
 			wantFlag: "EnableParameterizedDecimal",
+		},
+		{
+			name: "26.2.1.14 renaming an index",
+			refusal: "Status: PRECONDITION_FAILED Issues: <main>: Error: Executing ESchemeOpMoveIndex, code: 2029 " +
+				"<main>: Error: Move index is not supported yet, code: 2029",
+			wantKey:  capability.IndexRename,
+			wantFlag: "EnableMoveIndex",
+		},
+		{
+			name:     "25.1.4.7 renaming an index",
+			refusal:  "Status: PRECONDITION_FAILED Issues: <main>: Error: Move index is not supported yet, code: 2029",
+			wantKey:  capability.IndexRename,
+			wantFlag: "EnableMoveIndex",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

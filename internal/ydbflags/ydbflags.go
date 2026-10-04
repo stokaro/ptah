@@ -92,6 +92,16 @@ var gates = []Gate{
 		Flag:     "EnableParameterizedDecimal",
 		refusals: []string{"EnableParameterizedDecimal feature flag is off"},
 	},
+	{
+		// On by default on every line, so it was measured the other way:
+		// turned off in the startup configuration of 26.2.1.14 and 25.1.4.7,
+		// and again at runtime through the dynamic configuration, ALTER TABLE
+		// ... RENAME INDEX answers PRECONDITION_FAILED with this text and the
+		// index keeps its name.
+		Key:      capability.IndexRename,
+		Flag:     "EnableMoveIndex",
+		refusals: []string{"Move index is not supported yet"},
+	},
 }
 
 // Gates returns every capability a flag decides, in a fixed order.
