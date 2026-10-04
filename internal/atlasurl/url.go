@@ -47,12 +47,32 @@ var dockerEngineDialects = map[string]string{
 	"mariadb":  platform.MariaDB,
 }
 
+// dockerExtensionEngines are the engines Ptah starts from a `docker://` URL
+// and the pinned community binary does not: measured on v1.3.0,
+// `docker://ydb/...` answers `unsupported docker image "ydb"`, since no Atlas
+// edition has a YDB driver. Strict compatibility refuses each in those words;
+// see [DockerEngineIsExtension].
+var dockerExtensionEngines = map[string]string{
+	"ydb": platform.YDB,
+}
+
 // DockerEngineDialect returns the dialect of the server a `docker://` URL
 // naming engine starts, and whether engine is one Ptah starts. engine is
 // compared as written.
 func DockerEngineDialect(engine string) (string, bool) {
-	dialect, ok := dockerEngineDialects[engine]
+	if dialect, ok := dockerEngineDialects[engine]; ok {
+		return dialect, true
+	}
+	dialect, ok := dockerExtensionEngines[engine]
 	return dialect, ok
+}
+
+// DockerEngineIsExtension reports whether engine is one Ptah starts from a
+// `docker://` URL and the pinned community binary refuses as an unsupported
+// image.
+func DockerEngineIsExtension(engine string) bool {
+	_, ok := dockerExtensionEngines[engine]
+	return ok
 }
 
 // dockerImageSchemePrefix begins the scheme that asks Ptah to start a dev

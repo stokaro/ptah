@@ -225,3 +225,43 @@ func TestDialectFromURL_YDBSchemes(t *testing.T) {
 		})
 	}
 }
+
+// docker://ydb starts local-ydb, a YDB server; the engine is matched as
+// written, as every docker engine is.
+func TestDialectFromURL_DockerYDB_HappyPath(t *testing.T) {
+	for _, rawURL := range []string{"docker://ydb/26.2.1.14/local", "docker://ydb/25.1.4.7", "docker://ydb"} {
+		t.Run(rawURL, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := atlasurl.DialectFromURL(rawURL)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, "ydb")
+		})
+	}
+}
+
+func TestDialectFromURL_DockerYDB_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	got, err := atlasurl.DialectFromURL("docker://YDB/26.2.1.14/local")
+
+	c.Assert(err, qt.ErrorMatches, `unsupported docker image "YDB"`)
+	c.Assert(got, qt.Equals, "")
+}
+
+// YDB is the one docker engine the pinned community binary does not start,
+// which is what strict compatibility reads to refuse it.
+func TestDockerEngineIsExtension_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	c.Assert(atlasurl.DockerEngineIsExtension("ydb"), qt.IsTrue)
+}
+
+func TestDockerEngineIsExtension_FailurePath(t *testing.T) {
+	for _, engine := range []string{"postgres", "postgis", "pgvector", "mysql", "maria", "mariadb", "YDB", "sqlite", ""} {
+		t.Run(engine, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(atlasurl.DockerEngineIsExtension(engine), qt.IsFalse)
+		})
+	}
+}
