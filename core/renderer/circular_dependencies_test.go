@@ -610,10 +610,10 @@ func TestRenderSQL_TypedNilForeignKeyContainers_FailurePath(t *testing.T) {
 		node    ast.Node
 		wantErr string
 	}{
-		{name: "create table", node: createTable, wantErr: "create-table node is nil"},
-		{name: "alter table", node: alterTable, wantErr: "alter-table node is nil"},
-		{name: "column", node: column, wantErr: "column node is nil"},
-		{name: "constraint", node: constraint, wantErr: "constraint node is nil"},
+		{name: "create table", node: createTable, wantErr: `\*ast\.CreateTableNode is nil`},
+		{name: "alter table", node: alterTable, wantErr: `\*ast\.AlterTableNode is nil`},
+		{name: "column", node: column, wantErr: `\*ast\.ColumnNode is nil`},
+		{name: "constraint", node: constraint, wantErr: `\*ast\.ConstraintNode is nil`},
 	}
 
 	for _, test := range tests {
@@ -644,7 +644,7 @@ func TestRenderSQL_TypedNilGenericASTNode_FailurePath(t *testing.T) {
 	sql, err := renderer.RenderSQL("postgres", index)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-	c.Assert(err, qt.ErrorMatches, "index node is nil")
+	c.Assert(err, qt.ErrorMatches, `\*ast\.IndexNode is nil`)
 	c.Assert(sql, qt.Equals, "")
 }
 

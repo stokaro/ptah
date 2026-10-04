@@ -92,10 +92,11 @@ func TestRender_Topic_RenderersWithoutTopicsRefuse(t *testing.T) {
 	}
 }
 
-// The YDB renderer checks the topics key itself, so a caller that visits a
-// topic node with it, past the central check, is refused on a target without
-// the key, the drop included.
-func TestRender_Topic_YDBRendererChecksTheKey(t *testing.T) {
+// A visit runs the central check as RenderSQL does: there is no way past it
+// through the renderer, so a YDB target without the key refuses each topic
+// statement by the subject the check names, the drop included. The YDB
+// renderer's own check of the key is covered in its package.
+func TestRender_Topic_VisitOnYDBWithoutTheKeyIsRefused(t *testing.T) {
 	caps := capability.YDB262().With(capability.Topics, false)
 	for _, node := range topicNodes {
 		t.Run(node.subject, func(t *testing.T) {
@@ -105,7 +106,7 @@ func TestRender_Topic_YDBRendererChecksTheKey(t *testing.T) {
 
 			visitErr := node.node.Accept(visitor)
 
-			c.Assert(visitErr, qt.ErrorMatches, `topic app\.events, which requires target capability topics, unavailable on this ydb target`)
+			c.Assert(visitErr, qt.ErrorMatches, node.subject+`, which requires target capability topics, unavailable on this ydb target`)
 			c.Assert(visitErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(visitor.Output(), qt.Equals, "")
 		})

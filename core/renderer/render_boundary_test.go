@@ -107,7 +107,7 @@ func interceptedRefusals() []boundaryFixture {
 			dialect: platform.Postgres,
 			node:    (*ast.CreateMaterializedViewNode)(nil),
 			wantIs:  ptaherr.ErrInvalidSchemaDiff,
-			wantErr: "materialized view node is nil",
+			wantErr: `\*ast\.CreateMaterializedViewNode is nil`,
 		},
 	}
 }
@@ -734,8 +734,8 @@ func TestEveryPublicEntryPointRendersTheSameSQL(t *testing.T) {
 // pointer against that kind's case, and hands the handler the nil pointer. Most
 // handlers do not check: they render nothing and report nothing, or dereference
 // the pointer and panic. The preparation the wrapper runs answers every absent
-// node first, of every kind and on every target, and names the kind where the
-// preparation has one.
+// node first, of every kind and on every target, and names the type of a nil
+// pointer.
 func TestRenderer_NilNodeIsAnsweredByTheWrapper(t *testing.T) {
 	tests := []struct {
 		name string
@@ -745,7 +745,7 @@ func TestRenderer_NilNodeIsAnsweredByTheWrapper(t *testing.T) {
 		{
 			name: "an interface holding a nil pointer",
 			node: (*ast.CreateTableNode)(nil),
-			want: "create-table node is nil",
+			want: `\*ast\.CreateTableNode is nil`,
 		},
 		{
 			name: "no node at all",
