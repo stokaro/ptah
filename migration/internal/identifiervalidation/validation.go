@@ -4,6 +4,7 @@ package identifiervalidation
 
 import (
 	"fmt"
+	"strings"
 
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
@@ -93,20 +94,14 @@ func validateTablesAndColumns(
 	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) error {
-	tables := make(map[string]string, len(desired.Tables))
-	for _, table := range desired.Tables {
-		rawName := table.QualifiedName()
-		conflictKey := semantics.QualifiedTableConflictKey(rawName)
-		if previous, exists := tables[conflictKey]; exists &&
-			previous != rawName {
-			return fmt.Errorf(
-				"%w: target tables %s and %s may have the same catalog identity",
-				ptaherr.ErrInvalidSchemaDiff,
-				previous,
-				rawName,
-			)
-		}
-		tables[conflictKey] = rawName
+	semantics = indexscope.ConflictSemantics(semantics)
+	if previous, current, conflict := conflictingTable(semantics, desired); conflict {
+		return fmt.Errorf(
+			"%w: target tables %s and %s may have the same catalog identity",
+			ptaherr.ErrInvalidSchemaDiff,
+			previous,
+			current,
+		)
 	}
 
 	for _, table := range desired.Tables {
@@ -122,6 +117,60 @@ func validateTablesAndColumns(
 		}
 	}
 	return nil
+}
+
+// unresolvedTableKey is the part every conflict key of a table name the target
+// cannot place contains, whichever of the schema and the name is unresolved.
+var unresolvedTableKey = identifier.ComparisonCatalogUnknown.ConflictKey("")
+
+// conflictingTable returns the first pair of tables the target cannot keep
+// apart, in declaration order. A table declared twice under one spelling is
+// one table, not a pair.
+//
+// A table whose name has no equivalence class is compared against every table
+// already seen, for the reason [conflictingColumn] gives: under an
+// accent-insensitive collation `örders` is the table `orders`, and the two
+// conflict keys are different.
+func conflictingTable(
+	semantics identifier.Semantics,
+	desired *schemamodel.Database,
+) (previous, current string, conflict bool) {
+	tables := make(map[string]string, len(desired.Tables))
+	var seen []string
+	unresolved := ""
+	for _, table := range desired.Tables {
+		rawName := table.QualifiedName()
+		conflictKey := semantics.QualifiedTableConflictKey(rawName)
+		if strings.Contains(conflictKey, unresolvedTableKey) {
+			if earlier, found := firstOther(seen, rawName); found {
+				return earlier, rawName, true
+			}
+			if unresolved == "" {
+				unresolved = rawName
+			}
+			seen = append(seen, rawName)
+			continue
+		}
+		if unresolved != "" && unresolved != rawName {
+			return unresolved, rawName, true
+		}
+		if earlier, exists := tables[conflictKey]; exists && earlier != rawName {
+			return earlier, rawName, true
+		}
+		tables[conflictKey] = rawName
+		seen = append(seen, rawName)
+	}
+	return "", "", false
+}
+
+// firstOther returns the first name in seen spelled differently from name.
+func firstOther(seen []string, name string) (string, bool) {
+	for _, earlier := range seen {
+		if earlier != name {
+			return earlier, true
+		}
+	}
+	return "", false
 }
 
 // conflictingColumn returns the first pair of column names one table cannot

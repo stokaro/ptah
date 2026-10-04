@@ -123,10 +123,10 @@ type ConflictSet struct {
 	// unresolvedTables holds the references whose table cannot be told apart
 	// from another offline, and all holds every reference. An index on such a
 	// table may share a namespace with an index on any table, so it is compared
-	// against all of them; see [conflictSemantics].
+	// against all of them; see [ConflictSemantics].
 	unresolvedTables []difftypes.IndexRef
 	all              []difftypes.IndexRef
-	// splitTables records that table names are placed by [conflictSemantics]
+	// splitTables records that table names are placed by [ConflictSemantics]
 	// rather than by the target's own comparison, which happens only when that
 	// comparison knows nothing about the target's collation.
 	splitTables bool
@@ -144,7 +144,7 @@ func NewConflictSetWithSemantics(
 	refs []difftypes.IndexRef,
 ) *ConflictSet {
 	set := &ConflictSet{
-		semantics:   conflictSemantics(semantics),
+		semantics:   ConflictSemantics(semantics),
 		splitTables: semantics.TableNames == identifier.ComparisonCatalogUnknown,
 		matches:     make(map[namespaceKey][]difftypes.IndexRef, len(refs)),
 		namespaces:  make(map[string][]difftypes.IndexRef, len(refs)),
@@ -358,21 +358,30 @@ type namespaceKey struct {
 // see [identifier.Comparison.ConflictKey].
 var unresolvedConflictKey = identifier.ComparisonCatalogUnknown.ConflictKey("")
 
-// conflictSemantics returns the semantics the conflict check compares table and
-// index names with. A comparison that knows nothing about the target's
-// collation places every name in one class, so every index conflicted with
-// every other: an offline SQL Server plan adding orders_user_ix on orders and
-// users_created_ix on users was refused as a namespace conflict, and so were
-// users_created_ix and users_email_uq on one table (stokaro/ptah#4111).
+// ConflictSemantics returns the semantics a conflict check compares table,
+// column and index names with. A comparison that knows nothing about the
+// target's collation places every name in one class, so every name conflicts
+// with every other: an offline SQL Server plan adding orders_user_ix on orders
+// and users_created_ix on users is refused as a namespace conflict
+// (stokaro/ptah#4111), and so is every table with two columns
+// (stokaro/ptah#4122).
 //
 // Two ASCII names that differ after ASCII case folding are different under
 // every collation SQL Server offers, so they are kept apart. A name with a
 // non-ASCII character still has no class: an accent-insensitive collation makes
 // `résumé` the same index as `resume`, and `ördérs` the same table as `orders`,
 // so such a name is compared against every other.
-func conflictSemantics(semantics identifier.Semantics) identifier.Semantics {
+//
+// The index conflict set here and the table and column check in
+// migration/internal/identifiervalidation both call it. One rule for both is
+// what keeps an offline plan from accepting a table the comparison before it
+// refuses, or the other way round.
+func ConflictSemantics(semantics identifier.Semantics) identifier.Semantics {
 	if semantics.TableNames == identifier.ComparisonCatalogUnknown {
 		semantics.TableNames = identifier.ComparisonASCIIFoldedNonASCIIUnknown
+	}
+	if semantics.ColumnNames == identifier.ComparisonCatalogUnknown {
+		semantics.ColumnNames = identifier.ComparisonASCIIFoldedNonASCIIUnknown
 	}
 	if semantics.IndexNames == identifier.ComparisonCatalogUnknown {
 		semantics.IndexNames = identifier.ComparisonASCIIFoldedNonASCIIUnknown

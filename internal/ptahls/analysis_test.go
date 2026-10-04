@@ -66,3 +66,33 @@ func TestCompleteSuppressesAttributeNamesInsideValues(t *testing.T) {
 
 	c.Assert(items, qt.HasLen, 0)
 }
+
+// A YDB model is an ordinary Ptah model to the language server: YDB type
+// names, a `platform.ydb.*` override and a `dialects` scope naming YDB draw no
+// diagnostic, and a field's hover names the override form. The metadata holds
+// no list of dialects or types, so none needs a YDB entry; this pins that a
+// YDB model is not reported as unknown.
+func TestAnalyzeAcceptsAYDBModel(t *testing.T) {
+	c := qt.New(t)
+	const source = `package models
+
+//ptah:schema:view name="active" body="SELECT 1 AS a" dialects="ydb,postgres"
+type Views struct{}
+
+//ptah:schema:table name="orders" schema="shop/archive" primary_key="tenant,id"
+type Order struct {
+	//ptah:schema:field name="tenant" type="Utf8" not_null="true" platform.ydb.type="String"
+	Tenant string
+	//ptah:schema:field name="id" type="Uint64" not_null="true" platform.ydb.default="0"
+	ID uint64
+	//ptah:schema:field name="at" type="TIMESTAMP" platform.ydb.type="Timestamp64" platform.postgres.type="TIMESTAMPTZ"
+	At string
+}`
+
+	diagnostics := ptahls.Analyze(source)
+	hover, ok := ptahls.Hover(source, annotationparse.Position{Line: 7, Character: 10})
+
+	c.Assert(diagnostics, qt.HasLen, 0)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(hover, qt.Contains, "`platform.<dialect>.<key>`: dialect-specific override attributes.")
+}

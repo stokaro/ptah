@@ -71,7 +71,8 @@ reading several databases can tell them apart without a job per database.`,
 	flags.StringVar(&opts.dbURL, statsDBURLFlag, "",
 		"Database URL to read (required). Example: postgres://localhost:5432/dbname")
 	flags.StringVar(&opts.schemas, statsSchemaFlag, "",
-		"Comma-separated schemas to count (PostgreSQL-family only). Empty uses the connection default.")
+		"Comma-separated schemas to count: PostgreSQL-family and SQL Server schemas, or YDB directories relative "+
+			"to the database root. Empty uses the connection default, and on YDB every directory.")
 	cmd.SetFlagErrorFunc(cmdutil.FlagErrorFunc)
 	return cmd
 }

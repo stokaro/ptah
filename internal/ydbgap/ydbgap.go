@@ -17,7 +17,7 @@
 // declaration of one reaches the renderer by name, and a database holding one
 // reaches the reader, and each has to be refused there rather than handled as
 // something else. So are the commands that connect and then need a layer that
-// does not exist yet: the surfaces planned last.
+// does not exist yet: inference.
 package ydbgap
 
 import (
@@ -60,10 +60,11 @@ const (
 	// IndexFamilies is the index kinds beyond a row table's global indexes:
 	// vector, full-text and JSON indexes, and a column table's local ones.
 	IndexFamilies
-	// OtherSurfaces is the commands planned last: Go struct generation from a
-	// database, schema security analysis and the other surfaces that read more
-	// than the schema reader describes.
-	OtherSurfaces
+	// Inference is an embedding generation on YDB: `ptah inference` and the
+	// agent surface's inference tools. The run state and the vectors they
+	// work on are a PostgreSQL vertical built on pgvector, and the YDB design
+	// waits for the vector index family.
+	Inference
 
 	// endOfLayers is one past the last layer and names none. It keeps
 	// [Layers] derived from this block rather than from a second list.
@@ -98,8 +99,8 @@ func (l Layer) work() string {
 		return "setting YDB table options (TTL, partitioning, column families, changefeeds)"
 	case IndexFamilies:
 		return "reading or creating a YDB vector, full-text, JSON or column-table index"
-	case OtherSurfaces:
-		return "running this command against YDB"
+	case Inference:
+		return "running an embedding generation against YDB"
 	default:
 		return "this YDB operation"
 	}
@@ -113,7 +114,7 @@ func (l Layer) Phase() int {
 		return 9
 	case SchemaFiles, Comments, Views, AccessControl, TableSettings, IndexFamilies:
 		return 10
-	case OtherSurfaces:
+	case Inference:
 		return 12
 	default:
 		return 0
@@ -148,9 +149,8 @@ func (l Layer) Unsupported() string {
 		return "table settings: TTL, partitioning, column families and changefeeds"
 	case IndexFamilies:
 		return "vector, full-text, JSON and column-table indexes"
-	case OtherSurfaces:
-		return "`ptah introspect`, `ptah schema security` and `ptah schema lineage`, " +
-			"which need more of a database than the schema reader describes"
+	case Inference:
+		return "`ptah inference` and the inference tools of `ptah mcp`, which wait for the vector index family"
 	default:
 		return ""
 	}
