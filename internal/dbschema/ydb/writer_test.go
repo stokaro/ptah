@@ -67,10 +67,12 @@ func (f *fakeDatabase) ExecContext(_ context.Context, query string, _ ...any) (s
 	if position < len(f.failures) && f.failures[position] != nil {
 		return nil, f.failures[position]
 	}
-	if table, dropped := strings.CutPrefix(query, "DROP TABLE `"); dropped {
-		full := path.Join("/local", strings.ReplaceAll(strings.TrimSuffix(table, "`"), "\\`", "`"))
-		parent, name := path.Split(full)
-		f.tree[strings.TrimSuffix(parent, "/")] = without(f.tree[strings.TrimSuffix(parent, "/")], name)
+	for _, verb := range []string{"DROP TABLE `", "DROP VIEW `"} {
+		if object, dropped := strings.CutPrefix(query, verb); dropped {
+			full := path.Join("/local", strings.ReplaceAll(strings.TrimSuffix(object, "`"), "\\`", "`"))
+			parent, name := path.Split(full)
+			f.tree[strings.TrimSuffix(parent, "/")] = without(f.tree[strings.TrimSuffix(parent, "/")], name)
+		}
 	}
 	return driver.RowsAffected(0), nil
 }
@@ -264,10 +266,10 @@ func TestWriter_TransactionIsANoOp(t *testing.T) {
 	c.Assert(fake.executed, qt.DeepEquals, []string{"DROP TABLE `t`"})
 }
 
-// DropAllTables drops every row table and removes the directories that left
-// empty. What the reader does not describe stays, and so does the directory
-// that holds it; a directory that was empty before is not touched, and a
-// dot-directory is never listed.
+// DropAllTables drops every view and row table, a directory's views first, and
+// removes the directories that left empty. What the reader does not describe
+// stays, and so does the directory that holds it; a directory that was empty
+// before is not touched, and a dot-directory is never listed.
 func TestWriter_DropAllTables(t *testing.T) {
 	c := qt.New(t)
 	fake := &fakeDatabase{tree: map[string][]*Ydb_Scheme.Entry{
@@ -280,7 +282,11 @@ func TestWriter_DropAllTables(t *testing.T) {
 			entry("olap", Ydb_Scheme.Entry_COLUMN_TABLE),
 			entry("v", Ydb_Scheme.Entry_VIEW),
 		},
-		"/local/app":     {entry("sub", Ydb_Scheme.Entry_DIRECTORY), entry("t2", Ydb_Scheme.Entry_TABLE)},
+		"/local/app": {
+			entry("sub", Ydb_Scheme.Entry_DIRECTORY),
+			entry("t2", Ydb_Scheme.Entry_TABLE),
+			entry("v2", Ydb_Scheme.Entry_VIEW),
+		},
 		"/local/app/sub": {entry("t`3", Ydb_Scheme.Entry_TABLE)},
 		"/local/keep":    nil,
 		"/local/mixed":   {entry("t4", Ydb_Scheme.Entry_TABLE), entry("events", Ydb_Scheme.Entry_TOPIC)},
@@ -291,6 +297,8 @@ func TestWriter_DropAllTables(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(fake.executed, qt.DeepEquals, []string{
+		"DROP VIEW `v`",
+		"DROP VIEW `app/v2`",
 		"DROP TABLE `app/sub/t\\`3`",
 		"DROP TABLE `app/t2`",
 		"DROP TABLE `mixed/t4`",
@@ -301,7 +309,7 @@ func TestWriter_DropAllTables(t *testing.T) {
 	for _, kept := range fake.tree["/local"] {
 		left = append(left, kept.GetName())
 	}
-	c.Assert(left, qt.DeepEquals, []string{".sys", "keep", "mixed", "olap", "v"})
+	c.Assert(left, qt.DeepEquals, []string{".sys", "keep", "mixed", "olap"})
 	c.Assert(fake.tree["/local/mixed"], qt.HasLen, 1)
 }
 
