@@ -7,14 +7,18 @@ import (
 	"io"
 	"net"
 	"net/url"
-	"slices"
+	"path"
 	"sync"
 	"testing"
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Table"
+	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
+	"github.com/ydb-platform/ydb-go-sdk/v3/table"
 
 	"ptah.run/dbschema"
+	ydbschema "ptah.run/internal/dbschema/ydb"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/migrator"
 )
@@ -102,6 +106,13 @@ func throughProxy(c *qt.C, line ydbLine, proxy *cuttingProxy) string {
 // refuses to run the statement again rather than guess, which here would
 // answer that the index exists. A failure the server answered is recorded as
 // one; TestYDBMigrator_ResumesWhereAFailedMigrationStopped is that control.
+//
+// The cut waits for the server's own sign that it took the statement: the
+// index the build creates, which DescribeTable lists while it builds. A cut
+// timed by the client's clock measures the machine's speed instead, and a cut
+// that lands before the server has the statement is a failure before sending.
+// The cleanup cancels a build still running: until it ends, the table is
+// locked, and DROP TABLE answers `path ... has been locked by tx`.
 func TestYDBMigrator_TransportFailureLeavesTheOutcomeUnknown(t *testing.T) {
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
@@ -110,12 +121,13 @@ func TestYDBMigrator_TransportFailureLeavesTheOutcomeUnknown(t *testing.T) {
 			const dir = "ptah_ydb_mig_transport"
 			dropDirectory(c, direct, dir, "big")
 			c.Cleanup(func() {
-				settleIndexBuild(c, direct, dir, "big_v")
+				cancelIndexBuild(c, direct, dir+"/big")
 				dropDirectory(c, direct, dir, "big")
 			})
 			fillRows(c, direct, dir+"/big", 1000000)
+			indexes := watchIndexes(c, line)
 			proxy := startCuttingProxy(c, parsedHost(c, dbtarget.URL(c, line.engine)))
-			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 			defer cancel()
 			proxied, err := dbschema.ConnectToDatabase(ctx, throughProxy(c, line, proxy))
 			c.Assert(err, qt.IsNil)
@@ -128,13 +140,12 @@ func TestYDBMigrator_TransportFailureLeavesTheOutcomeUnknown(t *testing.T) {
 
 			done := make(chan error, 1)
 			go func() { done <- m.MigrateUp(ctx) }()
-			waitForInFlightMark(c, direct, files, dir)
-			time.Sleep(300 * time.Millisecond)
+			indexes.waitForBuild(c, dir+"/big", "big_v", done)
 			proxy.cut()
 			runErr := <-done
 
 			c.Assert(runErr, qt.IsNotNil)
-			c.Assert(settleIndexBuild(c, direct, dir, "big_v"), qt.IsTrue)
+			c.Assert(indexes.waitForReady(c, dir+"/big", "big_v"), qt.IsTrue)
 			revision := revisionOf(c, newMigrator(c, direct, files, migrator.RevisionTableFormatPtah, dir))
 			c.Assert(revision.StatementOutcomeUnknown(), qt.IsTrue, qt.Commentf("run: %v\nrevision: %+v", runErr, revision))
 			resumed := newMigrator(c, direct, files, migrator.RevisionTableFormatPtah, dir)
@@ -152,32 +163,90 @@ func parsedHost(c *qt.C, raw string) string {
 	return parsed.Host
 }
 
-// waitForInFlightMark waits until the migration's revision records its first
-// statement in flight, which the migrator writes right before it sends it.
-func waitForInFlightMark(c *qt.C, conn *dbschema.DatabaseConnection, files map[string]string, dir string) {
-	c.Helper()
-	deadline := time.Now().Add(30 * time.Second)
-	for time.Now().Before(deadline) {
-		revisions, err := newMigrator(c, conn, files, migrator.RevisionTableFormatPtah, dir).GetRevisions(c.Context())
-		if err == nil && len(revisions) == 1 && revisions[0].StatementOutcomeUnknown() {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	c.Fatalf("the migration's statement was not marked in flight within thirty seconds")
+// indexWatch reads a table's indexes and their state through a driver of its
+// own, so a test sees what the server holds whatever its other connections
+// are doing.
+type indexWatch struct {
+	driver *ydbsdk.Driver
 }
 
-// settleIndexBuild waits until index exists on the table, and reports
-// whether it did within a minute.
-func settleIndexBuild(c *qt.C, conn *dbschema.DatabaseConnection, dir, index string) bool {
+// watchIndexes opens the driver an indexWatch reads through.
+func watchIndexes(c *qt.C, line ydbLine) *indexWatch {
 	c.Helper()
-	deadline := time.Now().Add(time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	driver, err := ydbsdk.Open(ctx, dbtarget.DriverDSN(c, line.engine))
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { _ = driver.Close(context.Background()) })
+	return &indexWatch{driver: driver}
+}
+
+// status reads the state of index on tablePath, a path relative to the database
+// root, and reports whether the table has the index.
+func (w *indexWatch) status(tablePath, index string) (Ydb_Table.TableIndexDescription_Status, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	var status Ydb_Table.TableIndexDescription_Status
+	found := false
+	_ = w.driver.Table().Do(ctx, func(ctx context.Context, session table.Session) error {
+		description, err := session.DescribeTable(ctx, path.Join(w.driver.Name(), tablePath))
+		if err != nil {
+			return err
+		}
+		for _, described := range description.Indexes {
+			if described.Name == index {
+				status, found = described.Status, true
+			}
+		}
+		return nil
+	})
+	return status, found
+}
+
+// waitForBuild waits until the server lists index on tablePath, which it does
+// from the moment the build starts, and fails the test when the run ends
+// before that or the build does not start within two minutes.
+func (w *indexWatch) waitForBuild(c *qt.C, tablePath, index string, run <-chan error) {
+	c.Helper()
+	deadline := time.Now().Add(2 * time.Minute)
 	for time.Now().Before(deadline) {
-		live, err := dbschema.ReadSchemaWithSchemasContext(context.Background(), conn, []string{dir})
-		if err == nil && slices.Contains(indexNamesOf(live), index) {
+		select {
+		case err := <-run:
+			c.Fatalf("the migration ended before the server started building %s: %v", index, err)
+		default:
+		}
+		if _, found := w.status(tablePath, index); found {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	c.Fatalf("the server did not start building %s within two minutes", index)
+}
+
+// waitForReady reports whether index on tablePath becomes ready to use within
+// five minutes: the build ran to its end.
+func (w *indexWatch) waitForReady(c *qt.C, tablePath, index string) bool {
+	c.Helper()
+	deadline := time.Now().Add(5 * time.Minute)
+	for time.Now().Before(deadline) {
+		if status, found := w.status(tablePath, index); found && status == Ydb_Table.TableIndexDescription_STATUS_READY {
 			return true
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
 	return false
+}
+
+// cancelIndexBuild cancels a build still running on tablePath and waits for it to
+// end, so the table can be dropped. A build that ended already is left alone.
+func cancelIndexBuild(c *qt.C, conn *dbschema.DatabaseConnection, tablePath string) {
+	c.Helper()
+	canceller, ok := conn.SchemaWriter().(interface {
+		CancelRunningBuild(ctx context.Context, tablePath string, wait ydbschema.BuildWait) (ydbschema.BuildOutcome, error)
+	})
+	c.Assert(ok, qt.IsTrue)
+	outcome, err := canceller.CancelRunningBuild(context.Background(), tablePath,
+		ydbschema.BuildWait{Settle: 2 * time.Minute, Poll: 100 * time.Millisecond})
+	c.Assert(err, qt.IsNil)
+	c.Assert(outcome, qt.Not(qt.Equals), ydbschema.BuildUnsettled)
 }
