@@ -18,17 +18,27 @@ import (
 	"ptah.run/internal/ydburl"
 )
 
-// withMonitoring adds the monitoring parameter to a YDB URL, naming port on
-// the host the URL connects to: local-ydb serves its monitoring endpoint
-// beside its gRPC one, and go-integration-tests.yml publishes both.
-func withMonitoring(c *qt.C, raw, port string) string {
+// monitoredTarget is the line's URL and its reading. The URL names the
+// server's monitoring endpoint, so the flags are read wherever the server's
+// operator published it rather than at a port this package assumes.
+func monitoredTarget(c *qt.C, line ydbLine) (string, ydburl.URL) {
+	c.Helper()
+	raw := dbtarget.URL(c, line.engine)
+	parsed, err := ydburl.Parse(raw)
+	c.Assert(err, qt.IsNil)
+	c.Assert(parsed.Monitoring, qt.IsNotNil, qt.Commentf(
+		"%s names no monitoring endpoint: add monitoring=http://host:port, where the server publishes it",
+		line.engine))
+	return raw, parsed
+}
+
+// withMonitoring replaces the monitoring endpoint a YDB URL names.
+func withMonitoring(c *qt.C, raw, endpoint string) string {
 	c.Helper()
 	parsed, err := url.Parse(raw)
 	c.Assert(err, qt.IsNil)
-	ydb, err := ydburl.FromURL(parsed)
-	c.Assert(err, qt.IsNil)
 	query := parsed.Query()
-	query.Set(ydburl.MonitoringParameter, "http://"+net.JoinHostPort(ydb.Host, port))
+	query.Set(ydburl.MonitoringParameter, endpoint)
 	parsed.RawQuery = query.Encode()
 	return parsed.String()
 }
@@ -46,7 +56,9 @@ func TestYDBConnection_ReadsTheClusterFeatureFlags_HappyPath(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			defer cancel()
 
-			conn, err := dbschema.ConnectToDatabase(ctx, withMonitoring(c, dbtarget.URL(c, line.engine), line.monitoringPort))
+			target, _ := monitoredTarget(c, line)
+
+			conn, err := dbschema.ConnectToDatabase(ctx, target)
 			c.Assert(err, qt.IsNil)
 			c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 
@@ -65,7 +77,8 @@ func TestYDBConnection_ReadsTheClusterFeatureFlags_HappyPath(t *testing.T) {
 // A monitoring endpoint that does not answer fails the connection: the
 // operator asked for the cluster's flags, and a plan made without them would
 // be made for a cluster nobody described. The control above shows the same
-// URL with the endpoint that does answer connects.
+// URL with the endpoint that does answer connects; here only the port moves,
+// to one nothing listens on.
 func TestYDBConnection_ReadsTheClusterFeatureFlags_FailurePath(t *testing.T) {
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
@@ -73,7 +86,10 @@ func TestYDBConnection_ReadsTheClusterFeatureFlags_FailurePath(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			defer cancel()
 
-			conn, err := dbschema.ConnectToDatabase(ctx, withMonitoring(c, dbtarget.URL(c, line.engine), "1"))
+			target, parsed := monitoredTarget(c, line)
+			silent := "http://" + net.JoinHostPort(parsed.Monitoring.Hostname(), "1")
+
+			conn, err := dbschema.ConnectToDatabase(ctx, withMonitoring(c, target, silent))
 
 			c.Assert(err, qt.ErrorMatches,
 				`failed to get database info: read YDB feature flags from http://.*:1/viewer/json/feature_flags\?database=[^ ]*: .*`)
