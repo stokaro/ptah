@@ -256,9 +256,9 @@ func (w *Writer) DropAllTables(ctx context.Context) error {
 	return err
 }
 
-// dropDirectory drops the views, tables and topics in the directory dir,
-// relative to the database root, and the directories under it, and reports
-// whether it dropped or removed anything there.
+// dropDirectory drops the views, tables, topics and coordination nodes in the
+// directory dir, relative to the database root, and the directories under it,
+// and reports whether it dropped or removed anything there.
 func (w *Writer) dropDirectory(ctx context.Context, dir string) (bool, error) {
 	entries, err := w.scheme.ListDirectory(ctx, path.Join(w.root, dir))
 	if err != nil {
@@ -272,48 +272,50 @@ func (w *Writer) dropDirectory(ctx context.Context, dir string) (bool, error) {
 	})
 	changed := false
 	for _, entry := range entries {
+		if statement, droppable := w.describedDropStatement(dir, entry); droppable {
+			if err := w.ExecuteSQL(ctx, statement); err != nil {
+				return changed, err
+			}
+			changed = true
+			continue
+		}
 		name := entry.GetName()
-		switch {
-		case entry.GetType() == Ydb_Scheme.Entry_VIEW:
-			if err := w.ExecuteSQL(ctx, "DROP VIEW "+sqlident.Quote(platform.YDB, path.Join(dir, name))); err != nil {
-				return changed, err
-			}
-			changed = true
-		case entry.GetType() == Ydb_Scheme.Entry_TABLE:
-			if err := w.ExecuteSQL(ctx, "DROP TABLE "+sqlident.Quote(platform.YDB, path.Join(dir, name))); err != nil {
-				return changed, err
-			}
-			changed = true
-		case entry.GetType() == Ydb_Scheme.Entry_TOPIC:
-			if err := w.ExecuteSQL(ctx, "DROP TOPIC "+sqlident.Quote(platform.YDB, path.Join(dir, name))); err != nil {
-				return changed, err
-			}
-			changed = true
-		case entry.GetType() == Ydb_Scheme.Entry_COORDINATION_NODE:
-			if w.leftAlone(dir, entry) {
-				continue
-			}
-			if err := w.ExecuteSQL(ctx, dropCoordinationNode(path.Join(dir, name))); err != nil {
-				return changed, err
-			}
-			changed = true
-		case entry.GetType() == Ydb_Scheme.Entry_DIRECTORY && !strings.HasPrefix(name, ".") &&
-			(dir != "" || name != ydburl.RealmDirectory):
-			child := path.Join(dir, name)
-			childChanged, err := w.dropDirectory(ctx, child)
-			if err != nil {
-				return changed, err
-			}
-			if !childChanged {
-				continue
-			}
-			changed = true
-			if err := w.removeIfEmpty(ctx, child); err != nil {
-				return changed, err
-			}
+		if entry.GetType() != Ydb_Scheme.Entry_DIRECTORY || strings.HasPrefix(name, ".") ||
+			(dir == "" && name == ydburl.RealmDirectory) {
+			continue
+		}
+		child := path.Join(dir, name)
+		childChanged, err := w.dropDirectory(ctx, child)
+		if err != nil {
+			return changed, err
+		}
+		if !childChanged {
+			continue
+		}
+		changed = true
+		if err := w.removeIfEmpty(ctx, child); err != nil {
+			return changed, err
 		}
 	}
 	return changed, nil
+}
+
+// describedDropStatement is the statement DropAllTables drops entry, in the
+// directory dir, with: a view, a row table, a topic, or a coordination node
+// other than one [Writer.leftAlone] keeps. It reports false for any other
+// entry, which the reader does not describe and the cleanup keeps.
+func (w *Writer) describedDropStatement(dir string, entry *Ydb_Scheme.Entry) (string, bool) {
+	switch entry.GetType() {
+	case Ydb_Scheme.Entry_VIEW, Ydb_Scheme.Entry_TABLE, Ydb_Scheme.Entry_TOPIC:
+		return dropStatement(entry.GetType(), path.Join(dir, entry.GetName()))
+	case Ydb_Scheme.Entry_COORDINATION_NODE:
+		if w.leftAlone(dir, entry) {
+			return "", false
+		}
+		return dropStatement(entry.GetType(), path.Join(dir, entry.GetName()))
+	default:
+		return "", false
+	}
 }
 
 // dropRank orders a directory's entries for DropAllTables: views first, then

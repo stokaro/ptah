@@ -523,15 +523,15 @@ func assessNode(node ast.Node) StatementAssessment {
 		Severity: Safe,
 		Reason:   "does not remove data or tighten constraints",
 	}
+	if subject, reason, dropped := destructiveDrop(node); dropped {
+		assessment.Subject, assessment.Severity, assessment.Reason = subject, Destructive, reason
+		return assessment
+	}
 
 	switch n := node.(type) {
 	case *ast.AlterTableNode:
 		assessment.Subject = n.Name
 		return assessAlterTable(n, assessment)
-	case *ast.DropTableNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Destructive
-		assessment.Reason = "DROP TABLE removes the table and all rows"
 	case *ast.DropTypeNode:
 		assessment.Subject = n.Name
 		assessment.Severity = Destructive
@@ -540,26 +540,6 @@ func assessNode(node ast.Node) StatementAssessment {
 		} else {
 			assessment.Reason = "DROP TYPE removes an existing database type"
 		}
-	case *ast.DropExtensionNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Destructive
-		assessment.Reason = "DROP EXTENSION removes database objects owned by the extension"
-	case *ast.DropFunctionNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Destructive
-		assessment.Reason = "DROP FUNCTION removes executable database behavior"
-	case *ast.DropRoleNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Destructive
-		assessment.Reason = "DROP ROLE removes an existing database principal"
-	case *ast.DropPolicyNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Destructive
-		assessment.Reason = "DROP POLICY removes an access-control protection"
-	case *ast.DropCoordinationNodeNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Destructive
-		assessment.Reason = dropCoordinationNodeReason
 	case *ast.AlterTableDisableRLSNode:
 		assessment.Subject = n.Table
 		assessment.Severity = Destructive
@@ -588,10 +568,6 @@ func assessNode(node ast.Node) StatementAssessment {
 	case *ast.AlterTypeNode:
 		assessment.Subject = n.Name
 		return assessAlterType(n, assessment)
-	case *ast.DropTopicNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Destructive
-		assessment.Reason = dropTopicReason
 	case *ast.AlterTopicNode:
 		assessment.Subject = n.Name
 		return assessAlterTopic(n, assessment)
@@ -600,6 +576,30 @@ func assessNode(node ast.Node) StatementAssessment {
 		return assessRawSQL(n.SQL, assessment, false)
 	}
 	return assessment
+}
+
+// destructiveDrop is the subject and the reason of a statement that drops an
+// object and always removes data or behavior with it, and false for any other
+// node.
+func destructiveDrop(node ast.Node) (subject, reason string, dropped bool) {
+	switch n := node.(type) {
+	case *ast.DropTableNode:
+		return n.Name, "DROP TABLE removes the table and all rows", true
+	case *ast.DropExtensionNode:
+		return n.Name, "DROP EXTENSION removes database objects owned by the extension", true
+	case *ast.DropFunctionNode:
+		return n.Name, "DROP FUNCTION removes executable database behavior", true
+	case *ast.DropRoleNode:
+		return n.Name, "DROP ROLE removes an existing database principal", true
+	case *ast.DropPolicyNode:
+		return n.Name, "DROP POLICY removes an access-control protection", true
+	case *ast.DropCoordinationNodeNode:
+		return n.Name, dropCoordinationNodeReason, true
+	case *ast.DropTopicNode:
+		return n.Name, dropTopicReason, true
+	default:
+		return "", "", false
+	}
 }
 
 func assessAlterTable(n *ast.AlterTableNode, assessment StatementAssessment) StatementAssessment {

@@ -1729,8 +1729,7 @@ func (d *SchemaDiff) HasChanges() bool {
 		d.hasUserTypeChanges() ||
 		d.hasViewChanges() ||
 		d.hasSynonymChanges() ||
-		d.hasTopicChanges() ||
-		d.hasCoordinationNodeChanges() ||
+		d.hasYDBObjectChanges() ||
 		d.hasHypertableChanges() ||
 		d.hasContinuousAggregateChanges() ||
 		d.hasExtendedPropertyChanges() ||
@@ -1976,6 +1975,12 @@ func (d *SchemaDiff) hasSynonymChanges() bool {
 	return len(d.SynonymsAdded) > 0 ||
 		len(d.SynonymsRemoved) > 0 ||
 		len(d.SynonymsModified) > 0
+}
+
+// hasYDBObjectChanges reports a change to the objects only YDB has outside a
+// table: topics and coordination nodes.
+func (d *SchemaDiff) hasYDBObjectChanges() bool {
+	return d.hasTopicChanges() || d.hasCoordinationNodeChanges()
 }
 
 func (d *SchemaDiff) hasTopicChanges() bool {
