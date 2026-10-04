@@ -745,7 +745,7 @@ names a [secret](#secrets) by its path, which YDB 25.4 and later take; the
 server looks the secret up when it creates the data source, so a plan creates
 the secrets first. An option ending in `_SECRET_NAME` names a deprecated secret
 object, whose value the database administrator reads in clear, and lint rule
-`YD121` reports it. An external table takes no default, key or column family:
+`YD141` reports it. An external table takes no default, key or column family:
 the declaration refuses all three, since YDB drops a `DEFAULT` without a word
 and refuses the other two.
 
