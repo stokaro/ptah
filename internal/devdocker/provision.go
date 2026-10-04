@@ -435,6 +435,18 @@ func refuseRemoteRuntime(ctx context.Context, runner Runner, spec Spec) error {
 		"database URL", spec.Engine, spec.Image, host)
 }
 
+// ResolvedPerRun reports whether [Resolve] may hand back, for rawURL, a database
+// the URL does not name as written: a docker URL, whose server Resolve starts,
+// and a YDB URL, whose dev database is a dev realm Resolve creates. Such a URL
+// cannot be compared with another database by its text. The question is
+// asked of the connection Resolve's URL opens instead, as
+// [ptah.run/internal/devlock.EnsureDistinct] asks it, which also refuses a
+// YDB database declared disposable, where Resolve creates no realm, when it is
+// the database it must not be.
+func ResolvedPerRun(rawURL string) bool {
+	return IsURL(rawURL) || ydbrealm.Applies(rawURL)
+}
+
 // Resolve returns a directly connectable dev database URL for rawURL, together
 // with a release function the caller must always call.
 //

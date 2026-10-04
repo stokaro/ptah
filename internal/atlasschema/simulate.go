@@ -192,8 +192,17 @@ func connectSimulationDev(
 	// of any server and a comparison of URLs would refuse each one. It is
 	// compared by the server it reaches instead, once connected and before
 	// anything is reset; see [claimSimulationDevServer].
+	//
+	// A YDB dev URL is compared live for the same reason: its dev database is
+	// a dev realm Resolve creates, so the URL that names the target names a
+	// realm beside it, and only the connection can say which.
 	serverDev := isDevServer(devURL)
-	for _, target := range urlAliasCandidates(devURL, []string{targetURL}) {
+	comparedByURL := !devdocker.ResolvedPerRun(devURL)
+	targets := []string{targetURL}
+	if !comparedByURL {
+		targets = nil
+	}
+	for _, target := range urlAliasCandidates(devURL, targets) {
 		sameTarget, err := atlasurl.MayAddressSameDatabase(devURL, target)
 		if err != nil {
 			return simulationDev{}, fmt.Errorf("compare --dev-url with target database: %w", err)
@@ -207,7 +216,7 @@ func connectSimulationDev(
 		if isDirectDatabaseURL(desired) {
 			protected = append(protected, devlock.Protected{URL: desired, Refusal: devURLIsDesiredError(desired)})
 		}
-		if serverDev {
+		if serverDev || !comparedByURL {
 			continue
 		}
 		sameDesired, err := sameDirectDatabaseURL(devURL, desired)

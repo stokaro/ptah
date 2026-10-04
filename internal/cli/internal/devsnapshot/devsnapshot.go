@@ -39,7 +39,6 @@ import (
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/migrateclean"
-	"ptah.run/internal/ydbrealm"
 )
 
 // Check is how a verb words the refusal: which prefix the binary puts in
@@ -112,7 +111,7 @@ func ForSources(sets ...atlassource.Set) (Check, bool) {
 // this check does not guess at them. And a dialect [migrateclean.GovernsDev]
 // does not cover is not checked.
 func Refuse(ctx context.Context, devURL string, check Check) error {
-	if strings.TrimSpace(devURL) == "" || devdocker.IsURL(devURL) || ydbrealm.Applies(devURL) {
+	if strings.TrimSpace(devURL) == "" || devdocker.ResolvedPerRun(devURL) {
 		return nil
 	}
 	connectCtx, cancel := dbcli.ConnectContext(ctx, dbcli.DefaultConnectTimeout)

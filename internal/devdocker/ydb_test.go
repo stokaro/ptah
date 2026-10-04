@@ -152,3 +152,30 @@ func TestProvisionYDB_FailurePath(t *testing.T) {
 		c.Assert(started, qt.HasLen, 0)
 	})
 }
+
+// A docker URL and a YDB URL each get a database Resolve hands out per run, so
+// neither is compared by its text.
+func TestResolvedPerRun_HappyPath(t *testing.T) {
+	for _, rawURL := range []string{
+		"docker://postgres/16/dev",
+		"docker://ydb/26.2.1.14/local",
+		"docker+postgres://_/postgres:17/dev",
+		"ydb://localhost:2136/local",
+		"ydbs://ydb.example:2135/?database=/Root/app",
+	} {
+		t.Run(rawURL, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(devdocker.ResolvedPerRun(rawURL), qt.IsTrue)
+		})
+	}
+}
+
+// Every other URL names the dev database it is.
+func TestResolvedPerRun_FailurePath(t *testing.T) {
+	for _, rawURL := range []string{"postgres://localhost/dev", "mysql://root@tcp(localhost:3306)/dev", "sqlite://dev.db", ""} {
+		t.Run(rawURL, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(devdocker.ResolvedPerRun(rawURL), qt.IsFalse)
+		})
+	}
+}

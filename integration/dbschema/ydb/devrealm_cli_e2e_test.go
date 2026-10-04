@@ -159,5 +159,21 @@ func TestYDBBinary_DevDatabaseIsARealm(t *testing.T) {
 		c.Assert(directoryNames(c, ctx), qt.Not(qt.Contains), ydburl.RealmDirectory)
 	})
 
+	t.Run("a rehearsal on the target's URL runs in a realm", func(t *testing.T) {
+		c := qt.New(t)
+		entities := filepath.Join(c.TempDir(), "entities")
+		writeFiles(c, entities, map[string]string{"items.go": devRealmEntities})
+		dropDirectory(c, conn, "ptah_ydb_devrealm", "items")
+		c.Cleanup(func() { dropDirectory(c, conn, "ptah_ydb_devrealm", "items") })
+
+		applied, err := runBinary(ctx, binary, "schema", "apply", "--db-url", url, "--root-dir", entities,
+			"--dev-url", url, "--auto-approve")
+
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", applied))
+		c.Assert(applied, qt.Contains, "Schema apply completed successfully.")
+		c.Assert(directoryNames(c, ctx, "ptah_ydb_devrealm"), qt.DeepEquals, []string{"items"})
+		c.Assert(directoryNames(c, ctx), qt.Not(qt.Contains), ydburl.RealmDirectory)
+	})
+
 	c.Assert(directoryNames(c, ctx, devRealmKept), qt.DeepEquals, []string{"t"})
 }
