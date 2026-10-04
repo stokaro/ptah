@@ -19,6 +19,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/internal/ydbready"
 )
 
 // errStorageNotReady is the refusal local-ydb 26.2.1.14 answers a CREATE TABLE
@@ -84,7 +85,7 @@ func TestCreateSentinel_WaitsForYDBStorage_HappyPath(t *testing.T) {
 		attempts, elapsed := sentinelRun(c, []error{errStorageNotReady, errStorageNotReady, nil}, time.Hour)
 
 		c.Assert(accepted(attempts), qt.DeepEquals, []bool{false, false, true})
-		c.Assert(elapsed, qt.Equals, 2*sentinelRetryInterval)
+		c.Assert(elapsed, qt.Equals, 2*ydbready.Interval)
 	})
 }
 
@@ -101,14 +102,14 @@ func TestCreateSentinel_WaitsForYDBStorage_FailurePath(t *testing.T) {
 		name:         "a server that never binds its storage",
 		answers:      []error{errStorageNotReady},
 		timeout:      time.Hour,
-		wantAttempts: sentinelRetries + 1,
-		wantElapsed:  sentinelRetries * sentinelRetryInterval,
+		wantAttempts: ydbready.Retries + 1,
+		wantElapsed:  ydbready.Retries * ydbready.Interval,
 	}, {
 		name:         "a context that ends during the wait",
 		answers:      []error{errStorageNotReady},
-		timeout:      2*sentinelRetryInterval + sentinelRetryInterval/2,
+		timeout:      2*ydbready.Interval + ydbready.Interval/2,
 		wantAttempts: 3,
-		wantElapsed:  2*sentinelRetryInterval + sentinelRetryInterval/2,
+		wantElapsed:  2*ydbready.Interval + ydbready.Interval/2,
 	}, {
 		name:         "another refusal",
 		answers:      []error{errors.New("Status: SCHEME_ERROR Issues: <main>: Error: Type annotation")},
