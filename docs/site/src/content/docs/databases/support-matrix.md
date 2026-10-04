@@ -45,7 +45,7 @@ measured.
 | [YugabyteDB](../distributed/) | `yugabytedb` (`yugabyte`, `ysql`) | `yugabytedb://`, `ysql://` | PostgreSQL-compatible path with capability differences. |
 | [ClickHouse](../clickhouse/) | `clickhouse` (`ch`) | `clickhouse://`, `ch://` | Capability-limited support. |
 | [Spanner (PostgreSQL interface)](../distributed/) | `spanner` (`cloudspanner`, `google-spanner`, `google_spanner`) | `spanner://` | Most conservative capability-limited support. |
-| [YDB](../ydb/) | `ydb` (`ydbs`) | `ydb://`, `ydbs://` | Renders, plans, reads, applies, runs versioned migrations and writes seeds, declared rows and query builder statements for row tables. Lint, dev databases and the YDB object families are planned in stokaro/ptah#4015. |
+| [YDB](../ydb/) | `ydb` (`ydbs`) | `ydb://`, `ydbs://` | Schemas, versioned migrations, lint and data writes on row tables. The rest is planned in stokaro/ptah#4015. |
 | [Oracle](../oracle/) | `oracle` | `oracle://` | Renders, plans, and reads a live catalog. |
 
 Accepted URL formats, and the difference between target, dev, shadow, and
