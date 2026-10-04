@@ -109,7 +109,7 @@ the declared set cannot say one thing here and another in a workflow file.
 | `ydb` | 25.1 | certified | `YDB251` | yes |
 | `clickhouse` | 25.8 | best-effort | `ClickHouse2411` | no |
 | `ydb` | 26.1 | best-effort | `YDB261` | no |
-| `ydb` | 25.4 | best-effort | `YDB253` | no |
+| `ydb` | 25.4 | best-effort | `YDB254` | no |
 | `ydb` | 25.3 | best-effort | `YDB253` | no |
 | `ydb` | 25.2 | best-effort | `YDB252` | no |
 

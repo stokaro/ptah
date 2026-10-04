@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
@@ -179,6 +180,7 @@ func convertTablesAndFields(
 			// other (stokaro/ptah#1027).
 			RowTTL:            dbTable.RowTTL.Clone(),
 			RowDeletionPolicy: dbTable.RowDeletionPolicy.Clone(),
+			Changefeeds:       ast.CloneChangefeeds(dbTable.Changefeeds),
 			Overrides:         tableStorageOverrides(dbTable),
 		}
 		database.Tables = append(database.Tables, table)

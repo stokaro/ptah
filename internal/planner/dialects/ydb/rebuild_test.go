@@ -281,8 +281,8 @@ func TestGenerateMigrationAST_TableRebuild_FailurePath(t *testing.T) {
 				coverage.Object{Kind: coverage.TTL, Name: "app.items"},
 				coverage.Object{Kind: coverage.Changefeed, Name: "app.items/updates"},
 				coverage.Object{Kind: coverage.TTL, Name: "app.other"}),
-			wantErr: `rebuilding table "app.items": the table carries a TTL run interval or tiering policy, changefeeds, ` +
-				`which Ptah does not model and ` +
+			wantErr: `rebuilding table "app.items": the table carries a TTL run interval or tiering policy, ` +
+				`changefeeds with settings Ptah does not read, which Ptah does not model and ` +
 				`so cannot write on the new table: recreating it would drop them\. .*`,
 		},
 		{

@@ -204,6 +204,17 @@ func TestYDBRules_ReportWhatTheServerRefuses(t *testing.T) {
 			want: []string{"0002_drop.up.sql:1:YD106"},
 		},
 		{
+			name: "a table carrying changefeeds renamed, and renamed again with one of them dropped",
+			files: map[string]string{
+				"0001_t.up.sql": "CREATE TABLE t (id Uint64 NOT NULL, PRIMARY KEY (id));\n" +
+					"ALTER TABLE t ADD CHANGEFEED feed WITH (MODE = 'UPDATES', FORMAT = 'JSON');\n" +
+					"ALTER TABLE t ADD CHANGEFEED `audit` WITH (MODE = 'KEYS_ONLY', FORMAT = 'JSON');\n",
+				"0002_t.up.sql": "ALTER TABLE t RENAME TO u;\n",
+				"0003_t.up.sql": "ALTER TABLE u DROP CHANGEFEED feed;\nALTER TABLE u RENAME TO v;\n",
+			},
+			want: []string{"0002_t.up.sql:1:YD109", "0003_t.up.sql:2:YD109"},
+		},
+		{
 			name: "a table a view reads, renamed",
 			files: map[string]string{
 				"0001_v.up.sql":      "CREATE TABLE base (id Uint64 NOT NULL, PRIMARY KEY (id));\nCREATE VIEW v WITH (security_invoker = TRUE) AS SELECT id FROM base;\n",
@@ -258,6 +269,11 @@ func TestYDBRules_LeaveWhatTheServerRuns(t *testing.T) {
 				"ALTER TABLE `shop/users` DROP INDEX users_email_v2;\nALTER TABLE `shop/users` DROP COLUMN email;\n"}},
 		{name: "a column of a table the directory never created", files: map[string]string{
 			"0001_t.up.sql": "ALTER TABLE elsewhere DROP COLUMN v;\n"}},
+		{name: "a table renamed after every changefeed was dropped", files: map[string]string{
+			"0001_t.up.sql": "CREATE TABLE t (id Uint64 NOT NULL, PRIMARY KEY (id));\n" +
+				"ALTER TABLE t ADD CHANGEFEED feed WITH (MODE = 'UPDATES', FORMAT = 'JSON');\n",
+			"0002_t.up.sql": "ALTER TABLE t DROP CHANGEFEED feed;\nALTER TABLE t RENAME TO u;\n" +
+				"ALTER TABLE u ADD CHANGEFEED feed WITH (MODE = 'UPDATES', FORMAT = 'JSON');\n"}},
 		{name: "a column of the same name in another table", files: map[string]string{
 			"0001_users.up.sql": usersTable,
 			"0002_drop.up.sql":  "ALTER TABLE users DROP COLUMN email;\n"}},

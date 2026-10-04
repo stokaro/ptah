@@ -176,12 +176,15 @@ func TestRead_AlterTable(t *testing.T) {
 			},
 		},
 		{
-			name: "renames and actions read as other",
+			name: "renames, changefeeds and actions read as other",
 			sql: "ALTER TABLE t RENAME TO `dir/u`, ALTER COLUMN v DROP NOT NULL, ADD FAMILY f (DATA = \"ssd\"), " +
 				"ADD CHANGEFEED cf WITH (MODE = 'KEYS_ONLY', FORMAT = 'JSON'), DROP CHANGEFEED old, DROP FAMILY f",
 			want: []yqlddl.Action{
 				{Kind: yqlddl.RenameTable, NewName: "dir/u"},
-				{}, {}, {}, {}, {},
+				{}, {},
+				{Kind: yqlddl.AddChangefeed, Changefeed: "cf"},
+				{Kind: yqlddl.DropChangefeed, Changefeed: "old"},
+				{},
 			},
 		},
 	}

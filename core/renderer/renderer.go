@@ -551,6 +551,13 @@ func prepareCreateTableNode(
 		}
 		cloned.Indexes[i] = prepared
 	}
+	if len(node.Changefeeds) > 0 {
+		subject := fmt.Sprintf("table %q declares changefeed %q", node.Name, node.Changefeeds[0].Name)
+		if err := refuseChangefeeds(dialect, caps, subject); err != nil {
+			return nil, err
+		}
+	}
+	cloned.Changefeeds = ast.CloneChangefeeds(node.Changefeeds)
 	if err := validateCreateTableForeignKeyColumns(dialect, &cloned); err != nil {
 		return nil, err
 	}
@@ -779,9 +786,11 @@ func prepareAlterOperation(
 			return nil, err
 		}
 		return operation, nil
-	case *ast.SetRowDeletionPolicyOperation:
-		spec := &ast.RowDeletionPolicySpec{Column: typed.Column, Interval: typed.Interval, Unit: typed.Unit}
-		if err := refuseRowDeletionPolicy(dialect, caps, table, spec); err != nil {
+	case *ast.AddChangefeedOperation, *ast.DropChangefeedOperation, *ast.AlterChangefeedTopicOperation,
+		*ast.SetRowDeletionPolicyOperation:
+		// One arm for a table's YDB settings, for the reason the column arm
+		// gives.
+		if err := validateTableSettingOperation(dialect, caps, table, operation); err != nil {
 			return nil, err
 		}
 		return operation, nil
@@ -791,6 +800,21 @@ func prepareAlterOperation(
 		}
 		return operation, nil
 	}
+}
+
+// validateTableSettingOperation refuses a change to a table's changefeeds or
+// row deletion policy on a target that has neither.
+func validateTableSettingOperation(
+	dialect string,
+	caps capability.Capabilities,
+	table string,
+	operation ast.AlterOperation,
+) error {
+	if policy, ok := operation.(*ast.SetRowDeletionPolicyOperation); ok {
+		spec := &ast.RowDeletionPolicySpec{Column: policy.Column, Interval: policy.Interval, Unit: policy.Unit}
+		return refuseRowDeletionPolicy(dialect, caps, table, spec)
+	}
+	return refuseChangefeeds(dialect, caps, fmt.Sprintf("changing the changefeeds of table %q", table))
 }
 
 // validateIndexOperation refuses an index operation that asks for an
@@ -828,6 +852,47 @@ func refuseIndexPartitioning(dialect string, caps capability.Capabilities, subje
 		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
 			subject, capability.IndexPartitioning, normalized),
 	}
+}
+
+// refuseChangefeeds refuses subject, a table's changefeeds, on a target
+// without [capability.Changefeeds]. Built without them, the table would carry
+// no stream of its changes, and nothing would report the difference.
+func refuseChangefeeds(dialect string, caps capability.Capabilities, subject string) error {
+	if caps.Has(capability.Changefeeds) {
+		return nil
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: string(capability.Changefeeds),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
+			subject, capability.Changefeeds, normalized),
+	}
+}
+
+// validateDeclaredTableSettings refuses a declared table's row deletion policy
+// or changefeeds on a target that cannot write them.
+func validateDeclaredTableSettings(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
+	if err := refuseDeclaredRowDeletionPolicies(dialect, caps, database.Tables); err != nil {
+		return err
+	}
+	return validateDeclaredChangefeeds(dialect, caps, database)
+}
+
+// validateDeclaredChangefeeds refuses a declared table's changefeeds on a
+// target without [capability.Changefeeds], before anything is rendered.
+func validateDeclaredChangefeeds(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
+	for _, table := range database.Tables {
+		if len(table.Changefeeds) == 0 {
+			continue
+		}
+		subject := fmt.Sprintf("table %q declares changefeed %q", table.QualifiedName(), table.Changefeeds[0].Name)
+		if err := refuseChangefeeds(dialect, caps, subject); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // refuseInvisibleIndexNode refuses index when the optimizer is not to use it
@@ -1684,10 +1749,10 @@ func validateDatabaseDeclarations(
 			Message: err.Error(),
 		}
 	}
-	// A row deletion policy is refused here for the same reason: a target
-	// without the clause must refuse before the first statement, not at the
-	// CREATE TABLE that carries it.
-	if err := refuseDeclaredRowDeletionPolicies(dialect, caps, database.Tables); err != nil {
+	// A row deletion policy and a changefeed are refused here for the same
+	// reason: a target without them must refuse before the first statement,
+	// not at the CREATE TABLE that carries one.
+	if err := validateDeclaredTableSettings(dialect, caps, database); err != nil {
 		return err
 	}
 	if err := validateRoutineIdentityCollisions(dialect, database.Functions); err != nil {

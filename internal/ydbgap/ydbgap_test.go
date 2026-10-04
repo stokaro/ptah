@@ -20,7 +20,7 @@ func TestLayer_Message_HappyPath(t *testing.T) {
 		{name: "schema files", layer: ydbgap.SchemaFiles, want: "reading a YDB schema file is not implemented yet (stokaro/ptah#4015, phase 10)"},
 		{name: "comments", layer: ydbgap.Comments, want: "storing a comment on a YDB object is not implemented yet (stokaro/ptah#4015, phase 10)"},
 		{name: "access control", layer: ydbgap.AccessControl, want: "managing YDB users, groups and permissions is not implemented yet (stokaro/ptah#4015, phase 10)"},
-		{name: "table settings", layer: ydbgap.TableSettings, want: "setting YDB table options (partitioning, column families, changefeeds) is not implemented yet (stokaro/ptah#4015, phase 10)"},
+		{name: "table settings", layer: ydbgap.TableSettings, want: "setting YDB table options (partitioning, column families) is not implemented yet (stokaro/ptah#4015, phase 10)"},
 		{name: "index families", layer: ydbgap.IndexFamilies, want: "reading or creating a YDB vector, full-text, JSON or column-table index is not implemented yet (stokaro/ptah#4015, phase 10)"},
 		{name: "inference", layer: ydbgap.Inference, want: "running an embedding generation against YDB is not implemented yet (stokaro/ptah#4015, phase 12)"},
 	}

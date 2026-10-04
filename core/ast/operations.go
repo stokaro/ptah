@@ -676,6 +676,62 @@ func (op *SetIndexPartitioningOperation) Accept(visitor Visitor) error { return 
 // alterOperation implements the marker method for type safety.
 func (op *SetIndexPartitioningOperation) alterOperation() {}
 
+// AddChangefeedOperation adds a YDB changefeed to the table: `ALTER TABLE t
+// ADD CHANGEFEED c WITH (...)`, followed by an `ALTER TOPIC` for each consumer
+// of the changefeed's topic, since the topic exists only once the changefeed
+// does. The YDB renderer writes it; the other renderers refuse it, because
+// their engines have no changefeed Ptah models.
+type AddChangefeedOperation struct {
+	// Changefeed is the changefeed to add.
+	Changefeed ChangefeedSpec
+}
+
+// Accept hands the visitor this operation. The rendering is the ALTER TABLE
+// renderer's, which reads the operation out of the statement that carries it.
+func (op *AddChangefeedOperation) Accept(visitor Visitor) error { return visitor.VisitNode(op) }
+
+// alterOperation implements the marker method for type safety.
+func (op *AddChangefeedOperation) alterOperation() {}
+
+// DropChangefeedOperation drops a YDB changefeed from the table, with its
+// topic and every consumer of it: `ALTER TABLE t DROP CHANGEFEED c`. The YDB
+// renderer writes it; the other renderers refuse it.
+type DropChangefeedOperation struct {
+	// Name is the changefeed to drop.
+	Name string
+}
+
+// Accept hands the visitor this operation. The rendering is the ALTER TABLE
+// renderer's, which reads the operation out of the statement that carries it.
+func (op *DropChangefeedOperation) Accept(visitor Visitor) error { return visitor.VisitNode(op) }
+
+// alterOperation implements the marker method for type safety.
+func (op *DropChangefeedOperation) alterOperation() {}
+
+// AlterChangefeedTopicOperation changes what a YDB changefeed's topic holds
+// in place, through `ALTER TOPIC <table>/<changefeed> ...`: its retention
+// period, and its consumers, added, changed and dropped. The YDB renderer
+// writes it; the other renderers refuse it.
+//
+// It carries the changefeed before the change as well as after it, because
+// the statements are the difference between the two: a consumer only Previous
+// names is dropped, and a setting the declaration leaves out is set back to
+// YDB's default rather than reset, since `RESET` changes nothing on 26.2.1.14
+// and is refused on 25.1.4.7.
+type AlterChangefeedTopicOperation struct {
+	// Changefeed is the changefeed as the topic is to hold it.
+	Changefeed ChangefeedSpec
+	// Previous is the changefeed as the topic holds it.
+	Previous ChangefeedSpec
+}
+
+// Accept hands the visitor this operation. The rendering is the ALTER TABLE
+// renderer's, which reads the operation out of the statement that carries it.
+func (op *AlterChangefeedTopicOperation) Accept(visitor Visitor) error { return visitor.VisitNode(op) }
+
+// alterOperation implements the marker method for type safety.
+func (op *AlterChangefeedTopicOperation) alterOperation() {}
+
 // ReplaceIndexOperation drops an index and adds it again under the same name
 // in one statement: `ALTER TABLE t DROP INDEX k, ADD INDEX k (...)`. It is how
 // the MySQL family changes what it cannot change in place, such as an index

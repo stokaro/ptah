@@ -139,6 +139,10 @@ const (
 	SetSettings
 	// ResetSettings is RESET (...).
 	ResetSettings
+	// AddChangefeed is ADD CHANGEFEED.
+	AddChangefeed
+	// DropChangefeed is DROP CHANGEFEED.
+	DropChangefeed
 )
 
 // Action is one action of an ALTER TABLE.
@@ -153,6 +157,9 @@ type Action struct {
 	Index Index
 	// NewName is the new name RENAME INDEX and RENAME TO give.
 	NewName string
+	// Changefeed is the changefeed ADD CHANGEFEED adds or DROP CHANGEFEED
+	// drops.
+	Changefeed string
 	// Settings are what SET sets or RESET resets.
 	Settings []Setting
 }
@@ -340,8 +347,13 @@ func readAction(tokens []lexer.Token) Action {
 	case startsWith(tokens, "RENAME", "TO"):
 		newName, _ := readName(tokens[2:])
 		return Action{Kind: RenameTable, NewName: newName}
-	case startsWith(tokens, "ADD", "FAMILY"), startsWith(tokens, "ADD", "CHANGEFEED"),
-		startsWith(tokens, "DROP", "CHANGEFEED"), startsWith(tokens, "DROP", "FAMILY"):
+	case startsWith(tokens, "ADD", "CHANGEFEED"):
+		name, _ := readName(tokens[2:])
+		return Action{Kind: AddChangefeed, Changefeed: name}
+	case startsWith(tokens, "DROP", "CHANGEFEED"):
+		name, _ := readName(tokens[2:])
+		return Action{Kind: DropChangefeed, Changefeed: name}
+	case startsWith(tokens, "ADD", "FAMILY"), startsWith(tokens, "DROP", "FAMILY"):
 		return Action{}
 	case startsWith(tokens, "ADD"):
 		rest, _ := skipWords(tokens[1:], "COLUMN")

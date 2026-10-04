@@ -6,6 +6,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbgap"
 	"ptah.run/internal/ydbtype"
 )
@@ -91,6 +92,18 @@ func (r *Renderer) alterStatement(table string, operation ast.AlterOperation) ([
 			fmt.Sprintf("the visibility of index %q of %s", op.IndexName, subject))
 	case *ast.SetIndexPartitioningOperation:
 		return r.setIndexPartitioning(table, op)
+	case *ast.AddChangefeedOperation:
+		if err := r.checkChangefeed(table, op.Changefeed); err != nil {
+			return nil, err
+		}
+		return ydbchangefeed.AddStatements(table, op.Changefeed), nil
+	case *ast.DropChangefeedOperation:
+		if !r.caps.Has(capability.Changefeeds) {
+			return nil, refuseKey(capability.Changefeeds, fmt.Sprintf("dropping changefeed %q of %s", op.Name, subject))
+		}
+		return []string{ydbchangefeed.DropStatement(table, op.Name)}, nil
+	case *ast.AlterChangefeedTopicOperation:
+		return r.alterChangefeedTopic(table, op)
 	case *ast.AddIndexOperation:
 		return r.addIndex(table, op.Index)
 	case *ast.ReplaceIndexOperation:
@@ -354,4 +367,22 @@ func (r *Renderer) renderDropTable(node *ast.DropTableNode) error {
 		r.w.WriteLinef("DROP TABLE%s %s;", guard, tablePath(name))
 	}
 	return nil
+}
+
+// alterChangefeedTopic writes the ALTER TOPIC statements that change a
+// changefeed's retention and consumers in place. It refuses a change that
+// needs the changefeed dropped and added, which the planner writes as an
+// AddChangefeedOperation after a DropChangefeedOperation, so an operation
+// built by hand cannot report an option changed while it is not.
+func (r *Renderer) alterChangefeedTopic(table string, op *ast.AlterChangefeedTopicOperation) ([]string, error) {
+	subject := fmt.Sprintf("changefeed %q of table %q", op.Changefeed.Name, table)
+	if err := r.checkChangefeed(table, op.Changefeed); err != nil {
+		return nil, err
+	}
+	if op.Previous.Name != op.Changefeed.Name || ydbchangefeed.Recreated(op.Changefeed, op.Previous) {
+		return nil, refuseFact(subject, "YDB changes no option of a changefeed in place (`MODE alter is not "+
+			"supported`), so the change drops the changefeed and adds it again")
+	}
+	statements, _ := ydbchangefeed.TopicStatements(table, op.Changefeed, op.Previous)
+	return statements, nil
 }

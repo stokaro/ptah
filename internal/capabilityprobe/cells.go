@@ -752,13 +752,13 @@ var Cells = []Cell{
 	},
 	{
 		Dialect: platform.YDB, Line: capabilityline.YDB254,
-		Preset: capability.YDB253, PresetName: "YDB253",
+		Preset: capability.YDB254, PresetName: "YDB254",
 		Refinement: RefinedByVersion, Support: capability.BestEffort,
 		Image: "ydbplatform/local-ydb:25.4", ResolveNewestPatch: true,
 		Unprobed:    ydbUnprobed,
 		Understates: ydbUnderstates,
-		Note: ydbUnprobedNote("25.4.1.15") + " It answers every statement as 25.3 does, and reports its version " +
-			"as `stable-25-4-1`.",
+		Note: ydbUnprobedNote("25.4.1.15") + " The first line whose topic consumer takes availability_period, " +
+			"and it reports its version as `stable-25-4-1`.",
 	},
 	{
 		Dialect: platform.YDB, Line: capabilityline.YDB253,
@@ -799,7 +799,7 @@ const ydbUnprobed = "YDB publishes no support period for its open-source lines, 
 // ydbProbedNote opens the note of a YDB cell the probe runs.
 func ydbProbedNote(version string) string {
 	return "probed on every run of the tiered workflows. Measured on " + version + " through this cell's " +
-		"launch recipe: 108 rows, 92 agree, 1 is understated on purpose, 15 are undecidable and none disagrees."
+		"launch recipe: 113 rows, 97 agree, 1 is understated on purpose, 15 are undecidable and none disagrees."
 }
 
 // ydbUnprobedNote opens the note of a YDB cell the probe skips.

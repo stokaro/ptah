@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/ast"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/convert/dbschematogo"
@@ -508,6 +509,19 @@ func reverseRowDeletionPolicyChange(
 		return nil
 	}
 	return &difftypes.RowDeletionPolicyChange{Desired: change.Current, Current: change.Desired}
+}
+
+// reverseChangefeedsChange swaps the two sides of a table's changefeeds, so a
+// rollback drops what the forward change added and adds back what it
+// dropped, under the settings each side held.
+func reverseChangefeedsChange(change *difftypes.ChangefeedsChange) *difftypes.ChangefeedsChange {
+	if change == nil {
+		return nil
+	}
+	return &difftypes.ChangefeedsChange{
+		Desired: ast.CloneChangefeeds(change.Current),
+		Current: ast.CloneChangefeeds(change.Desired),
+	}
 }
 
 // reverseRefreshChange swaps the two sides of a materialized view's refresh

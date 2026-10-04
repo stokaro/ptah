@@ -30,7 +30,7 @@ func TestYDBResolution_HappyPath(t *testing.T) {
 		{name: "25.1.4.7", version: "25.1.4.7", want: capability.YDB251(), wantVersionSpecific: true},
 		{name: "25.2.1.24", version: "25.2.1.24", want: capability.YDB252(), wantVersionSpecific: true},
 		{name: "25.3.1.25", version: "25.3.1.25", want: capability.YDB253(), wantVersionSpecific: true},
-		{name: "25.4.1.15 branch name", version: "stable-25-4-1", want: capability.YDB253(), wantVersionSpecific: true},
+		{name: "25.4.1.15 branch name", version: "stable-25-4-1", want: capability.YDB254(), wantVersionSpecific: true},
 		{name: "26.1.1.22", version: "26.1.1.22", want: capability.YDB261(), wantVersionSpecific: true},
 		{name: "26.2.1.14", version: "26.2.1.14", want: capability.YDB262(), wantVersionSpecific: true},
 		{name: "branch name without a patch", version: "stable-26-1", want: capability.YDB261(), wantVersionSpecific: true},
@@ -98,12 +98,15 @@ func TestYDBPresets_DifferOnlyWhereTheLinesDid(t *testing.T) {
 	}{
 		{name: "26.1 below 26.2", lower: capability.YDB261(), upper: capability.YDB262(),
 			want: []capability.Capability{capability.AlterColumnDefault}},
-		{name: "25.3 below 26.1", lower: capability.YDB253(), upper: capability.YDB261(),
-			want: []capability.Capability{capability.AddColumnWithDefault}},
+		{name: "25.4 below 26.1", lower: capability.YDB254(), upper: capability.YDB261(),
+			want: []capability.Capability{capability.AddColumnWithDefault, capability.ChangefeedUserSIDs}},
+		{name: "25.3 below 25.4", lower: capability.YDB253(), upper: capability.YDB254(),
+			want: []capability.Capability{capability.TopicConsumerAvailabilityPeriod}},
 		{name: "25.2 below 25.3", lower: capability.YDB252(), upper: capability.YDB253(),
-			want: []capability.Capability{capability.DocumentTypeDefaults, capability.ReturningClause}},
+			want: []capability.Capability{capability.ChangefeedSchemaChanges, capability.DocumentTypeDefaults, capability.ReturningClause}},
 		{name: "25.1 below 25.2", lower: capability.YDB251(), upper: capability.YDB252(),
-			want: []capability.Capability{capability.ParameterizedDecimal, capability.SmallIntegerDefaults, capability.WideDateTimeTypes}},
+			want: []capability.Capability{capability.ChangefeedTopicAutoPartitioning, capability.ParameterizedDecimal,
+				capability.SmallIntegerDefaults, capability.WideDateTimeTypes}},
 	}
 
 	for _, test := range tests {

@@ -313,6 +313,11 @@ type Table struct {
 	// RowDeletionPolicy is the row deletion policy this table carries, nil for
 	// a table with none (stokaro/ptah#2236).
 	RowDeletionPolicy *ast.RowDeletionPolicySpec `json:"row_deletion_policy,omitzero"`
+	// Changefeeds are the YDB changefeeds this table carries, each with the
+	// retention and the consumers of its topic. A changefeed holding a
+	// setting Ptah does not model is not listed here; the reader records it
+	// as not described instead, so a plan neither drops nor changes it.
+	Changefeeds []ast.ChangefeedSpec `json:"changefeeds,omitempty"`
 	// VirtualModule is the SQLite module that owns this table, from the USING
 	// clause of the CREATE VIRTUAL TABLE statement that created it -- `fts5`,
 	// `rtree`, `geopoly`, or any other module a build registers. It is empty

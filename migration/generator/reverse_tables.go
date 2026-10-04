@@ -112,6 +112,7 @@ func reverseTableDiffs(tableDiffs []difftypes.TableDiff, prior *schemamodel.Data
 			CommentChange:           reverseCommentChange(tableDiff.CommentChange),
 			RowTTLChange:            reverseRowTTLChange(tableDiff.RowTTLChange),
 			RowDeletionPolicyChange: reverseRowDeletionPolicyChange(tableDiff.RowDeletionPolicyChange),
+			ChangefeedsChange:       reverseChangefeedsChange(tableDiff.ChangefeedsChange),
 		}
 	}
 	return reversed

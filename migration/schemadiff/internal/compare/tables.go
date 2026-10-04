@@ -263,9 +263,14 @@ func TablesAndColumnsWithServerSpellings(
 			// different things about what the table is for -- on every run,
 			// with nothing able to fix it (stokaro/ptah#2168).
 			tableDiff.CommentChange = commentChange(genTable.Comment, dbTable.Comment)
+			// Changefeeds belong to the table too, and a table whose only
+			// difference is a changefeed has to reach TablesModified for the
+			// same reason.
+			tableDiff.ChangefeedsChange = changefeedsChange(cov, genTable, dbTable)
 			if len(tableDiff.ColumnsAdded) > 0 || len(tableDiff.ColumnsRemoved) > 0 ||
 				len(tableDiff.ColumnsModified) > 0 || tableDiff.RowTTLChange != nil ||
-				tableDiff.RowDeletionPolicyChange != nil || tableDiff.CommentChange != nil {
+				tableDiff.RowDeletionPolicyChange != nil || tableDiff.CommentChange != nil ||
+				tableDiff.ChangefeedsChange != nil {
 				diff.TablesModified = append(diff.TablesModified, tableDiff)
 			}
 		}

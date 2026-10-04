@@ -182,6 +182,26 @@ func TestYDBLint_RulesReportWhatTheServerRefuses(t *testing.T) {
 			rule:      "YD104",
 			refusals:  map[string]string{"26.2": "", "25.1": ""},
 		},
+		{
+			name: "a table carrying a changefeed, renamed",
+			setup: []string{"CREATE TABLE `{dir}/t` (id Uint64 NOT NULL, PRIMARY KEY (id))",
+				"ALTER TABLE `{dir}/t` ADD CHANGEFEED feed WITH (MODE = 'UPDATES', FORMAT = 'JSON')"},
+			statement: "ALTER TABLE `{dir}/t` RENAME TO `{dir}/u`",
+			rule:      "YD109",
+			refusals: map[string]string{
+				"26.2": "Cannot move table with cdc streams",
+				"25.1": "Cannot move table with cdc streams",
+			},
+		},
+		{
+			name: "a table renamed after its changefeed was dropped",
+			setup: []string{"CREATE TABLE `{dir}/t` (id Uint64 NOT NULL, PRIMARY KEY (id))",
+				"ALTER TABLE `{dir}/t` ADD CHANGEFEED feed WITH (MODE = 'UPDATES', FORMAT = 'JSON')",
+				"ALTER TABLE `{dir}/t` DROP CHANGEFEED feed"},
+			statement: "ALTER TABLE `{dir}/t` RENAME TO `{dir}/u`",
+			rule:      "YD109",
+			refusals:  map[string]string{"26.2": "", "25.1": ""},
+		},
 	}
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {

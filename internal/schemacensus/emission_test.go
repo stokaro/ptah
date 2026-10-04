@@ -124,6 +124,9 @@ func TestMeasureEmissions_TheGuardsBlindSpotsAreWrittenDown(t *testing.T) {
 		"ALTER TABLE \"T\"",
 		"ALTER TABLE `B`",
 		"ALTER TABLE `T`",
+		// A consumer added to a changefeed's topic, which the ALTER TABLE
+		// that added the changefeed created.
+		"ALTER TOPIC `T/UPDATES`",
 		// Documentation and privileges, which create no object.
 		"COMMENT ON COLUMN",
 		"COMMENT ON CONSTRAINT",

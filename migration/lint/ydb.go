@@ -49,6 +49,7 @@ func ydbRules() []Rule {
 		ydbViewOrphanedRule(),
 		ydbNarrowSerialSequenceRule(),
 		ydbReplayedRestartRule(),
+		ydbMovedTableWithChangefeedRule(),
 	}
 }
 
@@ -490,6 +491,68 @@ func ydbViewOrphanedRule() Rule {
 	}
 }
 
+// ydbMovedTableWithChangefeedRule reports an ALTER TABLE ... RENAME TO of a
+// table that carries a changefeed, which YDB refuses. Measured on 25.1.4.7,
+// 25.2.1.24, 25.3.1.25, 25.4.1.15, 26.1.1.22 and 26.2.1.14:
+//
+//	ALTER TABLE t RENAME TO u   Cannot move table with cdc streams
+//
+// with one changefeed or several, and after DROP CHANGEFEED of each the same
+// rename is accepted. The table's changefeeds are read from the directory's
+// own migrations, as YD104 reads its indexes.
+func ydbMovedTableWithChangefeedRule() Rule {
+	return Rule{
+		Code:     "YD109",
+		Title:    "table renamed while it carries a changefeed",
+		Severity: SeverityError,
+		Dialects: ydbOnly,
+		CheckFile: func(file *File) []Finding {
+			if !ydbRun(file.Target) {
+				return nil
+			}
+			state := file.ydbBefore.clone()
+			var findings []Finding
+			for i := range file.Statements {
+				stmt := &file.Statements[i]
+				read := yqlddl.Read(stmt.SQL)
+				if read.Kind != yqlddl.AlterTable {
+					state.apply(read)
+					continue
+				}
+				table := state.table(read.Name)
+				for _, action := range read.Actions {
+					if action.Kind == yqlddl.RenameTable && len(table.changefeeds) > 0 {
+						findings = append(findings, Finding{
+							Rule:     "YD109",
+							Title:    "table renamed while it carries a changefeed",
+							Severity: SeverityError,
+							File:     file.Path,
+							Line:     stmt.Line,
+							Message: fmt.Sprintf(
+								"RENAME TO moves %s, which carries %s, and YDB moves no table that carries one "+
+									"(Cannot move table with cdc streams); drop the changefeeds first and add them again after "+
+									"the move, which restarts each stream",
+								read.Name, changefeedList(table.changefeeds)),
+							Context: statementFindingContext(i, Subject{Kind: SubjectTable, Name: read.Name}),
+						})
+					}
+					table = table.applyAction(action)
+				}
+				state.store(read, table)
+			}
+			return findings
+		},
+	}
+}
+
+// changefeedList names a table's changefeeds in a finding.
+func changefeedList(changefeeds []string) string {
+	if len(changefeeds) == 1 {
+		return "changefeed " + changefeeds[0]
+	}
+	return "changefeeds " + strings.Join(changefeeds, ", ")
+}
+
 // tableRenamedTo returns the name an ALTER TABLE moves its table to, and reports
 // whether it renames it.
 func tableRenamedTo(read yqlddl.Statement) (string, bool) {
@@ -544,6 +607,8 @@ type ydbTable struct {
 	// restarts are, by Serial column, the value the last RESTART of the
 	// column's sequence moved it to, written as the statement wrote it.
 	restarts map[string]string
+	// changefeeds are the table's changefeeds, in the order they were added.
+	changefeeds []string
 }
 
 func (s *ydbSchema) clone() *ydbSchema {
@@ -557,6 +622,7 @@ func (s *ydbSchema) clone() *ydbSchema {
 			columns: slices.Clone(table.columns), columnsKnown: table.columnsKnown,
 			minPartitions: table.minPartitions, minKnown: table.minKnown,
 			serials: maps.Clone(table.serials), restarts: maps.Clone(table.restarts),
+			changefeeds: slices.Clone(table.changefeeds),
 		}
 	}
 	for name, reads := range s.views {
@@ -829,6 +895,12 @@ func (t ydbTable) applyAction(action yqlddl.Action) ydbTable {
 				t.ttl = ""
 			}
 		}
+	case yqlddl.AddChangefeed:
+		t.changefeeds = append(slices.Clone(t.changefeeds), action.Changefeed)
+	case yqlddl.DropChangefeed:
+		t.changefeeds = slices.DeleteFunc(slices.Clone(t.changefeeds), func(name string) bool {
+			return name == action.Changefeed
+		})
 	}
 	t.indexes = indexes
 	return t

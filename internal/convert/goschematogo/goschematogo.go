@@ -21,6 +21,7 @@ import (
 	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/uniquename"
+	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbtype"
 )
@@ -475,6 +476,12 @@ func (ctx *renderContext) writeTable(w *sourceWriter, table schemamodel.Table) {
 		w.writeComment(constraintAnnotation(constraint))
 	}
 	w.writeComment(tableAnnotation(table))
+	for _, changefeed := range table.Changefeeds {
+		w.writeComment(annotation("ptah:schema:changefeed", changefeedAttrs(changefeed)...))
+		for _, consumer := range changefeed.Consumers {
+			w.writeComment(annotation("ptah:schema:changefeed:consumer", consumerAttrs(changefeed.Name, consumer)...))
+		}
+	}
 	typeName := exportedIdentifier(firstNonEmpty(table.StructName, table.Name))
 	w.writeLine("type " + typeName + " struct {")
 	usedNames := make(map[string]struct{})
@@ -576,6 +583,42 @@ func rowDeletionAttrs(policy *ast.RowDeletionPolicySpec) []attr {
 		{name: rowdeletion.AttributeColumn, value: policy.Column, set: true},
 		{name: rowdeletion.AttributeInterval, value: policy.Interval, set: true},
 		{name: rowdeletion.AttributeUnit, value: policy.Unit, set: policy.Unit != ""},
+	}
+}
+
+// changefeedAttrs writes a YDB changefeed as the attributes the annotation
+// parser reads it from. A disabled changefeed is written as an enabled one:
+// no annotation declares one disabled, because no statement disables one.
+func changefeedAttrs(changefeed ast.ChangefeedSpec) []attr {
+	flag := func(name string, on bool) attr { return attr{name: name, value: "true", set: on} }
+	return []attr{
+		{name: ydbchangefeed.AttributeName, value: changefeed.Name, set: true},
+		{name: ydbchangefeed.AttributeMode, value: changefeed.Mode, set: true},
+		{name: ydbchangefeed.AttributeFormat, value: changefeed.Format, set: true},
+		flag(ydbchangefeed.AttributeVirtualTimestamps, changefeed.VirtualTimestamps),
+		{name: ydbchangefeed.AttributeResolvedTimestamps, value: changefeed.ResolvedTimestamps,
+			set: changefeed.ResolvedTimestamps != ""},
+		flag(ydbchangefeed.AttributeInitialScan, changefeed.InitialScan),
+		flag(ydbchangefeed.AttributeUserSIDs, changefeed.UserSIDs),
+		flag(ydbchangefeed.AttributeSchemaChanges, changefeed.SchemaChanges),
+		{name: ydbchangefeed.AttributeTopicMinActivePartitions,
+			value: strconv.FormatUint(changefeed.TopicMinActivePartitions, 10), set: changefeed.TopicMinActivePartitions != 0},
+		flag(ydbchangefeed.AttributeTopicAutoPartitioning, changefeed.TopicAutoPartitioning),
+		{name: ydbchangefeed.AttributeRetentionPeriod, value: changefeed.RetentionPeriod, set: changefeed.RetentionPeriod != ""},
+	}
+}
+
+// consumerAttrs writes a consumer of the changefeed named changefeed.
+func consumerAttrs(changefeed string, consumer ast.TopicConsumerSpec) []attr {
+	return []attr{
+		{name: ydbchangefeed.AttributeChangefeed, value: changefeed, set: true},
+		{name: ydbchangefeed.AttributeName, value: consumer.Name, set: true},
+		{name: ydbchangefeed.AttributeImportant, value: "true", set: consumer.Important},
+		{name: ydbchangefeed.AttributeReadFrom, value: consumer.ReadFrom, set: consumer.ReadFrom != ""},
+		{name: ydbchangefeed.AttributeSupportedCodecs, value: strings.Join(consumer.SupportedCodecs, ","),
+			set: len(consumer.SupportedCodecs) > 0},
+		{name: ydbchangefeed.AttributeAvailabilityPeriod, value: consumer.AvailabilityPeriod,
+			set: consumer.AvailabilityPeriod != ""},
 	}
 }
 

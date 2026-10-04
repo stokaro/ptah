@@ -2064,6 +2064,11 @@ type TableDiff struct {
 	// engines and no table carries both (stokaro/ptah#2236).
 	RowDeletionPolicyChange *RowDeletionPolicyChange `json:"row_deletion_policy_change,omitzero"`
 
+	// ChangefeedsChange carries the table's YDB changefeeds when the
+	// declaration and the database disagree about them, and is nil when
+	// they agree. See [ChangefeedsChange].
+	ChangefeedsChange *ChangefeedsChange `json:"changefeeds_change,omitzero"`
+
 	// ColumnKeyNames holds the name each column that gains its own UNIQUE
 	// takes on the target, keyed by column name: a column added with UNIQUE,
 	// and a column whose uniqueness changes to UNIQUE.
@@ -2082,6 +2087,24 @@ type TableDiff struct {
 	// not measured, and in a diff built by hand; a planner then writes the name
 	// the server tries first. It rides off the wire, like Desired.
 	ColumnKeyNames map[string]string `json:"-"`
+}
+
+// ChangefeedsChange is one table's YDB changefeeds on both sides of the
+// comparison, each list whole.
+//
+// Whole lists travel rather than the changefeeds that differ, because a plan
+// that changes the table in other ways needs the ones that do not: YDB moves
+// no table that carries a changefeed (`Cannot move table with cdc streams`),
+// so a table rebuild drops every changefeed the table holds and adds every
+// one the declaration names. A planner pairs the two lists by name. A
+// changefeed the read did not describe is in neither list, so no plan drops
+// or adds it, and one the declaration does not describe is the database's on
+// both sides, so a rebuild adds it back as it was.
+type ChangefeedsChange struct {
+	// Desired is the changefeeds the declaration states.
+	Desired []ast.ChangefeedSpec `json:"desired,omitempty"`
+	// Current is the changefeeds the database carries.
+	Current []ast.ChangefeedSpec `json:"current,omitempty"`
 }
 
 // RowDeletionPolicyChange is one table's row deletion policy transition.

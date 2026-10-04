@@ -9,6 +9,7 @@ import (
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/rowdeletion"
+	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbindex"
 )
 
@@ -406,6 +407,57 @@ var directives = []Directive{
 			attr(ydbindex.AttributeMinPartitions, "YDB: the fewest partitions the index's table keeps.", valueString, false, false),
 			attr(ydbindex.AttributeMaxPartitions, "YDB: the most partitions the index's table splits into.", valueString, false, false),
 			attr(ydbindex.AttributeReadReplicas, "YDB: the index's read replicas, PER_AZ:<n> or ANY_AZ:<n>.", valueString, false, false),
+		},
+	},
+	{
+		Name: "ptah:schema:changefeed",
+		Description: "Declares a YDB changefeed: a stream of a table's changes, kept in a topic at " +
+			"<table>/<name>. It belongs to the struct's table, or to the table it names.",
+		Scopes: []Scope{ScopeStruct, ScopeField},
+		Attributes: []Attribute{
+			attr(ydbchangefeed.AttributeName, "Changefeed name, unique among the table's changefeeds and indexes.",
+				valueString, true, false),
+			attr(ydbchangefeed.AttributeTable, "Table the changefeed belongs to, when not the struct's own.",
+				valueString, false, false),
+			attr(ydbchangefeed.AttributeMode, "What a record carries: KEYS_ONLY, UPDATES, NEW_IMAGE, OLD_IMAGE or "+
+				"NEW_AND_OLD_IMAGES.", valueString, true, false),
+			attr(ydbchangefeed.AttributeFormat, "How a record is written: JSON or DEBEZIUM_JSON.", valueString, true, false),
+			attr(ydbchangefeed.AttributeVirtualTimestamps, "Each record carries the virtual timestamp of its change.",
+				valueBoolean, false, true),
+			attr(ydbchangefeed.AttributeResolvedTimestamps, "Interval of the barrier records, an ISO 8601 duration "+
+				"such as PT10S.", valueString, false, false),
+			attr(ydbchangefeed.AttributeInitialScan, "The stream opens with a record for every row the table holds.",
+				valueBoolean, false, true),
+			attr(ydbchangefeed.AttributeUserSIDs, "Each record names the user who made the change.",
+				valueBoolean, false, true),
+			attr(ydbchangefeed.AttributeSchemaChanges, "The stream carries a record for each schema change.",
+				valueBoolean, false, true),
+			attr(ydbchangefeed.AttributeTopicMinActivePartitions, "Partitions the topic starts with.",
+				valueString, false, false),
+			attr(ydbchangefeed.AttributeTopicAutoPartitioning, "The topic gains partitions as writes grow.",
+				valueBoolean, false, true),
+			attr(ydbchangefeed.AttributeRetentionPeriod, "How long the topic keeps a record, an ISO 8601 duration; "+
+				"24 hours when omitted.", valueString, false, false),
+		},
+	},
+	{
+		Name: "ptah:schema:changefeed:consumer",
+		Description: "Declares a consumer of a YDB changefeed's topic: a named reader that keeps its own " +
+			"position in the stream.",
+		Scopes: []Scope{ScopeStruct, ScopeField},
+		Attributes: []Attribute{
+			attr(ydbchangefeed.AttributeName, "Consumer name, unique within the topic.", valueString, true, false),
+			attr(ydbchangefeed.AttributeChangefeed, "Changefeed whose topic the consumer reads.", valueString, true, false),
+			attr(ydbchangefeed.AttributeTable, "Table of the changefeed, when not the struct's own.",
+				valueString, false, false),
+			attr(ydbchangefeed.AttributeImportant, "The topic keeps a record this consumer has not read past "+
+				"the retention period.", valueBoolean, false, true),
+			attr(ydbchangefeed.AttributeReadFrom, "RFC 3339 time a partition this consumer has not read is read from.",
+				valueString, false, false),
+			attr(ydbchangefeed.AttributeSupportedCodecs, "Codecs the consumer reads: raw, gzip, lzop, zstd, custom.",
+				valueList, false, false),
+			attr(ydbchangefeed.AttributeAvailabilityPeriod, "How long the topic keeps a record this consumer has "+
+				"not read past the retention period, an ISO 8601 duration.", valueString, false, false),
 		},
 	},
 	{

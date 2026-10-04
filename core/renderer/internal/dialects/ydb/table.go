@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/renderdiag"
+	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbgap"
 	"ptah.run/internal/ydbsequence"
 	"ptah.run/internal/ydbttl"
@@ -98,6 +99,10 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 		}
 	}
 
+	changefeeds, err := r.changefeedStatements(node, slices.Collect(maps.Keys(named)), columnTypes[keyColumns[0]])
+	if err != nil {
+		return err
+	}
 	guard, err := r.createGuard(node)
 	if err != nil {
 		return err
@@ -115,7 +120,53 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	for _, statement := range partitioning {
 		r.w.WriteLine(statement)
 	}
+	for _, statement := range changefeeds {
+		r.w.WriteLine(statement)
+	}
 	return nil
+}
+
+// changefeedStatements writes the statements that give a new table its
+// changefeeds, each after the CREATE TABLE: YDB's CREATE TABLE takes no
+// changefeed (`CHANGEFEED` inside it fails with `TCoAtomStub(): requirement
+// Match(node.Get()) failed` on 25.1.4.7 and 26.2.1.14), so each is an ALTER
+// TABLE of its own, followed by its topic's consumers. indexes are the names
+// the table's indexes take, which a changefeed shares the table's path with,
+// and keyType is the YDB type of the first key column, which splits a topic
+// that starts with more than one partition.
+func (r *Renderer) changefeedStatements(node *ast.CreateTableNode, indexes []string, keyType string) ([]string, error) {
+	if len(node.Changefeeds) == 0 {
+		return nil, nil
+	}
+	subject := fmt.Sprintf("table %q", node.Name)
+	if reason := ydbchangefeed.NameRefusal(node.Changefeeds, indexes); reason != "" {
+		return nil, refuseFact(subject, reason)
+	}
+	var statements []string
+	for _, changefeed := range node.Changefeeds {
+		if err := r.checkChangefeed(node.Name, changefeed); err != nil {
+			return nil, err
+		}
+		if reason := ydbchangefeed.KeyRefusal(changefeed, keyType); reason != "" {
+			return nil, refuseFact(fmt.Sprintf("changefeed %q of %s", changefeed.Name, subject), reason)
+		}
+		statements = append(statements, ydbchangefeed.AddStatements(node.Name, changefeed)...)
+	}
+	return statements, nil
+}
+
+// checkChangefeed refuses a changefeed the target cannot hold: one needing a
+// capability it lacks, named by the key, and one YDB refuses on every line.
+func (r *Renderer) checkChangefeed(table string, changefeed ast.ChangefeedSpec) error {
+	refusal := ydbchangefeed.Check(table, changefeed, r.caps)
+	switch {
+	case refusal == nil:
+		return nil
+	case refusal.Key != "":
+		return refuseKey(refusal.Key, refusal.Subject)
+	default:
+		return refuseFact(refusal.Subject, refusal.Reason)
+	}
 }
 
 // createGuard writes IF NOT EXISTS where the declaration asked for one.

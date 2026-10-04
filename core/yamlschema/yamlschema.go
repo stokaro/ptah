@@ -72,12 +72,14 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/rowdeletion"
+	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbindex"
 )
 
@@ -163,6 +165,7 @@ type tableSpec struct {
 	Fields      orderedMap[fieldSpec]      `yaml:"fields"`
 	Indexes     orderedMap[indexSpec]      `yaml:"indexes"`
 	Constraints orderedMap[constraintSpec] `yaml:"constraints"`
+	Changefeeds orderedMap[changefeedSpec] `yaml:"changefeeds"`
 	RLSEnabled  bool                       `yaml:"rls_enabled"`
 	// The row deletion policy, keyed as the annotation keys it.
 	RowDeletionColumn   *stringScalar `yaml:"row_deletion_column"`
@@ -273,6 +276,95 @@ func (spec indexSpec) partitioningValues() map[string]string {
 		}
 	}
 	return values
+}
+
+// changefeedSpec is a YDB changefeed of the table, keyed by its name, with
+// each option keyed as the annotation keys it; see
+// [ydbchangefeed.ParseDeclaration].
+type changefeedSpec struct {
+	Mode                     *stringScalar            `yaml:"mode"`
+	Format                   *stringScalar            `yaml:"format"`
+	VirtualTimestamps        *stringScalar            `yaml:"virtual_timestamps"`
+	ResolvedTimestamps       *stringScalar            `yaml:"resolved_timestamps"`
+	InitialScan              *stringScalar            `yaml:"initial_scan"`
+	UserSIDs                 *stringScalar            `yaml:"user_sids"`
+	SchemaChanges            *stringScalar            `yaml:"schema_changes"`
+	TopicMinActivePartitions *stringScalar            `yaml:"topic_min_active_partitions"`
+	TopicAutoPartitioning    *stringScalar            `yaml:"topic_auto_partitioning"`
+	RetentionPeriod          *stringScalar            `yaml:"retention_period"`
+	Consumers                orderedMap[consumerSpec] `yaml:"consumers"`
+}
+
+// consumerSpec is a consumer of a changefeed's topic, keyed by its name; see
+// [ydbchangefeed.ParseConsumer].
+type consumerSpec struct {
+	Important          *stringScalar `yaml:"important"`
+	ReadFrom           *stringScalar `yaml:"read_from"`
+	SupportedCodecs    stringList    `yaml:"supported_codecs"`
+	AvailabilityPeriod *stringScalar `yaml:"availability_period"`
+}
+
+// values are the attributes the changefeed sets, keyed by attribute name. An
+// attribute the document leaves out is absent, and one it sets to an empty
+// value is present, so an empty value is refused rather than read as no
+// declaration.
+func (spec changefeedSpec) values(name string) map[string]string {
+	return presentValues(map[string]*stringScalar{
+		ydbchangefeed.AttributeMode:                     spec.Mode,
+		ydbchangefeed.AttributeFormat:                   spec.Format,
+		ydbchangefeed.AttributeVirtualTimestamps:        spec.VirtualTimestamps,
+		ydbchangefeed.AttributeResolvedTimestamps:       spec.ResolvedTimestamps,
+		ydbchangefeed.AttributeInitialScan:              spec.InitialScan,
+		ydbchangefeed.AttributeUserSIDs:                 spec.UserSIDs,
+		ydbchangefeed.AttributeSchemaChanges:            spec.SchemaChanges,
+		ydbchangefeed.AttributeTopicMinActivePartitions: spec.TopicMinActivePartitions,
+		ydbchangefeed.AttributeTopicAutoPartitioning:    spec.TopicAutoPartitioning,
+		ydbchangefeed.AttributeRetentionPeriod:          spec.RetentionPeriod,
+	}, name)
+}
+
+// values are the attributes the consumer sets, keyed as for a changefeed.
+func (spec consumerSpec) values(name string) map[string]string {
+	values := presentValues(map[string]*stringScalar{
+		ydbchangefeed.AttributeImportant:          spec.Important,
+		ydbchangefeed.AttributeReadFrom:           spec.ReadFrom,
+		ydbchangefeed.AttributeAvailabilityPeriod: spec.AvailabilityPeriod,
+	}, name)
+	if spec.SupportedCodecs != nil {
+		values[ydbchangefeed.AttributeSupportedCodecs] = strings.Join(spec.SupportedCodecs, ",")
+	}
+	return values
+}
+
+// presentValues keeps the attributes a document set, and names the object.
+func presentValues(scalars map[string]*stringScalar, name string) map[string]string {
+	values := map[string]string{ydbchangefeed.AttributeName: name}
+	for attribute, value := range scalars {
+		if value != nil {
+			values[attribute] = string(*value)
+		}
+	}
+	return values
+}
+
+// buildChangefeeds reads a table's changefeeds and their consumers.
+func buildChangefeeds(table string, specs orderedMap[changefeedSpec]) ([]ast.ChangefeedSpec, error) {
+	var changefeeds []ast.ChangefeedSpec
+	for _, entry := range specs {
+		changefeed, err := ydbchangefeed.ParseDeclaration(entry.Value.values(entry.Name))
+		if err != nil {
+			return nil, fmt.Errorf("table %q: changefeed %q: %w", table, entry.Name, err)
+		}
+		for _, consumerEntry := range entry.Value.Consumers {
+			consumer, err := ydbchangefeed.ParseConsumer(consumerEntry.Value.values(consumerEntry.Name))
+			if err != nil {
+				return nil, fmt.Errorf("table %q: changefeed %q: consumer %q: %w", table, entry.Name, consumerEntry.Name, err)
+			}
+			changefeed.Consumers = append(changefeed.Consumers, consumer)
+		}
+		changefeeds = append(changefeeds, changefeed)
+	}
+	return changefeeds, nil
 }
 
 type constraintSpec struct {
@@ -557,10 +649,15 @@ func (d document) addTables(db *schemamodel.Database) error {
 			return err
 		}
 
+		changefeeds, err := buildChangefeeds(tableName, table.Changefeeds)
+		if err != nil {
+			return err
+		}
 		db.Tables = append(db.Tables, schemamodel.Table{
-			StructName: structName,
-			Name:       tableName,
-			APIName:    string(table.APIName),
+			StructName:  structName,
+			Name:        tableName,
+			Changefeeds: changefeeds,
+			APIName:     string(table.APIName),
 			APINames: schemamodel.TargetNames{
 				OpenAPI:  string(table.OpenAPIName),
 				GraphQL:  string(table.GraphQLName),

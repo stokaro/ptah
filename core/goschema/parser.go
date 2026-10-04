@@ -725,6 +725,8 @@ type schemaParseState struct {
 	managedData           []schemamodel.ManagedData
 	schemas               []schemamodel.Schema
 	notDescribed          []coverage.Object
+	changefeeds           []pendingChangefeed
+	consumers             []pendingConsumer
 }
 
 type structDeclaration struct {
@@ -847,6 +849,8 @@ var sharedDirectiveParsers = map[string]sharedDirectiveParser{
 	"ptah:schema:defaultprivilege":    (*schemaParseState).parseDefaultPrivilegeComment,
 	"ptah:schema:data":                (*schemaParseState).parseManagedDataComment,
 	"ptah:schema:notdescribed":        ignoringStruct((*schemaParseState).parseNotDescribedComment),
+	"ptah:schema:changefeed":          (*schemaParseState).parseChangefeedComment,
+	"ptah:schema:changefeed:consumer": (*schemaParseState).parseChangefeedConsumerComment,
 }
 
 // ignoringStruct adapts a parser that does not need the owning struct's name.
@@ -982,6 +986,9 @@ func ParseSource(filename string, source any) (schemamodel.Database, error) {
 func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamodel.Database, error) {
 	state := newSchemaParseState(filename, fset)
 	if err := state.processFileAST(f); err != nil {
+		return schemamodel.Database{}, err
+	}
+	if err := state.attachChangefeeds(); err != nil {
 		return schemamodel.Database{}, err
 	}
 

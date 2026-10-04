@@ -138,3 +138,23 @@ func RefuseSerialSequenceChanges(dialect string, diff *difftypes.SchemaDiff) err
 	}
 	return nil
 }
+
+// RefuseChangefeedChanges refuses a diff that changes a table's changefeeds,
+// for a planner of dialect that plans none. The comparison records such a
+// change only where the two sides hold changefeeds, which only a YDB
+// declaration and a YDB database do, so another planner reaches one only
+// through a diff built by hand or a declaration meant for YDB; planning
+// nothing would leave the changefeeds as they were and report the two sides
+// equal.
+func RefuseChangefeedChanges(dialect string, diff *difftypes.SchemaDiff) error {
+	if diff == nil {
+		return nil
+	}
+	for _, tableDiff := range diff.TablesModified {
+		if tableDiff.ChangefeedsChange != nil {
+			return fmt.Errorf("%w: the diff changes the changefeeds of table %q, which only a YDB plan does; "+
+				"the %s planner plans none", ptaherr.ErrUnsupportedFeature, tableDiff.TableName, dialect)
+		}
+	}
+	return nil
+}
