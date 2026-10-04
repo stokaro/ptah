@@ -295,7 +295,7 @@ Declares an index for a table.
 | `nulls_distinct` | No | Controls NULLS DISTINCT behavior. `true`/`false`. The clause is PostgreSQL's; a target whose capability set does not carry `unique_nulls_distinct_clause` refuses it at render time rather than dropping it, in either spelling. |
 | `ops` | No | PostgreSQL operator class. |
 | `table` | No | Explicit target table. |
-| `type` | No | Index type or method. On YDB, `async` builds a `GLOBAL ASYNC` index. |
+| `type` | No | Index type or method. On YDB, `async` builds a `GLOBAL ASYNC` index and `vector_kmeans_tree` a vector index. |
 | `unique` | No | Creates a unique index. `true`/`false`; bare form allowed. |
 | `where` | No | Atlas-style partial index condition alias. |
 
@@ -325,6 +325,20 @@ declares one, rather than build it with the server's defaults. See
 | `auto_partitioning_min_partitions_count` | at least 1 |
 | `auto_partitioning_max_partitions_count` | at least 1 |
 | `read_replicas_settings` | `PER_AZ:<n>` or `ANY_AZ:<n>` |
+
+A YDB vector index, `type="vector_kmeans_tree"`, takes its settings in
+attributes spelled as YDB names them. It names one of `distance` and
+`similarity`, and every other one. Every other dialect refuses an index that
+declares them. See [vector indexes](../../databases/ydb/#vector-indexes).
+
+| Attribute | Value |
+| --- | --- |
+| `distance` | `cosine`, `euclidean` or `manhattan` |
+| `similarity` | `inner_product` or `cosine` |
+| `vector_type` | `float`, `uint8`, `int8` or `bit` |
+| `vector_dimension` | 1 to 16384 |
+| `levels` | 1 to 16 |
+| `clusters` | 2 to 2048 |
 
 CockroachDB's catalog names its access methods `prefix` and `inverted`, and it
 refuses both as input. `ptah db read` reports them as `btree` and `gin`, the
