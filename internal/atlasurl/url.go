@@ -20,7 +20,6 @@ import (
 	"github.com/microsoft/go-mssqldb/msdsn"
 
 	"ptah.run/core/platform"
-	"ptah.run/internal/ydbgap"
 	"ptah.run/internal/ydburl"
 )
 
@@ -477,7 +476,10 @@ func networkDatabaseIdentity(parsed *url.URL, dialect string) (databaseIdentity,
 		// YDB, and a server listens for plaintext on one port and for TLS on
 		// another.
 		endpoint = networkEndpoint(ydbURL.Host, ydbURL.Port, platform.YDB)
-		database = ydbURL.Database
+		// A dev realm is a database of its own to every reader and writer a
+		// connection to it builds, and the database that holds it leaves
+		// the realm out of everything it reads and resets.
+		database = ydbURL.Root()
 	}
 	return databaseIdentity{
 		dialect:  identityDialect(dialect),
@@ -693,6 +695,10 @@ func NamesAFile(rawURL string) bool {
 	return err == nil && slices.Contains(fileSchemes, parsed.Scheme)
 }
 
+// ErrYDBDatabaseName is the refusal [WithDatabaseName] gives a YDB URL.
+var ErrYDBDatabaseName = errors.New("a YDB database cannot be created through SQL, so a URL renamed to a new " +
+	"database names one nothing can create; a YDB dev or scratch database is a dev realm in the database the URL names")
+
 // WithDatabaseName returns rawURL addressing the database name instead of the
 // one it names now.
 //
@@ -731,7 +737,7 @@ func WithDatabaseName(rawURL, name string) (string, error) {
 		// A YDB database cannot be created with SQL, so a URL naming a new one
 		// names a database nothing can make, and its name may also sit in a
 		// database parameter that a new path would not replace.
-		return "", errors.New(ydbgap.CreatingDatabases.Message())
+		return "", ErrYDBDatabaseName
 	}
 	parsed.Path = "/" + name
 	parsed.Opaque = ""

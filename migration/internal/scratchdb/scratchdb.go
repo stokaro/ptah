@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/ydbrealm"
 )
 
 // ErrNoIsolation reports that the dialect a URL names has no way to give one
@@ -33,6 +34,8 @@ type Scratch struct {
 	temporary   string
 	dropFrom    string
 	dropCommand string
+	// release removes a YDB dev realm, and is nil for every other dialect.
+	release func()
 }
 
 // URL is the address of the disposable database.
@@ -55,6 +58,12 @@ func (s *Scratch) Close(ctx context.Context) error {
 		dir := s.temporary
 		s.temporary = ""
 		return os.RemoveAll(dir)
+	}
+	if s.release != nil {
+		release := s.release
+		s.release = nil
+		release()
+		return nil
 	}
 	if s.dropCommand == "" {
 		return nil
@@ -83,6 +92,13 @@ func (s *Scratch) Close(ctx context.Context) error {
 // server. The server engines create a database beside the one the URL names and
 // return an address for it; Close removes what was created.
 //
+// YDB has no SQL that creates a database, so a case gets a dev realm instead:
+// a directory in the database the URL names, which a connection opened from
+// the returned URL treats as its whole database (see
+// ptah.run/internal/ydbrealm). Close removes the realm with everything in it;
+// a realm it could not remove is reported in a warning that names the
+// directory.
+//
 // A dialect this cannot isolate returns [ErrNoIsolation], so a caller refuses
 // rather than silently sharing.
 func Provision(ctx context.Context, baseURL string) (*Scratch, error) {
@@ -93,6 +109,13 @@ func Provision(ctx context.Context, baseURL string) (*Scratch, error) {
 
 	if dialect == platform.SQLite {
 		return provisionSQLite()
+	}
+	if dialect == platform.YDB {
+		realmURL, release, err := ydbrealm.Enter(ctx, baseURL)
+		if err != nil {
+			return nil, fmt.Errorf("create a scratch dev realm: %w", err)
+		}
+		return &Scratch{url: realmURL, release: release}, nil
 	}
 	if platform.IsPostgresFamily(dialect) || dialect == platform.MySQL || dialect == platform.MariaDB {
 		return provisionServerDatabase(ctx, baseURL)
@@ -200,7 +223,8 @@ func CanIsolate(baseURL string) error {
 	if dialect == platform.SQLite ||
 		platform.IsPostgresFamily(dialect) ||
 		dialect == platform.MySQL ||
-		dialect == platform.MariaDB {
+		dialect == platform.MariaDB ||
+		dialect == platform.YDB {
 		return nil
 	}
 	return fmt.Errorf("%w: %s", ErrNoIsolation, dialect)

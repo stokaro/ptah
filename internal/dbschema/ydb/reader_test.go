@@ -136,6 +136,53 @@ func TestReader_WalksTheTree(t *testing.T) {
 	c.Assert(got, qt.DeepEquals, []string{"app|orders", "app/sub|items", "|users"})
 }
 
+// The dev realms at the root of the database are the runs' own: the reader
+// does not list them. A directory of the same name anywhere else is part of
+// the schema, and a reader rooted at a realm reads it as its whole database.
+func TestReader_LeavesOutTheDevRealms(t *testing.T) {
+	source := fakeSource{
+		directories: map[string][]*Ydb_Scheme.Entry{
+			"/local": {
+				entry("users", Ydb_Scheme.Entry_TABLE),
+				entry("ptah_dev", Ydb_Scheme.Entry_DIRECTORY),
+				entry("app", Ydb_Scheme.Entry_DIRECTORY),
+			},
+			"/local/app":              {entry("ptah_dev", Ydb_Scheme.Entry_DIRECTORY)},
+			"/local/app/ptah_dev":     {entry("orders", Ydb_Scheme.Entry_TABLE)},
+			"/local/ptah_dev/r1":      {entry("items", Ydb_Scheme.Entry_TABLE), entry("shop", Ydb_Scheme.Entry_DIRECTORY)},
+			"/local/ptah_dev/r1/shop": {entry("carts", Ydb_Scheme.Entry_TABLE)},
+		},
+		tables: map[string]*Ydb_Table.DescribeTableResult{
+			"/local/users":                  plainTable(),
+			"/local/app/ptah_dev/orders":    plainTable(),
+			"/local/ptah_dev/r1/items":      plainTable(),
+			"/local/ptah_dev/r1/shop/carts": plainTable(),
+		},
+	}
+	tests := []struct {
+		name string
+		root string
+		want []string
+	}{
+		{name: "the database", root: "/local", want: []string{"app/ptah_dev|orders", "|users"}},
+		{name: "a realm", root: "/local/ptah_dev/r1", want: []string{"|items", "shop|carts"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			db, err := ydbschema.NewReaderFromSource(source, test.root, capability.YDB262()).ReadSchemaContext(context.Background())
+
+			c.Assert(err, qt.IsNil)
+			var got []string
+			for _, table := range db.Tables {
+				got = append(got, table.Schema+"|"+table.Name)
+			}
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
+}
+
 // A schema list narrows the read to the directories it names, and a
 // directory's own subdirectories are schemas of their own.
 func TestReader_SetSchemas(t *testing.T) {

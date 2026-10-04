@@ -39,6 +39,7 @@ import (
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/migrateclean"
+	"ptah.run/internal/ydbrealm"
 )
 
 // Check is how a verb words the refusal: which prefix the binary puts in
@@ -102,14 +103,16 @@ func ForSources(sets ...atlassource.Set) (Check, bool) {
 // Refuse returns the binary's refusal when the dev database devURL names holds
 // a table, and nil otherwise.
 //
-// It returns nil without looking in three cases, each of which the verb
+// It returns nil without looking in four cases, each of which the verb
 // answers itself. A `docker://` value names a container the run starts, which
-// is empty. A dev database that cannot be reached or read is reported by the
-// verb when it connects, in the words its own tests pin; this check does not
-// guess at them. And a dialect [migrateclean.GovernsDev] does not cover is
-// not checked.
+// is empty. A YDB URL names the database a dev realm the run creates lives in,
+// which is empty too, and on a server declared disposable the claim checks the
+// database before it resets it. A dev database that cannot be reached or read
+// is reported by the verb when it connects, in the words its own tests pin;
+// this check does not guess at them. And a dialect [migrateclean.GovernsDev]
+// does not cover is not checked.
 func Refuse(ctx context.Context, devURL string, check Check) error {
-	if strings.TrimSpace(devURL) == "" || devdocker.IsURL(devURL) {
+	if strings.TrimSpace(devURL) == "" || devdocker.IsURL(devURL) || ydbrealm.Applies(devURL) {
 		return nil
 	}
 	connectCtx, cancel := dbcli.ConnectContext(ctx, dbcli.DefaultConnectTimeout)

@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"ptah.run/internal/ydbrealm"
 )
 
 // ContainerLabel marks every container this package starts. It exists so an
@@ -397,9 +399,19 @@ func Provision(ctx context.Context, rawURL string, opts Options) (*Instance, err
 // With [Options.DeclaredDisposable] set, such a URL is recorded for [RunOwned]
 // in the form a consumer connects with, trimmed of surrounding space, and the
 // release ends the record. Without it the release does nothing.
+//
+// A YDB URL is the exception. SQL cannot create a YDB database, so the dev
+// database is a dev realm Resolve creates in the database the URL names, and
+// the URL returned names the realm; the release removes it (see
+// ptah.run/internal/ydbrealm). A YDB server the operator declared disposable
+// is the run's whole, as a `docker://ydb` one is, and gets no realm: its
+// database is the dev database.
 func Resolve(ctx context.Context, rawURL string, opts Options) (string, func(), error) {
 	if !IsURL(rawURL) {
 		if !opts.DeclaredDisposable {
+			if ydbrealm.Applies(rawURL) {
+				return ydbrealm.Enter(ctx, rawURL)
+			}
 			return rawURL, func() {}, nil
 		}
 		declared := strings.TrimSpace(rawURL)

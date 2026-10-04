@@ -18,6 +18,7 @@ import (
 	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
 	"github.com/ydb-platform/ydb-go-sdk/v3/balancers"
 
+	"ptah.run/internal/ydbtype"
 	"ptah.run/internal/ydburl"
 )
 
@@ -27,6 +28,13 @@ import (
 type Connection struct {
 	DB     *sql.DB
 	Driver *ydbsdk.Driver
+	// Root is the absolute path the connection treats as its database: the
+	// database the URL names, or the dev realm's directory under it when the
+	// URL names a realm (see ydburl.RealmParameter). The reader and the writer
+	// built for the connection read and change only what is under it.
+	Root string
+	// Realm is the dev realm the URL names, "" for none.
+	Realm string
 }
 
 // The parameters a YDB URL may carry besides database and monitoring, which
@@ -66,6 +74,13 @@ var acceptedParameters = []string{
 // (sqlutil.Rebind) and the connection names each positional argument; see
 // [NewBindingConnector]. It is pinned to the query service, which the SDK otherwise
 // lets YDB_DATABASE_SQL_OVER_QUERY_SERVICE switch.
+//
+// A URL that names a dev realm opens the database that holds it, and every
+// query the pool runs starts with `PRAGMA TablePathPrefix` naming the realm's
+// directory, so a relative path in any statement resolves inside the realm.
+// The realm's directory is not created here: a realm is created by the run
+// that names it, and a URL naming one that does not exist reads as an empty
+// database and creates its directory with the first table.
 func Open(ctx context.Context, rawURL string) (*Connection, error) {
 	parsed, err := ydburl.Parse(rawURL)
 	if err != nil {
@@ -100,10 +115,28 @@ func Open(ctx context.Context, rawURL string) (*Connection, error) {
 		DB: sql.OpenDB(&connector{
 			inner:   inner,
 			sdk:     driver,
+			prefix:  pathPrefix(parsed),
 			onClose: func() error { return closeDriver(driver) },
 		}),
 		Driver: driver,
+		Root:   parsed.Root(),
+		Realm:  parsed.Realm,
 	}, nil
+}
+
+// pathPrefix is the pragma every query of a connection to parsed starts with:
+// `PRAGMA TablePathPrefix` naming the realm's directory, or nothing when the
+// URL names no realm. The pragma takes an absolute path, and a relative path
+// in the statement after it then resolves under that path. Measured on
+// 26.2.1.14 and 25.1.4.7: `CREATE TABLE t` after it creates the table in the
+// realm, and so do `CREATE VIEW` and `CREATE TOPIC`; an absolute path, a path
+// that climbs out with `..` and a table named through a `$` expression are
+// not confined by it, and the dev replay guard refuses each.
+func pathPrefix(parsed ydburl.URL) string {
+	if parsed.Realm == "" {
+		return ""
+	}
+	return "PRAGMA TablePathPrefix(" + ydbtype.StringLiteral(parsed.Root()) + ");\n"
 }
 
 // dataSourceName writes the SDK's form of the URL: grpc:// or grpcs://, the

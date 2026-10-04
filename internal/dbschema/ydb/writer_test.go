@@ -12,9 +12,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Scheme"
 
 	"ptah.run/core/ptaherr"
+	"ptah.run/internal/dbreset"
 	ydbschema "ptah.run/internal/dbschema/ydb"
 )
 
@@ -24,9 +26,25 @@ type fakeDatabase struct {
 	tree     map[string][]*Ydb_Scheme.Entry
 	executed []string
 	removed  []string
+	made     []string
+	// created is the creation moment DescribePath answers for each path.
+	created map[string]*Ydb.VirtualTimestamp
 	// failures answers the statement at each position of the log with an
 	// error, where the slice holds one.
 	failures []error
+}
+
+func (f *fakeDatabase) MakeDirectory(_ context.Context, dir string) error {
+	f.made = append(f.made, dir)
+	return nil
+}
+
+func (f *fakeDatabase) DescribePath(_ context.Context, absolute string) (*Ydb_Scheme.Entry, error) {
+	created, ok := f.created[absolute]
+	if !ok {
+		return nil, fmt.Errorf("described %s, which the fixture does not hold", absolute)
+	}
+	return &Ydb_Scheme.Entry{Name: path.Base(absolute), Type: Ydb_Scheme.Entry_DIRECTORY, CreatedAt: created}, nil
 }
 
 func (f *fakeDatabase) ListDirectory(_ context.Context, dir string) ([]*Ydb_Scheme.Entry, error) {
@@ -95,7 +113,7 @@ func newFake() *fakeDatabase {
 func TestWriter_ExecuteSQL_RunsTheQueriesOfTheSplit(t *testing.T) {
 	c := qt.New(t)
 	fake := newFake()
-	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local")
+	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
 
 	err := writer.ExecuteSQL(context.Background(),
 		"ALTER TABLE `t` ADD COLUMN `v` Utf8;\nALTER TABLE `t` ADD INDEX `i` GLOBAL SYNC ON (`v`);\n"+
@@ -147,7 +165,7 @@ func TestWriter_ExecuteSQL_RetriesAnAbortedDataStatement(t *testing.T) {
 			c := qt.New(t)
 			fake := newFake()
 			fake.failures = test.failures
-			writer := ydbschema.NewWriterFromScheme(fake, fake, "/local")
+			writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
 
 			err := writer.ExecuteSQL(context.Background(), test.statement)
 
@@ -208,7 +226,7 @@ func TestWriter_ExecuteSQL_FailurePath(t *testing.T) {
 			c := qt.New(t)
 			fake := newFake()
 			fake.failures = test.failures
-			writer := ydbschema.NewWriterFromScheme(fake, fake, "/local")
+			writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
 
 			err := writer.ExecuteSQL(context.Background(), test.statement, test.args...)
 
@@ -224,7 +242,7 @@ func TestWriter_ExecuteSQL_FailurePath_StopsRetryingWhenTheContextEnds(t *testin
 	c := qt.New(t)
 	fake := newFake()
 	fake.failures = []error{conflictError{}, conflictError{}, conflictError{}, conflictError{}, conflictError{}}
-	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local")
+	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -238,7 +256,7 @@ func TestWriter_ExecuteSQL_FailurePath_StopsRetryingWhenTheContextEnds(t *testin
 func TestWriter_DryRun(t *testing.T) {
 	c := qt.New(t)
 	fake := newFake()
-	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local")
+	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
 	writer.SetDryRun(true)
 
 	err := writer.ExecuteSQL(context.Background(), "DROP TABLE `t`")
@@ -253,7 +271,7 @@ func TestWriter_DryRun(t *testing.T) {
 func TestWriter_TransactionIsANoOp(t *testing.T) {
 	c := qt.New(t)
 	fake := newFake()
-	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local")
+	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
 
 	tx, err := writer.BeginTransaction(context.Background())
 	c.Assert(err, qt.IsNil)
@@ -267,7 +285,7 @@ func TestWriter_TransactionIsANoOp(t *testing.T) {
 // DropAllTables drops every row table and removes the directories that left
 // empty. What the reader does not describe stays, and so does the directory
 // that holds it; a directory that was empty before is not touched, and a
-// dot-directory is never listed.
+// dot-directory is never listed, nor are the dev realms at the root.
 func TestWriter_DropAllTables(t *testing.T) {
 	c := qt.New(t)
 	fake := &fakeDatabase{tree: map[string][]*Ydb_Scheme.Entry{
@@ -278,6 +296,7 @@ func TestWriter_DropAllTables(t *testing.T) {
 			entry("keep", Ydb_Scheme.Entry_DIRECTORY),
 			entry("mixed", Ydb_Scheme.Entry_DIRECTORY),
 			entry("olap", Ydb_Scheme.Entry_COLUMN_TABLE),
+			entry("ptah_dev", Ydb_Scheme.Entry_DIRECTORY),
 			entry("v", Ydb_Scheme.Entry_VIEW),
 		},
 		"/local/app":     {entry("sub", Ydb_Scheme.Entry_DIRECTORY), entry("t2", Ydb_Scheme.Entry_TABLE)},
@@ -285,7 +304,7 @@ func TestWriter_DropAllTables(t *testing.T) {
 		"/local/keep":    nil,
 		"/local/mixed":   {entry("t4", Ydb_Scheme.Entry_TABLE), entry("events", Ydb_Scheme.Entry_TOPIC)},
 	}}
-	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local")
+	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
 
 	err := writer.DropAllTables(context.Background())
 
@@ -301,7 +320,7 @@ func TestWriter_DropAllTables(t *testing.T) {
 	for _, kept := range fake.tree["/local"] {
 		left = append(left, kept.GetName())
 	}
-	c.Assert(left, qt.DeepEquals, []string{".sys", "keep", "mixed", "olap", "v"})
+	c.Assert(left, qt.DeepEquals, []string{".sys", "keep", "mixed", "olap", "ptah_dev", "v"})
 	c.Assert(fake.tree["/local/mixed"], qt.HasLen, 1)
 }
 
@@ -312,7 +331,7 @@ func TestWriter_DropAllTables_FailurePath(t *testing.T) {
 		tree:     map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
 		failures: []error{errors.New("SCHEME_ERROR: path is locked")},
 	}
-	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local")
+	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
 
 	err := writer.DropAllTables(context.Background())
 
@@ -336,7 +355,7 @@ func TestWriter_DropDirectory(t *testing.T) {
 		"/local/probe/rb": {entry("t`2", Ydb_Scheme.Entry_TABLE)},
 		"/local/app":      {entry("keep", Ydb_Scheme.Entry_TABLE)},
 	}}
-	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local")
+	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
 
 	err := writer.DropDirectory(context.Background(), "/probe/")
 
@@ -399,7 +418,7 @@ func TestWriter_DropDirectory_FailurePath(t *testing.T) {
 				"/local/scratch":      {entry("t", Ydb_Scheme.Entry_TABLE), entry(".tmp", Ydb_Scheme.Entry_DIRECTORY)},
 				"/local/scratch/.tmp": {entry("x", Ydb_Scheme.Entry_TABLE)},
 			}}
-			writer := ydbschema.NewWriterFromScheme(fake, fake, "/local")
+			writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
 
 			err := writer.DropDirectory(context.Background(), test.dir)
 
@@ -419,7 +438,7 @@ func TestWriter_ExecuteSQL_FailurePath_NamesTheCapabilityAFlagTurnedOff(t *testi
 	refusal := errors.New("Status: BAD_REQUEST Issues: <main>: Error: Failed item check: " +
 		"Adding a unique index to an existing table is disabled")
 	fake.failures = []error{refusal}
-	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local")
+	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
 
 	err := writer.ExecuteSQL(context.Background(), "ALTER TABLE `t` ADD INDEX `u` GLOBAL UNIQUE SYNC ON (`n`)")
 
@@ -433,4 +452,271 @@ func TestWriter_ExecuteSQL_FailurePath_NamesTheCapabilityAFlagTurnedOff(t *testi
 	var capabilityErr *ptaherr.CapabilityError
 	c.Assert(err, qt.ErrorAs, &capabilityErr)
 	c.Assert(capabilityErr.Feature, qt.Equals, "unique_index_on_existing_table")
+}
+
+// rootTree is a database whose root holds the server's directories, Ptah's
+// lock node and dev realms, and the objects a reset finds; realm r1 holds a
+// table and a directory named like the realms' one.
+func rootTree() map[string][]*Ydb_Scheme.Entry {
+	return map[string][]*Ydb_Scheme.Entry{
+		"/local": {
+			entry("users", Ydb_Scheme.Entry_TABLE),
+			entry(".sys", Ydb_Scheme.Entry_DIRECTORY),
+			entry("app", Ydb_Scheme.Entry_DIRECTORY),
+			entry("empty", Ydb_Scheme.Entry_DIRECTORY),
+			entry("ptah_dev", Ydb_Scheme.Entry_DIRECTORY),
+			entry("ptah_locks", Ydb_Scheme.Entry_COORDINATION_NODE),
+		},
+		"/local/app":                  {entry("v", Ydb_Scheme.Entry_VIEW), entry("orders", Ydb_Scheme.Entry_TABLE)},
+		"/local/empty":                nil,
+		"/local/ptah_dev":             {entry("r1", Ydb_Scheme.Entry_DIRECTORY), entry("r2", Ydb_Scheme.Entry_DIRECTORY)},
+		"/local/ptah_dev/r1":          {entry("t", Ydb_Scheme.Entry_TABLE), entry("ptah_dev", Ydb_Scheme.Entry_DIRECTORY)},
+		"/local/ptah_dev/r1/ptah_dev": {entry("olap", Ydb_Scheme.Entry_COLUMN_TABLE)},
+	}
+}
+
+// A reset lists what it would drop, contents before their directory, and
+// leaves out the server's directories and, at a database's root only, Ptah's
+// lock node and the dev realms.
+func TestWriter_ResetObjects(t *testing.T) {
+	tests := []struct {
+		name  string
+		realm string
+		want  []dbreset.Object
+	}{
+		{
+			name: "a database",
+			want: []dbreset.Object{
+				{Kind: "table", Schema: "app", Name: "orders"},
+				{Kind: "view", Schema: "app", Name: "v"},
+				{Kind: "directory", Name: "app"},
+				{Kind: "directory", Name: "empty"},
+				{Kind: "table", Name: "users"},
+			},
+		},
+		{
+			name:  "a realm",
+			realm: "r1",
+			want: []dbreset.Object{
+				{Kind: "column table", Schema: "ptah_dev", Name: "olap"},
+				{Kind: "directory", Name: "ptah_dev"},
+				{Kind: "table", Name: "t"},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fake := &fakeDatabase{tree: rootTree()}
+			writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", test.realm)
+
+			got, err := writer.ResetObjects(context.Background(), dbreset.Scope{})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// A reset drops what it lists and removes the directories below the root,
+// deepest first; the statements name objects relative to the root, which is
+// the root the connection resolves names against.
+func TestWriter_DropDatabaseRealm(t *testing.T) {
+	tests := []struct {
+		name         string
+		realm        string
+		wantExecuted []string
+		wantRemoved  []string
+	}{
+		{
+			name:         "a database",
+			wantExecuted: []string{"DROP TABLE `app/orders`", "DROP VIEW `app/v`", "DROP TABLE `users`"},
+			wantRemoved:  []string{"/local/app", "/local/empty"},
+		},
+		{
+			name:         "a realm",
+			realm:        "r1",
+			wantExecuted: []string{"DROP TABLE `ptah_dev/olap`", "DROP TABLE `t`"},
+			wantRemoved:  []string{"/local/ptah_dev/r1/ptah_dev"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fake := &fakeDatabase{tree: rootTree()}
+			writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", test.realm)
+
+			err := writer.DropDatabaseRealm(context.Background())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(fake.executed, qt.DeepEquals, test.wantExecuted)
+			c.Assert(fake.removed, qt.DeepEquals, test.wantRemoved)
+		})
+	}
+}
+
+// An object a reset has no statement for stops it before anything is dropped,
+// and so does an environment a YDB reset cannot keep.
+func TestWriter_DropDatabaseRealm_FailurePath(t *testing.T) {
+	t.Run("a topic", func(t *testing.T) {
+		c := qt.New(t)
+		tree := rootTree()
+		tree["/local/app"] = append(tree["/local/app"], entry("events", Ydb_Scheme.Entry_TOPIC))
+		fake := &fakeDatabase{tree: tree}
+		writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
+
+		err := writer.DropDatabaseRealm(context.Background())
+
+		c.Assert(err, qt.ErrorMatches,
+			`ydb: /local holds topic "events" in directory "app", which Ptah has no statement to drop; nothing was dropped`)
+		c.Assert(fake.executed, qt.HasLen, 0)
+		c.Assert(fake.removed, qt.HasLen, 0)
+	})
+	t.Run("a kept extension", func(t *testing.T) {
+		c := qt.New(t)
+		fake := &fakeDatabase{tree: rootTree()}
+		writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
+
+		err := writer.DropAllTablesKeeping(context.Background(), dbreset.Kept{Extensions: []string{"vector"}})
+
+		c.Assert(err, qt.ErrorMatches, "ydb: a YDB dev database has no environment a reset keeps, and this one names some")
+		c.Assert(fake.executed, qt.HasLen, 0)
+	})
+}
+
+// A run's realm goes with everything in it, a name that starts with a dot
+// included, through statements that name each object from the database's
+// root; the directory of the realms goes with the last realm.
+func TestWriter_RemoveRealm(t *testing.T) {
+	tests := []struct {
+		name         string
+		others       []*Ydb_Scheme.Entry
+		wantExecuted []string
+		wantRemoved  []string
+	}{
+		{
+			name:         "another realm is left",
+			others:       []*Ydb_Scheme.Entry{entry("r2", Ydb_Scheme.Entry_DIRECTORY)},
+			wantExecuted: []string{"DROP TABLE `ptah_dev/r1/.hidden`", "DROP VIEW `ptah_dev/r1/app/v`", "DROP TABLE `ptah_dev/r1/t`"},
+			wantRemoved:  []string{"/local/ptah_dev/r1/app", "/local/ptah_dev/r1"},
+		},
+		{
+			name:         "the last realm",
+			wantExecuted: []string{"DROP TABLE `ptah_dev/r1/.hidden`", "DROP VIEW `ptah_dev/r1/app/v`", "DROP TABLE `ptah_dev/r1/t`"},
+			wantRemoved:  []string{"/local/ptah_dev/r1/app", "/local/ptah_dev/r1", "/local/ptah_dev"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fake := &fakeDatabase{tree: map[string][]*Ydb_Scheme.Entry{
+				"/local":          {entry("ptah_dev", Ydb_Scheme.Entry_DIRECTORY)},
+				"/local/ptah_dev": append([]*Ydb_Scheme.Entry{entry("r1", Ydb_Scheme.Entry_DIRECTORY)}, test.others...),
+				"/local/ptah_dev/r1": {
+					entry("t", Ydb_Scheme.Entry_TABLE),
+					entry(".hidden", Ydb_Scheme.Entry_TABLE),
+					entry("app", Ydb_Scheme.Entry_DIRECTORY),
+				},
+				"/local/ptah_dev/r1/app": {entry("v", Ydb_Scheme.Entry_VIEW)},
+			}}
+			writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
+
+			err := writer.RemoveRealm(context.Background(), "r1")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(fake.executed, qt.DeepEquals, test.wantExecuted)
+			c.Assert(fake.removed, qt.DeepEquals, test.wantRemoved)
+		})
+	}
+}
+
+// A realm is removed through its database, by a name a realm can carry, and
+// only when everything in it can be dropped; otherwise nothing is dropped.
+func TestWriter_RemoveRealm_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		realm   string
+		in      string
+		wantErr string
+	}{
+		{
+			name:    "through a realm",
+			realm:   "r1",
+			in:      "r2",
+			wantErr: `ydb: a realm is removed through its database, not through /local/ptah_dev/r2`,
+		},
+		{
+			name:    "a name that is a path",
+			realm:   "../app",
+			wantErr: `the dev_realm parameter "../app" is not a realm name: use 1 to 64 lowercase letters, digits and underscores`,
+		},
+		{
+			name:  "a topic inside",
+			realm: "r1",
+			wantErr: `ydb: the dev realm /local/ptah_dev/r1 holds topic "events" in directory "app", ` +
+				`which Ptah has no statement to drop; nothing was dropped`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fake := &fakeDatabase{tree: map[string][]*Ydb_Scheme.Entry{
+				"/local":                 {entry("ptah_dev", Ydb_Scheme.Entry_DIRECTORY)},
+				"/local/ptah_dev":        {entry("r1", Ydb_Scheme.Entry_DIRECTORY)},
+				"/local/ptah_dev/r1":     {entry("t", Ydb_Scheme.Entry_TABLE), entry("app", Ydb_Scheme.Entry_DIRECTORY)},
+				"/local/ptah_dev/r1/app": {entry("events", Ydb_Scheme.Entry_TOPIC)},
+			}}
+			writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", test.in)
+
+			err := writer.RemoveRealm(context.Background(), test.realm)
+
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(test.wantErr))
+			c.Assert(fake.executed, qt.HasLen, 0)
+			c.Assert(fake.removed, qt.HasLen, 0)
+		})
+	}
+}
+
+// A realm's identity is its database's, which the server's creation moment
+// tells apart from a database of the same path on another server, and the
+// realm's directory.
+func TestWriter_RealmIdentity(t *testing.T) {
+	tests := []struct {
+		name    string
+		realm   string
+		created *Ydb.VirtualTimestamp
+		want    string
+	}{
+		{name: "a database", created: &Ydb.VirtualTimestamp{PlanStep: 1791098831240, TxId: 1}, want: "/local@1791098831240.1"},
+		{
+			name:    "a realm",
+			realm:   "r1",
+			created: &Ydb.VirtualTimestamp{PlanStep: 1791098831240, TxId: 1},
+			want:    "/local@1791098831240.1/ptah_dev/r1",
+		},
+		{name: "a server that reports no creation moment", want: "/local"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fake := &fakeDatabase{created: map[string]*Ydb.VirtualTimestamp{"/local": test.created}}
+			writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", test.realm)
+
+			got, err := writer.RealmIdentity(context.Background())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+// A directory is created under the root, the realm's when there is one.
+func TestWriter_MakeDirectory(t *testing.T) {
+	c := qt.New(t)
+	fake := newFake()
+
+	c.Assert(ydbschema.NewWriterFromScheme(fake, fake, "/local", "").MakeDirectory(context.Background(), "ptah_dev/r1"), qt.IsNil)
+	c.Assert(ydbschema.NewWriterFromScheme(fake, fake, "/local", "r1").MakeDirectory(context.Background(), "app"), qt.IsNil)
+
+	c.Assert(fake.made, qt.DeepEquals, []string{"/local/ptah_dev/r1", "/local/ptah_dev/r1/app"})
 }

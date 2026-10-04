@@ -7,7 +7,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/atlasurl"
-	"ptah.run/internal/ydbgap"
 )
 
 // A YDB database is a path, and the URL may carry it in its path or in a
@@ -80,6 +79,24 @@ func TestSameDatabaseEndpoint_YDB_HappyPath(t *testing.T) {
 			left:  "ydb://localhost:2136",
 			right: "ydb://localhost:2136/",
 			want:  false,
+		},
+		{
+			name:  "a dev realm is not the database that holds it",
+			left:  "ydb://localhost:2136/local?dev_realm=r1",
+			right: "ydb://localhost:2136/local",
+			want:  false,
+		},
+		{
+			name:  "two dev realms in one database",
+			left:  "ydb://localhost:2136/local?dev_realm=r1",
+			right: "ydb://localhost:2136/local?dev_realm=r2",
+			want:  false,
+		},
+		{
+			name:  "one dev realm spelled twice",
+			left:  "ydb://localhost:2136/local?dev_realm=r1",
+			right: "ydb://localhost/?database=/local&dev_realm=r1",
+			want:  true,
 		},
 	}
 
@@ -162,6 +179,12 @@ func TestMayAddressSameDatabase_YDB_HappyPath(t *testing.T) {
 			right: "postgres://localhost/local",
 			want:  false,
 		},
+		{
+			name:  "a dev realm and the database that holds it are distinct realms",
+			left:  "ydb://db-a:2136/local?dev_realm=r1",
+			right: "ydb://db-b:2136/local",
+			want:  false,
+		},
 	}
 
 	for _, test := range tests {
@@ -184,7 +207,7 @@ func TestWithDatabaseName_RefusesYDB(t *testing.T) {
 
 			got, err := atlasurl.WithDatabaseName(rawURL, "scratch")
 
-			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(ydbgap.CreatingDatabases.Message()))
+			c.Assert(err, qt.ErrorIs, atlasurl.ErrYDBDatabaseName)
 			c.Assert(got, qt.Equals, "")
 		})
 	}
