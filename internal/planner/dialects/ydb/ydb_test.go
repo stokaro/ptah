@@ -93,6 +93,60 @@ func TestGenerateMigrationAST_Order_HappyPath(t *testing.T) {
 		"DROP TABLE `legacy`;\n")
 }
 
+// tagsAdded is a plan that creates table tags with one index.
+func tagsAdded(index schemamodel.Index) *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
+		TablesAdded: difftypes.TableChanges{{
+			Name:   "tags",
+			Table:  schemamodel.Table{StructName: "T", Name: "tags"},
+			Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "BIGINT", Primary: true}, {StructName: "T", Name: "label", Type: "TEXT", Nullable: true}},
+		}},
+		IndexesAdded: difftypes.IndexChanges{{TableName: "tags", Index: index}},
+	}
+}
+
+// TestGenerateMigrationAST_NewTableIndexes_HappyPath pins where a new table's
+// index goes, which capability.CreateIndexStatement decides. Every YDB line
+// lacks the key, so the index is written inside the CREATE TABLE; a target that
+// had the statement would get the index after the table, as YDB's own ADD
+// INDEX, because no CREATE INDEX spelling has been measured on YDB to write.
+func TestGenerateMigrationAST_NewTableIndexes_HappyPath(t *testing.T) {
+	tests := []struct {
+		name string
+		caps capability.Capabilities
+		want string
+	}{
+		{
+			name: "every YDB line declares it in the table",
+			caps: capability.YDB262(),
+			want: "CREATE TABLE `tags` (\n" +
+				"    `id` Int64 NOT NULL,\n" +
+				"    `label` Utf8,\n" +
+				"    PRIMARY KEY (`id`),\n" +
+				"    INDEX `tags_label` GLOBAL SYNC ON (`label`)\n" +
+				");\n",
+		},
+		{
+			name: "a target with CREATE INDEX adds it after the table",
+			caps: capability.YDB262().With(capability.CreateIndexStatement, true),
+			want: "CREATE TABLE `tags` (\n" +
+				"    `id` Int64 NOT NULL,\n" +
+				"    `label` Utf8,\n" +
+				"    PRIMARY KEY (`id`)\n" +
+				");\n" +
+				"ALTER TABLE `tags` ADD INDEX `tags_label` GLOBAL SYNC ON (`label`);\n",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			got := render(c, test.caps, tagsAdded(schemamodel.Index{Name: "tags_label", Fields: []string{"label"}}))
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
 // TestGenerateMigrationAST_ColumnChanges_HappyPath pins the in-place changes a
 // line makes: DROP NOT NULL on every line, SET and DROP DEFAULT on 26.2, and a
 // column added with a default from 26.1.
@@ -196,6 +250,11 @@ func TestGenerateMigrationAST_RefusesByCapability_FailurePath(t *testing.T) {
 		{name: "a unique index added to a table that exists", caps: capability.YDB262(),
 			diff:    &difftypes.SchemaDiff{IndexesAdded: difftypes.IndexChanges{{TableName: "items", Index: schemamodel.Index{Name: "u", Fields: []string{"a"}, Unique: true}}}},
 			wantKey: capability.UniqueIndexOnExistingTable, wantErr: `adding unique index "u" to table "items", which exists already, which requires target capability unique_index_on_existing_table, .*`},
+		// With the index outside the CREATE TABLE, a new table's unique index
+		// is an ADD INDEX on a table that exists by then.
+		{name: "a unique index on a new table added after it", caps: capability.YDB262().With(capability.CreateIndexStatement, true),
+			diff:    tagsAdded(schemamodel.Index{Name: "tags_label_uq", Fields: []string{"label"}, Unique: true}),
+			wantKey: capability.UniqueIndexOnExistingTable, wantErr: `adding unique index "tags_label_uq" to table "tags", which exists already, which requires target capability unique_index_on_existing_table, .*`},
 		{name: "a UNIQUE constraint added", caps: capability.YDB262(),
 			diff:    &difftypes.SchemaDiff{ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "uq", TableName: "items", Type: "UNIQUE"}}},
 			wantKey: capability.UniqueConstraints, wantErr: `adding constraint uq \(declare a unique index instead\), which requires target capability unique_constraints, .*`},

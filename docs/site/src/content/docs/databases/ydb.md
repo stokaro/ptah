@@ -165,7 +165,8 @@ Indexes are global. A plain index is `GLOBAL SYNC`, a unique one
 become `COVER (...)`. A unique index treats NULLs as distinct, as PostgreSQL
 does by default.
 
-The indexes of a new table are written inside its `CREATE TABLE`. YDB keeps
+YDB has no `CREATE INDEX` statement, which the `create_index_statement` key
+records, so the indexes of a new table are written inside its `CREATE TABLE`. YDB keeps
 adding a unique index to a table that already exists behind a feature flag that
 is off by default, so Ptah refuses that change and declares a unique index with
 the table instead. A cluster that turns the flag on takes the change when the

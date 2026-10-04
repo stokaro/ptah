@@ -11,7 +11,8 @@
 // one that has not run yet:
 //
 //  1. CREATE TABLE for every added table, with the indexes it gains written
-//     inside the statement;
+//     inside the statement, because YDB has no CREATE INDEX
+//     ([capability.CreateIndexStatement]);
 //  2. DROP INDEX for every index the plan removes, before any column it names
 //     is dropped (measured: `Impossible drop column because table has an index
 //     with that column`, and the same for a covered column);
@@ -43,6 +44,7 @@ import (
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/planner/columnchange"
 	"ptah.run/internal/planner/schemaprecondition"
+	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/ydbgap"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbtype"
@@ -92,30 +94,47 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 			return nil, err
 		}
 	}
-	if err := p.refuseIndexAdditions(diff, addedTables, semantics); err != nil {
+	// The tables whose indexes go inside their CREATE TABLE: every added
+	// table, on a target without a CREATE INDEX statement. The render path
+	// decides the same question through the same predicate, so `schema
+	// render` and a plan write a new table's indexes in the same place.
+	inlineIndexes := make(map[string]bool)
+	if schemaprep.DeclaresIndexesInCreateTable(p.caps) {
+		inlineIndexes = addedTables
+	}
+	if err := p.refuseIndexAdditions(diff, inlineIndexes, semantics); err != nil {
 		return nil, err
 	}
 
 	var result []ast.Node
-	result = append(result, p.createTables(diff, semantics)...)
+	result = append(result, p.createTables(diff, inlineIndexes, semantics)...)
 	result = append(result, dropIndexes(diff.IndexRemovals(), removedTables, semantics)...)
 	for _, tableDiff := range diff.TablesModified {
 		result = append(result, p.changeTable(tableDiff, diff.DeclaredUserTypes.Enums)...)
 	}
-	result = append(result, addIndexes(diff.IndexesAdded, addedTables, semantics)...)
+	result = append(result, addIndexes(diff.IndexesAdded, inlineIndexes, semantics)...)
 	for _, name := range diff.TablesRemoved {
 		result = append(result, ast.NewDropTable(name))
 	}
 	return result, nil
 }
 
-// createTables writes each added table with the indexes the plan gives it.
-func (p *Planner) createTables(diff *difftypes.SchemaDiff, semantics identifier.Semantics) []ast.Node {
+// createTables writes each added table, with the indexes the plan gives it
+// when inlineIndexes names the table.
+func (p *Planner) createTables(
+	diff *difftypes.SchemaDiff,
+	inlineIndexes map[string]bool,
+	semantics identifier.Semantics,
+) []ast.Node {
 	creations := diff.TablesAdded.Qualified(diff.DeclaredUserTypes, platform.YDB).InDependencyOrder()
 	nodes := make([]ast.Node, 0, len(creations))
 	for _, creation := range creations {
 		table := modelast.FromTableWithConstraints(creation.Table, creation.Fields, creation.Enums, platform.YDB, creation.Constraints)
 		key := semantics.TableIdentityKey(creation.Name)
+		if !inlineIndexes[key] {
+			nodes = append(nodes, table)
+			continue
+		}
 		for _, change := range diff.IndexesAdded {
 			if semantics.TableIdentityKey(change.TableName) != key {
 				continue
@@ -142,12 +161,12 @@ func dropIndexes(refs []difftypes.IndexRef, removedTables map[string]bool, seman
 	return nodes
 }
 
-// addIndexes adds each index a plan gives an existing table, one per
-// statement. An added table's indexes are written into its CREATE TABLE.
-func addIndexes(changes difftypes.IndexChanges, addedTables map[string]bool, semantics identifier.Semantics) []ast.Node {
+// addIndexes adds each index the plan gives a table, one per statement, except
+// on the tables inlineIndexes names, whose CREATE TABLE carries them.
+func addIndexes(changes difftypes.IndexChanges, inlineIndexes map[string]bool, semantics identifier.Semantics) []ast.Node {
 	var nodes []ast.Node
 	for _, change := range changes {
-		if addedTables[semantics.TableIdentityKey(change.TableName)] {
+		if inlineIndexes[semantics.TableIdentityKey(change.TableName)] {
 			continue
 		}
 		index := change.Index
@@ -217,9 +236,10 @@ func tableSet(names []string, semantics identifier.Semantics) map[string]bool {
 	return set
 }
 
-// refuseIndexAdditions refuses, before anything is emitted, an index added to
-// a table that exists which YDB would refuse when the plan reaches it. A
-// unique one needs [capability.UniqueIndexOnExistingTable]: measured on every
+// refuseIndexAdditions refuses, before anything is emitted, an index added
+// through ALTER TABLE which YDB would refuse when the plan reaches it: an index
+// on a table that exists, or on a new table that inlineIndexes does not name.
+// A unique one needs [capability.UniqueIndexOnExistingTable]: measured on every
 // line, `Adding a unique index to an existing table is disabled`, even on an
 // empty table. Where the plan carries the table's declaration, because it
 // changes the table too, the index is held to [ydbindex.ShapeRefusal] the way
@@ -229,7 +249,7 @@ func tableSet(names []string, semantics identifier.Semantics) map[string]bool {
 // made.
 func (p *Planner) refuseIndexAdditions(
 	diff *difftypes.SchemaDiff,
-	addedTables map[string]bool,
+	inlineIndexes map[string]bool,
 	semantics identifier.Semantics,
 ) error {
 	declarations := make(map[string]difftypes.TableDeclaration, len(diff.TablesModified))
@@ -240,7 +260,7 @@ func (p *Planner) refuseIndexAdditions(
 	}
 	for _, change := range diff.IndexesAdded {
 		table := semantics.TableIdentityKey(change.TableName)
-		if addedTables[table] {
+		if inlineIndexes[table] {
 			continue
 		}
 		if change.Index.Unique && !p.caps.Has(capability.UniqueIndexOnExistingTable) {

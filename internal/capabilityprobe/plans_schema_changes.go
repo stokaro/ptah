@@ -84,6 +84,10 @@ type schemaChanges struct {
 
 	check string
 
+	// createIndex creates an index with a standalone statement and drops it
+	// by name, which the server refused before the index existed.
+	createIndex schemaChange
+
 	coverSetup []string
 	cover      string
 	// coverRead proves the payload columns the cover statement asked for are
@@ -179,6 +183,7 @@ func (sc schemaChanges) experiments() []experiment {
 			after:  sc.exprDefault.after,
 		}),
 		acceptance(capability.CheckConstraints, nil, sc.check),
+		proven(capability.CreateIndexStatement, sc.createIndex),
 		proven(capability.UniqueIndexOnExistingTable, sc.uniqueIndex),
 	}
 	if sc.cover != "" {
@@ -274,7 +279,12 @@ func postgresSchemaChanges() schemaChanges {
 		exprDefault: expressionDefault(
 			"CREATE TABLE sc_exe (id int NOT NULL, s varchar(8) DEFAULT (lower('X')), PRIMARY KEY (id))",
 		),
-		check:       "CREATE TABLE sc_chk (id int NOT NULL, n int CHECK (n > 0), PRIMARY KEY (id))",
+		check: "CREATE TABLE sc_chk (id int NOT NULL, n int CHECK (n > 0), PRIMARY KEY (id))",
+		createIndex: createIndexChange(
+			"CREATE TABLE sc_cix (id int NOT NULL, n int, PRIMARY KEY (id))",
+			"CREATE INDEX sc_cix_n ON sc_cix (n)",
+			"DROP INDEX sc_cix_n",
+		),
 		coverSetup:  []string{"CREATE TABLE sc_cov (id int NOT NULL, a int, b int, PRIMARY KEY (id))"},
 		cover:       "CREATE INDEX sc_cov_ix ON sc_cov (a) INCLUDE (b)",
 		uniqueIndex: uniqueIndexChange("CREATE TABLE sc_uix (id int NOT NULL, n int, PRIMARY KEY (id))"),
@@ -308,6 +318,12 @@ func mysqlSchemaChanges() schemaChanges {
 	sc.retype.change = []string{"ALTER TABLE sc_typ MODIFY COLUMN s varchar(8)"}
 	sc.setNull.change = []string{"ALTER TABLE sc_snn MODIFY COLUMN n int NOT NULL"}
 	sc.dropNull.change = []string{"ALTER TABLE sc_dnn MODIFY COLUMN n int NULL"}
+	// The index is dropped through its table, as these engines name an index.
+	sc.createIndex = createIndexChange(
+		"CREATE TABLE sc_cix (id int NOT NULL, n int, PRIMARY KEY (id))",
+		"CREATE INDEX sc_cix_n ON sc_cix (n)",
+		"DROP INDEX sc_cix_n ON sc_cix",
+	)
 	return sc
 }
 
@@ -362,9 +378,14 @@ func clickHouseSchemaChanges() schemaChanges {
 		literalDefault: "CREATE TABLE sc_exl (id Int32, s String DEFAULT 'x')" + engine,
 		exprDefault:    expressionDefault("CREATE TABLE sc_exe (id Int32, s String DEFAULT lower('X'))" + engine),
 		check:          "CREATE TABLE sc_chk (id Int32, n Int32, CONSTRAINT sc_chk_n CHECK n > 0)" + engine,
-		coverSetup:     []string{"CREATE TABLE sc_cov (id Int32, a Int32, b Int32)" + engine},
-		cover:          "CREATE INDEX sc_cov_ix ON sc_cov (a) INCLUDE (b)",
-		uniqueIndex:    uniqueIndexChange("CREATE TABLE sc_uix (id Int32, n Int32)" + engine),
+		createIndex: createIndexChange(
+			"CREATE TABLE sc_cix (id Int32, n Int32)"+engine,
+			"CREATE INDEX sc_cix_n ON sc_cix (n) TYPE minmax GRANULARITY 1",
+			"DROP INDEX sc_cix_n ON sc_cix",
+		),
+		coverSetup:  []string{"CREATE TABLE sc_cov (id Int32, a Int32, b Int32)" + engine},
+		cover:       "CREATE INDEX sc_cov_ix ON sc_cov (a) INCLUDE (b)",
+		uniqueIndex: uniqueIndexChange("CREATE TABLE sc_uix (id Int32, n Int32)" + engine),
 	}
 }
 
@@ -397,6 +418,12 @@ func sqlServerSchemaChanges() schemaChanges {
 		"ALTER TABLE sc_def DROP CONSTRAINT sc_def_n",
 	)
 	sc.addColumn.change = []string{"ALTER TABLE sc_add ADD n int NOT NULL CONSTRAINT sc_add_n DEFAULT 7"}
+	// The index is dropped through its table, as these engines name an index.
+	sc.createIndex = createIndexChange(
+		"CREATE TABLE sc_cix (id int NOT NULL, n int, PRIMARY KEY (id))",
+		"CREATE INDEX sc_cix_n ON sc_cix (n)",
+		"DROP INDEX sc_cix_n ON sc_cix",
+	)
 	sc.coverSetup, sc.cover = nil, ""
 	return sc
 }
@@ -445,7 +472,12 @@ func oracleSchemaChanges() schemaChanges {
 		exprDefault: expressionDefault(
 			"CREATE TABLE sc_exe (id NUMBER(10) NOT NULL, s VARCHAR2(8) DEFAULT lower('X'), PRIMARY KEY (id))",
 		),
-		check:      "CREATE TABLE sc_chk (id NUMBER(10) NOT NULL, n NUMBER(10) CHECK (n > 0), PRIMARY KEY (id))",
+		check: "CREATE TABLE sc_chk (id NUMBER(10) NOT NULL, n NUMBER(10) CHECK (n > 0), PRIMARY KEY (id))",
+		createIndex: createIndexChange(
+			"CREATE TABLE sc_cix (id NUMBER(10) NOT NULL, n NUMBER(10), PRIMARY KEY (id))",
+			"CREATE INDEX sc_cix_n ON sc_cix (n)",
+			"DROP INDEX sc_cix_n",
+		),
 		coverSetup: []string{"CREATE TABLE sc_cov (id NUMBER(10) NOT NULL, a NUMBER(10), b NUMBER(10), PRIMARY KEY (id))"},
 		cover:      "CREATE INDEX sc_cov_ix ON sc_cov (a) INCLUDE (b)",
 		uniqueIndex: uniqueIndexChange(
@@ -507,7 +539,10 @@ func ydbSchemaChanges() schemaChanges {
 				counts("SELECT COUNT(*) FROM sc_exe WHERE id = 1 AND t IS NOT NULL", 1),
 			},
 		},
-		check:      table("sc_chk", "id Int32 NOT NULL, n Int32 CHECK (n > 0)"),
+		check: table("sc_chk", "id Int32 NOT NULL, n Int32 CHECK (n > 0)"),
+		createIndex: createIndexChange(table("sc_cix", "id Int32 NOT NULL, n Int32"),
+			"CREATE INDEX sc_cix_n ON sc_cix (n)",
+			"ALTER TABLE sc_cix DROP INDEX sc_cix_n"),
 		coverSetup: []string{table("sc_cov", "id Int32 NOT NULL, a Int32, b Int32")},
 		cover:      "ALTER TABLE sc_cov ADD INDEX sc_cov_ix GLOBAL ON (a) COVER (b)",
 		coverRead: []check{ydbDescribedIndex("sc_cov", "sc_cov_ix", "the index to cover b",
@@ -592,6 +627,18 @@ func expressionDefault(table string) schemaChange {
 			accepts("INSERT INTO sc_exe (id) VALUES (1)"),
 			counts("SELECT COUNT(*) FROM sc_exe WHERE id = 1 AND s = 'x'", 1),
 		},
+	}
+}
+
+// createIndexChange creates an index with create and proves it exists by
+// dropping it with drop, which the server refused before the index existed. A
+// statement the server accepted and ignored leaves nothing to drop.
+func createIndexChange(table, create, drop string) schemaChange {
+	return schemaChange{
+		setup:  []string{table},
+		before: []check{refuses(drop)},
+		change: []string{create},
+		after:  []check{accepts(drop)},
 	}
 }
 
