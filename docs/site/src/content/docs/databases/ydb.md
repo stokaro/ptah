@@ -368,6 +368,9 @@ The flags decide these capabilities:
 | `EnableTableDatetime64` | `wide_date_time_types` |
 | `EnableParameterizedDecimal` | `parameterized_decimal` |
 
+`EnableAsyncIndexes` decides no capability: a cluster with the flag off still
+builds a `GLOBAL ASYNC` index, so `async_indexes` keeps the preset's answer.
+
 A flag the cluster does not list leaves the capability as the release line's
 preset has it. Ptah sends no credentials to the monitoring endpoint and follows
 no redirect from it. A failed read fails the connection rather than planning

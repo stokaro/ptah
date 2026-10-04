@@ -1216,7 +1216,9 @@ const (
 	// asynchronously, YDB's `GLOBAL ASYNC`: a write commits without waiting
 	// for the index, and a read through the index may trail the table.
 	// Measured inline in CREATE TABLE and through ALTER TABLE ... ADD INDEX
-	// on every YDB line from 25.1.4.7 to 26.2.1.14.
+	// on every YDB line from 25.1.4.7 to 26.2.1.14. The EnableAsyncIndexes
+	// feature flag does not decide it: with the flag off, 26.2.1.14 and
+	// 25.1.4.7 still build both and answer reads through them.
 	AsyncIndexes Capability = "async_indexes"
 
 	// IndexRename marks a target on which Ptah plans an index whose

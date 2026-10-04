@@ -113,6 +113,32 @@ func TestRefine_AnAbsentFlagKeepsThePreset(t *testing.T) {
 	c.Assert(graduated.Refine(capability.YDB262()).Has(capability.WideDateTimeTypes), qt.IsTrue)
 }
 
+// A cluster that turned EnableAsyncIndexes off still builds async indexes:
+// measured on both certified lines with the flag off in the startup
+// configuration, which is what these pages were recorded from. So the flag
+// leaves async_indexes, and every other key, as the line's preset has it.
+func TestRefine_AsyncIndexesFlagOffKeepsThePreset(t *testing.T) {
+	for _, test := range []struct {
+		page   string
+		preset func() capability.Capabilities
+	}{
+		{page: "local-ydb-26.2.1.14-async-indexes-off.json", preset: capability.YDB262},
+		{page: "local-ydb-25.1.4.7-async-indexes-off.json", preset: capability.YDB251},
+	} {
+		t.Run(test.page, func(t *testing.T) {
+			c := qt.New(t)
+			flags, err := ydbflags.Decode(page(c, test.page), "/local")
+			c.Assert(err, qt.IsNil)
+			c.Assert(flags["EnableAsyncIndexes"], qt.IsFalse)
+
+			refined := flags.Refine(test.preset())
+
+			c.Assert(refined.Has(capability.AsyncIndexes), qt.IsTrue)
+			c.Assert(refined, qt.DeepEquals, test.preset())
+		})
+	}
+}
+
 // TestRefine_LeavesUngatedKeysAndItsInputAlone pins the rest of the set: a
 // flag decides only its own capability, and the caller's set is not written.
 func TestRefine_LeavesUngatedKeysAndItsInputAlone(t *testing.T) {
