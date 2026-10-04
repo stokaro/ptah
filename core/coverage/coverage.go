@@ -219,7 +219,8 @@ const (
 	// beyond the row deletion policy Ptah models: the run interval, which only
 	// the SDK and the CLI set, and a column table's tiering policy. A document
 	// in a format with no spelling for a TTL, HCL or DBML, records the whole
-	// kind, and the comparison then plans no removal of a table's policy.
+	// kind, and the comparison then keeps the policy the database holds for
+	// each table, through a rebuild too.
 	TTL Kind = "ttl"
 	// ColumnFamily is a YDB table's column families beyond the default one,
 	// or a default family with its own storage pool or compression.
