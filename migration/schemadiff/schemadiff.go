@@ -303,6 +303,9 @@ func compareReportingUndecidedAdditions(
 		omitted := schemamodel.OmissionsForDialect(desired, opts.Dialect)
 		desired = schemamodel.ScopeToDialect(desired, opts.Dialect)
 		desired = schemaprep.AssignDefaultForeignKeyNames(desired, opts.Dialect)
+		// A UNIQUE constraint is a unique index on YDB, which is what the
+		// reader reports for one a plan applied.
+		desired = schemaprep.UniqueConstraintsAsIndexesFor(desired, opts.Dialect, caps)
 		database = suppressScopedAway(database, omitted)
 	}
 

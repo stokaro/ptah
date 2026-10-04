@@ -981,6 +981,13 @@ const (
 	// one, so nothing there reads this key today; the value records what the
 	// server answered.
 	//
+	// YDB refuses both spellings as a parse error on every line, and has
+	// global unique indexes instead, which hold the same rows: a second row
+	// with the same value is refused, and rows whose value is NULL are not.
+	// So where the key is false the YDB renderer writes a declared UNIQUE as
+	// that index and the comparison reads it as one (stokaro/ptah#4015,
+	// decision 7), where Spanner refuses the declaration.
+	//
 	// True everywhere else: PostgreSQL, CockroachDB, YugabyteDB, MySQL, MariaDB,
 	// SQLite, SQL Server and Oracle all take the constraint spelling.
 	UniqueConstraints Capability = "unique_constraints"

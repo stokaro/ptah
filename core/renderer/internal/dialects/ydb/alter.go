@@ -53,7 +53,15 @@ func (r *Renderer) alterStatement(table string, operation ast.AlterOperation) ([
 		if err != nil {
 			return nil, err
 		}
-		return []string{prefix + clause + ";"}, nil
+		statements := []string{prefix + clause + ";"}
+		if !op.Column.Unique || r.caps.Has(capability.UniqueConstraints) {
+			return statements, nil
+		}
+		unique, err := r.addIndexStatements(uniqueColumnIndex(table, op.Column.Name))
+		if err != nil {
+			return nil, err
+		}
+		return append(statements, unique...), nil
 	case *ast.DropColumnOperation:
 		return r.dropColumn(prefix, subject, op)
 	case *ast.ModifyColumnOperation:
@@ -67,7 +75,7 @@ func (r *Renderer) alterStatement(table string, operation ast.AlterOperation) ([
 		return nil, r.keyed(capability.AlterGeneratedColumnExpression, "generated column",
 			fmt.Sprintf("the expression of column %q of %s", op.ColumnName, subject))
 	case *ast.AddConstraintOperation:
-		return nil, r.addConstraint(table, op)
+		return r.addConstraint(table, op)
 	case *ast.ValidateConstraintOperation:
 		return nil, r.keyed(capability.AddConstraintNotValid, "constraint validation",
 			fmt.Sprintf("validating constraint %q of %s", op.ConstraintName, subject))
@@ -267,13 +275,23 @@ func (r *Renderer) columnDefault(prefix, subject, column, declaredType string, v
 	return prefix + "ALTER COLUMN " + quote(column) + " SET " + clause + ";", nil
 }
 
-// addConstraint refuses every constraint an ALTER can add: YDB's key never
+// addConstraint writes the one constraint an ALTER can add on YDB, a UNIQUE,
+// as the unique index it renders as, which needs
+// [capability.UniqueIndexOnExistingTable] like any unique index added to a
+// table that exists. Every other constraint is refused: YDB's key never
 // changes and it has no other constraint.
-func (r *Renderer) addConstraint(table string, op *ast.AddConstraintOperation) error {
+func (r *Renderer) addConstraint(table string, op *ast.AddConstraintOperation) ([]string, error) {
 	if op.Constraint != nil && op.Constraint.Type == ast.PrimaryKeyConstraint {
-		return r.keyed(capability.PrimaryKeyAlterable, "key change", fmt.Sprintf("adding a primary key to table %q", table))
+		return nil, r.keyed(capability.PrimaryKeyAlterable, "key change", fmt.Sprintf("adding a primary key to table %q", table))
 	}
-	return r.refuseConstraint(table, op.Constraint)
+	if err := r.refuseConstraint(table, op.Constraint); err != nil {
+		return nil, err
+	}
+	index, err := uniqueConstraintIndex(table, op.Constraint)
+	if err != nil {
+		return nil, err
+	}
+	return r.addIndexStatements(index)
 }
 
 // addIndex writes an index an ALTER TABLE carries, with the table the ALTER
