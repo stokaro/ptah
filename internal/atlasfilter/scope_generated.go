@@ -80,6 +80,9 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database)
 	out.Synonyms = keep(db.Synonyms, func(synonym schemamodel.Synonym) bool {
 		return s.selectedQualifiedName(typeList("synonym"), synonym.QualifiedName())
 	})
+	out.CoordinationNodes = keep(db.CoordinationNodes, func(node schemamodel.CoordinationNode) bool {
+		return s.selectedQualifiedName(typeList("coordination_node"), node.QualifiedName())
+	})
 	out.ExtendedProperties = keep(db.ExtendedProperties,
 		func(property schemamodel.ExtendedProperty) bool {
 			if property.Schema == "" {

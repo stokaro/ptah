@@ -85,8 +85,8 @@ func (f *fakeDatabase) ExecContext(_ context.Context, query string, _ ...any) (s
 	if position < len(f.failures) && f.failures[position] != nil {
 		return nil, f.failures[position]
 	}
-	for _, verb := range []string{"DROP TABLE `", "DROP VIEW `"} {
-		if object, dropped := strings.CutPrefix(query, verb); dropped {
+	for _, prefix := range []string{"DROP TABLE `", "DROP VIEW `", "DROP COORDINATION NODE `"} {
+		if object, dropped := strings.CutPrefix(query, prefix); dropped {
 			full := path.Join("/local", strings.ReplaceAll(strings.TrimSuffix(object, "`"), "\\`", "`"))
 			parent, name := path.Split(full)
 			f.tree[strings.TrimSuffix(parent, "/")] = without(f.tree[strings.TrimSuffix(parent, "/")], name)
@@ -284,22 +284,27 @@ func TestWriter_TransactionIsANoOp(t *testing.T) {
 	c.Assert(fake.executed, qt.DeepEquals, []string{"DROP TABLE `t`"})
 }
 
-// DropAllTables drops every view and row table, a directory's views first, and
-// removes the directories that left empty. What the reader does not describe
-// stays, and so does the directory that holds it; a directory that was empty
-// before is not touched, and a dot-directory is never listed, nor are the dev
-// realms at the root.
+// DropAllTables drops every view, row table and coordination node, a
+// directory's views first, and removes the directories that left empty. What
+// the reader does not describe stays, and so does the directory that holds it:
+// Ptah's lock node at the root and a node whose name starts with a dot among
+// them. A directory that was empty before is not touched, and a dot-directory
+// is never listed, nor are the dev realms at the root.
 func TestWriter_DropAllTables(t *testing.T) {
 	c := qt.New(t)
 	fake := &fakeDatabase{tree: map[string][]*Ydb_Scheme.Entry{
 		"/local": {
 			entry("t1", Ydb_Scheme.Entry_TABLE),
 			entry(".sys", Ydb_Scheme.Entry_DIRECTORY),
+			entry(".hidden", Ydb_Scheme.Entry_COORDINATION_NODE),
 			entry("app", Ydb_Scheme.Entry_DIRECTORY),
 			entry("keep", Ydb_Scheme.Entry_DIRECTORY),
+			entry("locks", Ydb_Scheme.Entry_COORDINATION_NODE),
 			entry("mixed", Ydb_Scheme.Entry_DIRECTORY),
+			entry("nodes", Ydb_Scheme.Entry_DIRECTORY),
 			entry("olap", Ydb_Scheme.Entry_COLUMN_TABLE),
 			entry("ptah_dev", Ydb_Scheme.Entry_DIRECTORY),
+			entry("ptah_locks", Ydb_Scheme.Entry_COORDINATION_NODE),
 			entry("v", Ydb_Scheme.Entry_VIEW),
 		},
 		"/local/app": {
@@ -310,6 +315,7 @@ func TestWriter_DropAllTables(t *testing.T) {
 		"/local/app/sub": {entry("t`3", Ydb_Scheme.Entry_TABLE)},
 		"/local/keep":    nil,
 		"/local/mixed":   {entry("t4", Ydb_Scheme.Entry_TABLE), entry("events", Ydb_Scheme.Entry_TOPIC)},
+		"/local/nodes":   {entry("ptah_locks", Ydb_Scheme.Entry_COORDINATION_NODE)},
 	}}
 	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
 
@@ -321,15 +327,17 @@ func TestWriter_DropAllTables(t *testing.T) {
 		"DROP VIEW `app/v2`",
 		"DROP TABLE `app/sub/t\\`3`",
 		"DROP TABLE `app/t2`",
+		"DROP COORDINATION NODE `locks`",
 		"DROP TABLE `mixed/t4`",
+		"DROP COORDINATION NODE `nodes/ptah_locks`",
 		"DROP TABLE `t1`",
 	})
-	c.Assert(fake.removed, qt.DeepEquals, []string{"/local/app/sub", "/local/app"})
+	c.Assert(fake.removed, qt.DeepEquals, []string{"/local/app/sub", "/local/app", "/local/nodes"})
 	var left []string
 	for _, kept := range fake.tree["/local"] {
 		left = append(left, kept.GetName())
 	}
-	c.Assert(left, qt.DeepEquals, []string{".sys", "keep", "mixed", "olap", "ptah_dev"})
+	c.Assert(left, qt.DeepEquals, []string{".hidden", ".sys", "keep", "mixed", "olap", "ptah_dev", "ptah_locks"})
 	c.Assert(fake.tree["/local/mixed"], qt.HasLen, 1)
 }
 
@@ -349,7 +357,8 @@ func TestWriter_DropAllTables_FailurePath(t *testing.T) {
 }
 
 // DropDirectory removes a directory a caller made for itself with everything
-// in it, deepest first: tables of both kinds, views, and the directories below.
+// in it, deepest first: tables of both kinds, views, coordination nodes, and
+// the directories below.
 // What sits beside the directory is not touched.
 func TestWriter_DropDirectory(t *testing.T) {
 	c := qt.New(t)
@@ -359,6 +368,7 @@ func TestWriter_DropDirectory(t *testing.T) {
 			entry("t", Ydb_Scheme.Entry_TABLE),
 			entry("olap", Ydb_Scheme.Entry_COLUMN_TABLE),
 			entry("v", Ydb_Scheme.Entry_VIEW),
+			entry("locks", Ydb_Scheme.Entry_COORDINATION_NODE),
 			entry("rb", Ydb_Scheme.Entry_DIRECTORY),
 		},
 		"/local/probe/rb": {entry("t`2", Ydb_Scheme.Entry_TABLE)},
@@ -370,6 +380,7 @@ func TestWriter_DropDirectory(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(fake.executed, qt.DeepEquals, []string{
+		"DROP COORDINATION NODE `probe/locks`",
 		"DROP TABLE `probe/olap`",
 		"DROP TABLE `probe/rb/t\\`2`",
 		"DROP TABLE `probe/t`",

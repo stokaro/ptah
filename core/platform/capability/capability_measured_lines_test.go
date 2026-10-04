@@ -232,6 +232,7 @@ func measuredLines() map[string]measuredLine {
 				capability.GroupPrincipals:                 accessKeyCarried,
 				capability.DatabaseGrants:                  accessKeyCarried,
 				capability.RelativeGrantPaths:              accessKeyCarried,
+				capability.CoordinationNodes:               coordinationKeyCarried,
 				capability.Changefeeds:                     changefeedKeyCarried,
 				capability.ChangefeedUserSIDs:              changefeedKeyCarried,
 				capability.ChangefeedSchemaChanges:         changefeedKeyCarried,
@@ -390,6 +391,7 @@ func measuredLines() map[string]measuredLine {
 				capability.GroupPrincipals:                 accessKeyCarried,
 				capability.DatabaseGrants:                  accessKeyCarried,
 				capability.RelativeGrantPaths:              accessKeyCarried,
+				capability.CoordinationNodes:               coordinationKeyCarried,
 				capability.Changefeeds:                     changefeedKeyCarried,
 				capability.ChangefeedUserSIDs:              changefeedKeyCarried,
 				capability.ChangefeedSchemaChanges:         changefeedKeyCarried,
@@ -549,6 +551,7 @@ func measuredLines() map[string]measuredLine {
 				capability.GroupPrincipals:                 accessKeyCarried,
 				capability.DatabaseGrants:                  accessKeyCarried,
 				capability.RelativeGrantPaths:              accessKeyCarried,
+				capability.CoordinationNodes:               coordinationKeyCarried,
 				capability.Changefeeds:                     changefeedKeyCarried,
 				capability.ChangefeedUserSIDs:              changefeedKeyCarried,
 				capability.ChangefeedSchemaChanges:         changefeedKeyCarried,
@@ -739,3 +742,9 @@ const changefeedKeyCarried = "this run predates the key and sent no changefeed e
 // these engines, and the value here is the preset's.
 const accessKeyCarried = "this run predates the key; the probe declares it undecided on this engine, " +
 	"because only the YDB planner plans it, and the value here is the preset's"
+
+// coordinationKeyCarried is why the key about YDB coordination nodes is
+// carried on every measured line: the run named there predates it, and no
+// statement can ask an engine other than YDB about an object only YDB has.
+const coordinationKeyCarried = "this run predates the key; it names whether Ptah manages YDB coordination " +
+	"nodes, which only YDB has, and the value here is the preset's"

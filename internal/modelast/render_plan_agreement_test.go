@@ -126,6 +126,13 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	if assertBothSurfacesRefuseTheDomain(c, dialect, &desired) {
 		return
 	}
+	// A coordination node is YDB's own object. A target without one refuses
+	// it on both surfaces, through one validation, and the census below
+	// compares the rest of the fixture.
+	routed := len(routedKinds)
+	if assertBothSurfacesRefuseTheCoordinationNode(c, dialect, &desired) {
+		routed--
+	}
 
 	renderCensus := surfaceCensus(c, dialect,
 		modelast.CollectDatabase(desired, dialect).Statements)
@@ -148,7 +155,7 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	// Check rather than Assert so a surface that lost a kind still reaches
 	// the comparison below, which is the assertion that names which kind
 	// went missing on which side.
-	c.Check(renderCensus, qt.HasLen, len(routedKinds)+len(derivedNodeKinds),
+	c.Check(renderCensus, qt.HasLen, routed+len(derivedNodeKinds),
 		qt.Commentf("render surface census:\n%s", strings.Join(renderCensus, "\n")))
 
 	c.Assert(planCensus, qt.DeepEquals, renderCensus,
@@ -219,5 +226,25 @@ func assertBothSurfacesRefuseTheDomain(c *qt.C, dialect string, desired *schemam
 	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(planErr.Error(), qt.Contains, "CREATE DOMAIN")
 	c.Assert(renderErr.Error(), qt.Contains, "CREATE DOMAIN")
+	return true
+}
+
+// assertBothSurfacesRefuseTheCoordinationNode checks the shared refusal of the
+// fixture's coordination node on a target without one, and takes the node out
+// of desired when it applied, so the census compares what is left.
+func assertBothSurfacesRefuseTheCoordinationNode(c *qt.C, dialect string, desired *schemamodel.Database) bool {
+	c.Helper()
+	if capability.ForDialect(dialect).Has(capability.CoordinationNodes) {
+		return false
+	}
+	_, planErr := schemadiff.CompareWithDatabaseInfo(
+		desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil,
+	)
+	renderErr := renderer.ValidateSchema(desired, dialect)
+	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(planErr.Error(), qt.Contains, "coordination_nodes")
+	c.Assert(renderErr.Error(), qt.Contains, "coordination_nodes")
+	desired.CoordinationNodes = nil
 	return true
 }

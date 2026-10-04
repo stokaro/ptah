@@ -65,6 +65,9 @@ type Database struct {
 	Views       []View             `json:"views"`      // Database views
 	MatViews    []MaterializedView `json:"matviews"`   // Database materialized views
 	Synonyms    []Synonym          `json:"synonyms"`   // SQL Server synonyms
+	// CoordinationNodes are the YDB coordination nodes this read described.
+	// omitempty keeps the serialization of every other dialect as it is.
+	CoordinationNodes []CoordinationNode `json:"coordination_nodes,omitempty"`
 	// ExtendedProperties are the SQL Server extended properties this
 	// description covers: schema-, table- and column-scoped ones. See
 	// [ExtendedProperty] for what is deliberately not in it.
@@ -1599,6 +1602,22 @@ func (p ExtendedProperty) QualifiedOwner() string {
 // QualifiedName returns schema.synonym when Schema is set, or Name otherwise.
 func (s Synonym) QualifiedName() string {
 	return QualifyTableName(s.Schema, s.Name)
+}
+
+// CoordinationNode is one YDB coordination node a read described.
+//
+// Spec is the configuration as YDB stores it, which is what was sent when the
+// node was created or last changed: a setting nobody set reads back unset,
+// and the node runs with the server's default for it.
+type CoordinationNode struct {
+	Schema string                   `json:"schema"` // Directory holding the node, relative to the database root
+	Name   string                   `json:"name"`   // Node name
+	Spec   ast.CoordinationNodeSpec `json:"spec"`
+}
+
+// QualifiedName returns the node's name qualified by its directory.
+func (n CoordinationNode) QualifiedName() string {
+	return QualifyTableName(n.Schema, n.Name)
 }
 
 // DeclaredTarget is the synonym's target in the spelling a declaration uses:

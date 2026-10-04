@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydburl"
 )
 
@@ -39,8 +40,13 @@ import (
 // objects below, so a plan never meets a view the renderer would refuse. A
 // table's TTL is read as its row deletion policy.
 //
-// An object it meets and Ptah does not model -- a topic, a column table, a
-// coordination node, and the rest of [coverage]'s YDB kinds -- is recorded in
+// It describes each coordination node with the coordination service, except
+// Ptah's own lock node at the root ([LockNode]), which it leaves out of every
+// read as it leaves out the migrator's tables. A node whose name starts with a
+// dot is the server's, like a dot-directory, and is recorded as not described.
+//
+// An object it meets and Ptah does not model -- a topic, a column table, and
+// the rest of [coverage]'s YDB kinds -- is recorded in
 // [catalog.Database.NotDescribed] by its path, as is a table setting such as a
 // changefeed or a TTL run interval. An object or an index kind the reader does
 // not know is refused by name rather than read as the nearest known one.
@@ -137,7 +143,7 @@ func (r *Reader) walk(ctx context.Context, source Source, schema string, db *cat
 // schema, as it leaves out the migrator's tables: it is Ptah's bookkeeping,
 // and a plan that dropped it would only have the next run create it again.
 // It leaves out ydburl.RealmDirectory at the root for the same reason.
-const LockNode = "ptah_locks"
+const LockNode = ydbcoordination.LockNode
 
 // entry reads one directory entry.
 func (r *Reader) entry(
@@ -185,6 +191,14 @@ func (r *Reader) entry(
 		if schema == "" && name == LockNode {
 			return nil
 		}
+		if !r.inScope(schema) {
+			return nil
+		}
+		if strings.HasPrefix(name, ".") {
+			db.NotDescribed = db.NotDescribed.With(unmodeled(coverage.CoordinationNode, schema, name))
+			return nil
+		}
+		return r.coordinationNode(ctx, source, schema, name, db)
 	}
 	if !r.inScope(schema) {
 		return nil
@@ -224,7 +238,6 @@ var unmodeledEntries = map[Ydb_Scheme.Entry_Type]coverage.Kind{
 	Ydb_Scheme.Entry_PERS_QUEUE_GROUP:     coverage.Topic,
 	Ydb_Scheme.Entry_COLUMN_TABLE:         coverage.ColumnTable,
 	Ydb_Scheme.Entry_COLUMN_STORE:         coverage.ColumnTable,
-	Ydb_Scheme.Entry_COORDINATION_NODE:    coverage.CoordinationNode,
 	Ydb_Scheme.Entry_SEQUENCE:             coverage.Sequence,
 	Ydb_Scheme.Entry_REPLICATION:          coverage.Replication,
 	Ydb_Scheme.Entry_TRANSFER:             coverage.Transfer,
@@ -232,6 +245,22 @@ var unmodeledEntries = map[Ydb_Scheme.Entry_Type]coverage.Kind{
 	Ydb_Scheme.Entry_EXTERNAL_TABLE:       coverage.ExternalTable,
 	Ydb_Scheme.Entry_SECRET:               coverage.Secret,
 	Ydb_Scheme.Entry_RESOURCE_POOL:        coverage.ResourcePool,
+}
+
+// coordinationNode describes the coordination node name in the directory
+// schema.
+func (r *Reader) coordinationNode(ctx context.Context, source Source, schema, name string, db *catalog.Database) error {
+	absolute := r.absolute(schema, name)
+	described, err := source.DescribeCoordinationNode(ctx, absolute)
+	if err != nil {
+		return err
+	}
+	node, err := decodeCoordinationNode(schema, name, described)
+	if err != nil {
+		return fmt.Errorf("YDB coordination node %s: %w", absolute, err)
+	}
+	db.CoordinationNodes = append(db.CoordinationNodes, node)
+	return nil
 }
 
 // entryTypeName names a scheme entry type, including one the pinned protocol

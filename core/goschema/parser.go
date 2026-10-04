@@ -27,6 +27,7 @@ import (
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbindex"
 )
 
@@ -711,6 +712,7 @@ type schemaParseState struct {
 	ranges                []schemamodel.Range
 	views                 []schemamodel.View
 	synonyms              []schemamodel.Synonym
+	coordinationNodes     []schemamodel.CoordinationNode
 	extendedProperties    []schemamodel.ExtendedProperty
 	materializedViews     []schemamodel.MaterializedView
 	triggers              []schemamodel.Trigger
@@ -839,6 +841,7 @@ var sharedDirectiveParsers = map[string]sharedDirectiveParser{
 	"ptah:schema:hypertable":          (*schemaParseState).parseHypertableComment,
 	"ptah:schema:continuousaggregate": (*schemaParseState).parseContinuousAggregateComment,
 	"ptah:schema:synonym":             (*schemaParseState).parseSynonymComment,
+	"ptah:schema:coordinationnode":    (*schemaParseState).parseCoordinationNodeComment,
 	"ptah:schema:extendedproperty":    (*schemaParseState).parseExtendedPropertyComment,
 	"ptah:schema:trigger":             (*schemaParseState).parseTriggerComment,
 	"ptah:schema:rls:policy":          (*schemaParseState).parseRLSPolicyComment,
@@ -1023,6 +1026,7 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 		Ranges:               state.ranges,
 		Views:                state.views,
 		Synonyms:             state.synonyms,
+		CoordinationNodes:    state.coordinationNodes,
 		ExtendedProperties:   state.extendedProperties,
 		MaterializedViews:    state.materializedViews,
 		Triggers:             state.triggers,
@@ -1789,6 +1793,55 @@ func (s *schemaParseState) parseSynonymComment(comment *ast.Comment, structName 
 		Comment:    kv["comment"],
 	})
 	return nil
+}
+
+// parseCoordinationNodeComment reads a YDB coordination node declaration.
+//
+// There is no dialect scope here, for the reason a synonym has none: a
+// coordination node is a YDB object and nothing else. The settings are read
+// and checked by internal/ydbcoordination, which the YAML reader asks too, so
+// a value one source accepts is one the other accepts. Ptah's own lock node
+// and a name with a segment that starts with a dot are refused where they are
+// written.
+func (s *schemaParseState) parseCoordinationNodeComment(comment *ast.Comment, structName string) error {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	ctx := s.annotationContext(comment, "//ptah:schema:coordinationnode", structName)
+	if err := validateAttributes(kv, ctx); err != nil {
+		return err
+	}
+	if err := requireAttributes(kv, ctx); err != nil {
+		return err
+	}
+	if err := ydbcoordination.RefuseName(kv["schema"], kv["name"]); err != nil {
+		return coordinationNodeError(ctx, "name", err)
+	}
+	spec, err := ydbcoordination.ParseDeclaration(kv)
+	if setting, ok := errors.AsType[*ydbcoordination.SettingError](err); ok {
+		return coordinationNodeError(ctx, setting.Setting, err)
+	}
+	if err != nil {
+		return err
+	}
+	s.coordinationNodes = append(s.coordinationNodes, schemamodel.CoordinationNode{
+		StructName: structName,
+		Schema:     kv["schema"],
+		Name:       kv["name"],
+		Spec:       spec,
+	})
+	return nil
+}
+
+// coordinationNodeError is the parse error for a coordination node
+// attribute whose value the node cannot take.
+func coordinationNodeError(ctx annotationErrorContext, attribute string, err error) error {
+	return &ptaherr.ParseError{
+		File:      ctx.file,
+		Line:      ctx.line,
+		Directive: strings.TrimPrefix(ctx.directive, "//"),
+		Attribute: attribute,
+		Err:       ptaherr.ErrInvalidAttributeValue,
+		Message:   fmt.Sprintf("%s on %s at %s", err.Error(), ctx.directive, ctx.location),
+	}
 }
 
 // parseExtendedPropertyComment reads a SQL Server extended-property

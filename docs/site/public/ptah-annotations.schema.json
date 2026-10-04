@@ -410,6 +410,57 @@
       ],
       "type": "object"
     },
+    "ptah.schema.coordinationnode": {
+      "additionalProperties": false,
+      "description": "Declares a YDB coordination node, which holds an application's semaphores and rate limiter resources. A setting left out takes YDB's default.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "attach_consistency_mode": {
+              "description": "`strict` or `relaxed`. YDB's default is `strict`.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Node name.",
+              "type": "string"
+            },
+            "rate_limiter_counters_mode": {
+              "description": "`aggregated` or `detailed`. YDB's default is `aggregated`.",
+              "type": "string"
+            },
+            "read_consistency_mode": {
+              "description": "`strict` or `relaxed`. YDB's default is `relaxed`.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Directory holding the node, relative to the database root.",
+              "type": "string"
+            },
+            "self_check_period": {
+              "description": "How often the node checks it is alive, as an ISO 8601 duration from `PT0.5S` to `PT10S`. YDB's default is `PT1S`.",
+              "type": "string"
+            },
+            "session_grace_period": {
+              "description": "How long a session keeps its semaphores while the node changes its leader, as an ISO 8601 duration from the self-check period plus one second to `PT30S`. YDB's default is `PT10S`.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:coordinationnode"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
     "ptah.schema.data": {
       "additionalProperties": false,
       "description": "Declares external reference/seed row data for a table.",
@@ -2211,6 +2262,9 @@
     },
     {
       "$ref": "#/$defs/ptah.schema.synonym"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.coordinationnode"
     },
     {
       "$ref": "#/$defs/ptah.schema.extendedproperty"

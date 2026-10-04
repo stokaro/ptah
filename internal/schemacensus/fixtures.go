@@ -112,6 +112,7 @@ func Fixtures() []Fixture {
 		{Name: "hypertable", Schema: hypertableFixture()},
 		{Name: "continuous-aggregate", Schema: continuousAggregateFixture()},
 		{Name: "synonym", Schema: synonymFixture()},
+		{Name: "coordination-node", Schema: coordinationNodeFixture()},
 		{Name: "extended-property", Schema: extendedPropertyFixture()},
 		{Name: "role", Schema: roleFixture()},
 		{Name: "ydb-group-membership", Schema: ydbGroupMembershipFixture()},
@@ -1312,6 +1313,17 @@ func synonymFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
 	db.Synonyms = []schemamodel.Synonym{{
 		StructName: "SY", Name: "tt", Schema: "dbo", Target: "dbo.t", Comment: "alias",
+	}}
+	return db
+}
+
+func coordinationNodeFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.CoordinationNodes = []schemamodel.CoordinationNode{{
+		StructName: "CN", Schema: "app", Name: "locks", Spec: ast.CoordinationNodeSpec{
+			SelfCheckPeriodMillis: 2000, SessionGracePeriodMillis: 15000,
+			ReadConsistencyMode: "strict", AttachConsistencyMode: "relaxed", RateLimiterCountersMode: "detailed",
+		},
 	}}
 	return db
 }

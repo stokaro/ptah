@@ -80,6 +80,7 @@ import (
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/ydbchangefeed"
+	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbindex"
 )
 
@@ -147,6 +148,7 @@ type document struct {
 	Views             map[string]viewSpec             `yaml:"views"`
 	MaterializedViews map[string]matViewSpec          `yaml:"matviews"`
 	Triggers          map[string]triggerSpec          `yaml:"triggers"`
+	CoordinationNodes map[string]coordinationNodeSpec `yaml:"coordination_nodes"`
 }
 
 type tableSpec struct {
@@ -435,6 +437,39 @@ type functionSpec struct {
 	Comment  stringScalar   `yaml:"comment"`
 }
 
+// coordinationNodeSpec declares a YDB coordination node. The settings are
+// keyed as the annotation keys them; see [ydbcoordination.ParseDeclaration].
+type coordinationNodeSpec struct {
+	StructName              stringScalar  `yaml:"struct_name"`
+	Name                    stringScalar  `yaml:"name"`
+	Schema                  stringScalar  `yaml:"schema"`
+	SelfCheckPeriod         *stringScalar `yaml:"self_check_period"`
+	SessionGracePeriod      *stringScalar `yaml:"session_grace_period"`
+	ReadConsistencyMode     *stringScalar `yaml:"read_consistency_mode"`
+	AttachConsistencyMode   *stringScalar `yaml:"attach_consistency_mode"`
+	RateLimiterCountersMode *stringScalar `yaml:"rate_limiter_counters_mode"`
+}
+
+// settingValues are the settings the node sets, keyed by setting name. A
+// setting the document leaves out is absent, and one it sets to an empty
+// value is present, so an empty value is refused rather than read as no
+// declaration.
+func (spec coordinationNodeSpec) settingValues() map[string]string {
+	values := make(map[string]string)
+	for setting, value := range map[string]*stringScalar{
+		ydbcoordination.SettingSelfCheckPeriod:         spec.SelfCheckPeriod,
+		ydbcoordination.SettingSessionGracePeriod:      spec.SessionGracePeriod,
+		ydbcoordination.SettingReadConsistencyMode:     spec.ReadConsistencyMode,
+		ydbcoordination.SettingAttachConsistencyMode:   spec.AttachConsistencyMode,
+		ydbcoordination.SettingRateLimiterCountersMode: spec.RateLimiterCountersMode,
+	} {
+		if value != nil {
+			values[setting] = string(*value)
+		}
+	}
+	return values
+}
+
 type viewSpec struct {
 	StructName stringScalar `yaml:"struct_name"`
 	Name       stringScalar `yaml:"name"`
@@ -610,6 +645,9 @@ func (d document) toDatabase() (*schemamodel.Database, error) {
 		return nil, err
 	}
 	if err := d.addTriggers(db); err != nil {
+		return nil, err
+	}
+	if err := d.addCoordinationNodes(db); err != nil {
 		return nil, err
 	}
 	d.addRLS(db)
@@ -1039,6 +1077,28 @@ func (d document) addViews(db *schemamodel.Database) error {
 			Body:       string(spec.Body),
 			WithCheck:  spec.WithCheck,
 			Comment:    string(spec.Comment),
+		})
+	}
+	return nil
+}
+
+// addCoordinationNodes reads the YDB coordination nodes, in key order.
+func (d document) addCoordinationNodes(db *schemamodel.Database) error {
+	for _, key := range sortedKeys(d.CoordinationNodes) {
+		spec := d.CoordinationNodes[key]
+		name := valueOrDefault(spec.Name, key)
+		if err := ydbcoordination.RefuseName(string(spec.Schema), name); err != nil {
+			return fmt.Errorf("coordination node %q: %w", key, err)
+		}
+		settings, err := ydbcoordination.ParseDeclaration(spec.settingValues())
+		if err != nil {
+			return fmt.Errorf("coordination node %q: %w", key, err)
+		}
+		db.CoordinationNodes = append(db.CoordinationNodes, schemamodel.CoordinationNode{
+			StructName: string(spec.StructName),
+			Schema:     string(spec.Schema),
+			Name:       name,
+			Spec:       settings,
 		})
 	}
 	return nil

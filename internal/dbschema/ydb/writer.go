@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/atlasretry"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlrunner"
+	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbflags"
 	"ptah.run/internal/ydburl"
 	"ptah.run/internal/yqlquery"
@@ -233,17 +234,20 @@ func (t *transaction) Commit() error { return nil }
 // request is not wrong; YDB has nothing it could undo.
 func (t *transaction) Rollback() error { return nil }
 
-// DropAllTables drops every view and row table in the database and then
-// removes each directory that dropping them left empty, deepest first.
+// DropAllTables drops every view, row table and coordination node in the
+// database and then removes each directory that dropping them left empty,
+// deepest first.
 //
 // It drops what the schema reader describes and nothing else. A column table,
 // a topic and the other objects the reader records as not described stay, and
 // so does the directory that holds one, so a cleanup planned from a read
-// removes exactly what the plan listed. Dot-directories are never entered, nor
-// is ydburl.RealmDirectory at the root, and a directory that was empty before
-// is left alone. A directory's views go before its tables; YDB would take
-// either order, since it records no dependency on a view or on the table a
-// view reads.
+// removes exactly what the plan listed. Ptah's own lock node at the root
+// ([LockNode]) stays too, as the reader leaves it out, and so does a node whose
+// name starts with a dot. Dot-directories are never entered, nor is
+// ydburl.RealmDirectory at the root, and a directory that was empty before is
+// left alone. A directory's views go before its tables; YDB would take either
+// order, since it records no dependency on a view or on the table a view
+// reads.
 func (w *Writer) DropAllTables(ctx context.Context) error {
 	if w.scheme == nil {
 		return fmt.Errorf("no YDB scheme connection")
@@ -280,6 +284,14 @@ func (w *Writer) dropDirectory(ctx context.Context, dir string) (bool, error) {
 				return changed, err
 			}
 			changed = true
+		case entry.GetType() == Ydb_Scheme.Entry_COORDINATION_NODE:
+			if (dir == "" && name == LockNode) || strings.HasPrefix(name, ".") {
+				continue
+			}
+			if err := w.ExecuteSQL(ctx, dropCoordinationNode(path.Join(dir, name))); err != nil {
+				return changed, err
+			}
+			changed = true
 		case entry.GetType() == Ydb_Scheme.Entry_DIRECTORY && !strings.HasPrefix(name, ".") &&
 			(dir != "" || name != ydburl.RealmDirectory):
 			child := path.Join(dir, name)
@@ -309,18 +321,18 @@ func dropRank(entry *Ydb_Scheme.Entry) int {
 }
 
 // DropDirectory drops dir, a directory relative to the database root, together
-// with everything in it: row and column tables, views and the directories
-// below, deepest first. It is the teardown of a directory a caller created for
-// itself, such as the capability probe's namespace; DropAllTables is the
-// cleanup that keeps what the reader does not describe.
+// with everything in it: row and column tables, views, coordination nodes and
+// the directories below, deepest first. It is the teardown of a directory a
+// caller created for itself, such as the capability probe's namespace;
+// DropAllTables is the cleanup that keeps what the reader does not describe.
 //
 // dir names a directory below the root and nothing else: a segment that
 // starts with a dot -- `.`, `..`, or a server directory such as `.sys` -- is
 // refused, so no spelling of dir reaches the root or leaves it. The whole tree
 // is read and checked before anything is dropped. An entry of a kind there is
-// no measured statement for, such as a topic or a coordination node, and an
-// entry whose name starts with a dot, which belongs to the server, stop it
-// with the entry named and nothing dropped.
+// no measured statement for, such as a topic, and an entry whose name starts
+// with a dot, which belongs to the server, stop it with the entry named and
+// nothing dropped.
 func (w *Writer) DropDirectory(ctx context.Context, dir string) error {
 	relative, err := w.droppableDirectory(dir)
 	if err != nil {
@@ -366,6 +378,15 @@ var treeStatements = map[Ydb_Scheme.Entry_Type]string{
 	Ydb_Scheme.Entry_VIEW:         "DROP VIEW %s",
 }
 
+// dropCoordinationNode is Ptah's statement that drops the coordination node
+// at relative, a path below the database root. Ptah's YDB connection runs it
+// through the coordination service; see [ydbcoordination.Recognize].
+func dropCoordinationNode(relative string) string {
+	// A drop carries no setting, so writing it cannot fail.
+	text, _ := ydbcoordination.Statement{Verb: ydbcoordination.Drop, Path: relative}.Text()
+	return text
+}
+
 // treeStep is one step of a directory teardown: a statement that drops an
 // object, or the removal of a directory, by its absolute path, once it is
 // empty.
@@ -395,6 +416,8 @@ func (w *Writer) planTree(ctx context.Context, dir string, steps *[]treeStep) er
 			if err := w.planTree(ctx, child, steps); err != nil {
 				return err
 			}
+		case entry.GetType() == Ydb_Scheme.Entry_COORDINATION_NODE:
+			*steps = append(*steps, treeStep{statement: dropCoordinationNode(child)})
 		case droppable:
 			*steps = append(*steps, treeStep{statement: fmt.Sprintf(statement, sqlident.Quote(platform.YDB, child))})
 		default:

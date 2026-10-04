@@ -32,8 +32,12 @@
 //     its topic, then ALTER TOPIC for a retention or a consumer changed in
 //     place; a new table's changefeeds follow its CREATE TABLE instead, since
 //     YDB adds one only to a table that exists;
-//  8. DROP TABLE for every removed table, which drops its changefeeds;
-//  9. CREATE VIEW for every view the plan adds or replaces, last, a view after
+//  8. the coordination nodes the plan creates and changes, through Ptah's own
+//     statements, which Ptah's YDB connection runs through the coordination
+//     service (YQL has none);
+//  9. DROP TABLE for every removed table, which drops its changefeeds, then
+//     the coordination nodes the plan drops;
+//  10. CREATE VIEW for every view the plan adds or replaces, last, a view after
 //     the views it reads: YDB checks a view's query against the schema when
 //     the view is created, so the tables and columns it reads exist by then.
 //
@@ -145,6 +149,9 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := p.refuseObjects(scoped); err != nil {
 		return nil, err
 	}
+	if err := p.refuseCoordinationNodes(diff); err != nil {
+		return nil, err
+	}
 	for _, tableDiff := range diff.TablesModified {
 		if err := p.refuseModification(tableDiff, rebuilds, semantics, diff.CurrentNotDescribed); err != nil {
 			return nil, err
@@ -199,9 +206,12 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	result = append(result, sequences.changed...)
 	result = append(result, addIndexes(diff.IndexesAdded, ownIndexes, semantics)...)
 	result = append(result, changeChangefeeds(diff, rebuilds, semantics)...)
+	nodeChanges, nodeDrops := coordinationNodes(diff)
+	result = append(result, nodeChanges...)
 	for _, name := range diff.TablesRemoved {
 		result = append(result, ast.NewDropTable(name))
 	}
+	result = append(result, nodeDrops...)
 	result = append(result, p.createViews(diff)...)
 	result = append(result, access.after...)
 	result = append(result, access.last...)

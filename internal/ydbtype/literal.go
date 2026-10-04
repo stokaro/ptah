@@ -319,6 +319,13 @@ func intervalLiteral(ydbType, value string) (string, error) {
 	return ydbType + "(" + quote(IntervalText(micros)) + ")", nil
 }
 
+// IntervalMicros reads an ISO 8601 duration in the form YDB's Interval takes,
+// such as P1D or PT1.5S, into microseconds, and reports false for text that is
+// not one. It reads what [IntervalText] writes.
+func IntervalMicros(text string) (int64, bool) {
+	return parseDuration(text)
+}
+
 // parseDuration reads an ISO 8601 duration in the form YDB's Interval takes
 // into microseconds. A week is seven days and a day is 24 hours, which is how
 // YDB stores them: `Interval('P1DT2H')` reads back as 93600000000.

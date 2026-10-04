@@ -32,21 +32,25 @@ import (
 // fingerprint it already had. [Database.NotDescribed] and [Field.APIExpose]
 // spell out the reasoning.
 type Database struct {
-	Schemas                    []Schema
-	Tables                     []Table
-	Fields                     []Field
-	Indexes                    []Index
-	Constraints                []Constraint // Table-level constraints (EXCLUDE, CHECK, etc.)
-	Enums                      []Enum
-	EmbeddedFields             []EmbeddedField
-	Extensions                 []Extension                    // PostgreSQL extensions (pg_trgm, postgis, etc.)
-	Functions                  []Function                     // PostgreSQL custom functions
-	Sequences                  []Sequence                     // PostgreSQL standalone sequences (CREATE SEQUENCE)
-	Domains                    []Domain                       // PostgreSQL domain types (CREATE DOMAIN)
-	CompositeTypes             []CompositeType                // PostgreSQL composite types (CREATE TYPE ... AS (...))
-	Ranges                     []Range                        // PostgreSQL range types (CREATE TYPE ... AS RANGE (...))
-	Views                      []View                         // Database views
-	Synonyms                   []Synonym                      // SQL Server synonyms
+	Schemas        []Schema
+	Tables         []Table
+	Fields         []Field
+	Indexes        []Index
+	Constraints    []Constraint // Table-level constraints (EXCLUDE, CHECK, etc.)
+	Enums          []Enum
+	EmbeddedFields []EmbeddedField
+	Extensions     []Extension     // PostgreSQL extensions (pg_trgm, postgis, etc.)
+	Functions      []Function      // PostgreSQL custom functions
+	Sequences      []Sequence      // PostgreSQL standalone sequences (CREATE SEQUENCE)
+	Domains        []Domain        // PostgreSQL domain types (CREATE DOMAIN)
+	CompositeTypes []CompositeType // PostgreSQL composite types (CREATE TYPE ... AS (...))
+	Ranges         []Range         // PostgreSQL range types (CREATE TYPE ... AS RANGE (...))
+	Views          []View          // Database views
+	Synonyms       []Synonym       // SQL Server synonyms
+	// CoordinationNodes are the YDB coordination nodes the schema declares.
+	// omitempty keeps the encoding, and so the fingerprint, of every schema
+	// that declares none as it is.
+	CoordinationNodes          []CoordinationNode             `json:",omitempty"`
 	ExtendedProperties         []ExtendedProperty             // SQL Server extended properties
 	MaterializedViews          []MaterializedView             // Database materialized views
 	Triggers                   []Trigger                      // Database triggers
@@ -1373,6 +1377,31 @@ func (s Synonym) QualifiedName() string {
 		return s.Name
 	}
 	return s.Schema + "." + s.Name
+}
+
+// CoordinationNode is a YDB coordination node: the object that holds a YDB
+// application's semaphores, which serve as distributed locks, and its rate
+// limiter resources. Ptah manages the node and its configuration; what an
+// application keeps in it is the application's.
+//
+// Schema is the directory that holds the node, relative to the database root,
+// and empty for the root itself, as a YDB table's schema is.
+//
+// Dialects is deliberately absent, as on [Synonym]: a coordination node
+// belongs to YDB and to nothing else.
+type CoordinationNode struct {
+	StructName string // Name of the Go struct this node is declared on
+	Schema     string // Directory holding the node, relative to the database root
+	Name       string // Node name
+	// Spec is the node's configuration; a setting it leaves unset takes the
+	// server's default.
+	Spec ast.CoordinationNodeSpec
+}
+
+// QualifiedName returns the node's name qualified by its directory, in the
+// form a table's is, so a dotted name stays one name.
+func (n CoordinationNode) QualifiedName() string {
+	return tableref.Canonical(n.Schema, n.Name)
 }
 
 // sequenceTypeAliases maps accepted spellings of a sequence's underlying

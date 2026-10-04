@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/uniquename"
 	"ptah.run/internal/ydbchangefeed"
+	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbtype"
 )
@@ -359,7 +360,8 @@ func (ctx *renderContext) hasGlobalObjects() bool {
 		len(ctx.db.CompositeTypes) > 0 ||
 		len(ctx.db.Domains) > 0 ||
 		len(ctx.db.Ranges) > 0 ||
-		len(ctx.db.Sequences) > 0
+		len(ctx.db.Sequences) > 0 ||
+		len(ctx.db.CoordinationNodes) > 0
 }
 
 func (ctx *renderContext) writeEnums(w *sourceWriter) {
@@ -451,6 +453,9 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 	}
 	for _, privilege := range sortedDefaultPrivileges(ctx.db.DefaultPrivileges) {
 		w.writeComment(defaultPrivilegeAnnotation(privilege))
+	}
+	for _, node := range sortedCoordinationNodes(ctx.db.CoordinationNodes) {
+		w.writeComment(coordinationNodeAnnotation(node))
 	}
 	if ctx.hasGlobalObjects() {
 		w.writeLine("type PtahSchemaObjects struct{}")
@@ -966,6 +971,19 @@ func defaultPrivilegeAnnotation(privilege schemamodel.DefaultPrivilege) string {
 	)
 }
 
+// coordinationNodeAnnotation declares a YDB coordination node with the
+// settings it was given; a setting left unset takes YDB's default.
+func coordinationNodeAnnotation(node schemamodel.CoordinationNode) string {
+	attrs := []attr{
+		{name: "name", value: node.Name, set: true},
+		{name: "schema", value: node.Schema, set: node.Schema != ""},
+	}
+	for _, setting := range ydbcoordination.Attributes(node.Spec) {
+		attrs = append(attrs, attr{name: setting[0], value: setting[1], set: true})
+	}
+	return annotation("ptah:schema:coordinationnode", attrs...)
+}
+
 func annotation(name string, attrs ...attr) string {
 	var builder strings.Builder
 	builder.WriteString("//")
@@ -1235,6 +1253,12 @@ func sortedFunctions(values []schemamodel.Function) []schemamodel.Function {
 func sortedViews(values []schemamodel.View) []schemamodel.View {
 	result := append([]schemamodel.View(nil), values...)
 	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
+	return result
+}
+
+func sortedCoordinationNodes(values []schemamodel.CoordinationNode) []schemamodel.CoordinationNode {
+	result := append([]schemamodel.CoordinationNode(nil), values...)
+	sort.Slice(result, func(i, j int) bool { return result[i].QualifiedName() < result[j].QualifiedName() })
 	return result
 }
 

@@ -564,6 +564,7 @@ func (r *renderer) renderBody() {
 	r.renderHypertables()
 	r.renderContinuousAggregates()
 	r.renderSynonyms()
+	r.renderCoordinationNodes()
 	r.renderExtendedProperties()
 	r.renderFunctions()
 	r.renderViews()

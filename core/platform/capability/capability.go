@@ -479,6 +479,17 @@ const (
 	// both, and one of them could ship before the other.
 	ContinuousAggregates Capability = "continuous_aggregates"
 
+	// CoordinationNodes marks a target on which Ptah declares, reads, creates,
+	// changes and drops YDB coordination nodes, the objects that hold a YDB
+	// application's distributed locks and rate limiters.
+	//
+	// It describes Ptah rather than a statement the server takes: YQL has no
+	// statement for a coordination node (measured on YDB 25.1.4.7 and
+	// 26.2.1.14, `CREATE COORDINATION NODE` is a parse error), so Ptah writes
+	// a statement of its own and its YDB connection runs it through the
+	// coordination service. No other engine has the object.
+	CoordinationNodes Capability = "coordination_nodes"
+
 	// SequenceStartCounterOnly marks a target whose CREATE SEQUENCE carries a
 	// name and a start counter and refuses the option clauses PostgreSQL takes
 	// beside them.
@@ -1587,6 +1598,9 @@ var registry = map[Capability]spec{
 	ContinuousAggregates: {
 		doc: "TimescaleDB continuous aggregates: CREATE MATERIALIZED VIEW WITH (timescaledb.continuous) and the catalog that reads one back",
 	},
+	CoordinationNodes: {
+		doc: "Ptah declares, reads and plans YDB coordination nodes, through a statement of its own that its YDB connection runs",
+	},
 	PostgresCatalogFunctions: {
 		doc: "obj_description reads a comment back out of the catalog",
 	},
@@ -2067,6 +2081,7 @@ func MySQL84() Capabilities {
 		RowLevelSecurity:               false,
 		Hypertables:                    false,
 		ContinuousAggregates:           false,
+		CoordinationNodes:              false,
 		PostgresCatalogFunctions:       false,
 		CatalogRowStatistics:           false,
 		CatalogVectorInfo:              false,
@@ -2290,6 +2305,7 @@ func MariaDB1011() Capabilities {
 		RowLevelSecurity:               false,
 		Hypertables:                    false,
 		ContinuousAggregates:           false,
+		CoordinationNodes:              false,
 		PostgresCatalogFunctions:       false,
 		CatalogRowStatistics:           false,
 		CatalogVectorInfo:              false,
@@ -2475,6 +2491,7 @@ func Postgres16() Capabilities {
 		RowLevelSecurity:               true,
 		Hypertables:                    false,
 		ContinuousAggregates:           false,
+		CoordinationNodes:              false,
 		PostgresCatalogFunctions:       true,
 		CatalogRowStatistics:           true,
 		CatalogVectorInfo:              false,
@@ -2756,6 +2773,7 @@ func ClickHouse24() Capabilities {
 		RowLevelSecurity:         true,
 		Hypertables:              false,
 		ContinuousAggregates:     false,
+		CoordinationNodes:        false,
 		PostgresCatalogFunctions: false,
 		CatalogRowStatistics:     false,
 		CatalogVectorInfo:        false,
@@ -2946,6 +2964,7 @@ func SQLite3() Capabilities {
 		RowLevelSecurity:               false,
 		Hypertables:                    false,
 		ContinuousAggregates:           false,
+		CoordinationNodes:              false,
 		PostgresCatalogFunctions:       false,
 		CatalogRowStatistics:           false,
 		CatalogVectorInfo:              false,
@@ -3178,6 +3197,7 @@ func SQLServer2022() Capabilities {
 		RowLevelSecurity:         true,
 		Hypertables:              false,
 		ContinuousAggregates:     false,
+		CoordinationNodes:        false,
 		PostgresCatalogFunctions: false,
 		CatalogRowStatistics:     false,
 		CatalogVectorInfo:        false,
@@ -3897,6 +3917,7 @@ func Oracle23() Capabilities {
 		RowLevelSecurity:         false,
 		Hypertables:              false,
 		ContinuousAggregates:     false,
+		CoordinationNodes:        false,
 		PostgresCatalogFunctions: false,
 		CatalogRowStatistics:     false,
 		// ALL_TAB_COLS.VECTOR_INFO reports VECTOR(1536,FLOAT32,DENSE) for a
@@ -4328,6 +4349,12 @@ func YDB262() Capabilities {
 		// Extensions of other engines.
 		Hypertables:          false,
 		ContinuousAggregates: false,
+
+		// Coordination nodes. YQL has no statement for one, and the
+		// coordination service creates, changes, describes and drops one on
+		// 25.1.4.7 and 26.2.1.14 alike: Ptah's YDB connection runs Ptah's own
+		// statement through it, so every line between them carries the key.
+		CoordinationNodes: true,
 	}
 }
 

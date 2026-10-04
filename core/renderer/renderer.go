@@ -77,6 +77,7 @@ import (
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/usertypescope"
+	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbindex"
 )
 
@@ -415,6 +416,14 @@ func prepareASTNodeForRendering(
 			return nil, invalidASTForeignKeyError(dialect, "AST node is nil")
 		}
 		return node, refuseAccessNode(dialect, caps, node)
+	case *ast.CreateCoordinationNodeNode, *ast.AlterCoordinationNodeNode, *ast.DropCoordinationNodeNode:
+		if isNilInterface(node) {
+			return nil, invalidASTForeignKeyError(dialect, "AST node is nil")
+		}
+		if err := refuseCoordinationNode(dialect, caps, node); err != nil {
+			return nil, err
+		}
+		return node, nil
 	default:
 		if isNilInterface(node) {
 			return nil, invalidASTForeignKeyError(dialect, "AST node is nil")
@@ -988,6 +997,32 @@ func validateDeclaredChangefeeds(dialect string, caps capability.Capabilities, d
 		}
 	}
 	return nil
+}
+
+// refuseCoordinationNode refuses node, a coordination node statement, on a
+// target without [capability.CoordinationNodes]: a coordination node is YDB's
+// own object, and another engine has nothing to create.
+func refuseCoordinationNode(dialect string, caps capability.Capabilities, node ast.Node) error {
+	if caps.Has(capability.CoordinationNodes) {
+		return nil
+	}
+	var name string
+	switch typed := node.(type) {
+	case *ast.CreateCoordinationNodeNode:
+		name = typed.Name
+	case *ast.AlterCoordinationNodeNode:
+		name = typed.Name
+	case *ast.DropCoordinationNodeNode:
+		name = typed.Name
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: string(capability.CoordinationNodes),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("coordination node %s, which requires target capability %s, unavailable on this %s target",
+			name, capability.CoordinationNodes, normalized),
+	}
 }
 
 // refuseInvisibleIndexNode refuses index when the optimizer is not to use it
@@ -1803,6 +1838,11 @@ func validateDatabaseDeclarations(
 	// own columns naming a type the server has no definition of
 	// (stokaro/ptah#1717).
 	if err := usertypescope.ValidateDeclared(dialect, caps, database); err != nil {
+		return err
+	}
+	// A coordination node is YDB's own object; anywhere else it is refused
+	// here, before anything is rendered, with the words a plan uses.
+	if err := ydbcoordination.ValidateDeclared(dialect, caps, database.CoordinationNodes); err != nil {
 		return err
 	}
 	if err := validateDeclaredAccess(dialect, caps, database); err != nil {

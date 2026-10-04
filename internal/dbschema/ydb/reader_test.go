@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/ydb-platform/ydb-go-genproto/draft/protos/Ydb_View"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb"
+	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Coordination"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Scheme"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Table"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Topic"
@@ -37,6 +38,15 @@ type fakeSource struct {
 	// it fails.
 	principals    ydbschema.Principals
 	principalsErr error
+	nodes         map[string]*Ydb_Coordination.DescribeNodeResult
+}
+
+func (f fakeSource) DescribeCoordinationNode(_ context.Context, path string) (*Ydb_Coordination.DescribeNodeResult, error) {
+	described, ok := f.nodes[path]
+	if !ok {
+		return nil, fmt.Errorf("described coordination node %s, which the fixture does not hold", path)
+	}
+	return described, nil
 }
 
 func (f fakeSource) ListDirectory(_ context.Context, path string) (*Ydb_Scheme.Entry, []*Ydb_Scheme.Entry, error) {
@@ -374,7 +384,6 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 				entry("legacy_queue", Ydb_Scheme.Entry_PERS_QUEUE_GROUP),
 				entry("olap", Ydb_Scheme.Entry_COLUMN_TABLE),
 				entry("store", Ydb_Scheme.Entry_COLUMN_STORE),
-				entry("locks", Ydb_Scheme.Entry_COORDINATION_NODE),
 				entry("seq", Ydb_Scheme.Entry_SEQUENCE),
 				entry("repl", Ydb_Scheme.Entry_REPLICATION),
 				entry("xfer", Ydb_Scheme.Entry_TRANSFER),
@@ -408,7 +417,6 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 		observed(coverage.ExternalTable, "ext"),
 		observed(coverage.Secret, "key"),
 		observed(coverage.Topic, "legacy_queue"),
-		observed(coverage.CoordinationNode, "locks"),
 		observed(coverage.ColumnTable, "olap"),
 		observed(coverage.ResourcePool, "pool"),
 		observed(coverage.Replication, "repl"),
@@ -943,6 +951,10 @@ func (errorSource) DescribeTopic(context.Context, string) (*Ydb_Topic.DescribeTo
 	return nil, errors.New("connection refused")
 }
 
+func (errorSource) DescribeCoordinationNode(context.Context, string) (*Ydb_Coordination.DescribeNodeResult, error) {
+	return nil, errors.New("connection refused")
+}
+
 func TestReader_FailurePath_SourceFails(t *testing.T) {
 	c := qt.New(t)
 
@@ -998,8 +1010,9 @@ func TestReader_LeavesTheMigratorsTablesOut(t *testing.T) {
 }
 
 // Ptah's lock node at the database root is Ptah's bookkeeping too, and the
-// reader leaves it out; a coordination node of the same name in a directory
-// below the root is not Ptah's, and is recorded as any other.
+// reader leaves it out without describing it; a coordination node of the same
+// name in a directory below the root is not Ptah's, and is described as any
+// other.
 func TestReader_LeavesPtahsLockNodeOut(t *testing.T) {
 	c := qt.New(t)
 	source := fakeSource{
@@ -1010,14 +1023,115 @@ func TestReader_LeavesPtahsLockNodeOut(t *testing.T) {
 			},
 			"/local/app": {entry(ydbschema.LockNode, Ydb_Scheme.Entry_COORDINATION_NODE)},
 		},
+		nodes: map[string]*Ydb_Coordination.DescribeNodeResult{
+			"/local/app/ptah_locks": {Config: &Ydb_Coordination.Config{}},
+		},
 	}
 
 	db := readFrom(c, source)
 
+	c.Assert(db.CoordinationNodes, qt.DeepEquals, []catalog.CoordinationNode{{Schema: "app", Name: "ptah_locks"}})
+	c.Assert(db.NotDescribed, qt.DeepEquals, coverage.Set{})
+}
+
+// A coordination node is described with the configuration YDB stores: a
+// setting nobody sent reads back unset, which the comparison fills in. Nodes
+// come out in the order the walk meets them, each directory's entries by
+// name. A node whose name starts with a dot is the server's and is recorded as
+// not described, and a node outside the directories the read is limited to is
+// not read at all.
+func TestReader_DescribesCoordinationNodes(t *testing.T) {
+	c := qt.New(t)
+	source := fakeSource{
+		directories: map[string][]*Ydb_Scheme.Entry{
+			"/local": {
+				entry("defaults", Ydb_Scheme.Entry_COORDINATION_NODE),
+				entry(".hidden", Ydb_Scheme.Entry_COORDINATION_NODE),
+				entry("app", Ydb_Scheme.Entry_DIRECTORY),
+				entry("other", Ydb_Scheme.Entry_DIRECTORY),
+			},
+			"/local/app":   {entry("limits", Ydb_Scheme.Entry_COORDINATION_NODE)},
+			"/local/other": {entry("elsewhere", Ydb_Scheme.Entry_COORDINATION_NODE)},
+		},
+		nodes: map[string]*Ydb_Coordination.DescribeNodeResult{
+			"/local/defaults": {Config: &Ydb_Coordination.Config{}},
+			"/local/app/limits": {Config: &Ydb_Coordination.Config{
+				SelfCheckPeriodMillis:    2500,
+				SessionGracePeriodMillis: 15000,
+				ReadConsistencyMode:      Ydb_Coordination.ConsistencyMode_CONSISTENCY_MODE_STRICT,
+				AttachConsistencyMode:    Ydb_Coordination.ConsistencyMode_CONSISTENCY_MODE_RELAXED,
+				RateLimiterCountersMode:  Ydb_Coordination.RateLimiterCountersMode_RATE_LIMITER_COUNTERS_MODE_DETAILED,
+			}},
+		},
+	}
+	reader := ydbschema.NewReaderFromSource(source, "/local", capability.YDB262())
+	reader.SetSchemas([]string{"", "app"})
+
+	db, err := reader.ReadSchema()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.CoordinationNodes, qt.DeepEquals, []catalog.CoordinationNode{
+		{Schema: "app", Name: "limits", Spec: ast.CoordinationNodeSpec{
+			SelfCheckPeriodMillis: 2500, SessionGracePeriodMillis: 15000,
+			ReadConsistencyMode: "strict", AttachConsistencyMode: "relaxed", RateLimiterCountersMode: "detailed",
+		}},
+		{Name: "defaults"},
+	})
 	c.Assert(db.NotDescribed, qt.DeepEquals, coverage.Set{}.With(
-		coverage.Object{Kind: coverage.CoordinationNode, Name: "app.ptah_locks", Reason: coverage.Unsupported,
+		coverage.Object{Kind: coverage.CoordinationNode, Name: `".hidden"`, Reason: coverage.Unsupported,
 			Provenance: coverage.Observed},
 	))
+}
+
+// A node carrying a mode or a setting the pinned protocol buffers do not
+// model is refused by name, because read as absent it would be planned away.
+func TestReader_DescribesCoordinationNodes_FailurePath(t *testing.T) {
+	unknownSetting := &Ydb_Coordination.DescribeNodeResult{Config: &Ydb_Coordination.Config{}}
+	unknownSetting.GetConfig().ProtoReflect().SetUnknown(protowire.AppendVarint(protowire.AppendTag(nil, 9,
+		protowire.VarintType), 1))
+	tests := []struct {
+		name      string
+		described *Ydb_Coordination.DescribeNodeResult
+		wantErr   string
+	}{
+		{
+			name: "a read mode",
+			described: &Ydb_Coordination.DescribeNodeResult{Config: &Ydb_Coordination.Config{
+				ReadConsistencyMode: Ydb_Coordination.ConsistencyMode(7)}},
+			wantErr: `YDB coordination node /local/locks: its read_consistency_mode is 7, which Ptah does not know`,
+		},
+		{
+			name: "an attach mode",
+			described: &Ydb_Coordination.DescribeNodeResult{Config: &Ydb_Coordination.Config{
+				AttachConsistencyMode: Ydb_Coordination.ConsistencyMode(3)}},
+			wantErr: `YDB coordination node /local/locks: its attach_consistency_mode is 3, which Ptah does not know`,
+		},
+		{
+			name: "a counters mode",
+			described: &Ydb_Coordination.DescribeNodeResult{Config: &Ydb_Coordination.Config{
+				RateLimiterCountersMode: Ydb_Coordination.RateLimiterCountersMode(9)}},
+			wantErr: `YDB coordination node /local/locks: its rate_limiter_counters_mode is 9, which Ptah does not know`,
+		},
+		{
+			name:      "a setting",
+			described: unknownSetting,
+			wantErr:   `YDB coordination node /local/locks: its description carries field 9, which this build of Ptah does not read`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			source := fakeSource{
+				directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("locks", Ydb_Scheme.Entry_COORDINATION_NODE)}},
+				nodes:       map[string]*Ydb_Coordination.DescribeNodeResult{"/local/locks": test.described},
+			}
+
+			db, err := ydbschema.NewReaderFromSource(source, "/local", capability.YDB262()).ReadSchema()
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(db, qt.IsNil)
+		})
+	}
 }
 
 func TestReader_TableColumns_HappyPath(t *testing.T) {

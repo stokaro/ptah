@@ -1223,6 +1223,20 @@ type SchemaDiff struct {
 	// name with an unrelated create.
 	SynonymsModified []SynonymDiff `json:"synonyms_modified"`
 
+	// CoordinationNodesAdded are the YDB coordination nodes the target schema
+	// declares and the database does not hold, each carrying its
+	// configuration.
+	CoordinationNodesAdded []schemamodel.CoordinationNode `json:"coordination_nodes_added,omitempty"`
+
+	// CoordinationNodesRemoved are the YDB coordination nodes the database
+	// holds and the target schema does not declare, each carrying the
+	// configuration the database holds, which a rollback creates it with.
+	CoordinationNodesRemoved []schemamodel.CoordinationNode `json:"coordination_nodes_removed,omitempty"`
+
+	// CoordinationNodesModified are the YDB coordination nodes whose
+	// configuration, as the node runs with it, differs from the declared one.
+	CoordinationNodesModified []CoordinationNodeChange `json:"coordination_nodes_modified,omitempty"`
+
 	// ExtendedPropertiesAdded contains the SQL Server extended properties the
 	// target schema declares and the database does not have.
 	ExtendedPropertiesAdded []ExtendedPropertyRef `json:"extended_properties_added"`
@@ -1675,6 +1689,7 @@ func (d *SchemaDiff) HasChanges() bool {
 		d.hasUserTypeChanges() ||
 		d.hasViewChanges() ||
 		d.hasSynonymChanges() ||
+		d.hasCoordinationNodeChanges() ||
 		d.hasHypertableChanges() ||
 		d.hasContinuousAggregateChanges() ||
 		d.hasExtendedPropertyChanges() ||
@@ -1920,6 +1935,12 @@ func (d *SchemaDiff) hasSynonymChanges() bool {
 	return len(d.SynonymsAdded) > 0 ||
 		len(d.SynonymsRemoved) > 0 ||
 		len(d.SynonymsModified) > 0
+}
+
+func (d *SchemaDiff) hasCoordinationNodeChanges() bool {
+	return len(d.CoordinationNodesAdded) > 0 ||
+		len(d.CoordinationNodesRemoved) > 0 ||
+		len(d.CoordinationNodesModified) > 0
 }
 
 func (d *SchemaDiff) hasHypertableChanges() bool {
@@ -2689,6 +2710,28 @@ type ExtendedPropertyDiff struct {
 	// OldValue is what the database holds now. Value on the embedded ref is
 	// what the declaration asks for.
 	OldValue string `json:"old_value"`
+}
+
+// CoordinationNodeChange is a YDB coordination node whose configuration
+// changes.
+type CoordinationNodeChange struct {
+	// Schema is the directory holding the node, relative to the database
+	// root, and Name the node's name in it.
+	Schema string `json:"schema,omitempty"`
+	Name   string `json:"name"`
+	// Changes names the settings the node runs with differently, each at its
+	// declared value, a setting the declaration leaves out at the server's
+	// default. A setting it leaves unset does not change.
+	Changes ast.CoordinationNodeSpec `json:"changes"`
+	// Previous is the configuration the node holds, as YDB stores it, which
+	// a rollback restores.
+	Previous ast.CoordinationNodeSpec `json:"previous"`
+}
+
+// QualifiedName returns the node's name qualified by its directory, as
+// [schemamodel.CoordinationNode.QualifiedName] spells it.
+func (c CoordinationNodeChange) QualifiedName() string {
+	return schemamodel.CoordinationNode{Schema: c.Schema, Name: c.Name}.QualifiedName()
 }
 
 // SynonymDiff describes a synonym whose target changed.

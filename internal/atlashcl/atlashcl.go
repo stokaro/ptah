@@ -333,6 +333,7 @@ var objectBlockParsers = map[string]func(*parser, *hclsyntax.Block) error{
 	"hypertable":           (*parser).parseHypertable,
 	"continuous_aggregate": (*parser).parseContinuousAggregate,
 	"synonym":              (*parser).parseSynonym,
+	"coordination_node":    (*parser).parseCoordinationNode,
 	"extended_property":    (*parser).parseExtendedProperty,
 	"table":                (*parser).parseTable,
 	"extension":            (*parser).parseExtension,

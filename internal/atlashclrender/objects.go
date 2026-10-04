@@ -11,6 +11,7 @@ import (
 	"ptah.run/internal/systemschema"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/triggerdef"
+	"ptah.run/internal/ydbcoordination"
 )
 
 func (r *renderer) renderExtensions() {
@@ -1371,6 +1372,28 @@ func (r *renderer) renderSynonyms() {
 		}
 		r.stringAttr(1, "target", synonym.Target)
 		r.stringAttr(1, "comment", synonym.Comment)
+		r.line("}")
+		r.line("")
+	}
+}
+
+// renderCoordinationNodes writes the YDB coordination node blocks, a Ptah
+// extension for the reason [renderer.renderSynonyms] gives: a document that
+// cannot name a node cannot ask for it to be kept. A setting the declaration
+// leaves unset is left out, and the reader takes it as YDB's default.
+func (r *renderer) renderCoordinationNodes() {
+	nodes := append([]schemamodel.CoordinationNode(nil), r.db.CoordinationNodes...)
+	slices.SortFunc(nodes, func(a, b schemamodel.CoordinationNode) int {
+		return cmp.Compare(a.QualifiedName(), b.QualifiedName())
+	})
+	for _, node := range nodes {
+		r.linef(`coordination_node %s {`, quote(node.Name))
+		if schema := r.schemaFor(node.Schema); schema != "" {
+			r.rawAttr(1, "schema", r.schemaRef(schema))
+		}
+		for _, setting := range ydbcoordination.Attributes(node.Spec) {
+			r.stringAttr(1, setting[0], setting[1])
+		}
 		r.line("}")
 		r.line("")
 	}

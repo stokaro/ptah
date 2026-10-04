@@ -1608,35 +1608,39 @@ func TestParseDir_AllIntegrationFixturesRemainParsable(t *testing.T) {
 func TestParseDir_ReflectionGuard(t *testing.T) {
 	c := qt.New(t)
 
-	fixtureDir := "../../integration/internal/fixtures/entities/023-go-annotations-objects"
-
-	merged := schemamodel.Database{}
-	entries, err := os.ReadDir(fixtureDir)
-	c.Assert(err, qt.IsNil)
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
-			continue
-		}
-		full := filepath.Join(fixtureDir, e.Name())
-		content, err := os.ReadFile(full)
-		c.Assert(err, qt.IsNil)
-		db := mustParseSource(c, e.Name(), string(content))
-		// General reflection merge over ALL slice fields from ParseSource (future-proof, no hard-coded list of 6)
-		fvSrc := reflect.ValueOf(db)
-		fvDst := reflect.ValueOf(&merged).Elem()
-		for j := 0; j < fvSrc.NumField(); j++ {
-			if fvSrc.Field(j).Kind() == reflect.Slice {
-				dstField := fvDst.Field(j)
-				dstField.Set(reflect.AppendSlice(dstField, fvSrc.Field(j)))
-			}
-		}
+	// 023 declares every object family the dialects share. A family only
+	// one engine has, and that every other engine refuses, has a fixture of
+	// its own, so the shared one stays renderable on every target: 048 holds
+	// YDB's coordination nodes.
+	fixtureDirs := []string{
+		"../../integration/internal/fixtures/entities/023-go-annotations-objects",
+		"../../integration/internal/fixtures/entities/048-ydb-coordination-nodes",
 	}
 
-	dirDb, err := goschema.ParseDir(fixtureDir)
-	c.Assert(err, qt.IsNil)
+	merged := schemamodel.Database{}
+	dirMerged := schemamodel.Database{}
+	for _, fixtureDir := range fixtureDirs {
+		entries, err := os.ReadDir(fixtureDir)
+		c.Assert(err, qt.IsNil)
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
+				continue
+			}
+			full := filepath.Join(fixtureDir, e.Name())
+			content, err := os.ReadFile(full)
+			c.Assert(err, qt.IsNil)
+			db := mustParseSource(c, e.Name(), string(content))
+			// General reflection merge over ALL slice fields from ParseSource (future-proof, no hard-coded list of 6)
+			appendSlices(&merged, db)
+		}
+
+		dirDb, err := goschema.ParseDir(fixtureDir)
+		c.Assert(err, qt.IsNil)
+		appendSlices(&dirMerged, *dirDb)
+	}
 
 	fvMerged := reflect.ValueOf(merged)
-	fvDir := reflect.ValueOf(*dirDb)
+	fvDir := reflect.ValueOf(dirMerged)
 	typ := fvMerged.Type()
 	for i := 0; i < fvMerged.NumField(); i++ {
 		if fvMerged.Field(i).Kind() != reflect.Slice {
@@ -1645,10 +1649,22 @@ func TestParseDir_ReflectionGuard(t *testing.T) {
 		name := typ.Field(i).Name
 		mLen := fvMerged.Field(i).Len()
 		if mLen == 0 {
-			c.Fatalf("%s is not exercised by the fixture; add it to 023-go-annotations-objects so the walker append stays covered", name)
+			c.Fatalf("%s is not exercised by the fixtures; add it to 023-go-annotations-objects so the walker append stays covered", name)
 		}
 		dLen := fvDir.Field(i).Len()
 		c.Assert(dLen > 0, qt.IsTrue, qt.Commentf("%s populated by per-file parse (%d) but ParseDir/ParseFS gave %d — missing append in walker.go?", name, mLen, dLen))
+	}
+}
+
+// appendSlices appends every slice field of src to the same field of dst.
+func appendSlices(dst *schemamodel.Database, src schemamodel.Database) {
+	fvSrc := reflect.ValueOf(src)
+	fvDst := reflect.ValueOf(dst).Elem()
+	for j := 0; j < fvSrc.NumField(); j++ {
+		if fvSrc.Field(j).Kind() == reflect.Slice {
+			dstField := fvDst.Field(j)
+			dstField.Set(reflect.AppendSlice(dstField, fvSrc.Field(j)))
+		}
 	}
 }
 

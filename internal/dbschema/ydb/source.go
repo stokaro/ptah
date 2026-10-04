@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ydb-platform/ydb-go-genproto/Ydb_Coordination_V1"
 	"github.com/ydb-platform/ydb-go-genproto/Ydb_Scheme_V1"
 	"github.com/ydb-platform/ydb-go-genproto/Ydb_Table_V1"
 	"github.com/ydb-platform/ydb-go-genproto/Ydb_Topic_V1"
 	"github.com/ydb-platform/ydb-go-genproto/draft/Ydb_View_V1"
 	"github.com/ydb-platform/ydb-go-genproto/draft/protos/Ydb_View"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb"
+	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Coordination"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Issue"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Operations"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Scheme"
@@ -22,10 +24,10 @@ import (
 )
 
 // Source is what the reader asks a YDB database: a directory's own entry and
-// the entries under it, the description of a row table or a view, the
-// description of a topic, which is how a changefeed's retention and consumers
-// are read, and the database's users, groups and memberships. A path is
-// absolute.
+// the entries under it, the description of a row table, of a view or of a
+// coordination node, the description of a topic, which is how a changefeed's
+// retention and consumers are read, and the database's users, groups and
+// memberships. A path is absolute.
 //
 // A directory's own entry and a table's description each carry the object's
 // owner and its permission entries, which is where the reader reads them from:
@@ -36,6 +38,7 @@ type Source interface {
 	DescribeView(ctx context.Context, path string) (*Ydb_View.DescribeViewResult, error)
 	DescribeTopic(ctx context.Context, path string) (*Ydb_Topic.DescribeTopicResult, error)
 	Principals(ctx context.Context) (Principals, error)
+	DescribeCoordinationNode(ctx context.Context, path string) (*Ydb_Coordination.DescribeNodeResult, error)
 }
 
 // grpcSource answers through the SDK driver's gRPC connection with raw scheme
@@ -47,12 +50,13 @@ type Source interface {
 // one; the raw description leaves the type empty and the data in fields the
 // pinned protocol buffers do not know, and the reader refuses it.
 type grpcSource struct {
-	scheme   Ydb_Scheme_V1.SchemeServiceClient
-	table    Ydb_Table_V1.TableServiceClient
-	view     Ydb_View_V1.ViewServiceClient
-	topic    Ydb_Topic_V1.TopicServiceClient
-	session  string
-	database string
+	scheme       Ydb_Scheme_V1.SchemeServiceClient
+	table        Ydb_Table_V1.TableServiceClient
+	view         Ydb_View_V1.ViewServiceClient
+	topic        Ydb_Topic_V1.TopicServiceClient
+	coordination grpcCoordination
+	session      string
+	database     string
 }
 
 // newGRPCSource opens a table session for one read. The caller ends it with
@@ -60,11 +64,12 @@ type grpcSource struct {
 func newGRPCSource(ctx context.Context, driver *ydbsdk.Driver) (*grpcSource, func(), error) {
 	connection := ydbsdk.GRPCConn(driver)
 	source := &grpcSource{
-		scheme:   Ydb_Scheme_V1.NewSchemeServiceClient(connection),
-		table:    Ydb_Table_V1.NewTableServiceClient(connection),
-		view:     Ydb_View_V1.NewViewServiceClient(connection),
-		topic:    Ydb_Topic_V1.NewTopicServiceClient(connection),
-		database: driver.Name(),
+		scheme:       Ydb_Scheme_V1.NewSchemeServiceClient(connection),
+		table:        Ydb_Table_V1.NewTableServiceClient(connection),
+		view:         Ydb_View_V1.NewViewServiceClient(connection),
+		topic:        Ydb_Topic_V1.NewTopicServiceClient(connection),
+		coordination: grpcCoordination{client: Ydb_Coordination_V1.NewCoordinationServiceClient(connection)},
+		database:     driver.Name(),
 	}
 	response, err := source.table.CreateSession(ctx, &Ydb_Table.CreateSessionRequest{})
 	if err != nil {
@@ -191,6 +196,11 @@ func (s *grpcSource) DescribeTopic(ctx context.Context, path string) (*Ydb_Topic
 		return nil, fmt.Errorf("describe YDB topic %s: %w", path, err)
 	}
 	return &described, nil
+}
+
+// DescribeCoordinationNode describes the coordination node at path.
+func (s *grpcSource) DescribeCoordinationNode(ctx context.Context, path string) (*Ydb_Coordination.DescribeNodeResult, error) {
+	return s.coordination.DescribeNode(ctx, path)
 }
 
 // operationResult unpacks a completed operation's result into result, or
