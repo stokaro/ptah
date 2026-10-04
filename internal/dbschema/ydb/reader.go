@@ -92,7 +92,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	}
 	defer end()
 
-	db := &catalog.Database{}
+	db := &catalog.Database{DatabasePath: "/" + strings.Trim(r.database, "/")}
 	if err := r.walk(ctx, source, "", db); err != nil {
 		return nil, err
 	}

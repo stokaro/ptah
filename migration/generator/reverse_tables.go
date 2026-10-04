@@ -153,6 +153,9 @@ func reverseColumnDiffs(
 			ColumnName: columnDiff.ColumnName,
 			Changes:    reversedChanges,
 			Desired:    priorColumn(prior, tableName, columnDiff.ColumnName),
+			// The rollback alters the same sequence of the same database,
+			// whose restart is replayed by its ALTER as by the forward one.
+			CurrentSequenceRestart: columnDiff.CurrentSequenceRestart,
 		}
 	}
 	return reversed

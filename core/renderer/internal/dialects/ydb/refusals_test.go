@@ -228,9 +228,26 @@ func TestRender_RefusesWhatYDBCannotHold_FailurePath(t *testing.T) {
 		{name: "a type YDB has none of",
 			node:    keyed(ast.NewColumn("at", "TIME")),
 			wantErr: `column "at" of table "t": TIME has no YDB counterpart: YDB has no time-of-day type`},
-		{name: "an identity that does not start at 1",
-			node:    &ast.CreateTableNode{Name: "t", Columns: []*ast.ColumnNode{{Name: "id", Type: "BIGINT", Primary: true, AutoInc: true, IdentityStart: "10", IdentityIncrement: "2"}}},
-			wantErr: `column "id" of table "t": a YDB Serial starts at 1, steps by 1 and takes no sequence options, and the column declares start 10, increment 2`},
+		{name: "an identity generated always",
+			node: &ast.CreateTableNode{Name: "t", Columns: []*ast.ColumnNode{
+				{Name: "id", Type: "BIGINT", Primary: true, AutoInc: true, IdentityGeneration: "ALWAYS"}}},
+			wantErr: `column "id" of table "t": GENERATED ALWAYS refuses an explicit value, and a YDB Serial takes one`},
+		{name: "raw identity options",
+			node: &ast.CreateTableNode{Name: "t", Columns: []*ast.ColumnNode{
+				{Name: "id", Type: "BIGINT", Primary: true, AutoInc: true, IdentityOptions: "CACHE 10"}}},
+			wantErr: `column "id" of table "t": a YDB Serial's sequence takes a start and an increment and nothing else, .* CACHE 10`},
+		{name: "a start below 1",
+			node: &ast.CreateTableNode{Name: "t", Columns: []*ast.ColumnNode{
+				{Name: "id", Type: "BIGINT", Primary: true, AutoInc: true, IdentityStart: "0"}}},
+			wantErr: `column "id" of table "t": identity_start 0: a YDB Serial's sequence takes a start of 1 or more .*`},
+		{name: "an increment below 1",
+			node: &ast.CreateTableNode{Name: "t", Columns: []*ast.ColumnNode{
+				{Name: "id", Type: "BIGINT", Primary: true, AutoInc: true, IdentityIncrement: "-2"}}},
+			wantErr: `column "id" of table "t": identity_increment -2: a YDB Serial's sequence takes an increment of 1 or more .*`},
+		{name: "a start that is not a whole number",
+			node: &ast.CreateTableNode{Name: "t", Columns: []*ast.ColumnNode{
+				{Name: "id", Type: "BIGSERIAL", Primary: true, IdentityStart: "1.5", IdentityGeneration: "BY_DEFAULT"}}},
+			wantErr: `column "id" of table "t": identity_start "1.5" is not a whole number YDB's ALTER SEQUENCE takes`},
 		{name: "a collation",
 			node:    keyed(&ast.ColumnNode{Name: "n", Type: "TEXT", Nullable: true, Collate: "C"}),
 			wantErr: `column "n" of table "t": YDB has no column collation .*`},

@@ -356,6 +356,9 @@ func reverseSchemaDiffWithSchemaForDialect(
 	// A rollback runs against the same database, whose read declined the same
 	// settings.
 	reversed.CurrentNotDescribed = diff.CurrentNotDescribed
+	// A rollback runs against the same database, so it names the objects YDB
+	// takes by absolute path under the same root.
+	reversed.CurrentDatabasePath = diff.CurrentDatabasePath
 	return reversed
 }
 

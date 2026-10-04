@@ -357,6 +357,7 @@ func compareReportingUndecidedAdditions(
 			Columns:        opts.ColumnSpellings,
 			DefaultIntSize: defaultIntSize,
 		},
+		caps,
 	)
 
 	// Compare enum type definitions and values. The semantics carry the
@@ -430,6 +431,9 @@ func compareReportingUndecidedAdditions(
 	// What the read of the database declined to describe, for a target that
 	// rebuilds a table and must not drop a setting nobody compared.
 	diff.CurrentNotDescribed = database.NotDescribed
+	// Where the read happened, for the statements YDB takes only with an
+	// absolute path.
+	diff.CurrentDatabasePath = database.DatabasePath
 
 	// Comments on the objects that take theirs through a statement of its
 	// own, compared only where the target stores and reports them.

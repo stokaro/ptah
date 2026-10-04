@@ -1253,6 +1253,41 @@ const (
 	// Serial only where this key holds.
 	SerialColumns Capability = "serial_columns"
 
+	// SerialSequenceOptions marks a target on which Ptah declares, reads back
+	// and changes the start and the increment of the sequence behind a Serial
+	// column: YDB's `ALTER SEQUENCE` on the sequence's absolute path, read
+	// back from the column's description.
+	//
+	// It describes Ptah rather than the engine. PostgreSQL alters a serial's
+	// sequence too, and the key is false there because no other planner
+	// compares or plans a serial's start or increment.
+	//
+	// Measured on YDB 25.1.4.7 and 26.2.1.14. A Serial column c of table t
+	// owns the sequence `t/_serial_column_c`. ALTER SEQUENCE takes it only by
+	// its absolute path: `t/_serial_column_c` answers `Path does not exist`
+	// whatever `PRAGMA TablePathPrefix` says. It takes START, INCREMENT and
+	// RESTART and nothing else: MINVALUE, MAXVALUE, CACHE, CYCLE and AS are
+	// parse errors. START changes the recorded start and not the next value,
+	// even on a sequence that never issued one, so only RESTART moves the
+	// next value, and a RESTART onto a value a row holds fails the next
+	// insert with `Conflict with existing key`.
+	SerialSequenceOptions Capability = "serial_sequence_options"
+
+	// SerialSequenceKeepsRange marks a target whose ALTER SEQUENCE keeps a
+	// 16-bit or 32-bit Serial's sequence ending where the column does. Ptah
+	// changes the start or the increment of such a sequence only where it
+	// holds; a 64-bit Serial's sequence ends where its column does either way.
+	//
+	// False on every YDB line. Measured on 25.1.4.7 and 26.2.1.14, any ALTER
+	// SEQUENCE, `INCREMENT BY 1` included, raises a Serial's or SmallSerial's
+	// maximum to the Int64 maximum, and no statement lowers it again. Before
+	// the ALTER, a SmallSerial at 32767 refuses the next insert (`sequence
+	// ... doesn't have any more values available`). After it, the next insert
+	// stores 32768 as -32768 and reports success, and a Serial stores
+	// 2147483648 as -2147483648. A BigSerial's maximum is the Int64 maximum
+	// already, so the jump changes nothing there.
+	SerialSequenceKeepsRange Capability = "serial_sequence_keeps_range"
+
 	// SmallIntegerDefaults marks a target on which a 16-bit integer column
 	// takes a literal default.
 	//
@@ -1663,6 +1698,14 @@ var registry = map[Capability]spec{
 	SerialColumns: {
 		doc: "SERIAL column types fill the column from an implicit sequence (PostgreSQL serial, YDB Serial)",
 	},
+	SerialSequenceOptions: {
+		doc:      "Ptah declares, reads and changes a Serial column's sequence start and increment (YDB's ALTER SEQUENCE)",
+		requires: []Capability{SerialColumns},
+	},
+	SerialSequenceKeepsRange: {
+		doc:      "the server keeps a 16- or 32-bit Serial's sequence within the column's range through ALTER SEQUENCE (not YDB)",
+		requires: []Capability{SerialSequenceOptions},
+	},
 	SmallIntegerDefaults: {
 		doc: "a 16-bit integer column takes a literal default (not YDB 25.1)",
 	},
@@ -1949,6 +1992,10 @@ func MySQL84() Capabilities {
 		SerialColumns:        true,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
+		// Only the YDB planner compares and changes a Serial's sequence, so
+		// both sequence keys are false here.
+		SerialSequenceOptions:    false,
+		SerialSequenceKeepsRange: false,
 		// MySQL has no RETURNING. CTEs arrived in 8.0.1, correlated subqueries
 		// and any JOIN condition are older, and OFFSET is taken only after a
 		// LIMIT.
@@ -2160,6 +2207,10 @@ func MariaDB1011() Capabilities {
 		SerialColumns:        true,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
+		// Only the YDB planner compares and changes a Serial's sequence, so
+		// both sequence keys are false here.
+		SerialSequenceOptions:    false,
+		SerialSequenceKeepsRange: false,
 		// RETURNING on INSERT and DELETE, not on UPDATE: measured on 12.3.3,
 		// `UPDATE ... RETURNING id` is a syntax error. A bare OFFSET is one
 		// too, while `OFFSET 1 ROWS` is accepted.
@@ -2310,6 +2361,10 @@ func Postgres16() Capabilities {
 		SerialColumns:        true,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
+		// Only the YDB planner compares and changes a Serial's sequence, so
+		// both sequence keys are false here.
+		SerialSequenceOptions:    false,
+		SerialSequenceKeepsRange: false,
 		// The family takes every query-builder construct in the standard
 		// spelling, a bare OFFSET included.
 		ReturningClause:        true,
@@ -2586,6 +2641,10 @@ func ClickHouse24() Capabilities {
 		SerialColumns:        false,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
+		// Only the YDB planner compares and changes a Serial's sequence, so
+		// both sequence keys are false here.
+		SerialSequenceOptions:    false,
+		SerialSequenceKeepsRange: false,
 		// No RETURNING. Measured on 24.10.4.191: a correlated EXISTS and `ON
 		// a.n < b.n` are refused, while a CTE and a bare OFFSET run.
 		ReturningClause:        false,
@@ -2757,6 +2816,10 @@ func SQLite3() Capabilities {
 		SerialColumns:        false,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
+		// Only the YDB planner compares and changes a Serial's sequence, so
+		// both sequence keys are false here.
+		SerialSequenceOptions:    false,
+		SerialSequenceKeepsRange: false,
 		// RETURNING arrived in 3.35; OFFSET is taken only after a LIMIT.
 		ReturningClause:        true,
 		CommonTableExpressions: true,
@@ -3007,6 +3070,10 @@ func SQLServer2022() Capabilities {
 		SerialColumns:        false,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
+		// Only the YDB planner compares and changes a Serial's sequence, so
+		// both sequence keys are false here.
+		SerialSequenceOptions:    false,
+		SerialSequenceKeepsRange: false,
 		// T-SQL spells RETURNING as OUTPUT, a different clause, and pages
 		// only with `OFFSET n ROWS`.
 		ReturningClause:        false,
@@ -3693,6 +3760,10 @@ func Oracle23() Capabilities {
 		SerialColumns:        false,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
+		// Only the YDB planner compares and changes a Serial's sequence, so
+		// both sequence keys are false here.
+		SerialSequenceOptions:    false,
+		SerialSequenceKeepsRange: false,
 		// RETURNING needs an INTO clause binding out-parameters (measured on
 		// 23.26, `RETURNING id` alone answers ORA-00925), and OFFSET needs
 		// ROWS.
@@ -3898,6 +3969,14 @@ func YDB262() Capabilities {
 		SerialColumns:        true,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: true,
+		// `ALTER SEQUENCE `/local/t/_serial_column_id` START WITH 100
+		// INCREMENT BY 5` changes a Serial's sequence and DescribeTable reads
+		// both back, on 25.1.4.7 and 26.2.1.14 alike, so every line between
+		// them carries it too. The same statement raises a Serial's or
+		// SmallSerial's maximum to the Int64 maximum on both, after which the
+		// column wraps to negative values without an error.
+		SerialSequenceOptions:    true,
+		SerialSequenceKeepsRange: false,
 
 		// The query builder's keys, measured from 25.1.4.7 to 26.2.1.14:
 		// RETURNING runs on every statement here, and YQL has no WITH, no
