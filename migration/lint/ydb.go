@@ -396,6 +396,10 @@ type ydbTable struct {
 	indexes []yqlddl.Index
 	// ttl is the column the TTL reads, empty when the table has none.
 	ttl string
+	// columns are the table's columns, in order, when columnsKnown: a table
+	// the directory created has them all, and one it only altered does not.
+	columns      []string
+	columnsKnown bool
 }
 
 func (s *ydbSchema) clone() *ydbSchema {
@@ -404,7 +408,10 @@ func (s *ydbSchema) clone() *ydbSchema {
 		return cloned
 	}
 	for name, table := range s.tables {
-		cloned.tables[name] = ydbTable{indexes: slices.Clone(table.indexes), ttl: table.ttl}
+		cloned.tables[name] = ydbTable{
+			indexes: slices.Clone(table.indexes), ttl: table.ttl,
+			columns: slices.Clone(table.columns), columnsKnown: table.columnsKnown,
+		}
 	}
 	for name, reads := range s.views {
 		cloned.views[name] = slices.Clone(reads)
@@ -444,7 +451,13 @@ func (s *ydbSchema) apply(read yqlddl.Statement) {
 		if _, exists := s.tables[read.Name]; exists && read.IfExists {
 			return
 		}
-		s.tables[read.Name] = ydbTable{indexes: slices.Clone(read.Indexes), ttl: read.TTLColumn}
+		columns := make([]string, 0, len(read.Columns))
+		for _, column := range read.Columns {
+			columns = append(columns, column.Name)
+		}
+		s.tables[read.Name] = ydbTable{
+			indexes: slices.Clone(read.Indexes), ttl: read.TTLColumn, columns: columns, columnsKnown: true,
+		}
 	case yqlddl.AlterTable:
 		table := s.table(read.Name)
 		for _, action := range read.Actions {
@@ -479,6 +492,10 @@ func (s *ydbSchema) viewsReading(table string) []string {
 func (t ydbTable) applyAction(action yqlddl.Action) ydbTable {
 	indexes := slices.Clone(t.indexes)
 	switch action.Kind {
+	case yqlddl.AddColumn:
+		t.columns = append(slices.Clone(t.columns), action.Column.Name)
+	case yqlddl.DropColumn:
+		t.columns = slices.DeleteFunc(slices.Clone(t.columns), func(name string) bool { return name == action.Column.Name })
 	case yqlddl.AddIndex:
 		indexes = slices.DeleteFunc(indexes, func(index yqlddl.Index) bool { return index.Name == action.Index.Name })
 		indexes = append(indexes, action.Index)

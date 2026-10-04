@@ -253,7 +253,9 @@ var migrationRuleMeta = map[string]ruleMeta{
 		YDBNote: "YQL stores no routine",
 	},
 	"DS101": {
-		Summary:   "DROP TABLE, and on MariaDB CREATE OR REPLACE TABLE, destroys the table and every row in it; a rename reports here on the compatibility surface, retiring the old name without moving the rows",
+		Summary: "DROP TABLE, and on MariaDB CREATE OR REPLACE TABLE, destroys the table and every row in it; " +
+			"a rename reports here on the compatibility surface, retiring the old name without moving the rows. " +
+			"The native surface leaves out the drop that ends a table rebuild, whose copy keeps every row under the old name",
 		AtlasCode: "DS102",
 		YDB:       YDBApplies,
 		YDBNote:   "`DROP TABLE`",

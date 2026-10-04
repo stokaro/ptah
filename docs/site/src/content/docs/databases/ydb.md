@@ -326,7 +326,10 @@ The copy is one data query, which commits whole or not at all:
 
 In a versioned migration each step is a query of its own, and progress is
 recorded after each. A run interrupted between two steps resumes at the next
-one with `migrations up --allow-dirty`.
+one with `migrations up --allow-dirty`. `ptah migrations lint` reads the five
+steps as a rebuild, so it does not report the final `DROP TABLE` as a lost
+table; it does when the copy leaves out a column the directory's earlier
+migrations gave the table.
 
 Even with the flag, a rebuild is refused when it would damage the table:
 

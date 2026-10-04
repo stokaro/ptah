@@ -409,12 +409,18 @@ func atlasGapDroppedTableRule() Rule {
 			if !atlasGapReportsOnThisSurface(file) {
 				return nil
 			}
+			rebuilds := fileRebuilds(file)
 			var findings []Finding
 			created := make(map[string]bool)
 			for i := range file.Statements {
 				stmt := &file.Statements[i]
 				if ref := createdTableRef(stmt.Words); ref != "" {
 					created[ref] = true
+					continue
+				}
+				if rebuilds.drops[i] {
+					// The rebuild's copy holds the name again by the end of
+					// the file; see [fileRebuilds].
 					continue
 				}
 				findings = append(findings, atlasGapDroppedTableFindings(file, stmt, i, created)...)
