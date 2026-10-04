@@ -81,6 +81,28 @@ func TestYDBBinary_DevDatabaseIsARealm(t *testing.T) {
 				c.Assert(directoryNames(c, ctx, line), qt.Not(qt.Contains), ydburl.RealmDirectory)
 			})
 
+			t.Run("lint replays in a realm and reads its baseline there", func(t *testing.T) {
+				c := qt.New(t)
+				migrations := filepath.Join(c.TempDir(), "migrations")
+				writeFiles(c, migrations, map[string]string{
+					"0000000001_users.up.sql":   "CREATE TABLE `shop/users` (`id` Uint64 NOT NULL, PRIMARY KEY (`id`));\n",
+					"0000000001_users.down.sql": "DROP TABLE `shop/users`;\n",
+					"0000000002_score.up.sql":   "ALTER TABLE `shop/users` ADD COLUMN `score` Int32;\n",
+					"0000000002_score.down.sql": "ALTER TABLE `shop/users` DROP COLUMN `score`;\n",
+				})
+				hashed, hashErr := runBinary(ctx, binary, "migrations", "hash", "--dir", migrations)
+				c.Assert(hashErr, qt.IsNil, qt.Commentf("%s", hashed))
+
+				linted, err := runBinary(ctx, binary, "migrations", "lint", "--dir", migrations, "--dev-url", url,
+					"--fail-on", "none")
+
+				c.Assert(err, qt.IsNil, qt.Commentf("%s", linted))
+				c.Assert(linted, qt.Contains, "No lint findings.")
+				c.Assert(linted, qt.Not(qt.Contains), "ran without the baseline schema")
+				c.Assert(directoryNames(c, ctx, line), qt.Not(qt.Contains), "shop")
+				c.Assert(directoryNames(c, ctx, line), qt.Not(qt.Contains), ydburl.RealmDirectory)
+			})
+
 			t.Run("a statement that reaches the whole database is refused", func(t *testing.T) {
 				c := qt.New(t)
 				migrations := filepath.Join(c.TempDir(), "migrations")

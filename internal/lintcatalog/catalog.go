@@ -144,8 +144,8 @@ const (
 	// instead, with the reason the statement fails there.
 	YDBReplaced YDBVerdict = "replaced"
 	// YDBNeedsDevDatabase marks a rule that reads the state a dev database
-	// replay supplies, which a YDB database cannot be yet. The run names the
-	// rule as unmet rather than reporting less in silence.
+	// replay supplies, on YDB a replay in a dev realm. A run without a dev
+	// database names the rule as unmet rather than reporting less in silence.
 	YDBNeedsDevDatabase YDBVerdict = "needs a dev database"
 )
 

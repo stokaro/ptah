@@ -439,8 +439,10 @@ reads. [Lint rules](../../reference/lint-rules/#ydb) lists each rule with its
 meaning.
 
 `YD104` and `YD106` read the indexes, TTL and views the directory's own
-earlier migrations declare, because a YDB database cannot be a dev database
-yet; a table the directory never created is unknown to them. The rules for
+earlier migrations declare; a table the directory never created is unknown to
+them. With `--dev-url`, lint first replays the directory in a
+[dev realm](#dev-shadow-and-scratch-databases), so a statement YDB refuses fails
+the run, and the rules that read a baseline schema read it there. The rules for
 every dialect run too, and the
 [lint rules](../../reference/lint-rules/#what-the-rules-for-every-dialect-do-on-ydb)
 say what each does on YDB.
