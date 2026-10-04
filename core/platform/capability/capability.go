@@ -1389,6 +1389,46 @@ const (
 	// for consumer` on 25.1.4.7 to 25.3.1.25.
 	TopicConsumerAvailabilityPeriod Capability = "topic_consumer_availability_period"
 
+	// AsyncReplication marks a target on which Ptah declares, reads and plans
+	// an asynchronous replication: YDB's `CREATE ASYNC REPLICATION <name> FOR
+	// <source> AS <replica> WITH (CONNECTION_STRING = ...)`, which copies
+	// tables of a source database into read-only replica tables the server
+	// creates and keeps current.
+	//
+	// Measured on every YDB line from 25.1.4.7 to 26.2.1.14: the replication
+	// service's DescribeReplication reports the connection, the credentials
+	// by the secret they name, the consistency level and one item per
+	// replicated table, and `ALTER ASYNC REPLICATION ... SET` changes the
+	// connection and the credentials only while the replication is paused
+	// (`Modifications are not allowed in StandBy state`). The items, the
+	// consistency level and the commit interval never change in place
+	// (`CONSISTENCY_LEVEL is not supported in ALTER`). On 26.2.1.14 the
+	// statement is behind YDB's EnableReplication flag, on by default:
+	// turned off, it answers `Asynchronous replication is disabled`.
+	AsyncReplication Capability = "async_replication"
+
+	// Transfers marks a target on which Ptah declares, reads and plans a
+	// transfer: YDB's `CREATE TRANSFER <name> FROM <topic> TO <table> USING
+	// <lambda>`, which reads a topic's messages, turns each through a YQL
+	// lambda and writes the rows into a table.
+	//
+	// It is behind YDB's EnableTopicTransfer flag: off on 25.1.4.7, where the
+	// statement answers `Topic transfer creation is disabled` and is accepted
+	// and runs once the flag is on, and on from 25.2.1.24. DescribeTransfer
+	// reports the lambda as written, the source, the destination, the
+	// consumer and the batch settings, and `ALTER TRANSFER ... SET USING` and
+	// `SET (BATCH_SIZE_BYTES = ..., FLUSH_INTERVAL = ...)` change a running
+	// transfer in place.
+	Transfers Capability = "transfers"
+
+	// ReplicationSecretPaths marks a target whose async replication and
+	// transfer take `TOKEN_SECRET_PATH` and `PASSWORD_SECRET_PATH`, naming a
+	// secret by its scheme path rather than by the name of an object secret.
+	// Measured: accepted on YDB 25.4.1.15 and later and read back as the
+	// secret's absolute path, and `Unknown replication setting:
+	// TOKEN_SECRET_PATH` on 25.1.4.7 to 25.3.1.25.
+	ReplicationSecretPaths Capability = "replication_secret_paths" // #nosec G101 -- a capability key, not a credential
+
 	// SerialColumns marks a target whose SERIAL column types fill the column
 	// on insert without the application naming a value: PostgreSQL's serial
 	// pseudo-types and YDB's Serial, BigSerial and SmallSerial, each backed by
@@ -1880,6 +1920,15 @@ var registry = map[Capability]spec{
 	TopicConsumerAvailabilityPeriod: {
 		doc: "a topic consumer keeps unread records past the retention, availability_period (YDB 25.4 and later)",
 	},
+	AsyncReplication: {
+		doc: "Ptah declares, reads and plans an async replication of another database's tables (YDB's CREATE ASYNC REPLICATION)",
+	},
+	Transfers: {
+		doc: "Ptah declares, reads and plans a transfer from a topic into a table through a lambda (YDB's CREATE TRANSFER)",
+	},
+	ReplicationSecretPaths: {
+		doc: "a replication or a transfer names a secret by its path, TOKEN_SECRET_PATH (YDB 25.4 and later)",
+	},
 	SerialColumns: {
 		doc: "SERIAL column types fill the column from an implicit sequence (PostgreSQL serial, YDB Serial)",
 	},
@@ -2193,6 +2242,11 @@ func MySQL84() Capabilities {
 		SerialColumns:                   true,
 		SmallIntegerDefaults:            true,
 		DocumentTypeDefaults:            false,
+		// An async replication and a transfer are YDB's, so the three
+		// replication keys are false here.
+		AsyncReplication:       false,
+		Transfers:              false,
+		ReplicationSecretPaths: false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -2424,6 +2478,11 @@ func MariaDB1011() Capabilities {
 		SerialColumns:                   true,
 		SmallIntegerDefaults:            true,
 		DocumentTypeDefaults:            false,
+		// An async replication and a transfer are YDB's, so the three
+		// replication keys are false here.
+		AsyncReplication:       false,
+		Transfers:              false,
+		ReplicationSecretPaths: false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -2597,6 +2656,11 @@ func Postgres16() Capabilities {
 		SerialColumns:                   true,
 		SmallIntegerDefaults:            true,
 		DocumentTypeDefaults:            false,
+		// An async replication and a transfer are YDB's, so the three
+		// replication keys are false here.
+		AsyncReplication:       false,
+		Transfers:              false,
+		ReplicationSecretPaths: false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -2893,6 +2957,11 @@ func ClickHouse24() Capabilities {
 		SerialColumns:                   false,
 		SmallIntegerDefaults:            true,
 		DocumentTypeDefaults:            false,
+		// An async replication and a transfer are YDB's, so the three
+		// replication keys are false here.
+		AsyncReplication:       false,
+		Transfers:              false,
+		ReplicationSecretPaths: false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -3084,6 +3153,11 @@ func SQLite3() Capabilities {
 		SerialColumns:                   false,
 		SmallIntegerDefaults:            true,
 		DocumentTypeDefaults:            false,
+		// An async replication and a transfer are YDB's, so the three
+		// replication keys are false here.
+		AsyncReplication:       false,
+		Transfers:              false,
+		ReplicationSecretPaths: false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -3354,6 +3428,11 @@ func SQLServer2022() Capabilities {
 		SerialColumns:                   false,
 		SmallIntegerDefaults:            true,
 		DocumentTypeDefaults:            false,
+		// An async replication and a transfer are YDB's, so the three
+		// replication keys are false here.
+		AsyncReplication:       false,
+		Transfers:              false,
+		ReplicationSecretPaths: false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -4062,6 +4141,11 @@ func Oracle23() Capabilities {
 		SerialColumns:                   false,
 		SmallIntegerDefaults:            true,
 		DocumentTypeDefaults:            false,
+		// An async replication and a transfer are YDB's, so the three
+		// replication keys are false here.
+		AsyncReplication:       false,
+		Transfers:              false,
+		ReplicationSecretPaths: false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -4272,6 +4356,16 @@ func YDB262() Capabilities {
 		Topics:                          true,
 		TopicConsumerAvailabilityPeriod: true,
 
+		// Async replication and transfers, measured on 26.2.1.14 with a
+		// replication of the server's own database: CREATE ASYNC
+		// REPLICATION creates the replica tables and keeps them current,
+		// CREATE TRANSFER moves a topic's messages into a table through a
+		// lambda, and the replication service describes both. Both name a
+		// secret by its path as well as by an object secret's name.
+		AsyncReplication:       true,
+		Transfers:              true,
+		ReplicationSecretPaths: true,
+
 		// Tables and their in-place changes. A table needs a key (`Primary
 		// key is required for ydb tables.`), and no ALTER changes it. A
 		// column's type never changes and a column is never renamed: `ALTER
@@ -4386,12 +4480,20 @@ func YDB254() Capabilities {
 		With(RelativeGrantPaths, false)
 }
 
-// YDB253 is the preset for YDB 25.3. It differs from [YDB254] in one key: a
-// topic consumer's availability_period answers `AVAILABILITY_PERIOD: unknown
-// option for consumer` on 25.3.1.25, where 25.4.1.15 takes it and reads it
-// back. Every other statement measured on the two lines answered alike.
+// YDB253 is the preset for YDB 25.3. It differs from [YDB254] in two keys,
+// each measured on 25.3.1.25, where 25.4.1.15 takes the statement and reads
+// it back:
+//
+//   - a topic consumer's availability_period answers `AVAILABILITY_PERIOD:
+//     unknown option for consumer`;
+//   - an async replication's TOKEN_SECRET_PATH answers `Unknown replication
+//     setting: TOKEN_SECRET_PATH`.
+//
+// Every other statement measured on the two lines answered alike.
 func YDB253() Capabilities {
-	return YDB254().With(TopicConsumerAvailabilityPeriod, false)
+	return YDB254().
+		With(TopicConsumerAvailabilityPeriod, false).
+		With(ReplicationSecretPaths, false)
 }
 
 // YDB252 is the preset for YDB 25.2. It differs from [YDB253] in three keys,
@@ -4413,7 +4515,7 @@ func YDB252() Capabilities {
 
 // YDB251 is the preset for YDB 25.1, the oldest line Ptah measured.
 //
-// It differs from [YDB252] in four keys, each measured on 25.1.4.7:
+// It differs from [YDB252] in five keys, each measured on 25.1.4.7:
 //
 //   - the 64-bit date and time types are behind a flag that is off (`support
 //     for new date/time 64 types is disabled`);
@@ -4422,13 +4524,16 @@ func YDB252() Capabilities {
 //   - an Int16 or Uint16 column with a literal default fails the CREATE TABLE
 //     with `INTERNAL_ERROR ... Unexpected type slot Int16`;
 //   - a changefeed's auto-partitioned topic is behind a flag that is off
-//     (`Topic autopartitioning for CDC is disabled`).
+//     (`Topic autopartitioning for CDC is disabled`);
+//   - a transfer is behind a flag that is off (`Topic transfer creation is
+//     disabled`).
 func YDB251() Capabilities {
 	return YDB252().
 		With(WideDateTimeTypes, false).
 		With(ParameterizedDecimal, false).
 		With(SmallIntegerDefaults, false).
-		With(ChangefeedTopicAutoPartitioning, false)
+		With(ChangefeedTopicAutoPartitioning, false).
+		With(Transfers, false)
 }
 
 var defaultDialectPresets = map[string]func() Capabilities{

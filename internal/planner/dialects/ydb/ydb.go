@@ -10,35 +10,43 @@
 // with the dialect's name, and orders what it emits so that no statement needs
 // one that has not run yet:
 //
-//  1. DROP VIEW for every view the plan removes or replaces, dependents first,
+//  1. DROP TRANSFER for every transfer the plan removes, then DROP ASYNC
+//     REPLICATION for every replication it removes, before anything a
+//     transfer reads or writes goes and before a table is created at a path a
+//     replication held;
+//  2. DROP VIEW for every view the plan removes or replaces, dependents first,
 //     so no table goes while a view the plan touches still reads it;
-//  2. DROP TOPIC for every removed topic, so a table created under its path
+//  3. DROP TOPIC for every removed topic, so a table created under its path
 //     finds the path free;
-//  3. CREATE TABLE for every added table, with the indexes it gains written
+//  4. CREATE TABLE for every added table, with the indexes it gains written
 //     inside the statement, because YDB has no CREATE INDEX
 //     ([capability.CreateIndexStatement]);
-//  4. DROP INDEX for every index the plan removes, before any column it names
+//  5. DROP INDEX for every index the plan removes, before any column it names
 //     is dropped (measured: `Impossible drop column because table has an index
 //     with that column`, and the same for a covered column);
-//  5. RENAME INDEX for every index the plan renames, one per statement
+//  6. RENAME INDEX for every index the plan renames, one per statement
 //     (`RENAME INDEX TO can not be used together with another table action`),
 //     then ALTER INDEX ... SET for every index whose partitioning changes in
 //     place, under the name it has once renamed;
-//  6. per table, ADD COLUMN, then the in-place column changes, then SET
+//  7. per table, ADD COLUMN, then the in-place column changes, then SET
 //     (TTL = ...) or RESET (TTL), then DROP COLUMN: a TTL may read a column
 //     the plan adds, and YDB refuses to drop the column a TTL reads;
-//  7. ADD INDEX for every index added to a table that already exists, one per
+//  8. ADD INDEX for every index added to a table that already exists, one per
 //     statement (`Only one index can be added by one operation`), after the
 //     columns it names exist;
-//  8. per table, DROP CHANGEFEED, then ADD CHANGEFEED with the consumers of
+//  9. per table, DROP CHANGEFEED, then ADD CHANGEFEED with the consumers of
 //     its topic, then ALTER TOPIC for a retention or a consumer changed in
 //     place; a new table's changefeeds follow its CREATE TABLE instead, since
 //     YDB adds one only to a table that exists;
-//  9. DROP TABLE for every removed table, which drops its changefeeds;
-//  10. CREATE TOPIC for every added topic and ALTER TOPIC for every changed
+//  10. DROP TABLE for every removed table, which drops its changefeeds;
+//  11. CREATE TOPIC for every added topic and ALTER TOPIC for every changed
 //     one, after the tables are dropped, so a topic created under a dropped
 //     table's path finds the path free;
-//  11. CREATE VIEW for every view the plan adds or replaces, last, a view after
+//  12. CREATE ASYNC REPLICATION and ALTER ASYNC REPLICATION, then CREATE
+//     TRANSFER and ALTER TRANSFER, once the tables, changefeeds, topics and
+//     consumers a transfer uses exist and the paths a replication creates its
+//     replica tables at are free;
+//  13. CREATE VIEW for every view the plan adds or replaces, last, a view after
 //     the views it reads: YDB checks a view's query against the schema when
 //     the view is created, so the tables and columns it reads exist by then.
 //
@@ -182,6 +190,9 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := p.refuseTopics(diff); err != nil {
 		return nil, err
 	}
+	if err := p.refuseReplications(diff); err != nil {
+		return nil, err
+	}
 	sequences, err := p.planSerialSequences(diff, rebuilds, semantics)
 	if err != nil {
 		return nil, err
@@ -193,6 +204,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	}
 
 	var result []ast.Node
+	result = append(result, dropReplications(diff)...)
 	result = append(result, p.dropViews(diff)...)
 	result = append(result, access.before...)
 	result = append(result, dropTopics(diff)...)
@@ -212,6 +224,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 		result = append(result, ast.NewDropTable(name))
 	}
 	result = append(result, changeTopics(diff)...)
+	result = append(result, changeReplications(diff)...)
 	result = append(result, p.createViews(diff)...)
 	result = append(result, access.after...)
 	result = append(result, access.last...)

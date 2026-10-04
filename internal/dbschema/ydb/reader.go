@@ -18,16 +18,22 @@ import (
 	"ptah.run/internal/ydburl"
 )
 
-// Reader describes a YDB database's row tables, views, topics and access
-// model.
+// Reader describes a YDB database's row tables, views, topics, async
+// replications, transfers and access model.
 //
 // A Ptah schema is a directory on YDB, and "" is the database root, so a table
 // at /local/app/users is table users in schema app. The reader walks the whole
 // tree with the scheme service, skipping every directory whose name begins
 // with a dot (.sys, .metadata, .tmp, .sys_health, ...), and describes each row
-// table with the table service, each view with the view service and each topic
-// with the topic service. A changefeed's topic sits under its table rather
-// than in a directory, so the walk does not meet it as a topic.
+// table with the table service, each view with the view service, each topic
+// with the topic service, and each async replication and transfer with the
+// replication service. A changefeed's topic sits under its table rather than
+// in a directory, so the walk does not meet it as a topic.
+//
+// A table an async replication writes is recorded rather than described: YDB
+// marks one with the `__async_replica` attribute and keeps it read-only, and
+// the replication owns it. A replication and a transfer are recorded rather
+// than described on a cluster that does not serve the replication API.
 //
 // The access model is read where YDB keeps it. The owner and the permission
 // entries of the database, of each directory and of each table come with the
@@ -157,33 +163,11 @@ func (r *Reader) entry(
 	case Ydb_Scheme.Entry_DIRECTORY:
 		return r.directory(ctx, source, schema, name, db)
 	case Ydb_Scheme.Entry_TABLE:
-		if !r.inScope(schema) || revisiontable.IsDefault(name) {
-			// The migrator's own tables are its bookkeeping, not the
-			// schema, as every other reader treats its revision tables.
-			// The tag table is one of them: measured on 26.2.1.14, a read
-			// of the migrations directory listed it, so a scoped plan
-			// would drop it.
-			return nil
-		}
-		described, err := source.DescribeTable(ctx, r.absolute(schema, name))
-		if err != nil {
+		return r.tableEntry(ctx, source, schema, name, db)
+	case Ydb_Scheme.Entry_VIEW, Ydb_Scheme.Entry_TOPIC, Ydb_Scheme.Entry_REPLICATION, Ydb_Scheme.Entry_TRANSFER:
+		if described, err := r.keyedEntry(ctx, source, schema, entry, db); described || err != nil {
 			return err
 		}
-		return r.table(ctx, source, schema, name, described, db)
-	case Ydb_Scheme.Entry_VIEW:
-		if !r.caps.Has(capability.Views) || !r.inScope(schema) {
-			break
-		}
-		described, err := source.DescribeView(ctx, r.absolute(schema, name))
-		if err != nil {
-			return err
-		}
-		return r.view(schema, name, described, db)
-	case Ydb_Scheme.Entry_TOPIC:
-		if !r.caps.Has(capability.Topics) || !r.inScope(schema) {
-			break
-		}
-		return r.topic(ctx, source, schema, name, db)
 	case Ydb_Scheme.Entry_DATABASE:
 		// Another database whose root sits under this one. It is not part
 		// of the database this connection reads.
@@ -209,6 +193,69 @@ func (r *Reader) entry(
 	return nil
 }
 
+// tableEntry describes the row table name in the directory schema, or records
+// it: a table an async replication writes is the replication's, and YDB
+// keeps it read-only, so it is recorded rather than described.
+func (r *Reader) tableEntry(ctx context.Context, source Source, schema, name string, db *catalog.Database) error {
+	if !r.inScope(schema) || revisiontable.IsDefault(name) {
+		// The migrator's own tables are its bookkeeping, not the
+		// schema, as every other reader treats its revision tables.
+		// The tag table is one of them: measured on 26.2.1.14, a read
+		// of the migrations directory listed it, so a scoped plan
+		// would drop it.
+		return nil
+	}
+	described, err := source.DescribeTable(ctx, r.absolute(schema, name))
+	if err != nil {
+		return err
+	}
+	if isReplica(described.GetAttributes()) {
+		db.NotDescribed = db.NotDescribed.With(replicaTable(schema, name))
+		return nil
+	}
+	return r.table(ctx, source, schema, name, described, db)
+}
+
+// keyedEntries are the kinds of entry the reader describes on a target with
+// the capability each names, and records rather than describes on one
+// without it.
+var keyedEntries = map[Ydb_Scheme.Entry_Type]capability.Capability{
+	Ydb_Scheme.Entry_VIEW:        capability.Views,
+	Ydb_Scheme.Entry_TOPIC:       capability.Topics,
+	Ydb_Scheme.Entry_REPLICATION: capability.AsyncReplication,
+	Ydb_Scheme.Entry_TRANSFER:    capability.Transfers,
+}
+
+// keyedEntry describes an entry of a kind [keyedEntries] names, and reports
+// false when the target lacks the kind's key or the entry is out of scope, so
+// the caller records the entry rather than describing it.
+func (r *Reader) keyedEntry(
+	ctx context.Context,
+	source Source,
+	schema string,
+	entry *Ydb_Scheme.Entry,
+	db *catalog.Database,
+) (bool, error) {
+	if !r.caps.Has(keyedEntries[entry.GetType()]) || !r.inScope(schema) {
+		return false, nil
+	}
+	name := entry.GetName()
+	switch entry.GetType() {
+	case Ydb_Scheme.Entry_VIEW:
+		described, err := source.DescribeView(ctx, r.absolute(schema, name))
+		if err != nil {
+			return true, err
+		}
+		return true, r.view(schema, name, described, db)
+	case Ydb_Scheme.Entry_TOPIC:
+		return true, r.topic(ctx, source, schema, name, db)
+	case Ydb_Scheme.Entry_REPLICATION:
+		return true, r.replication(ctx, source, schema, name, db)
+	default:
+		return true, r.transfer(ctx, source, schema, name, db)
+	}
+}
+
 // directory reads the directory name in schema, unless it belongs to the
 // server or to the dev realms.
 func (r *Reader) directory(ctx context.Context, source Source, schema, name string, db *catalog.Database) error {
@@ -226,9 +273,10 @@ func (r *Reader) directory(ctx context.Context, source Source, schema, name stri
 }
 
 // unmodeledEntries maps each scheme entry type Ptah does not model to the
-// coverage kind it is recorded under. A view and a topic are here for a
-// server without [capability.Views] or [capability.Topics], whose reader
-// records them rather than describing them.
+// coverage kind it is recorded under. A view, a topic, an async replication
+// and a transfer are here for a server without [capability.Views],
+// [capability.Topics], [capability.AsyncReplication] or [capability.Transfers],
+// whose reader records them rather than describing them.
 var unmodeledEntries = map[Ydb_Scheme.Entry_Type]coverage.Kind{
 	Ydb_Scheme.Entry_VIEW:                 coverage.View,
 	Ydb_Scheme.Entry_TOPIC:                coverage.Topic,

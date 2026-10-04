@@ -729,6 +729,9 @@ type schemaParseState struct {
 	consumers             []pendingConsumer
 	topics                []schemamodel.Topic
 	topicConsumers        []pendingTopicConsumer
+	asyncReplications     []schemamodel.AsyncReplication
+	replicationItems      []pendingReplicationItem
+	transfers             []schemamodel.Transfer
 }
 
 type structDeclaration struct {
@@ -855,6 +858,11 @@ var sharedDirectiveParsers = map[string]sharedDirectiveParser{
 	"ptah:schema:changefeed:consumer": (*schemaParseState).parseChangefeedConsumerComment,
 	"ptah:schema:topic":               (*schemaParseState).parseTopicComment,
 	"ptah:schema:topic:consumer":      (*schemaParseState).parseTopicConsumerComment,
+
+	// YDB's async replications, their items and transfers.
+	"ptah:schema:async_replication":      (*schemaParseState).parseAsyncReplicationComment,
+	"ptah:schema:async_replication:item": (*schemaParseState).parseAsyncReplicationItemComment,
+	"ptah:schema:transfer":               (*schemaParseState).parseTransferComment,
 }
 
 // ignoringStruct adapts a parser that does not need the owning struct's name.
@@ -998,6 +1006,9 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 	if err := state.attachTopicConsumers(); err != nil {
 		return schemamodel.Database{}, err
 	}
+	if err := state.attachReplicationItems(); err != nil {
+		return schemamodel.Database{}, err
+	}
 
 	enums := make([]schemamodel.Enum, 0, len(state.globalEnumsMap))
 	keys := make([]string, 0, len(state.globalEnumsMap))
@@ -1031,6 +1042,8 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 		Views:                state.views,
 		Synonyms:             state.synonyms,
 		Topics:               state.topics,
+		AsyncReplications:    state.asyncReplications,
+		Transfers:            state.transfers,
 		ExtendedProperties:   state.extendedProperties,
 		MaterializedViews:    state.materializedViews,
 		Triggers:             state.triggers,

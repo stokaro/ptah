@@ -1576,6 +1576,33 @@ func appendTopicStatements(visit func(ast.Node) error, topics []schemamodel.Topi
 	return nil
 }
 
+// FromAsyncReplication converts a schemamodel.AsyncReplication to an
+// ast.CreateAsyncReplicationNode carrying its connection and items.
+func FromAsyncReplication(replication schemamodel.AsyncReplication) *ast.CreateAsyncReplicationNode {
+	return ast.NewCreateAsyncReplication(replication.QualifiedName(), replication.Spec)
+}
+
+// FromTransfer converts a schemamodel.Transfer to an ast.CreateTransferNode.
+func FromTransfer(transfer schemamodel.Transfer) *ast.CreateTransferNode {
+	return ast.NewCreateTransfer(transfer.QualifiedName(), transfer.Spec)
+}
+
+// appendReplicationStatements adds a CREATE ASYNC REPLICATION node for each
+// declared replication and a CREATE TRANSFER node for each declared transfer.
+func appendReplicationStatements(visit func(ast.Node) error, database schemamodel.Database) error {
+	for _, replication := range database.AsyncReplications {
+		if err := visit(FromAsyncReplication(replication)); err != nil {
+			return err
+		}
+	}
+	for _, transfer := range database.Transfers {
+		if err := visit(FromTransfer(transfer)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // appendSynonymStatements adds a CREATE SYNONYM node for each declared synonym.
 func appendSynonymStatements(visit func(ast.Node) error, synonyms []schemamodel.Synonym) error {
 	for _, synonym := range synonyms {
@@ -2197,6 +2224,14 @@ func WalkDatabase(
 	// that creates the alias first and the table second reads as though the
 	// order did not matter, and the next person reorders it.
 	if err := appendSynonymStatements(visit, database.Synonyms); err != nil {
+		return err
+	}
+
+	// 9b1. A YDB async replication creates its replica tables itself and
+	// names no object of this database but their paths; a transfer writes a
+	// table and reads a topic, a changefeed's among them, so it follows the
+	// tables and the changefeeds their CREATE TABLE carries.
+	if err := appendReplicationStatements(visit, database); err != nil {
 		return err
 	}
 

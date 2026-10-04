@@ -23,6 +23,7 @@ import (
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlrunner"
 	"ptah.run/internal/ydbflags"
+	"ptah.run/internal/ydbreplication"
 	"ptah.run/internal/ydburl"
 	"ptah.run/internal/yqlquery"
 )
@@ -65,6 +66,15 @@ type Writer struct {
 	// builds reaches the operation service, which cancels a build; nil for a
 	// writer made over a scheme alone.
 	builds *Builds
+	// describe opens the table service, which tells a replica table from an
+	// ordinary one; nil for a writer made over a scheme alone, which reads
+	// every row table as an ordinary one.
+	describe func(context.Context) (Source, func(), error)
+	// discover answers the addresses the cluster advertises for its nodes,
+	// and secure whether the connection uses TLS; nil for a writer made over
+	// a scheme alone.
+	discover func(context.Context) ([]string, error)
+	secure   bool
 	// pause waits before a retry, and is replaced in tests.
 	pause func(context.Context, int) error
 }
@@ -80,7 +90,41 @@ func NewWriter(runner sqlrunner.Runner, driver *ydbsdk.Driver, realm string) *Wr
 	// A statement names a table relative to the root its connection resolves
 	// names against, so a build is found under the root.
 	writer.builds = NewBuilds(Ydb_Operation_V1.NewOperationServiceClient(connection), writer.root)
+	writer.describe = func(ctx context.Context) (Source, func(), error) { return newGRPCSource(ctx, driver) }
+	writer.discover = func(ctx context.Context) ([]string, error) {
+		endpoints, err := driver.Discovery().Discover(ctx)
+		if err != nil {
+			return nil, WithoutStackFrames(err)
+		}
+		addresses := make([]string, 0, len(endpoints))
+		for _, endpoint := range endpoints {
+			addresses = append(addresses, endpoint.Address())
+		}
+		return addresses, nil
+	}
+	writer.secure = driver.Secure()
 	return writer
+}
+
+// SelfConnectionString is a connection string through which the cluster's own
+// nodes reach this database, as an async replication or a transfer of the
+// database's own tables and topics names it in CONNECTION_STRING: the address
+// discovery advertises, which is the node's own view of itself, rather than
+// the address this connection reached it through, which may be a published
+// port of another host. Measured on local-ydb 25.1.4.7 and 26.2.1.14, a
+// replication of the server's own database through that address runs.
+func (w *Writer) SelfConnectionString(ctx context.Context) (string, error) {
+	if w.discover == nil {
+		return "", errors.New("this YDB writer reaches no discovery service to read the cluster's address from")
+	}
+	addresses, err := w.discover(ctx)
+	if err != nil {
+		return "", fmt.Errorf("discover the YDB cluster's address: %w", err)
+	}
+	if len(addresses) == 0 {
+		return "", errors.New("the YDB cluster advertises no node to connect to")
+	}
+	return ydbreplication.Endpoint{Secure: w.secure, Address: addresses[0], Database: w.database}.String(), nil
 }
 
 // CancelRunningBuild cancels the build running on table and reports how it
@@ -233,8 +277,9 @@ func (t *transaction) Commit() error { return nil }
 // request is not wrong; YDB has nothing it could undo.
 func (t *transaction) Rollback() error { return nil }
 
-// DropAllTables drops every view, row table and topic in the database and
-// then removes each directory that dropping them left empty, deepest first.
+// DropAllTables drops every transfer, async replication, view, row table and
+// topic in the database and then removes each directory that dropping them
+// left empty, deepest first.
 //
 // It drops what the schema reader describes and nothing else. A column table
 // and the other objects the reader records as not described stay, and so does
@@ -244,18 +289,116 @@ func (t *transaction) Rollback() error { return nil }
 // left alone. A directory's views go before its tables; YDB would take either
 // order, since it records no dependency on a view or on the table a view
 // reads.
+//
+// The transfers and the replications go first, in a walk of their own, before
+// anything they read or write: a replication with CASCADE, which drops the
+// replica tables it writes, since the reader describes those as the
+// replication's. A table a replication left read-only and no replication
+// writes is one the reader records rather than describes, and it stays.
 func (w *Writer) DropAllTables(ctx context.Context) error {
 	if w.scheme == nil {
 		return fmt.Errorf("no YDB scheme connection")
 	}
-	_, err := w.dropDirectory(ctx, "")
+	emptied, err := w.dropReplications(ctx, "")
+	if err != nil {
+		return err
+	}
+	drop := allTablesDrop{
+		replica: func(context.Context, string) (bool, error) { return false, nil },
+		emptied: emptied,
+	}
+	if w.describe != nil {
+		source, end, err := w.describe(ctx)
+		if err != nil {
+			return err
+		}
+		defer end()
+		drop.replica = func(ctx context.Context, table string) (bool, error) {
+			described, err := source.DescribeTable(ctx, path.Join(w.root, table))
+			if err != nil {
+				return false, err
+			}
+			return isReplica(described.GetAttributes()), nil
+		}
+	}
+	_, err = w.dropDirectory(ctx, "", drop)
 	return err
+}
+
+// allTablesDrop is what the table pass of [Writer.DropAllTables] knows besides
+// the tree: which row tables are replicas it leaves where they are, and which
+// directories the pass before it dropped something in.
+type allTablesDrop struct {
+	// replica reports a replica table, given its path relative to the root.
+	replica func(context.Context, string) (bool, error)
+	// emptied holds each directory, relative to the root, that a transfer or
+	// a replication was dropped from: a directory left empty by them is
+	// removed like one left empty by its tables.
+	emptied map[string]bool
+}
+
+// dropReplications drops every transfer and then every async replication in
+// the directory dir, relative to the root, and the directories under it, and
+// returns the directories it dropped one from.
+func (w *Writer) dropReplications(ctx context.Context, dir string) (map[string]bool, error) {
+	var transfers, replications []string
+	var walk func(dir string) error
+	walk = func(dir string) error {
+		entries, err := w.scheme.ListDirectory(ctx, path.Join(w.root, dir))
+		if err != nil {
+			return err
+		}
+		slices.SortFunc(entries, func(a, b *Ydb_Scheme.Entry) int { return strings.Compare(a.GetName(), b.GetName()) })
+		for _, entry := range entries {
+			name := entry.GetName()
+			switch {
+			case entry.GetType() == Ydb_Scheme.Entry_TRANSFER:
+				transfers = append(transfers, path.Join(dir, name))
+			case entry.GetType() == Ydb_Scheme.Entry_REPLICATION:
+				replications = append(replications, path.Join(dir, name))
+			case entry.GetType() == Ydb_Scheme.Entry_DIRECTORY && !strings.HasPrefix(name, ".") &&
+				(dir != "" || name != ydburl.RealmDirectory):
+				if err := walk(path.Join(dir, name)); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	if err := walk(dir); err != nil {
+		return nil, err
+	}
+	emptied := make(map[string]bool)
+	for _, transfer := range transfers {
+		if err := w.ExecuteSQL(ctx, "DROP TRANSFER "+sqlident.Quote(platform.YDB, transfer)); err != nil {
+			return nil, err
+		}
+		emptied[parentDirectory(transfer)] = true
+	}
+	for _, replication := range replications {
+		if err := w.ExecuteSQL(ctx, "DROP ASYNC REPLICATION "+sqlident.Quote(platform.YDB, replication)+
+			" CASCADE"); err != nil {
+			return nil, err
+		}
+		emptied[parentDirectory(replication)] = true
+	}
+	return emptied, nil
+}
+
+// parentDirectory is the directory holding the object at relative, a path
+// relative to the root, and "" for one at the root.
+func parentDirectory(relative string) string {
+	if parent := path.Dir(relative); parent != "." {
+		return parent
+	}
+	return ""
 }
 
 // dropDirectory drops the views, tables and topics in the directory dir,
 // relative to the database root, and the directories under it, and reports
-// whether it dropped or removed anything there.
-func (w *Writer) dropDirectory(ctx context.Context, dir string) (bool, error) {
+// whether it or the pass before it dropped or removed anything there. A table
+// drop reports as a replica stays where it is.
+func (w *Writer) dropDirectory(ctx context.Context, dir string, drop allTablesDrop) (bool, error) {
 	entries, err := w.scheme.ListDirectory(ctx, path.Join(w.root, dir))
 	if err != nil {
 		return false, err
@@ -266,7 +409,7 @@ func (w *Writer) dropDirectory(ctx context.Context, dir string) (bool, error) {
 		}
 		return strings.Compare(a.GetName(), b.GetName())
 	})
-	changed := false
+	changed := drop.emptied[dir]
 	for _, entry := range entries {
 		name := entry.GetName()
 		switch {
@@ -276,10 +419,11 @@ func (w *Writer) dropDirectory(ctx context.Context, dir string) (bool, error) {
 			}
 			changed = true
 		case entry.GetType() == Ydb_Scheme.Entry_TABLE:
-			if err := w.ExecuteSQL(ctx, "DROP TABLE "+sqlident.Quote(platform.YDB, path.Join(dir, name))); err != nil {
+			dropped, err := w.dropTableUnlessReplica(ctx, path.Join(dir, name), drop)
+			if err != nil {
 				return changed, err
 			}
-			changed = true
+			changed = changed || dropped
 		case entry.GetType() == Ydb_Scheme.Entry_TOPIC:
 			if err := w.ExecuteSQL(ctx, "DROP TOPIC "+sqlident.Quote(platform.YDB, path.Join(dir, name))); err != nil {
 				return changed, err
@@ -288,7 +432,7 @@ func (w *Writer) dropDirectory(ctx context.Context, dir string) (bool, error) {
 		case entry.GetType() == Ydb_Scheme.Entry_DIRECTORY && !strings.HasPrefix(name, ".") &&
 			(dir != "" || name != ydburl.RealmDirectory):
 			child := path.Join(dir, name)
-			childChanged, err := w.dropDirectory(ctx, child)
+			childChanged, err := w.dropDirectory(ctx, child, drop)
 			if err != nil {
 				return changed, err
 			}
@@ -302,6 +446,19 @@ func (w *Writer) dropDirectory(ctx context.Context, dir string) (bool, error) {
 		}
 	}
 	return changed, nil
+}
+
+// dropTableUnlessReplica drops the row table at table, a path relative to the
+// root, unless drop reports it a replica, and reports whether it dropped it.
+func (w *Writer) dropTableUnlessReplica(ctx context.Context, table string, drop allTablesDrop) (bool, error) {
+	kept, err := drop.replica(ctx, table)
+	if err != nil || kept {
+		return false, err
+	}
+	if err := w.ExecuteSQL(ctx, "DROP TABLE "+sqlident.Quote(platform.YDB, table)); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // dropRank orders a directory's entries for DropAllTables: views first, then
@@ -338,6 +495,7 @@ func (w *Writer) DropDirectory(ctx context.Context, dir string) error {
 	if err := w.planTree(ctx, relative, &steps); err != nil {
 		return err
 	}
+	slices.SortStableFunc(steps, func(a, b treeStep) int { return cmp.Compare(a.rank, b.rank) })
 	for _, step := range steps {
 		if err := w.runTreeStep(ctx, step); err != nil {
 			return err
@@ -365,11 +523,32 @@ func (w *Writer) droppableDirectory(dir string) (string, error) {
 // treeStatements is the statement that drops each kind of entry the teardown
 // removes, with the path in place of %s. A directory has none: the scheme
 // service removes it once it is empty.
+//
+// A replication is dropped without CASCADE, so the teardown's own DROP TABLE
+// of each replica in the tree finds it there: measured on 25.1.4.7 and
+// 26.2.1.14, YDB drops a replica table, read-only as it is, with DROP TABLE,
+// while CASCADE would drop it first and the step for it would then fail.
 var treeStatements = map[Ydb_Scheme.Entry_Type]string{
 	Ydb_Scheme.Entry_TABLE:        "DROP TABLE %s",
 	Ydb_Scheme.Entry_COLUMN_TABLE: "DROP TABLE %s",
 	Ydb_Scheme.Entry_VIEW:         "DROP VIEW %s",
 	Ydb_Scheme.Entry_TOPIC:        "DROP TOPIC %s",
+	Ydb_Scheme.Entry_TRANSFER:     "DROP TRANSFER %s",
+	Ydb_Scheme.Entry_REPLICATION:  "DROP ASYNC REPLICATION %s",
+}
+
+// teardownRank orders the steps of a teardown: transfers first and then
+// replications, before the tables and topics they read and write go, and
+// everything else in the order the walk met it.
+func teardownRank(entryType Ydb_Scheme.Entry_Type) int {
+	switch entryType {
+	case Ydb_Scheme.Entry_TRANSFER:
+		return 0
+	case Ydb_Scheme.Entry_REPLICATION:
+		return 1
+	default:
+		return 2
+	}
 }
 
 // treeStep is one step of a directory teardown: a statement that drops an
@@ -378,6 +557,8 @@ var treeStatements = map[Ydb_Scheme.Entry_Type]string{
 type treeStep struct {
 	statement string
 	directory string
+	// rank is the step's [teardownRank]; a directory's is the last one.
+	rank int
 }
 
 // planTree appends the steps that drop what dir holds and then dir itself,
@@ -402,13 +583,14 @@ func (w *Writer) planTree(ctx context.Context, dir string, steps *[]treeStep) er
 				return err
 			}
 		case droppable:
-			*steps = append(*steps, treeStep{statement: fmt.Sprintf(statement, sqlident.Quote(platform.YDB, child))})
+			*steps = append(*steps, treeStep{statement: fmt.Sprintf(statement, sqlident.Quote(platform.YDB, child)),
+				rank: teardownRank(entry.GetType())})
 		default:
 			return fmt.Errorf("ydb: %s holds %s, a %s, which Ptah has no statement to drop; nothing was dropped",
 				absolute, name, entryTypeName(entry.GetType()))
 		}
 	}
-	*steps = append(*steps, treeStep{directory: absolute})
+	*steps = append(*steps, treeStep{directory: absolute, rank: teardownRank(Ydb_Scheme.Entry_DIRECTORY)})
 	return nil
 }
 

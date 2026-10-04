@@ -44,16 +44,16 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-448 fields are reachable from the desired schema, and each one carries
+477 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 386 | reaches rendered SQL on at least one target |
+| `ddl` | 413 | reaches rendered SQL on at least one target |
 | `comparison` | 7 | read when two schemas are compared, and written into no statement |
 | `planning` | 7 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
-| `source` | 17 | identifies the source text the declaration was read from |
+| `source` | 19 | identifies the source text the declaration was read from |
 | `export` | 10 | what a generated document carries, or reports that it cannot |
 | `data` | 11 | reference or seed rows, which are not DDL |
 
@@ -65,6 +65,12 @@ None.
 
 | Field | Disposition | Why it is not rendered |
 | --- | --- | --- |
+| `ast.AsyncReplicationItem.Source` | `ddl` | — |
+| `ast.AsyncReplicationItem.Target` | `ddl` | — |
+| `ast.AsyncReplicationSpec.CommitInterval` | `ddl` | — |
+| `ast.AsyncReplicationSpec.Connection` | `ddl` | — |
+| `ast.AsyncReplicationSpec.ConsistencyLevel` | `ddl` | — |
+| `ast.AsyncReplicationSpec.Items` | `ddl` | — |
 | `ast.ChangefeedSpec.Consumers` | `ddl` | — |
 | `ast.ChangefeedSpec.Disabled` | `ddl` | — |
 | `ast.ChangefeedSpec.Format` | `ddl` | — |
@@ -90,6 +96,12 @@ None.
 | `ast.MatViewRefreshSpec.Mode` | `ddl` | — |
 | `ast.MatViewRefreshSpec.Offset` | `ddl` | — |
 | `ast.MatViewRefreshSpec.Randomize` | `ddl` | — |
+| `ast.ReplicationConnectionSpec.ConnectionString` | `ddl` | — |
+| `ast.ReplicationConnectionSpec.PasswordSecretName` | `ddl` | — |
+| `ast.ReplicationConnectionSpec.PasswordSecretPath` | `ddl` | — |
+| `ast.ReplicationConnectionSpec.TokenSecretName` | `ddl` | — |
+| `ast.ReplicationConnectionSpec.TokenSecretPath` | `ddl` | — |
+| `ast.ReplicationConnectionSpec.User` | `ddl` | — |
 | `ast.RowDeletionPolicySpec.Column` | `ddl` | — |
 | `ast.RowDeletionPolicySpec.Interval` | `ddl` | — |
 | `ast.RowDeletionPolicySpec.Unit` | `ddl` | — |
@@ -125,11 +137,22 @@ None.
 | `ast.TopicSpec.PartitionWriteSpeedBytesPerSecond` | `ddl` | — |
 | `ast.TopicSpec.RetentionPeriod` | `ddl` | — |
 | `ast.TopicSpec.SupportedCodecs` | `ddl` | — |
+| `ast.TransferSpec.BatchSizeBytes` | `ddl` | — |
+| `ast.TransferSpec.Connection` | `ddl` | — |
+| `ast.TransferSpec.Consumer` | `ddl` | — |
+| `ast.TransferSpec.FlushInterval` | `ddl` | — |
+| `ast.TransferSpec.Lambda` | `ddl` | — |
+| `ast.TransferSpec.Source` | `ddl` | — |
+| `ast.TransferSpec.Target` | `ddl` | — |
 | `coverage.Object.Kind` | `comparison` | which kind the undescribed object is |
 | `coverage.Object.Name` | `comparison` | which object was not described |
 | `coverage.Object.Provenance` | `comparison` | how Ptah learned the object was not described |
 | `coverage.Object.Reason` | `comparison` | why it was not described |
 | `coverage.Set.Objects` | `comparison` | the per-object half of that record |
+| `schemamodel.AsyncReplication.Name` | `ddl` | — |
+| `schemamodel.AsyncReplication.Schema` | `ddl` | — |
+| `schemamodel.AsyncReplication.Spec` | `ddl` | — |
+| `schemamodel.AsyncReplication.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.CompositeField.Name` | `ddl` | — |
 | `schemamodel.CompositeField.Type` | `ddl` | — |
 | `schemamodel.CompositeType.Comment` | `ddl` | — |
@@ -169,6 +192,7 @@ None.
 | `schemamodel.ContinuousAggregate.Name` | `ddl` | — |
 | `schemamodel.ContinuousAggregate.Schema` | `ddl` | — |
 | `schemamodel.ContinuousAggregate.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
+| `schemamodel.Database.AsyncReplications` | `ddl` | — |
 | `schemamodel.Database.CompositeTypes` | `ddl` | — |
 | `schemamodel.Database.Constraints` | `ddl` | — |
 | `schemamodel.Database.ContinuousAggregates` | `ddl` | — |
@@ -201,6 +225,7 @@ None.
 | `schemamodel.Database.Synonyms` | `ddl` | — |
 | `schemamodel.Database.Tables` | `ddl` | — |
 | `schemamodel.Database.Topics` | `ddl` | — |
+| `schemamodel.Database.Transfers` | `ddl` | — |
 | `schemamodel.Database.Triggers` | `ddl` | — |
 | `schemamodel.Database.Views` | `ddl` | — |
 | `schemamodel.DefaultPrivilege.Comment` | `ddl` | — |
@@ -492,6 +517,10 @@ None.
 | `schemamodel.Topic.Schema` | `ddl` | — |
 | `schemamodel.Topic.Spec` | `ddl` | — |
 | `schemamodel.Topic.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
+| `schemamodel.Transfer.Name` | `ddl` | — |
+| `schemamodel.Transfer.Schema` | `ddl` | — |
+| `schemamodel.Transfer.Spec` | `ddl` | — |
+| `schemamodel.Transfer.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.Trigger.Body` | `ddl` | — |
 | `schemamodel.Trigger.Comment` | `ddl` | — |
 | `schemamodel.Trigger.Dialects` | `ddl` | — |

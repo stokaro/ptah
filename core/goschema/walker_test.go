@@ -1609,12 +1609,17 @@ func TestParseDir_AllIntegrationFixturesRemainParsable(t *testing.T) {
 // Fixture 023 carries every object kind a PostgreSQL render takes, refused or
 // skipped. A YDB topic is refused by every target but YDB, so it has a
 // fixture of its own, and the guard reads both.
+//
+// Fixture 023 carries every object kind a PostgreSQL render takes, refused or
+// skipped. A YDB async replication and a transfer are refused by every target
+// but YDB, so they have a fixture of their own, and the guard reads both.
 func TestParseDir_ReflectionGuard(t *testing.T) {
 	c := qt.New(t)
 
 	fixtureDirs := []string{
 		"../../integration/internal/fixtures/entities/023-go-annotations-objects",
 		"../../integration/internal/fixtures/entities/048-ydb-topics",
+		"../../integration/internal/fixtures/entities/050-ydb-replication",
 	}
 
 	merged := schemamodel.Database{}
@@ -1657,7 +1662,7 @@ func TestParseDir_ReflectionGuard(t *testing.T) {
 		mLen := fvMerged.Field(i).Len()
 		if mLen == 0 {
 			c.Fatalf("%s is not exercised by the fixtures; add it to 023-go-annotations-objects, or to 048-ydb-topics "+
-				"for a kind only YDB renders, so the walker append stays covered", name)
+				"or 050-ydb-replication for a kind only YDB renders, so the walker append stays covered", name)
 		}
 		dLen := fvDir.Field(i).Len()
 		c.Assert(dLen > 0, qt.IsTrue, qt.Commentf("%s populated by per-file parse (%d) but ParseDir/ParseFS gave %d — missing append in walker.go?", name, mLen, dLen))

@@ -554,6 +554,7 @@ func (r *renderer) renderBody() {
 	r.reportChangefeeds()
 	r.reportRowDeletionPolicies()
 	r.reportTopics()
+	r.reportReplications()
 	r.renderExtensions()
 	r.renderSequences()
 	r.renderUserTypes()

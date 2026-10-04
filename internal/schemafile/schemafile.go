@@ -339,6 +339,11 @@ var yamlOnlyExtensions = []string{".yaml", ".yml"}
 //     one, and neither the SQL parser nor DBML produces one, so an HCL
 //     document applied to a YDB database holding a topic would otherwise plan
 //     `DROP TOPIC`.
+//   - Only YAML and a Go schema express a YDB async replication or transfer.
+//     HCL has no block for either, and neither the SQL parser nor DBML
+//     produces one, so a document in those formats applied to a YDB database
+//     holding one would otherwise plan `DROP ASYNC REPLICATION ... CASCADE`,
+//     which drops the replica tables with it.
 func withFormatLimits(database *schemamodel.Database, resolved string) *schemamodel.Database {
 	if database == nil {
 		return nil
@@ -364,6 +369,10 @@ func withFormatLimits(database *schemamodel.Database, resolved string) *schemamo
 	}
 	if extension == dbmlExtension {
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(dbmlCannotExpress()...)...)
+	}
+	if !slices.Contains(yamlOnlyExtensions, extension) {
+		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(
+			coverage.Replication, coverage.Transfer)...)
 	}
 	return database
 }
@@ -818,6 +827,8 @@ func appendDatabase(dst, src *schemamodel.Database) {
 	dst.ContinuousAggregates = append(dst.ContinuousAggregates, src.ContinuousAggregates...)
 	dst.Synonyms = append(dst.Synonyms, src.Synonyms...)
 	dst.Topics = append(dst.Topics, src.Topics...)
+	dst.AsyncReplications = append(dst.AsyncReplications, src.AsyncReplications...)
+	dst.Transfers = append(dst.Transfers, src.Transfers...)
 	dst.ExtendedProperties = append(dst.ExtendedProperties, src.ExtendedProperties...)
 	dst.ManagedData = append(dst.ManagedData, src.ManagedData...)
 	// Several files loaded together are one description, and it describes only

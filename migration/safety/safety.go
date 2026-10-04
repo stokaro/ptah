@@ -132,6 +132,16 @@ func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 	add(&findings, "topics_removed", len(diff.TopicsRemoved), Destructive)
 	add(&findings, "topics_modified", len(diff.TopicsModified), Warning)
 	add(&findings, "topic_consumers_removed", droppedTopicConsumers(diff.TopicsModified), Destructive)
+	// Dropping an async replication drops the replica tables it created, or
+	// leaves them read-only for good, and dropping a transfer drops the
+	// consumer YDB created for it, with its position in the topic. A change
+	// of either moves where data comes from or how it is written.
+	add(&findings, "async_replications_added", len(diff.AsyncReplicationsAdded), Safe)
+	add(&findings, "async_replications_removed", len(diff.AsyncReplicationsRemoved), Destructive)
+	add(&findings, "async_replications_modified", len(diff.AsyncReplicationsModified), Warning)
+	add(&findings, "transfers_added", len(diff.TransfersAdded), Safe)
+	add(&findings, "transfers_removed", len(diff.TransfersRemoved), Destructive)
+	add(&findings, "transfers_modified", len(diff.TransfersModified), Warning)
 
 	for _, table := range diff.TablesModified {
 		add(&findings, "columns_added", len(table.ColumnsAdded), Warning)
@@ -581,13 +591,9 @@ func assessNode(node ast.Node) StatementAssessment {
 	case *ast.AlterTypeNode:
 		assessment.Subject = n.Name
 		return assessAlterType(n, assessment)
-	case *ast.DropTopicNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Destructive
-		assessment.Reason = dropTopicReason
-	case *ast.AlterTopicNode:
-		assessment.Subject = n.Name
-		return assessAlterTopic(n, assessment)
+	case *ast.DropTopicNode, *ast.AlterTopicNode, *ast.DropAsyncReplicationNode, *ast.DropTransferNode,
+		*ast.AlterAsyncReplicationNode, *ast.AlterTransferNode:
+		return assessYDBObjectNode(n, assessment)
 	case *ast.RawSQLNode:
 		assessment.Statement = n.SQL
 		return assessRawSQL(n.SQL, assessment, false)
@@ -745,6 +751,11 @@ func classifyTypeOperation(op ast.TypeOperation) (Severity, string) {
 // existing constraint and not a new one.
 func assessRawSQL(sql string, assessment StatementAssessment, keepsNullability bool) StatementAssessment {
 	words, dropsDefault := withoutDefaultConstraintDrop(rawWords(sql))
+	if hasWordPrefix(words, "DROP", "ASYNC", "REPLICATION") && !slices.Contains(words, "CASCADE") {
+		assessment.Severity = Warning
+		assessment.Reason = keepReplicaTablesReason
+		return assessment
+	}
 	if reason, found := destructivePrefixReason(words); found {
 		assessment.Severity = Destructive
 		assessment.Reason = reason
@@ -992,8 +1003,62 @@ var destructivePrefixes = []struct {
 	{words: []string{"DROP", "ROLE"}, reason: "DROP ROLE removes an existing database principal"},
 	{words: []string{"DROP", "POLICY"}, reason: "DROP POLICY removes an access-control protection"},
 	{words: []string{"DROP", "TOPIC"}, reason: dropTopicReason},
+	{words: []string{"DROP", "ASYNC", "REPLICATION"}, reason: dropReplicationReason},
+	{words: []string{"DROP", "TRANSFER"}, reason: dropTransferReason},
 	{words: []string{"TRUNCATE"}, reason: "TRUNCATE removes all rows from a table"},
 }
+
+// assessYDBObjectNode judges a change of a YDB topic, async replication or
+// transfer.
+func assessYDBObjectNode(node ast.Node, assessment StatementAssessment) StatementAssessment {
+	switch n := node.(type) {
+	case *ast.DropTopicNode:
+		assessment.Subject = n.Name
+		assessment.Severity = Destructive
+		assessment.Reason = dropTopicReason
+	case *ast.AlterTopicNode:
+		assessment.Subject = n.Name
+		return assessAlterTopic(n, assessment)
+	case *ast.DropAsyncReplicationNode:
+		assessment.Subject = n.Name
+		assessment.Severity = Destructive
+		assessment.Reason = dropReplicationReason
+		if !n.Cascade {
+			assessment.Severity = Warning
+			assessment.Reason = keepReplicaTablesReason
+		}
+	case *ast.DropTransferNode:
+		assessment.Subject = n.Name
+		assessment.Severity = Destructive
+		assessment.Reason = dropTransferReason
+	case *ast.AlterAsyncReplicationNode:
+		assessment.Subject = n.Name
+		assessment.Severity = Warning
+		assessment.Reason = "ALTER ASYNC REPLICATION points the replication at another source or credential"
+	case *ast.AlterTransferNode:
+		assessment.Subject = n.Name
+		assessment.Severity = Warning
+		assessment.Reason = "ALTER TRANSFER changes the rows the transfer writes from each message"
+	}
+	return assessment
+}
+
+// dropReplicationReason and dropTransferReason are why dropping a YDB async
+// replication with CASCADE or a transfer is destructive, and
+// keepReplicaTablesReason why a replication dropped without CASCADE is a
+// warning, in the words both the AST and the SQL-text classifiers report.
+// Measured on 25.1.4.7 and 26.2.1.14: with CASCADE the replica tables go, and
+// without it they stay, read-only for good where the replication was not
+// failed over first. A plan drops only a failed-over replication without
+// CASCADE, whose tables are ordinary; a statement read as text cannot tell
+// which it is, and lint rule YD115 reads the migration directory for it.
+const (
+	dropReplicationReason   = "DROP ASYNC REPLICATION ... CASCADE drops the replica tables with the replication"
+	keepReplicaTablesReason = "DROP ASYNC REPLICATION without CASCADE ends the replication and keeps its tables, " +
+		"read-only for good unless it was failed over first"
+	dropTransferReason = "DROP TRANSFER stops the transfer and drops the topic consumer YDB created for it, with " +
+		"its position in the topic"
+)
 
 // destructivePrefixReason returns the reason of the first [destructivePrefixes]
 // entry the statement's words start with.

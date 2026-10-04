@@ -83,6 +83,12 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database)
 	out.Topics = keep(db.Topics, func(topic schemamodel.Topic) bool {
 		return s.selected(typeList("topic"), topic.Schema, topic.Name)
 	})
+	out.AsyncReplications = keep(db.AsyncReplications, func(replication schemamodel.AsyncReplication) bool {
+		return s.selected(typeList("async_replication"), replication.Schema, replication.Name)
+	})
+	out.Transfers = keep(db.Transfers, func(transfer schemamodel.Transfer) bool {
+		return s.selected(typeList("transfer"), transfer.Schema, transfer.Name)
+	})
 	out.ExtendedProperties = keep(db.ExtendedProperties,
 		func(property schemamodel.ExtendedProperty) bool {
 			if property.Schema == "" {

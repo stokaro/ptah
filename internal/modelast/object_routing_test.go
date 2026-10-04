@@ -42,6 +42,8 @@ var routedKinds = []routedKind{
 	{name: "policy", want: 1, count: countNodes[*ast.CreatePolicyNode]},
 	{name: "synonym", want: 1, count: countNodes[*ast.CreateSynonymNode]},
 	{name: "topic", want: 1, count: countNodes[*ast.CreateTopicNode]},
+	{name: "async replication", want: 1, count: countNodes[*ast.CreateAsyncReplicationNode]},
+	{name: "transfer", want: 1, count: countNodes[*ast.CreateTransferNode]},
 	{name: "hypertable", want: 1, count: countNodes[*ast.CreateHypertableNode]},
 	{name: "continuous aggregate", want: 1, count: countNodes[*ast.CreateContinuousAggregateNode]},
 	{name: "extended property", want: 1, count: countNodes[*ast.ExtendedPropertyNode]},
@@ -87,6 +89,14 @@ func routingFixture() schemamodel.Database {
 		MaterializedViews: []schemamodel.MaterializedView{{StructName: "MV", Name: "matview_probe", Body: "SELECT id FROM table_probe"}},
 		Synonyms:          []schemamodel.Synonym{{StructName: "SY", Name: "synonym_probe", Target: "dbo.table_probe"}},
 		Topics:            []schemamodel.Topic{{StructName: "TO", Name: "topic_probe"}},
+		AsyncReplications: []schemamodel.AsyncReplication{{StructName: "AR", Name: "replication_probe",
+			Spec: ast.AsyncReplicationSpec{
+				Connection: ast.ReplicationConnectionSpec{ConnectionString: "grpc://primary:2136/?database=/prod"},
+				Items:      []ast.AsyncReplicationItem{{Source: "table_probe", Target: "replica_probe"}},
+			}}},
+		Transfers: []schemamodel.Transfer{{StructName: "TF", Name: "transfer_probe", Spec: ast.TransferSpec{
+			Source: "table_probe/feed", Target: "table_probe", Lambda: "($msg) -> { return []; }",
+		}}},
 		Hypertables: []schemamodel.Hypertable{{
 			StructName: "HY", Table: "table_probe", Column: "n",
 		}},

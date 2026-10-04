@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/ydb-platform/ydb-go-genproto/draft/protos/Ydb_Replication"
 	"github.com/ydb-platform/ydb-go-genproto/draft/protos/Ydb_View"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Scheme"
@@ -26,10 +27,15 @@ import (
 // path. A path it does not know is an error, so a reader that asks about a
 // directory it should skip fails the test.
 type fakeSource struct {
-	directories map[string][]*Ydb_Scheme.Entry
-	tables      map[string]*Ydb_Table.DescribeTableResult
-	topics      map[string]*Ydb_Topic.DescribeTopicResult
-	views       map[string]*Ydb_View.DescribeViewResult
+	directories  map[string][]*Ydb_Scheme.Entry
+	tables       map[string]*Ydb_Table.DescribeTableResult
+	topics       map[string]*Ydb_Topic.DescribeTopicResult
+	views        map[string]*Ydb_View.DescribeViewResult
+	replications map[string]*Ydb_Replication.DescribeReplicationResult
+	transfers    map[string]*Ydb_Replication.DescribeTransferResult
+	// replicationErr answers every replication and transfer description,
+	// when set.
+	replicationErr error
 	// selves are the directories' own entries, which carry their owner and
 	// permission entries; a directory without one has neither.
 	selves map[string]*Ydb_Scheme.Entry
@@ -71,6 +77,31 @@ func (f fakeSource) DescribeTopic(_ context.Context, path string) (*Ydb_Topic.De
 	described, ok := f.topics[path]
 	if !ok {
 		return nil, fmt.Errorf("described topic %s, which the fixture does not hold", path)
+	}
+	return described, nil
+}
+
+func (f fakeSource) DescribeReplication(
+	_ context.Context,
+	path string,
+) (*Ydb_Replication.DescribeReplicationResult, error) {
+	if f.replicationErr != nil {
+		return nil, f.replicationErr
+	}
+	described, ok := f.replications[path]
+	if !ok {
+		return nil, fmt.Errorf("described replication %s, which the fixture does not hold", path)
+	}
+	return described, nil
+}
+
+func (f fakeSource) DescribeTransfer(_ context.Context, path string) (*Ydb_Replication.DescribeTransferResult, error) {
+	if f.replicationErr != nil {
+		return nil, f.replicationErr
+	}
+	described, ok := f.transfers[path]
+	if !ok {
+		return nil, fmt.Errorf("described transfer %s, which the fixture does not hold", path)
 	}
 	return described, nil
 }
@@ -391,6 +422,9 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 			"/local/app/plain": plainTable(),
 		},
 		views: map[string]*Ydb_View.DescribeViewResult{"/local/v": {QueryText: "SELECT 1 AS a"}},
+		// A cluster that does not serve the replication API, as local-ydb
+		// does not by default: the replication and the transfer are recorded.
+		replicationErr: fmt.Errorf("describe YDB async replication: %w", ydbschema.ErrReplicationServiceUnavailable),
 	}
 
 	db := readFrom(c, source)
@@ -938,6 +972,14 @@ func (errorSource) DescribeView(context.Context, string) (*Ydb_View.DescribeView
 }
 
 func (errorSource) DescribeTopic(context.Context, string) (*Ydb_Topic.DescribeTopicResult, error) {
+	return nil, errors.New("connection refused")
+}
+
+func (errorSource) DescribeReplication(context.Context, string) (*Ydb_Replication.DescribeReplicationResult, error) {
+	return nil, errors.New("connection refused")
+}
+
+func (errorSource) DescribeTransfer(context.Context, string) (*Ydb_Replication.DescribeTransferResult, error) {
 	return nil, errors.New("connection refused")
 }
 

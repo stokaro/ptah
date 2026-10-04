@@ -211,3 +211,39 @@ func RefuseRoleMemberships(dialect string, diff *difftypes.SchemaDiff) error {
 		return nil
 	}
 }
+
+// RefuseReplications refuses a diff that creates, drops or changes a YDB
+// async replication or transfer, for a planner of dialect that plans none.
+// The comparison records such a change whenever a desired schema declares one,
+// and only the YDB planner plans it, so planning nothing here would report
+// the object applied while the database has none.
+func RefuseReplications(dialect string, diff *difftypes.SchemaDiff) error {
+	if diff == nil {
+		return nil
+	}
+	var subject string
+	key := capability.AsyncReplication
+	switch {
+	case len(diff.AsyncReplicationsAdded) > 0:
+		subject = "creates async replication " + diff.AsyncReplicationsAdded[0].QualifiedName()
+	case len(diff.AsyncReplicationsRemoved) > 0:
+		subject = "drops async replication " + diff.AsyncReplicationsRemoved[0].QualifiedName()
+	case len(diff.AsyncReplicationsModified) > 0:
+		subject = "changes async replication " + diff.AsyncReplicationsModified[0].Name
+	case len(diff.TransfersAdded) > 0:
+		subject, key = "creates transfer "+diff.TransfersAdded[0].QualifiedName(), capability.Transfers
+	case len(diff.TransfersRemoved) > 0:
+		subject, key = "drops transfer "+diff.TransfersRemoved[0].QualifiedName(), capability.Transfers
+	case len(diff.TransfersModified) > 0:
+		subject, key = "changes transfer "+diff.TransfersModified[0].Name, capability.Transfers
+	default:
+		return nil
+	}
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: string(key),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("the diff %s, which requires target capability %s, unavailable on this %s target; "+
+			"only a YDB plan creates, drops or changes an async replication or a transfer", subject, key, dialect),
+	}
+}

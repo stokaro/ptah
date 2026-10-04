@@ -307,11 +307,16 @@ jobs:
       # started this way reports healthy about six seconds after it starts.
       # 8765 is the monitoring endpoint. YDB_TEST_URL names it in its
       # monitoring parameter, so every YDB live test reads the cluster's
-      # feature flags there when it connects.
+      # feature flags there when it connects. local-ydb leaves the
+      # replication API out of the gRPC services it starts, and Ptah's reader
+      # describes an async replication and a transfer through it, so
+      # YDB_GRPC_SERVICES adds it; a cluster whose configuration names no
+      # services starts it with the rest.
       ydb:
         image: ydbplatform/local-ydb:26.2.1.14
         env:
           YDB_USE_IN_MEMORY_PDISKS: "true"
+          YDB_GRPC_SERVICES: replication
         options: >-
           --hostname localhost
           --health-cmd "sh /health_check"
@@ -342,6 +347,7 @@ jobs:
           GRPC_PORT: "2137"
           MON_PORT: "8766"
           YDB_FEATURE_FLAGS: enable_vector_index
+          YDB_GRPC_SERVICES: replication
         options: >-
           --hostname localhost
           --health-cmd "sh /health_check"
