@@ -1,6 +1,7 @@
 package lintcatalog_test
 
 import (
+	"regexp"
 	"slices"
 	"testing"
 	"testing/fstest"
@@ -172,4 +173,64 @@ func TestYDBVerdicts_RulesThatNeedADevDatabaseAreNamedUnmet(t *testing.T) {
 
 	c.Assert(codesWithVerdict(c, lintcatalog.YDBNeedsDevDatabase), qt.DeepEquals, []string{"DS110P"})
 	c.Assert(unmet, qt.Contains, "DS110P")
+}
+
+// A migration lint rule that runs on every dialect has to say what it does on
+// YDB, and a rule that does not run on every dialect must not.
+func TestValidate_RefusesAMissingOrMisplacedYDBVerdict(t *testing.T) {
+	tests := []struct {
+		name    string
+		entry   lintcatalog.Entry
+		message string
+	}{
+		{
+			name:    "a rule for every dialect without a verdict",
+			entry:   lintcatalog.Entry{Code: "DD901", Kind: lintcatalog.KindMigration, Summary: "invented"},
+			message: "rule DD901 runs on every dialect and says nothing known about YDB",
+		},
+		{
+			name: "a verdict nobody declared",
+			entry: lintcatalog.Entry{Code: "DD901", Kind: lintcatalog.KindMigration, Summary: "invented",
+				YDB: "probably fine", YDBNote: "a guess"},
+			message: "rule DD901 runs on every dialect and says nothing known about YDB",
+		},
+		{
+			name: "a verdict without a note",
+			entry: lintcatalog.Entry{Code: "DD901", Kind: lintcatalog.KindMigration, Summary: "invented",
+				YDB: lintcatalog.YDBApplies},
+			message: "rule DD901 has a YDB verdict and no note",
+		},
+		{
+			name: "a verdict on a rule for one dialect",
+			entry: lintcatalog.Entry{Code: "DD901", Kind: lintcatalog.KindMigration, Summary: "invented",
+				Dialects: []string{"postgres"}, YDB: lintcatalog.YDBApplies, YDBNote: "`DROP TABLE`"},
+			message: "rule DD901 declares a YDB verdict but does not run on every dialect",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			err := lintcatalog.Validate(append(shippedEntries(c), test.entry))
+			c.Assert(err, qt.ErrorMatches, `lint catalog is inconsistent with the code:\n  `+regexp.QuoteMeta(test.message)+`.*`)
+		})
+	}
+}
+
+// The control for the rows above: the same shipped catalog with a rule for
+// every dialect that declares a verdict and a note, a YDB rule and an SQL
+// lint rule that declare none, is accepted.
+func TestValidate_AcceptsDeclaredYDBVerdicts(t *testing.T) {
+	c := qt.New(t)
+	err := lintcatalog.Validate(append(shippedEntries(c),
+		lintcatalog.Entry{Code: "DD901", Kind: lintcatalog.KindMigration, Summary: "invented", YDB: lintcatalog.YDBApplies, YDBNote: "`DROP TABLE`"},
+		lintcatalog.Entry{Code: "YD901", Kind: lintcatalog.KindMigration, Summary: "invented", Dialects: []string{"ydb"}},
+		lintcatalog.Entry{Code: "DDL901", Kind: lintcatalog.KindSQL, Summary: "invented"},
+	))
+	c.Assert(err, qt.IsNil)
+}
+
+func shippedEntries(c *qt.C) []lintcatalog.Entry {
+	entries, err := lintcatalog.Entries()
+	c.Assert(err, qt.IsNil)
+	return entries
 }

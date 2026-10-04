@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/sqlutil"
 	"ptah.run/migration/lint"
 )
 
@@ -384,4 +385,59 @@ func TestYDBRules_NameWhatTheStatementBreaks(t *testing.T) {
 		"(Can't drop TTL column, disable TTL first); run ALTER TABLE ... RESET (TTL) first")
 	c.Assert(messages, qt.Contains, "YD106: DROP TABLE shop/users leaves views shop/active, shop/named reading a table that does not exist: "+
 		"YDB keeps a view whose table is dropped, and every read of it fails; drop or recreate them first")
+}
+
+// statementTexts returns the statements the linter cut a one-file YDB
+// directory into, as written.
+func statementTexts(c *qt.C, sql string) []string {
+	c.Helper()
+	analysis, err := lint.AnalyzeFS(fixture(map[string]string{"0001_t.up.sql": sql}), lint.Options{Dialect: "ydb"})
+	c.Assert(err, qt.IsNil)
+	var texts []string
+	for _, file := range analysis.Files() {
+		for _, statement := range file.Statements {
+			texts = append(texts, statement.SQL)
+		}
+	}
+	return texts
+}
+
+// migratorTexts returns the statements core/sqlutil cuts the same text into,
+// which is the split the migrator's queries are built from, without their
+// terminators.
+func migratorTexts(sql string) []string {
+	var texts []string
+	for _, statement := range sqlutil.SplitSourceStatements(sql, "ydb") {
+		texts = append(texts, strings.TrimSpace(strings.TrimSuffix(statement.Text, ";")))
+	}
+	return texts
+}
+
+// The linter cuts a YDB migration at the semicolons the migrator cuts it at,
+// so a rule judges each statement the migrator runs, and nothing it does not.
+func TestYDBStatements_SplitWhereTheMigratorDoes(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+		want int
+	}{
+		{name: "a lambda body between braces", want: 2,
+			sql: "$f = ($x) -> { $y = $x + 1; RETURN $y; };\nSELECT $f(1);\n"},
+		{name: "an action body", want: 2,
+			sql: "DEFINE ACTION $a() AS\n  UPSERT INTO t (id) VALUES (1);\n  DROP TABLE old;\nEND DEFINE;\nDO $a();\n"},
+		{name: "a loop body", want: 1,
+			sql: "EVALUATE FOR $i IN AsList(1, 2) DO BEGIN\n  UPSERT INTO t (id) VALUES ($i);\nEND DO;\n"},
+		{name: "semicolons inside YQL strings", want: 2,
+			sql: "UPSERT INTO t (a, b, c) VALUES (\"x\\\"; y\"u, 'p\\'; q'u, @@m; n@@);\nDROP TABLE `odd;name`;\n"},
+		{name: "a backticked name that spells a keyword inside a block", want: 2,
+			sql: "DO BEGIN SELECT 1 AS `end`; SELECT 2 AS `do`; END DO;\nDROP TABLE t;\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			got := statementTexts(c, test.sql)
+			c.Assert(got, qt.HasLen, test.want)
+			c.Assert(got, qt.DeepEquals, migratorTexts(test.sql))
+		})
+	}
 }
