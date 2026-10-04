@@ -57,6 +57,18 @@ func TestIsWidening(t *testing.T) {
 		// A bare CHAR has a dialect-defined length, so it is not compared.
 		{"char bare to varchar not compared", "char", "varchar(50)", false},
 
+		// ClickHouse's and YDB's fixed-width integers, compared by their own
+		// names (stokaro/ptah#4105). Lowered, Int8 is PostgreSQL's int8.
+		{"Int32 to Int64", "Int32", "Int64", true},
+		{"Int8 to Int16", "Int8", "Int16", true},
+		{"UInt8 to UInt16", "UInt8", "UInt16", true},
+		{"UInt8 to Int16 holds every value", "UInt8", "Int16", true},
+		{"UInt16 to Int16 does not", "UInt16", "Int16", false},
+		{"Int32 to UInt64 does not", "Int32", "UInt64", false},
+		{"Nullable(Int32) to Int64", "Nullable(Int32)", "Int64", true},
+		{"identical Int32", "Int32", "Int32", false},
+		{"PostgreSQL int8 is not ClickHouse Int8", "Int8", "int8", false},
+
 		// Cross-category and empty inputs never widen.
 		{"integer to text", "integer", "text", false},
 		{"empty old", "", "bigint", false},
@@ -98,6 +110,18 @@ func TestIsNarrowing(t *testing.T) {
 		{"char bare to varchar is not compared", "char", "varchar(50)", false},
 
 		{"empty input", "", "numeric(10)", false},
+
+		// ClickHouse's and YDB's fixed-width integers (stokaro/ptah#4105).
+		{"Int64 to Int32", "Int64", "Int32", true},
+		{"Int16 to Int8", "Int16", "Int8", true},
+		{"UInt16 to UInt8", "UInt16", "UInt8", true},
+		{"Int32 to UInt32 loses the negatives", "Int32", "UInt32", true},
+		{"Int8 to UInt64 loses the negatives", "Int8", "UInt64", true},
+		{"UInt32 to Int32 loses the top half", "UInt32", "Int32", true},
+		{"UInt32 to Int64 keeps every value", "UInt32", "Int64", false},
+		{"Int32 to Int64 is not narrowing", "Int32", "Int64", false},
+		{"inside Nullable", "Nullable(Int64)", "Nullable(Int32)", true},
+		{"identical Int8", "Int8", "Int8", false},
 	}
 
 	for _, tt := range tests {
@@ -122,6 +146,8 @@ func TestWideningNarrowingAreOpposites(t *testing.T) {
 		{"decimal precision", "numeric(10,2)", "numeric(12,2)"},
 		{"decimal scaleless precision", "numeric(10)", "numeric(12)"},
 		{"varchar bounded vs unbounded", "varchar(50)", "varchar"},
+		{"fixed-width integer", "Int32", "Int64"},
+		{"fixed-width unsigned integer", "UInt8", "UInt16"},
 	}
 
 	for _, p := range pairs {

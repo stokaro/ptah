@@ -13,6 +13,9 @@ var typeArgRe = regexp.MustCompile(`^([a-zA-Z0-9_ ]+)\(([^)]*)\)$`)
 // IsNarrowing reports whether changing from oldType to newType can lose data
 // by reducing the representable range or length.
 func IsNarrowing(oldType, newType string) bool {
+	if oldInt, newInt, ok := fixedWidthIntegers(oldType, newType); ok {
+		return fixedWidthNarrows(oldInt, newInt)
+	}
 	oldSpec := parseSpec(oldType)
 	newSpec := parseSpec(newType)
 	if oldSpec.name == "" || newSpec.name == "" || oldSpec.name == newSpec.name && oldSpec.arg == 0 && newSpec.arg == 0 {
@@ -49,6 +52,9 @@ func IsNarrowing(oldType, newType string) bool {
 // would apply. Reusing integerRank keeps the alias folding intact: INT, INTEGER
 // and INT4 share a rank, so widening compares range, not spelling.
 func IsWidening(oldType, newType string) bool {
+	if oldInt, newInt, ok := fixedWidthIntegers(oldType, newType); ok {
+		return oldInt != newInt && !fixedWidthNarrows(oldInt, newInt)
+	}
 	oldSpec := parseSpec(oldType)
 	newSpec := parseSpec(newType)
 	if oldSpec.name == "" || newSpec.name == "" || oldSpec.name == newSpec.name && oldSpec.arg == 0 && newSpec.arg == 0 {
@@ -204,6 +210,57 @@ func integerRank(name string) int {
 		return 5
 	default:
 		return 0
+	}
+}
+
+// fixedWidthIntegerRe matches the integer names ClickHouse and YDB give their
+// fixed-width types, in the case both spell them.
+//
+// The case is the point. Lowered, ClickHouse's 8-bit Int8 is PostgreSQL's
+// 64-bit int8, which integerRank ranks as bigint, and Int16, Int32 and Int64
+// are not ranked at all. So a ClickHouse column planned from Int64 to Int32 was
+// not called a narrowing, although measured on 24.10 and 26.9 the server
+// accepts it and stores 30000000000 as -64771072 (stokaro/ptah#4105). Both
+// sides have to match: no engine's catalog reports PostgreSQL's int8 as Int8.
+var fixedWidthIntegerRe = regexp.MustCompile(`^(U?)Int(8|16|32|64|128|256)$`)
+
+type fixedWidthInteger struct {
+	unsigned bool
+	bits     int
+}
+
+// fixedWidthIntegers parses both types as fixed-width integers, looking inside
+// ClickHouse's Nullable(...), which changes what a column admits and not the
+// values its type holds.
+func fixedWidthIntegers(oldType, newType string) (oldInt, newInt fixedWidthInteger, ok bool) {
+	parse := func(raw string) (fixedWidthInteger, bool) {
+		raw = strings.TrimSpace(raw)
+		if inner, found := strings.CutPrefix(raw, "Nullable("); found {
+			raw = strings.TrimSpace(strings.TrimSuffix(inner, ")"))
+		}
+		match := fixedWidthIntegerRe.FindStringSubmatch(raw)
+		if match == nil {
+			return fixedWidthInteger{}, false
+		}
+		bits, _ := strconv.Atoi(match[2])
+		return fixedWidthInteger{unsigned: match[1] == "U", bits: bits}, true
+	}
+	oldInt, oldOK := parse(oldType)
+	newInt, newOK := parse(newType)
+	return oldInt, newInt, oldOK && newOK
+}
+
+// fixedWidthNarrows reports whether some value of oldInt is not a value of
+// newInt: a smaller width of the same signedness, any signed type made
+// unsigned, and an unsigned type made signed without more bits.
+func fixedWidthNarrows(oldInt, newInt fixedWidthInteger) bool {
+	switch {
+	case oldInt.unsigned == newInt.unsigned:
+		return newInt.bits < oldInt.bits
+	case !oldInt.unsigned:
+		return true
+	default:
+		return newInt.bits <= oldInt.bits
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/chrefresh"
+	"ptah.run/internal/chtype"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/sqlrunner"
 )
@@ -441,8 +442,10 @@ func (r *Reader) readColumnsByTable(ctx context.Context, dbName string) (map[str
 		); err != nil {
 			return nil, err
 		}
+		// The parser asks the same question of a declared type, so a column
+		// reads as nullable here exactly when its declaration does.
 		nullable := "NO"
-		if strings.HasPrefix(dataType, "Nullable(") {
+		if chtype.AdmitsNull(dataType) {
 			nullable = "YES"
 		}
 		col := catalog.Column{
