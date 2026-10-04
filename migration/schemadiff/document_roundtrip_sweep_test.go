@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
@@ -371,6 +372,42 @@ func TestRoundTrip_EveryObjectFamilySurvives(t *testing.T) {
 	}
 }
 
+// hclUnwritableFields are the object families the HCL document has no block
+// for, and the coverage kind its header records each one under instead: a
+// YDB resource pool and a classifier. Atlas HCL has neither, and Ptah does
+// not invent a block the pinned binary would refuse.
+var hclUnwritableFields = map[string]coverage.Kind{
+	"ResourcePools":           coverage.ResourcePool,
+	"ResourcePoolClassifiers": coverage.ResourcePoolClassifier,
+}
+
+// TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped is the round trip of a
+// family the HCL document cannot carry: the document leaves the object out
+// and its header says so. The control is the same document's silence about a
+// sequence, which it could have named and so still removes.
+func TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped(t *testing.T) {
+	c := qt.New(t)
+	db := roundTripFixture()
+	db.ResourcePools = append(db.ResourcePools, schemamodel.ResourcePool{Name: "batch"})
+	db.ResourcePoolClassifiers = append(db.ResourcePoolClassifiers, schemamodel.ResourcePoolClassifier{
+		Name: "batch_users", Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "batch", Rank: 1},
+	})
+	live := &catalog.Database{
+		Schemas:   []catalog.Schema{{Name: "public"}},
+		Tables:    []catalog.Table{{Schema: "public", Name: "users"}},
+		Sequences: []catalog.Sequence{{Schema: "public", Name: "s1"}},
+	}
+
+	parsed := loadPostgresDocument(c, renderPostgresDocument(c, db))
+	diff := schemadiff.Compare(parsed, live)
+
+	c.Assert(parsed.ResourcePools, qt.HasLen, 0)
+	c.Assert(parsed.ResourcePoolClassifiers, qt.HasLen, 0)
+	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["ResourcePools"]), qt.IsFalse)
+	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["ResourcePoolClassifiers"]), qt.IsFalse)
+	c.Assert(diff.SequencesRemoved.Names(), qt.HasLen, 1)
+}
+
 // TestRoundTrip_SweepCoversEveryObjectFamily is the guard that makes the test
 // above a sweep rather than a list someone remembered to extend.
 //
@@ -385,6 +422,9 @@ func TestRoundTrip_SweepCoversEveryObjectFamily(t *testing.T) {
 		covered = append(covered, row.field)
 	}
 	covered = append(covered, nonObjectDatabaseFields...)
+	for field := range hclUnwritableFields {
+		covered = append(covered, field)
+	}
 	slices.Sort(covered)
 
 	c.Assert(covered, qt.DeepEquals, databaseSliceFields())

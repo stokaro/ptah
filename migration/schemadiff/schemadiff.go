@@ -393,6 +393,7 @@ func compareReportingUndecidedAdditions(
 	// Compare views, materialized views, and triggers
 	compare.ViewsWithSemantics(desired, database, diff, opts.Dialect, identifierSemantics, opts.ViewBodies)
 	compare.Synonyms(desired, database, diff, cov)
+	compare.ResourcePools(desired, database, diff, cov)
 
 	// Compare TimescaleDB hypertables (PostgreSQL with the extension)
 	compare.Hypertables(desired, database, diff, cov)

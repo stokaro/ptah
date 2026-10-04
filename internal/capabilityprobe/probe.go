@@ -455,6 +455,7 @@ func measure(ctx context.Context, pinned *dbschema.DatabaseConnection, report *R
 		return fmt.Errorf("create the throwaway probe namespace: %s", attempts[len(attempts)-1].ServerErr)
 	}
 	defer func() {
+		report.Cleanup = append(report.Cleanup, s.dropResourcePools(ctx)...)
 		report.Cleanup = append(report.Cleanup, s.dropRoles(ctx)...)
 		removal := s.leave(ctx, leave)
 		report.Cleanup = append(report.Cleanup, removal...)

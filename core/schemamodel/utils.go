@@ -1290,6 +1290,11 @@ func deduplicateComposite(r *Database) {
 		return rangeType.QualifiedName()
 	})
 	r.ManagedData = deduplicateNamedDefinitions(r.ManagedData, managedDataDefinitionIdentity)
+	r.ResourcePools = deduplicateNamedDefinitions(r.ResourcePools, func(pool ResourcePool) string {
+		return pool.Name
+	})
+	r.ResourcePoolClassifiers = deduplicateNamedDefinitions(r.ResourcePoolClassifiers,
+		func(classifier ResourcePoolClassifier) string { return classifier.Name })
 }
 
 type deduplicationScope func(tableScopeResolver, string, string) string

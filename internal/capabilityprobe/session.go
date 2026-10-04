@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/internal/sqlident"
+	"ptah.run/internal/ydbpool"
 	"ptah.run/internal/ydbready"
 	"ptah.run/internal/ydbtype"
 	"ptah.run/internal/ydburl"
@@ -68,6 +69,11 @@ type session struct {
 	// users are the YDB users the probe created, which DROP GROUP does not
 	// reach.
 	users []string
+	// resourcePools and resourcePoolClassifiers are the YDB resource pools
+	// and classifiers the probe created. Both belong to the database, so
+	// removing the namespace directory leaves them.
+	resourcePools           []string
+	resourcePoolClassifiers []string
 	// rowPolicies are the same kind of leftover on ClickHouse. Measured on
 	// 26.7.3.19: dropping the database a policy names leaves the policy behind
 	// in system.row_policies, so a run that forgot them would make the next one
@@ -594,6 +600,19 @@ func (s *session) dropRoles(ctx context.Context) []Attempt {
 	return attempts
 }
 
+// dropResourcePools removes the YDB classifiers the probe created and then
+// its pools, which outlive the namespace directory the way a user does.
+func (s *session) dropResourcePools(ctx context.Context) []Attempt {
+	attempts := make([]Attempt, 0, len(s.resourcePoolClassifiers)+len(s.resourcePools))
+	for _, classifier := range s.resourcePoolClassifiers {
+		attempts = append(attempts, s.exec(ctx, ydbpool.DropClassifierStatement(classifier)))
+	}
+	for _, pool := range s.resourcePools {
+		attempts = append(attempts, s.exec(ctx, ydbpool.DropPoolStatement(pool)))
+	}
+	return attempts
+}
+
 // revokeOnDatabase takes every permission principal holds on the YDB database
 // itself. Revoking what a principal does not hold succeeds, so it runs whether
 // or not a grant was made.
@@ -624,7 +643,8 @@ func (s *session) leave(ctx context.Context, statement string) []Attempt {
 //
 // Only YDB is asked. Its namespace is a directory the scheme service removes,
 // rather than a statement whose acceptance says the namespace is gone, and
-// the group the role experiment creates is outside the directory. A refused
+// the group the role experiment creates and the resource pool and classifier
+// another one creates are outside the directory. A refused
 // removal is a leftover by itself: DropDirectory refuses a tree holding an
 // object it has no statement for, such as a topic, before it drops anything,
 // and the partition statistics list row tables only, so they would count no
@@ -654,6 +674,20 @@ func (s *session) leftovers(ctx context.Context, removal []Attempt) ([]Attempt, 
 	case tables > 0:
 		remaining = append(remaining, fmt.Sprintf("%d table(s) under %s", tables, directory))
 	}
+	for _, object := range slices.Concat(
+		workloadObjects(s.resourcePools, "resource_pools", "resource pool "),
+		workloadObjects(s.resourcePoolClassifiers, "resource_pool_classifiers", "resource pool classifier "),
+	) {
+		found, read := s.query(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE Name = %s",
+			ydbSystemView(s.database, object.view), ydbString(object.name)))
+		reads = append(reads, read)
+		switch {
+		case !read.Accepted:
+			remaining = append(remaining, object.what+", which the server would not look up")
+		case found > 0:
+			remaining = append(remaining, object.what)
+		}
+	}
 	for _, principal := range slices.Concat(s.roles, s.users) {
 		for _, view := range []struct{ name, what string }{
 			{"auth_groups", "group " + principal},
@@ -672,6 +706,21 @@ func (s *session) leftovers(ctx context.Context, removal []Attempt) ([]Attempt, 
 		}
 	}
 	return reads, remaining
+}
+
+// workloadObject is a YDB resource pool or classifier the teardown confirms
+// gone, by its name in the system view that lists it.
+type workloadObject struct {
+	name, view, what string
+}
+
+// workloadObjects lists names as objects of one system view.
+func workloadObjects(names []string, view, kind string) []workloadObject {
+	objects := make([]workloadObject, 0, len(names))
+	for _, name := range names {
+		objects = append(objects, workloadObject{name: name, view: view, what: kind + name})
+	}
+	return objects
 }
 
 // directoryDropper is what the YDB teardown needs of the connection's schema

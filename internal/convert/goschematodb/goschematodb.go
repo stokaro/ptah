@@ -81,6 +81,10 @@ func ToDBSchema(db *schemamodel.Database, dialect string) *catalog.Database {
 		// comparison reports none, so the diff plans the same ALTER DEFAULT
 		// PRIVILEGES on every run and never converges.
 		DefaultPrivileges: toDBDefaultPrivileges(db.DefaultPrivileges),
+		// A pool declared in a document stands for the pool its database
+		// would hold, so a file-to-file comparison finds it on both sides.
+		ResourcePools:           toDBResourcePools(db.ResourcePools),
+		ResourcePoolClassifiers: toDBResourcePoolClassifiers(db.ResourcePoolClassifiers),
 		// A file-to-file comparison uses this side as the current state, and a
 		// document that declared its own limits declares them here too
 		// (stokaro/ptah#1276).
@@ -666,6 +670,28 @@ func toDBFunctions(functions []schemamodel.Function) []catalog.Function {
 			Body:       function.Body,
 			Comment:    function.Comment,
 		})
+	}
+	return out
+}
+
+func toDBResourcePools(pools []schemamodel.ResourcePool) []catalog.ResourcePool {
+	if len(pools) == 0 {
+		return nil
+	}
+	out := make([]catalog.ResourcePool, 0, len(pools))
+	for _, pool := range pools {
+		out = append(out, catalog.ResourcePool{Name: pool.Name, Spec: pool.Spec.Clone()})
+	}
+	return out
+}
+
+func toDBResourcePoolClassifiers(classifiers []schemamodel.ResourcePoolClassifier) []catalog.ResourcePoolClassifier {
+	if len(classifiers) == 0 {
+		return nil
+	}
+	out := make([]catalog.ResourcePoolClassifier, 0, len(classifiers))
+	for _, classifier := range classifiers {
+		out = append(out, catalog.ResourcePoolClassifier{Name: classifier.Name, Spec: classifier.Spec})
 	}
 	return out
 }

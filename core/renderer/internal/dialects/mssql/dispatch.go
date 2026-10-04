@@ -93,6 +93,10 @@ func (r *Renderer) VisitNode(node ast.Node) error { //nolint:gocyclo // one case
 		return r.renderDropContinuousAggregate(n)
 	case *ast.DropSynonymNode:
 		return r.renderDropSynonym(n)
+	case *ast.CreateResourcePoolNode, *ast.AlterResourcePoolNode, *ast.DropResourcePoolNode,
+		*ast.CreateResourcePoolClassifierNode, *ast.AlterResourcePoolClassifierNode,
+		*ast.DropResourcePoolClassifierNode:
+		return nodedispatch.RefuseResourcePool(DialectName, n)
 	case *ast.ExtendedPropertyNode:
 		return r.renderExtendedProperty(n)
 	case *ast.CreateMaterializedViewNode:

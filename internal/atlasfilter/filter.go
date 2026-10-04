@@ -120,6 +120,8 @@ func excludeDatabase(
 	filtered.Triggers = state.filterTriggers(filtered.Triggers)
 	filtered.RLSPolicies = state.filterRLSPolicies(filtered.RLSPolicies)
 	filtered.Roles = state.filterRoles(filtered.Roles)
+	filtered.ResourcePools = state.filterResourcePools(filtered.ResourcePools)
+	filtered.ResourcePoolClassifiers = state.filterResourcePoolClassifiers(filtered.ResourcePoolClassifiers)
 	filtered.RoleMemberships = state.filterRoleMemberships(filtered.RoleMemberships)
 	filtered.ObjectOwners = state.filterObjectOwners(filtered.ObjectOwners)
 	filtered.Grants = state.filterGrants(filtered.Grants)
@@ -221,6 +223,8 @@ func excludeGenerated(
 	filtered.RLSPolicies = state.filterGeneratedRLSPolicies(tableByStruct, filtered.RLSPolicies)
 	filtered.RLSEnabledTables = state.filterGeneratedRLSEnabledTables(tableByStruct, filtered.RLSEnabledTables)
 	filtered.Roles = state.filterGeneratedRoles(filtered.Roles)
+	filtered.ResourcePools = state.filterGeneratedResourcePools(filtered.ResourcePools)
+	filtered.ResourcePoolClassifiers = state.filterGeneratedResourcePoolClassifiers(filtered.ResourcePoolClassifiers)
 	filtered.Grants = state.filterGeneratedGrants(filtered.Grants)
 	filtered.RevokedGrants = state.filterGeneratedGrants(filtered.RevokedGrants)
 	filtered.DefaultPrivileges = state.filterGeneratedDefaultPrivileges(filtered.DefaultPrivileges)
@@ -1219,6 +1223,25 @@ func (s *exclusionState) filterRLSPolicies(policies []catalog.RLSPolicy) []catal
 	})
 }
 
+// filterResourcePools drops the YDB resource pools an exclusion selector
+// names. A pool belongs to the database, so it is named without a schema, as
+// a role is.
+func (s *exclusionState) filterResourcePools(pools []catalog.ResourcePool) []catalog.ResourcePool {
+	return keep(pools, func(pool catalog.ResourcePool) bool {
+		return !s.matches("resource_pool", pool.Name)
+	})
+}
+
+// filterResourcePoolClassifiers drops the classifiers an exclusion selector
+// names.
+func (s *exclusionState) filterResourcePoolClassifiers(
+	classifiers []catalog.ResourcePoolClassifier,
+) []catalog.ResourcePoolClassifier {
+	return keep(classifiers, func(classifier catalog.ResourcePoolClassifier) bool {
+		return !s.matches("resource_pool_classifier", classifier.Name)
+	})
+}
+
 func (s *exclusionState) filterRoles(roles []catalog.Role) []catalog.Role {
 	return keep(roles, func(role catalog.Role) bool {
 		return !s.matches("role", role.Name)
@@ -1617,6 +1640,20 @@ func (s *exclusionState) filterGeneratedRLSEnabledTables(
 	})
 }
 
+func (s *exclusionState) filterGeneratedResourcePools(pools []schemamodel.ResourcePool) []schemamodel.ResourcePool {
+	return keep(pools, func(pool schemamodel.ResourcePool) bool {
+		return !s.matches("resource_pool", pool.Name)
+	})
+}
+
+func (s *exclusionState) filterGeneratedResourcePoolClassifiers(
+	classifiers []schemamodel.ResourcePoolClassifier,
+) []schemamodel.ResourcePoolClassifier {
+	return keep(classifiers, func(classifier schemamodel.ResourcePoolClassifier) bool {
+		return !s.matches("resource_pool_classifier", classifier.Name)
+	})
+}
+
 func (s *exclusionState) filterGeneratedRoles(roles []schemamodel.Role) []schemamodel.Role {
 	return keep(roles, func(role schemamodel.Role) bool {
 		return !s.matches("role", role.Name)
@@ -1832,30 +1869,32 @@ func stripGeneratedFieldForeignKey(field schemamodel.Field) schemamodel.Field {
 
 func cloneDatabase(schema *catalog.Database) *catalog.Database {
 	return &catalog.Database{
-		Schemas:              slices.Clone(schema.Schemas),
-		Tables:               slices.Clone(schema.Tables),
-		Enums:                slices.Clone(schema.Enums),
-		Indexes:              slices.Clone(schema.Indexes),
-		Constraints:          slices.Clone(schema.Constraints),
-		Extensions:           slices.Clone(schema.Extensions),
-		Functions:            slices.Clone(schema.Functions),
-		Sequences:            slices.Clone(schema.Sequences),
-		Domains:              slices.Clone(schema.Domains),
-		Composites:           slices.Clone(schema.Composites),
-		Ranges:               slices.Clone(schema.Ranges),
-		Views:                slices.Clone(schema.Views),
-		Synonyms:             slices.Clone(schema.Synonyms),
-		ExtendedProperties:   slices.Clone(schema.ExtendedProperties),
-		ContinuousAggregates: slices.Clone(schema.ContinuousAggregates),
-		Hypertables:          slices.Clone(schema.Hypertables),
-		MatViews:             slices.Clone(schema.MatViews),
-		Triggers:             slices.Clone(schema.Triggers),
-		RLSPolicies:          slices.Clone(schema.RLSPolicies),
-		Roles:                slices.Clone(schema.Roles),
-		Grants:               slices.Clone(schema.Grants),
-		DefaultPrivileges:    slices.Clone(schema.DefaultPrivileges),
-		RoleMemberships:      slices.Clone(schema.RoleMemberships),
-		ObjectOwners:         slices.Clone(schema.ObjectOwners),
+		Schemas:                 slices.Clone(schema.Schemas),
+		Tables:                  slices.Clone(schema.Tables),
+		Enums:                   slices.Clone(schema.Enums),
+		Indexes:                 slices.Clone(schema.Indexes),
+		Constraints:             slices.Clone(schema.Constraints),
+		Extensions:              slices.Clone(schema.Extensions),
+		Functions:               slices.Clone(schema.Functions),
+		Sequences:               slices.Clone(schema.Sequences),
+		Domains:                 slices.Clone(schema.Domains),
+		Composites:              slices.Clone(schema.Composites),
+		Ranges:                  slices.Clone(schema.Ranges),
+		Views:                   slices.Clone(schema.Views),
+		Synonyms:                slices.Clone(schema.Synonyms),
+		ResourcePools:           slices.Clone(schema.ResourcePools),
+		ResourcePoolClassifiers: slices.Clone(schema.ResourcePoolClassifiers),
+		ExtendedProperties:      slices.Clone(schema.ExtendedProperties),
+		ContinuousAggregates:    slices.Clone(schema.ContinuousAggregates),
+		Hypertables:             slices.Clone(schema.Hypertables),
+		MatViews:                slices.Clone(schema.MatViews),
+		Triggers:                slices.Clone(schema.Triggers),
+		RLSPolicies:             slices.Clone(schema.RLSPolicies),
+		Roles:                   slices.Clone(schema.Roles),
+		Grants:                  slices.Clone(schema.Grants),
+		DefaultPrivileges:       slices.Clone(schema.DefaultPrivileges),
+		RoleMemberships:         slices.Clone(schema.RoleMemberships),
+		ObjectOwners:            slices.Clone(schema.ObjectOwners),
 		// Which roles the server has is a fact about the server, not part of
 		// the description a filter narrows. Dropping it here would tell the
 		// comparator that every cluster role outside the description is
@@ -1901,6 +1940,8 @@ func cloneGenerated(schema *schemamodel.Database) *schemamodel.Database {
 	filtered.Ranges = slices.Clone(schema.Ranges)
 	filtered.Views = slices.Clone(schema.Views)
 	filtered.Synonyms = slices.Clone(schema.Synonyms)
+	filtered.ResourcePools = slices.Clone(schema.ResourcePools)
+	filtered.ResourcePoolClassifiers = slices.Clone(schema.ResourcePoolClassifiers)
 	filtered.ExtendedProperties = slices.Clone(schema.ExtendedProperties)
 	filtered.MaterializedViews = slices.Clone(schema.MaterializedViews)
 	filtered.Triggers = slices.Clone(schema.Triggers)

@@ -95,6 +95,12 @@ func TestRefine_HappyPath(t *testing.T) {
 			key:   capability.ChangefeedTopicAutoPartitioning,
 			want:  true,
 		},
+		{
+			name:  "resource pools and their classifiers follow their flag",
+			flags: ydbflags.Flags{"EnableResourcePools": true},
+			key:   capability.ResourcePools,
+			want:  true,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -452,6 +458,21 @@ func TestRefused_HappyPath(t *testing.T) {
 			wantKey:  capability.ChangefeedTopicAutoPartitioning,
 			wantFlag: "EnableTopicAutopartitioningForCDC",
 		},
+		{
+			name: "26.2.1.14 creating a resource pool",
+			refusal: "Status: UNSUPPORTED Issues: <main>: Error: Executing operation with object \"RESOURCE_POOL\", " +
+				"code: 2030 <main>: Error: <main>: Error: Resource pools are disabled. Please contact your system " +
+				"administrator to enable it, code: 2030",
+			wantKey:  capability.ResourcePools,
+			wantFlag: "EnableResourcePools",
+		},
+		{
+			name: "25.1.4.7 creating a resource pool classifier",
+			refusal: "Status: GENERIC_ERROR Issues: <main>: Error: preparation problem: Resource pool classifiers " +
+				"are disabled. Please contact your system administrator to enable it",
+			wantKey:  capability.ResourcePools,
+			wantFlag: "EnableResourcePools",
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -470,7 +491,7 @@ func TestRefused_HappyPath(t *testing.T) {
 func TestRefused_FailurePath(t *testing.T) {
 	for _, refusal := range []string{
 		"Status: GENERIC_ERROR Issues: <main>:1:70: Error: SET NOT NULL is currently not supported.",
-		"Error: Resource pools are disabled. Please contact your system administrator to enable it",
+		"Error: Backup collections are disabled. Please contact your system administrator to enable it, code: 2029",
 		"Error: Conflict with existing key., code: 2012",
 	} {
 		t.Run(refusal, func(t *testing.T) {

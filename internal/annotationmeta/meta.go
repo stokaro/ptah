@@ -11,6 +11,7 @@ import (
 	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbindex"
+	"ptah.run/internal/ydbpool"
 )
 
 // Scope describes where a directive is valid in Go source.
@@ -742,6 +743,43 @@ var directives = []Directive{
 			attr("schema", "Schema the alias lives in.", valueString, false, false),
 			attr("target", "Object the alias stands for, as one to four dot-separated parts.", valueString, true, false),
 			attr("comment", "Synonym comment.", valueString, false, false),
+		},
+	},
+	{
+		Name: "ptah:schema:resourcepool",
+		Description: "Declares a YDB resource pool, which limits the queries that run in it. It belongs to " +
+			"the whole database; a setting left out has no limit.",
+		Scopes: []Scope{ScopeStruct, ScopeField},
+		Attributes: []Attribute{
+			attr(ydbpool.AttributeName, "Pool name; `default` changes the pool YDB creates.", valueString, true, false),
+			attr(ydbpool.AttributeConcurrentQueryLimit, "Most queries that run at once.", valueString, false, false),
+			attr(ydbpool.AttributeQueueSize, "Most queries that wait; needs concurrent_query_limit or "+
+				"database_load_cpu_threshold.", valueString, false, false),
+			attr(ydbpool.AttributeDatabaseLoadCPUThreshold, "Database CPU load in percent above which new "+
+				"queries wait.", valueString, false, false),
+			attr(ydbpool.AttributeQueryMemoryLimitPercentPerNode, "Share of a node's memory one query may take.",
+				valueString, false, false),
+			attr(ydbpool.AttributeQueryCPULimitPercentPerNode, "Share of a node's CPU one query may take.",
+				valueString, false, false),
+			attr(ydbpool.AttributeTotalCPULimitPercentPerNode, "Share of a node's CPU the pool's queries may "+
+				"take together.", valueString, false, false),
+			attr(ydbpool.AttributeResourceWeight, "The pool's share of the CPU when pools compete for it.",
+				valueString, false, false),
+		},
+	},
+	{
+		Name: "ptah:schema:resourcepool:classifier",
+		Description: "Declares a YDB resource pool classifier, which sends a user's or a group's queries " +
+			"to a resource pool. It belongs to the whole database.",
+		Scopes: []Scope{ScopeStruct, ScopeField},
+		Attributes: []Attribute{
+			attr(ydbpool.AttributeName, "Classifier name.", valueString, true, false),
+			attr(ydbpool.AttributeResourcePool, "Pool the classifier sends queries to: a declared pool or "+
+				"`default`.", valueString, true, false),
+			attr(ydbpool.AttributeMemberName, "User or group whose queries the classifier matches; every "+
+				"query when omitted.", valueString, false, false),
+			attr(ydbpool.AttributeRank, "Order among the classifiers, lowest first; unique, from 0.",
+				valueString, true, false),
 		},
 	},
 	{

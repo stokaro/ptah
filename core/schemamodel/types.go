@@ -47,6 +47,8 @@ type Database struct {
 	Ranges                     []Range                        // PostgreSQL range types (CREATE TYPE ... AS RANGE (...))
 	Views                      []View                         // Database views
 	Synonyms                   []Synonym                      // SQL Server synonyms
+	ResourcePools              []ResourcePool                 `json:",omitempty"` // YDB resource pools
+	ResourcePoolClassifiers    []ResourcePoolClassifier       `json:",omitempty"` // YDB resource pool classifiers
 	ExtendedProperties         []ExtendedProperty             // SQL Server extended properties
 	MaterializedViews          []MaterializedView             // Database materialized views
 	Triggers                   []Trigger                      // Database triggers
@@ -1316,6 +1318,36 @@ type Synonym struct {
 	// emitted: one to four dot-separated parts, unquoted.
 	Target  string
 	Comment string // Optional comment for documentation
+}
+
+// ResourcePool is a YDB resource pool: a named set of limits on the queries
+// that run in it, such as how many run at once and how much of a node's memory
+// each may take.
+//
+// A pool belongs to the whole database rather than to a directory, so it has
+// no Schema, and two pools never share a name. The database creates the pool
+// `default` itself, and every query a classifier does not send elsewhere runs
+// there; a declaration of `default` changes its settings and never creates or
+// drops it. Dialects is deliberately absent, for the reason [Synonym] gives: a
+// pool belongs to YDB and to nothing else, and every other target refuses one.
+type ResourcePool struct {
+	StructName string // Name of the Go struct this pool is associated with
+	Name       string // Pool name
+	// Spec is the pool's settings. It carries the ast type for the reason
+	// Table.RowDeletionPolicy does: the renderer, the reader and the
+	// comparison read one value rather than three copies of it.
+	Spec ast.ResourcePoolSpec
+}
+
+// ResourcePoolClassifier is a YDB resource pool classifier: a rule that sends
+// the queries of a user or a group to a resource pool. Like a pool, it belongs
+// to the whole database and is named without a directory.
+type ResourcePoolClassifier struct {
+	StructName string // Name of the Go struct this classifier is associated with
+	Name       string // Classifier name
+	// Spec is the pool the classifier sends queries to, the member whose
+	// queries it matches and its rank.
+	Spec ast.ResourcePoolClassifierSpec
 }
 
 // ExtendedProperty is a SQL Server extended property: a named value attached

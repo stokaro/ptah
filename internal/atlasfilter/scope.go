@@ -121,18 +121,20 @@ func (e *CrossScopeError) Error() string {
 // constraints, triggers, policies, grants) ride along with their parent and
 // are not independently includable.
 var includeSelectableTypes = map[string]struct{}{
-	"table":             {},
-	"view":              {},
-	"materialized_view": {},
-	"synonym":           {},
-	"function":          {},
-	"enum":              {},
-	"extension":         {},
-	"sequence":          {},
-	"domain":            {},
-	"composite_type":    {},
-	"range":             {},
-	"role":              {},
+	"table":                    {},
+	"view":                     {},
+	"materialized_view":        {},
+	"synonym":                  {},
+	"function":                 {},
+	"enum":                     {},
+	"extension":                {},
+	"sequence":                 {},
+	"domain":                   {},
+	"composite_type":           {},
+	"range":                    {},
+	"role":                     {},
+	"resource_pool":            {},
+	"resource_pool_classifier": {},
 }
 
 // Resource is one top-level identity offered to Atlas selector matching.

@@ -153,6 +153,20 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.AlterTableForceRLSNode:
 		return r.keyed(capability.RowLevelSecurity, "row-level security", "forced row-level security on "+n.Table)
 
+	// Resource pools and their classifiers.
+	case *ast.CreateResourcePoolNode:
+		return r.renderCreateResourcePool(n)
+	case *ast.AlterResourcePoolNode:
+		return r.renderAlterResourcePool(n)
+	case *ast.DropResourcePoolNode:
+		return r.renderDropResourcePool(n)
+	case *ast.CreateResourcePoolClassifierNode:
+		return r.renderCreateResourcePoolClassifier(n)
+	case *ast.AlterResourcePoolClassifierNode:
+		return r.renderAlterResourcePoolClassifier(n)
+	case *ast.DropResourcePoolClassifierNode:
+		return r.renderDropResourcePoolClassifier(n)
+
 	// Objects of other engines.
 	case *ast.CreateSynonymNode:
 		return refuseFact("synonym "+n.Name, "YDB has no synonyms")

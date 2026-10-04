@@ -415,6 +415,13 @@ func prepareASTNodeForRendering(
 			return nil, invalidASTForeignKeyError(dialect, "AST node is nil")
 		}
 		return node, refuseAccessNode(dialect, caps, node)
+	case *ast.CreateResourcePoolNode, *ast.AlterResourcePoolNode, *ast.DropResourcePoolNode,
+		*ast.CreateResourcePoolClassifierNode, *ast.AlterResourcePoolClassifierNode,
+		*ast.DropResourcePoolClassifierNode:
+		if isNilInterface(node) {
+			return nil, invalidASTForeignKeyError(dialect, "AST node is nil")
+		}
+		return node, refuseResourcePoolNode(dialect, caps, node)
 	default:
 		if isNilInterface(node) {
 			return nil, invalidASTForeignKeyError(dialect, "AST node is nil")
@@ -1806,6 +1813,9 @@ func validateDatabaseDeclarations(
 		return err
 	}
 	if err := validateDeclaredAccess(dialect, caps, database); err != nil {
+		return err
+	}
+	if err := validateDeclaredResourcePools(dialect, caps, database); err != nil {
 		return err
 	}
 	// Row-level TTL is refused here as well as at the table it belongs to,

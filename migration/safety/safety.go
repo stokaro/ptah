@@ -123,6 +123,14 @@ func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 	add(&findings, "roles_added", len(diff.RolesAdded), Safe)
 	add(&findings, "roles_removed", len(diff.RolesRemoved), Destructive)
 	add(&findings, "roles_modified", len(diff.RolesModified), Warning)
+	// A dropped or changed resource pool or classifier removes no data; it
+	// moves queries to another pool, which changes what limits them.
+	add(&findings, "resource_pools_added", len(diff.ResourcePoolsAdded), Safe)
+	add(&findings, "resource_pools_removed", len(diff.ResourcePoolsRemoved), Warning)
+	add(&findings, "resource_pools_modified", len(diff.ResourcePoolsModified), Warning)
+	add(&findings, "resource_pool_classifiers_added", len(diff.ResourcePoolClassifiersAdded), Warning)
+	add(&findings, "resource_pool_classifiers_removed", len(diff.ResourcePoolClassifiersRemoved), Warning)
+	add(&findings, "resource_pool_classifiers_modified", len(diff.ResourcePoolClassifiersModified), Warning)
 	add(&findings, "constraints_added", len(diff.ConstraintsAdded), Warning)
 	add(&findings, "constraints_removed", len(diff.ConstraintsRemoved), Destructive)
 
@@ -546,6 +554,15 @@ func assessNode(node ast.Node) StatementAssessment {
 		assessment.Subject = n.Name
 		assessment.Severity = Destructive
 		assessment.Reason = "DROP POLICY removes an access-control protection"
+	case *ast.DropResourcePoolNode:
+		assessment.Subject = n.Name
+		assessment.Severity = Warning
+		assessment.Reason = "DROP RESOURCE POOL runs the queries a classifier sends to the pool in the pool default"
+	case *ast.DropResourcePoolClassifierNode:
+		assessment.Subject = n.Name
+		assessment.Severity = Warning
+		assessment.Reason = "DROP RESOURCE POOL CLASSIFIER sends its member's queries to another classifier's pool " +
+			"or to the pool default"
 	case *ast.AlterTableDisableRLSNode:
 		assessment.Subject = n.Table
 		assessment.Severity = Destructive

@@ -68,6 +68,9 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := schemaprecondition.RefuseRoleMemberships(DialectName, diff); err != nil {
 		return nil, err
 	}
+	if err := schemaprecondition.RefuseResourcePools(DialectName, diff); err != nil {
+		return nil, err
+	}
 	// The identity check alone. Nothing is resolved: an addition carries its
 	// own declaration (stokaro/ptah#2315).
 	if err := indexscope.ValidateDiffWithSemantics(

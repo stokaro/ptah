@@ -239,7 +239,9 @@ func (t *transaction) Rollback() error { return nil }
 // It drops what the schema reader describes and nothing else. A column table,
 // a topic and the other objects the reader records as not described stay, and
 // so does the directory that holds one, so a cleanup planned from a read
-// removes exactly what the plan listed. Dot-directories are never entered, nor
+// removes exactly what the plan listed. Users, groups, resource pools and
+// their classifiers stay too: they belong to the whole database rather than
+// to a directory, and a plan never drops one the schema stops declaring. Dot-directories are never entered, nor
 // is ydburl.RealmDirectory at the root, and a directory that was empty before
 // is left alone. A directory's views go before its tables; YDB would take
 // either order, since it records no dependency on a view or on the table a

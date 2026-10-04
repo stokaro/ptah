@@ -181,11 +181,12 @@ const (
 	VirtualTable Kind = "virtual_table"
 )
 
-// The YDB object families Ptah does not model yet. A YDB read records each
-// one it meets, by the path of the object or of the table that carries it,
-// so a description's silence about them is never read as their absence and
-// nothing plans their removal. Like [ChangeStream], none of them is consulted
-// by a comparator that plans the family, because no planner writes one.
+// The YDB object families a YDB read records rather than describes. A read
+// records each one it meets, by the path of the object or of the table that
+// carries it, so a description's silence about them is never read as their
+// absence and nothing plans their removal. Like [ChangeStream], none of them
+// but [ResourcePool] and [ResourcePoolClassifier] is consulted by a
+// comparator that plans the family, because no planner writes one.
 const (
 	// View is a YDB view (CREATE VIEW ... WITH (security_invoker = TRUE)) on
 	// a server without the views capability. Every YDB line Ptah measured has
@@ -211,8 +212,19 @@ const (
 	// Secret is a YDB secret. Its value is never read.
 	Secret Kind = "secret"
 	// ResourcePool is a YDB resource pool, which limits the resources a class
-	// of queries may use.
+	// of queries may use. A read of a server without the resource_pools
+	// capability records each pool it finds, and a read of a dev realm, a
+	// directory standing in for a database, records the whole kind, since a
+	// pool belongs to the database that holds the realm. The resource pool
+	// comparator consults it before it plans a creation.
 	ResourcePool Kind = "resource_pool"
+	// ResourcePoolClassifier is a YDB resource pool classifier, which sends a
+	// user's or a group's queries to a resource pool. It is recorded as
+	// [ResourcePool] is.
+	ResourcePoolClassifier Kind = "resource_pool_classifier"
+	// StreamingQuery is a YDB streaming query, which runs continuously over
+	// the messages of a topic. Ptah does not model one.
+	StreamingQuery Kind = "streaming_query"
 	// Changefeed is a YDB changefeed, a stream of a table's changes. It is
 	// named by the table's path and the changefeed's name.
 	Changefeed Kind = "changefeed"
@@ -243,8 +255,8 @@ const (
 var kinds = []Kind{
 	Changefeed, ChangeStream, ColumnFamily, ColumnTable, Composite, CoordinationNode, DefaultPrivilege, Domain,
 	Extension, ExtendedProperty, ExternalDataSource, ExternalTable, Grant, Policy, Range, Replication,
-	ResourcePool, Role, Schema, Secret, Sequence, Synonym, TableOption, Topic, Transfer, TTL, View,
-	VirtualTable,
+	ResourcePool, ResourcePoolClassifier, Role, Schema, Secret, Sequence, StreamingQuery, Synonym, TableOption,
+	Topic, Transfer, TTL, View, VirtualTable,
 }
 
 // ParseKind resolves a serialized kind token. It refuses anything not in the

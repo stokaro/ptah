@@ -29,9 +29,10 @@
 // The top level is a set of object collections, each keyed by name: tables,
 // indexes, constraints, enums, extensions, functions, rls_policies,
 // rls_enabled_tables (also accepted as rls_enabled), roles, grants, revokes,
-// default_privileges, views, matviews, and triggers. A table carries its
-// columns in declaration order, along with its primary key, checks, engine,
-// comment, and per-platform overrides. A column carries the type, its
+// default_privileges, views, matviews, triggers, resource_pools and
+// resource_pool_classifiers. A table carries its columns in declaration
+// order, along with its primary key, checks, engine, comment, and
+// per-platform overrides. A column carries the type, its
 // nullability, key and uniqueness flags, defaults, generated and identity
 // expressions, a foreign key with its referential actions, character set and
 // collation, and its own per-platform overrides. Tables and columns can also
@@ -131,22 +132,24 @@ func Parse(data []byte) (*schemamodel.Database, error) {
 }
 
 type document struct {
-	Tables            map[string]tableSpec            `yaml:"tables"`
-	Indexes           map[string]indexSpec            `yaml:"indexes"`
-	Constraints       map[string]constraintSpec       `yaml:"constraints"`
-	Enums             map[string]enumSpec             `yaml:"enums"`
-	Extensions        map[string]extensionSpec        `yaml:"extensions"`
-	Functions         map[string]functionSpec         `yaml:"functions"`
-	RLSPolicies       map[string]rlsPolicySpec        `yaml:"rls_policies"`
-	RLSEnabledTables  map[string]rlsEnableSpec        `yaml:"rls_enabled_tables"`
-	RLSEnabled        map[string]rlsEnableSpec        `yaml:"rls_enabled"`
-	Roles             map[string]roleSpec             `yaml:"roles"`
-	Grants            map[string]grantSpec            `yaml:"grants"`
-	Revokes           map[string]revokeSpec           `yaml:"revokes"`
-	DefaultPrivileges map[string]defaultPrivilegeSpec `yaml:"default_privileges"`
-	Views             map[string]viewSpec             `yaml:"views"`
-	MaterializedViews map[string]matViewSpec          `yaml:"matviews"`
-	Triggers          map[string]triggerSpec          `yaml:"triggers"`
+	Tables                  map[string]tableSpec                  `yaml:"tables"`
+	Indexes                 map[string]indexSpec                  `yaml:"indexes"`
+	Constraints             map[string]constraintSpec             `yaml:"constraints"`
+	Enums                   map[string]enumSpec                   `yaml:"enums"`
+	Extensions              map[string]extensionSpec              `yaml:"extensions"`
+	Functions               map[string]functionSpec               `yaml:"functions"`
+	RLSPolicies             map[string]rlsPolicySpec              `yaml:"rls_policies"`
+	RLSEnabledTables        map[string]rlsEnableSpec              `yaml:"rls_enabled_tables"`
+	RLSEnabled              map[string]rlsEnableSpec              `yaml:"rls_enabled"`
+	Roles                   map[string]roleSpec                   `yaml:"roles"`
+	Grants                  map[string]grantSpec                  `yaml:"grants"`
+	Revokes                 map[string]revokeSpec                 `yaml:"revokes"`
+	DefaultPrivileges       map[string]defaultPrivilegeSpec       `yaml:"default_privileges"`
+	Views                   map[string]viewSpec                   `yaml:"views"`
+	MaterializedViews       map[string]matViewSpec                `yaml:"matviews"`
+	Triggers                map[string]triggerSpec                `yaml:"triggers"`
+	ResourcePools           map[string]resourcePoolSpec           `yaml:"resource_pools"`
+	ResourcePoolClassifiers map[string]resourcePoolClassifierSpec `yaml:"resource_pool_classifiers"`
 }
 
 type tableSpec struct {
@@ -610,6 +613,9 @@ func (d document) toDatabase() (*schemamodel.Database, error) {
 		return nil, err
 	}
 	if err := d.addTriggers(db); err != nil {
+		return nil, err
+	}
+	if err := d.addResourcePools(db); err != nil {
 		return nil, err
 	}
 	d.addRLS(db)

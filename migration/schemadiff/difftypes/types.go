@@ -131,6 +131,40 @@ func (s SynonymChanges) Names() []string {
 	return names
 }
 
+// ResourcePoolChanges is a set of YDB resource pools one change applies to,
+// carrying each one's settings and not only its name: a created pool is
+// written from them, and so is the pool a rollback creates again.
+type ResourcePoolChanges []schemamodel.ResourcePool
+
+// MarshalJSON writes the pool names alone, as the other object lists of a
+// diff write theirs.
+func (r ResourcePoolChanges) MarshalJSON() ([]byte, error) {
+	if r == nil {
+		return []byte("null"), nil
+	}
+	names := make([]string, 0, len(r))
+	for _, pool := range r {
+		names = append(names, pool.Name)
+	}
+	return json.Marshal(names)
+}
+
+// ResourcePoolClassifierChanges is a set of YDB resource pool classifiers one
+// change applies to, each with its pool, member and rank.
+type ResourcePoolClassifierChanges []schemamodel.ResourcePoolClassifier
+
+// MarshalJSON writes the classifier names alone.
+func (r ResourcePoolClassifierChanges) MarshalJSON() ([]byte, error) {
+	if r == nil {
+		return []byte("null"), nil
+	}
+	names := make([]string, 0, len(r))
+	for _, classifier := range r {
+		names = append(names, classifier.Name)
+	}
+	return json.Marshal(names)
+}
+
 // HypertableChanges is a set of hypertables one change applies to, carrying
 // each one's partitioning and not only its table name.
 //
@@ -1223,6 +1257,32 @@ type SchemaDiff struct {
 	// name with an unrelated create.
 	SynonymsModified []SynonymDiff `json:"synonyms_modified"`
 
+	// ResourcePoolsAdded are the YDB resource pools the target schema
+	// declares and the database does not have, each with its settings.
+	ResourcePoolsAdded ResourcePoolChanges `json:"resource_pools_added,omitempty"`
+
+	// ResourcePoolsRemoved are YDB resource pools a change drops. A
+	// comparison never fills it: a pool belongs to the whole database, so one
+	// the target schema does not declare stays, as a role does. A rollback of
+	// a creation fills it.
+	ResourcePoolsRemoved ResourcePoolChanges `json:"resource_pools_removed,omitempty"`
+
+	// ResourcePoolsModified are the YDB resource pools both sides hold whose
+	// settings differ, each changed in place by ALTER RESOURCE POOL.
+	ResourcePoolsModified []ResourcePoolDiff `json:"resource_pools_modified,omitempty"`
+
+	// ResourcePoolClassifiersAdded are the YDB resource pool classifiers the
+	// target schema declares and the database does not have.
+	ResourcePoolClassifiersAdded ResourcePoolClassifierChanges `json:"resource_pool_classifiers_added,omitempty"`
+
+	// ResourcePoolClassifiersRemoved are YDB resource pool classifiers a
+	// change drops, which a comparison never fills, as ResourcePoolsRemoved.
+	ResourcePoolClassifiersRemoved ResourcePoolClassifierChanges `json:"resource_pool_classifiers_removed,omitempty"`
+
+	// ResourcePoolClassifiersModified are the classifiers both sides hold
+	// whose pool, member or rank differ.
+	ResourcePoolClassifiersModified []ResourcePoolClassifierDiff `json:"resource_pool_classifiers_modified,omitempty"`
+
 	// ExtendedPropertiesAdded contains the SQL Server extended properties the
 	// target schema declares and the database does not have.
 	ExtendedPropertiesAdded []ExtendedPropertyRef `json:"extended_properties_added"`
@@ -1675,6 +1735,7 @@ func (d *SchemaDiff) HasChanges() bool {
 		d.hasUserTypeChanges() ||
 		d.hasViewChanges() ||
 		d.hasSynonymChanges() ||
+		d.hasResourcePoolChanges() ||
 		d.hasHypertableChanges() ||
 		d.hasContinuousAggregateChanges() ||
 		d.hasExtendedPropertyChanges() ||
@@ -1914,6 +1975,15 @@ func (d *SchemaDiff) hasViewChanges() bool {
 	return len(d.ViewsAdded) > 0 ||
 		len(d.ViewsRemoved) > 0 ||
 		len(d.ViewsModified) > 0
+}
+
+func (d *SchemaDiff) hasResourcePoolChanges() bool {
+	return len(d.ResourcePoolsAdded) > 0 ||
+		len(d.ResourcePoolsRemoved) > 0 ||
+		len(d.ResourcePoolsModified) > 0 ||
+		len(d.ResourcePoolClassifiersAdded) > 0 ||
+		len(d.ResourcePoolClassifiersRemoved) > 0 ||
+		len(d.ResourcePoolClassifiersModified) > 0
 }
 
 func (d *SchemaDiff) hasSynonymChanges() bool {
@@ -2689,6 +2759,33 @@ type ExtendedPropertyDiff struct {
 	// OldValue is what the database holds now. Value on the embedded ref is
 	// what the declaration asks for.
 	OldValue string `json:"old_value"`
+}
+
+// ResourcePoolDiff describes a YDB resource pool whose settings differ
+// between the target schema and the database. The two specs are the operands,
+// off the wire as [SynonymDiff.Desired] is.
+type ResourcePoolDiff struct {
+	// Name is the pool's name.
+	Name string `json:"name"`
+	// Desired is the pool as the target schema declares it.
+	Desired ast.ResourcePoolSpec `json:"-"`
+	// Current is the pool as the database holds it.
+	Current ast.ResourcePoolSpec `json:"-"`
+}
+
+// ResourcePoolClassifierDiff describes a YDB resource pool classifier whose
+// pool, member or rank differ between the target schema and the database.
+type ResourcePoolClassifierDiff struct {
+	// Name is the classifier's name.
+	Name string `json:"name"`
+	// RankChanged reports a rank that differs. YDB keeps one classifier per
+	// rank, so the planner orders such a change around the classifiers whose
+	// ranks it meets.
+	RankChanged bool `json:"rank_changed,omitempty"`
+	// Desired is the classifier as the target schema declares it.
+	Desired ast.ResourcePoolClassifierSpec `json:"-"`
+	// Current is the classifier as the database holds it.
+	Current ast.ResourcePoolClassifierSpec `json:"-"`
 }
 
 // SynonymDiff describes a synonym whose target changed.

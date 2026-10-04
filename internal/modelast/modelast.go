@@ -30,6 +30,7 @@ import (
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/unloggedtable"
 	"ptah.run/internal/ydbacl"
+	"ptah.run/internal/ydbpool"
 )
 
 // escapeSQLStringLiteral properly escapes a string value for use in SQL string literals.
@@ -1560,6 +1561,41 @@ func FromSynonym(synonym schemamodel.Synonym) *ast.CreateSynonymNode {
 		SetComment(synonym.Comment)
 }
 
+// FromResourcePool converts a schemamodel.ResourcePool to an
+// ast.CreateResourcePoolNode carrying the pool's settings.
+func FromResourcePool(pool schemamodel.ResourcePool) *ast.CreateResourcePoolNode {
+	return ast.NewCreateResourcePool(pool.Name, pool.Spec)
+}
+
+// FromResourcePoolClassifier converts a schemamodel.ResourcePoolClassifier to
+// an ast.CreateResourcePoolClassifierNode.
+func FromResourcePoolClassifier(classifier schemamodel.ResourcePoolClassifier) *ast.CreateResourcePoolClassifierNode {
+	return ast.NewCreateResourcePoolClassifier(classifier.Name, classifier.Spec)
+}
+
+// appendResourcePoolStatements adds a node for each declared resource pool,
+// then one for each classifier, which names a pool. The pool `default` is
+// the database's own, so a declaration of it is a change of its settings
+// rather than a creation: against nothing, its settings are what YDB gives
+// it, and the declaration is written as an ALTER from them.
+func appendResourcePoolStatements(visit func(ast.Node) error, database schemamodel.Database) error {
+	for _, pool := range database.ResourcePools {
+		node := ast.Node(FromResourcePool(pool))
+		if pool.Name == ydbpool.DefaultPool {
+			node = ast.NewAlterResourcePool(pool.Name, pool.Spec, ast.ResourcePoolSpec{})
+		}
+		if err := visit(node); err != nil {
+			return err
+		}
+	}
+	for _, classifier := range database.ResourcePoolClassifiers {
+		if err := visit(FromResourcePoolClassifier(classifier)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // appendSynonymStatements adds a CREATE SYNONYM node for each declared synonym.
 func appendSynonymStatements(visit func(ast.Node) error, synonyms []schemamodel.Synonym) error {
 	for _, synonym := range synonyms {
@@ -2199,6 +2235,13 @@ func WalkDatabase(
 	// ordinary table answers `invalid continuous aggregate view`. It therefore
 	// comes after the create_hypertable calls above rather than with the views.
 	if err := appendContinuousAggregateStatements(visit, database.ContinuousAggregates); err != nil {
+		return err
+	}
+
+	// 9b5. YDB resource pools and their classifiers depend on no table. A
+	// classifier names a pool and a user or group, which YDB does not check,
+	// and comes after both: the roles were written before the tables.
+	if err := appendResourcePoolStatements(visit, database); err != nil {
 		return err
 	}
 

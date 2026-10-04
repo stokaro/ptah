@@ -1424,6 +1424,102 @@
       ],
       "type": "object"
     },
+    "ptah.schema.resourcepool": {
+      "additionalProperties": false,
+      "description": "Declares a YDB resource pool, which limits the queries that run in it. It belongs to the whole database; a setting left out has no limit.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "concurrent_query_limit": {
+              "description": "Most queries that run at once.",
+              "type": "string"
+            },
+            "database_load_cpu_threshold": {
+              "description": "Database CPU load in percent above which new queries wait.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Pool name; `default` changes the pool YDB creates.",
+              "type": "string"
+            },
+            "query_cpu_limit_percent_per_node": {
+              "description": "Share of a node's CPU one query may take.",
+              "type": "string"
+            },
+            "query_memory_limit_percent_per_node": {
+              "description": "Share of a node's memory one query may take.",
+              "type": "string"
+            },
+            "queue_size": {
+              "description": "Most queries that wait; needs concurrent_query_limit or database_load_cpu_threshold.",
+              "type": "string"
+            },
+            "resource_weight": {
+              "description": "The pool's share of the CPU when pools compete for it.",
+              "type": "string"
+            },
+            "total_cpu_limit_percent_per_node": {
+              "description": "Share of a node's CPU the pool's queries may take together.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:resourcepool"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "ptah.schema.resourcepool.classifier": {
+      "additionalProperties": false,
+      "description": "Declares a YDB resource pool classifier, which sends a user's or a group's queries to a resource pool. It belongs to the whole database.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "member_name": {
+              "description": "User or group whose queries the classifier matches; every query when omitted.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Classifier name.",
+              "type": "string"
+            },
+            "rank": {
+              "description": "Order among the classifiers, lowest first; unique, from 0.",
+              "type": "string"
+            },
+            "resource_pool": {
+              "description": "Pool the classifier sends queries to: a declared pool or `default`.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "rank",
+            "resource_pool"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:resourcepool:classifier"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
     "ptah.schema.revoke": {
       "additionalProperties": false,
       "description": "Declares privileges a role does not hold, including ones it holds without a grant: PUBLIC's EXECUTE on a new function, or what ALTER DEFAULT PRIVILEGES gave a role on a new table.",
@@ -2211,6 +2307,12 @@
     },
     {
       "$ref": "#/$defs/ptah.schema.synonym"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.resourcepool"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.resourcepool.classifier"
     },
     {
       "$ref": "#/$defs/ptah.schema.extendedproperty"

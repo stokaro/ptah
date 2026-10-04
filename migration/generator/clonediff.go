@@ -48,6 +48,12 @@ func cloneSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 	clone.SynonymsAdded = slices.Clone(diff.SynonymsAdded)
 	clone.SynonymsRemoved = slices.Clone(diff.SynonymsRemoved)
 	clone.SynonymsModified = slices.Clone(diff.SynonymsModified)
+	clone.ResourcePoolsAdded = cloneResourcePools(diff.ResourcePoolsAdded)
+	clone.ResourcePoolsRemoved = cloneResourcePools(diff.ResourcePoolsRemoved)
+	clone.ResourcePoolsModified = cloneResourcePoolDiffs(diff.ResourcePoolsModified)
+	clone.ResourcePoolClassifiersAdded = slices.Clone(diff.ResourcePoolClassifiersAdded)
+	clone.ResourcePoolClassifiersRemoved = slices.Clone(diff.ResourcePoolClassifiersRemoved)
+	clone.ResourcePoolClassifiersModified = slices.Clone(diff.ResourcePoolClassifiersModified)
 	clone.HypertablesAdded = slices.Clone(diff.HypertablesAdded)
 	clone.HypertablesRemoved = slices.Clone(diff.HypertablesRemoved)
 	clone.HypertablesModified = slices.Clone(diff.HypertablesModified)
@@ -135,6 +141,34 @@ func cloneIndexPartitioningChanges(changes []difftypes.IndexPartitioningChange) 
 	for i, change := range changes {
 		change.Partitioning = change.Partitioning.Clone()
 		change.Previous = change.Previous.Clone()
+		clone[i] = change
+	}
+	return clone
+}
+
+// cloneResourcePools copies the pools and the settings each carries, so a
+// reversal swapping them leaves the caller's diff alone.
+func cloneResourcePools(pools difftypes.ResourcePoolChanges) difftypes.ResourcePoolChanges {
+	if pools == nil {
+		return nil
+	}
+	clone := make(difftypes.ResourcePoolChanges, len(pools))
+	for i, pool := range pools {
+		pool.Spec = pool.Spec.Clone()
+		clone[i] = pool
+	}
+	return clone
+}
+
+// cloneResourcePoolDiffs copies the changes and both specs.
+func cloneResourcePoolDiffs(changes []difftypes.ResourcePoolDiff) []difftypes.ResourcePoolDiff {
+	if changes == nil {
+		return nil
+	}
+	clone := make([]difftypes.ResourcePoolDiff, len(changes))
+	for i, change := range changes {
+		change.Desired = change.Desired.Clone()
+		change.Current = change.Current.Clone()
 		clone[i] = change
 	}
 	return clone

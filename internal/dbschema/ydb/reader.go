@@ -112,6 +112,9 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	if err := r.principals(ctx, source, db); err != nil {
 		return nil, err
 	}
+	if err := r.resourcePools(ctx, source, db); err != nil {
+		return nil, err
+	}
 	return db, nil
 }
 
@@ -232,7 +235,15 @@ var unmodeledEntries = map[Ydb_Scheme.Entry_Type]coverage.Kind{
 	Ydb_Scheme.Entry_EXTERNAL_TABLE:       coverage.ExternalTable,
 	Ydb_Scheme.Entry_SECRET:               coverage.Secret,
 	Ydb_Scheme.Entry_RESOURCE_POOL:        coverage.ResourcePool,
+	EntryStreamingQuery:                   coverage.StreamingQuery,
 }
+
+// EntryStreamingQuery is the scheme entry type of a streaming query, which the
+// pinned protocol buffers do not name. Measured on 26.2.1.14 with
+// EnableExternalDataSources on: ListDirectory reports a streaming query, at
+// the root and in a directory alike, as type 26. A read that met one refused
+// the whole database as an object of an unknown type.
+const EntryStreamingQuery Ydb_Scheme.Entry_Type = 26
 
 // entryTypeName names a scheme entry type, including one the pinned protocol
 // buffers do not know.

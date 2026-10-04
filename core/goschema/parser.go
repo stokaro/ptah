@@ -694,39 +694,41 @@ func splitCSVAttribute(value string) []string {
 }
 
 type schemaParseState struct {
-	filename              string
-	fset                  *token.FileSet
-	tableNameToStructName map[string]string
-	globalEnumsMap        map[string]schemamodel.Enum
-	embeddedFields        []schemamodel.EmbeddedField
-	schemaFields          []schemamodel.Field
-	schemaIndexes         []schemamodel.Index
-	schemaConstraints     []schemamodel.Constraint
-	tableDirectives       []schemamodel.Table
-	extensions            []schemamodel.Extension
-	functions             []schemamodel.Function
-	sequences             []schemamodel.Sequence
-	domains               []schemamodel.Domain
-	compositeTypes        []schemamodel.CompositeType
-	ranges                []schemamodel.Range
-	views                 []schemamodel.View
-	synonyms              []schemamodel.Synonym
-	extendedProperties    []schemamodel.ExtendedProperty
-	materializedViews     []schemamodel.MaterializedView
-	triggers              []schemamodel.Trigger
-	rlsPolicies           []schemamodel.RLSPolicy
-	rlsEnabledTables      []schemamodel.RLSEnabledTable
-	hypertables           []schemamodel.Hypertable
-	continuousAggregates  []schemamodel.ContinuousAggregate
-	roles                 []schemamodel.Role
-	grants                []schemamodel.Grant
-	revokedGrants         []schemamodel.Grant
-	defaultPrivileges     []schemamodel.DefaultPrivilege
-	managedData           []schemamodel.ManagedData
-	schemas               []schemamodel.Schema
-	notDescribed          []coverage.Object
-	changefeeds           []pendingChangefeed
-	consumers             []pendingConsumer
+	filename                string
+	fset                    *token.FileSet
+	tableNameToStructName   map[string]string
+	globalEnumsMap          map[string]schemamodel.Enum
+	embeddedFields          []schemamodel.EmbeddedField
+	schemaFields            []schemamodel.Field
+	schemaIndexes           []schemamodel.Index
+	schemaConstraints       []schemamodel.Constraint
+	tableDirectives         []schemamodel.Table
+	extensions              []schemamodel.Extension
+	functions               []schemamodel.Function
+	sequences               []schemamodel.Sequence
+	domains                 []schemamodel.Domain
+	compositeTypes          []schemamodel.CompositeType
+	ranges                  []schemamodel.Range
+	views                   []schemamodel.View
+	synonyms                []schemamodel.Synonym
+	extendedProperties      []schemamodel.ExtendedProperty
+	materializedViews       []schemamodel.MaterializedView
+	triggers                []schemamodel.Trigger
+	rlsPolicies             []schemamodel.RLSPolicy
+	rlsEnabledTables        []schemamodel.RLSEnabledTable
+	hypertables             []schemamodel.Hypertable
+	continuousAggregates    []schemamodel.ContinuousAggregate
+	roles                   []schemamodel.Role
+	grants                  []schemamodel.Grant
+	revokedGrants           []schemamodel.Grant
+	defaultPrivileges       []schemamodel.DefaultPrivilege
+	managedData             []schemamodel.ManagedData
+	schemas                 []schemamodel.Schema
+	notDescribed            []coverage.Object
+	changefeeds             []pendingChangefeed
+	consumers               []pendingConsumer
+	resourcePools           []schemamodel.ResourcePool
+	resourcePoolClassifiers []schemamodel.ResourcePoolClassifier
 }
 
 type structDeclaration struct {
@@ -825,32 +827,34 @@ type sharedDirectiveParser func(*schemaParseState, *ast.Comment, string) error
 // belongs to which parser and nothing else, and a new object family adds one
 // line instead of pushing the function past the complexity gate.
 var sharedDirectiveParsers = map[string]sharedDirectiveParser{
-	"ptah:schema:constraint":          (*schemaParseState).parseConstraintComment,
-	"ptah:schema:enum":                ignoringStruct((*schemaParseState).parseEnumComment),
-	"ptah:schema:extension":           ignoringStruct((*schemaParseState).parseExtensionComment),
-	"ptah:schema:function":            (*schemaParseState).parseFunctionComment,
-	"ptah:schema:procedure":           (*schemaParseState).parseProcedureComment,
-	"ptah:schema:sequence":            (*schemaParseState).parseSequenceComment,
-	"ptah:schema:domain":              (*schemaParseState).parseDomainComment,
-	"ptah:schema:composite":           (*schemaParseState).parseCompositeComment,
-	"ptah:schema:range":               (*schemaParseState).parseRangeComment,
-	"ptah:schema:view":                (*schemaParseState).parseViewComment,
-	"ptah:schema:matview":             (*schemaParseState).parseMaterializedViewComment,
-	"ptah:schema:hypertable":          (*schemaParseState).parseHypertableComment,
-	"ptah:schema:continuousaggregate": (*schemaParseState).parseContinuousAggregateComment,
-	"ptah:schema:synonym":             (*schemaParseState).parseSynonymComment,
-	"ptah:schema:extendedproperty":    (*schemaParseState).parseExtendedPropertyComment,
-	"ptah:schema:trigger":             (*schemaParseState).parseTriggerComment,
-	"ptah:schema:rls:policy":          (*schemaParseState).parseRLSPolicyComment,
-	"ptah:schema:rls:enable":          (*schemaParseState).parseRLSEnableComment,
-	"ptah:schema:role":                (*schemaParseState).parseRoleComment,
-	"ptah:schema:grant":               (*schemaParseState).parseGrantComment,
-	"ptah:schema:revoke":              (*schemaParseState).parseRevokeComment,
-	"ptah:schema:defaultprivilege":    (*schemaParseState).parseDefaultPrivilegeComment,
-	"ptah:schema:data":                (*schemaParseState).parseManagedDataComment,
-	"ptah:schema:notdescribed":        ignoringStruct((*schemaParseState).parseNotDescribedComment),
-	"ptah:schema:changefeed":          (*schemaParseState).parseChangefeedComment,
-	"ptah:schema:changefeed:consumer": (*schemaParseState).parseChangefeedConsumerComment,
+	"ptah:schema:constraint":              (*schemaParseState).parseConstraintComment,
+	"ptah:schema:enum":                    ignoringStruct((*schemaParseState).parseEnumComment),
+	"ptah:schema:extension":               ignoringStruct((*schemaParseState).parseExtensionComment),
+	"ptah:schema:function":                (*schemaParseState).parseFunctionComment,
+	"ptah:schema:procedure":               (*schemaParseState).parseProcedureComment,
+	"ptah:schema:sequence":                (*schemaParseState).parseSequenceComment,
+	"ptah:schema:domain":                  (*schemaParseState).parseDomainComment,
+	"ptah:schema:composite":               (*schemaParseState).parseCompositeComment,
+	"ptah:schema:range":                   (*schemaParseState).parseRangeComment,
+	"ptah:schema:view":                    (*schemaParseState).parseViewComment,
+	"ptah:schema:matview":                 (*schemaParseState).parseMaterializedViewComment,
+	"ptah:schema:hypertable":              (*schemaParseState).parseHypertableComment,
+	"ptah:schema:continuousaggregate":     (*schemaParseState).parseContinuousAggregateComment,
+	"ptah:schema:synonym":                 (*schemaParseState).parseSynonymComment,
+	"ptah:schema:extendedproperty":        (*schemaParseState).parseExtendedPropertyComment,
+	"ptah:schema:trigger":                 (*schemaParseState).parseTriggerComment,
+	"ptah:schema:rls:policy":              (*schemaParseState).parseRLSPolicyComment,
+	"ptah:schema:rls:enable":              (*schemaParseState).parseRLSEnableComment,
+	"ptah:schema:role":                    (*schemaParseState).parseRoleComment,
+	"ptah:schema:grant":                   (*schemaParseState).parseGrantComment,
+	"ptah:schema:revoke":                  (*schemaParseState).parseRevokeComment,
+	"ptah:schema:defaultprivilege":        (*schemaParseState).parseDefaultPrivilegeComment,
+	"ptah:schema:data":                    (*schemaParseState).parseManagedDataComment,
+	"ptah:schema:notdescribed":            ignoringStruct((*schemaParseState).parseNotDescribedComment),
+	"ptah:schema:changefeed":              (*schemaParseState).parseChangefeedComment,
+	"ptah:schema:changefeed:consumer":     (*schemaParseState).parseChangefeedConsumerComment,
+	"ptah:schema:resourcepool":            (*schemaParseState).parseResourcePoolComment,
+	"ptah:schema:resourcepool:classifier": (*schemaParseState).parseResourcePoolClassifierComment,
 }
 
 // ignoringStruct adapts a parser that does not need the owning struct's name.
@@ -1008,35 +1012,37 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 	})
 
 	result := schemamodel.Database{
-		Schemas:              state.schemas,
-		Tables:               state.tableDirectives,
-		Fields:               state.schemaFields,
-		Indexes:              state.schemaIndexes,
-		Constraints:          state.schemaConstraints,
-		Enums:                enums,
-		EmbeddedFields:       state.embeddedFields,
-		Extensions:           state.extensions,
-		Functions:            state.functions,
-		Sequences:            state.sequences,
-		Domains:              state.domains,
-		CompositeTypes:       state.compositeTypes,
-		Ranges:               state.ranges,
-		Views:                state.views,
-		Synonyms:             state.synonyms,
-		ExtendedProperties:   state.extendedProperties,
-		MaterializedViews:    state.materializedViews,
-		Triggers:             state.triggers,
-		RLSPolicies:          state.rlsPolicies,
-		RLSEnabledTables:     state.rlsEnabledTables,
-		Hypertables:          state.hypertables,
-		ContinuousAggregates: state.continuousAggregates,
-		Roles:                state.roles,
-		Grants:               state.grants,
-		RevokedGrants:        state.revokedGrants,
-		DefaultPrivileges:    state.defaultPrivileges,
-		ManagedData:          state.managedData,
-		NotDescribed:         coverage.Set{}.With(state.notDescribed...),
-		Dependencies:         make(map[string][]string),
+		Schemas:                 state.schemas,
+		Tables:                  state.tableDirectives,
+		Fields:                  state.schemaFields,
+		Indexes:                 state.schemaIndexes,
+		Constraints:             state.schemaConstraints,
+		Enums:                   enums,
+		EmbeddedFields:          state.embeddedFields,
+		Extensions:              state.extensions,
+		Functions:               state.functions,
+		Sequences:               state.sequences,
+		Domains:                 state.domains,
+		CompositeTypes:          state.compositeTypes,
+		Ranges:                  state.ranges,
+		Views:                   state.views,
+		Synonyms:                state.synonyms,
+		ResourcePools:           state.resourcePools,
+		ResourcePoolClassifiers: state.resourcePoolClassifiers,
+		ExtendedProperties:      state.extendedProperties,
+		MaterializedViews:       state.materializedViews,
+		Triggers:                state.triggers,
+		RLSPolicies:             state.rlsPolicies,
+		RLSEnabledTables:        state.rlsEnabledTables,
+		Hypertables:             state.hypertables,
+		ContinuousAggregates:    state.continuousAggregates,
+		Roles:                   state.roles,
+		Grants:                  state.grants,
+		RevokedGrants:           state.revokedGrants,
+		DefaultPrivileges:       state.defaultPrivileges,
+		ManagedData:             state.managedData,
+		NotDescribed:            coverage.Set{}.With(state.notDescribed...),
+		Dependencies:            make(map[string][]string),
 	}
 	schemamodel.NormalizeTableScopedNames(&result)
 	schemamodel.BuildDependencyGraph(&result)

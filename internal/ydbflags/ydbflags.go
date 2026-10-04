@@ -112,6 +112,19 @@ var gates = []Gate{
 		Flag:     "EnableTopicAutopartitioningForCDC",
 		refusals: []string{"Topic autopartitioning for CDC is disabled"},
 	},
+	{
+		// Off on every line from 25.1 to 26.2. Measured with the flag on
+		// at startup on each of them: a pool and a classifier are created,
+		// altered with SET and RESET, read back from .sys and dropped.
+		// EnableBackupService, which gates a backup collection, is not a
+		// gate: Ptah models no collection, so no key follows it.
+		Key:  capability.ResourcePools,
+		Flag: "EnableResourcePools",
+		refusals: []string{
+			"Resource pools are disabled",
+			"Resource pool classifiers are disabled",
+		},
+	},
 }
 
 // Gates returns every capability a flag decides, in a fixed order.

@@ -192,6 +192,20 @@ func clonedCollectionRows() []clonedCollectionRow {
 			},
 		},
 		{
+			field: "ResourcePools", present: "batch_pool", absent: "nosuch_pool",
+			seed: func(s *catalog.Database) {
+				s.ResourcePools = append(s.ResourcePools, catalog.ResourcePool{Name: "batch_pool"})
+			},
+		},
+		{
+			field: "ResourcePoolClassifiers", present: "batch_classifier", absent: "nosuch_classifier",
+			seed: func(s *catalog.Database) {
+				s.ResourcePoolClassifiers = append(s.ResourcePoolClassifiers, catalog.ResourcePoolClassifier{
+					Name: "batch_classifier",
+				})
+			},
+		},
+		{
 			field: "Roles", present: "app_role", absent: "nosuch_role",
 			seed: func(s *catalog.Database) {
 				s.Roles = append(s.Roles, catalog.Role{Name: "app_role"})

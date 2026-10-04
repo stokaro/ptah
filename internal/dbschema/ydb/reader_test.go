@@ -37,6 +37,11 @@ type fakeSource struct {
 	// it fails.
 	principals    ydbschema.Principals
 	principalsErr error
+	// pools is what .sys/resource_pools and .sys/resource_pool_classifiers
+	// report, and poolsErr how reading them fails. A fixture that names no
+	// database answers for /local, the database every fixture reads.
+	pools    ydbschema.ResourcePools
+	poolsErr error
 }
 
 func (f fakeSource) ListDirectory(_ context.Context, path string) (*Ydb_Scheme.Entry, []*Ydb_Scheme.Entry, error) {
@@ -49,6 +54,13 @@ func (f fakeSource) ListDirectory(_ context.Context, path string) (*Ydb_Scheme.E
 
 func (f fakeSource) Principals(context.Context) (ydbschema.Principals, error) {
 	return f.principals, f.principalsErr
+}
+
+func (f fakeSource) ResourcePools(context.Context) (ydbschema.ResourcePools, error) {
+	if f.pools.Database == "" {
+		f.pools.Database = "/local"
+	}
+	return f.pools, f.poolsErr
 }
 
 func (f fakeSource) DescribeTable(_ context.Context, path string) (*Ydb_Table.DescribeTableResult, error) {
@@ -382,6 +394,7 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 				entry("ext", Ydb_Scheme.Entry_EXTERNAL_TABLE),
 				entry("key", Ydb_Scheme.Entry_SECRET),
 				entry("pool", Ydb_Scheme.Entry_RESOURCE_POOL),
+				entry("stream", ydbschema.EntryStreamingQuery),
 				entry("health", Ydb_Scheme.Entry_SYS_VIEW),
 				entry("app", Ydb_Scheme.Entry_DIRECTORY),
 			},
@@ -415,6 +428,7 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 		observed(coverage.Sequence, "seq"),
 		observed(coverage.ExternalDataSource, "src"),
 		observed(coverage.ColumnTable, "store"),
+		observed(coverage.StreamingQuery, "stream"),
 		observed(coverage.Transfer, "xfer"),
 	))
 	c.Assert(db.Tables, qt.HasLen, 2)
@@ -929,6 +943,10 @@ func (errorSource) ListDirectory(context.Context, string) (*Ydb_Scheme.Entry, []
 
 func (errorSource) Principals(context.Context) (ydbschema.Principals, error) {
 	return ydbschema.Principals{}, errors.New("connection refused")
+}
+
+func (errorSource) ResourcePools(context.Context) (ydbschema.ResourcePools, error) {
+	return ydbschema.ResourcePools{}, errors.New("connection refused")
 }
 
 func (errorSource) DescribeTable(context.Context, string) (*Ydb_Table.DescribeTableResult, error) {

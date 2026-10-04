@@ -155,6 +155,10 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderExtension(n)
 	case *ast.DropExtensionNode:
 		return r.renderDropExtension(n)
+	case *ast.CreateResourcePoolNode, *ast.AlterResourcePoolNode, *ast.DropResourcePoolNode,
+		*ast.CreateResourcePoolClassifierNode, *ast.AlterResourcePoolClassifierNode,
+		*ast.DropResourcePoolClassifierNode:
+		return nodedispatch.RefuseResourcePool(DialectName, n)
 	case *ast.ExtendedPropertyNode:
 		return r.renderExtendedProperty(n)
 	case *ast.CreateHypertableNode:

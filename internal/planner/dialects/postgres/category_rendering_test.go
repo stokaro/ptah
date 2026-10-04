@@ -90,6 +90,36 @@ var refusedDiffCategories = map[string]refusedFixture{
 		why:  "index partitioning is YDB's, and the comparison records a change of it only on a target with index_partitioning; planning nothing would report an index settled that is not",
 		diff: &difftypes.SchemaDiff{IndexPartitioningChanged: []difftypes.IndexPartitioningChange{{TableName: "users", Name: "a"}}},
 	},
+	"ResourcePoolsAdded": {
+		why:  "a resource pool is YDB's, and the comparison that feeds a PostgreSQL plan refuses a declared one before it diffs; a plan reaches one only through a diff built by hand, and planning nothing would report a pool applied that the database does not have",
+		diff: &difftypes.SchemaDiff{ResourcePoolsAdded: difftypes.ResourcePoolChanges{{Name: "batch"}}},
+	},
+	"ResourcePoolsRemoved": {
+		why:  "no PostgreSQL read reports a resource pool, so a removal reaches the planner only through a diff built by hand, and planning nothing would report it dropped",
+		diff: &difftypes.SchemaDiff{ResourcePoolsRemoved: difftypes.ResourcePoolChanges{{Name: "batch"}}},
+	},
+	"ResourcePoolsModified": {
+		why:  "a changed resource pool is YDB's for the same reason",
+		diff: &difftypes.SchemaDiff{ResourcePoolsModified: []difftypes.ResourcePoolDiff{{Name: "batch"}}},
+	},
+	"ResourcePoolClassifiersAdded": {
+		why: "a resource pool classifier is YDB's, as a pool is",
+		diff: &difftypes.SchemaDiff{ResourcePoolClassifiersAdded: difftypes.ResourcePoolClassifierChanges{{
+			Name: "batch_users",
+		}}},
+	},
+	"ResourcePoolClassifiersRemoved": {
+		why: "no PostgreSQL read reports a classifier, so a removal reaches the planner only through a diff built by hand",
+		diff: &difftypes.SchemaDiff{ResourcePoolClassifiersRemoved: difftypes.ResourcePoolClassifierChanges{{
+			Name: "batch_users",
+		}}},
+	},
+	"ResourcePoolClassifiersModified": {
+		why: "a changed classifier is YDB's for the same reason",
+		diff: &difftypes.SchemaDiff{ResourcePoolClassifiersModified: []difftypes.ResourcePoolClassifierDiff{{
+			Name: "batch_users",
+		}}},
+	},
 	"RLSPolicyIdentityConflicts": {
 		why: "two declared policies that resolve to one identity cannot be planned: the comparison already reduced them to one entry, so applying it would apply whichever the map kept (stokaro/ptah#2440)",
 		diff: &difftypes.SchemaDiff{RLSPolicyIdentityConflicts: []difftypes.RLSPolicyConflict{{

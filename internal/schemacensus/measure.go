@@ -4,9 +4,12 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/capabilityprobe"
+	"ptah.run/internal/ydbflags"
 )
 
 // Observation is what the census established about one field.
@@ -48,7 +51,7 @@ func Measure() []Observation {
 // disagreement between the surfaces.
 func measure(surface func(schemamodel.Database, capabilityprobe.Cell) string) []Observation {
 	fixtures := Fixtures()
-	cells := capabilityprobe.Cells
+	cells := measuredCells()
 
 	baselines := make([]map[string]string, len(fixtures))
 	for index, fixture := range fixtures {
@@ -76,6 +79,35 @@ func measure(surface func(schemamodel.Database, capabilityprobe.Cell) string) []
 		observations = append(observations, observation)
 	}
 	return observations
+}
+
+// measuredCells are the declared release lines, and each YDB line again with
+// every feature flag Ptah reads turned on, named with a `+flags` suffix.
+//
+// A YDB preset describes a cluster running its line's default flags, and a
+// declaration a flag gates is refused on every one of them: a resource pool
+// is, since EnableResourcePools is off by default on every line. Rendered only
+// on the presets, every setting of a pool would read as a field nothing reads,
+// because the refusal comes first and names none of them. [ydbflags.Flags.Refine]
+// is how Ptah turns a flag the cluster reports into its key, and each gate's
+// flag was measured on every line with the flag on, so the refined set is one
+// Ptah plans for on such a cluster.
+func measuredCells() []capabilityprobe.Cell {
+	allOn := make(ydbflags.Flags)
+	for _, gate := range ydbflags.Gates() {
+		allOn[gate.Flag] = true
+	}
+	cells := slices.Clone(capabilityprobe.Cells)
+	for _, cell := range capabilityprobe.Cells {
+		if cell.Dialect != platform.YDB || cell.Preset == nil {
+			continue
+		}
+		preset := cell.Preset
+		cell.Line += "+flags"
+		cell.Preset = func() capability.Capabilities { return allOn.Refine(preset()) }
+		cells = append(cells, cell)
+	}
+	return cells
 }
 
 // everyCell applies one surface to one schema against every declared release

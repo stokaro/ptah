@@ -126,6 +126,11 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	if assertBothSurfacesRefuseTheDomain(c, dialect, &desired) {
 		return
 	}
+	// A resource pool and its classifier are refused the same way on every
+	// target without the resource_pools key, which is every target's default
+	// preset, YDB's included. Once both surfaces are seen to refuse them, the
+	// census below runs over the rest of the fixture.
+	refused := assertBothSurfacesRefuseTheResourcePools(c, dialect, &desired)
 
 	renderCensus := surfaceCensus(c, dialect,
 		modelast.CollectDatabase(desired, dialect).Statements)
@@ -143,12 +148,12 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	// object of every kind in routedKinds, and each of those kinds is one
 	// AST node kind, so a surface that carried them all reports exactly
 	// that many rows, plus the kinds below that the fixture causes without
-	// declaring.
+	// declaring, less the kinds both surfaces refused above.
 	//
 	// Check rather than Assert so a surface that lost a kind still reaches
 	// the comparison below, which is the assertion that names which kind
 	// went missing on which side.
-	c.Check(renderCensus, qt.HasLen, len(routedKinds)+len(derivedNodeKinds),
+	c.Check(renderCensus, qt.HasLen, len(routedKinds)+len(derivedNodeKinds)-refused,
 		qt.Commentf("render surface census:\n%s", strings.Join(renderCensus, "\n")))
 
 	c.Assert(planCensus, qt.DeepEquals, renderCensus,
@@ -220,4 +225,26 @@ func assertBothSurfacesRefuseTheDomain(c *qt.C, dialect string, desired *schemam
 	c.Assert(planErr.Error(), qt.Contains, "CREATE DOMAIN")
 	c.Assert(renderErr.Error(), qt.Contains, "CREATE DOMAIN")
 	return true
+}
+
+// assertBothSurfacesRefuseTheResourcePools checks that a target without the
+// resource_pools key refuses the fixture's pool on both surfaces, through the
+// one validation they share, and takes the pool and its classifier out of
+// desired so the census can run over the rest. It returns how many routed
+// kinds it took out.
+func assertBothSurfacesRefuseTheResourcePools(c *qt.C, dialect string, desired *schemamodel.Database) int {
+	c.Helper()
+	if capability.ForDialect(dialect).Has(capability.ResourcePools) {
+		return 0
+	}
+	_, planErr := schemadiff.CompareWithDatabaseInfo(
+		desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil,
+	)
+	renderErr := renderer.ValidateSchema(desired, dialect)
+	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(planErr.Error(), qt.Contains, "requires target capability resource_pools")
+	c.Assert(renderErr.Error(), qt.Contains, "requires target capability resource_pools")
+	desired.ResourcePools, desired.ResourcePoolClassifiers = nil, nil
+	return 2
 }

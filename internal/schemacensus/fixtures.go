@@ -112,6 +112,7 @@ func Fixtures() []Fixture {
 		{Name: "hypertable", Schema: hypertableFixture()},
 		{Name: "continuous-aggregate", Schema: continuousAggregateFixture()},
 		{Name: "synonym", Schema: synonymFixture()},
+		{Name: "resource-pool", Schema: resourcePoolFixture()},
 		{Name: "extended-property", Schema: extendedPropertyFixture()},
 		{Name: "role", Schema: roleFixture()},
 		{Name: "ydb-group-membership", Schema: ydbGroupMembershipFixture()},
@@ -1312,6 +1313,26 @@ func synonymFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
 	db.Synonyms = []schemamodel.Synonym{{
 		StructName: "SY", Name: "tt", Schema: "dbo", Target: "dbo.t", Comment: "alias",
+	}}
+	return db
+}
+
+// resourcePoolFixture declares a YDB resource pool that sets every setting,
+// and a classifier that sends a member's queries to it.
+func resourcePoolFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.ResourcePools = []schemamodel.ResourcePool{{
+		StructName: "RP", Name: "reporting",
+		Spec: ast.ResourcePoolSpec{
+			ConcurrentQueryLimit: new(int32(10)), QueueSize: new(int32(20)),
+			DatabaseLoadCPUThreshold: new(80.5), QueryMemoryLimitPercentPerNode: new(25.0),
+			QueryCPULimitPercentPerNode: new(30.0), TotalCPULimitPercentPerNode: new(70.0),
+			ResourceWeight: new(5.0),
+		},
+	}}
+	db.ResourcePoolClassifiers = []schemamodel.ResourcePoolClassifier{{
+		StructName: "RP", Name: "reporting_group",
+		Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "reporting", MemberName: "reporters", Rank: 100},
 	}}
 	return db
 }
