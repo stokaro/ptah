@@ -65,9 +65,9 @@ func TestYDBSequenceRules_Report(t *testing.T) {
 
 // TestYDBSequenceRules_LeaveWhatTheServerKeeps holds the controls: a 64-bit
 // Serial's sequence, which ends at the Int64 maximum already; a restart that
-// sets a value of its own; a sequence restarted before its table was dropped
-// and created again; and a sequence of a table the directory never created,
-// or of another table whose path the altered one only resembles.
+// sets a value of its own; a sequence restarted before its table was dropped,
+// or dropped and created again; and a sequence of a table the directory never
+// created, or of another table whose path the altered one only resembles.
 func TestYDBSequenceRules_LeaveWhatTheServerKeeps(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -83,6 +83,10 @@ func TestYDBSequenceRules_LeaveWhatTheServerKeeps(t *testing.T) {
 			"0001_t.up.sql": serialTables + "ALTER SEQUENCE `/local/shop/orders/_serial_column_id` RESTART WITH 100;\n",
 			"0002_t.up.sql": "DROP TABLE `shop/orders`;\n" +
 				"CREATE TABLE `shop/orders` (id BigSerial NOT NULL, PRIMARY KEY (id));\n" +
+				"ALTER SEQUENCE `/local/shop/orders/_serial_column_id` INCREMENT BY 10;\n"}},
+		{name: "a sequence of a table the directory dropped", files: map[string]string{
+			"0001_t.up.sql": serialTables + "ALTER SEQUENCE `/local/shop/orders/_serial_column_id` RESTART WITH 100;\n",
+			"0002_t.up.sql": "DROP TABLE `shop/orders`;\n" +
 				"ALTER SEQUENCE `/local/shop/orders/_serial_column_id` INCREMENT BY 10;\n"}},
 		{name: "a sequence of a table the directory never created", files: map[string]string{
 			"0001_t.up.sql": "ALTER SEQUENCE `/local/elsewhere/_serial_column_id` INCREMENT BY 2;\n"}},
