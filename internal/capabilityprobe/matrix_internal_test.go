@@ -2,9 +2,12 @@ package capabilityprobe
 
 // White-box testing required: Unprobed governs skipReasons, which is
 // unexported and reachable from outside only through CIMatrix over the
-// package-level Cells. No declared line sets Unprobed, so a black-box test
-// would assert over a corpus the rule has no subject in, and would report
-// success about a rule nothing exercised.
+// package-level Cells. Declared lines do set Unprobed (a ClickHouse line past
+// its upstream support, and the best-effort YDB lines), but a black-box test
+// can only read them as declared. It cannot take one line, remove its reason
+// and keep every other field, which is the control that shows the reason
+// alone skips the line, and an assertion that names a declared line breaks
+// when that line's support changes rather than when the rule does.
 
 import (
 	"testing"
