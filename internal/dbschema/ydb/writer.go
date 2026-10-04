@@ -241,9 +241,9 @@ func (t *transaction) Rollback() error { return nil }
 // It drops what the schema reader describes and nothing else. A column table,
 // a topic and the other objects the reader records as not described stay, and
 // so does the directory that holds one, so a cleanup planned from a read
-// removes exactly what the plan listed. Ptah's own lock node at the root
-// ([LockNode]) stays too, as the reader leaves it out, and so does a node whose
-// name starts with a dot. Dot-directories are never entered, nor is
+// removes exactly what the plan listed. Ptah's own lock node at the root of a
+// database ([LockNode]) stays too, as the reader leaves it out, and so does a
+// node whose name starts with a dot. Dot-directories are never entered, nor is
 // ydburl.RealmDirectory at the root, and a directory that was empty before is
 // left alone. A directory's views go before its tables; YDB would take either
 // order, since it records no dependency on a view or on the table a view
@@ -285,7 +285,7 @@ func (w *Writer) dropDirectory(ctx context.Context, dir string) (bool, error) {
 			}
 			changed = true
 		case entry.GetType() == Ydb_Scheme.Entry_COORDINATION_NODE:
-			if (dir == "" && name == LockNode) || strings.HasPrefix(name, ".") {
+			if w.leftAlone(dir, entry) {
 				continue
 			}
 			if err := w.ExecuteSQL(ctx, dropCoordinationNode(path.Join(dir, name))); err != nil {
@@ -378,12 +378,27 @@ var treeStatements = map[Ydb_Scheme.Entry_Type]string{
 	Ydb_Scheme.Entry_VIEW:         "DROP VIEW %s",
 }
 
+// dropStatement is the statement that drops an entry of entryType at target,
+// a path the writer's runner resolves, and reports false for a kind the
+// teardown has no statement for. A coordination node is dropped with Ptah's
+// own statement; see [dropCoordinationNode].
+func dropStatement(entryType Ydb_Scheme.Entry_Type, target string) (string, bool) {
+	if entryType == Ydb_Scheme.Entry_COORDINATION_NODE {
+		return dropCoordinationNode(target), true
+	}
+	statement, droppable := treeStatements[entryType]
+	if !droppable {
+		return "", false
+	}
+	return fmt.Sprintf(statement, sqlident.Quote(platform.YDB, target)), true
+}
+
 // dropCoordinationNode is Ptah's statement that drops the coordination node
-// at relative, a path below the database root. Ptah's YDB connection runs it
-// through the coordination service; see [ydbcoordination.Recognize].
-func dropCoordinationNode(relative string) string {
+// at target, a path the writer's runner resolves. Ptah's YDB connection runs
+// it through the coordination service; see [ydbcoordination.Recognize].
+func dropCoordinationNode(target string) string {
 	// A drop carries no setting, so writing it cannot fail.
-	text, _ := ydbcoordination.Statement{Verb: ydbcoordination.Drop, Path: relative}.Text()
+	text, _ := ydbcoordination.Statement{Verb: ydbcoordination.Drop, Path: target}.Text()
 	return text
 }
 
@@ -407,7 +422,7 @@ func (w *Writer) planTree(ctx context.Context, dir string, steps *[]treeStep) er
 	for _, entry := range entries {
 		name := entry.GetName()
 		child := path.Join(dir, name)
-		statement, droppable := treeStatements[entry.GetType()]
+		statement, droppable := dropStatement(entry.GetType(), child)
 		switch {
 		case strings.HasPrefix(name, "."):
 			return fmt.Errorf("ydb: %s holds %s, whose name starts with a dot and so belongs to the server; "+
@@ -416,10 +431,8 @@ func (w *Writer) planTree(ctx context.Context, dir string, steps *[]treeStep) er
 			if err := w.planTree(ctx, child, steps); err != nil {
 				return err
 			}
-		case entry.GetType() == Ydb_Scheme.Entry_COORDINATION_NODE:
-			*steps = append(*steps, treeStep{statement: dropCoordinationNode(child)})
 		case droppable:
-			*steps = append(*steps, treeStep{statement: fmt.Sprintf(statement, sqlident.Quote(platform.YDB, child))})
+			*steps = append(*steps, treeStep{statement: statement})
 		default:
 			return fmt.Errorf("ydb: %s holds %s, a %s, which Ptah has no statement to drop; nothing was dropped",
 				absolute, name, entryTypeName(entry.GetType()))

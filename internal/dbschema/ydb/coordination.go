@@ -16,10 +16,18 @@ import (
 	"ptah.run/internal/ydbcoordination"
 )
 
+// ErrNoCoordinationNode is the error [Coordination.DescribeNode] wraps when no
+// coordination node is at the path: the service answers SCHEME_ERROR both
+// when nothing is there and when an object of another kind is, measured on
+// 25.1.4.7 and 26.2.1.14.
+var ErrNoCoordinationNode = errors.New("no coordination node at this path")
+
 // Coordination is what Ptah asks of YDB's coordination service: the
 // configuration of a node, and the creation, change and removal of one. Each
-// takes an absolute path. It answers through raw service calls, so a
-// consistency mode the SDK does not know is not read as another one.
+// takes an absolute path, and DescribeNode answers an error wrapping
+// [ErrNoCoordinationNode] for a path that holds no node. Ptah's implementation
+// answers through raw service calls, so a consistency mode the SDK does not
+// know is not read as another one.
 type Coordination interface {
 	DescribeNode(ctx context.Context, absolute string) (*Ydb_Coordination.DescribeNodeResult, error)
 	CreateNode(ctx context.Context, absolute string, config *Ydb_Coordination.Config) error
@@ -38,7 +46,11 @@ func (c grpcCoordination) DescribeNode(ctx context.Context, absolute string) (*Y
 		return nil, fmt.Errorf("describe YDB coordination node %s: %w", absolute, WithoutStackFrames(err))
 	}
 	var described Ydb_Coordination.DescribeNodeResult
-	if err := operationResult(response.GetOperation(), &described); err != nil {
+	err = operationResult(response.GetOperation(), &described)
+	switch {
+	case isSchemeError(err):
+		return nil, fmt.Errorf("describe YDB coordination node %s: %w: %w", absolute, ErrNoCoordinationNode, err)
+	case err != nil:
 		return nil, fmt.Errorf("describe YDB coordination node %s: %w", absolute, err)
 	}
 	return &described, nil
@@ -162,9 +174,9 @@ var errNoCoordinationService = errors.New("this YDB connection reaches no coordi
 // connection treats as its database: database itself, or a dev realm's
 // directory under it.
 //
-// It refuses a node outside the database, Ptah's own lock node -- at the
-// database root, and at root, where the schema reader leaves it out too -- and
-// a path segment that starts with a dot before it calls the service. A CREATE
+// It refuses a node outside root, Ptah's own lock node at the root of the
+// database, and a path segment that starts with a dot before it calls the
+// service. A CREATE
 // first asks whether the node exists, because the service answers a creation
 // of an existing node with success and leaves its configuration as it was
 // (measured on 25.1.4.7 and 26.2.1.14: `path exist, request accepts it`),
@@ -183,18 +195,20 @@ func RunCoordinationStatement(
 	if err != nil {
 		return err
 	}
-	for _, base := range []string{database, root} {
-		relative, inside := strings.CutPrefix(absolute, strings.TrimSuffix(base, "/")+"/")
-		if !inside {
-			return fmt.Errorf("%w: coordination node %s is not in %s", ydbcoordination.ErrStatement, absolute, base)
-		}
-		directory := path.Dir(relative)
-		if directory == "." {
-			directory = ""
-		}
-		if err := ydbcoordination.RefuseName(directory, path.Base(relative)); err != nil {
-			return fmt.Errorf("%w: %w", ydbcoordination.ErrStatement, err)
-		}
+	relative, inside := strings.CutPrefix(absolute, strings.TrimSuffix(root, "/")+"/")
+	if !inside {
+		return fmt.Errorf("%w: coordination node %s is not in %s", ydbcoordination.ErrStatement, absolute, root)
+	}
+	if root != database {
+		// Ptah's lock node is at the root of the database, not of a realm.
+		relative = strings.TrimPrefix(absolute, database+"/")
+	}
+	directory := path.Dir(relative)
+	if directory == "." {
+		directory = ""
+	}
+	if err := ydbcoordination.RefuseName(directory, path.Base(relative)); err != nil {
+		return fmt.Errorf("%w: %w", ydbcoordination.ErrStatement, err)
 	}
 	switch query.Verb {
 	case ydbcoordination.Create:
@@ -215,7 +229,7 @@ func createCoordinationNode(ctx context.Context, service Coordination, absolute 
 	switch {
 	case err == nil:
 		return fmt.Errorf("create YDB coordination node %s: the node already exists", absolute)
-	case !isSchemeError(err):
+	case !errors.Is(err, ErrNoCoordinationNode):
 		return err
 	}
 	if err := service.CreateNode(ctx, absolute, encodeCoordinationConfig(spec)); err != nil {

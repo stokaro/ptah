@@ -53,8 +53,12 @@ import (
 type Reader struct {
 	open     func(context.Context) (Source, func(), error)
 	database string
-	caps     capability.Capabilities
-	schemas  []string
+	// realm is set when the root the reader reads is a dev realm's
+	// directory rather than a database: Ptah's lock node and the dev realms
+	// live at the root of a database, so a realm's root holds neither.
+	realm   bool
+	caps    capability.Capabilities
+	schemas []string
 }
 
 // NewReader returns a reader that reads root, an absolute path in the database
@@ -66,6 +70,7 @@ func NewReader(driver *ydbsdk.Driver, root string, caps capability.Capabilities)
 			return newGRPCSource(ctx, driver)
 		},
 		database: "/" + strings.Trim(root, "/"),
+		realm:    strings.Trim(root, "/") != strings.Trim(driver.Name(), "/"),
 		caps:     caps.Clone(),
 	}
 }
@@ -188,16 +193,6 @@ func (r *Reader) entry(
 		// A system view outside a dot-directory belongs to the server too.
 		return nil
 	case Ydb_Scheme.Entry_COORDINATION_NODE:
-		if schema == "" && name == LockNode {
-			return nil
-		}
-		if !r.inScope(schema) {
-			return nil
-		}
-		if strings.HasPrefix(name, ".") {
-			db.NotDescribed = db.NotDescribed.With(unmodeled(coverage.CoordinationNode, schema, name))
-			return nil
-		}
 		return r.coordinationNode(ctx, source, schema, name, db)
 	}
 	if !r.inScope(schema) {
@@ -248,8 +243,19 @@ var unmodeledEntries = map[Ydb_Scheme.Entry_Type]coverage.Kind{
 }
 
 // coordinationNode describes the coordination node name in the directory
-// schema.
+// schema. Ptah's lock node at the root of a database is left out, and a node
+// whose name starts with a dot is the server's and recorded as not described.
 func (r *Reader) coordinationNode(ctx context.Context, source Source, schema, name string, db *catalog.Database) error {
+	if schema == "" && name == LockNode && !r.realm {
+		return nil
+	}
+	if !r.inScope(schema) {
+		return nil
+	}
+	if strings.HasPrefix(name, ".") {
+		db.NotDescribed = db.NotDescribed.With(unmodeled(coverage.CoordinationNode, schema, name))
+		return nil
+	}
 	absolute := r.absolute(schema, name)
 	described, err := source.DescribeCoordinationNode(ctx, absolute)
 	if err != nil {
