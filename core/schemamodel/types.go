@@ -48,6 +48,7 @@ type Database struct {
 	Views                      []View                         // Database views
 	Synonyms                   []Synonym                      // SQL Server synonyms
 	Topics                     []Topic                        `json:",omitempty"` // YDB topics and their consumers
+	Secrets                    []Secret                       `json:",omitempty"` // YDB secrets, by name; never their values
 	ExtendedProperties         []ExtendedProperty             // SQL Server extended properties
 	MaterializedViews          []MaterializedView             // Database materialized views
 	Triggers                   []Trigger                      // Database triggers
@@ -1342,6 +1343,29 @@ type Topic struct {
 // name alone at the database root.
 func (t Topic) QualifiedName() string {
 	return tableref.Canonical(t.Schema, t.Name)
+}
+
+// Secret is a YDB secret: a scheme object whose value the server keeps and
+// never returns, created with CREATE SECRET and used by an external data
+// source for its credentials.
+//
+// It never holds the value. ValueEnv names the environment variable the value
+// is read from when a statement that creates or rotates the secret runs; a
+// declaration that writes the value itself is refused where it is written.
+// Schema is the directory that holds the secret, "" for the database root, as
+// it is for a YDB table. Dialects is absent for the reason [Synonym] gives: a
+// secret belongs to YDB alone, and every other target refuses one.
+type Secret struct {
+	StructName string // Name of the Go struct this secret is associated with
+	Name       string // Secret name, the last segment of its path
+	Schema     string // Directory that holds the secret, relative to the database root
+	ValueEnv   string // Environment variable the value is read from, starting with PTAH_SECRET_
+}
+
+// QualifiedName returns the secret's canonical reference: schema.name, or the
+// name alone at the database root.
+func (s Secret) QualifiedName() string {
+	return tableref.Canonical(s.Schema, s.Name)
 }
 
 // ExtendedProperty is a SQL Server extended property: a named value attached

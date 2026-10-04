@@ -11,6 +11,7 @@ import (
 	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbindex"
+	"ptah.run/internal/ydbsecret"
 	"ptah.run/internal/ydbtopic"
 )
 
@@ -793,6 +794,20 @@ var directives = []Directive{
 				valueList, false, false),
 			attr(ydbtopic.AttributeAvailabilityPeriod, "How long the topic keeps a message this consumer has "+
 				"not read past the retention period, an ISO 8601 duration.", valueString, false, false),
+		},
+	},
+	{
+		Name: "ptah:schema:secret",
+		Description: "Declares a YDB secret: a scheme object whose value the server keeps and never returns. " +
+			"The value comes from an environment variable when the statement that creates the secret runs, " +
+			"and a declaration never writes it.",
+		Scopes: []Scope{ScopeStruct, ScopeField},
+		Attributes: []Attribute{
+			attr(ydbsecret.AttributeName, "Secret name, the last segment of its path.", valueString, true, false),
+			attr(ydbsecret.AttributeSchema, "Directory that holds the secret, relative to the database root.",
+				valueString, false, false),
+			attr(ydbsecret.AttributeValueEnv, "Environment variable that holds the value; its name starts with "+
+				ydbsecret.ValuePrefix+".", valueString, true, false),
 		},
 	},
 	{

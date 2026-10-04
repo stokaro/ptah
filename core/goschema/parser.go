@@ -711,6 +711,7 @@ type schemaParseState struct {
 	ranges                []schemamodel.Range
 	views                 []schemamodel.View
 	synonyms              []schemamodel.Synonym
+	secrets               []schemamodel.Secret
 	extendedProperties    []schemamodel.ExtendedProperty
 	materializedViews     []schemamodel.MaterializedView
 	triggers              []schemamodel.Trigger
@@ -855,6 +856,7 @@ var sharedDirectiveParsers = map[string]sharedDirectiveParser{
 	"ptah:schema:changefeed:consumer": (*schemaParseState).parseChangefeedConsumerComment,
 	"ptah:schema:topic":               (*schemaParseState).parseTopicComment,
 	"ptah:schema:topic:consumer":      (*schemaParseState).parseTopicConsumerComment,
+	"ptah:schema:secret":              (*schemaParseState).parseSecretComment,
 }
 
 // ignoringStruct adapts a parser that does not need the owning struct's name.
@@ -1031,6 +1033,7 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 		Views:                state.views,
 		Synonyms:             state.synonyms,
 		Topics:               state.topics,
+		Secrets:              state.secrets,
 		ExtendedProperties:   state.extendedProperties,
 		MaterializedViews:    state.materializedViews,
 		Triggers:             state.triggers,

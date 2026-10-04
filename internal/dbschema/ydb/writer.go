@@ -233,8 +233,8 @@ func (t *transaction) Commit() error { return nil }
 // request is not wrong; YDB has nothing it could undo.
 func (t *transaction) Rollback() error { return nil }
 
-// DropAllTables drops every view, row table and topic in the database and
-// then removes each directory that dropping them left empty, deepest first.
+// DropAllTables drops every view, row table, topic and secret in the database
+// and then removes each directory that dropping them left empty, deepest first.
 //
 // It drops what the schema reader describes and nothing else. A column table
 // and the other objects the reader records as not described stay, and so does
@@ -285,6 +285,11 @@ func (w *Writer) dropDirectory(ctx context.Context, dir string) (bool, error) {
 				return changed, err
 			}
 			changed = true
+		case entry.GetType() == Ydb_Scheme.Entry_SECRET:
+			if err := w.ExecuteSQL(ctx, "DROP SECRET "+sqlident.Quote(platform.YDB, path.Join(dir, name))); err != nil {
+				return changed, err
+			}
+			changed = true
 		case entry.GetType() == Ydb_Scheme.Entry_DIRECTORY && !strings.HasPrefix(name, ".") &&
 			(dir != "" || name != ydburl.RealmDirectory):
 			child := path.Join(dir, name)
@@ -314,8 +319,8 @@ func dropRank(entry *Ydb_Scheme.Entry) int {
 }
 
 // DropDirectory drops dir, a directory relative to the database root, together
-// with everything in it: row and column tables, views, topics and the
-// directories below, deepest first. It is the teardown of a directory a
+// with everything in it: row and column tables, views, topics, secrets and
+// the directories below, deepest first. It is the teardown of a directory a
 // caller created for itself, such as the capability probe's namespace;
 // DropAllTables is the cleanup that keeps what the reader does not describe.
 //
@@ -370,6 +375,7 @@ var treeStatements = map[Ydb_Scheme.Entry_Type]string{
 	Ydb_Scheme.Entry_COLUMN_TABLE: "DROP TABLE %s",
 	Ydb_Scheme.Entry_VIEW:         "DROP VIEW %s",
 	Ydb_Scheme.Entry_TOPIC:        "DROP TOPIC %s",
+	Ydb_Scheme.Entry_SECRET:       "DROP SECRET %s",
 }
 
 // treeStep is one step of a directory teardown: a statement that drops an

@@ -792,6 +792,7 @@ Read the columns as follows.
 | `--report` | `string` | — | `PTAH_REPORT` | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
+| `--rotate-secret` | `stringArray` | `[]` | — | — |
 | `--schema-cmd` | `string` | — | `PTAH_SCHEMA_CMD` | — |
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
 | `--schema-format` | `string` | `sql` | `PTAH_SCHEMA_FORMAT` | — |
@@ -913,6 +914,7 @@ Read the columns as follows.
 | `--report` | `string` | `text` | `PTAH_REPORT` | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
+| `--rotate-secret` | `stringArray` | `[]` | — | — |
 | `--schema-cmd` | `string` | — | `PTAH_SCHEMA_CMD` | — |
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
 | `--schema-format` | `string` | `sql` | `PTAH_SCHEMA_FORMAT` | — |
@@ -1367,6 +1369,7 @@ Read the columns as follows.
 | `--protected-table` | `stringArray` | `[]` | `PTAH_PROTECTED_TABLE` | — |
 | `--require-approval` | `bool` | `false` | `PTAH_REQUIRE_APPROVAL` | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
+| `--rotate-secret` | `stringArray` | `[]` | — | — |
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 | `--signer` | `string` | — | `PTAH_SIGNER` | — |
@@ -1404,6 +1407,7 @@ Read the columns as follows.
 | `--ignore-extension` | `stringArray` | `[]` | `PTAH_IGNORE_EXTENSION` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
+| `--rotate-secret` | `stringArray` | `[]` | — | — |
 | `--schema-cmd` | `string` | — | `PTAH_SCHEMA_CMD` | — |
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
 | `--schema-format` | `string` | `sql` | `PTAH_SCHEMA_FORMAT` | — |
@@ -1427,6 +1431,7 @@ Read the columns as follows.
 | `--format` | `string` | `sql` | `PTAH_FORMAT` | — |
 | `--from` | `stringArray` | `[]` | `PTAH_FROM` | — |
 | `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
+| `--rotate-secret` | `stringArray` | `[]` | — | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
 | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
@@ -1567,6 +1572,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--protected-table` | `stringArray` | `[]` | `PTAH_PROTECTED_TABLE` | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
+| `--rotate-secret` | `stringArray` | `[]` | — | — |
 | `--save` | `bool` | `false` | `PTAH_SAVE` | — |
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |

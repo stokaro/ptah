@@ -114,6 +114,7 @@ func excludeDatabase(
 	filtered.Views = state.filterViews(filtered.Views)
 	filtered.Synonyms = state.filterSynonyms(filtered.Synonyms)
 	filtered.Topics = state.filterTopics(filtered.Topics)
+	filtered.Secrets = state.filterSecrets(filtered.Secrets)
 	filtered.ExtendedProperties = state.filterExtendedProperties(filtered.ExtendedProperties)
 	filtered.ContinuousAggregates = state.filterContinuousAggregates(filtered.ContinuousAggregates)
 	filtered.Hypertables = state.filterHypertables(filtered.Hypertables)
@@ -1122,6 +1123,19 @@ func (s *exclusionState) filterTopics(topics []catalog.Topic) []catalog.Topic {
 	return result
 }
 
+// filterSecrets drops YDB secrets an exclusion selector names, and secrets
+// whose directory is excluded. A secret is selected on its own name.
+func (s *exclusionState) filterSecrets(secrets []catalog.Secret) []catalog.Secret {
+	result := make([]catalog.Secret, 0, len(secrets))
+	for _, secret := range secrets {
+		if s.matches("secret", s.nameCandidates(secret.Schema, secret.Name)...) || s.schemaExcluded(secret.Schema) {
+			continue
+		}
+		result = append(result, secret)
+	}
+	return result
+}
+
 // filterExtendedProperties drops the extended properties an exclusion selector
 // names, and the ones whose owner is excluded.
 //
@@ -1861,6 +1875,7 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		Views:                slices.Clone(schema.Views),
 		Synonyms:             slices.Clone(schema.Synonyms),
 		Topics:               slices.Clone(schema.Topics),
+		Secrets:              slices.Clone(schema.Secrets),
 		ExtendedProperties:   slices.Clone(schema.ExtendedProperties),
 		ContinuousAggregates: slices.Clone(schema.ContinuousAggregates),
 		Hypertables:          slices.Clone(schema.Hypertables),
@@ -1918,6 +1933,7 @@ func cloneGenerated(schema *schemamodel.Database) *schemamodel.Database {
 	filtered.Views = slices.Clone(schema.Views)
 	filtered.Synonyms = slices.Clone(schema.Synonyms)
 	filtered.Topics = slices.Clone(schema.Topics)
+	filtered.Secrets = slices.Clone(schema.Secrets)
 	filtered.ExtendedProperties = slices.Clone(schema.ExtendedProperties)
 	filtered.MaterializedViews = slices.Clone(schema.MaterializedViews)
 	filtered.Triggers = slices.Clone(schema.Triggers)

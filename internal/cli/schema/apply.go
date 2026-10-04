@@ -25,6 +25,7 @@ import (
 	"ptah.run/internal/cli/internal/editor"
 	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/cli/internal/schemaroot"
+	"ptah.run/internal/cli/internal/secretrotation"
 	"ptah.run/internal/cli/internal/tablerebuild"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/schemafile"
@@ -242,14 +243,20 @@ document. --json reads no environment variable and cannot be combined with
 	cmd.MarkFlagsMutuallyExclusive(applyToFlag, applyRootDirFlag)
 	cmd.MarkFlagsMutuallyExclusive(applyToFlag, applySchemaFileFlag)
 	tablerebuild.Register(cmd)
+	secretrotation.Register(cmd)
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
 
 // nativeDiffPolicy maps the native project diff policy, and the command's
-// --allow-table-rebuild, onto the shared schema-apply planning policy.
+// --allow-table-rebuild and --rotate-secret, onto the shared schema-apply
+// planning policy.
 func nativeDiffPolicy(cmd *cobra.Command, cfg projectconfig.Config) (atlasschema.DiffPolicy, error) {
 	rebuild, err := tablerebuild.Requested(cmd)
+	if err != nil {
+		return atlasschema.DiffPolicy{}, err
+	}
+	rotations, err := secretrotation.Requested(cmd)
 	if err != nil {
 		return atlasschema.DiffPolicy{}, err
 	}
@@ -260,6 +267,7 @@ func nativeDiffPolicy(cmd *cobra.Command, cfg projectconfig.Config) (atlasschema
 		ConcurrentIndexCreateDisabled: cfg.Diff.ConcurrentIndexCreateDisabled(),
 		OnlineAlter:                   cfg.Diff.OnlineAlterRequested(),
 		AllowTableRebuild:             rebuild,
+		RotateSecrets:                 rotations,
 	}, nil
 }
 

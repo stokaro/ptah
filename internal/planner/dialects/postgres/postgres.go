@@ -1774,6 +1774,9 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := schemaprecondition.RefuseSerialSequenceChanges(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}
+	if err := schemaprecondition.RefuseSecrets(p.targetDialect(), diff); err != nil {
+		return nil, err
+	}
 	if err := schemaprecondition.RefuseChangefeedChanges(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}

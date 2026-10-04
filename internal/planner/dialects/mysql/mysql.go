@@ -1354,6 +1354,9 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := schemaprecondition.RefuseSerialSequenceChanges(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}
+	if err := schemaprecondition.RefuseSecrets(p.targetDialect(), diff); err != nil {
+		return nil, err
+	}
 	// One fold, at the door, beside the index resolver that has always been
 	// here. A diff the comparator produced arrives with its identities
 	// resolved; one an embedder built by hand does not, and the zero identity

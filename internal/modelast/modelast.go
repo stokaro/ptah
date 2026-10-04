@@ -1586,6 +1586,22 @@ func appendSynonymStatements(visit func(ast.Node) error, synonyms []schemamodel.
 	return nil
 }
 
+// FromSecret converts a schemamodel.Secret to an ast.CreateSecretNode, which
+// names the environment variable the value comes from and never the value.
+func FromSecret(secret schemamodel.Secret) *ast.CreateSecretNode {
+	return ast.NewCreateSecret(secret.QualifiedName(), secret.ValueEnv)
+}
+
+// appendSecretStatements adds a CREATE SECRET node for each declared secret.
+func appendSecretStatements(visit func(ast.Node) error, secrets []schemamodel.Secret) error {
+	for _, secret := range secrets {
+		if err := visit(FromSecret(secret)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // FromHypertable converts a schemamodel.Hypertable into the call that makes one.
 func FromHypertable(hypertable schemamodel.Hypertable) *ast.CreateHypertableNode {
 	return ast.NewCreateHypertable(hypertable.Table, hypertable.Column).
@@ -2275,6 +2291,12 @@ func appendPreTableStatements(
 	// Roles precede the objects that name them: a grant or a policy names a
 	// role. They go ahead of the routines, as in a migration plan.
 	if err := appendRoleStatements(visit, database); err != nil {
+		return err
+	}
+
+	// A YDB secret depends on nothing, and an external data source names one
+	// for its credentials, so the secrets come before every other object.
+	if err := appendSecretStatements(visit, database.Secrets); err != nil {
 		return err
 	}
 

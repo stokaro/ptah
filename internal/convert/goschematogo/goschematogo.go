@@ -23,6 +23,7 @@ import (
 	"ptah.run/internal/uniquename"
 	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbindex"
+	"ptah.run/internal/ydbsecret"
 	"ptah.run/internal/ydbtopic"
 	"ptah.run/internal/ydbtype"
 )
@@ -361,7 +362,8 @@ func (ctx *renderContext) hasGlobalObjects() bool {
 		len(ctx.db.Domains) > 0 ||
 		len(ctx.db.Ranges) > 0 ||
 		len(ctx.db.Sequences) > 0 ||
-		len(ctx.db.Topics) > 0
+		len(ctx.db.Topics) > 0 ||
+		len(ctx.db.Secrets) > 0
 }
 
 func (ctx *renderContext) writeEnums(w *sourceWriter) {
@@ -446,6 +448,9 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 		for _, comment := range topicAnnotations(topic) {
 			w.writeComment(comment)
 		}
+	}
+	for _, secret := range sortedSecrets(ctx.db.Secrets) {
+		w.writeComment(secretAnnotation(secret))
 	}
 	for _, role := range sortedRoles(ctx.db.Roles) {
 		w.writeComment(roleAnnotation(role))
@@ -918,6 +923,16 @@ func topicAnnotations(topic schemamodel.Topic) []string {
 	return comments
 }
 
+// secretAnnotation writes a YDB secret as its annotation: its path and the
+// variable its value comes from, and never a value, which no model holds.
+func secretAnnotation(secret schemamodel.Secret) string {
+	return annotation("ptah:schema:secret",
+		attr{name: ydbsecret.AttributeName, value: secret.Name, set: true},
+		attr{name: ydbsecret.AttributeSchema, value: secret.Schema, set: secret.Schema != ""},
+		attr{name: ydbsecret.AttributeValueEnv, value: secret.ValueEnv, set: true},
+	)
+}
+
 func roleAnnotation(role schemamodel.Role) string {
 	return annotation("ptah:schema:role",
 		attr{name: "name", value: role.Name, set: true},
@@ -1279,6 +1294,12 @@ func sortedFunctions(values []schemamodel.Function) []schemamodel.Function {
 }
 
 func sortedTopics(values []schemamodel.Topic) []schemamodel.Topic {
+	sorted := slices.Clone(values)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].QualifiedName() < sorted[j].QualifiedName() })
+	return sorted
+}
+
+func sortedSecrets(values []schemamodel.Secret) []schemamodel.Secret {
 	sorted := slices.Clone(values)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].QualifiedName() < sorted[j].QualifiedName() })
 	return sorted

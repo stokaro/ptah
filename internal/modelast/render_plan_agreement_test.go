@@ -126,10 +126,11 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	if assertBothSurfacesRefuseTheDomain(c, dialect, &desired) {
 		return
 	}
-	// A topic is refused the same way on every target without the topics key,
-	// which is every PostgreSQL-family one. Once both surfaces are seen to
-	// refuse it, the census below runs over the rest of the fixture.
-	refused := assertBothSurfacesRefuseTheTopic(c, dialect, &desired)
+	// A topic and a secret are refused the same way on every target without
+	// their keys, which is every PostgreSQL-family one. Once both surfaces are
+	// seen to refuse them, the census below runs over the rest of the fixture.
+	refused := assertBothSurfacesRefuseTheSecret(c, dialect, &desired)
+	refused += assertBothSurfacesRefuseTheTopic(c, dialect, &desired)
 
 	renderCensus := surfaceCensus(c, dialect,
 		modelast.CollectDatabase(desired, dialect).Statements)
@@ -244,5 +245,32 @@ func assertBothSurfacesRefuseTheTopic(c *qt.C, dialect string, desired *schemamo
 	c.Assert(planErr.Error(), qt.Contains, "requires target capability topics")
 	c.Assert(renderErr.Error(), qt.Contains, "requires target capability topics")
 	desired.Topics = nil
+	return 1
+}
+
+// assertBothSurfacesRefuseTheSecret checks that a target without the secrets
+// key refuses the fixture's secret on both surfaces, through the one
+// validation they share, and takes the secret out of desired so the census can
+// run over the rest. It returns how many routed kinds it took out.
+//
+// The fixture holds a topic too, which the same targets refuse, so the probe
+// leaves the topic out: the refusal measured here is the secret's whichever
+// family the validation reaches first.
+func assertBothSurfacesRefuseTheSecret(c *qt.C, dialect string, desired *schemamodel.Database) int {
+	c.Helper()
+	if capability.ForDialect(dialect).Has(capability.Secrets) {
+		return 0
+	}
+	probe := *desired
+	probe.Topics = nil
+	_, planErr := schemadiff.CompareWithDatabaseInfo(
+		&probe, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil,
+	)
+	renderErr := renderer.ValidateSchema(&probe, dialect)
+	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(planErr.Error(), qt.Contains, "requires target capability secrets")
+	c.Assert(renderErr.Error(), qt.Contains, "requires target capability secrets")
+	desired.Secrets = nil
 	return 1
 }

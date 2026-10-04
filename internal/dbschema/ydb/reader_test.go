@@ -404,7 +404,6 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 		observed(coverage.ColumnFamily, "app.t"),
 		observed(coverage.TableOption, "app.t"),
 		observed(coverage.ExternalTable, "ext"),
-		observed(coverage.Secret, "key"),
 		observed(coverage.Topic, "legacy_queue"),
 		observed(coverage.CoordinationNode, "locks"),
 		observed(coverage.ColumnTable, "olap"),
@@ -417,6 +416,60 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 	))
 	c.Assert(db.Tables, qt.HasLen, 2)
 	c.Assert(db.Views, qt.DeepEquals, []catalog.View{{Name: "v", Body: "SELECT 1 AS a"}})
+	c.Assert(db.Secrets, qt.DeepEquals, []catalog.Secret{{Name: "key"}})
+}
+
+// A secret is read by its path alone: the listing names it, and the reader
+// asks nothing else of it. A scoped read reads only the secrets of the
+// directories it names.
+func TestReader_ReadsASecretByItsPath(t *testing.T) {
+	source := fakeSource{
+		directories: map[string][]*Ydb_Scheme.Entry{
+			"/local":         {entry("pg_password", Ydb_Scheme.Entry_SECRET), entry("ext", Ydb_Scheme.Entry_DIRECTORY)},
+			"/local/ext":     {entry("s3.key", Ydb_Scheme.Entry_SECRET), entry("aws", Ydb_Scheme.Entry_DIRECTORY)},
+			"/local/ext/aws": {entry("token", Ydb_Scheme.Entry_SECRET)},
+		},
+	}
+	tests := []struct {
+		name    string
+		schemas []string
+		want    []catalog.Secret
+	}{
+		{name: "every directory", want: []catalog.Secret{
+			{Name: "pg_password"}, {Name: "s3.key", Schema: "ext"}, {Name: "token", Schema: "ext/aws"},
+		}},
+		{name: "one directory, not the ones below it", schemas: []string{"ext"},
+			want: []catalog.Secret{{Name: "s3.key", Schema: "ext"}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			reader := ydbschema.NewReaderFromSource(source, "/local", capability.YDB262())
+			reader.SetSchemas(test.schemas)
+
+			db, err := reader.ReadSchemaContext(context.Background())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(db.Secrets, qt.DeepEquals, test.want)
+			c.Assert(db.NotDescribed.Describes(coverage.Secret), qt.IsTrue)
+		})
+	}
+}
+
+// On a line without the secrets key a secret is recorded rather than read,
+// as a view is without the views key, so a plan never meets a secret the
+// renderer would refuse.
+func TestReader_RecordsASecretOnALineWithoutSecrets(t *testing.T) {
+	c := qt.New(t)
+	source := fakeSource{
+		directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("pg_password", Ydb_Scheme.Entry_SECRET)}},
+	}
+
+	db, err := ydbschema.NewReaderFromSource(source, "/local", capability.YDB253()).ReadSchemaContext(context.Background())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Secrets, qt.HasLen, 0)
+	c.Assert(db.NotDescribed.DescribesIn(coverage.Secret, "", "pg_password"), qt.IsFalse)
 }
 
 // A table setting is recorded only where it differs from what a table created

@@ -132,6 +132,12 @@ func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 	add(&findings, "topics_removed", len(diff.TopicsRemoved), Destructive)
 	add(&findings, "topics_modified", len(diff.TopicsModified), Warning)
 	add(&findings, "topic_consumers_removed", droppedTopicConsumers(diff.TopicsModified), Destructive)
+	// A dropped YDB secret takes a value nothing can read back, and an
+	// external data source that names it fails at its next read; a rotated
+	// one replaces the value every such source uses.
+	add(&findings, "secrets_added", len(diff.SecretsAdded), Safe)
+	add(&findings, "secrets_removed", len(diff.SecretsRemoved), Destructive)
+	add(&findings, "secrets_rotated", len(diff.SecretsRotated), Warning)
 
 	for _, table := range diff.TablesModified {
 		add(&findings, "columns_added", len(table.ColumnsAdded), Warning)
@@ -553,6 +559,14 @@ func assessNode(node ast.Node) StatementAssessment {
 		assessment.Subject = n.Name
 		assessment.Severity = Destructive
 		assessment.Reason = "DROP POLICY removes an access-control protection"
+	case *ast.DropSecretNode:
+		assessment.Subject = n.Name
+		assessment.Severity = Destructive
+		assessment.Reason = dropSecretReason
+	case *ast.AlterSecretNode:
+		assessment.Subject = n.Name
+		assessment.Severity = Warning
+		assessment.Reason = "ALTER SECRET replaces the value every external data source naming the secret uses"
 	case *ast.AlterTableDisableRLSNode:
 		assessment.Subject = n.Table
 		assessment.Severity = Destructive
@@ -992,8 +1006,13 @@ var destructivePrefixes = []struct {
 	{words: []string{"DROP", "ROLE"}, reason: "DROP ROLE removes an existing database principal"},
 	{words: []string{"DROP", "POLICY"}, reason: "DROP POLICY removes an access-control protection"},
 	{words: []string{"DROP", "TOPIC"}, reason: dropTopicReason},
+	{words: []string{"DROP", "SECRET"}, reason: dropSecretReason},
 	{words: []string{"TRUNCATE"}, reason: "TRUNCATE removes all rows from a table"},
 }
+
+// dropSecretReason is why DROP SECRET is destructive, in the words both the
+// AST and the SQL-text classifiers report.
+const dropSecretReason = "DROP SECRET removes a YDB secret whose value nothing can read back"
 
 // destructivePrefixReason returns the reason of the first [destructivePrefixes]
 // entry the statement's words start with.

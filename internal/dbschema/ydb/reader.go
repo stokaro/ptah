@@ -1,6 +1,7 @@
 package ydb
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"path"
@@ -40,7 +41,9 @@ import (
 // A view is read only on a server with [capability.Views], and a topic only on
 // one with [capability.Topics]; every YDB line Ptah measured has both. On a
 // server without the key, the object is recorded like the objects below, so a
-// plan never meets one the renderer would refuse. A table's TTL is read as its
+// plan never meets one the renderer would refuse. A secret is read the same
+// way under [capability.Secrets], by its path alone: the listing names it, and
+// no request the reader sends returns its value. A table's TTL is read as its
 // row deletion policy.
 //
 // An object it meets and Ptah does not model -- a column table, a
@@ -117,6 +120,12 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	if err := r.principals(ctx, source, db); err != nil {
 		return nil, err
 	}
+	// The walk descends into a directory where its name sorts, so a secret
+	// in a directory can come before one at the root; a description lists
+	// them by directory and name, as it lists tables.
+	slices.SortFunc(db.Secrets, func(a, b catalog.Secret) int {
+		return cmp.Or(strings.Compare(a.Schema, b.Schema), strings.Compare(a.Name, b.Name))
+	})
 	return db, nil
 }
 
@@ -184,6 +193,14 @@ func (r *Reader) entry(
 			break
 		}
 		return r.topic(ctx, source, schema, name, db)
+	case Ydb_Scheme.Entry_SECRET:
+		if !r.caps.Has(capability.Secrets) || !r.inScope(schema) {
+			break
+		}
+		// The listing is the whole description: a secret is its path, and
+		// nothing the server answers holds its value.
+		db.Secrets = append(db.Secrets, catalog.Secret{Name: name, Schema: schema})
+		return nil
 	case Ydb_Scheme.Entry_DATABASE:
 		// Another database whose root sits under this one. It is not part
 		// of the database this connection reads.

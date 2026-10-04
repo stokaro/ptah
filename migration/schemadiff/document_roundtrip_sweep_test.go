@@ -383,25 +383,29 @@ func TestRoundTrip_EveryObjectFamilySurvives(t *testing.T) {
 
 // hclUnwritableFields are the object families the HCL document has no block
 // for, and the coverage kind its header records each one under instead. A YDB
-// topic is the one: Atlas HCL has no topic, and Ptah does not invent a block
-// the pinned binary would refuse.
+// topic and a YDB secret are such families: Atlas HCL has neither, and Ptah
+// does not invent a block the pinned binary would refuse.
 var hclUnwritableFields = map[string]coverage.Kind{
-	"Topics": coverage.Topic,
+	"Topics":  coverage.Topic,
+	"Secrets": coverage.Secret,
 }
 
 // TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped is the round trip of a
 // family the HCL document cannot carry: the document leaves the object out
-// and its header says so, so applying it back plans no removal. The control is
-// the same document's silence about a sequence, which it could have named and
-// so still removes.
+// and its header says so, so applying it back plans no removal -- for a secret
+// a DROP SECRET, which would lose a value nothing can read back. The control
+// is the same document's silence about a sequence, which it could have named
+// and so still removes.
 func TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped(t *testing.T) {
 	c := qt.New(t)
 	db := roundTripFixture()
 	db.Topics = append(db.Topics, schemamodel.Topic{Name: "events", Schema: "public"})
+	db.Secrets = append(db.Secrets, schemamodel.Secret{Name: "pg_password", ValueEnv: "PTAH_SECRET_PG"})
 	live := &catalog.Database{
 		Schemas:   []catalog.Schema{{Name: "public"}},
 		Tables:    []catalog.Table{{Schema: "public", Name: "users"}},
 		Topics:    []catalog.Topic{{Schema: "public", Name: "events"}},
+		Secrets:   []catalog.Secret{{Name: "pg_password"}},
 		Sequences: []catalog.Sequence{{Schema: "public", Name: "s1"}},
 	}
 
@@ -411,7 +415,20 @@ func TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped(t *testing.T) {
 	c.Assert(parsed.Topics, qt.HasLen, 0)
 	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["Topics"]), qt.IsFalse)
 	c.Assert(diff.TopicsRemoved, qt.HasLen, 0)
+	c.Assert(parsed.Secrets, qt.HasLen, 0)
+	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["Secrets"]), qt.IsFalse)
+	c.Assert(diff.SecretsRemoved, qt.HasLen, 0)
 	c.Assert(diff.SequencesRemoved.Names(), qt.HasLen, 1)
+}
+
+// The YAML surface has a secrets key, so a YAML document that leaves a secret
+// out is asking for it to go: unlike the HCL one, it records nothing.
+func TestYAMLDocument_DescribesSecrets(t *testing.T) {
+	c := qt.New(t)
+
+	parsed := loadYAMLDocument(c)
+
+	c.Assert(parsed.NotDescribed.Describes(coverage.Secret), qt.IsTrue)
 }
 
 // TestRoundTrip_SweepCoversEveryObjectFamily is the guard that makes the test

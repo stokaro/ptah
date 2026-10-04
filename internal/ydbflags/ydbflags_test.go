@@ -95,6 +95,12 @@ func TestRefine_HappyPath(t *testing.T) {
 			key:   capability.ChangefeedTopicAutoPartitioning,
 			want:  true,
 		},
+		{
+			name:  "a secret follows its flag",
+			flags: ydbflags.Flags{"EnableSchemaSecrets": false},
+			key:   capability.Secrets,
+			want:  false,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -451,6 +457,13 @@ func TestRefused_HappyPath(t *testing.T) {
 				"is disabled'}])",
 			wantKey:  capability.ChangefeedTopicAutoPartitioning,
 			wantFlag: "EnableTopicAutopartitioningForCDC",
+		},
+		{
+			name: "25.3.1.25 a secret",
+			refusal: "Status: INTERNAL_ERROR Issues: <main>: Fatal: Secrets are disabled. Please contact your " +
+				"system administrator to enable it, code: 1",
+			wantKey:  capability.Secrets,
+			wantFlag: "EnableSchemaSecrets",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

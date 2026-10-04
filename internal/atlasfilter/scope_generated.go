@@ -83,6 +83,9 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database)
 	out.Topics = keep(db.Topics, func(topic schemamodel.Topic) bool {
 		return s.selected(typeList("topic"), topic.Schema, topic.Name)
 	})
+	out.Secrets = keep(db.Secrets, func(secret schemamodel.Secret) bool {
+		return s.selected(typeList("secret"), secret.Schema, secret.Name)
+	})
 	out.ExtendedProperties = keep(db.ExtendedProperties,
 		func(property schemamodel.ExtendedProperty) bool {
 			if property.Schema == "" {

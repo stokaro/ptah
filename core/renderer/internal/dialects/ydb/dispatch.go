@@ -161,6 +161,14 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderAlterTopic(n)
 	case *ast.DropTopicNode:
 		return r.renderDropTopic(n)
+	// Secrets, whose value is a reference the connection defines when the
+	// statement runs.
+	case *ast.CreateSecretNode:
+		return r.renderCreateSecret(n)
+	case *ast.AlterSecretNode:
+		return r.renderAlterSecret(n)
+	case *ast.DropSecretNode:
+		return r.renderDropSecret(n)
 
 	// Objects of other engines.
 	case *ast.CreateSynonymNode:

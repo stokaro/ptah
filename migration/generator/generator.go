@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
@@ -19,6 +20,7 @@ import (
 	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/schemadiff"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // GenerateMigrationOptions contains options for migration generation
@@ -157,6 +159,11 @@ type DiffPolicy struct {
 	// explicit table rebuild, in both directions of the migration. See
 	// [planner.Options.AllowTableRebuild].
 	AllowTableRebuild bool
+	// RotateSecrets names the YDB secrets, by path, the up migration gives the
+	// value their declared variable holds when it runs. The down migration
+	// does not restore the earlier value, which was never read. See
+	// [difftypes.SchemaDiff.RotateSecrets].
+	RotateSecrets []string
 }
 
 // MigrationFilePair represents one generated up/down migration file pair.
@@ -306,15 +313,9 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 	// 3. Calculate the diff between desired and current schema using live
 	// dialect and catalog identifier metadata.
 	info := conn.Info()
-	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(
-		ctx,
-		conn,
-		desired,
-		dbSchema,
-		compareOptionsWithDiffPolicy(opts.CompareOptions, opts.DiffPolicy),
-	)
+	diff, undecided, err := compareForPlan(ctx, conn, desired, dbSchema, opts)
 	if err != nil {
-		return nil, fmt.Errorf("error comparing generated and database schemas: %w", err)
+		return nil, err
 	}
 	opts.reportUndecided(undecided)
 
@@ -380,4 +381,26 @@ func declaredExtensions(desired *schemamodel.Database) map[string]bool {
 		names[extension.Name] = true
 	}
 	return names
+}
+
+// compareForPlan compares desired with the database a migration is planned
+// against, under the options' diff policy, and adds the secret rotations the
+// caller asked for, which no comparison finds by itself.
+func compareForPlan(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	desired *schemamodel.Database,
+	dbSchema *catalog.Database,
+	opts GenerateMigrationOptions,
+) (*difftypes.SchemaDiff, []coverage.Object, error) {
+	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(
+		ctx, conn, desired, dbSchema, compareOptionsWithDiffPolicy(opts.CompareOptions, opts.DiffPolicy),
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error comparing generated and database schemas: %w", err)
+	}
+	if err := diff.RotateSecrets(opts.DiffPolicy.RotateSecrets); err != nil {
+		return nil, nil, err
+	}
+	return diff, undecided, nil
 }

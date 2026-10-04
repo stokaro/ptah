@@ -1741,6 +1741,42 @@
       ],
       "type": "object"
     },
+    "ptah.schema.secret": {
+      "additionalProperties": false,
+      "description": "Declares a YDB secret: a scheme object whose value the server keeps and never returns. The value comes from an environment variable when the statement that creates the secret runs, and a declaration never writes it.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "description": "Secret name, the last segment of its path.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Directory that holds the secret, relative to the database root.",
+              "type": "string"
+            },
+            "value_env": {
+              "description": "Environment variable that holds the value; its name starts with PTAH_SECRET_.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "value_env"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:secret"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
     "ptah.schema.sequence": {
       "additionalProperties": false,
       "description": "Declares a standalone PostgreSQL sequence.",
@@ -2345,6 +2381,9 @@
     },
     {
       "$ref": "#/$defs/ptah.schema.topic.consumer"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.secret"
     },
     {
       "$ref": "#/$defs/ptah.schema.extendedproperty"

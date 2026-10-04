@@ -552,6 +552,7 @@ func (r *renderer) renderBody() {
 	r.reportDialectScopes()
 	r.reportExportMetadata()
 	r.reportChangefeeds()
+	r.reportSecrets()
 	r.reportRowDeletionPolicies()
 	r.reportTopics()
 	r.renderExtensions()

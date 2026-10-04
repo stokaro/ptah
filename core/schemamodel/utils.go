@@ -1293,6 +1293,9 @@ func deduplicateComposite(r *Database) {
 	r.Topics = deduplicateNamedDefinitions(r.Topics, func(topic Topic) string {
 		return topic.QualifiedName()
 	})
+	r.Secrets = deduplicateNamedDefinitions(r.Secrets, func(secret Secret) string {
+		return secret.QualifiedName()
+	})
 }
 
 type deduplicationScope func(tableScopeResolver, string, string) string

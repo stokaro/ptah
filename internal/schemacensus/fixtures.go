@@ -113,6 +113,7 @@ func Fixtures() []Fixture {
 		{Name: "continuous-aggregate", Schema: continuousAggregateFixture()},
 		{Name: "synonym", Schema: synonymFixture()},
 		{Name: "topic", Schema: topicFixture()},
+		{Name: "secret", Schema: secretFixture()},
 		{Name: "extended-property", Schema: extendedPropertyFixture()},
 		{Name: "role", Schema: roleFixture()},
 		{Name: "ydb-group-membership", Schema: ydbGroupMembershipFixture()},
@@ -1337,6 +1338,16 @@ func topicFixture() schemamodel.Database {
 					AvailabilityPeriod: "PT2H"},
 			},
 		},
+	}}
+	return db
+}
+
+// secretFixture declares a YDB secret in a directory, naming the variable its
+// value comes from.
+func secretFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Secrets = []schemamodel.Secret{{
+		StructName: "SE", Name: "pg_password", Schema: "ext", ValueEnv: "PTAH_SECRET_PG_PASSWORD",
 	}}
 	return db
 }

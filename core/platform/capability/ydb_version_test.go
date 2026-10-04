@@ -101,7 +101,7 @@ func TestYDBPresets_DifferOnlyWhereTheLinesDid(t *testing.T) {
 		{name: "25.4 below 26.1", lower: capability.YDB254(), upper: capability.YDB261(),
 			want: []capability.Capability{capability.AddColumnWithDefault, capability.ChangefeedUserSIDs, capability.RelativeGrantPaths}},
 		{name: "25.3 below 25.4", lower: capability.YDB253(), upper: capability.YDB254(),
-			want: []capability.Capability{capability.TopicConsumerAvailabilityPeriod}},
+			want: []capability.Capability{capability.Secrets, capability.TopicConsumerAvailabilityPeriod}},
 		{name: "25.2 below 25.3", lower: capability.YDB252(), upper: capability.YDB253(),
 			want: []capability.Capability{capability.ChangefeedSchemaChanges, capability.DocumentTypeDefaults, capability.ReturningClause}},
 		{name: "25.1 below 25.2", lower: capability.YDB251(), upper: capability.YDB252(),

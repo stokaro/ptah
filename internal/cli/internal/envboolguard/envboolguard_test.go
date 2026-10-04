@@ -32,7 +32,8 @@ import (
 	_ "ptah.run/internal/reservedrole"       // links its PTAH_* declarations into the registry
 	_ "ptah.run/internal/rolescope"          // links its PTAH_* declarations into the registry
 	_ "ptah.run/internal/sqlitevirtual"      // links its PTAH_* declarations into the registry
-	_ "ptah.run/migration/migrator"          // links its PTAH_* declarations into the registry
+	"ptah.run/internal/ydbsecret"
+	_ "ptah.run/migration/migrator" // links its PTAH_* declarations into the registry
 )
 
 // nonBooleanPtahVars is the ONLY hand-written list in this file: the `PTAH_*`
@@ -420,12 +421,19 @@ func namesOutsideBothClassifications(mentioned []string) []string {
 	declared := registeredNames()
 	var unclassified []string
 	for _, name := range mentioned {
-		if slices.Contains(declared, name) || slices.Contains(nonBooleanPtahVars, name) {
+		if slices.Contains(declared, name) || slices.Contains(nonBooleanPtahVars, name) || secretValueVariable(name) {
 			continue
 		}
 		unclassified = append(unclassified, name)
 	}
 	return unclassified
+}
+
+// secretValueVariable reports a name under the prefix every YDB secret's value
+// variable carries. The operator chooses the rest of the name, so the prefix
+// classifies every one of them at once.
+func secretValueVariable(name string) bool {
+	return strings.HasPrefix(name, ydbsecret.ValuePrefix)
 }
 
 // namesInBothClassifications returns the names claimed by both classifications.

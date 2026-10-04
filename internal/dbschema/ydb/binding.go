@@ -7,10 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"reflect"
 	"strconv"
 
 	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
+
+	"ptah.run/internal/ydbsecret"
 )
 
 // connector hands database/sql the SDK's connections with Ptah's argument
@@ -95,17 +98,47 @@ type conn struct {
 }
 
 // ExecContext runs a statement after the connection's prefix and returns its
-// error without stack frames.
+// error without stack frames. A secret value the statement refers to is
+// defined from the environment first; see [ydbsecret.Expand].
 func (c conn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
-	result, err := c.sdkConn.ExecContext(ctx, c.prefix+query, args)
-	return result, WithoutStackFrames(err)
+	expanded, err := ydbsecret.Expand(query, os.LookupEnv)
+	if err != nil {
+		return nil, fmt.Errorf("ydb: %w", err)
+	}
+	result, err := c.sdkConn.ExecContext(ctx, c.prefix+expanded.Text, args)
+	return result, redacted(expanded, WithoutStackFrames(err))
 }
 
 // QueryContext runs a query after the connection's prefix and wraps the result
-// set it returns.
+// set it returns, defining a secret value the query refers to as ExecContext
+// does.
 func (c conn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
-	return wrapRows(c.sdkConn.QueryContext(ctx, c.prefix+query, args))
+	expanded, err := ydbsecret.Expand(query, os.LookupEnv)
+	if err != nil {
+		return nil, fmt.Errorf("ydb: %w", err)
+	}
+	opened, err := c.sdkConn.QueryContext(ctx, c.prefix+expanded.Text, args)
+	return wrapRows(opened, redacted(expanded, err))
 }
+
+// redacted returns err with every secret value expanded defined written out of
+// its text, so a refusal the server answers a CREATE SECRET with cannot carry
+// the value into a log or an error. errors.Is and errors.As still reach err.
+func redacted(expanded ydbsecret.Expansion, err error) error {
+	if err == nil || !expanded.Defines() {
+		return err
+	}
+	return redactedError{err: err, text: expanded.Redact(err.Error())}
+}
+
+// redactedError is an error whose text had a secret value taken out of it.
+type redactedError struct {
+	err  error
+	text string
+}
+
+func (e redactedError) Error() string { return e.text }
+func (e redactedError) Unwrap() error { return e.err }
 
 // wrapRows wraps a result set the SDK returned, or returns its error without
 // stack frames.
@@ -122,15 +155,32 @@ func wrapRows(opened driver.Rows, err error) (driver.Rows, error) {
 }
 
 // PrepareContext prepares a statement after the connection's prefix and wraps
-// it.
+// it. A statement that refers to a secret value is refused: its value is
+// defined only in a query run at once, so a prepared statement would keep it
+// in a text the connection holds on to.
 func (c conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, error) {
+	if err := refuseSecretPreparation(query); err != nil {
+		return nil, err
+	}
 	return wrapStmt(c.sdkConn.PrepareContext(ctx, c.prefix+query))
 }
 
 // Prepare prepares a statement after the connection's prefix, without a
-// context, and wraps it.
+// context, and wraps it, refusing a secret value as PrepareContext does.
 func (c conn) Prepare(query string) (driver.Stmt, error) {
+	if err := refuseSecretPreparation(query); err != nil {
+		return nil, err
+	}
 	return wrapStmt(c.sdkConn.Prepare(c.prefix + query))
+}
+
+// refuseSecretPreparation refuses a statement that refers to a secret value.
+func refuseSecretPreparation(query string) error {
+	if variables := ydbsecret.References(query); len(variables) > 0 {
+		return fmt.Errorf("ydb: a prepared statement cannot take a secret's value; run the statement that "+
+			"refers to %s directly", ydbsecret.Reference(variables[0]))
+	}
+	return nil
 }
 
 // wrapStmt wraps a statement the SDK prepared, or returns its error without

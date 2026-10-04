@@ -31,3 +31,17 @@ func (r *renderer) reportChangefeeds() {
 		})
 	}
 }
+
+// reportSecrets names every YDB secret the document leaves out, because HCL
+// has no block for one. Like a changefeed's, the loss makes
+// `--cleanup-go-annotations` refuse, and reading the document back drops no
+// secret: the loader records that HCL cannot express one.
+func (r *renderer) reportSecrets() {
+	for _, secret := range r.db.Secrets {
+		r.diagnostics = append(r.diagnostics, Diagnostic{
+			Severity: SeverityWarning,
+			Path:     "secret." + secret.QualifiedName(),
+			Message:  fmt.Sprintf("secret %s is not represented in HCL", secret.QualifiedName()),
+		})
+	}
+}

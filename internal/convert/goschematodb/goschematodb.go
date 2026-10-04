@@ -69,6 +69,7 @@ func ToDBSchema(db *schemamodel.Database, dialect string) *catalog.Database {
 		Ranges:      toDBRanges(db.Ranges),
 		Views:       toDBViews(db.Views),
 		MatViews:    toDBMaterializedViews(db.MaterializedViews),
+		Secrets:     toDBSecrets(db.Secrets),
 		Triggers:    toDBTriggers(db.Triggers, tableByStruct),
 		RLSPolicies: toDBRLSPolicies(db.RLSPolicies),
 		Roles:       toDBRoles(db.Roles),
@@ -699,6 +700,20 @@ func toDBViews(views []schemamodel.View) []catalog.View {
 			CheckOption: checkOption,
 			Comment:     view.Comment,
 		})
+	}
+	return out
+}
+
+// toDBSecrets keeps a declared YDB secret's path. The variable its value
+// comes from is the declaration's, and a database holds no such thing, so the
+// converted side holds what a read of the database would.
+func toDBSecrets(secrets []schemamodel.Secret) []catalog.Secret {
+	if len(secrets) == 0 {
+		return nil
+	}
+	out := make([]catalog.Secret, 0, len(secrets))
+	for _, secret := range secrets {
+		out = append(out, catalog.Secret{Name: secret.Name, Schema: secret.Schema})
 	}
 	return out
 }

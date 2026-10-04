@@ -20,8 +20,9 @@ import (
 	ydbschema "ptah.run/internal/dbschema/ydb"
 )
 
-// fakeDatabase is a scheme tree and a statement log. DROP TABLE removes the
-// table it names, so the scheme answers the way YDB does after the drop.
+// fakeDatabase is a scheme tree and a statement log. DROP TABLE, DROP VIEW,
+// DROP TOPIC and DROP SECRET remove the object they name, so the scheme
+// answers the way YDB does after the drop.
 type fakeDatabase struct {
 	tree     map[string][]*Ydb_Scheme.Entry
 	executed []string
@@ -85,7 +86,7 @@ func (f *fakeDatabase) ExecContext(_ context.Context, query string, _ ...any) (s
 	if position < len(f.failures) && f.failures[position] != nil {
 		return nil, f.failures[position]
 	}
-	for _, verb := range []string{"DROP TABLE `", "DROP VIEW `", "DROP TOPIC `"} {
+	for _, verb := range []string{"DROP TABLE `", "DROP VIEW `", "DROP TOPIC `", "DROP SECRET `"} {
 		if object, dropped := strings.CutPrefix(query, verb); dropped {
 			full := path.Join("/local", strings.ReplaceAll(strings.TrimSuffix(object, "`"), "\\`", "`"))
 			parent, name := path.Split(full)
@@ -304,6 +305,7 @@ func TestWriter_DropAllTables(t *testing.T) {
 			entry("v", Ydb_Scheme.Entry_VIEW),
 		},
 		"/local/app": {
+			entry("pw", Ydb_Scheme.Entry_SECRET),
 			entry("sub", Ydb_Scheme.Entry_DIRECTORY),
 			entry("t2", Ydb_Scheme.Entry_TABLE),
 			entry("v2", Ydb_Scheme.Entry_VIEW),
@@ -321,6 +323,7 @@ func TestWriter_DropAllTables(t *testing.T) {
 	c.Assert(fake.executed, qt.DeepEquals, []string{
 		"DROP VIEW `v`",
 		"DROP VIEW `app/v2`",
+		"DROP SECRET `app/pw`",
 		"DROP TABLE `app/sub/t\\`3`",
 		"DROP TABLE `app/t2`",
 		"DROP TOPIC `mixed/events`",
@@ -364,6 +367,7 @@ func TestWriter_DropDirectory(t *testing.T) {
 			entry("t", Ydb_Scheme.Entry_TABLE),
 			entry("olap", Ydb_Scheme.Entry_COLUMN_TABLE),
 			entry("v", Ydb_Scheme.Entry_VIEW),
+			entry("sk", Ydb_Scheme.Entry_SECRET),
 			entry("rb", Ydb_Scheme.Entry_DIRECTORY),
 		},
 		"/local/probe/rb": {entry("t`2", Ydb_Scheme.Entry_TABLE), entry("events", Ydb_Scheme.Entry_TOPIC)},
@@ -378,6 +382,7 @@ func TestWriter_DropDirectory(t *testing.T) {
 		"DROP TABLE `probe/olap`",
 		"DROP TOPIC `probe/rb/events`",
 		"DROP TABLE `probe/rb/t\\`2`",
+		"DROP SECRET `probe/sk`",
 		"DROP TABLE `probe/t`",
 		"DROP VIEW `probe/v`",
 	})

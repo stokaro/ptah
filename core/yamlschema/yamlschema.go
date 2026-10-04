@@ -29,12 +29,12 @@
 // The top level is a set of object collections, each keyed by name: tables,
 // indexes, constraints, enums, extensions, functions, rls_policies,
 // rls_enabled_tables (also accepted as rls_enabled), roles, grants, revokes,
-// default_privileges, views, matviews, triggers, and topics. A table carries its
-// columns in declaration order, along with its primary key, checks, engine,
-// comment, and per-platform overrides. A column carries the type, its
-// nullability, key and uniqueness flags, defaults, generated and identity
-// expressions, a foreign key with its referential actions, character set and
-// collation, and its own per-platform overrides. Tables and columns can also
+// default_privileges, views, matviews, triggers, topics, and secrets. A table
+// carries its columns in declaration order, along with its primary key,
+// checks, engine, comment, and per-platform overrides. A column carries the
+// type, its nullability, key and uniqueness flags, defaults, generated and
+// identity expressions, a foreign key with its referential actions, character
+// set and collation, and its own per-platform overrides. Tables and columns can also
 // declare shared and per-target API names; columns additionally carry API-only
 // type and exposure metadata.
 //
@@ -148,6 +148,7 @@ type document struct {
 	MaterializedViews map[string]matViewSpec          `yaml:"matviews"`
 	Triggers          map[string]triggerSpec          `yaml:"triggers"`
 	Topics            map[string]topicSpec            `yaml:"topics"`
+	Secrets           map[string]secretSpec           `yaml:"secrets"`
 }
 
 type tableSpec struct {
@@ -614,6 +615,9 @@ func (d document) toDatabase() (*schemamodel.Database, error) {
 		return nil, err
 	}
 	if err := d.addTopics(db); err != nil {
+		return nil, err
+	}
+	if err := d.addSecrets(db); err != nil {
 		return nil, err
 	}
 	d.addRLS(db)

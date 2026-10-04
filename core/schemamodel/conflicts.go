@@ -301,6 +301,7 @@ func validateDuplicateSchemaObjectDefinitions(r *Database) error {
 		validator.views,
 		validator.materializedViews,
 		validator.topics,
+		validator.secrets,
 		validator.triggers,
 		validator.rlsPolicies,
 		validator.rlsEnabledTables,
@@ -504,6 +505,23 @@ func (v compositeDefinitionValidator) topics() error {
 		},
 		func(_ Topic, key string) error {
 			return fmt.Errorf("conflicting topic %q definitions", key)
+		},
+	)
+}
+
+// secrets refuses two declarations of one YDB secret that differ, which is
+// two declarations naming different variables for its value. A secret is
+// identified by its directory and name, as a YDB table is.
+func (v compositeDefinitionValidator) secrets() error {
+	return validateNamedDefinitions(
+		v.database.Secrets,
+		func(secret Secret) string { return secret.QualifiedName() },
+		func(secret Secret) Secret {
+			secret.StructName = ""
+			return secret
+		},
+		func(_ Secret, key string) error {
+			return fmt.Errorf("conflicting secret %q definitions", key)
 		},
 	)
 }

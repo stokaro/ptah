@@ -79,3 +79,28 @@ func RefuseTopic(dialect string, node ast.Node) error {
 			"YDB has", subject, dialect, capability.Topics),
 	}
 }
+
+// RefuseSecret refuses node, a YDB secret statement, on a renderer whose
+// engine has no secret Ptah models: every renderer but YDB's. The central
+// renderer refuses a secret on a target without [capability.Secrets] before a
+// dialect sees the node, so this answers a caller that visits the node with a
+// dialect renderer directly, and names the renderer that refused. The
+// refusal names the secret and never a value, which the node does not hold.
+func RefuseSecret(dialect string, node ast.Node) error {
+	subject := "a secret"
+	switch typed := node.(type) {
+	case *ast.CreateSecretNode:
+		subject = "secret " + typed.Name
+	case *ast.AlterSecretNode:
+		subject = "ALTER SECRET " + typed.Name
+	case *ast.DropSecretNode:
+		subject = "DROP SECRET " + typed.Name
+	}
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: string(capability.Secrets),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s: the %s renderer writes no secret; a secret needs target capability %s, which only "+
+			"YDB has", subject, dialect, capability.Secrets),
+	}
+}
