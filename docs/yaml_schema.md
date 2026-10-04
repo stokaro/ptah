@@ -190,6 +190,7 @@ Each entry under `tables` declares one table.
 | `indexes` | Ordered table-local index map. |
 | `constraints` | Ordered table-local constraint map. |
 | `rls_enabled` | Adds row-level security enablement for this table. |
+| `row_deletion_column`, `row_deletion_interval`, `row_deletion_unit` | The table's row deletion policy: the column a row's age is measured from, the interval after which a row is deleted, and for a YDB integer column the unit it counts. The values are the `//ptah:schema:table` attributes of the same names. Spanner and YDB have one; every other dialect refuses it. |
 | `platform` / `overrides` | Dialect-specific override map, for example `platform.mysql.type`. |
 
 Table-local `columns`, `fields`, `indexes`, and `constraints` preserve YAML

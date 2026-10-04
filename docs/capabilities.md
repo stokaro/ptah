@@ -455,9 +455,11 @@ names the cluster's monitoring endpoint refines the keys the flags decide
 (`unique_index_on_existing_table`, `add_column_with_default`,
 `alter_column_default`, `wide_date_time_types`, `parameterized_decimal`), and
 the capability probe measures its lines with that refinement in place. The
-keys that name an object family YDB has and Ptah does not carry yet -- views,
-access control, TTL -- are false whatever the server can do, and each YDB cell
-declares them understated on purpose.
+keys that name an object family YDB has and Ptah does not carry yet -- views
+and access control -- are false whatever the server can do, and each YDB cell
+declares them understated on purpose. A YDB table's TTL is its row deletion
+policy, so `row_deletion_policy` and `row_deletion_policy_epoch_column` are true
+on every YDB line.
 
 ### Saturation: servers newer than the newest measured line
 
