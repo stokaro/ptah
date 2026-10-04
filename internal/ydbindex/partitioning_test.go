@@ -223,6 +223,19 @@ func TestClause(t *testing.T) {
 			},
 		},
 		{
+			// The minimum is the same on both sides and is named anyway: setting
+			// AUTO_PARTITIONING_BY_LOAD alone would reset it to 1.
+			name:    "a setting that resets another names the other too",
+			desired: ydbindex.Settings{BySize: true, PartitionSizeMB: 2048, ByLoad: true, MinPartitions: 5},
+			current: ydbindex.Settings{BySize: true, PartitionSizeMB: 2048, MinPartitions: 5},
+			want: []string{
+				"AUTO_PARTITIONING_BY_SIZE = ENABLED",
+				"AUTO_PARTITIONING_PARTITION_SIZE_MB = 2048",
+				"AUTO_PARTITIONING_BY_LOAD = ENABLED",
+				"AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 5",
+			},
+		},
+		{
 			name: "no splitting by size names no size", desired: noSplitting, current: defaults,
 			want: []string{
 				"AUTO_PARTITIONING_BY_SIZE = DISABLED",
