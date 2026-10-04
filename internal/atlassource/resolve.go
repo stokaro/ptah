@@ -28,17 +28,12 @@ import (
 	"ptah.run/internal/migrationreplay"
 	"ptah.run/internal/migrationsnapshot"
 	"ptah.run/internal/ociartifact"
+	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/schemaartifact"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemaselection"
 	"ptah.run/migration/migrationfile"
-)
-
-const (
-	// revisionTableName is the Atlas revision table filtered out of replayed
-	// dev-database state, mirroring `atlas migrate diff` behavior.
-	revisionTableName = "atlas_schema_revisions"
 )
 
 // ResolveOptions configures resolution of one classified desired-state set.
@@ -685,28 +680,5 @@ func verifyMigrationFS(fsys fs.FS) error {
 // (and its indexes and constraints) removed, so replayed dev-database state
 // only exposes the migrations' own objects.
 func WithoutRevisionTable(schema *catalog.Database) *catalog.Database {
-	if schema == nil {
-		return &catalog.Database{}
-	}
-	out := *schema
-	out.Tables = filterByTable(out.Tables, func(table catalog.Table) bool {
-		return !strings.EqualFold(table.Name, revisionTableName)
-	})
-	out.Indexes = filterByTable(out.Indexes, func(index catalog.Index) bool {
-		return !strings.EqualFold(index.TableName, revisionTableName)
-	})
-	out.Constraints = filterByTable(out.Constraints, func(constraint catalog.Constraint) bool {
-		return !strings.EqualFold(constraint.TableName, revisionTableName)
-	})
-	return &out
-}
-
-func filterByTable[T any](values []T, keep func(T) bool) []T {
-	out := make([]T, 0, len(values))
-	for _, value := range values {
-		if keep(value) {
-			out = append(out, value)
-		}
-	}
-	return out
+	return revisiontable.Without(schema, []string{revisiontable.Atlas})
 }

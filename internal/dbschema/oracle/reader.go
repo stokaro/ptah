@@ -23,6 +23,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/sqlrunner"
 )
 
@@ -95,6 +96,13 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		return nil, fmt.Errorf("oracle: read indexes: %w", err)
 	}
 	schema.Indexes = indexes
+
+	// Ptah's own revision tables are bookkeeping, not schema. Reported, they
+	// read as tables no declaration has, and `migrations generate` planned
+	// `DROP TABLE IF EXISTS PTAH.schema_migrations PURGE` and the same for the
+	// log once a migration had been applied, measured on 23.26
+	// (stokaro/ptah#4029).
+	schema = revisiontable.Without(schema, revisiontable.NativeNames())
 
 	sequences, err := r.readSequences(ctx)
 	if err != nil {
