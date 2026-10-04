@@ -70,7 +70,7 @@ func TestRead_CreateTable(t *testing.T) {
 			want: yqlddl.Statement{
 				Kind:       yqlddl.CreateTable,
 				Name:       "t",
-				Columns:    []yqlddl.Column{{Name: "a", NotNull: true}, {Name: "b", NotNull: true}},
+				Columns:    []yqlddl.Column{{Name: "a", Type: "Uint64", NotNull: true}, {Name: "b", Type: "Uint64", NotNull: true}},
 				PrimaryKey: true,
 				Settings: []yqlddl.Setting{
 					{Name: "PARTITION_AT_KEYS", Items: 3},
