@@ -5,7 +5,6 @@ import (
 	"maps"
 	"reflect"
 	"slices"
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -48,7 +47,7 @@ func TestEntryPoints_AnswerEveryNodeAlike(t *testing.T) {
 				// parent: the core checks that answer against the parent
 				// statement, and a part of a statement it does not know as a
 				// fragment would reach the answer unchecked.
-				c.Assert(strings.HasSuffix(visited.Message, needsParentSuffix) && !isFragment(node), qt.IsFalse,
+				c.Assert(claimsItsParent(visited.Message, node) && !isFragment(node), qt.IsFalse,
 					qt.Commentf("%T answers %q", node, visited.Message))
 			})
 		}
@@ -124,6 +123,12 @@ func entryPointCases(c *qt.C) map[string]ast.Node {
 	cases["REVOKE on the database"] = ast.NewRevokePrivilege("readers", "DATABASE", "app", []string{"CONNECT"})
 	cases["a list whose statement is refused"] = &ast.StatementList{Statements: []ast.Node{
 		ast.NewCreateRole("readers").SetGroup(true),
+	}}
+	// The core passes a type definition that its CREATE TYPE renders, and the
+	// dialect then refuses it as a part of a statement: a refusal that arises
+	// while rendering a list, after the preparation accepted it.
+	cases["a list whose statement the dialect refuses"] = &ast.StatementList{Statements: []ast.Node{
+		ast.NewEnumTypeDef("active", "inactive"),
 	}}
 	cases["a list holding a list"] = &ast.StatementList{Statements: []ast.Node{
 		&ast.StatementList{Statements: []ast.Node{&ast.CommentNode{Text: "inner"}}},

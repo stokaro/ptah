@@ -377,8 +377,13 @@ func visit(c *qt.C, dialect string, node ast.Node) error {
 // arrived without the statement that carries it: the fragment's own type, and
 // the sentence every renderer ends that answer with.
 func needsParent(err error, fragment ast.Node) bool {
-	message := fmt.Sprint(err)
-	return strings.Contains(message, fmt.Sprintf("%T", fragment)) && strings.HasSuffix(message, needsParentSuffix)
+	return claimsItsParent(fmt.Sprint(err), fragment)
+}
+
+// claimsItsParent reports whether message is the needs-parent answer about
+// node itself, rather than about a statement node holds.
+func claimsItsParent(message string, node ast.Node) bool {
+	return strings.Contains(message, fmt.Sprintf("%T", node)) && strings.HasSuffix(message, needsParentSuffix)
 }
 
 // needsParentSuffix is how every renderer ends its refusal of a fragment that
