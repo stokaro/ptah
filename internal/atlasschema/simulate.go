@@ -197,34 +197,13 @@ func connectSimulationDev(
 	// a dev realm Resolve creates, so the URL that names the target names a
 	// realm beside it, and only the connection can say which.
 	serverDev := isDevServer(devURL)
-	comparedByURL := !devdocker.ResolvedPerRun(devURL)
-	targets := []string{targetURL}
-	if !comparedByURL {
-		targets = nil
-	}
-	for _, target := range urlAliasCandidates(devURL, targets) {
-		sameTarget, err := atlasurl.MayAddressSameDatabase(devURL, target)
-		if err != nil {
-			return simulationDev{}, fmt.Errorf("compare --dev-url with target database: %w", err)
-		}
-		if sameTarget {
-			return simulationDev{}, errDevURLIsTarget
-		}
+	if err := refuseDevURLAliases(devURL, targetURL, desiredURLs); err != nil {
+		return simulationDev{}, err
 	}
 	protected := []devlock.Protected{{Conn: targetConn, Refusal: errDevURLIsTarget}}
 	for _, desired := range aliasCandidates(devURL, desiredURLs) {
 		if isDirectDatabaseURL(desired) {
 			protected = append(protected, devlock.Protected{URL: desired, Refusal: devURLIsDesiredError(desired)})
-		}
-		if serverDev || !comparedByURL {
-			continue
-		}
-		sameDesired, err := sameDirectDatabaseURL(devURL, desired)
-		if err != nil {
-			return simulationDev{}, fmt.Errorf("compare --dev-url with --to desired-state database %q: %w", desired, err)
-		}
-		if sameDesired {
-			return simulationDev{}, devURLIsDesiredError(desired)
 		}
 	}
 
@@ -295,6 +274,38 @@ func connectSimulationDev(
 		return simulationDev{}, err
 	}
 	return simulationDev{conn: devConn, baseline: baseline, release: release}, nil
+}
+
+// refuseDevURLAliases refuses a dev URL whose text names the target or a
+// desired-state database; see [connectSimulationDev] for the URLs it does not
+// read. Every pair it skips is compared live once the dev database is
+// connected.
+func refuseDevURLAliases(devURL, targetURL string, desiredURLs []string) error {
+	if devdocker.ResolvedPerRun(devURL) {
+		return nil
+	}
+	for _, target := range urlAliasCandidates(devURL, []string{targetURL}) {
+		sameTarget, err := atlasurl.MayAddressSameDatabase(devURL, target)
+		if err != nil {
+			return fmt.Errorf("compare --dev-url with target database: %w", err)
+		}
+		if sameTarget {
+			return errDevURLIsTarget
+		}
+	}
+	if isDevServer(devURL) {
+		return nil
+	}
+	for _, desired := range aliasCandidates(devURL, desiredURLs) {
+		sameDesired, err := sameDirectDatabaseURL(devURL, desired)
+		if err != nil {
+			return fmt.Errorf("compare --dev-url with --to desired-state database %q: %w", desired, err)
+		}
+		if sameDesired {
+			return devURLIsDesiredError(desired)
+		}
+	}
+	return nil
 }
 
 // errDevURLIsTarget is the refusal of a dev URL that names the target, by its
