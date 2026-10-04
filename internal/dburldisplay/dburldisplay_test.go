@@ -66,7 +66,7 @@ func TestFormat(t *testing.T) {
 			expected: "ydb://h:2136/local?go_balancer=disable&monitoring=http%3A%2F%2Fredacted%40mon.example%3A8765",
 		},
 		{
-			// A user name alone can be a token, and Ptah sends none there.
+			// A user name alone can be a token, and the endpoint takes none of its own.
 			name:     "YDB URL with a user name alone in its monitoring endpoint",
 			input:    "ydbs://h/local?monitoring=https://t0k3n@mon.example:8765",
 			expected: "ydbs://h/local?monitoring=https%3A%2F%2Fredacted%40mon.example%3A8765",

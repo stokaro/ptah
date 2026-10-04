@@ -10,8 +10,10 @@
 // on the monitoring port lists every flag the database knows with its default
 // and, where it was set, its current value (stokaro/ptah#4015, decision 12).
 //
-// The package links no YDB SDK, so the connection layer reaches it without
-// pulling a driver into any other path.
+// The page is read with the database connection's own credential, which the
+// connection layer hands in, so a cluster that enforces authentication serves
+// it to the user that connects. The package links no YDB SDK, so the connection
+// layer reaches it without pulling a driver into any other path.
 package ydbflags
 
 import (
@@ -159,9 +161,16 @@ var client = &http.Client{
 }
 
 // Read asks the monitoring endpoint for the flags of database, an absolute
-// path such as /local. It sends no credentials: a cluster that requires a
-// viewer token answers with a status that is returned as an error.
-func Read(ctx context.Context, monitoring *url.URL, database string) (Flags, error) {
+// path such as /local.
+//
+// ticket is the credential the database connection presents, and "" for an
+// anonymous one. It is sent as the Authorization header, bare: measured on
+// 26.2.1.14 and 25.1.4.7 with authentication enforced, the endpoint answers
+// `401 Unauthorized` with no credential, reads the page for the token a
+// static user's login returns, and answers `403 Forbidden` with `Token is not
+// supported` for the same token behind `Bearer `. The ticket appears in no
+// error Read returns, the endpoint's own answer included.
+func Read(ctx context.Context, monitoring *url.URL, database, ticket string) (Flags, error) {
 	if monitoring == nil {
 		return nil, errors.New("no monitoring endpoint to read feature flags from")
 	}
@@ -173,6 +182,9 @@ func Read(ctx context.Context, monitoring *url.URL, database string) (Flags, err
 		return nil, fmt.Errorf("read YDB feature flags: %w", err)
 	}
 	request.Header.Set("Accept", "application/json")
+	if ticket != "" {
+		request.Header.Set("Authorization", ticket)
+	}
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("read YDB feature flags from %s: %w", page.Redacted(), err)
@@ -183,8 +195,8 @@ func Read(ctx context.Context, monitoring *url.URL, database string) (Flags, err
 		return nil, fmt.Errorf("read YDB feature flags from %s: %w", page.Redacted(), err)
 	}
 	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("read YDB feature flags from %s: %s: %s",
-			page.Redacted(), response.Status, echo(body))
+		return nil, fmt.Errorf("read YDB feature flags from %s: %s: %s%s",
+			page.Redacted(), response.Status, echo(body, ticket), rightsHint(response.StatusCode, ticket, database))
 	}
 	flags, err := Decode(body, database)
 	if err != nil {
@@ -193,13 +205,30 @@ func Read(ctx context.Context, monitoring *url.URL, database string) (Flags, err
 	return flags, nil
 }
 
-// echo is the start of a refusing page, as an error repeats it.
-func echo(body []byte) string {
+// echo is the start of a refusing page, as an error repeats it. An endpoint
+// that repeats the request's headers would repeat the ticket, so the ticket is
+// taken out before the page is cut.
+func echo(body []byte, ticket string) string {
 	text := strings.TrimSpace(string(body))
+	if ticket != "" {
+		text = strings.ReplaceAll(text, ticket, "<redacted>")
+	}
 	if len(text) <= maxEcho {
 		return text
 	}
 	return strings.ToValidUTF8(text[:maxEcho], "") + "..."
+}
+
+// rightsHint says what a 400 means when the page was read with a credential:
+// measured on 26.2.1.14, the endpoint answers `Failed to resolve database` to
+// a user without DESCRIBE SCHEMA on the database, the same user reads the
+// page once granted it, and anonymous reads on a cluster that does not
+// enforce authentication are not checked at all.
+func rightsHint(status int, ticket, database string) string {
+	if status != http.StatusBadRequest || ticket == "" {
+		return ""
+	}
+	return fmt.Sprintf("; the page is read as the connection's user, who needs DESCRIBE SCHEMA on %s", database)
 }
 
 // pageVersion is the only page layout Ptah reads; measured on 25.1.4.7

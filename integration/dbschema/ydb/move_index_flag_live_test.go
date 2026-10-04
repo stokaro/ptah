@@ -97,7 +97,7 @@ func awaitFlags(ctx context.Context, c *qt.C, line ydbLine, want ydbflags.Flags)
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 	for {
-		flags, err := ydbflags.Read(ctx, target.Monitoring, target.Database)
+		flags, err := ydbflags.Read(ctx, target.Monitoring, target.Database, "")
 		c.Assert(err, qt.IsNil)
 		if listsEvery(flags, want) {
 			return

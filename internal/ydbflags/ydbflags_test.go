@@ -241,24 +241,39 @@ func TestDecode_FailurePath(t *testing.T) {
 	}
 }
 
+// The page is read with the connection's credential, sent bare in the
+// Authorization header, which is the one spelling a YDB monitoring endpoint
+// that enforces authentication accepts; an anonymous connection sends none.
 func TestRead_HappyPath(t *testing.T) {
-	c := qt.New(t)
-	body := page(c, "local-ydb-26.2.1.14.json")
-	var asked *url.URL
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		asked = r.URL
-		_, _ = w.Write(body)
-	}))
-	c.Cleanup(server.Close)
-	endpoint, err := url.Parse(server.URL)
-	c.Assert(err, qt.IsNil)
+	for _, test := range []struct {
+		name              string
+		ticket            string
+		wantAuthorization []string
+	}{
+		{name: "an anonymous connection", ticket: "", wantAuthorization: nil},
+		{name: "a connection with a credential", ticket: "eyJhbGciOi.t0k3n", wantAuthorization: []string{"eyJhbGciOi.t0k3n"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			body := page(c, "local-ydb-26.2.1.14.json")
+			var asked *http.Request
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				asked = r
+				_, _ = w.Write(body)
+			}))
+			c.Cleanup(server.Close)
+			endpoint, err := url.Parse(server.URL)
+			c.Assert(err, qt.IsNil)
 
-	flags, err := ydbflags.Read(t.Context(), endpoint, "/local")
+			flags, err := ydbflags.Read(t.Context(), endpoint, "/local", test.ticket)
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(flags["EnableSetDropDefaultValue"], qt.IsTrue)
-	c.Assert(asked.Path, qt.Equals, "/viewer/json/feature_flags")
-	c.Assert(asked.Query().Get("database"), qt.Equals, "/local")
+			c.Assert(err, qt.IsNil)
+			c.Assert(flags["EnableSetDropDefaultValue"], qt.IsTrue)
+			c.Assert(asked.URL.Path, qt.Equals, "/viewer/json/feature_flags")
+			c.Assert(asked.URL.Query().Get("database"), qt.Equals, "/local")
+			c.Assert(asked.Header.Values("Authorization"), qt.DeepEquals, test.wantAuthorization)
+		})
+	}
 }
 
 func TestRead_FailurePath(t *testing.T) {
@@ -274,15 +289,43 @@ func TestRead_FailurePath(t *testing.T) {
 
 	t.Run("a refusing endpoint", func(t *testing.T) {
 		c := qt.New(t)
-		flags, err := ydbflags.Read(t.Context(), endpoint, "/nope")
+		flags, err := ydbflags.Read(t.Context(), endpoint, "/nope", "")
 		c.Assert(err, qt.ErrorMatches,
 			`read YDB feature flags from http://.*/viewer/json/feature_flags\?database=%2Fnope: `+
 				`400 Bad Request: Failed to resolve database`)
 		c.Assert(flags, qt.IsNil)
 	})
+	// 26.2.1.14 answers the same to a user without DESCRIBE SCHEMA on the
+	// database, and the error says so when the page was read as a user.
+	t.Run("a refusal of the connection's user", func(t *testing.T) {
+		c := qt.New(t)
+		flags, err := ydbflags.Read(t.Context(), endpoint, "/local", "t0k3n")
+		c.Assert(err, qt.ErrorMatches,
+			`read YDB feature flags from http://.*/viewer/json/feature_flags\?database=%2Flocal: `+
+				`400 Bad Request: Failed to resolve database; the page is read as the connection's user, `+
+				`who needs DESCRIBE SCHEMA on /local`)
+		c.Assert(flags, qt.IsNil)
+	})
+	// An endpoint that repeats the request's headers in its refusal repeats
+	// the credential, and the error must not.
+	t.Run("a refusal that repeats the credential", func(t *testing.T) {
+		c := qt.New(t)
+		mirror := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "Could not find correct token validator for "+r.Header.Get("Authorization"), http.StatusForbidden)
+		}))
+		c.Cleanup(mirror.Close)
+		mirroring, err := url.Parse(mirror.URL)
+		c.Assert(err, qt.IsNil)
+
+		flags, err := ydbflags.Read(t.Context(), mirroring, "/local", "eyJhbGciOi.t0k3n")
+
+		c.Assert(err, qt.ErrorMatches, `read YDB feature flags from http://.*: 403 Forbidden: `+
+			`Could not find correct token validator for <redacted>`)
+		c.Assert(flags, qt.IsNil)
+	})
 	t.Run("no endpoint", func(t *testing.T) {
 		c := qt.New(t)
-		flags, err := ydbflags.Read(t.Context(), nil, "/local")
+		flags, err := ydbflags.Read(t.Context(), nil, "/local", "")
 		c.Assert(err, qt.ErrorMatches, `no monitoring endpoint to read feature flags from`)
 		c.Assert(flags, qt.IsNil)
 	})
@@ -303,7 +346,7 @@ func TestRead_FailurePath(t *testing.T) {
 		redirecting, err := url.Parse(redirector.URL)
 		c.Assert(err, qt.IsNil)
 
-		flags, err := ydbflags.Read(t.Context(), redirecting, "/local")
+		flags, err := ydbflags.Read(t.Context(), redirecting, "/local", "t0k3n")
 
 		c.Assert(err, qt.ErrorMatches, `read YDB feature flags from http://.*: 302 Found: .*`)
 		c.Assert(flags, qt.IsNil)
@@ -320,7 +363,7 @@ func TestRead_FailurePath(t *testing.T) {
 		refusing, err := url.Parse(long.URL)
 		c.Assert(err, qt.IsNil)
 
-		flags, err := ydbflags.Read(t.Context(), refusing, "/local")
+		flags, err := ydbflags.Read(t.Context(), refusing, "/local", "")
 
 		c.Assert(err, qt.ErrorMatches, `read YDB feature flags from http://.*: 500 Internal Server Error: y{256}\.\.\.`)
 		c.Assert(flags, qt.IsNil)

@@ -129,7 +129,7 @@ func urlValuedParameter(scheme string) func(key string) bool {
 func noURLValuedParameter(string) bool { return false }
 
 // redactUserInfo hides the user info of a URL held in a parameter, the user
-// name included: Ptah sends no credentials to that endpoint, so none of it is
+// name included: the endpoint takes no credential of its own, so none of it is
 // needed to read the line, and a user name can itself be a token. A value
 // that carries an @ where no user info can be read -- it does not parse, or it
 // has no authority -- is hidden whole, because where its credentials end

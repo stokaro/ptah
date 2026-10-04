@@ -379,10 +379,19 @@ The flags decide these capabilities:
 builds a `GLOBAL ASYNC` index, so `async_indexes` keeps the preset's answer.
 
 A flag the cluster does not list leaves the capability as the release line's
-preset has it. Ptah sends no credentials to the monitoring endpoint and follows
-no redirect from it. A failed read fails the connection rather than planning
-without the flags. `ptah db capabilities` lists the keys
-the flags changed under `Set by this server rather than by its release line`.
+preset has it. A failed read fails the connection rather than planning without
+the flags. `ptah db capabilities` lists the keys the flags changed under
+`Set by this server rather than by its release line`.
+
+Ptah reads the page as the user the URL connects as. It sends the token the
+connection presents to the server in the `Authorization` header, which is how
+the monitoring endpoint of a cluster that enforces authentication accepts it,
+and an anonymous connection sends none. YDB 26.2 serves the page only to a
+user with `DESCRIBE SCHEMA` on the database, and answers anyone else with
+`400 Bad Request: Failed to resolve database`; YDB 25.1 serves it to any user it
+knows. A `ydbs://` connection's token is not sent to a plain `http://`
+endpoint: name the endpoint with `https://`. The monitoring parameter carries
+no credential of its own, and Ptah follows no redirect from the endpoint.
 
 Without the parameter the line's preset stands. A statement the cluster
 refuses because a flag is off then fails with an error that names the

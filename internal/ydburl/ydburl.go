@@ -142,8 +142,9 @@ func FromURL(parsed *url.URL) (URL, error) {
 //
 // The value is the endpoint and nothing more: Ptah adds the path of the page
 // it reads, so a path, a query or a fragment would be read as part of an
-// address they are not part of. A user in the value is refused rather than
-// sent, because nothing else in Ptah sends a credential to that endpoint.
+// address they are not part of. A user in the value is refused: Ptah reads
+// the page with the database connection's own credential, and a second one
+// here would say something else about who reads it.
 //
 // A refusal never repeats the value. It can carry a password in its user part
 // or a token in a query, and the error reaches logs and terminals that a URL
@@ -173,8 +174,8 @@ func monitoringEndpoint(query url.Values) (*url.URL, error) {
 	case parsed.Hostname() == "":
 		return nil, errors.New("the monitoring parameter names no host: write monitoring=http://host:8765")
 	case parsed.User != nil:
-		return nil, fmt.Errorf("the monitoring parameter for %s carries a user; Ptah sends no credentials there, "+
-			"so name the endpoint only, as monitoring=%s", endpoint, endpoint)
+		return nil, fmt.Errorf("the monitoring parameter for %s carries a user; Ptah reads that endpoint with "+
+			"the connection's own credential, so name the endpoint only, as monitoring=%s", endpoint, endpoint)
 	case strings.Trim(parsed.EscapedPath(), "/") != "" || parsed.RawQuery != "" || parsed.Fragment != "":
 		return nil, fmt.Errorf("the monitoring parameter for %s names a page; name the endpoint only, "+
 			"as monitoring=%s", endpoint, endpoint)

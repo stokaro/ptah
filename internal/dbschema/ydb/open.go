@@ -17,6 +17,8 @@ import (
 	environ "github.com/ydb-platform/ydb-go-sdk-auth-environ"
 	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
 	"github.com/ydb-platform/ydb-go-sdk/v3/balancers"
+	"github.com/ydb-platform/ydb-go-sdk/v3/config"
+	"google.golang.org/grpc"
 
 	"ptah.run/internal/ydburl"
 )
@@ -27,6 +29,9 @@ import (
 type Connection struct {
 	DB     *sql.DB
 	Driver *ydbsdk.Driver
+	// authenticated reports a credential source in the URL; without one the
+	// connection is anonymous and has no ticket to hand out.
+	authenticated bool
 }
 
 // The parameters a YDB URL may carry besides database and monitoring, which
@@ -84,7 +89,10 @@ func Open(ctx context.Context, rawURL string) (*Connection, error) {
 		return nil, fmt.Errorf("invalid YDB URL: %w", err)
 	}
 
-	options := []ydbsdk.Option{ydbsdk.WithApplicationName("ptah")}
+	options := []ydbsdk.Option{
+		ydbsdk.WithApplicationName("ptah"),
+		ydbsdk.With(config.WithGrpcOptions(grpc.WithChainUnaryInterceptor(recordTicket))),
+	}
 	if credentials != nil {
 		options = append(options, credentials)
 	}
@@ -102,7 +110,8 @@ func Open(ctx context.Context, rawURL string) (*Connection, error) {
 			sdk:     driver,
 			onClose: func() error { return closeDriver(driver) },
 		}),
-		Driver: driver,
+		Driver:        driver,
+		authenticated: credentials != nil,
 	}, nil
 }
 
