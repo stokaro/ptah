@@ -10,14 +10,14 @@
 // removes its constant together with every refusal that names it.
 //
 // The renderer, the planner, the connection, the schema reader, the schema
-// writer, the versioned migrator and both linters exist. The object families
+// writer, the versioned migrator, both linters, the query builder and the data
+// layer -- the data diff, declared rows and seeds -- exist. The object families
 // they do not carry yet -- comments, views, access control, table settings,
 // the index kinds beyond global ones -- are layers here too, because a
 // declaration of one reaches the renderer by name, and a database holding one
 // reaches the reader, and each has to be refused there rather than handled as
 // something else. So are the commands that connect and then need a layer that
-// does not exist yet: data changes, the compatibility surface and the surfaces
-// planned last.
+// does not exist yet: the compatibility surface and the surfaces planned last.
 package ydbgap
 
 import (
@@ -39,10 +39,6 @@ const (
 	// dialect has. It lands with the object families, because each family
 	// brings the clauses the parser has to read.
 	SchemaFiles Layer = iota + 1
-	// QueryBuilding is the query builder writing YQL.
-	QueryBuilding
-	// DataChanges is writing rows: an upsert, a data diff, a seed.
-	DataChanges
 	// CreatingDatabases is making a new YDB database for a scratch or dev
 	// run. SQL cannot create one; the alternative is designed with the dev
 	// database work.
@@ -90,10 +86,6 @@ func (l Layer) work() string {
 	switch l {
 	case SchemaFiles:
 		return "reading a YDB schema file"
-	case QueryBuilding:
-		return "building a YQL query"
-	case DataChanges:
-		return "writing YDB rows"
 	case CreatingDatabases:
 		return "creating a YDB database"
 	case DevDatabases:
@@ -121,8 +113,6 @@ func (l Layer) work() string {
 // that names no layer.
 func (l Layer) Phase() int {
 	switch l {
-	case QueryBuilding, DataChanges:
-		return 7
 	case CreatingDatabases, DevDatabases:
 		return 9
 	case SchemaFiles, Comments, Views, AccessControl, TableSettings, IndexFamilies:
@@ -149,10 +139,6 @@ func (l Layer) Unsupported() string {
 	switch l {
 	case SchemaFiles:
 		return "a YQL file as the desired schema (Go structs and YAML schemas work)"
-	case QueryBuilding:
-		return "the query builder"
-	case DataChanges:
-		return "data changes: seeds, data plans and declared rows"
 	case CreatingDatabases:
 		return "a scratch database for each case of `ptah migrations test` and `ptah schema test`, " +
 			"since YQL cannot create a database"

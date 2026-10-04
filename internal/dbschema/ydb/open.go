@@ -302,3 +302,24 @@ const driverCloseTimeout = 30 * time.Second
 func TransactionNotFound(err error) bool {
 	return ydbsdk.IsOperationError(err, Ydb.StatusIds_NOT_FOUND)
 }
+
+// constraintViolated is the issue code YDB reports a write that collides with
+// an existing key under: measured on 26.2.1.14 and 25.1.4.7, an INSERT of an
+// existing primary key, and an UPSERT of a value a unique index already holds,
+// both answer PRECONDITION_FAILED with issue 2012, `Conflict with existing key`.
+const constraintViolated = 2012
+
+// KeyConflict reports a write YDB refused because a row with the same key, or
+// the same value in a unique index, already exists. The transaction the write
+// ran in has ended on the server: measured, the next statement in it answers
+// `Transaction not found`.
+func KeyConflict(err error) bool {
+	if !ydbsdk.IsOperationError(err, Ydb.StatusIds_PRECONDITION_FAILED) {
+		return false
+	}
+	conflict := false
+	ydbsdk.IterateByIssues(err, func(_ string, code Ydb.StatusIds_StatusCode, _ uint32) {
+		conflict = conflict || code == constraintViolated
+	})
+	return conflict
+}

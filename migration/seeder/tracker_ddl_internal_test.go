@@ -157,3 +157,21 @@ func TestTrackerDDL_SpannerAvoidsTheTypesTheEndpointLacks(t *testing.T) {
 	c.Assert(ddl, qt.Contains, "applied_at TIMESTAMPTZ NOT NULL")
 	c.Assert(ddl, qt.Not(qt.Contains), "CHAR(64)")
 }
+
+// TestTrackerDDL_YDBDeclaresTheKeyInAClause pins the statement YDB is sent: the
+// key in a clause of its own, since an inline PRIMARY KEY is a parse error on
+// every line, Utf8 for every text column, since YDB has no length-limited
+// string and reads Varchar as bytes, and a Timestamp for the time a seed ran.
+func TestTrackerDDL_YDBDeclaresTheKeyInAClause(t *testing.T) {
+	c := qt.New(t)
+
+	ddl := trackerDDL(platform.YDB)
+
+	c.Assert(ddl, qt.Equals, `CREATE TABLE IF NOT EXISTS schema_seeds (
+    seed_path Utf8 NOT NULL,
+    env Utf8 NOT NULL,
+    checksum Utf8 NOT NULL,
+    applied_at Timestamp NOT NULL,
+    PRIMARY KEY (seed_path)
+)`)
+}
