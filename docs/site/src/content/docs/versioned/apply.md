@@ -233,6 +233,16 @@ records what the run committed, and a resume starts there. A run stopped for
 longer than that reads the loss as soon as it continues, before its next
 statement.
 
+On the other engines the lock belongs to a database session the run opens for
+the lock alone, and the migrations run on other connections. The server
+releases the lock when that session ends, and another runner can take it at
+once: `pg_terminate_backend` or `KILL` ends it, and so does a broken
+connection. The run pings that session every second, and asks
+it again before a statement once the last answer is a second old. A session
+that does not answer is treated as a lost lock, with the same result as on YDB:
+the statement running then is canceled, nothing more runs, and the run fails
+with the loss.
+
 Every spelling refuses. `PTAH_MIGRATION_LOCK_TIMEOUT` fills the flag on each of
 those commands, and `migration.migration_lock_timeout` in
 [the project config](../../reference/configuration/) fills it on `up` and
