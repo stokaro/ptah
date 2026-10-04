@@ -261,6 +261,55 @@ endpoint, Ptah reads the flag and plans the renamed index as dropped and added
 again, under the rules for adding an index to an existing table (see
 [Feature flags](#feature-flags)).
 
+### Serial columns and their sequences
+
+A Serial column fills itself from a sequence YDB creates with the column, at
+`<table>/_serial_column_<column>`. `SERIAL`, `BIGSERIAL` and `SMALLSERIAL` are
+Serial columns, and so is an integer column with `auto_increment`. The sequence
+starts at 1 and steps by 1 unless the column declares `identity_start` or
+`identity_increment`, in a Go annotation or a YAML schema:
+
+```go
+//ptah:schema:field name="id" type="BIGSERIAL" primary="true" identity_start="1000" identity_increment="10"
+```
+
+YDB sets both with `ALTER SEQUENCE` and nothing else, and that statement takes
+the sequence only by its absolute path, which begins with the database's own.
+So a plan made against a database writes it, after the table's `CREATE TABLE`:
+
+```sql
+ALTER SEQUENCE `/local/orders/_serial_column_id` START WITH 1000 INCREMENT BY 10 RESTART WITH 1000;
+```
+
+`START` alone changes the start YDB records and leaves the next value where it
+was, even on a new sequence, so a new table's sequence is restarted at the
+declared start. A sequence of a table that exists is never restarted, because a
+restart onto a value a row holds fails the next insert with `Conflict with
+existing key`. A changed start there is recorded and moves no value; a changed
+increment applies from the next value on.
+
+`ptah schema render` has no database to name, so it writes the table without
+the statement and reports the start and the increment as skipped. A migration
+file names the database it was planned against, and applying it to a database
+at another path fails with `Path does not exist`.
+
+A plan refuses a change to a sequence that YDB would turn against the table:
+
+- a start or an increment on a 16-bit or 32-bit Serial. Any `ALTER SEQUENCE`
+  raises its maximum to the Int64 maximum, and the column then stores the value
+  after 32767 or 2147483647 as a negative number without an error. A
+  `BIGSERIAL` has no such limit to lose. The `serial_sequence_keeps_range` key
+  is false on every YDB line;
+- a change to a sequence that was restarted, including the one of a table
+  created with a start other than 1. YDB replays the last restart on every
+  later `ALTER SEQUENCE`, so the next insert takes that value again and
+  collides with the row that holds it.
+
+`identity_options` and `GENERATED ALWAYS` are refused, and so is a start or an
+increment below 1. The read reports a sequence's start, increment and last
+restart. `YD107` and `YD108` in `ptah migrations lint` report the same traps in
+a migration written by hand.
+
 ## Planning changes
 
 YDB changes a table in place less than the SQL engines do, and runs a schema
@@ -268,14 +317,16 @@ statement outside any transaction. A plan therefore refuses what the server
 cannot do before it emits anything, and orders what it emits so that no
 statement needs one that has not run yet:
 
-1. Create the added tables, with their indexes.
+1. Create the added tables, with their indexes, each followed by the
+   `ALTER SEQUENCE` that gives a Serial column its declared start and increment.
 2. Drop the indexes the plan removes, before any column they name. YDB refuses
    to drop an indexed or a covered column.
 3. Rename the indexes the declaration renames, then change the partitioning of
    the indexes that keep their definition.
 4. Per table: add columns, then change columns in place, then drop columns.
-5. Add the new indexes of existing tables.
-6. Drop the removed tables.
+5. Change the start and the increment of the Serial columns of existing tables.
+6. Add the new indexes of existing tables.
+7. Drop the removed tables.
 
 Each statement runs as its own query. A query of several schema statements is
 not atomic on YDB, and each of its statements compiles against the schema as it
@@ -406,8 +457,9 @@ the [support matrix](../support-matrix/).
 
 `ptah db read --db-url ydb://...` and the commands that compare against a
 database read every row table under the database root, its columns, defaults,
-`Serial` columns, primary key and global indexes, with each index's
-partitioning and read replicas.
+`Serial` columns with their sequence's start, increment and last restart,
+primary key and global indexes, with each index's partitioning and read
+replicas.
 
 What Ptah does not model yet is recorded rather than dropped: views, topics,
 column-oriented tables, sequences other than a `Serial` column's, and the
