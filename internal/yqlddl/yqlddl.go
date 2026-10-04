@@ -1,7 +1,7 @@
 // Package yqlddl reads what one YQL schema statement does: the table or view
 // it names, the columns, key, indexes and TTL column a CREATE TABLE declares,
-// the actions an ALTER TABLE takes, the restart an ALTER SEQUENCE makes, and
-// the tables a query reads.
+// the actions an ALTER TABLE takes, the restart an ALTER SEQUENCE makes, the
+// tables a query reads, and the table a data statement writes.
 //
 // It is the reading both linters share, so `ptah migrations lint` and
 // `ptah sql lint` cannot disagree about what a YQL statement does. It reads
@@ -106,11 +106,20 @@ type Index struct {
 	Name string
 	// Unique reports UNIQUE among the words before ON.
 	Unique bool
+	// Method is the kind USING names, in lower case, such as
+	// vector_kmeans_tree, and empty for an index that names none.
+	Method string
+	// VectorType is the vector_type a vector index's WITH (...) names, in
+	// lower case, and empty where it names none.
+	VectorType string
 	// Columns are the key columns, from ON (...).
 	Columns []string
 	// Cover are the covered columns, from COVER (...).
 	Cover []string
 }
+
+// vectorMethod is the kind USING names for a vector index.
+const vectorMethod = "vector_kmeans_tree"
 
 // Uses reports whether the index keys or covers column.
 func (i Index) Uses(column string) bool {
@@ -185,14 +194,17 @@ type Requirement struct {
 	// Capability is the key the target has to hold.
 	Capability capability.Capability
 	// Action is the position in [Statement.Actions] of the action that needs
-	// it.
+	// it, or, where Inline holds, the position in [Statement.Indexes] of the
+	// index a CREATE TABLE declares that needs it.
 	Action int
+	// Inline reports a requirement of an index a CREATE TABLE declares.
+	Inline bool
 }
 
-// Requirements returns the capabilities an ALTER TABLE needs that a YDB line
-// may lack, in action order. Both linters judge a statement against its
-// target through this one list, so they cannot disagree about what a line
-// refuses. Measured on 26.2.1.14 and 25.1.4.7:
+// Requirements returns the capabilities a CREATE TABLE or an ALTER TABLE
+// needs that a YDB line may lack, in index and action order. Both linters
+// judge a statement against its target through this one list, so they cannot
+// disagree about what a line refuses. Measured on 26.2.1.14 and 25.1.4.7:
 //
 //   - ADD INDEX ... UNIQUE needs [capability.UniqueIndexOnExistingTable]: a
 //     table the statement alters exists, and YDB keeps adding a unique index
@@ -201,23 +213,58 @@ type Requirement struct {
 //     syncGlobalUnique` on 25.1.4.7);
 //   - ADD COLUMN with a DEFAULT needs [capability.AddColumnWithDefault]
 //     (`Column addition with default value is not supported now` on
-//     25.1.4.7).
+//     25.1.4.7);
+//   - a vector index, inline or added, needs [capability.VectorIndexes]
+//     (`Vector index support is disabled` on 25.1.4.7 with its flag off),
+//     and one over bit vectors needs [capability.VectorBitType] too (`bit
+//     vector type is not supported` on 25.1.4.7, `Unsupported vector_type:
+//     VECTOR_TYPE_BIT` on 25.4.1.15).
 //
 // Any other statement needs nothing listed here.
 func (s Statement) Requirements() []Requirement {
+	var requirements []Requirement
+	if s.Kind == CreateTable {
+		for i, index := range s.Indexes {
+			for _, key := range index.vectorRequirements() {
+				requirements = append(requirements, Requirement{Capability: key, Action: i, Inline: true})
+			}
+		}
+		return requirements
+	}
 	if s.Kind != AlterTable {
 		return nil
 	}
-	var requirements []Requirement
 	for i, action := range s.Actions {
 		switch {
 		case action.Kind == AddIndex && action.Index.Unique:
 			requirements = append(requirements, Requirement{Capability: capability.UniqueIndexOnExistingTable, Action: i})
 		case action.Kind == AddColumn && action.Column.Default:
 			requirements = append(requirements, Requirement{Capability: capability.AddColumnWithDefault, Action: i})
+		case action.Kind == AddIndex:
+			for _, key := range action.Index.vectorRequirements() {
+				requirements = append(requirements, Requirement{Capability: key, Action: i})
+			}
 		}
 	}
 	return requirements
+}
+
+// Vector reports a vector index.
+func (i Index) Vector() bool {
+	return i.Method == vectorMethod
+}
+
+// vectorRequirements are the capabilities a vector index needs, and none for
+// any other index.
+func (i Index) vectorRequirements() []capability.Capability {
+	switch {
+	case !i.Vector():
+		return nil
+	case i.VectorType == "bit":
+		return []capability.Capability{capability.VectorIndexes, capability.VectorBitType}
+	default:
+		return []capability.Capability{capability.VectorIndexes}
+	}
 }
 
 // Read reads one YQL statement. Comments and a terminating semicolon are
@@ -240,6 +287,32 @@ func Read(statement string) Statement {
 	default:
 		return Statement{}
 	}
+}
+
+// WrittenTable returns the table a data statement writes rows into: the name
+// after INSERT, UPSERT or REPLACE ... INTO, after UPDATE, and after DELETE
+// FROM, each also behind BATCH. It reports false for any other statement and
+// for a name written as a named expression, which is not known before the
+// query runs.
+func WrittenTable(statement string) (string, bool) {
+	tokens, _ := skipWords(significant(statement), "BATCH")
+	switch {
+	case startsWith(tokens, "INSERT"), startsWith(tokens, "UPSERT"), startsWith(tokens, "REPLACE"):
+		for i := range tokens {
+			if tokens[i].MatchIdentifierValue("INTO") {
+				tokens = tokens[i+1:]
+				break
+			}
+		}
+	case startsWith(tokens, "UPDATE"):
+		tokens = tokens[1:]
+	case startsWith(tokens, "DELETE", "FROM"):
+		tokens = tokens[2:]
+	default:
+		return "", false
+	}
+	name, _ := readName(tokens)
+	return name, name != ""
 }
 
 // TablesRead returns the tables the statement tokens start reads, in order: the
@@ -446,17 +519,42 @@ func readIndex(tokens []lexer.Token) Index {
 		switch {
 		case tokens[i].MatchIdentifierValue("UNIQUE"):
 			index.Unique = true
+		case tokens[i].MatchIdentifierValue("USING") && i+1 < len(tokens):
+			index.Method = strings.ToLower(tokens[i+1].Value)
 		case tokens[i].MatchIdentifierValue("ON"):
 			columns, rest := parenthesized(tokens[i+1:])
 			index.Columns = readNames(columns)
 			if startsWith(rest, "COVER") {
-				cover, _ := parenthesized(rest[1:])
+				var cover []lexer.Token
+				cover, rest = parenthesized(rest[1:])
 				index.Cover = readNames(cover)
+			}
+			if startsWith(rest, "WITH") {
+				settings, _ := parenthesized(rest[1:])
+				index.VectorType = indexSetting(settings, "vector_type")
 			}
 			return index
 		}
 	}
 	return index
+}
+
+// indexSetting is the value an index's WITH (...) list gives the setting
+// name, in lower case, written as a word or a string, and empty where the
+// list names it otherwise or not at all.
+func indexSetting(tokens []lexer.Token, name string) string {
+	for _, item := range splitTopLevel(tokens) {
+		if len(item) != 3 || !item[0].MatchIdentifierValue(name) || !item[1].MatchOperatorValue("=") {
+			continue
+		}
+		switch item[2].Type {
+		case lexer.TokenIdentifier:
+			return strings.ToLower(item[2].Value)
+		case lexer.TokenString:
+			return strings.ToLower(strings.Trim(item[2].Value, `"'`))
+		}
+	}
+	return ""
 }
 
 // readColumn reads a column declaration: name type [NOT NULL] [DEFAULT ...].

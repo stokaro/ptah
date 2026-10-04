@@ -624,6 +624,12 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"YD111": {
 		Summary: "`DROP USER` or `DROP GROUP` on YDB leaves the principal's permissions behind, and a principal created later under the name holds them",
 	},
+	"YD130": {
+		Summary: "a vector index a YDB line does not build: any where `vector_indexes` is false, and one over bit vectors where `vector_bit_type` is false",
+	},
+	"YD131": {
+		Summary: "rows written into a table holding a vector index on a YDB line where `vector_index_maintained_on_write` is false, which the index does not find",
+	},
 }
 
 // sqlRuleMeta declares the same facts for the standalone SQL linter, which
