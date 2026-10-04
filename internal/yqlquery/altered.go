@@ -12,9 +12,10 @@ import (
 // It answers only where the text alone settles the answer, and reports false
 // otherwise: when text is not one query of one ALTER TABLE statement, when the
 // table is a named expression (`ALTER TABLE $t ...`), when a quoted name holds
-// an escape other than an escaped backtick or backslash, and when a PRAGMA
-// heads any statement of the query, since `PRAGMA TablePathPrefix` changes
-// what a relative name resolves to.
+// an escape the server refuses, and when a PRAGMA heads any statement of the
+// query, since `PRAGMA TablePathPrefix` changes what a relative name resolves
+// to. A quoted name is decoded by [lexer.YQLIdentifierValue], the way the
+// server reads it.
 func AlteredTable(text string) (string, bool) {
 	queries, err := Split(text)
 	if err != nil || len(queries) != 1 {
@@ -44,40 +45,11 @@ func setsAPragma(text string) bool {
 }
 
 // tableName reads the name a token writes: a bare identifier as it is, and a
-// backticked one with its quoting removed.
+// backticked one decoded the way the server reads it.
 func tableName(token lexer.Token) (string, bool) {
 	value := token.Value
 	if token.Type != lexer.TokenIdentifier || value == "" || strings.HasPrefix(value, "$") {
 		return "", false
 	}
-	if !strings.HasPrefix(value, "`") {
-		return value, true
-	}
-	if len(value) < 2 || !strings.HasSuffix(value, "`") {
-		return "", false
-	}
-	return unquoteBackticked(value[1 : len(value)-1])
-}
-
-// unquoteBackticked removes the escaping inside a backticked YQL name: a
-// doubled backtick and a backslash before a backtick or a backslash each stand
-// for the character. Any other backslash escape is a C escape the grammar
-// reads, which this does not decode, so the name is not answered.
-func unquoteBackticked(inner string) (string, bool) {
-	var name strings.Builder
-	for i := 0; i < len(inner); i++ {
-		switch ch := inner[i]; {
-		case ch == '`' && i+1 < len(inner) && inner[i+1] == '`':
-			name.WriteByte('`')
-			i++
-		case ch == '\\' && i+1 < len(inner) && (inner[i+1] == '`' || inner[i+1] == '\\'):
-			name.WriteByte(inner[i+1])
-			i++
-		case ch == '\\' || ch == '`':
-			return "", false
-		default:
-			name.WriteByte(ch)
-		}
-	}
-	return name.String(), true
+	return lexer.YQLIdentifierValue(value)
 }
