@@ -1,6 +1,7 @@
 package ydb_test
 
 import (
+	"regexp"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -215,6 +216,35 @@ func TestGenerateMigrationAST_TableRebuild_NotAskedFor(t *testing.T) {
 			refusal, ok := err.(*ptaherr.CapabilityError)
 			c.Assert(ok, qt.IsTrue)
 			c.Assert(refusal.Feature, qt.Equals, string(test.wantKey))
+			c.Assert(nodes, qt.IsNil)
+		})
+	}
+}
+
+// A caller that reads the request from somewhere other than the native flag
+// names its own spelling, and the refusal names that; with none it names the
+// flag. One predicate decides which changes a rebuild makes, so only the words
+// differ.
+func TestGenerateMigrationAST_TableRebuild_NamesTheCallersRequest(t *testing.T) {
+	tests := []struct {
+		name    string
+		request string
+		want    string
+	}{
+		{name: "the native flag", request: "", want: "--allow-table-rebuild"},
+		{name: "a variable", request: "PTAH_ALLOW_TABLE_REBUILD=1", want: "PTAH_ALLOW_TABLE_REBUILD=1"},
+	}
+	diff := modified(difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(),
+		ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}}})
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			nodes, err := ydb.NewWithCapabilities(capability.YDB262()).WithTableRebuildRequest(test.request).
+				GenerateMigrationAST(diff)
+
+			c.Assert(err, qt.ErrorMatches, `changing the type of column "n" of table "items" \(Int32 -> Int64\), .*`+
+				`; YDB makes it by rebuilding the table, which Ptah plans when asked with `+regexp.QuoteMeta(test.want))
 			c.Assert(nodes, qt.IsNil)
 		})
 	}

@@ -55,6 +55,9 @@ type BidirectionalPlanPolicy struct {
 	// AllowTableRebuild plans both directions' changes the target cannot make
 	// in place as table rebuilds. See [planner.Options.AllowTableRebuild].
 	AllowTableRebuild bool
+	// TableRebuildRequest is how the caller asks for AllowTableRebuild. See
+	// [planner.Options.TableRebuildRequest].
+	TableRebuildRequest string
 }
 
 // SchemaDirectionPlan is one half of a bidirectional schema migration plan.
@@ -184,6 +187,7 @@ func planBidirectionalSchemaDiffWithRefs(
 		OnlineAlter:             opts.Policy.OnlineAlter,
 		OmitNullBackfill:        opts.Policy.OmitNullBackfill,
 		AllowTableRebuild:       opts.Policy.AllowTableRebuild,
+		TableRebuildRequest:     opts.Policy.TableRebuildRequest,
 	}
 	forwardNodes, err := planner.GenerateSchemaDiffASTWithOptions(opts.Diff, dialect, forwardOpts)
 	if err != nil {
@@ -243,6 +247,7 @@ func planBidirectionalSchemaDiffWithRefs(
 		ConcurrentIndexDropRefs: reverseDrop,
 		OmitNullBackfill:        opts.Policy.OmitNullBackfill,
 		AllowTableRebuild:       opts.Policy.AllowTableRebuild,
+		TableRebuildRequest:     opts.Policy.TableRebuildRequest,
 	}
 	// The rollback's target is the schema the database currently holds, and it
 	// is validated here because this is where that schema exists. The forward
