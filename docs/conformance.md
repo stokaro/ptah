@@ -300,14 +300,17 @@ own type names in HCL, which no Atlas binary reads: a Ptah extension that Ptah's
 own parser reads back. The strict profile refuses a YDB URL from a flag, from
 `atlas.hcl`, and from any connection the run would open, a data source
 included; a `PTAH_*` variable is refused as a variable before that. The data
-source row differs in its middle words on every engine, not only on YDB. A
-`docker://ydb` dev URL is checked before its dialect, so strict mode answers it
-as the pinned binary answers an image it does not start, not as it answers a
-`ydb://` URL; `internal/atlascompatpolicy/policy_test.go` and
-`internal/cli/atlas/compat_ydb_url_test.go` pin that answer. What
+source row differs in its middle words on every engine, not only on YDB. What
 each verb does on YDB is on the [YDB page](./site/src/content/docs/databases/ydb.md#ptah-compat),
 and the divergence is recorded under
 [Compatibility differences](./site/src/content/docs/atlas/retained-divergences.md#a-ydb-database-url).
+
+A `docker://ydb` dev URL is checked before its dialect, so strict mode answers
+it as the pinned binary answers an image it does not start, not as it answers a
+`ydb://` URL. `internal/atlascompatpolicy/policy_test.go` and
+`internal/cli/atlas/compat_ydb_url_test.go` pin that answer. A YDB dev URL in
+the default profile gets a dev realm, as on the native commands, on the target's
+server or on another one.
 
 ## Never a Copied Defect
 
