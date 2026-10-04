@@ -23,15 +23,17 @@ import (
 //	CREATE USER u1 PASSWORD "p"             created a user of the database
 //	GRANT SELECT ON t TO u1                 refused: a grant takes no prefix
 //	CREATE TOPIC tp                         created in the realm
+//	CREATE SECRET s WITH (value = 'v')      created in the realm (26.2.1.14)
 //
 // So a statement whose effect is not confined to the realm is refused: a
 // write whose target is an absolute path, climbs out with `..`, is named
 // through a `$` expression or carries a cluster, a pragma that moves the
 // prefix, a statement that runs code it computes, and every object the whole
-// database shares -- users, groups, permissions, secrets, resource pools,
-// backups. A topic is judged by its path like a table, since the realm's reset
-// drops it. A statement that reads outside the realm is left alone, since a
-// read leaves nothing behind.
+// database shares -- users, groups, permissions, the deprecated `OBJECT ...
+// (TYPE SECRET)`, which belongs to the user rather than to a path, resource
+// pools, backups. A topic, and a secret made with CREATE SECRET, is judged by
+// its path like a table, since the realm's reset drops it. A statement that
+// reads outside the realm is left alone, since a read leaves nothing behind.
 //
 // On a server the run owns, the realm is the server, so only what reaches past
 // it stays refused: an external data source or table, async replication, a
@@ -161,8 +163,16 @@ func validateYDBObjectStatement(tokens []lexer.Token) error {
 	case "USER", "GROUP":
 		return unsafeReplayStatement(platform.YDB, "a "+strings.ToLower(ydbKeywordAt(tokens, kind))+
 			" of the whole database")
-	case "SECRET", "OBJECT":
-		return unsafeReplayStatement(platform.YDB, "a secret or an object of the whole database")
+	case "SECRET":
+		// A secret is a path in the scheme tree: after the prefix, `CREATE
+		// SECRET s` created the secret in the realm, and the realm's reset
+		// drops one.
+		return ydbCheckTarget(tokens, ydbSkipExistenceGuard(tokens, kind+1))
+	case "OBJECT":
+		// CREATE OBJECT makes the deprecated secret object, which belongs to
+		// the user rather than to a path, and the other objects of the
+		// database's metadata service.
+		return unsafeReplayStatement(platform.YDB, "an object of the whole database")
 	case "RESOURCE":
 		return unsafeReplayStatement(platform.YDB, "a resource pool of the whole database")
 	case "BACKUP":

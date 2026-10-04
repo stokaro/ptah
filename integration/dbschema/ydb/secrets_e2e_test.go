@@ -12,6 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/ydburl"
 )
 
 // The directory the binary's secret runs write into, and the variable and
@@ -117,4 +118,46 @@ func TestYDBBinary_KeepsASecretsValueOutOfEveryOutput(t *testing.T) {
 	}
 	c.Assert(written, qt.HasLen, 6+len(files))
 	c.Assert(len(files) >= 2, qt.IsTrue, qt.Commentf("migrations generate wrote %d files", len(files)))
+}
+
+// TestYDBBinary_ReplaysASecretInADevRealm validates a migration directory that
+// creates and rotates a secret on a dev realm in the test database: the
+// secret is a path the realm confines, the replay takes its value from the
+// environment as an apply does, and the realm is gone, with the secret in it,
+// when the binary exits. The deprecated secret object belongs to a user
+// rather than to a path, so a replay refuses it.
+func TestYDBBinary_ReplaysASecretInADevRealm(t *testing.T) {
+	t.Setenv(secretsE2EEnv, secretsE2EFirst)
+	c := qt.New(t)
+	binary := buildBinary(c, c.Context())
+	line := lineNamed(c, "26.2")
+	url := dbtarget.URL(c, line.engine)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	confined, refusing := filepath.Join(c.TempDir(), "migrations"), filepath.Join(c.TempDir(), "migrations")
+	writeFiles(c, confined, map[string]string{
+		"0000000001_secret.up.sql": "CREATE SECRET `ptah_ydb_devrealm_secrets/pw` WITH (value = $" + secretsE2EEnv + ");\n" +
+			"ALTER SECRET `ptah_ydb_devrealm_secrets/pw` WITH (value = $" + secretsE2EEnv + ");\n",
+		"0000000001_secret.down.sql": "DROP SECRET `ptah_ydb_devrealm_secrets/pw`;\n",
+	})
+	writeFiles(c, refusing, map[string]string{
+		"0000000001_secret.up.sql":   "CREATE OBJECT ptah_ydb_devrealm_secret (TYPE SECRET) WITH value = 'x';\n",
+		"0000000001_secret.down.sql": "DROP OBJECT ptah_ydb_devrealm_secret (TYPE SECRET);\n",
+	})
+	for _, dir := range []string{confined, refusing} {
+		hashed, err := runBinary(ctx, binary, "migrations", "hash", "--dir", dir)
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", hashed))
+	}
+
+	validated, validateErr := runBinary(ctx, binary, "migrations", "validate", "--dir", confined, "--dev-url", url)
+	refused, refusedErr := runBinary(ctx, binary, "migrations", "validate", "--dir", refusing, "--dev-url", url)
+
+	c.Assert(validateErr, qt.IsNil, qt.Commentf("%s", validated))
+	c.Assert(validated, qt.Contains, "OK: migration SQL validated on dev database")
+	c.Assert(validated, qt.Not(qt.Contains), "SENTINEL")
+	c.Assert(directoryNames(c, ctx, line), qt.Not(qt.Contains), "ptah_ydb_devrealm_secrets")
+	c.Assert(directoryNames(c, ctx, line), qt.Not(qt.Contains), ydburl.RealmDirectory)
+	c.Assert(refusedErr, qt.IsNotNil)
+	c.Assert(refused, qt.Contains, "ydb migration replay rejects an object of the whole database because its "+
+		"effects cannot be confined to the disposable database realm")
 }
