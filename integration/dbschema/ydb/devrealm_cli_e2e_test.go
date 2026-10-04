@@ -37,12 +37,17 @@ func writeFiles(c *qt.C, dir string, files map[string]string) {
 	}
 }
 
+// devRealmKept is a directory of the test database that holds a table, so
+// the database is not empty: a dev database that were the database itself
+// would be refused as not clean, or emptied.
+const devRealmKept = "ptah_ydb_devrealm_kept"
+
 // TestYDBBinary_DevDatabaseIsARealm drives the shipped binary's dev database
 // verbs with the test database as the dev URL. Each run gets a dev realm of
 // its own in that database, so the replay, the shadow verification and every
 // parallel test case run against an empty database, nothing they create
-// reaches the database's own schema, and the realms are gone when the binary
-// exits.
+// reaches the database's own schema, what the database holds stays, and the
+// realms are gone when the binary exits.
 func TestYDBBinary_DevDatabaseIsARealm(t *testing.T) {
 	url := dbtarget.URL(t, dbtarget.YDB)
 	c := qt.New(t)
@@ -50,6 +55,10 @@ func TestYDBBinary_DevDatabaseIsARealm(t *testing.T) {
 	defer cancel()
 	binary := buildBinary(c, ctx)
 	conn := openYDB(c)
+	dropDirectory(c, conn, devRealmKept, "t")
+	c.Cleanup(func() { dropDirectory(c, conn, devRealmKept, "t") })
+	c.Assert(conn.Writer().ExecuteSQL(ctx,
+		"CREATE TABLE `"+devRealmKept+"/t` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))"), qt.IsNil)
 
 	t.Run("a replay runs in a realm", func(t *testing.T) {
 		c := qt.New(t)
@@ -149,4 +158,6 @@ func TestYDBBinary_DevDatabaseIsARealm(t *testing.T) {
 		c.Assert(directoryNames(c, ctx), qt.Not(qt.Contains), "ptah_ydb_devrealm")
 		c.Assert(directoryNames(c, ctx), qt.Not(qt.Contains), ydburl.RealmDirectory)
 	})
+
+	c.Assert(directoryNames(c, ctx, devRealmKept), qt.DeepEquals, []string{"t"})
 }
