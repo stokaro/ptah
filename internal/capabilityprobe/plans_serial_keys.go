@@ -68,7 +68,10 @@ func ydbSerialKeyExperiments() []experiment {
 			"RESTART WITH 32767",
 			accepts("INSERT INTO skr (n) VALUES (1)"),
 			attempts("INSERT INTO skr (n) VALUES (2)"),
-			counts("SELECT COUNT(*) FROM skr WHERE id < 0", 0),
+			// The cast keeps an Int16 literal out of the query: 25.1.4.7
+			// answers one with `FillLiteralProtoImpl(): requirement false
+			// failed`, which would decide the key on the line's literal bug.
+			counts("SELECT COUNT(*) FROM skr WHERE CAST(id AS Int64) < 0", 0),
 		),
 	}
 }
