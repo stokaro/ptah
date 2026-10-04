@@ -329,9 +329,11 @@ jobs:
       # behind a remapped one, which would advertise the other server's port.
       # MON_PORT moves the monitoring endpoint off the first server's 8765, and
       # YDB251_TEST_URL names it in its monitoring parameter.
-      # EnableVectorIndex is off by default on 25.1, and the reader's refusal
-      # of a vector index needs a table that holds one; the flag decides no
-      # capability, so every flag that does stays at the line's default.
+      # EnableVectorIndex is off by default on 25.1. The flag turns
+      # vector_indexes on, which the connection reads through the monitoring
+      # endpoint, so the vector index tests build their indexes on this line
+      # too; every other flag that decides a capability stays at the line's
+      # default.
       #
       # The tag names a patch: local-ydb's short tags are branch builds, and
       # `25.1.4` is a build of stable-25-1-4 rather than a release.
