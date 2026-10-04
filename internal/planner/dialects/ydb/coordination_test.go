@@ -1,0 +1,135 @@
+package ydb_test
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+
+	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/planner/dialects/ydb"
+	"ptah.run/migration/schemadiff/difftypes"
+)
+
+// TestGenerateMigrationAST_CoordinationNodes_HappyPath pins where coordination
+// node statements sit in a plan: the creations and the changes after the
+// tables are created and changed, and the drops after the tables are dropped
+// and before the views are created, which come last. A change names only the
+// settings that differ. A plan of this shape applied on 26.2.1.14 and 25.1.4.7
+// and read back as declared.
+func TestGenerateMigrationAST_CoordinationNodes_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{
+		TablesAdded: difftypes.TableChanges{{
+			Name:   "items",
+			Table:  schemamodel.Table{StructName: "S", Name: "items"},
+			Fields: []schemamodel.Field{keyField("id")},
+		}},
+		TablesRemoved: []string{"old"},
+		CoordinationNodesAdded: []schemamodel.CoordinationNode{
+			{Schema: "app", Name: "fresh", Spec: ast.CoordinationNodeSpec{SelfCheckPeriodMillis: 2000}},
+		},
+		CoordinationNodesModified: []difftypes.CoordinationNodeChange{{
+			Name: "locks", Changes: ast.CoordinationNodeSpec{ReadConsistencyMode: "strict"},
+		}},
+		CoordinationNodesRemoved: []schemamodel.CoordinationNode{{Schema: "app", Name: "gone"}},
+		ViewsAdded:               difftypes.ViewChanges{{Name: "item_ids", Body: "SELECT id FROM items"}},
+	}
+
+	got := render(c, capability.YDB262(), diff)
+
+	c.Assert(got, qt.Equals, "CREATE TABLE `items` (\n"+
+		"    `id` Int64 NOT NULL,\n"+
+		"    PRIMARY KEY (`id`)\n"+
+		");\n"+
+		"CREATE COORDINATION NODE `app/fresh` WITH (self_check_period = Interval('PT2S'));\n"+
+		"ALTER COORDINATION NODE `locks` SET (read_consistency_mode = 'strict');\n"+
+		"DROP TABLE `old`;\n"+
+		"DROP COORDINATION NODE `app/gone`;\n"+
+		"CREATE VIEW `item_ids` WITH (security_invoker = TRUE) AS\n"+
+		"SELECT id FROM items\n"+
+		";\n")
+}
+
+// TestGenerateMigrationAST_CoordinationNodes_FailurePath refuses, before any
+// node is returned, a coordination node change the plan cannot make: any of
+// them on a target without the key, Ptah's own lock node, and a configuration
+// the node would not run with as written, a change judged with the settings
+// the node keeps.
+func TestGenerateMigrationAST_CoordinationNodes_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		caps    capability.Capabilities
+		diff    *difftypes.SchemaDiff
+		wantErr string
+	}{
+		{
+			name:    "a creation without the key",
+			caps:    capability.YDB262().With(capability.CoordinationNodes, false),
+			diff:    &difftypes.SchemaDiff{CoordinationNodesAdded: []schemamodel.CoordinationNode{{Name: "locks"}}},
+			wantErr: `creating coordination node locks, which requires target capability coordination_nodes, unavailable on this ydb target`,
+		},
+		{
+			name: "a change without the key",
+			caps: capability.YDB262().With(capability.CoordinationNodes, false),
+			diff: &difftypes.SchemaDiff{CoordinationNodesModified: []difftypes.CoordinationNodeChange{{
+				Name: "locks", Changes: ast.CoordinationNodeSpec{ReadConsistencyMode: "strict"},
+			}}},
+			wantErr: `changing coordination node locks, which requires target capability coordination_nodes, .*`,
+		},
+		{
+			name:    "a drop without the key",
+			caps:    capability.YDB262().With(capability.CoordinationNodes, false),
+			diff:    &difftypes.SchemaDiff{CoordinationNodesRemoved: []schemamodel.CoordinationNode{{Name: "locks"}}},
+			wantErr: `dropping coordination node locks, which requires target capability coordination_nodes, .*`,
+		},
+		{
+			name:    "a creation of Ptah's lock node",
+			caps:    capability.YDB262(),
+			diff:    &difftypes.SchemaDiff{CoordinationNodesAdded: []schemamodel.CoordinationNode{{Name: "ptah_locks"}}},
+			wantErr: `coordination node ptah_locks: coordination node ptah_locks at the database root holds Ptah's own locks, .*`,
+		},
+		{
+			name:    "a drop of Ptah's lock node",
+			caps:    capability.YDB262(),
+			diff:    &difftypes.SchemaDiff{CoordinationNodesRemoved: []schemamodel.CoordinationNode{{Name: "ptah_locks"}}},
+			wantErr: `coordination node ptah_locks: coordination node ptah_locks at the database root .*`,
+		},
+		{
+			name: "a change of Ptah's lock node",
+			caps: capability.YDB262(),
+			diff: &difftypes.SchemaDiff{CoordinationNodesModified: []difftypes.CoordinationNodeChange{{
+				Name: "ptah_locks", Changes: ast.CoordinationNodeSpec{ReadConsistencyMode: "strict"},
+			}}},
+			wantErr: `coordination node ptah_locks: coordination node ptah_locks at the database root .*`,
+		},
+		{
+			name: "a creation the node would not run with",
+			caps: capability.YDB262(),
+			diff: &difftypes.SchemaDiff{CoordinationNodesAdded: []schemamodel.CoordinationNode{{
+				Name: "locks", Spec: ast.CoordinationNodeSpec{SelfCheckPeriodMillis: 100},
+			}}},
+			wantErr: `coordination node locks: self_check_period PT0.1S: .*`,
+		},
+		{
+			name: "a change that leaves the grace period below the self-check period the node keeps",
+			caps: capability.YDB262(),
+			diff: &difftypes.SchemaDiff{CoordinationNodesModified: []difftypes.CoordinationNodeChange{{
+				Name: "locks", Changes: ast.CoordinationNodeSpec{SessionGracePeriodMillis: 5000},
+				Previous: ast.CoordinationNodeSpec{SelfCheckPeriodMillis: 5000},
+			}}},
+			wantErr: `coordination node locks: session_grace_period PT5S: .*`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			nodes, err := ydb.NewWithCapabilities(test.caps).GenerateMigrationAST(test.diff)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(nodes, qt.IsNil)
+		})
+	}
+}
