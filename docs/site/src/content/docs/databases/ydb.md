@@ -255,6 +255,12 @@ pair of indexes that swap names, or an index renamed onto a name the table
 still holds, is dropped and built again. The rollback of a planned migration
 renames the index back.
 
+A cluster that turns `EnableMoveIndex` off refuses the rename with
+`Move index is not supported yet`. When the URL names the cluster's monitoring
+endpoint, Ptah reads the flag and plans the renamed index as dropped and added
+again, under the rules for adding an index to an existing table (see
+[Feature flags](#feature-flags)).
+
 ## Planning changes
 
 YDB changes a table in place less than the SQL engines do, and runs a schema
@@ -371,12 +377,25 @@ The flags decide these capabilities:
 | `EnableSetDropDefaultValue` | `alter_column_default` |
 | `EnableTableDatetime64` | `wide_date_time_types` |
 | `EnableParameterizedDecimal` | `parameterized_decimal` |
+| `EnableMoveIndex` | `index_rename` |
+
+`EnableAsyncIndexes` decides no capability: a cluster with the flag off still
+builds a `GLOBAL ASYNC` index, so `async_indexes` keeps the preset's answer.
 
 A flag the cluster does not list leaves the capability as the release line's
-preset has it. Ptah sends no credentials to the monitoring endpoint and follows
-no redirect from it. A failed read fails the connection rather than planning
-without the flags. `ptah db capabilities` lists the keys
-the flags changed under `Set by this server rather than by its release line`.
+preset has it. A failed read fails the connection rather than planning without
+the flags. `ptah db capabilities` lists the keys the flags changed under
+`Set by this server rather than by its release line`.
+
+Ptah reads the page as the user the URL connects as. It sends the token the
+connection presents to the server in the `Authorization` header, which is how
+the monitoring endpoint of a cluster that enforces authentication accepts it,
+and an anonymous connection sends none. YDB 26.2 serves the page only to a
+user with `DESCRIBE SCHEMA` on the database, and answers anyone else with
+`400 Bad Request: Failed to resolve database`; YDB 25.1 serves it to any user it
+knows. A `ydbs://` connection's token is not sent to a plain `http://`
+endpoint: name the endpoint with `https://`. The monitoring parameter carries
+no credential of its own, and Ptah follows no redirect from the endpoint.
 
 Without the parameter the line's preset stands. A statement the cluster
 refuses because a flag is off then fails with an error that names the
@@ -507,6 +526,18 @@ condition other than equalities between the joined tables' columns, and no
 OFFSET without a LIMIT. The builder refuses each before it renders anything,
 with the capability key the target lacks, and `RETURNING` is refused on 25.1
 and 25.2; see the [query builder](../../extend/query-builder/#dialect-coverage).
+
+YDB 26.2 fails an `UPSERT` on a table with a unique index when the statement
+names no column that a synchronous global index is keyed on. The server answers
+`INTERNAL_ERROR` with
+`verification=!hasUniqIndex || !usedIndexes.empty();fline=kqp_opt_phy_upsert_index.cpp:359`
+and writes nothing. This is a defect in the server: 25.1 runs the same
+statement. The column list is the caller's, and the builder does not know the
+table's indexes, so it cannot refuse the statement. Name every column of the
+table in such an `UPSERT`, or use `UPDATE` or `INSERT`, which 26.2 runs. Ptah
+writes no such statement itself: declared rows are written with `INSERT`,
+`UPDATE` and `DELETE`, and the tables Ptah keeps for migrations and seeds have no
+secondary index.
 
 ## ptah-compat
 

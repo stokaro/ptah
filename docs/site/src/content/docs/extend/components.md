@@ -37,7 +37,7 @@ uses them internally.
 | Need | Stable package(s) | What it gives you |
 | --- | --- | --- |
 | Build SQL DDL programmatically | `core/ast`, `core/astbuilder`, `core/renderer` | Dialect-aware SQL from structured AST nodes, written as struct literals or as builder chains. |
-| Build parameterized SELECT queries | `core/query`, `core/renderer` | Fluent, dialect-aware SELECT/WHERE/ORDER BY/LIMIT with bound parameters. See [Query builder](../query-builder/). |
+| Build parameterized DML statements | `core/query` | Fluent, dialect-aware SELECT, INSERT, UPDATE, DELETE and YDB's UPSERT with bound parameters. See [Query builder](../query-builder/). |
 | Parse Go schema annotations | `core/goschema` | Go source comments to Ptah's schema IR. |
 | Parse Atlas HCL schema files | `atlascompat` | Atlas-style HCL schema files to Ptah's schema IR through a stable compatibility wrapper. |
 | Parse YAML schema files | `core/yamlschema` | Ptah's YAML authoring format to the schema IR, from bytes or from a path. |
@@ -89,14 +89,14 @@ triggers, row-level security policies, roles, grants, and routine placeholders
 where supported. It is not a full SQL parser for every dialect-specific
 sub-language.
 
-DML query building has a bounded slice: `core/query` builds parameterized
-`SELECT` statements with `INNER`/`LEFT`/`RIGHT`/`FULL OUTER` joins, table aliases
-and qualified columns, a composable `WHERE` (and join `ON`) expression tree,
-`ORDER BY`, and `LIMIT`/`OFFSET`, rendered through `renderer.RenderSelect`.
-`GROUP BY`, `HAVING`, subqueries, and the `INSERT`/`UPDATE`/`DELETE` family are
-follow-up phases of issue
-[`#98`](https://github.com/stokaro/ptah/issues/98). See the
-[Query builder](../query-builder/) reference for the full API.
+DML lives in `core/query`. It builds parameterized `SELECT`, `INSERT`,
+`UPDATE` and `DELETE` statements, and YDB's `UPSERT INTO`, and renders them with
+`query.RenderSelect`, `query.RenderInsert`, `query.RenderUpdate` and
+`query.RenderDelete` for a named dialect. A statement can carry joins, `GROUP BY`
+and `HAVING`, subqueries, common table expressions, window functions,
+`RETURNING` and `ON CONFLICT`, where the target has them. See the
+[Query builder](../query-builder/) reference for the full API and what each
+dialect refuses.
 
 This complete example uses only public packages. The same AST/rendering path is
 validated by

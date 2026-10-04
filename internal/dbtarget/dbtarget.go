@@ -129,7 +129,10 @@ const (
 	MySQLDevServer
 	MariaDBDevServer
 	// YDB is a YDB database, reached over gRPC through a ydb:// or ydbs://
-	// URL that names the database.
+	// URL that names the database. The URL names the server's monitoring
+	// endpoint too, in its monitoring parameter, because that is where the
+	// connection reads the cluster's feature flags, and a server's monitoring
+	// port is as much its own as its gRPC port.
 	YDB
 	// YDB251 is a YDB database on a second server, one that runs the 25.1
 	// release line.

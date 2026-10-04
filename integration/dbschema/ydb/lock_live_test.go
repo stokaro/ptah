@@ -17,6 +17,7 @@ import (
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/dblock"
 	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/ydburl"
 	"ptah.run/migration/migrator"
 )
 
@@ -112,11 +113,19 @@ func TestYDBMigrator_StopsWhenTheLockIsLost(t *testing.T) {
 }
 
 // connectAs opens the line's database as user, who logs in with password.
+//
+// The connection reads no feature flags. The flags page is read as the
+// connecting user, and YDB 26.2 serves it only to a user with DESCRIBE SCHEMA
+// on the database, which the users these tests create are not given: what each
+// of them may do is what the test is about.
 func connectAs(c *qt.C, line ydbLine, user, password string) *dbschema.DatabaseConnection {
 	c.Helper()
 	parsed, err := url.Parse(dbtarget.URL(c, line.engine))
 	c.Assert(err, qt.IsNil)
 	parsed.User = url.UserPassword(user, password)
+	query := parsed.Query()
+	query.Del(ydburl.MonitoringParameter)
+	parsed.RawQuery = query.Encode()
 	conn, err := dbschema.ConnectToDatabase(c.Context(), parsed.String())
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { _ = conn.Close() })

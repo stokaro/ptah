@@ -194,6 +194,57 @@ func TestYDBQueryBuilder_ReturningFollowsTheLine(t *testing.T) {
 	}
 }
 
+// upsertNamingNoIndexColumn is what each certified line answers to an UPSERT
+// that names no column a synchronous index of the table is keyed on, on a
+// table with a unique index. 26.2.1.14 fails it with an internal error, which
+// is a defect in the server, and 25.1.4.7 runs it. The YDB page documents
+// the defect and the workaround; this entry turns red when a line stops
+// answering the way the page says.
+var upsertNamingNoIndexColumn = map[string]string{
+	"26.2": `(?s).*INTERNAL_ERROR.*verification=!hasUniqIndex \|\| !usedIndexes\.empty\(\);` +
+		`fline=kqp_opt_phy_upsert_index\.cpp:359.*`,
+	"25.1": `<nil>`,
+}
+
+// An UPSERT the query builder renders on a table with a unique index runs on
+// both lines when it names every column, which is the workaround the YDB page
+// gives for the 26.2 defect, and the statement that omits the indexed column
+// gets the answer upsertNamingNoIndexColumn records for the line. A failed
+// UPSERT writes nothing.
+func TestYDBQueryBuilder_UpsertOnATableWithAUniqueIndex(t *testing.T) {
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			caps := conn.Info().Capabilities
+			ownDirectory(c, conn, dataQuerySchema)
+			accounts := dataQuerySchema + "/accounts"
+			apply(c, conn, []string{
+				"CREATE TABLE `" + accounts + "` (id Int64 NOT NULL, email Utf8, plan Utf8, PRIMARY KEY (id), " +
+					"INDEX accounts_email GLOBAL UNIQUE SYNC ON (email))",
+			})
+			execRendered(c, conn)(query.RenderInsertWithCapabilities(query.UpsertInto(accounts).
+				Columns("id", "email", "plan").Values(int64(1), "a@x", "free").
+				Build(), platform.YDB, caps))
+
+			text, args, err := query.RenderInsertWithCapabilities(query.UpsertInto(accounts).
+				Columns("id", "plan").Values(int64(2), "trial").
+				Build(), platform.YDB, caps)
+			c.Assert(err, qt.IsNil)
+			_, partialErr := conn.ExecContext(c.Context(), text, args...)
+			afterPartial := readSorted(c, conn, dataQuerySchema, "accounts", "id", "email", "plan")
+			execRendered(c, conn)(query.RenderInsertWithCapabilities(query.UpsertInto(accounts).
+				Columns("id", "email", "plan").Values(int64(1), "a@x", "paid").
+				Build(), platform.YDB, caps))
+
+			c.Assert(fmt.Sprint(partialErr), qt.Matches, upsertNamingNoIndexColumn[line.name])
+			c.Assert(afterPartial, qt.HasLen, map[string]int{"26.2": 1, "25.1": 2}[line.name])
+			c.Assert(readSorted(c, conn, dataQuerySchema, "accounts", "id", "email", "plan")[0], qt.DeepEquals,
+				map[string]any{"id": int64(1), "email": "a@x", "plan": "paid"})
+		})
+	}
+}
+
 // diffDeclaration is a reference table whose columns cover the YDB types a
 // declared row is written into on every certified line: a declared TIMESTAMP
 // and DATE land on the 64-bit types where the line has them, and DECIMAL(22,9)
