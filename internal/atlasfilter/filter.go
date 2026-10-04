@@ -1878,6 +1878,9 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		// What the read left out stays what it left out: a filter narrows the
 		// description, and these default privileges were never in it.
 		UndescribedDefaultPrivileges: slices.Clone(schema.UndescribedDefaultPrivileges),
+		// Where the database is does not change with what a filter keeps of
+		// it, and a YDB plan names a Serial column's sequence by that path.
+		DatabasePath: schema.DatabasePath,
 	}
 }
 

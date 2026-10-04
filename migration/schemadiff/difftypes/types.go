@@ -1431,6 +1431,15 @@ type SchemaDiff struct {
 	// read: a rollback recreates a table of that database too.
 	CurrentNotDescribed coverage.Set `json:"-"`
 
+	// CurrentDatabasePath is the DatabasePath of the catalog read this plan
+	// runs against, carried once for the whole diff and off the wire:
+	// the absolute path a YDB plan names a Serial column's sequence under,
+	// since ALTER SEQUENCE takes no other form. Empty where the current side
+	// came from no live read, and a plan that would need it refuses instead.
+	//
+	// A reversal runs against the same database and carries the same path.
+	CurrentDatabasePath string `json:"-"`
+
 	// RLSEnabledTablesAdded is the tables that need RLS enabled, each carried
 	// as its declaration; see [RLSEnabledTableChanges].
 	RLSEnabledTablesAdded RLSEnabledTableChanges `json:"rls_enabled_tables_added"`
@@ -2151,6 +2160,15 @@ type ColumnDiff struct {
 	// column. Comparing those would report a difference on every table nobody
 	// changed (stokaro/ptah#2161).
 	NotNullConstraintNameChange *NotNullConstraintNameChange `json:"not_null_constraint_name_change,omitzero"`
+
+	// CurrentSequenceRestart is the value the database's last RESTART of this
+	// Serial column's sequence moved it to, carried with a change to the
+	// sequence's start or increment and empty otherwise. YDB replays that
+	// restart on every later ALTER SEQUENCE, so the next insert can land on a
+	// key a row already holds, and a plan refuses the change where this is
+	// set. A reversal runs against the same database and carries the same
+	// value.
+	CurrentSequenceRestart string `json:"current_sequence_restart,omitempty"`
 
 	// Desired is the column as the declaration writes it, with embedded fields
 	// already folded in.

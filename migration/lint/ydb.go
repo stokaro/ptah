@@ -3,11 +3,13 @@ package lint
 import (
 	"cmp"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/ydbsequence"
 	"ptah.run/internal/yqlddl"
 	"ptah.run/internal/yqlquery"
 )
@@ -44,6 +46,8 @@ func ydbRules() []Rule {
 		ydbDropUsedColumnRule(),
 		ydbPartitionMinimumResetRule(),
 		ydbViewOrphanedRule(),
+		ydbNarrowSerialSequenceRule(),
+		ydbReplayedRestartRule(),
 	}
 }
 
@@ -396,6 +400,13 @@ type ydbTable struct {
 	indexes []yqlddl.Index
 	// ttl is the column the TTL reads, empty when the table has none.
 	ttl string
+	// serials are the YDB types of the table's Serial columns, by column:
+	// Serial, BigSerial or SmallSerial, whichever alias the CREATE TABLE
+	// wrote.
+	serials map[string]string
+	// restarts are, by Serial column, the value the last RESTART of the
+	// column's sequence moved it to, written as the statement wrote it.
+	restarts map[string]string
 }
 
 func (s *ydbSchema) clone() *ydbSchema {
@@ -404,7 +415,12 @@ func (s *ydbSchema) clone() *ydbSchema {
 		return cloned
 	}
 	for name, table := range s.tables {
-		cloned.tables[name] = ydbTable{indexes: slices.Clone(table.indexes), ttl: table.ttl}
+		cloned.tables[name] = ydbTable{
+			indexes:  slices.Clone(table.indexes),
+			ttl:      table.ttl,
+			serials:  maps.Clone(table.serials),
+			restarts: maps.Clone(table.restarts),
+		}
 	}
 	for name, reads := range s.views {
 		cloned.views[name] = slices.Clone(reads)
@@ -444,7 +460,7 @@ func (s *ydbSchema) apply(read yqlddl.Statement) {
 		if _, exists := s.tables[read.Name]; exists && read.IfExists {
 			return
 		}
-		s.tables[read.Name] = ydbTable{indexes: slices.Clone(read.Indexes), ttl: read.TTLColumn}
+		s.tables[read.Name] = ydbTable{indexes: slices.Clone(read.Indexes), ttl: read.TTLColumn, serials: serialColumns(read)}
 	case yqlddl.AlterTable:
 		table := s.table(read.Name)
 		for _, action := range read.Actions {
@@ -460,6 +476,167 @@ func (s *ydbSchema) apply(read yqlddl.Statement) {
 		s.views[read.Name] = slices.Clone(read.Reads)
 	case yqlddl.DropView:
 		delete(s.views, read.Name)
+	case yqlddl.AlterSequence:
+		name, column, owned := s.sequenceOwner(read.Name)
+		if !owned || !read.Restart {
+			return
+		}
+		table := s.tables[name]
+		table.restarts = maps.Clone(table.restarts)
+		if table.restarts == nil {
+			table.restarts = make(map[string]string)
+		}
+		table.restarts[column] = cmp.Or(read.RestartWith, "its start")
+		s.tables[name] = table
+	}
+}
+
+// serialTypes are the spellings YQL takes for a Serial column, by the type
+// each makes. Measured on 26.2.1.14 and 25.1.4.7, in any letter case: a
+// SmallSerial or Serial2 column is Int16, a Serial or Serial4 column Int32,
+// and a BigSerial or Serial8 column Int64.
+var serialTypes = map[string]string{
+	"smallserial": "SmallSerial", "serial2": "SmallSerial",
+	"serial": "Serial", "serial4": "Serial",
+	"bigserial": "BigSerial", "serial8": "BigSerial",
+}
+
+// serialColumns returns the Serial columns a CREATE TABLE declares, by
+// column, with the type each makes.
+func serialColumns(read yqlddl.Statement) map[string]string {
+	serials := make(map[string]string)
+	for _, column := range read.Columns {
+		if serial, ok := serialTypes[strings.ToLower(column.Type)]; ok {
+			serials[column.Name] = serial
+		}
+	}
+	return serials
+}
+
+// sequenceOwner returns the table and the Serial column whose sequence path
+// names. The last element of the path is `_serial_column_<column>`, and the
+// elements before it end with the table: YDB takes the path from the cluster
+// root, so the database's own path comes first, and the directory names its
+// tables from below that. Of the tables the directory knows, the longest that
+// ends the path is the owner.
+func (s *ydbSchema) sequenceOwner(path string) (table, column string, ok bool) {
+	slash := strings.LastIndex(path, "/")
+	if slash < 0 {
+		return "", "", false
+	}
+	column, ok = strings.CutPrefix(path[slash+1:], ydbsequence.Name(""))
+	if !ok || column == "" {
+		return "", "", false
+	}
+	owner := path[:slash]
+	for _, name := range slices.Sorted(maps.Keys(s.tables)) {
+		if (owner == name || strings.HasSuffix(owner, "/"+name)) && len(name) > len(table) {
+			table = name
+		}
+	}
+	return table, column, table != ""
+}
+
+// ydbNarrowSerialSequenceRule reports an ALTER SEQUENCE on the sequence of a
+// Serial or SmallSerial column the directory created. Measured on 26.2.1.14
+// and 25.1.4.7, any ALTER SEQUENCE, `INCREMENT BY 1` included, raises the
+// sequence's maximum from the column's to the Int64 maximum, and nothing
+// lowers it again:
+//
+//	before, SmallSerial at 32767   doesn't have any more values available
+//	after,  SmallSerial at 32767   the next row is stored with id -32768
+//	after,  Serial at 2147483647   the next row is stored with id -2147483648
+//
+// The statement succeeds, and the column stores the value past its range as a
+// negative number without an error. A BigSerial's maximum is the Int64
+// maximum already.
+func ydbNarrowSerialSequenceRule() Rule {
+	return Rule{
+		Code:          "YD107",
+		Title:         "ALTER SEQUENCE widens a 16-bit or 32-bit Serial",
+		Severity:      SeverityError,
+		Dialects:      ydbOnly,
+		AppliesToDown: true,
+		CheckFile: func(file *File) []Finding {
+			if !ydbRun(file.Target) || file.Target.Capabilities.Has(capability.SerialSequenceKeepsRange) {
+				return nil
+			}
+			state := file.ydbBefore.clone()
+			var findings []Finding
+			for i := range file.Statements {
+				stmt := &file.Statements[i]
+				read := yqlddl.Read(stmt.SQL)
+				if read.Kind == yqlddl.AlterSequence {
+					table, column, owned := state.sequenceOwner(read.Name)
+					serial := state.table(table).serials[column]
+					if owned && (serial == "Serial" || serial == "SmallSerial") {
+						findings = append(findings, Finding{
+							Rule:     "YD107",
+							Title:    "ALTER SEQUENCE widens a 16-bit or 32-bit Serial",
+							Severity: SeverityError,
+							File:     file.Path,
+							Line:     stmt.Line,
+							Message: fmt.Sprintf(
+								"ALTER SEQUENCE %s raises the maximum of the sequence of %s column %s.%s to the Int64 maximum, "+
+									"and the column then stores the value past its own maximum as a negative number without "+
+									"an error; declare the column BigSerial to give its sequence a start or an increment",
+								read.Name, serial, table, column),
+							Context: statementFindingContext(i, Subject{Kind: SubjectColumn, Name: column, Parent: table}),
+						})
+					}
+				}
+				state.apply(read)
+			}
+			return findings
+		},
+	}
+}
+
+// ydbReplayedRestartRule reports an ALTER SEQUENCE without a RESTART of its
+// own on a sequence an earlier statement restarted. Measured on 26.2.1.14 and
+// 25.1.4.7: after `RESTART WITH 500` and a row holding 500, `ALTER SEQUENCE
+// ... INCREMENT BY 1` succeeds and moves the next value back to 500, and the
+// next insert fails with `Conflict with existing key`. A RESTART of the
+// statement's own sets a new value instead.
+func ydbReplayedRestartRule() Rule {
+	return Rule{
+		Code:          "YD108",
+		Title:         "ALTER SEQUENCE replays an earlier RESTART",
+		Severity:      SeverityError,
+		Dialects:      ydbOnly,
+		AppliesToDown: true,
+		CheckFile: func(file *File) []Finding {
+			if !ydbRun(file.Target) {
+				return nil
+			}
+			state := file.ydbBefore.clone()
+			var findings []Finding
+			for i := range file.Statements {
+				stmt := &file.Statements[i]
+				read := yqlddl.Read(stmt.SQL)
+				if read.Kind == yqlddl.AlterSequence && !read.Restart {
+					table, column, owned := state.sequenceOwner(read.Name)
+					if restart, restarted := state.table(table).restarts[column]; owned && restarted {
+						findings = append(findings, Finding{
+							Rule:     "YD108",
+							Title:    "ALTER SEQUENCE replays an earlier RESTART",
+							Severity: SeverityError,
+							File:     file.Path,
+							Line:     stmt.Line,
+							Message: fmt.Sprintf(
+								"ALTER SEQUENCE %s alters a sequence an earlier statement restarted at %s, and YDB replays that "+
+									"restart on every later ALTER SEQUENCE, so the next row of %s takes %s again and fails on a key "+
+									"a row already holds (Conflict with existing key); restart it in this statement at a value "+
+									"past every row, or leave it as it is",
+								read.Name, restart, table, restart),
+							Context: statementFindingContext(i, Subject{Kind: SubjectColumn, Name: column, Parent: table}),
+						})
+					}
+				}
+				state.apply(read)
+			}
+			return findings
+		},
 	}
 }
 

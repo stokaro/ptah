@@ -229,6 +229,8 @@ func measuredLines() map[string]measuredLine {
 				capability.IndexRename:                indexKeyCarried,
 				capability.IndexPartitioning:          indexKeyCarried,
 				capability.SerialColumns:              typeKeyCarried,
+				capability.SerialSequenceOptions:      serialKeyCarried,
+				capability.SerialSequenceKeepsRange:   serialKeyCarried,
 				capability.SmallIntegerDefaults:       typeKeyCarried,
 				capability.DocumentTypeDefaults:       typeKeyCarried,
 				capability.ReturningClause:            queryKeyCarried,
@@ -373,6 +375,8 @@ func measuredLines() map[string]measuredLine {
 				capability.IndexRename:                indexKeyCarried,
 				capability.IndexPartitioning:          indexKeyCarried,
 				capability.SerialColumns:              typeKeyCarried,
+				capability.SerialSequenceOptions:      serialKeyCarried,
+				capability.SerialSequenceKeepsRange:   serialKeyCarried,
 				capability.SmallIntegerDefaults:       typeKeyCarried,
 				capability.DocumentTypeDefaults:       typeKeyCarried,
 				capability.ReturningClause:            queryKeyCarried,
@@ -518,6 +522,8 @@ func measuredLines() map[string]measuredLine {
 				capability.IndexRename:                indexKeyCarried,
 				capability.IndexPartitioning:          indexKeyCarried,
 				capability.SerialColumns:              typeKeyCarried,
+				capability.SerialSequenceOptions:      serialKeyCarried,
+				capability.SerialSequenceKeepsRange:   serialKeyCarried,
 				capability.SmallIntegerDefaults:       typeKeyCarried,
 				capability.DocumentTypeDefaults:       typeKeyCarried,
 				capability.ReturningClause:            queryKeyCarried,
@@ -669,4 +675,11 @@ const queryKeyCarried = "this run predates the key and sent no query experiment;
 // predates them. The probe asks them on every run through its index
 // experiments, and the value here is the preset's.
 const indexKeyCarried = "this run predates the key and sent no index experiment; the probe asks it " +
+	"on every run through those experiments, and the value here is the preset's"
+
+// serialKeyCarried is why the keys about a Serial column's sequence are
+// carried on every measured line: the run named there predates them. The
+// probe asks them on every run through its serial experiments, and the value
+// here is the preset's.
+const serialKeyCarried = "this run predates the key and sent no serial sequence experiment; the probe asks it " +
 	"on every run through those experiments, and the value here is the preset's"

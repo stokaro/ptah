@@ -79,7 +79,12 @@ func (s *grpcSource) ListDirectory(ctx context.Context, path string) ([]*Ydb_Sch
 
 // DescribeTable describes the row table at path.
 func (s *grpcSource) DescribeTable(ctx context.Context, path string) (*Ydb_Table.DescribeTableResult, error) {
-	response, err := s.table.DescribeTable(ctx, &Ydb_Table.DescribeTableRequest{SessionId: s.session, Path: path})
+	// IncludeSetVal makes a sequence that was restarted say so: its
+	// description then carries the value the restart set, which YDB replays
+	// on every later ALTER SEQUENCE.
+	response, err := s.table.DescribeTable(ctx, &Ydb_Table.DescribeTableRequest{
+		SessionId: s.session, Path: path, IncludeSetVal: true,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("describe YDB table %s: %w", path, WithoutStackFrames(err))
 	}

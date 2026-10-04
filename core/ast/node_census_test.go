@@ -45,6 +45,7 @@ var nodeCensus = []censusRow{
 	{node: &ast.AlterMaterializedViewRefreshNode{}},
 	{node: &ast.AlterRoleNode{}},
 	{node: &ast.AlterSequenceNode{}},
+	{node: &ast.AlterSerialSequenceNode{}},
 	{node: &ast.AlterTableDisableRLSNode{}},
 	{node: &ast.AlterTableEnableRLSNode{}},
 	{node: &ast.AlterTableForceRLSNode{}},

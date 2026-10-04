@@ -21,6 +21,7 @@ import (
 	"ptah.run/internal/oracletype"
 	"ptah.run/internal/sqlitekey"
 	"ptah.run/internal/typechange"
+	"ptah.run/internal/ydbsequence"
 	"ptah.run/internal/ydbtype"
 	"ptah.run/migration/internal/generatedschema"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -132,6 +133,7 @@ func TableColumnsWithSemantics(
 		semantics,
 		columnUniqueness{},
 		ServerSpellings{},
+		nil,
 	)
 }
 
@@ -143,6 +145,7 @@ func tableColumnsWithSemantics(
 	semantics identifier.Semantics,
 	uniqueness columnUniqueness,
 	spellings ServerSpellings,
+	caps capability.Capabilities,
 ) difftypes.TableDiff {
 	tableDiff := difftypes.TableDiff{
 		TableName: genTable.QualifiedName(),
@@ -203,6 +206,7 @@ func tableColumnsWithSemantics(
 				generatedExpressions: spellings.Generated,
 				columnSpellings:      spellings.Columns,
 				defaultIntSize:       spellings.DefaultIntSize,
+				serialSequences:      caps.Has(capability.SerialSequenceOptions),
 			})
 			// A comment-only difference has no entry in Changes, and it is
 			// still a difference: without the second condition a column whose
@@ -379,6 +383,9 @@ type columnContext struct {
 	columnSpellings map[string]config.ColumnSpelling
 	// defaultIntSize is [ServerSpellings.DefaultIntSize].
 	defaultIntSize int
+	// serialSequences compares the start and the increment of a Serial
+	// column's sequence, on a target with [capability.SerialSequenceOptions].
+	serialSequences bool
 }
 
 // columnSpelling returns the server's spelling of the column's type and
@@ -462,6 +469,9 @@ func columnsWithDesiredDomains(
 	dbNullable := dbCol.IsNullable == "YES"
 	if genNullable != dbNullable {
 		colDiff.Changes["nullable"] = fmt.Sprintf("%t -> %t", dbNullable, genNullable)
+	}
+	if ctx.serialSequences && serialSequenceChanges(colDiff.Changes, genCol, dbCol) {
+		colDiff.CurrentSequenceRestart = dbCol.SequenceRestart
 	}
 
 	// Compare primary key
@@ -1252,6 +1262,35 @@ func ydbSerialOf(columnType string) string {
 		return serial
 	}
 	return columnType
+}
+
+// serialSequenceChanges records a difference in the start or the increment of
+// a Serial column's sequence, under the attribute names a declaration spells
+// them with. It compares only where both sides are Serial: a column that is
+// Serial on one side only has a type difference, which says more.
+//
+// Each side is read through [ydbsequence.Canonical], so an omitted setting is
+// the 1 a sequence nobody altered has, and `0100` is 100. Both settings are
+// compared and recorded on their own, while the plan writes both whatever
+// changed, so a value is never left to whatever the server keeps. It reports
+// whether it recorded either.
+func serialSequenceChanges(changes map[string]string, genCol schemamodel.Field, dbCol catalog.Column) bool {
+	declaredSerial := genCol.AutoInc || genCol.IdentityGeneration != "" || ydbtype.DeclaresSerial(genCol.Type)
+	if !declaredSerial || !dbCol.IsAutoIncrement {
+		return false
+	}
+	recorded := false
+	for _, setting := range []struct{ key, declared, current string }{
+		{"identity_start", genCol.IdentityStart, dbCol.IdentityStart},
+		{"identity_increment", genCol.IdentityIncrement, dbCol.IdentityIncrement},
+	} {
+		declared, current := ydbsequence.Canonical(setting.declared), ydbsequence.Canonical(setting.current)
+		if declared != current {
+			changes[setting.key] = current + " -> " + declared
+			recorded = true
+		}
+	}
+	return recorded
 }
 
 // writesYDBSerial reports a column the YDB renderer writes as a Serial type,

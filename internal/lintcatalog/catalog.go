@@ -607,6 +607,12 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"YD106": {
 		Summary: "a `DROP TABLE` of a table a view reads: YDB drops the table, keeps the view, and every read of the view fails",
 	},
+	"YD107": {
+		Summary: "an `ALTER SEQUENCE` on a 16-bit or 32-bit Serial's sequence, which raises its maximum to the Int64 maximum, so the column wraps to negative values without an error",
+	},
+	"YD108": {
+		Summary: "an `ALTER SEQUENCE` without a `RESTART` on a sequence an earlier statement restarted, which YDB replays, so the next insert takes a key a row holds",
+	},
 }
 
 // sqlRuleMeta declares the same facts for the standalone SQL linter, which

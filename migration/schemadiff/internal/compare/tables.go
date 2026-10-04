@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/crdbttl"
@@ -109,7 +110,7 @@ func TablesAndColumnsWithSemantics(
 	semantics identifier.Semantics,
 	cov Coverage,
 ) {
-	TablesAndColumnsWithServerSpellings(desired, database, diff, dialect, semantics, cov, ServerSpellings{})
+	TablesAndColumnsWithServerSpellings(desired, database, diff, dialect, semantics, cov, ServerSpellings{}, nil)
 }
 
 // ServerSpellings is how the target itself spells the column attributes it
@@ -127,7 +128,9 @@ type ServerSpellings struct {
 
 // TablesAndColumnsWithServerSpellings is [TablesAndColumnsWithSemantics] told
 // how the target itself spells each declared generated expression, column type
-// and column default.
+// and column default, and what the target can do: with
+// [capability.SerialSequenceOptions] in caps, the start and the increment of a
+// Serial column's sequence are compared too. Nil caps compares neither.
 func TablesAndColumnsWithServerSpellings(
 	desired *schemamodel.Database,
 	database *catalog.Database,
@@ -136,6 +139,7 @@ func TablesAndColumnsWithServerSpellings(
 	semantics identifier.Semantics,
 	cov Coverage,
 	spellings ServerSpellings,
+	caps capability.Capabilities,
 ) {
 	// Create maps for quick lookup
 	genTables := make(map[tableIdentity]schemamodel.Table)
@@ -234,6 +238,7 @@ func TablesAndColumnsWithServerSpellings(
 				semantics,
 				uniqueness,
 				spellings,
+				caps,
 			)
 			// The TTL policy is compared here rather than inside
 			// tableColumnsWithSemantics because it is a property of the table
