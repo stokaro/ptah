@@ -157,3 +157,9 @@ func isSchemeError(err error) bool {
 	status, ok := errors.AsType[*statusError](err)
 	return ok && status.status == Ydb.StatusIds_SCHEME_ERROR
 }
+
+// isUnauthorized reports an operation the server refused for want of a right.
+func isUnauthorized(err error) bool {
+	status, ok := errors.AsType[*statusError](err)
+	return ok && status.status == Ydb.StatusIds_UNAUTHORIZED
+}

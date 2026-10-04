@@ -4,6 +4,7 @@ package ydb_test
 
 import (
 	"context"
+	"net/url"
 	"path"
 	"testing"
 	"time"
@@ -206,4 +207,44 @@ func TestYDBSchemaClean_NamesTheMigratorsTables(t *testing.T) {
 	c.Assert(left.Tables, qt.HasLen, 0)
 	c.Assert(findErr, qt.IsNil)
 	c.Assert(bookkeeping, qt.HasLen, 0)
+}
+
+// A realm is a directory, which the scheme service creates only for a user
+// who holds ydb.granular.create_directory: one who may create tables is
+// refused the directory with the right named, and creates a realm once
+// granted it.
+//
+// DROP USER leaves the user's rights on /local behind, and a user created
+// again under the name holds them, so the rights are revoked before the test
+// and after it.
+func TestYDBDevRealm_NamesTheRightItNeeds(t *testing.T) {
+	c := qt.New(t)
+	admin := openYDB(c)
+	const user, password = "ptahrealmtest", "realmrights1"
+	forget := func(ctx context.Context) error {
+		return admin.Writer().ExecuteSQL(ctx, "REVOKE ALL ON `/local` FROM "+user+";\nDROP USER IF EXISTS "+user)
+	}
+	c.Assert(admin.Writer().ExecuteSQL(c.Context(), "DROP USER IF EXISTS "+user), qt.IsNil)
+	c.Assert(admin.Writer().ExecuteSQL(c.Context(), "CREATE USER "+user+" PASSWORD '"+password+"'"), qt.IsNil)
+	c.Assert(admin.Writer().ExecuteSQL(c.Context(), "REVOKE ALL ON `/local` FROM "+user), qt.IsNil)
+	c.Cleanup(func() { c.Check(forget(context.Background()), qt.IsNil) })
+	grant := func(rights string) {
+		c.Assert(admin.Writer().ExecuteSQL(c.Context(), "GRANT "+rights+" ON `/local` TO "+user), qt.IsNil)
+	}
+	grant("CONNECT, 'ydb.granular.create_table', 'ydb.granular.describe_schema', 'ydb.granular.remove_schema'")
+	parsed, err := url.Parse(dbtarget.URL(c, dbtarget.YDB))
+	c.Assert(err, qt.IsNil)
+	parsed.User = url.UserPassword(user, password)
+
+	_, refusedRelease, refused := ydbrealm.Enter(c.Context(), parsed.String())
+	refusedRelease()
+	grant("'ydb.granular.create_directory'")
+	realmURL, release, created := ydbrealm.Enter(c.Context(), parsed.String())
+	c.Cleanup(release)
+
+	c.Assert(refused, qt.ErrorMatches, `create the dev realm [0-9a-f]+ in /local: ydb: create directory `+
+		`/local/ptah_dev/[0-9a-f]+: UNAUTHORIZED: .*; creating a directory needs the `+
+		`ydb.granular.create_directory right on the database`)
+	c.Assert(created, qt.IsNil)
+	c.Assert(directoryNames(c, c.Context(), ydburl.RealmDirectory), qt.Contains, path.Base(realmPath(c, realmURL)))
 }

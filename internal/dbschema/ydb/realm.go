@@ -186,15 +186,27 @@ func describeObject(object dbreset.Object) string {
 
 // MakeDirectory creates the directory dir, relative to the root, with every
 // directory above it that does not exist. Creating one that exists succeeds.
+//
+// The scheme service asks for a right of its own: measured on 26.2.1.14, an
+// account granted ydb.granular.create_table on the database creates a table
+// in a directory that does not exist yet, and is refused the directory alone
+// (`Access denied`) until it holds ydb.granular.create_directory. A refusal
+// names that right.
 func (w *Writer) MakeDirectory(ctx context.Context, dir string) error {
 	if w.scheme == nil {
 		return errors.New("no YDB scheme connection")
 	}
 	absolute := path.Join(w.root, dir)
-	if err := w.scheme.MakeDirectory(ctx, absolute); err != nil {
+	err := w.scheme.MakeDirectory(ctx, absolute)
+	switch {
+	case err == nil:
+		return nil
+	case isUnauthorized(err):
+		return fmt.Errorf("ydb: create directory %s: %w; creating a directory needs the "+
+			"ydb.granular.create_directory right on the database", absolute, err)
+	default:
 		return fmt.Errorf("ydb: create directory %s: %w", absolute, err)
 	}
-	return nil
 }
 
 // RemoveRealm removes the dev realm realm, with everything in it, and then
