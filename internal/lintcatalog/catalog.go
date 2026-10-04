@@ -613,6 +613,9 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"YD108": {
 		Summary: "an `ALTER SEQUENCE` without a `RESTART` on a sequence an earlier statement restarted, which YDB replays, so the next insert takes a key a row holds",
 	},
+	"YD109": {
+		Summary: "a `RENAME TO` of a table that carries a changefeed, which YDB refuses until every changefeed is dropped",
+	},
 }
 
 // sqlRuleMeta declares the same facts for the standalone SQL linter, which

@@ -180,7 +180,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## Migration lint rules
 
-101 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings unless the policy's `gate` section names more families, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
+102 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings unless the policy's `gate` section names more families, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
 
 ### Every dialect
 
@@ -327,6 +327,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `YD106` | a `DROP TABLE` of a table a view reads: YDB drops the table, keeps the view, and every read of the view fails | both | Ptah |
 | `YD107` | an `ALTER SEQUENCE` on a 16-bit or 32-bit Serial's sequence, which raises its maximum to the Int64 maximum, so the column wraps to negative values without an error | both | Ptah |
 | `YD108` | an `ALTER SEQUENCE` without a `RESTART` on a sequence an earlier statement restarted, which YDB replays, so the next insert takes a key a row holds | both | Ptah |
+| `YD109` | a `RENAME TO` of a table that carries a changefeed, which YDB refuses until every changefeed is dropped | both | Ptah |
 
 ### What the rules for every dialect do on YDB
 
@@ -383,7 +384,7 @@ A YDB run reads migrations as YQL. The `YD` family above is YDB's own, and every
 
 ## Default severities
 
-28 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `DS111P`, `MY146`, `ON101`, `ON102`, `ON103`, `SQL001`, `SQL002`, `YD101`, `YD102`, `YD103`, `YD104`, `YD106`, `YD107`, `YD108`. The other 80 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
+29 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `DS111P`, `MY146`, `ON101`, `ON102`, `ON103`, `SQL001`, `SQL002`, `YD101`, `YD102`, `YD103`, `YD104`, `YD106`, `YD107`, `YD108`, `YD109`. The other 80 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
 
 ## What ptah-compat prints
 
