@@ -720,3 +720,35 @@ func TestWriter_MakeDirectory(t *testing.T) {
 
 	c.Assert(fake.made, qt.DeepEquals, []string{"/local/ptah_dev/r1", "/local/ptah_dev/r1/app"})
 }
+
+// The migrator's tables are found by name in every directory DropAllTables
+// enters, each with its own directory; a view of the same name is not a
+// table, and neither the server's directories nor the dev realms are entered.
+func TestWriter_TablesNamed(t *testing.T) {
+	c := qt.New(t)
+	fake := &fakeDatabase{tree: map[string][]*Ydb_Scheme.Entry{
+		"/local": {
+			entry("schema_migrations", Ydb_Scheme.Entry_TABLE),
+			entry("users", Ydb_Scheme.Entry_TABLE),
+			entry(".sys", Ydb_Scheme.Entry_DIRECTORY),
+			entry("ptah_dev", Ydb_Scheme.Entry_DIRECTORY),
+			entry("app", Ydb_Scheme.Entry_DIRECTORY),
+		},
+		"/local/app": {
+			entry("ptah_migration_tags", Ydb_Scheme.Entry_TABLE),
+			entry("schema_migrations", Ydb_Scheme.Entry_VIEW),
+			entry("sub", Ydb_Scheme.Entry_DIRECTORY),
+		},
+		"/local/app/sub": {entry("schema_migrations", Ydb_Scheme.Entry_TABLE)},
+	}}
+	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
+
+	got, err := writer.TablesNamed(context.Background(), []string{"schema_migrations", "ptah_migration_tags"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, []dbreset.Object{
+		{Kind: "table", Schema: "app", Name: "ptah_migration_tags"},
+		{Kind: "table", Schema: "app/sub", Name: "schema_migrations"},
+		{Kind: "table", Name: "schema_migrations"},
+	})
+}
