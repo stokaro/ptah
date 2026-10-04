@@ -386,12 +386,29 @@ func ydbRowDeletionPolicy(t tableSpelling) experiment {
 // describes an index on YDB and a read the reader cannot make is one no
 // comparison could converge on.
 func ydbDescribedIndex(table, index, expectation string, want func(catalog.Index) bool) check {
+	inNamespace := func(s *session) string { return s.namespace }
+	return readBackIndex(table, index, expectation, inNamespace, want, func(s *session) string {
+		return fmt.Sprintf("read index %s of table %s through Ptah's YDB reader",
+			index, path.Join(s.database, s.namespace, table))
+	})
+}
+
+// readBackIndex is a check that reads index of table back through Ptah's
+// reader and answers whether want holds of it. schema names the schema the
+// reader is scoped to, which is the probe's namespace on YDB and dbo inside the
+// probe's database on SQL Server; statement names the read in the probe's
+// report.
+func readBackIndex(
+	table, index, expectation string,
+	schema func(*session) string,
+	want func(catalog.Index) bool,
+	statement func(*session) string,
+) check {
 	return check{
 		describes: expectation,
 		inspect: func(ctx context.Context, s *session) (Attempt, bool, string) {
-			attempt := Attempt{Statement: fmt.Sprintf("read index %s of table %s through Ptah's YDB reader",
-				index, path.Join(s.database, s.namespace, table))}
-			db, err := dbschema.ReadSchemaWithSchemasContext(ctx, s.conn, []string{s.namespace})
+			attempt := Attempt{Statement: statement(s)}
+			db, err := dbschema.ReadSchemaWithSchemasContext(ctx, s.conn, []string{schema(s)})
 			if err != nil {
 				attempt.ServerErr = err.Error()
 				return attempt, false, "was refused"

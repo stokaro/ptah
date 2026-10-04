@@ -38,6 +38,6 @@ CREATE INDEX `users_created_ix` ON `users` (`created_at`);
 CREATE UNIQUE INDEX `users_email_uq` ON `users` (`email`);
 DROP INDEX `users_name_ix` ON `users`;
 -- render: a covering index
--- refused: mysql does not support INCLUDE columns on index "users_name_ix"; target cockroachdb, postgres, spanner, ydb, or yugabytedb
+-- refused: mysql does not support INCLUDE columns on index "users_name_ix"; target cockroachdb, postgres, spanner, sqlserver, ydb, or yugabytedb
 -- plan: the current schema to a covering index
--- refused: mysql does not support INCLUDE columns on index "users_name_ix"; target cockroachdb, postgres, spanner, ydb, or yugabytedb
+-- refused: mysql does not support INCLUDE columns on index "users_name_ix"; target cockroachdb, postgres, spanner, sqlserver, ydb, or yugabytedb

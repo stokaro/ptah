@@ -182,6 +182,10 @@ type BidirectionalPlanInput struct {
 	// OmitNullBackfill is [DiffOptions.OmitNullBackfill], carried to the
 	// injected planner.
 	OmitNullBackfill bool
+	// AllowTableRebuild and TableRebuildRequest are the diff policy's, carried
+	// to the injected planner.
+	AllowTableRebuild   bool
+	TableRebuildRequest string
 }
 
 // BidirectionalPlan is the primitive output internal migrate-diff rendering
@@ -586,6 +590,8 @@ func planDiffFileContents(
 			OnlineAlter:          opts.Policy.OnlineAlter,
 			ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
 			OmitNullBackfill:     opts.OmitNullBackfill,
+			AllowTableRebuild:    opts.Policy.AllowTableRebuild,
+			TableRebuildRequest:  opts.Policy.TableRebuildRequest,
 		})
 
 		if err != nil {
@@ -603,6 +609,8 @@ func planDiffFileContents(
 			ConcurrentIndexCreate: opts.Policy.ConcurrentIndexCreate,
 			ConcurrentIndexDrop:   opts.Policy.ConcurrentIndexDrop,
 			OmitNullBackfill:      opts.OmitNullBackfill,
+			AllowTableRebuild:     opts.Policy.AllowTableRebuild,
+			TableRebuildRequest:   opts.Policy.TableRebuildRequest,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("generate migration plan: %w", err)
