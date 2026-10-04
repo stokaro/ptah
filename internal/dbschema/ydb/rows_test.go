@@ -90,3 +90,13 @@ func TestRowValue_FailurePath(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `read a Decimal\(22,9\) value that is not a finite number`)
 	c.Assert(got, qt.IsNil)
 }
+
+// The driver hands a moment over in the local zone, and RowValue returns it in
+// UTC, the only zone YDB stores. qt.DeepEquals compares two times by instant,
+// so the zone is asserted on its own.
+func TestRowValue_ReturnsAMomentInUTC(t *testing.T) {
+	c := qt.New(t)
+	got, err := ydb.RowValue(time.Date(2026, time.January, 2, 4, 4, 5, 0, time.FixedZone("CET", 3600)))
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.(time.Time).Location(), qt.Equals, time.UTC)
+}
