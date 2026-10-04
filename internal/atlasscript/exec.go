@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/hashicorp/hcl/v2"
 )
 
 // Execer is the write half of a database connection: a transaction, or
@@ -74,7 +76,7 @@ func RunExec(ctx context.Context, db Transactor, script Script, opts RunOptions)
 	reportf(opts.Report, "Executing script %q (%s:%d):\n-- tx open\n",
 		script.Name, script.Range.Filename, script.Range.Start.Line)
 
-	outcomes, err := runExecSteps(ctx, tx, script, opts, now)
+	outcomes, err := runExecSteps(ctx, tx, script, opts, now, constantContext())
 	if err != nil {
 		reportf(opts.Report, "-- tx rollback\n")
 		return nil, err
@@ -88,8 +90,11 @@ func RunExec(ctx context.Context, db Transactor, script Script, opts RunOptions)
 	return outcomes, nil
 }
 
+// runExecSteps runs a script's steps in order. evaluation is what their args
+// read: nothing in an exec script, and the page in a loop's do body.
 func runExecSteps(
 	ctx context.Context, tx Execer, script Script, opts RunOptions, now func() time.Time,
+	evaluation *hcl.EvalContext,
 ) ([]ExecOutcome, error) {
 	outcomes := make([]ExecOutcome, 0, len(script.Steps))
 	for _, step := range script.Steps {
@@ -98,11 +103,11 @@ func runExecSteps(
 			reportf(opts.Report, "-- output (%s:%d): %s\n",
 				step.Range.Filename, step.Range.Start.Line, step.Message)
 		case StepCondition:
-			if err := runCondition(ctx, tx, step, opts); err != nil {
+			if err := runCondition(ctx, tx, step, opts, evaluation); err != nil {
 				return nil, err
 			}
 		case StepExec:
-			outcome, err := runExecStep(ctx, tx, step, opts, now)
+			outcome, err := runExecStep(ctx, tx, step, opts, now, evaluation)
 			if err != nil {
 				return nil, err
 			}
@@ -111,7 +116,7 @@ func runExecSteps(
 			// A query inside an exec script is a read the author put there to
 			// report on. It runs, and its rows go to the product like a query
 			// script's do.
-			if _, err := runQueryStep(ctx, tx, step, opts, now); err != nil {
+			if _, err := runQueryStep(ctx, tx, step, opts, now, evaluation); err != nil {
 				return nil, err
 			}
 		}
@@ -124,8 +129,13 @@ func runExecSteps(
 //
 // An empty result set is false rather than an error: "SELECT id FROM users
 // WHERE active = 0 LIMIT 1" returning nothing is exactly the guard working.
-func runCondition(ctx context.Context, tx Execer, step Step, opts RunOptions) error {
-	rows, err := tx.QueryContext(ctx, step.SQL)
+func runCondition(ctx context.Context, tx Execer, step Step, opts RunOptions, evaluation *hcl.EvalContext) error {
+	args, err := bindArgs(step.Args, evaluation)
+	if err != nil {
+		return fmt.Errorf("condition %q (%s:%d): %w",
+			step.Name, step.Range.Filename, step.Range.Start.Line, err)
+	}
+	rows, err := tx.QueryContext(ctx, step.SQL, args...)
 	if err != nil {
 		return fmt.Errorf("condition %q (%s:%d): %w",
 			step.Name, step.Range.Filename, step.Range.Start.Line, err)
@@ -191,14 +201,16 @@ func truthyString(value string) bool {
 
 func runExecStep(
 	ctx context.Context, tx Execer, step Step, opts RunOptions, now func() time.Time,
+	evaluation *hcl.EvalContext,
 ) (ExecOutcome, error) {
 	reportf(opts.Report, "-- exec %q (%s:%d)\n   -> %s\n",
 		step.Name, step.Range.Filename, step.Range.Start.Line, step.SQL)
 
 	started := now()
-	args := make([]any, 0, len(step.Args))
-	for _, arg := range step.Args {
-		args = append(args, arg)
+	args, err := bindArgs(step.Args, evaluation)
+	if err != nil {
+		return ExecOutcome{}, fmt.Errorf("exec %q (%s:%d): %w",
+			step.Name, step.Range.Filename, step.Range.Start.Line, err)
 	}
 	result, err := tx.ExecContext(ctx, step.SQL, args...)
 	if err != nil {

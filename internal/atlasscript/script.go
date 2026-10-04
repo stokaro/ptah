@@ -45,14 +45,20 @@ type Script struct {
 // choice made here -- an OFFSET walk over rows the body is deleting skips
 // rows, because every delete shifts the offsets under the next page.
 type Iterator struct {
-	// Cursor names the columns carried between batches, in declaration order.
-	Cursor []string
-	// InitSQL selects the first batch.
-	InitSQL string
-	// NextSQL selects each batch after it, and NextArgs are the cursor
-	// references it takes.
+	// Cursor is the columns carried from the last row of one page to the next
+	// query, in declaration order.
+	Cursor []Column
+	// Batch is the columns of the page a do body reads as
+	// iterator.keyset.batch. Empty means the cursor's columns.
+	Batch []Column
+	// InitSQL selects the first batch, and InitArgs are its constant
+	// arguments.
+	InitSQL  string
+	InitArgs []hcl.Expression
+	// NextSQL selects each batch after it, and NextArgs are its arguments,
+	// which read the cursor as cursor.<col> and bind in the order written.
 	NextSQL  string
-	NextArgs []string
+	NextArgs []hcl.Expression
 	Range    hcl.Range
 }
 
@@ -76,10 +82,11 @@ type Step struct {
 	Name string
 	// SQL is the statement, for every kind but output.
 	SQL string
-	// Args are the placeholder arguments, each a constant written as a
-	// string. A reference or a null is refused when the script is parsed,
-	// because nothing binds a value for one.
-	Args []string
+	// Args are the placeholder arguments as written. Each is evaluated when
+	// the step runs: a constant binds as its own type, and in a loop's do body
+	// an element may read the page through iterator.keyset and self. What an
+	// element may read is checked when the script is parsed.
+	Args []hcl.Expression
 	// ExpectRows is exec's assertion on the row count. Nil means no assertion,
 	// which is different from zero -- a script that expects to change nothing
 	// is a real thing to write, and it is not the same as not caring.
@@ -180,17 +187,23 @@ func parseScriptBlock(block *hclsyntax.Block, masks map[string]Mask) (Script, er
 	}
 
 	script := Script{Kind: kind, Name: block.Labels[1], Masks: masks, Range: block.DefRange()}
-	steps, err := parseSteps(block.Body, masks)
-	if err != nil {
-		return Script{}, err
-	}
-	script.Steps = steps
-
+	// The iterator is read first: a loop's steps are checked against the
+	// columns it declares.
 	iterator, err := parseIterator(block)
 	if err != nil {
 		return Script{}, err
 	}
 	script.Iterator = iterator
+
+	scope, shape := scopeConstant, pageShape{}
+	if kind == KindLoop && iterator != nil {
+		scope, shape = scopeBody, pageShape{cursor: iterator.Cursor, batch: iterator.Batch}
+	}
+	steps, err := parseSteps(block.Body, masks, scope, shape)
+	if err != nil {
+		return Script{}, err
+	}
+	script.Steps = steps
 
 	// The pairing is checked here rather than at run time, because a script
 	// with the wrong shape is wrong before it reaches a database. A loop with
@@ -223,18 +236,18 @@ func parseScriptBlock(block *hclsyntax.Block, masks map[string]Mask) (Script, er
 
 // parseSteps reads a body's steps, descending into `do` because a loop wraps
 // its body in one.
-func parseSteps(body *hclsyntax.Body, masks map[string]Mask) ([]Step, error) {
+func parseSteps(body *hclsyntax.Body, masks map[string]Mask, scope argScope, shape pageShape) ([]Step, error) {
 	steps := make([]Step, 0, len(body.Blocks))
 	for _, block := range body.Blocks {
 		switch block.Type {
 		case "do":
-			nested, err := parseSteps(block.Body, masks)
+			nested, err := parseSteps(block.Body, masks, scope, shape)
 			if err != nil {
 				return nil, err
 			}
 			steps = append(steps, nested...)
 		case "query", "exec", "condition", "output":
-			step, err := parseStep(block, masks)
+			step, err := parseStep(block, masks, scope, shape)
 			if err != nil {
 				return nil, err
 			}
@@ -259,7 +272,7 @@ func parseSteps(body *hclsyntax.Body, masks map[string]Mask) ([]Step, error) {
 	return steps, nil
 }
 
-func parseStep(block *hclsyntax.Block, masks map[string]Mask) (Step, error) {
+func parseStep(block *hclsyntax.Block, masks map[string]Mask, scope argScope, shape pageShape) (Step, error) {
 	step := Step{Kind: StepKind(block.Type), Range: block.DefRange()}
 	if len(block.Labels) > 0 {
 		step.Name = block.Labels[0]
@@ -290,10 +303,7 @@ func parseStep(block *hclsyntax.Block, masks map[string]Mask) (Step, error) {
 	step.SQL = sql
 
 	if attr := block.Body.Attributes["args"]; attr != nil {
-		if err := refuseUnboundStepArgs(attr); err != nil {
-			return Step{}, err
-		}
-		args, err := rawList(attr)
+		args, err := parseArgs(attr, scope, shape)
 		if err != nil {
 			return Step{}, err
 		}
@@ -357,32 +367,6 @@ func intAttr(block *hclsyntax.Block, attr *hclsyntax.Attribute) (int, error) {
 	return int(count), nil
 }
 
-// refuseUnboundStepArgs refuses an element of a step's args that is not a
-// constant value. A step binds its arguments as written, and nothing resolves a
-// reference such as cursor.id or binds a null there, so either would reach the
-// database as an empty string: an UPDATE ... WHERE id = ? that matched no row
-// and reported success. Only the iterator's next query takes the cursor, and
-// its args are not read through here.
-func refuseUnboundStepArgs(attr *hclsyntax.Attribute) error {
-	list, ok := attr.Expr.(*hclsyntax.TupleConsExpr)
-	if !ok {
-		return &ParseError{Range: attr.SrcRange, Message: "args must be a list"}
-	}
-	for _, expr := range list.Exprs {
-		if variables := expr.Variables(); len(variables) > 0 {
-			return &ParseError{Range: expr.Range(), Message: fmt.Sprintf(
-				"args element %s is a reference, and a step binds constant values only: "+
-					"only the iterator's next query reads the cursor",
-				traversalText(variables[0]))}
-		}
-		if value, diags := expr.Value(nil); !diags.HasErrors() && value.IsNull() {
-			return &ParseError{Range: expr.Range(), Message: "args element null binds no value: " +
-				"a step binds constant values only"}
-		}
-	}
-	return nil
-}
-
 // traversalText spells a reference the way it was written, such as cursor.id.
 func traversalText(traversal hcl.Traversal) string {
 	var text strings.Builder
@@ -399,29 +383,24 @@ func traversalText(traversal hcl.Traversal) string {
 	return text.String()
 }
 
-// rawList returns a list attribute's elements as strings: a constant as its
-// value, and an element that does not evaluate to one as the empty string.
+// stringList reads a list attribute whose elements are literal strings.
 //
-// The iterator's next args reference the cursor and are not evaluable here;
-// the loop binds the cursor row to that query itself. A step's args are
-// refused by [refuseUnboundStepArgs] before this reads them, so the empty
-// string never reaches a step.
-func rawList(attr *hclsyntax.Attribute) ([]string, error) {
+// An element that is not one is refused rather than read as the empty string:
+// a mask whose columns came back empty matches no column, and the query prints
+// the values it was written to hide.
+func stringList(attr *hclsyntax.Attribute, name string) ([]string, error) {
 	list, ok := attr.Expr.(*hclsyntax.TupleConsExpr)
 	if !ok {
-		return nil, &ParseError{Range: attr.SrcRange, Message: "args must be a list"}
+		return nil, &ParseError{Range: attr.SrcRange, Message: name + " must be a list"}
 	}
-	args := make([]string, 0, len(list.Exprs))
+	values := make([]string, 0, len(list.Exprs))
 	for _, expr := range list.Exprs {
 		value, diags := expr.Value(nil)
-		if !diags.HasErrors() && !value.IsNull() {
-			converted, err := convert.Convert(value, cty.String)
-			if err == nil {
-				args = append(args, converted.AsString())
-				continue
-			}
+		if diags.HasErrors() || value.IsNull() || value.Type() != cty.String {
+			return nil, &ParseError{Range: expr.Range(), Message: fmt.Sprintf(
+				"%s element %s must be a literal string", name, exprText(expr))}
 		}
-		args = append(args, "")
+		values = append(values, value.AsString())
 	}
-	return args, nil
+	return values, nil
 }

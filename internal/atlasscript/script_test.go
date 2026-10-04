@@ -322,19 +322,10 @@ func TestParse_ARefusalNamesWhereItHappened(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `purge\.hcl:4: .*`)
 }
 
-// A step binds its args as written, and nothing resolves a reference or binds a
-// null there, so such an element would reach the database as an empty string:
-// an UPDATE ... WHERE id = ? that matches no row and reports success. Each is
-// refused where it was written, in a loop body and in an exec script alike.
-func TestParse_RefusesAStepArgThatIsNotAConstant(t *testing.T) {
-	tests := []struct {
-		name     string
-		document string
-		want     string
-	}{
-		{
-			name: "a cursor reference in a loop body",
-			document: `
+// loopDocument is a keyset loop over items whose next query and do body are
+// written by the caller.
+func loopDocument(nextArgs, body string) string {
+	return `
 script "loop" "touch" {
   iterator "keyset" {
     cursor {
@@ -345,21 +336,86 @@ script "loop" "touch" {
     }
     next {
       sql  = "SELECT id FROM items WHERE id > ? ORDER BY id LIMIT 1"
-      args = [cursor.id]
+      args = ` + nextArgs + `
     }
   }
   do {
-    exec "touch" {
-      sql  = "UPDATE items SET price = price + 100 WHERE id = ?"
-      args = [cursor.id]
-    }
+` + body + `
   }
-}`,
-			want: `script\.hcl:18: args element cursor\.id is a reference, and a step binds constant values only: ` +
-				`only the iterator's next query reads the cursor`,
+}`
+}
+
+// An args element is checked where it is written, against what that place
+// reads. Unchecked, an element nothing can resolve reaches the database as an
+// empty string: an UPDATE ... WHERE id = ? that matches no row and reports
+// success (stokaro/ptah#4127).
+func TestParse_StepArgs_FailurePath(t *testing.T) {
+	tests := []struct {
+		name     string
+		document string
+		want     string
+	}{
+		{
+			name: "the bare cursor in a do body",
+			document: loopDocument("[cursor.id]",
+				`exec "touch" {
+  sql  = "UPDATE items SET price = price + 100 WHERE id = ?"
+  args = [cursor.id]
+}`),
+			want: `script\.hcl:18: args element cursor\.id names the cursor the way only the iterator's next query does: ` +
+				`inside do it is iterator\.keyset\.cursor\.id, the last row of the page`,
 		},
 		{
-			name: "a reference in an exec script, which has no cursor",
+			name: "a column the cursor does not declare",
+			document: loopDocument("[cursor.id]",
+				`exec "touch" {
+  sql  = "UPDATE items SET price = 1 WHERE id = ?"
+  args = [iterator.keyset.cursor.price]
+}`),
+			want: `script\.hcl:18: args element iterator\.keyset\.cursor\.price: .*attribute named "price".*`,
+		},
+		{
+			name: "a name a do body does not read",
+			document: loopDocument("[cursor.id]",
+				`exec "touch" {
+  sql  = "UPDATE items SET price = 1 WHERE id = ?"
+  args = [query.page.rows]
+}`),
+			want: `script\.hcl:18: args element query\.page\.rows names nothing a do body reads: ` +
+				`it reads iterator\.keyset\.cursor\.<col>, iterator\.keyset\.batch\[\*\]\.<col> and self\.index`,
+		},
+		{
+			name: "the page bound to one placeholder",
+			document: loopDocument("[cursor.id]",
+				`exec "touch" {
+  sql  = "DELETE FROM items WHERE id IN (?)"
+  args = [iterator.keyset.batch[*].id]
+}`),
+			want: `script\.hcl:18: args element iterator\.keyset\.batch\[\*\]\.id is list of number, ` +
+				`and a placeholder takes one value: bind it through jsonencode\(\.\.\.\)`,
+		},
+		{
+			name: "a function nothing provides",
+			document: loopDocument("[cursor.id]",
+				`exec "touch" {
+  sql  = "UPDATE items SET note = ?"
+  args = [upper("x")]
+}`),
+			want: `script\.hcl:18: args element upper\(\.\.\.\): .*no function named "upper".*`,
+		},
+		{
+			name:     "a column the next query's cursor does not declare",
+			document: loopDocument("[cursor.price]", `exec "touch" { sql = "DELETE FROM items" }`),
+			want:     `script\.hcl:12: args element cursor\.price: .*attribute named "price".*`,
+		},
+		{
+			name:     "a name the next query does not read",
+			document: loopDocument("[self.index]", `exec "touch" { sql = "DELETE FROM items" }`),
+			want: `script\.hcl:12: args element self\.index names nothing the next query reads: ` +
+				`it reads the last row of the previous page as cursor\.<col>`,
+		},
+		{
+			name: "a reference in an exec script",
 			document: `
 script "exec" "one" {
   exec "touch" {
@@ -367,8 +423,8 @@ script "exec" "one" {
     args = [1, row.id]
   }
 }`,
-			want: `script\.hcl:5: args element row\.id is a reference, and a step binds constant values only: ` +
-				`only the iterator's next query reads the cursor`,
+			want: `script\.hcl:5: args element row\.id is a reference, and nothing here has been read for it to name: ` +
+				`only a loop's do body reads iterator\.keyset and self, and only the iterator's next query reads cursor`,
 		},
 		{
 			name: "a null",
@@ -379,7 +435,52 @@ script "exec" "one" {
     args = [null]
   }
 }`,
-			want: `script\.hcl:5: args element null binds no value: a step binds constant values only`,
+			want: `script\.hcl:5: args element null binds no value: write the constant, or read a column the page carries`,
+		},
+		{
+			name: "a cursor column with no type",
+			document: `
+script "loop" "touch" {
+  iterator "keyset" {
+    cursor {
+      id = integer
+    }
+    init { sql = "SELECT id FROM items" }
+    next { sql = "SELECT id FROM items" }
+  }
+  do {
+    exec "touch" { sql = "DELETE FROM items" }
+  }
+}`,
+			want: `script\.hcl:5: cursor column id needs a type: int, number, string or bool`,
+		},
+		{
+			name: "a mask column that is not a string",
+			document: `
+script "query" "read" {
+  query "q" {
+    sql = "SELECT email FROM users"
+    mask {
+      columns = [email]
+      method  = "REDACT"
+    }
+  }
+}`,
+			want: `script\.hcl:6: columns element email must be a literal string`,
+		},
+		{
+			name: "a mask column that is a number",
+			document: `
+script "query" "read" {
+  query "q" {
+    sql = "SELECT email FROM users"
+    mask {
+      columns = ["email", 1]
+      method  = "REDACT"
+    }
+  }
+}`,
+			want: `script\.hcl:6: columns element 1 must be a literal string`,
 		},
 	}
 	for _, test := range tests {
@@ -394,34 +495,23 @@ script "exec" "one" {
 	}
 }
 
-// The control: constants bind as written, and the iterator's next query keeps
-// its cursor reference.
-func TestParse_KeepsConstantStepArgs(t *testing.T) {
+// The control: every place an element is written accepts what that place
+// reads.
+func TestParse_StepArgs_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	scripts := parse(c, `
-script "loop" "touch" {
-  iterator "keyset" {
-    cursor {
-      id = int
-    }
-    init {
-      sql = "SELECT id FROM items ORDER BY id LIMIT 1"
-    }
-    next {
-      sql  = "SELECT id FROM items WHERE id > ? ORDER BY id LIMIT 1"
-      args = [cursor.id]
-    }
-  }
-  do {
-    exec "touch" {
-      sql  = "UPDATE items SET price = ? WHERE note = ? AND active = ?"
-      args = [100, "x", true]
-    }
-  }
+	scripts, err := atlasscript.Parse([]byte(loopDocument("[cursor.id]", `exec "touch" {
+  sql  = "UPDATE items SET price = ?, note = ? WHERE id = ? AND ? > 0 AND ? = 1"
+  args = [100, "x", iterator.keyset.cursor.id, length(iterator.keyset.batch), self.index]
 }
-`)
+exec "page" {
+  sql  = "DELETE FROM items WHERE id IN (SELECT value FROM json_each(?))"
+  args = [jsonencode(iterator.keyset.batch[*].id)]
+}`)), "script.hcl")
 
-	c.Assert(scripts[0].Steps, qt.HasLen, 1)
-	c.Assert(scripts[0].Steps[0].Args, qt.DeepEquals, []string{"100", "x", "true"})
+	c.Assert(err, qt.IsNil)
+	c.Assert(scripts[0].Steps, qt.HasLen, 2)
+	c.Assert(scripts[0].Steps[0].Args, qt.HasLen, 5)
+	c.Assert(scripts[0].Steps[1].Args, qt.HasLen, 1)
+	c.Assert(scripts[0].Iterator.NextArgs, qt.HasLen, 1)
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 )
 
@@ -39,39 +40,31 @@ func parseIterator(block *hclsyntax.Block) (*Iterator, error) {
 	}
 
 	iterator := &Iterator{Range: found.DefRange()}
+	var initBlock, nextBlock *hclsyntax.Block
 	for _, nested := range found.Body.Blocks {
 		switch nested.Type {
 		case "cursor":
-			// The cursor's attributes name the carried columns. Their values
-			// are type hints in the documented grammar, and this reads the
-			// names only -- the database decides the types, and a hint that
-			// disagreed with it would be a second opinion nobody consults.
-			//
-			// Read in SOURCE order rather than map order. hclsyntax keeps
-			// attributes in a map, and Go randomizes that iteration, so taking
-			// the names as they come would order the cursor differently on
-			// every run -- and the cursor's order is what the next batch's
-			// arguments are positioned against.
-			iterator.Cursor = attributeNamesInSourceOrder(nested)
+			// The cursor's attributes name the carried columns and their
+			// types, read in SOURCE order rather than map order: hclsyntax
+			// keeps attributes in a map, and Go randomizes that iteration, so
+			// taking them as they come would order the cursor differently on
+			// every run. The values are matched to the result set by name, so
+			// the order is what the report and a reader see.
+			columns, err := parseColumns(nested)
+			if err != nil {
+				return nil, err
+			}
+			iterator.Cursor = columns
+		case "batch":
+			columns, err := parseColumns(nested)
+			if err != nil {
+				return nil, err
+			}
+			iterator.Batch = columns
 		case "init":
-			sql, err := stringAttr(nested, "sql")
-			if err != nil {
-				return nil, err
-			}
-			iterator.InitSQL = sql
+			initBlock = nested
 		case "next":
-			sql, err := stringAttr(nested, "sql")
-			if err != nil {
-				return nil, err
-			}
-			iterator.NextSQL = sql
-			if attr := nested.Body.Attributes["args"]; attr != nil {
-				args, err := rawList(attr)
-				if err != nil {
-					return nil, err
-				}
-				iterator.NextArgs = args
-			}
+			nextBlock = nested
 		default:
 			return nil, &ParseError{
 				Range:   nested.DefRange(),
@@ -80,25 +73,72 @@ func parseIterator(block *hclsyntax.Block) (*Iterator, error) {
 		}
 	}
 
+	// The queries are read after the cursor, which may be written below
+	// them: the next query's args are checked against its columns.
+	shape := pageShape{cursor: iterator.Cursor, batch: iterator.Batch}
+	if initBlock != nil {
+		sql, args, err := parseIteratorQuery(initBlock, scopeConstant, shape)
+		if err != nil {
+			return nil, err
+		}
+		iterator.InitSQL, iterator.InitArgs = sql, args
+	}
+	if nextBlock != nil {
+		sql, args, err := parseIteratorQuery(nextBlock, scopeNext, shape)
+		if err != nil {
+			return nil, err
+		}
+		iterator.NextSQL, iterator.NextArgs = sql, args
+	}
+
+	if err := requireIteratorParts(iterator); err != nil {
+		return nil, err
+	}
+	return iterator, nil
+}
+
+// requireIteratorParts refuses an iterator that cannot walk: one with no
+// first query, no query for the pages after it, or no cursor to resume from.
+func requireIteratorParts(iterator *Iterator) error {
 	if iterator.InitSQL == "" {
-		return nil, &ParseError{Range: found.DefRange(), Message: "the iterator has no init sql"}
+		return &ParseError{Range: iterator.Range, Message: "the iterator has no init sql"}
 	}
 	if iterator.NextSQL == "" {
 		// Without `next` the walk has one page and the loop would run its body
 		// once, which is the batching silently not happening rather than a
 		// smaller batch size.
-		return nil, &ParseError{
-			Range:   found.DefRange(),
+		return &ParseError{
+			Range:   iterator.Range,
 			Message: "the iterator has no next sql, so the walk would stop after one batch",
 		}
 	}
 	if len(iterator.Cursor) == 0 {
-		return nil, &ParseError{
-			Range:   found.DefRange(),
+		return &ParseError{
+			Range:   iterator.Range,
 			Message: "the iterator has no cursor, so each batch could not resume after the last",
 		}
 	}
-	return iterator, nil
+	return nil
+}
+
+// parseIteratorQuery reads an init or next block: its sql, and its args
+// checked against what the scope reads.
+func parseIteratorQuery(
+	block *hclsyntax.Block, scope argScope, shape pageShape,
+) (string, []hcl.Expression, error) {
+	sql, err := stringAttr(block, "sql")
+	if err != nil {
+		return "", nil, err
+	}
+	attr := block.Body.Attributes["args"]
+	if attr == nil {
+		return sql, nil, nil
+	}
+	args, err := parseArgs(attr, scope, shape)
+	if err != nil {
+		return "", nil, err
+	}
+	return sql, args, nil
 }
 
 // attributeNamesInSourceOrder returns a block's attribute names as written.
