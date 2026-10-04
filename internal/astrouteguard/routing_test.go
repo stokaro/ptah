@@ -32,8 +32,11 @@ func TestRouting_EveryRendererDecidesAboutEveryNodeKind(t *testing.T) {
 
 	renderers, err := astrouteguard.Renderers(root)
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(renderers) >= astrouteguard.RendererFloor, qt.IsTrue,
-		qt.Commentf("the guard found %d renderers, below the floor of %d", len(renderers), astrouteguard.RendererFloor))
+	linked, err := astrouteguard.LinkedRenderers(root)
+	c.Assert(err, qt.IsNil)
+	c.Assert(linked, qt.Not(qt.HasLen), 0, qt.Commentf("the renderer links no dialect renderer the guard can see"))
+	c.Assert(packagesOf(renderers), qt.DeepEquals, linked,
+		qt.Commentf("the guard must read a dispatcher in every renderer the build links, and in nothing else"))
 
 	byPackage := make(map[string]astrouteguard.Renderer, len(renderers))
 	for _, renderer := range renderers {
@@ -169,7 +172,7 @@ func TestRouting_SelfTest(t *testing.T) {
 
 // TestRouting_EveryRendererPackageIsUnderTheDialectsDirectory is the control on
 // the discovery: a guard that found renderers somewhere else would be measuring
-// something other than the eight that ship.
+// something other than the renderers that ship.
 func TestRouting_EveryRendererPackageIsUnderTheDialectsDirectory(t *testing.T) {
 	c := qt.New(t)
 
@@ -187,6 +190,17 @@ func TestRouting_EveryRendererPackageIsUnderTheDialectsDirectory(t *testing.T) {
 				qt.Commentf("%s names no node kind at all", renderer.Package))
 		})
 	}
+}
+
+// packagesOf lists the renderers' packages in the order LinkedRenderers sorts
+// them.
+func packagesOf(renderers []astrouteguard.Renderer) []string {
+	packages := make([]string, 0, len(renderers))
+	for _, renderer := range renderers {
+		packages = append(packages, renderer.Package)
+	}
+	slices.Sort(packages)
+	return packages
 }
 
 // delegationEdges names every renderer that forwards its default arm, as
