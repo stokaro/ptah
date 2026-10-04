@@ -52,7 +52,7 @@ type sdkConn interface {
 func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
 	opened, err := c.inner.Connect(ctx)
 	if err != nil {
-		return nil, err
+		return nil, WithoutStackFrames(err)
 	}
 	sdk, ok := opened.(sdkConn)
 	if !ok {
@@ -81,10 +81,139 @@ func (c *connector) Close() error {
 }
 
 // conn is an SDK connection whose arguments are named and widened before the
-// SDK binds them.
+// SDK binds them, and whose errors reach database/sql without the SDK's stack
+// frames; see [WithoutStackFrames]. The transactions, statements and result
+// sets it returns are wrapped for the same reason.
 type conn struct {
 	sdkConn
 	driver *ydbsdk.Driver
+}
+
+// ExecContext runs a statement and returns its error without stack frames.
+func (c conn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	result, err := c.sdkConn.ExecContext(ctx, query, args)
+	return result, WithoutStackFrames(err)
+}
+
+// QueryContext runs a query and wraps the result set it returns.
+func (c conn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+	return wrapRows(c.sdkConn.QueryContext(ctx, query, args))
+}
+
+// wrapRows wraps a result set the SDK returned, or returns its error without
+// stack frames.
+func wrapRows(opened driver.Rows, err error) (driver.Rows, error) {
+	if err != nil {
+		return nil, WithoutStackFrames(err)
+	}
+	sdk, ok := opened.(sdkRows)
+	if !ok {
+		_ = opened.Close()
+		return nil, fmt.Errorf("the YDB driver's result set %T no longer offers what Ptah reads through", opened)
+	}
+	return rows{sdkRows: sdk}, nil
+}
+
+// PrepareContext prepares a statement and wraps it.
+func (c conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, error) {
+	return wrapStmt(c.sdkConn.PrepareContext(ctx, query))
+}
+
+// Prepare prepares a statement without a context and wraps it.
+func (c conn) Prepare(query string) (driver.Stmt, error) {
+	return wrapStmt(c.sdkConn.Prepare(query))
+}
+
+// wrapStmt wraps a statement the SDK prepared, or returns its error without
+// stack frames.
+func wrapStmt(prepared driver.Stmt, err error) (driver.Stmt, error) {
+	if err != nil {
+		return nil, WithoutStackFrames(err)
+	}
+	sdk, ok := prepared.(sdkStmt)
+	if !ok {
+		_ = prepared.Close()
+		return nil, fmt.Errorf("the YDB driver's statement %T no longer offers what Ptah runs through", prepared)
+	}
+	return stmt{sdkStmt: sdk}, nil
+}
+
+// BeginTx starts a transaction and wraps it.
+func (c conn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
+	return wrapTx(c.sdkConn.BeginTx(ctx, opts))
+}
+
+// Begin starts a transaction without a context or options and wraps it.
+func (c conn) Begin() (driver.Tx, error) {
+	return wrapTx(c.sdkConn.Begin())
+}
+
+// wrapTx wraps a transaction the SDK began, or returns its error without
+// stack frames.
+func wrapTx(begun driver.Tx, err error) (driver.Tx, error) {
+	if err != nil {
+		return nil, WithoutStackFrames(err)
+	}
+	return tx{inner: begun}, nil
+}
+
+// Ping checks the connection and returns its error without stack frames.
+func (c conn) Ping(ctx context.Context) error {
+	return WithoutStackFrames(c.sdkConn.Ping(ctx))
+}
+
+// tx is an SDK transaction whose commit and rollback errors reach
+// database/sql without stack frames. A commit is where YDB reports a
+// transaction its optimistic locks lost, so it is the error a retry names.
+type tx struct {
+	inner driver.Tx
+}
+
+func (t tx) Commit() error   { return WithoutStackFrames(t.inner.Commit()) }
+func (t tx) Rollback() error { return WithoutStackFrames(t.inner.Rollback()) }
+
+// sdkRows is what database/sql uses of a ydb-go-sdk result set, checked when
+// a query returns one, as [sdkConn] is when a connection is made.
+type sdkRows interface {
+	driver.Rows
+	driver.RowsNextResultSet
+	driver.RowsColumnTypeDatabaseTypeName
+	driver.RowsColumnTypeNullable
+}
+
+// rows is an SDK result set whose errors reach database/sql without stack
+// frames. The end of a result set is io.EOF, which carries none and so reaches
+// database/sql as the very value it compares against.
+type rows struct {
+	sdkRows
+}
+
+func (r rows) Next(dest []driver.Value) error { return WithoutStackFrames(r.sdkRows.Next(dest)) }
+func (r rows) NextResultSet() error           { return WithoutStackFrames(r.sdkRows.NextResultSet()) }
+func (r rows) Close() error                   { return WithoutStackFrames(r.sdkRows.Close()) }
+
+// sdkStmt is what database/sql uses of a ydb-go-sdk prepared statement.
+type sdkStmt interface {
+	driver.Stmt
+	driver.StmtExecContext
+	driver.StmtQueryContext
+}
+
+// stmt is an SDK prepared statement whose errors reach database/sql without
+// stack frames.
+type stmt struct {
+	sdkStmt
+}
+
+func (s stmt) Close() error { return WithoutStackFrames(s.sdkStmt.Close()) }
+
+func (s stmt) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
+	result, err := s.sdkStmt.ExecContext(ctx, args)
+	return result, WithoutStackFrames(err)
+}
+
+func (s stmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
+	return wrapRows(s.sdkStmt.QueryContext(ctx, args))
 }
 
 // DriverOf returns the SDK driver behind session, a connection from a pool

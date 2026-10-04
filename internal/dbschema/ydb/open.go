@@ -90,11 +90,11 @@ func Open(ctx context.Context, rawURL string) (*Connection, error) {
 	}
 	driver, err := ydbsdk.Open(ctx, dataSourceName(parsed, passed), options...)
 	if err != nil {
-		return nil, fmt.Errorf("open YDB driver: %w", err)
+		return nil, fmt.Errorf("open YDB driver: %w", WithoutStackFrames(err))
 	}
 	inner, err := ydbsdk.Connector(driver, ydbsdk.WithQueryService(true))
 	if err != nil {
-		return nil, errors.Join(fmt.Errorf("create YDB connector: %w", err), closeDriver(driver))
+		return nil, errors.Join(fmt.Errorf("create YDB connector: %w", WithoutStackFrames(err)), closeDriver(driver))
 	}
 	return &Connection{
 		DB: sql.OpenDB(&connector{
@@ -288,7 +288,7 @@ func closeDriver(driver *ydbsdk.Driver) error {
 	ctx, cancel := context.WithTimeout(context.Background(), driverCloseTimeout)
 	defer cancel()
 	if err := driver.Close(ctx); err != nil {
-		return fmt.Errorf("close YDB driver: %w", err)
+		return fmt.Errorf("close YDB driver: %w", WithoutStackFrames(err))
 	}
 	return nil
 }

@@ -269,10 +269,13 @@ and shadow verification (shadow execution is rejected when the shadow catalog
 resolves names differently).
 
 An offline, dialect-only comparison cannot know the target collation, so it
-confirms only exact-spelling identity and treats distinct unresolved names in
-one namespace as potential conflicts: planning rejects the ambiguity instead
-of guessing. This makes offline SQL Server planning intentionally stricter
-than live planning. Embedders choose between the live-aware and offline
+confirms only exact-spelling identity. When it checks for conflicts, it treats
+two ASCII names that differ after ASCII case folding as distinct, because no
+SQL Server collation makes them equal. Names that differ only in ASCII case, or
+where either name has a non-ASCII character, may be one name under some
+collation. Planning treats them as potential conflicts and rejects the
+ambiguity instead of guessing. This makes offline SQL Server planning
+intentionally stricter than live planning. Embedders choose between the live-aware and offline
 comparison APIs — see [Public Go API](../../extend/public-api/).
 
 ## Filtered indexes

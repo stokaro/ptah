@@ -23,9 +23,13 @@ var purePaths = []struct {
 	{name: "planner orders it", pkg: "ptah.run/migration/planner"},
 }
 
-// driverModules are the database drivers this module requires. Every one of
-// them belongs to the connection layer under `dbschema`, and none of them has
-// anything to say about rendering.
+// driverModules are the modules of the connection layer this module requires
+// directly: the database drivers, and for YDB the SDK's credential module and
+// the generated protocol the schema reader decodes. Every one of them belongs to
+// the connection layer under `dbschema`, and none of them has anything to say
+// about rendering. [TestConnectionLayerLinksEveryNamedDriver] holds the list to
+// that claim, so a name that stopped being linked fails rather than guarding
+// nothing.
 var driverModules = []string{
 	"github.com/ClickHouse/clickhouse-go/v2",
 	"github.com/go-sql-driver/mysql",
@@ -33,8 +37,15 @@ var driverModules = []string{
 	"github.com/microsoft/go-mssqldb",
 	"github.com/sijms/go-ora/v3",
 	"github.com/tursodatabase/libsql-client-go",
+	"github.com/ydb-platform/ydb-go-genproto",
+	"github.com/ydb-platform/ydb-go-sdk-auth-environ",
+	"github.com/ydb-platform/ydb-go-sdk/v3",
 	"modernc.org/sqlite",
 }
+
+// connectionLayer is the package that opens a database for every dialect, and
+// so the one root that has to reach every driver.
+const connectionLayer = "ptah.run/dbschema"
 
 // permittedModules is the entire module set a pure path may link, this module
 // included.
@@ -74,6 +85,27 @@ func TestPureRenderingPathsLinkNoDatabaseDriver(t *testing.T) {
 					"Cut the edge, or move the symbol the pure side needs into a leaf package.",
 				test.pkg, strings.Join(chain, "\n\t-> "),
 			))
+		})
+	}
+}
+
+// TestConnectionLayerLinksEveryNamedDriver is the control for the test above.
+//
+// A driver check that names a module nothing links passes whatever the
+// rendering path imports, because there is nothing for it to find. Asked of
+// the connection layer, the same walk has to find every named module, which
+// shows both that each name is spelled the way the build resolves it and that
+// the walk can find a driver at all.
+func TestConnectionLayerLinksEveryNamedDriver(t *testing.T) {
+	c := qt.New(t)
+	root := loadRoot(c, connectionLayer)
+	for _, module := range driverModules {
+		t.Run(module, func(t *testing.T) {
+			c := qt.New(t)
+			chain := chainToModule(root, func(linked string) bool { return linked == module })
+			c.Assert(chain, qt.IsNotNil, qt.Commentf(
+				"%s does not link %s, so the driver check cannot see it reach a rendering path; "+
+					"take the name off driverModules or correct its spelling", connectionLayer, module))
 		})
 	}
 }

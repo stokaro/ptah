@@ -1125,6 +1125,23 @@ const (
 	// turn a set into an invalid one.
 	CheckConstraints Capability = "check_constraints"
 
+	// CreateIndexStatement marks a target with a standalone CREATE INDEX
+	// statement. The probe creates an index with it and then drops that index
+	// by name, which the server refused before the index existed, so a
+	// statement accepted and ignored reads false.
+	//
+	// ClickHouse has one for its data-skipping indexes: measured on 24.10 and
+	// 26.9, `CREATE INDEX i ON t (n) TYPE minmax GRANULARITY 1` creates the
+	// index, and without TYPE the statement is refused. Ptah's ClickHouse
+	// renderer still writes the same index as ALTER TABLE ... ADD INDEX. YDB
+	// has none: 26.2 answers `no viable alternative at input 'CREATE INDEX'`
+	// and 25.1 `Unexpected token 'CREATE'`. An index there is declared in
+	// CREATE TABLE or added with ALTER TABLE ... ADD INDEX.
+	//
+	// On a target without the key, Ptah writes a new table's indexes inside
+	// its CREATE TABLE rather than as statements after it.
+	CreateIndexStatement Capability = "create_index_statement"
+
 	// IndexCoveringColumns marks a target on which Ptah renders, reads and
 	// plans an index's payload columns: INCLUDE on the PostgreSQL family
 	// (STORING on CockroachDB, which takes INCLUDE as a synonym) and COVER on
@@ -1498,6 +1515,13 @@ var registry = map[Capability]spec{
 	CheckConstraints: {
 		doc: "the grammar has CHECK constraints at all, enforced or not (not YDB)",
 	},
+	CreateIndexStatement: {
+		doc: "a standalone CREATE INDEX statement (not YDB, which declares an index in CREATE TABLE or adds it with ALTER TABLE)",
+		// Deliberately not a requirement of CreateIndexConcurrently, for the
+		// reason DropIndexConcurrently states: a caller composing a set with
+		// .With(CreateIndexStatement, false) is restricting this key, and
+		// Validate must not turn that composition into an error.
+	},
 	IndexCoveringColumns: {
 		doc: "Ptah renders an index's payload columns: INCLUDE on the PostgreSQL family, COVER on YDB",
 	},
@@ -1769,6 +1793,7 @@ func MySQL84() Capabilities {
 		AddColumnWithDefault:            true,
 		ExpressionDefaults:              true,
 		CheckConstraints:                true,
+		CreateIndexStatement:            true,
 		IndexCoveringColumns:            false,
 		UniqueIndexOnExistingTable:      true,
 		// The six keys below describe YDB's type system and SERIAL. MySQL has
@@ -1964,6 +1989,7 @@ func MariaDB1011() Capabilities {
 		AddColumnWithDefault:            true,
 		ExpressionDefaults:              true,
 		CheckConstraints:                true,
+		CreateIndexStatement:            true,
 		IndexCoveringColumns:            false,
 		UniqueIndexOnExistingTable:      true,
 		// As MySQL84: DECIMAL(p,s), the SERIAL alias and SMALLINT defaults,
@@ -2098,6 +2124,7 @@ func Postgres16() Capabilities {
 		AddColumnWithDefault:            true,
 		ExpressionDefaults:              true,
 		CheckConstraints:                true,
+		CreateIndexStatement:            true,
 		IndexCoveringColumns:            true,
 		UniqueIndexOnExistingTable:      true,
 		// numeric(p,s), the serial pseudo-types and smallint defaults are
@@ -2361,6 +2388,7 @@ func ClickHouse24() Capabilities {
 		AddColumnWithDefault:       true,
 		ExpressionDefaults:         true,
 		CheckConstraints:           true,
+		CreateIndexStatement:       true,
 		IndexCoveringColumns:       false,
 		UniqueIndexOnExistingTable: false,
 		// Decimal(P, S) and Int16 defaults exist; SERIAL does not, and neither
@@ -2511,6 +2539,7 @@ func SQLite3() Capabilities {
 		AddColumnWithDefault:       true,
 		ExpressionDefaults:         true,
 		CheckConstraints:           true,
+		CreateIndexStatement:       true,
 		IndexCoveringColumns:       false,
 		UniqueIndexOnExistingTable: true,
 		// SQLite stores any declared type name and keeps only its affinity, so
@@ -2746,6 +2775,7 @@ func SQLServer2022() Capabilities {
 		AddColumnWithDefault:       true,
 		ExpressionDefaults:         true,
 		CheckConstraints:           true,
+		CreateIndexStatement:       true,
 		IndexCoveringColumns:       false,
 		UniqueIndexOnExistingTable: true,
 		// DECIMAL(p,s) and SMALLINT defaults exist; SERIAL does not (an
@@ -3418,6 +3448,7 @@ func Oracle23() Capabilities {
 		AddColumnWithDefault:       true,
 		ExpressionDefaults:         true,
 		CheckConstraints:           true,
+		CreateIndexStatement:       true,
 		IndexCoveringColumns:       false,
 		UniqueIndexOnExistingTable: true,
 		// DECIMAL(p,s) is NUMBER(p,s) and SMALLINT defaults exist; SERIAL does
@@ -3581,6 +3612,7 @@ func YDB262() Capabilities {
 		DropIndexConcurrently:      false,
 		IndexIncludeSPGiST:         false,
 		InvisibleIndexes:           false,
+		CreateIndexStatement:       false,
 		IndexCoveringColumns:       true,
 		AsyncIndexes:               true,
 		UniqueIndexOnExistingTable: false,

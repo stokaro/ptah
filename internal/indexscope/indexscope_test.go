@@ -585,6 +585,122 @@ func TestValidate_SQLServerUnknownRejectsDistinctNames(t *testing.T) {
 	)
 }
 
+// TestValidate_SQLServerUnknownAcceptsDistinctASCIINames plans offline, with no
+// collation known. Two ASCII names that differ after ASCII case folding are
+// different under every SQL Server collation, so indexes on different tables,
+// and differently named indexes on one table, do not conflict
+// (stokaro/ptah#4111).
+func TestValidate_SQLServerUnknownAcceptsDistinctASCIINames(t *testing.T) {
+	tests := []struct {
+		name    string
+		indexes []schemamodel.Index
+	}{
+		{
+			name: "indexes on different tables",
+			indexes: []schemamodel.Index{
+				{Name: "orders_user_ix", TableName: "orders"},
+				{Name: "users_created_ix", TableName: "users"},
+			},
+		},
+		{
+			name: "differently named indexes on one table",
+			indexes: []schemamodel.Index{
+				{Name: "users_created_ix", TableName: "users"},
+				{Name: "users_email_uq", TableName: "users"},
+			},
+		},
+		{
+			name: "one index name on two tables",
+			indexes: []schemamodel.Index{
+				{Name: "ix", TableName: "orders"},
+				{Name: "ix", TableName: "users"},
+			},
+		},
+		{
+			name: "distinct ASCII index names on a non-ASCII table",
+			indexes: []schemamodel.Index{
+				{Name: "ix_a", TableName: "\u00f6rd\u00e9rs"},
+				{Name: "ix_b", TableName: "orders"},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired := &schemamodel.Database{Indexes: test.indexes}
+
+			err := indexscope.ValidateDeclared(
+				"sqlserver",
+				identifier.ForDialect("sqlserver"),
+				difftypes.IndexDeclarationsOf(desired),
+			)
+
+			c.Assert(err, qt.IsNil)
+		})
+	}
+}
+
+// TestValidate_SQLServerUnknownRejectsWhatACollationCouldMerge keeps the
+// conservative answer where a collation could make two names one: an index
+// name on a table whose name has a non-ASCII character, which an
+// accent-insensitive collation can make the same table as an ASCII one, and two
+// spellings ASCII case folding makes equal.
+func TestValidate_SQLServerUnknownRejectsWhatACollationCouldMerge(t *testing.T) {
+	tests := []struct {
+		name    string
+		indexes []schemamodel.Index
+		want    string
+	}{
+		{
+			name: "a non-ASCII table beside an ASCII one",
+			indexes: []schemamodel.Index{
+				{Name: "ix", TableName: "\u00f6rd\u00e9rs"},
+				{Name: "ix", TableName: "orders"},
+			},
+			want: "target indexes \u00f6rd\u00e9rs.ix and orders.ix conflict",
+		},
+		{
+			name: "an ASCII table beside a non-ASCII one",
+			indexes: []schemamodel.Index{
+				{Name: "ix", TableName: "orders"},
+				{Name: "ix", TableName: "\u00f6rd\u00e9rs"},
+			},
+			want: "target indexes orders.ix and \u00f6rd\u00e9rs.ix conflict",
+		},
+		{
+			name: "a non-ASCII index name beside an index on a non-ASCII table",
+			indexes: []schemamodel.Index{
+				{Name: "resume", TableName: "\u00f6rd\u00e9rs"},
+				{Name: "r\u00e9sum\u00e9", TableName: "orders"},
+			},
+			want: "target indexes \u00f6rd\u00e9rs.resume and orders.r\u00e9sum\u00e9 conflict",
+		},
+		{
+			name: "table names that differ in case",
+			indexes: []schemamodel.Index{
+				{Name: "ix", TableName: "Users"},
+				{Name: "IX", TableName: "users"},
+			},
+			want: "target indexes Users.ix and users.IX conflict",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired := &schemamodel.Database{Indexes: test.indexes}
+
+			err := indexscope.ValidateDeclared(
+				"sqlserver",
+				identifier.ForDialect("sqlserver"),
+				difftypes.IndexDeclarationsOf(desired),
+			)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+			c.Assert(err.Error(), qt.Contains, test.want)
+		})
+	}
+}
+
 func TestValidate_SQLServerCaseSensitiveAcceptsVariants(t *testing.T) {
 	c := qt.New(t)
 	semantics := resolvedCatalogSemantics(
