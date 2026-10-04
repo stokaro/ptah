@@ -183,6 +183,81 @@ func TestYDBCompatBinary_RunsTheAtlasVerbs(t *testing.T) {
 	}
 }
 
+// compatRebuildDesired declares compatDir's table rb with its column v widened
+// from Int32 to Int64, a change YDB makes only by rebuilding the table.
+const compatRebuildDesired = `schema "` + compatDir + `" {
+}
+
+table "rb" {
+  schema = schema.` + compatDir + `
+  column "id" {
+    type = Int64
+  }
+  column "v" {
+    type = Int64
+    null = true
+  }
+  primary_key {
+    columns = [column.id]
+  }
+}
+`
+
+// ptah-compat takes no flag the pinned binary lacks, so it asks for a table
+// rebuild with PTAH_ALLOW_TABLE_REBUILD where the native commands take
+// --allow-table-rebuild. Without the variable the type change is refused and
+// the refusal names it; with it, schema apply rebuilds the table, keeps its
+// rows, and finds the result synced. Strict mode refuses the variable before
+// any command runs.
+func TestYDBCompatBinary_RebuildsATableOnRequest(t *testing.T) {
+	c := qt.New(t)
+	binary := buildCompatBinary(c, c.Context())
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			url := dbtarget.URL(t, line.engine)
+			c := qt.New(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			conn := openYDB(c, line)
+			dropDirectory(c, conn, compatDir, "rb")
+			c.Cleanup(func() { dropDirectory(c, conn, compatDir, "rb") })
+			c.Assert(conn.Writer().ExecuteSQL(ctx, "CREATE TABLE `"+compatDir+"/rb` "+
+				"(`id` Int64 NOT NULL, `v` Int32, PRIMARY KEY (`id`))"), qt.IsNil)
+			c.Assert(conn.Writer().ExecuteSQL(ctx, "UPSERT INTO `"+compatDir+"/rb` (id, v) VALUES (1l, 10), (2l, NULL)"),
+				qt.IsNil)
+			desired := "file://" + writeCompatFile(c, c.TempDir(), "desired.hcl", compatRebuildDesired)
+			apply := []string{"schema", "apply", "--url", url, "--schema", compatDir, "--to", desired, "--auto-approve"}
+
+			_, refused, refusedErr := runCompatWithEnv(ctx, binary, nil, apply...)
+			c.Assert(refusedErr, qt.IsNotNil)
+			c.Assert(refused, qt.Contains, "YDB makes it by rebuilding the table, which Ptah plans when asked with "+
+				"PTAH_ALLOW_TABLE_REBUILD=1\n")
+			c.Assert(columnNamed(c, tableNamed(c, readScoped(c, conn, []string{compatDir}), compatDir, "rb"), "v").DataType,
+				qt.Equals, "Int32")
+
+			_, strict, strictErr := runCompatWithEnv(ctx, binary,
+				[]string{"PTAH_ATLAS_STRICT_COMPAT=1", "PTAH_ALLOW_TABLE_REBUILD=1"}, apply...)
+			c.Assert(strictErr, qt.IsNotNil)
+			c.Assert(strict, qt.Equals, "Error: PTAH_ATLAS_STRICT_COMPAT does not allow PTAH_ALLOW_TABLE_REBUILD\n")
+
+			rebuilt, rebuildStderr, rebuildErr := runCompatWithEnv(ctx, binary,
+				[]string{"PTAH_ALLOW_TABLE_REBUILD=1"}, apply...)
+			c.Assert(rebuildErr, qt.IsNil, qt.Commentf("schema apply:\n%s\n%s", rebuilt, rebuildStderr))
+			c.Assert(rebuilt, qt.Contains, "ALTER TABLE `"+compatDir+"/__ptah_rebuild_rb` RENAME TO `"+compatDir+"/rb`;")
+			live := readScoped(c, conn, []string{compatDir})
+			c.Assert(columnNamed(c, tableNamed(c, live, compatDir, "rb"), "v").DataType, qt.Equals, "Int64")
+			c.Assert(tableNames(live), qt.DeepEquals, []string{compatDir + "|rb"})
+			c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+compatDir+"/rb`"), qt.Equals, int64(2))
+			c.Assert(scalar(c, conn, "SELECT v FROM `"+compatDir+"/rb` WHERE id = 1l"), qt.Equals, int64(10))
+
+			synced, _, syncedErr := runCompatWithEnv(ctx, binary, nil,
+				"schema", "apply", "--url", url, "--schema", compatDir, "--to", desired, "--dry-run")
+			c.Assert(syncedErr, qt.IsNil, qt.Commentf("schema apply again:\n%s", synced))
+			c.Assert(synced, qt.Equals, "Schema is synced, no changes to be made\n")
+		})
+	}
+}
+
 // buildCompatBinary builds ptah-compat from this checkout.
 func buildCompatBinary(c *qt.C, ctx context.Context) string {
 	c.Helper()
@@ -201,7 +276,14 @@ func buildCompatBinary(c *qt.C, ctx context.Context) string {
 // schema inspect writes the document to standard output and its notes to
 // standard error.
 func runCompat(ctx context.Context, binary string, args ...string) (stdout, stderr string, err error) {
+	return runCompatWithEnv(ctx, binary, nil, args...)
+}
+
+// runCompatWithEnv is runCompat with variables added to the process's
+// environment.
+func runCompatWithEnv(ctx context.Context, binary string, env []string, args ...string) (stdout, stderr string, err error) {
 	cmd := exec.CommandContext(ctx, binary, args...)
+	cmd.Env = append(os.Environ(), env...)
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	err = cmd.Run()
