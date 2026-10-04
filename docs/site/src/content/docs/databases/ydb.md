@@ -190,16 +190,17 @@ A deferrable, `NOT ENFORCED`, partial or commented `UNIQUE` is refused.
 ### Index partitioning
 
 Each global index is a table of its own, which YDB splits into partitions as it
-grows. An index declares how, with the attributes YDB names its settings by:
+grows. An index declares how, with attributes named after the YDB settings,
+in lower case:
 
-| Attribute | Setting | Value |
-| --- | --- | --- |
-| `auto_partitioning_by_size` | `AUTO_PARTITIONING_BY_SIZE` | `ENABLED` or `DISABLED` |
-| `auto_partitioning_partition_size_mb` | `AUTO_PARTITIONING_PARTITION_SIZE_MB` | megabytes, at least 1 |
-| `auto_partitioning_by_load` | `AUTO_PARTITIONING_BY_LOAD` | `ENABLED` or `DISABLED` |
-| `auto_partitioning_min_partitions_count` | `AUTO_PARTITIONING_MIN_PARTITIONS_COUNT` | at least 1 |
-| `auto_partitioning_max_partitions_count` | `AUTO_PARTITIONING_MAX_PARTITIONS_COUNT` | at least 1 |
-| `read_replicas_settings` | `READ_REPLICAS_SETTINGS` | `PER_AZ:<n>` or `ANY_AZ:<n>` |
+| Attribute | Value |
+| --- | --- |
+| `auto_partitioning_by_size` | `ENABLED` or `DISABLED` |
+| `auto_partitioning_partition_size_mb` | megabytes, at least 1 |
+| `auto_partitioning_by_load` | `ENABLED` or `DISABLED` |
+| `auto_partitioning_min_partitions_count` | at least 1 |
+| `auto_partitioning_max_partitions_count` | at least 1 |
+| `read_replicas_settings` | `PER_AZ:<n>` or `ANY_AZ:<n>` |
 
 The same keys work on an index in a YAML schema. A setting an index leaves out
 is the value YDB gives a new index: split by size at 2048 MB, not by load, at
