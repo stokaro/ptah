@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -181,4 +182,22 @@ func TestGenerateMigrationAST_SerialSequence_FailurePath(t *testing.T) {
 			c.Assert(nodes, qt.IsNil)
 		})
 	}
+}
+
+// TestGenerateMigrationAST_SerialSequenceReportsNothingDropped renders a plan
+// that creates a table with a Serial's start and increment while reporting
+// what the renderer could not carry. The plan writes both in its ALTER
+// SEQUENCE, so the CREATE TABLE it hands the renderer carries neither, and
+// nothing is reported dropped; a render of the declaration alone reports both.
+func TestGenerateMigrationAST_SerialSequenceReportsNothingDropped(t *testing.T) {
+	c := qt.New(t)
+	nodes, err := ydb.NewWithCapabilities(capability.YDB262()).
+		GenerateMigrationAST(createdOrders(serialField("BIGSERIAL", "100", "5")))
+	c.Assert(err, qt.IsNil)
+
+	sql, omissions, err := renderer.RenderSQLReportingOmissions("ydb", capability.YDB262(), nodes...)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "START WITH 100 INCREMENT BY 5 RESTART WITH 100")
+	c.Assert(omissions, qt.HasLen, 0)
 }
