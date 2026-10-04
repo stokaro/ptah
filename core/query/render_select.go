@@ -1,25 +1,32 @@
 package query
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
 	"ptah.run/internal/sqlident"
-	"ptah.run/internal/ydbgap"
 )
 
 // RenderSelect renders a SELECT statement to parameterized SQL for the given
-// dialect, returning the SQL text and its positional arguments.
+// dialect, returning the SQL text and its positional arguments. It renders for
+// the dialect's current release line, the capabilities
+// capability.ForDialect returns; [RenderSelectWithCapabilities] renders for a
+// line the caller names.
 //
 // Every value in the statement — comparison operands (including those inside a
 // JOIN ON or a HAVING), IN list elements, function-call value arguments, and the
 // LIMIT/OFFSET bounds — is emitted as a placeholder and returned in args, never
 // interpolated into the SQL. Placeholder style follows the dialect: $1, $2, … for
 // the PostgreSQL family; ? for MySQL, MariaDB, SQLite, and ClickHouse; @p1,
-// @p2, … for SQL Server; :1, :2, … for Oracle. Placeholders are
+// @p2, … for SQL Server; :1, :2, … for Oracle; $p1, $p2, … for YDB, whose
+// arguments are each a sql.NamedArg named p1, p2, … so that a YDB connection
+// binds them by name. Placeholders are
 // numbered in a single left-to-right pass over the projection, FROM, the joins,
 // WHERE, then HAVING, then LIMIT/OFFSET, so args are ordered to match; a JOIN ON
 // value is numbered before any WHERE value, and a HAVING value after every WHERE
@@ -35,7 +42,7 @@ import (
 // Supported dialects are the PostgreSQL family (PostgreSQL itself, CockroachDB,
 // YugabyteDB, and Cloud Spanner's PostgreSQL interface — the set
 // platform.IsPostgresFamily reports), plus MySQL, MariaDB, SQLite, ClickHouse,
-// SQL Server, and Oracle. SQL Server and Oracle both page with OFFSET/FETCH
+// SQL Server, Oracle, and YDB. SQL Server and Oracle both page with OFFSET/FETCH
 // rather than LIMIT, which neither of them accepts. Only SQL Server also gets a
 // synthesized ORDER BY (SELECT NULL) when the caller ordered nothing, because
 // only T-SQL refuses the row-limiting clause without an ORDER BY; Oracle needs
@@ -46,11 +53,39 @@ import (
 // operator, a function call with an invalid name or a bad argument shape, a GROUP
 // BY term with an empty column, a join without a table or ON condition, or a
 // RIGHT/FULL join on SQLite (which cannot express one before version 3.39).
+// On YDB it also returns an error for a construct the target's capabilities
+// lack; see [RenderSelectWithCapabilities].
 func RenderSelect(stmt *SelectStatement, dialect string) (string, []any, error) {
+	return RenderSelectWithCapabilities(stmt, dialect, capability.ForDialect(dialect))
+}
+
+// RenderSelectWithCapabilities renders a SELECT statement as [RenderSelect]
+// does, for a target whose release line has caps.
+//
+// The capabilities decide what YDB is sent. A WITH clause needs
+// capability.CommonTableExpressions, a subquery that reads a column of an
+// enclosing query needs capability.CorrelatedSubqueries, a JOIN condition
+// other than a conjunction of equalities between two columns needs
+// capability.NonEquiJoins, and an OFFSET without a LIMIT needs
+// capability.OffsetWithoutLimit. A statement that needs a capability caps
+// lacks is refused with a *ptaherr.CapabilityError wrapping
+// ptaherr.ErrUnsupportedFeature, whose text names the key. YDB takes LIMIT
+// and OFFSET as Uint64, so they are bound as uint64 there and a negative
+// bound is an error.
+//
+// The other dialects render the statement as RenderSelect renders it for
+// them, whatever caps holds: their spelling of each construct is decided by
+// the dialect, and ClickHouse24, ClickHouse's default preset, lacks two of
+// those keys while the ClickHouse lines after it run both.
+func RenderSelectWithCapabilities(
+	stmt *SelectStatement,
+	dialect string,
+	caps capability.Capabilities,
+) (string, []any, error) {
 	if stmt == nil {
 		return "", nil, errors.New("renderer: nil select statement")
 	}
-	r, err := newSelectRenderer(dialect)
+	r, err := newSelectRenderer(dialect, caps)
 	if err != nil {
 		return "", nil, err
 	}
@@ -80,12 +115,25 @@ const (
 	// ordinal argument. Emitting `?` here would render SQL the server parses as
 	// a syntax error rather than as a parameter.
 	placeholderAtP
+	// placeholderYQL names parameters $p1, $p2, … (YDB) and binds each
+	// argument as a sql.NamedArg of the same name.
+	//
+	// YQL has no positional parameter: `$1` and `?` are parse errors. The
+	// name is the one sqlutil.Rebind writes for the same position, and the
+	// argument carries it, because ydb-go-sdk binds a parameter by name:
+	// measured on YDB 26.2.1.14 with ydb-go-sdk v3.153.2, a positional
+	// argument for `$p1` answers `Unknown name: $p1` through the SDK's own
+	// connector, and sql.Named("p1", v) binds there and through Ptah's
+	// connection alike.
+	placeholderYQL
 )
 
 // selectRenderer holds the mutable state for one RenderSelect call: the target
-// dialect, the placeholder style, the accumulated arguments, and the SQL buffer.
+// dialect and its capabilities, the placeholder style, the accumulated
+// arguments, and the SQL buffer.
 type selectRenderer struct {
 	dialect     string
+	caps        capability.Capabilities
 	placeholder placeholderStyle
 	args        []any
 	buf         strings.Builder
@@ -93,27 +141,41 @@ type selectRenderer struct {
 	nestDepth int
 }
 
-func newSelectRenderer(dialect string) (*selectRenderer, error) {
+func newSelectRenderer(dialect string, caps capability.Capabilities) (*selectRenderer, error) {
 	normalized := platform.NormalizeDialect(dialect)
-	if err := refuseYDB(normalized, "SELECT"); err != nil {
-		return nil, err
-	}
 	style, ok := selectPlaceholderStyle(normalized)
 	if !ok {
 		return nil, fmt.Errorf("renderer: SELECT rendering is not supported for dialect %q", dialect)
 	}
-	return &selectRenderer{dialect: normalized, placeholder: style}, nil
+	return &selectRenderer{dialect: normalized, caps: caps, placeholder: style}, nil
 }
 
-// refuseYDB answers YDB by name rather than with the generic refusal. YDB has
-// a DDL renderer, and the query builder is the data phase's work: a YQL query
-// needs every value typed to its column, which the builder's bound values do
-// not carry yet.
-func refuseYDB(normalized, kind string) error {
-	if normalized != platform.YDB {
+// asksKeys reports whether the renderer decides a construct by the target's
+// capabilities rather than by its dialect. Only YDB does; see
+// RenderSelectWithCapabilities for why the other dialects do not.
+func (r *selectRenderer) asksKeys() bool {
+	return r.dialect == platform.YDB
+}
+
+// refuseWithout refuses subject when the renderer decides by capabilities and
+// the target lacks key.
+func (r *selectRenderer) refuseWithout(key capability.Capability, subject string) error {
+	if !r.asksKeys() || r.caps.Has(key) {
 		return nil
 	}
-	return fmt.Errorf("renderer: %s for dialect %q: %s", kind, platform.YDB, ydbgap.QueryBuilding.Message())
+	return capabilityRefusal(r.dialect, key, subject)
+}
+
+// capabilityRefusal is the error a construct the target lacks key for is
+// refused with.
+func capabilityRefusal(dialect string, key capability.Capability, subject string) error {
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: string(key),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("renderer: %s, which requires target capability %s, unavailable on this %s target",
+			subject, key, dialect),
+	}
 }
 
 // selectPlaceholderStyle reports how a dialect numbers bound parameters, and
@@ -147,6 +209,9 @@ func refuseYDB(normalized, kind string) error {
 // executes only two of the four verbs portably. UPDATE and DELETE are mutations
 // there and are refused by refuseUnportableWrite with that reason, which is a
 // statement about the engine rather than about this table.
+//
+// YDB needed a fifth style, $p1 and $p2, whose arguments carry the names; see
+// placeholderYQL.
 func selectPlaceholderStyle(normalized string) (placeholderStyle, bool) {
 	if platform.IsPostgresFamily(normalized) {
 		return placeholderDollar, true
@@ -158,13 +223,22 @@ func selectPlaceholderStyle(normalized string) (placeholderStyle, bool) {
 		return placeholderAtP, true
 	case platform.Oracle:
 		return placeholderColon, true
+	case platform.YDB:
+		return placeholderYQL, true
 	default:
 		return 0, false
 	}
 }
 
-// bind records value as a positional argument and returns its placeholder.
+// bind records value as an argument and returns its placeholder. The argument
+// is positional on every dialect but YDB, where it is a sql.NamedArg carrying
+// the placeholder's name.
 func (r *selectRenderer) bind(value any) string {
+	if r.placeholder == placeholderYQL {
+		name := "p" + strconv.Itoa(len(r.args)+1)
+		r.args = append(r.args, sql.Named(name, value))
+		return "$" + name
+	}
 	r.args = append(r.args, value)
 	switch r.placeholder {
 	case placeholderDollar:
@@ -211,6 +285,11 @@ func (r *selectRenderer) writeTableRef(table, alias string) {
 func (r *selectRenderer) render(stmt *SelectStatement) error {
 	if strings.TrimSpace(stmt.From) == "" {
 		return errors.New("renderer: select statement requires a FROM table")
+	}
+	if len(stmt.With) > 0 {
+		if err := r.refuseWithout(capability.CommonTableExpressions, "a WITH clause"); err != nil {
+			return err
+		}
 	}
 	if err := r.renderWith(stmt.With); err != nil {
 		return err
@@ -264,8 +343,7 @@ func (r *selectRenderer) render(stmt *SelectStatement) error {
 		r.buf.WriteString(" ORDER BY (SELECT NULL)")
 	}
 
-	r.renderLimitOffset(stmt.Limit, stmt.Offset)
-	return nil
+	return r.renderLimitOffset(stmt.Limit, stmt.Offset)
 }
 
 // maxNestDepth bounds how far one statement may nest inside another.
@@ -404,6 +482,13 @@ func (r *selectRenderer) renderJoin(join *JoinClause) error {
 	}
 	if join.On == nil {
 		return errors.New("renderer: join requires an ON condition")
+	}
+	if !isColumnEquality(join.On) {
+		err := r.refuseWithout(capability.NonEquiJoins,
+			"a JOIN condition other than equalities between columns of the joined tables")
+		if err != nil {
+			return err
+		}
 	}
 	r.buf.WriteString(" ")
 	r.buf.WriteString(keyword)
@@ -544,6 +629,13 @@ func (r *selectRenderer) renderNested(stmt *SelectStatement) error {
 	defer func() { r.nestDepth-- }()
 	if r.nestDepth > maxNestDepth {
 		return fmt.Errorf("renderer: statement nests deeper than %d, which a cycle would do", maxNestDepth)
+	}
+	if name, ok := correlatedReference(stmt); ok {
+		err := r.refuseWithout(capability.CorrelatedSubqueries,
+			fmt.Sprintf("a subquery that reads %q from the query around it", name))
+		if err != nil {
+			return err
+		}
 	}
 	r.buf.WriteString("(")
 	if err := r.render(stmt); err != nil {
@@ -850,11 +942,16 @@ const (
 // When OFFSET is set without LIMIT, a dialect that cannot express a bare OFFSET
 // gets a synthesized "no limit" sentinel in front of it. The sentinel is a
 // structural constant, not caller data, so it is emitted as a literal and does
-// not consume a placeholder; the OFFSET value remains bound.
-func (r *selectRenderer) renderLimitOffset(limit, offset *int64) {
+// not consume a placeholder; the OFFSET value remains bound. YDB has no
+// sentinel that works (see capability.OffsetWithoutLimit), so there a bare
+// OFFSET is refused where the target lacks the key.
+func (r *selectRenderer) renderLimitOffset(limit, offset *int64) error {
 	if r.dialect == platform.SQLServer || r.dialect == platform.Oracle {
 		r.renderFetchOffset(limit, offset)
-		return
+		return nil
+	}
+	if r.dialect == platform.YDB {
+		return r.renderYQLLimitOffset(limit, offset)
 	}
 	if limit != nil {
 		r.buf.WriteString(" LIMIT ")
@@ -869,6 +966,37 @@ func (r *selectRenderer) renderLimitOffset(limit, offset *int64) {
 		r.buf.WriteString(" OFFSET ")
 		r.buf.WriteString(r.bind(*offset))
 	}
+	return nil
+}
+
+// renderYQLLimitOffset writes YDB's LIMIT and OFFSET. YQL types both as Uint64
+// and does not convert a signed parameter: measured on 26.2.1.14 and 25.1.4.7,
+// `LIMIT $p1` bound to an Int64 answers `Failed to convert type: Int64 to
+// Uint64`. So each bound is bound as a uint64, and a negative one, which no
+// Uint64 holds, is refused here rather than wrapped.
+func (r *selectRenderer) renderYQLLimitOffset(limit, offset *int64) error {
+	for _, bound := range []struct {
+		name  string
+		value *int64
+	}{{"LIMIT", limit}, {"OFFSET", offset}} {
+		if bound.value != nil && *bound.value < 0 {
+			return fmt.Errorf("renderer: YDB takes %s as a Uint64, and %d is negative", bound.name, *bound.value)
+		}
+	}
+	if offset != nil && limit == nil {
+		if err := r.refuseWithout(capability.OffsetWithoutLimit, "an OFFSET without a LIMIT"); err != nil {
+			return err
+		}
+	}
+	if limit != nil {
+		r.buf.WriteString(" LIMIT ")
+		r.buf.WriteString(r.bind(uint64(*limit))) // #nosec G115 -- a negative bound is refused above
+	}
+	if offset != nil {
+		r.buf.WriteString(" OFFSET ")
+		r.buf.WriteString(r.bind(uint64(*offset))) // #nosec G115 -- a negative bound is refused above
+	}
+	return nil
 }
 
 // renderFetchOffset writes SQL Server's row-limiting clause.

@@ -2,10 +2,13 @@ package dbschema
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
 
+	"ptah.run/core/platform"
+	ydbschema "ptah.run/internal/dbschema/ydb"
 	"ptah.run/internal/sqlident"
 )
 
@@ -22,11 +25,14 @@ import (
 // keys of the returned maps: each returned row is a map[string]any keyed by the
 // requested column names, in the exact spelling passed in.
 //
-// A value from a binary column (bytea, binary, varbinary, blob, image or raw) is
-// returned as []byte holding exactly the bytes the database stores. Several
-// drivers also scan character, numeric, date and JSON columns as []byte; those
-// values are returned as string, so text compares stably regardless of driver.
-// All other values are returned as scanned.
+// A value from a binary column (bytea, binary, varbinary, blob, image or raw,
+// and YDB's String and Yson) is returned as []byte holding exactly the bytes
+// the database stores. Several drivers also scan character, numeric, date and
+// JSON columns as []byte; those values are returned as string, so text
+// compares stably regardless of driver. On YDB a Decimal is returned as its
+// digits in a string and a moment as a time.Time in UTC, where the driver hands
+// over a type of its own and the local zone. All other values are returned as
+// scanned.
 //
 // No ORDER BY is applied, so the returned row order is whatever the database
 // yields and must not be relied upon. This suits set-oriented callers such as
@@ -77,10 +83,7 @@ func ReadTableRows(ctx context.Context, conn *DatabaseConnection, schema, table 
 	if len(columnTypes) != len(columns) {
 		return nil, fmt.Errorf("dbschema: table %q returned %d columns, want %d", table, len(columnTypes), len(columns))
 	}
-	binary := make([]bool, len(columnTypes))
-	for i, columnType := range columnTypes {
-		binary[i] = holdsBinary(columnType.DatabaseTypeName())
-	}
+	values := newColumnValues(dialect, columnTypes)
 
 	holders := make([]any, len(columns))
 	scanTargets := make([]any, len(columns))
@@ -95,14 +98,9 @@ func ReadTableRows(ctx context.Context, conn *DatabaseConnection, schema, table 
 		}
 		row := make(map[string]any, len(columns))
 		for i, col := range columns {
-			value := holders[i]
-			// A binary value keeps its bytes. Converted to string it reaches
-			// the renderer as text, and a text literal is what a server
-			// refuses for a byte that is not valid UTF-8, stores as a
-			// different value when a backslash reads as a bytea escape, or
-			// refuses outright on SQL Server (stokaro/ptah#3297).
-			if raw, isBytes := value.([]byte); isBytes && !binary[i] {
-				value = string(raw)
+			value, err := values.value(i, holders[i])
+			if err != nil {
+				return nil, fmt.Errorf("dbschema: column %q of table %q: %w", col, table, err)
 			}
 			row[col] = value
 		}
@@ -113,6 +111,45 @@ func ReadTableRows(ctx context.Context, conn *DatabaseConnection, schema, table 
 	}
 
 	return result, nil
+}
+
+// columnValues turns what the driver scanned for each column into the value
+// ReadTableRows returns.
+type columnValues struct {
+	binary []bool
+	isYDB  bool
+}
+
+func newColumnValues(dialect string, columnTypes []*sql.ColumnType) columnValues {
+	values := columnValues{
+		binary: make([]bool, len(columnTypes)),
+		isYDB:  platform.NormalizeDialect(dialect) == platform.YDB,
+	}
+	for i, columnType := range columnTypes {
+		if values.isYDB {
+			values.binary[i] = ydbschema.HoldsBytes(columnType.DatabaseTypeName())
+			continue
+		}
+		values.binary[i] = holdsBinary(columnType.DatabaseTypeName())
+	}
+	return values
+}
+
+// value is the value column i returns for what the driver scanned.
+//
+// A binary value keeps its bytes. Converted to string it reaches the renderer
+// as text, and a text literal is what a server refuses for a byte that is not
+// valid UTF-8, stores as a different value when a backslash reads as a bytea
+// escape, or refuses outright on SQL Server (stokaro/ptah#3297). On YDB the
+// driver's own Decimal and its local moments become plain values.
+func (v columnValues) value(i int, scanned any) (any, error) {
+	if raw, isBytes := scanned.([]byte); isBytes && !v.binary[i] {
+		scanned = string(raw)
+	}
+	if !v.isYDB {
+		return scanned, nil
+	}
+	return ydbschema.RowValue(scanned)
 }
 
 // holdsBinary reports whether a column the driver describes as databaseType

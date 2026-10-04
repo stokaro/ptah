@@ -17,10 +17,10 @@ owns:
 
 Ptah's `core/query` package is a fluent builder for parameterized `SELECT`
 statements. It is the DML counterpart to the DDL AST: a builder produces an
-`*ast.SelectStatement`, and `renderer.RenderSelect` turns that into a SQL string
-plus its positional arguments for the PostgreSQL family, MySQL, MariaDB, and
-SQLite. See [Dialect coverage](#dialect-coverage) for the exact set and for the
-dialects that are refused.
+`*query.SelectStatement`, and `query.RenderSelect` turns that into a SQL string
+plus its arguments for every dialect Ptah renders, YDB included. See
+[Dialect coverage](#dialect-coverage) for how each dialect is written and for
+what each one refuses.
 
 This is a bounded slice of the DML work in issue
 [`#98`](https://github.com/stokaro/ptah/issues/98). It exists so callers can stop
@@ -52,7 +52,8 @@ Implemented so far:
   `FROM`;
 - window functions — an aggregate with `OVER (PARTITION BY … ORDER BY …)`;
 - common table expressions (`WITH name AS (…)`, one or more);
-- `ON CONFLICT DO NOTHING` and `ON CONFLICT DO UPDATE`, and `INSERT … SELECT`.
+- `ON CONFLICT DO NOTHING` and `ON CONFLICT DO UPDATE`, and `INSERT … SELECT`;
+- YDB's `UPSERT INTO`, built by `UpsertInto` (see [UPSERT](#upsert)).
 
 One thing is deliberately absent: a window **frame** clause. Without one the
 engine applies its default, which is what an unframed window means everywhere,
@@ -61,10 +62,10 @@ and guessing a frame would change results.
 ## Dialect coverage
 
 `RenderSelect`, `RenderInsert`, `RenderUpdate`, and `RenderDelete` render for
-every dialect `renderer.SupportedDialects()` returns except `ydb`. What differs
-between them is the placeholder, the identifier quoting, and how a row limit is
-written. The first column holds the strings you pass as the dialect, so the
-table is also that list of names:
+every dialect `renderer.SupportedDialects()` returns. What differs between them
+is the placeholder, the identifier quoting, and how a row limit is written. The
+first column holds the strings you pass as the dialect, so the table is also
+that list of names:
 
 | Dialect | Placeholder | Identifiers | `LIMIT` / `OFFSET` |
 | --- | --- | --- | --- |
@@ -74,9 +75,9 @@ table is also that list of names:
 | `sqlite` `sqlite3` | `?` | `"id"` | `LIMIT ? OFFSET ?` |
 | `sqlserver` `mssql` | `@p1`, `@p2`, … | `[id]` | `OFFSET 0 ROWS FETCH NEXT @pn ROWS ONLY` |
 | `oracle` | `:1`, `:2`, … | bare `id` | `OFFSET 0 ROWS FETCH NEXT :n ROWS ONLY` |
-| `ydb` | refused | — | — |
+| `ydb` | `$p1`, `$p2`, … | `` `id` `` | `LIMIT $pn OFFSET $pn` |
 
-Three of those rows carry a decision worth stating:
+Four of those rows carry a decision worth stating:
 
 - **SQL Server** writes its row limit as T-SQL's row-limiting clause, which
   requires an `OFFSET` before the `FETCH` and an `ORDER BY` before either — a
@@ -96,11 +97,22 @@ Three of those rows carry a decision worth stating:
   [support matrix](../../databases/support-matrix/) caveat applies — review the
   generated SQL before relying on it.
 
-YDB is refused in all four functions. Its DDL renders, which is why the name is
-in the list. A YQL query needs every bound value typed to its column, and the
-builder's values carry no type, so each function returns an error that names
-the verb and the plan that adds the builder,
-[`stokaro/ptah#4015`](https://github.com/stokaro/ptah/issues/4015).
+- **YDB** has no positional parameter, so the builder writes YQL's named
+  parameters, `$p1`, `$p2`, …, and returns each argument as a `sql.NamedArg`
+  of that name. A YDB connection binds a parameter by name, Ptah's own and the
+  YDB SDK's alike. YQL types every value, and a bound value's Go type is the
+  type it binds as: an `int64` is `Int64`, so an `Int32` column takes an
+  `int32`. `LIMIT` and `OFFSET` bind as `uint64`, the type YQL reads them as,
+  and a negative one is refused. A table in a directory is one name,
+  `` `app/users` ``.
+
+YDB lacks constructs the other dialects render, and the builder refuses each
+before it writes anything, with the capability key the target lacks: a `WITH`
+clause (`common_table_expressions`), a subquery that reads a column of the query
+around it (`correlated_subqueries`), a join condition other than equalities
+between the joined tables' columns (`non_equi_joins`), and an `OFFSET` without a
+`LIMIT` (`offset_without_limit`). `ON CONFLICT` is refused too: YDB has none and
+refuses `INSERT OR IGNORE`, and its upsert is `UPSERT INTO`.
 
 One statement is refused, and for an engine reason rather than an untaught one:
 
@@ -113,12 +125,28 @@ on the table
 
 Every dialect name `renderer.SupportedDialects()` returns is pinned against all
 four render functions — one cell per (dialect, verb) pair, each pinned to an
-exact SQL string or an exact error — in
-`core/renderer/dml_dialect_matrix_test.go`, so the builder cannot
-acquire or lose a dialect without that table saying so. What each dialect
-renders is also executed against a live server for SQL Server and ClickHouse in
-`integration/gonative/dml_execution_integration_test.go`: a renderer test proves
-the string, and only the server proves the SQL.
+exact SQL string or an exact error — in `core/query/dialect_matrix_test.go`, so
+the builder cannot acquire or lose a dialect without that table saying so. What
+each dialect renders is also executed against a live server for SQL Server and
+ClickHouse in `integration/gonative/dml_execution_integration_test.go`, and for
+YDB in `integration/dbschema/ydb/data_live_test.go`: a renderer test proves the
+string, and only the server proves the SQL.
+
+### Release lines
+
+The four render functions render for the dialect's current release line, the
+capabilities `capability.ForDialect` returns. `RenderSelectWithCapabilities`,
+`RenderInsertWithCapabilities`, `RenderUpdateWithCapabilities` and
+`RenderDeleteWithCapabilities` take the capabilities of the line you run
+against, such as the ones a connection reports in `conn.Info().Capabilities`.
+They decide `RETURNING` on every dialect, and on YDB the constructs above.
+
+```go
+stmt := query.Update("users").Set("plan", "paid").Where(query.Eq("id", int64(7))).Returning("id").Build()
+sql, args, err := query.RenderUpdateWithCapabilities(stmt, platform.YDB, capability.YDB251())
+// err: renderer: RETURNING, which requires target capability returning_clause,
+//      unavailable on this ydb target
+```
 
 ## Safety model
 
@@ -130,8 +158,9 @@ The builder keeps identifiers and values in separate lanes, so the classic
   parameters. They are never interpolated into the SQL text. `LIMIT` and
   `OFFSET` values are bound the same way. The renderer emits the dialect's
   placeholder — `$1`, `$2`, … for PostgreSQL, `?` for MySQL, MariaDB, ClickHouse
-  and SQLite, `@p1`, `@p2`, … for SQL Server, and `:1`, `:2`, … for Oracle —
-  and returns the values in a matching `[]any`.
+  and SQLite, `@p1`, `@p2`, … for SQL Server, `:1`, `:2`, … for Oracle, and
+  `$p1`, `$p2`, … for YDB — and returns the values in a matching `[]any`, as
+  `sql.NamedArg` values on YDB.
 - **Identifiers are always quoted.** Table and column names are emitted through
   dialect-aware identifier quoting, so an attacker-shaped identifier cannot
   terminate the quoted identifier and inject SQL. As with Ptah's DDL rendering,
@@ -255,7 +284,7 @@ Not every dialect can express every join type. `RenderSelect` rejects an
 unsupported join at render time — returning a clear error — rather than emit SQL
 that fails at execution time against the database.
 
-| Join type | PostgreSQL family, SQL Server, Oracle, ClickHouse | MySQL / MariaDB | SQLite |
+| Join type | PostgreSQL family, SQL Server, Oracle, ClickHouse, YDB | MySQL / MariaDB | SQLite |
 | --- | --- | --- | --- |
 | `INNER` | yes | yes | yes |
 | `LEFT` | yes | yes | yes |
@@ -269,7 +298,11 @@ that fails at execution time against the database.
   emulated with a `UNION` of a `LEFT` and a `RIGHT` join — so `FULL` is rejected
   (`renderer: mysql does not support FULL OUTER JOIN`). `RIGHT` renders normally.
 - The **PostgreSQL family** (including CockroachDB, YugabyteDB, and Spanner),
-  **SQL Server**, **Oracle**, and **ClickHouse** support all four.
+  **SQL Server**, **Oracle**, **ClickHouse** and **YDB** support all four.
+- **YDB** joins only on equalities between columns of the two joined tables, or
+  a conjunction of them. Any other `ON` condition — an inequality, a comparison
+  with a value, an `OR` — is refused with the key `non_equi_joins`; the server
+  answers `JOIN ON expression must be a conjunction of equality predicates`.
 
 ## Aggregates, GROUP BY, and HAVING
 
@@ -360,6 +393,29 @@ its own renderer entry point, all returning `(sql string, args []any, err error)
 Validation of degenerate input happens at render time (as with `SELECT`), so a
 builder call never fails and `Build` never returns an error.
 
+### UPSERT
+
+`UpsertInto` builds YDB's `UPSERT INTO`. It writes each row over the row with
+the same primary key, keeps the columns the statement does not name, and
+inserts the row where there is none. `Columns`, `Values`, `FromSelect` and
+`Returning` work as they do for `InsertInto`.
+
+```go
+stmt := query.UpsertInto("users").
+	Columns("id", "name").
+	Values(int64(1), "alice").
+	Values(int64(2), "bob").
+	Build()
+
+sql, args, err := query.RenderInsert(stmt, platform.YDB)
+// UPSERT INTO `users` (`id`, `name`) VALUES ($p1, $p2), ($p3, $p4)
+// args: sql.Named("p1", int64(1)), sql.Named("p2", "alice"), ...
+```
+
+The other dialects refuse it. Each of them names the key an upsert watches in
+the statement, which the builder does not know for a table, so use
+`OnConflictDoUpdate` there.
+
 ### INSERT
 
 Declare the column list with `Columns` and add one row per `Values` call. A
@@ -443,13 +499,15 @@ query.DeleteFrom("sessions").Unconditional().Build()
 
 `Returning` adds a `RETURNING` projection to any of the three statements.
 `RETURNING` is not portable across every dialect, so `RenderInsert` /
-`RenderUpdate` / `RenderDelete` reject it — returning a clear error — on a dialect
-that cannot execute it, rather than emit SQL that fails at execution time.
+`RenderUpdate` / `RenderDelete` reject it — returning a clear error — on a target
+without the capability `returning_clause`, rather than emit SQL that fails at
+execution time.
 
 | Dialect | `RETURNING` |
 | --- | --- |
 | PostgreSQL family (incl. CockroachDB, YugabyteDB, Spanner) | yes |
 | SQLite | yes (since 3.35, 2021) |
+| YDB | yes from 25.3 (see note) |
 | MySQL | no |
 | MariaDB | no (see note) |
 | SQL Server, Azure SQL | no (see note) |
@@ -459,14 +517,19 @@ that cannot execute it, rather than emit SQL that fails at execution time.
 - **MySQL** has no `RETURNING` at all.
 - **MariaDB** supports `RETURNING` for `INSERT` and `DELETE` but not `UPDATE`. To
   keep one rule across all three write statements, Ptah treats MariaDB as
-  unsupported and rejects a non-empty `RETURNING`
-  (`renderer: mariadb does not support RETURNING`).
-- **SQLite** gained `RETURNING` in 3.35 (2021). Ptah emits it; if you must target
-  an older SQLite, avoid `Returning`.
+  unsupported and rejects a non-empty `RETURNING` (`renderer: RETURNING, which
+  requires target capability returning_clause, unavailable on this mariadb
+  target`).
+- **SQLite** gained `RETURNING` in 3.35 (2021). `RenderInsert` emits it for the
+  current SQLite line; `RenderInsertWithCapabilities` with `capability.SQLite324()`
+  refuses it.
+- **YDB** 25.1 and 25.2 run `INSERT`, `DELETE` and `UPSERT` with `RETURNING`
+  and fail `UPDATE … RETURNING` on a table with a unique index (`INTERNAL_ERROR
+  … wrong returning expr type`). The same one rule holds, so those lines are
+  refused and 25.3 and later render it.
 - **SQL Server** has `OUTPUT`, which is a different clause in a different
   position, not a spelling of this one. Mapping `Returning` onto it would change
-  what the statement means, so a non-empty `Returning` is rejected
-  (`renderer: sqlserver does not support RETURNING`).
+  what the statement means, so a non-empty `Returning` is rejected.
 - **Oracle** has the keyword and not this shape: measured on 23.26,
   `INSERT INTO t (id) VALUES (99) RETURNING id INTO :out` is accepted with an
   out-parameter bound, while the same statement ending at `RETURNING id` answers
@@ -499,6 +562,7 @@ Write builders:
 | Function | Result |
 | --- | --- |
 | `InsertInto(table)` | Start an `INSERT`. |
+| `UpsertInto(table)` | Start a YDB `UPSERT`. |
 | `.Columns(cols ...string)` | Declare the inserted column list. |
 | `.Values(vals ...any)` | Append one row of bound values; call once per row. |
 | `Update(table)` | Start an `UPDATE`. |
@@ -506,7 +570,7 @@ Write builders:
 | `DeleteFrom(table)` | Start a `DELETE`. |
 | `.Where(expr)` | Set the filter (shared by `Update` and `DeleteFrom`). |
 | `.Unconditional()` | Opt in to a whole-table `UPDATE`/`DELETE` (required when no `Where`). |
-| `.Returning(cols ...string)` | Add a `RETURNING` projection (PostgreSQL family and SQLite only). |
+| `.Returning(cols ...string)` | Add a `RETURNING` projection, where the target has `returning_clause`. |
 | `.Build()` | Produce the `*ast.InsertStatement` / `*ast.UpdateStatement` / `*ast.DeleteStatement`. |
 
 Expression helpers: `Eq`, `Ne`, `Lt`, `Le`, `Gt`, `Ge`, `In`, `IsNull`,
@@ -531,3 +595,8 @@ accept a bare `OFFSET` and emit one. SQL Server and Oracle write it as the
 row-limiting clause with no `FETCH`, `OFFSET @p1 ROWS` and `OFFSET :1 ROWS`, and
 SQL Server keeps the sentinel `ORDER BY (SELECT NULL)` that clause requires. The sentinel is a structural constant, not caller data,
 so it is emitted as a literal and the `OFFSET` value stays a bound parameter.
+
+YDB has no sentinel that works: a `LIMIT` of the `Uint64` maximum fails the
+query, and the `Int64` maximum leaves it running without an answer. So
+`Offset` without `Limit` is refused there with the key `offset_without_limit`;
+set a limit.

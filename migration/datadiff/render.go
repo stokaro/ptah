@@ -13,7 +13,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/oracletype"
 	"ptah.run/internal/sqlident"
-	"ptah.run/internal/ydbgap"
+	"ptah.run/internal/ydbtype"
 )
 
 // Render renders diff into a pair of SQL scripts: up applies the desired state
@@ -69,6 +69,16 @@ import (
 // for a column absent from the live row cannot be rolled back to that absence.
 // A []byte value is written as a hexadecimal binary literal, and a dialect with
 // no known binary literal is refused (see [binaryLiteral]).
+//
+// # YDB
+//
+// YQL types every literal and converts few of them, so on YDB each value is
+// written in the type of its column, which [DataDiff.ColumnTypes] names: an
+// Int32 column takes `5`, an Int64 column `5l`, a Utf8 column `'x'u`, a
+// Timestamp column `Timestamp('...')`. A column the map does not name is an
+// error rather than a guess, and so is a value its column cannot hold -- an
+// integer outside the type's range, a negative one for an unsigned type -- which
+// the error names together with the column and its type.
 func Render(diff *DataDiff, dialect string) (up, down string, err error) {
 	upStmts, downStmts, err := RenderStatements(diff, dialect)
 	if err != nil {
@@ -90,15 +100,9 @@ func Render(diff *DataDiff, dialect string) (up, down string, err error) {
 //
 // Both slices are nil when diff carries no changes. On error both are nil and
 // the error is the one [Render] returns for the same diff.
-//
-// A YDB dialect is refused: YQL needs every data literal typed, and the
-// typed literals and the reads they compare against are not implemented yet.
 func RenderStatements(diff *DataDiff, dialect string) (up, down []string, err error) {
 	if diff == nil {
 		return nil, nil, errors.New("datadiff: nil diff")
-	}
-	if platform.NormalizeDialect(dialect) == platform.YDB {
-		return nil, nil, fmt.Errorf("datadiff: %s", ydbgap.DataChanges.Message())
 	}
 
 	if len(diff.Inserts) == 0 && len(diff.Updates) == 0 && len(diff.Deletes) == 0 {
@@ -328,7 +332,14 @@ func joinStatements(stmts []string) string {
 // timestamp literal. Text that names no moment is refused here rather than sent
 // to a server that would refuse it. An empty declaredType is a column whose type
 // the caller does not know, and v renders from its Go value alone.
+//
+// On YDB the declared type is the column's YDB type, and every literal is
+// written in it through ydbtype.ValueLiteral, the map the YDB renderer writes
+// the column with; see [Render].
 func renderColumnLiteral(dialect, declaredType string, v any) (string, error) {
+	if platform.NormalizeDialect(dialect) == platform.YDB {
+		return ydbColumnLiteral(declaredType, v)
+	}
 	text, isText := textValue(v)
 	if !isText || !refusesTextForDatetime(dialect, declaredType) {
 		return renderLiteral(dialect, v)
@@ -340,6 +351,18 @@ func renderColumnLiteral(dialect, declaredType string, v any) (string, error) {
 			text, declaredType, platform.NormalizeDialect(dialect))
 	}
 	return timeLiteral(dialect, moment), nil
+}
+
+// ydbColumnLiteral writes v for a YDB column of ydbType. YDB converts almost no
+// literal to a column's type, so without the type there is no literal to
+// write, and the column is refused rather than given the type its Go value
+// suggests.
+func ydbColumnLiteral(ydbType string, v any) (string, error) {
+	if strings.TrimSpace(ydbType) == "" {
+		return "", errors.New("YDB stores a literal only in its column's own type, " +
+			"and the diff names no type for this column")
+	}
+	return ydbtype.ValueLiteral(ydbType, v)
 }
 
 // refusesTextForDatetime reports whether dialect refuses a string literal for a

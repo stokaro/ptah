@@ -161,6 +161,15 @@ refuses a plain string for a moment. Write a declared moment as `2024-03-01`,
 `2024-03-01 12:30:45` or RFC 3339; other text for such a column is refused when
 the statements are rendered.
 
+On YDB every value is written in its column's own type, because YQL converts
+almost no literal: `5` in an `Int32` column, `5l` in an `Int64` one, `'x'u` in
+`Utf8`, `Timestamp('...')` in a `Timestamp`. The type is the live table's, or,
+for a table the plan creates, the one the declaration lands on for the server's
+release line. A value its column cannot hold — an integer outside the type's
+range, a negative one for an unsigned type — is refused with the column and the
+type when the statements are rendered. [YDB](../../databases/ydb/#declared-rows)
+has the details.
+
 Managed tables are ordered by the schema's foreign-key dependency graph:
 `INSERT`s run parents-first and `DELETE`s children-first, so a migration
 spanning FK-related reference tables applies (and rolls back) without violating
@@ -226,7 +235,9 @@ What the plan carries is decided by what the declaration owns:
   text, and the two are compared as the instant they name. In a text column both
   spellings stay separate values. A declared number or boolean is compared the
   same way with the text a driver returns for a numeric column, which is how the
-  Oracle driver reads `NUMBER`: `30` meets `"30"` and `true` meets `"1"`.
+  Oracle driver reads `NUMBER`: `30` meets `"30"` and `true` meets `"1"`. On YDB
+  each value is compared in its column's type, so a declared `12.50` meets the
+  `12.5` a `Decimal` stores, and an upper-case UUID the lower-case one.
 
 The plan orders the statements the way the migration body does, from the same
 dependency rank: every `INSERT` and `UPDATE` parents-first, then every `DELETE`

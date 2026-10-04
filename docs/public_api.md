@@ -132,7 +132,10 @@ and the dialect engines that turn it into schema SQL. `core/query` carries the
 whole DML language: the SELECT / INSERT / UPDATE / DELETE statement and
 expression tree, the fluent builders that produce it, and `RenderSelect`,
 `RenderInsert`, `RenderUpdate`, and `RenderDelete`, which return parameterized
-SQL plus its positional arguments for a named dialect.
+SQL plus its arguments for a named dialect. Each has a `WithCapabilities`
+variant that renders for the release line whose capabilities the caller
+passes; on YDB the arguments are `sql.NamedArg` values named after the
+placeholders.
 
 `core/astbuilder` builds `core/ast` nodes by method chaining instead of by
 nested struct literals. `NewTable` and `NewIndex` return one statement node;

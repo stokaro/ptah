@@ -7,9 +7,8 @@
 // tree), core/astbuilder (the fluent constructors) and core/renderer (the
 // visitor engine): where those model CREATE TABLE and friends, this package
 // models data statements. A builder produces a *SelectStatement, which
-// RenderSelect turns into a SQL string plus its positional arguments for the
-// PostgreSQL family, MySQL, MariaDB, SQLite, ClickHouse, SQL Server, and
-// Oracle.
+// RenderSelect turns into a SQL string plus its arguments for the PostgreSQL
+// family, MySQL, MariaDB, SQLite, ClickHouse, SQL Server, Oracle, and YDB.
 //
 // # Scope
 //
@@ -42,8 +41,23 @@
 // here, so the builder refuses the combinations they cannot express: PostgreSQL
 // and SQLite require the conflict target for DO UPDATE, MySQL and MariaDB
 // accept no target at all because ON DUPLICATE KEY UPDATE fires for every
-// unique key, and SQL Server (MERGE) and ClickHouse (no upsert statement) are
-// refused by name.
+// unique key, and SQL Server (MERGE), ClickHouse (no upsert statement) and YDB
+// (no ON CONFLICT) are refused by name. YDB's upsert is its own statement,
+// UPSERT INTO, which UpsertInto builds: it writes each row over the row with
+// the same primary key and inserts it where there is none, and it renders on
+// YDB alone.
+//
+// # Release lines
+//
+// RenderSelect, RenderInsert, RenderUpdate and RenderDelete render for the
+// dialect's current release line, the capabilities
+// capability.ForDialect returns. The WithCapabilities variants of each take the
+// capabilities of the line the caller runs against. RETURNING follows
+// capability.ReturningClause on every dialect. On YDB the capabilities also
+// decide a WITH clause, a correlated subquery, a JOIN condition other than
+// equalities between columns, and an OFFSET without a LIMIT; a construct the
+// target lacks is refused with a *ptaherr.CapabilityError naming the key, and
+// every YDB line lacks the last four.
 //
 // Subqueries reach WHERE through InQuery, Exists and NotExists, and a
 // non-recursive common table expression through SelectBuilder.With. Both bind
@@ -80,9 +94,13 @@
 //     any and always travel to the database as bound parameters. They are never
 //     interpolated into the SQL text; the renderer emits a placeholder ($1, $2,
 //     … for the PostgreSQL family; ? for MySQL/MariaDB/SQLite/ClickHouse;
-//     @p1, @p2, … for SQL Server; :1, :2, … for Oracle) and appends the value to the returned argument slice. LIMIT
-//     and OFFSET values are bound the same way, including the OFFSET/FETCH
-//     bounds SQL Server pages with.
+//     @p1, @p2, … for SQL Server; :1, :2, … for Oracle; $p1, $p2, … for YDB)
+//     and appends the value to the returned argument slice. On YDB each
+//     argument is a sql.NamedArg named after its placeholder, because a YDB
+//     connection binds a parameter by name, and the value's Go type is the
+//     YQL type it binds as: an int64 is Int64, so an Int32 column takes an
+//     int32. LIMIT and OFFSET values are bound the same way, including the
+//     OFFSET/FETCH bounds SQL Server pages with and the Uint64 YDB reads.
 //   - Identifiers (table names, column names) are always emitted through
 //     dialect-aware quoting, so an attacker-shaped identifier cannot terminate
 //     the quoted identifier and inject SQL. As with Ptah's DDL rendering,
@@ -220,8 +238,9 @@
 // Two safety rules apply. First, a whole-table UPDATE or DELETE — one with no
 // WHERE clause — is rejected at render time unless the builder marks it
 // Unconditional, so a missing filter cannot silently rewrite or delete every row.
-// Second, RETURNING renders only on dialects that can execute it: the PostgreSQL
-// family and SQLite (3.35+). MySQL and MariaDB have no portable RETURNING across
-// all three statements, so RenderInsert / RenderUpdate / RenderDelete reject a
-// non-empty RETURNING there rather than emit SQL the engine cannot run.
+// Second, RETURNING renders only on targets that can execute it, the ones with
+// capability.ReturningClause: the PostgreSQL family, SQLite (3.35+) and YDB
+// (25.3+). MySQL and MariaDB have no portable RETURNING across all three
+// statements, so RenderInsert / RenderUpdate / RenderDelete reject a non-empty
+// RETURNING there rather than emit SQL the engine cannot run.
 package query

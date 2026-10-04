@@ -267,7 +267,7 @@ func TestRender_RefusesWhatYDBCannotHold_FailurePath(t *testing.T) {
 		{name: "a role", node: &ast.CreateRoleNode{Name: "r"},
 			wantErr: `role r: managing YDB users, groups and permissions is not implemented yet .*`},
 		{name: "an upsert", node: ast.NewUpsert("t"),
-			wantErr: `upsert into t: writing YDB rows is not implemented yet .*`},
+			wantErr: `upsert into t: YDB's UPSERT INTO matches on the primary key .*; build the statement with core/query's UpsertInto`},
 		{name: "a database", node: &ast.CreateDatabaseNode{Name: "d"},
 			wantErr: `CREATE DATABASE d: creating a YDB database is not implemented yet .*`},
 		{name: "a dropped table with CASCADE", node: &ast.DropTableNode{Name: "t", Cascade: true},

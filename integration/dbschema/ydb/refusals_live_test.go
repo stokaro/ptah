@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"regexp"
 	"testing"
-	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
@@ -17,7 +16,6 @@ import (
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/migrateclean"
 	"ptah.run/internal/ydbgap"
-	"ptah.run/migration/seeder"
 )
 
 // Once a YDB connection opens, every layer behind it that does not reach YDB
@@ -31,11 +29,9 @@ func TestYDBConnectedLayersRefuse(t *testing.T) {
 			conn := openYDB(c, line)
 			ctx := c.Context()
 
-			_, seedErr := seeder.Apply(ctx, conn, fstest.MapFS{}, seeder.Options{Env: "dev"})
 			devErr := migrateclean.DevRefusal(ctx, conn)
 			_, realmErr := devlock.SameRealm(ctx, conn, conn)
 
-			c.Assert(seedErr, qt.ErrorMatches, `(?s).*`+regexp.QuoteMeta(ydbgap.DataChanges.Message()))
 			c.Assert(devErr, qt.ErrorMatches, `(?s).*`+regexp.QuoteMeta(ydbgap.DevDatabases.Message()))
 			c.Assert(realmErr, qt.ErrorMatches, `(?s).*`+regexp.QuoteMeta(ydbgap.DevDatabases.Message()))
 		})

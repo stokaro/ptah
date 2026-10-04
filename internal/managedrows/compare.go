@@ -7,10 +7,13 @@ import (
 	"slices"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dataorder"
+	"ptah.run/internal/ydbtype"
 	"ptah.run/migration/datadiff"
 	"ptah.run/migration/safety"
 )
@@ -154,6 +157,14 @@ func Compare(
 		}
 	}
 
+	references, columnTypes := declarationShape(req.Desired, declaration)
+	if platform.NormalizeDialect(conn.Info().Dialect) == platform.YDB {
+		typed, err := typedYDBRows(conn.Info().Capabilities, liveTable, columnTypes, desired, live)
+		if err != nil {
+			return nil, fmt.Errorf("compare declared rows of %s: %w", qualified, err)
+		}
+		columnTypes, desired, live = typed.columnTypes, typed.desired, typed.live
+	}
 	diff, err := datadiff.Compute(declaration.Schema, declaration.Table, declaration.Keys, desired, live)
 	if err != nil {
 		return nil, fmt.Errorf("compare declared rows of %s: %w", qualified, err)
@@ -162,7 +173,6 @@ func Compare(
 	// reference a row of its own table -- a category tree, an org chart -- and
 	// that order is inside one table, so it is decided here: parents first to
 	// write, children first to remove (stokaro/ptah#3266).
-	references, columnTypes := declarationShape(req.Desired, declaration)
 	diff.ColumnTypes = columnTypes
 	diff.Inserts = dataorder.Rows(diff.Inserts, declaration.Keys, references)
 	diff.Deletes = dataorder.Rows(diff.Deletes, declaration.Keys, references)
@@ -271,4 +281,86 @@ func declarationShape(
 		}
 	}
 	return nil, nil
+}
+
+// typedYDBRows answers, for a YDB table, the YDB type of each column, and the
+// declared and live rows with every typed value in one canonical Go form.
+//
+// YQL types every literal, so the diff writes each value in its column's YDB
+// type, and that type is the live table's where the column exists: YDB cannot
+// change a column's type, so what the table holds is what a statement writes
+// into. A column the table does not have yet takes the type its declaration
+// lands on for this target's capabilities, which is the type the schema stage
+// of the same plan creates it with.
+//
+// The rows are compared in canonical form (see ydbtype.CanonicalValue):
+// declared as `12.50` or as a moment in UTC, a value pairs with the 12.5 a
+// Decimal reads back and with the local moment the driver returns, so a
+// converged row plans nothing. A declared value its column cannot hold is an
+// error naming the column and the type.
+func typedYDBRows(
+	caps capability.Capabilities,
+	liveTable *catalog.Table,
+	declaredTypes map[string]string,
+	desired, live []map[string]any,
+) (typedRows, error) {
+	columnTypes := make(map[string]string, len(declaredTypes))
+	if liveTable != nil {
+		for _, column := range liveTable.Columns {
+			columnTypes[column.Name] = column.DataType
+		}
+	}
+	for column, declared := range declaredTypes {
+		if _, isLive := columnTypes[column]; isLive {
+			continue
+		}
+		mapping, err := ydbtype.Map(declared, caps)
+		if err != nil {
+			return typedRows{}, fmt.Errorf("column %q: %w", column, err)
+		}
+		columnTypes[column] = mapping.Type
+	}
+	typedDesired, err := canonicalRows(columnTypes, desired)
+	if err != nil {
+		return typedRows{}, fmt.Errorf("declared %w", err)
+	}
+	typedLive, err := canonicalRows(columnTypes, live)
+	if err != nil {
+		return typedRows{}, fmt.Errorf("live %w", err)
+	}
+	return typedRows{columnTypes: columnTypes, desired: typedDesired, live: typedLive}, nil
+}
+
+// typedRows is a YDB table's column types and its declared and live rows in
+// canonical form.
+type typedRows struct {
+	columnTypes   map[string]string
+	desired, live []map[string]any
+}
+
+// canonicalRows returns copies of rows with every value of a typed column in
+// canonical form. A column with no type keeps its value; the diff refuses to
+// write it.
+func canonicalRows(columnTypes map[string]string, rows []map[string]any) ([]map[string]any, error) {
+	if rows == nil {
+		return nil, nil
+	}
+	out := make([]map[string]any, len(rows))
+	for i, row := range rows {
+		typed := make(map[string]any, len(row))
+		for column, value := range row {
+			ydbType, ok := columnTypes[column]
+			if !ok {
+				typed[column] = value
+				continue
+			}
+			canonical, err := ydbtype.CanonicalValue(ydbType, value)
+			if err != nil {
+				return nil, fmt.Errorf("row %d, column %q: %w", i+1, column, err)
+			}
+			typed[column] = canonical
+		}
+		out[i] = typed
+	}
+	return out, nil
 }

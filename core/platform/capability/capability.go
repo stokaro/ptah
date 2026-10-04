@@ -1215,6 +1215,66 @@ const (
 	// `DyNumber`), and 25.3.1.25 and newer take both. No other engine has the
 	// types.
 	DocumentTypeDefaults Capability = "document_type_defaults"
+
+	// ReturningClause marks a target on which INSERT, UPDATE and DELETE each
+	// return the rows they wrote through a RETURNING projection, on any row
+	// table. The query builder renders RETURNING only where it holds.
+	//
+	// It is one key for the three statements, so a target that refuses the
+	// clause on one of them has none: MariaDB takes it on INSERT and DELETE
+	// and refuses `UPDATE ... RETURNING` (measured on 12.3.3, a syntax
+	// error). YDB 25.1.4.7 and 25.2.1.24 run INSERT, DELETE and UPSERT with
+	// RETURNING and fail `UPDATE ... RETURNING` on a table with a unique
+	// index with `INTERNAL_ERROR ... wrong returning expr type`; 25.3.1.25
+	// and newer run all of them. SQL Server spells the idea as OUTPUT, and
+	// Oracle accepts RETURNING only with an INTO clause binding
+	// out-parameters, so neither has this projection.
+	ReturningClause Capability = "returning_clause"
+
+	// CommonTableExpressions marks a target whose SELECT can open with a
+	// WITH clause naming subqueries the query reads as tables.
+	//
+	// YDB has none on any line: measured from 25.1.4.7 to 26.2.1.14, `WITH c
+	// AS (SELECT ...) SELECT ...` is a parse error (`mismatched input
+	// 'WITH'`), because YQL names a subquery with a named expression,
+	// `$c = SELECT ...`. MySQL has the clause from 8.0.1 and MariaDB from
+	// 10.2.1, so the presets for the lines below them lack it.
+	CommonTableExpressions Capability = "common_table_expressions"
+
+	// CorrelatedSubqueries marks a target on which a subquery can read a
+	// column of the query that contains it, as in `WHERE EXISTS (SELECT 1
+	// FROM b WHERE b.n = a.n)`.
+	//
+	// YDB evaluates a subquery on its own: measured from 25.1.4.7 to
+	// 26.2.1.14, the correlated EXISTS fails with `Type annotation`, code
+	// 1030, while the same EXISTS without the outer reference runs.
+	// ClickHouse 24.10.4.191 refuses it too, and 25.8.33.6 and newer run it.
+	CorrelatedSubqueries Capability = "correlated_subqueries"
+
+	// NonEquiJoins marks a target whose JOIN ... ON takes any predicate: an
+	// inequality, a comparison with a value or a disjunction, and not only a
+	// conjunction of equalities between columns of the two joined inputs.
+	//
+	// YDB takes the conjunction alone: measured from 25.1.4.7 to 26.2.1.14,
+	// `ON a.n < b.n` answers `JOIN ON expression must be a conjunction of
+	// equality predicates`, and `ON a.id = b.id AND b.s = 'x'` answers `JOIN:
+	// each equality predicate argument must depend on exactly one JOIN
+	// input`. ClickHouse 24.10.4.191 refuses `ON a.n < b.n`, and 25.8.33.6
+	// and newer run it.
+	NonEquiJoins Capability = "non_equi_joins"
+
+	// OffsetWithoutLimit marks a target whose SELECT skips rows with a bare
+	// `OFFSET n`, written without a LIMIT and without the ROWS keyword.
+	//
+	// The PostgreSQL family and ClickHouse take it. MySQL, MariaDB and SQLite
+	// take OFFSET only after a LIMIT, and SQL Server and Oracle only as
+	// `OFFSET n ROWS`; the query builder writes each of those engines' own
+	// spelling. YDB has neither and no LIMIT that means "all rows": measured
+	// from 25.1.4.7 to 26.2.1.14, the bare OFFSET is a parse error, and a
+	// LIMIT of the Uint64 maximum fails the query (`Unexpected node in
+	// results` on 26.2.1.14) while the Int64 maximum and 4294967295 leave it
+	// running without an answer.
+	OffsetWithoutLimit Capability = "offset_without_limit"
 )
 
 // spec documents a registry entry and its implication edges.
@@ -1546,6 +1606,21 @@ var registry = map[Capability]spec{
 	DocumentTypeDefaults: {
 		doc: "YDB's JsonDocument and DyNumber columns take a literal default (YDB 25.3 and later)",
 	},
+	ReturningClause: {
+		doc: "INSERT, UPDATE and DELETE each return the rows they wrote through RETURNING (not MySQL, MariaDB, YDB 25.1 and 25.2)",
+	},
+	CommonTableExpressions: {
+		doc: "a SELECT can open with a WITH clause naming subqueries (not YDB)",
+	},
+	CorrelatedSubqueries: {
+		doc: "a subquery can read a column of the query that contains it (not YDB, ClickHouse 24)",
+	},
+	NonEquiJoins: {
+		doc: "a JOIN condition can be any predicate, not only equalities between the joined inputs' columns (not YDB, ClickHouse 24)",
+	},
+	OffsetWithoutLimit: {
+		doc: "a SELECT skips rows with a bare OFFSET n, without LIMIT or ROWS (the PostgreSQL family and ClickHouse)",
+	},
 }
 
 // mutexGroups lists capability groups in which AT MOST ONE member may be
@@ -1806,6 +1881,14 @@ func MySQL84() Capabilities {
 		SerialColumns:        true,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
+		// MySQL has no RETURNING. CTEs arrived in 8.0.1, correlated subqueries
+		// and any JOIN condition are older, and OFFSET is taken only after a
+		// LIMIT.
+		ReturningClause:        false,
+		CommonTableExpressions: true,
+		CorrelatedSubqueries:   true,
+		NonEquiJoins:           true,
+		OffsetWithoutLimit:     false,
 	}
 }
 
@@ -1853,7 +1936,10 @@ func MySQLLegacy() Capabilities {
 		With(InvisibleIndexes, false).
 		// An expression default, `DEFAULT (expr)`, arrived in 8.0.13, and
 		// [MySQL8013] restores it for the arm above.
-		With(ExpressionDefaults, false)
+		With(ExpressionDefaults, false).
+		// A WITH clause arrived in 8.0.1, inside this arm's range, and 5.7
+		// has none; [MySQL8013] restores it for the arm above.
+		With(CommonTableExpressions, false)
 }
 
 // MySQL8013 is the preset for MySQL 8.0.13 through 8.0.15: [MySQLLegacy] plus
@@ -1867,7 +1953,8 @@ func MySQL8013() Capabilities {
 	return MySQLLegacy().
 		With(CatalogViewDependencies, true).
 		With(InvisibleIndexes, true).
-		With(ExpressionDefaults, true)
+		With(ExpressionDefaults, true).
+		With(CommonTableExpressions, true)
 }
 
 // MariaDB1011 is the preset for the current MariaDB LTS line (10.6+ /
@@ -2000,6 +2087,14 @@ func MariaDB1011() Capabilities {
 		SerialColumns:        true,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
+		// RETURNING on INSERT and DELETE, not on UPDATE: measured on 12.3.3,
+		// `UPDATE ... RETURNING id` is a syntax error. A bare OFFSET is one
+		// too, while `OFFSET 1 ROWS` is accepted.
+		ReturningClause:        false,
+		CommonTableExpressions: true,
+		CorrelatedSubqueries:   true,
+		NonEquiJoins:           true,
+		OffsetWithoutLimit:     false,
 	}
 }
 
@@ -2018,8 +2113,9 @@ func MariaDBLegacy() Capabilities {
 		With(CheckConstraintsEnforced, false).
 		With(CreateOrReplaceTrigger, false).
 		// A DEFAULT that is an expression arrived in MariaDB 10.2.1, the
-		// first release above this arm.
-		With(ExpressionDefaults, false)
+		// first release above this arm, and so did the WITH clause.
+		With(ExpressionDefaults, false).
+		With(CommonTableExpressions, false)
 }
 
 // Postgres16 is the preset for PostgreSQL 14–16.
@@ -2136,6 +2232,13 @@ func Postgres16() Capabilities {
 		SerialColumns:        true,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
+		// The family takes every query-builder construct in the standard
+		// spelling, a bare OFFSET included.
+		ReturningClause:        true,
+		CommonTableExpressions: true,
+		CorrelatedSubqueries:   true,
+		NonEquiJoins:           true,
+		OffsetWithoutLimit:     true,
 	}
 }
 
@@ -2400,6 +2503,13 @@ func ClickHouse24() Capabilities {
 		SerialColumns:        false,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
+		// No RETURNING. Measured on 24.10.4.191: a correlated EXISTS and `ON
+		// a.n < b.n` are refused, while a CTE and a bare OFFSET run.
+		ReturningClause:        false,
+		CommonTableExpressions: true,
+		CorrelatedSubqueries:   false,
+		NonEquiJoins:           false,
+		OffsetWithoutLimit:     true,
 	}
 }
 
@@ -2418,7 +2528,13 @@ func ClickHouse24() Capabilities {
 func ClickHouse2411() Capabilities {
 	return ClickHouse24().
 		With(CheckGrantStatement, true).
-		With(AlterColumnSetNotNull, false)
+		With(AlterColumnSetNotNull, false).
+		// Measured on 25.8.33.6, 26.3.39.7, 26.7.20.28, 26.8.16.41 and
+		// 26.9.8.3: a correlated EXISTS and `ON a.n < b.n` both run. The
+		// releases between 24.11 and 25.8 are unmeasured, and no consumer
+		// reads either key for ClickHouse.
+		With(CorrelatedSubqueries, true).
+		With(NonEquiJoins, true)
 }
 
 // SQLite3 is the preset for SQLite 3.53 and newer, the line Ptah links. SQLite enforces CHECK
@@ -2553,6 +2669,12 @@ func SQLite3() Capabilities {
 		SerialColumns:        false,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
+		// RETURNING arrived in 3.35; OFFSET is taken only after a LIMIT.
+		ReturningClause:        true,
+		CommonTableExpressions: true,
+		CorrelatedSubqueries:   true,
+		NonEquiJoins:           true,
+		OffsetWithoutLimit:     false,
 	}
 }
 
@@ -2581,7 +2703,9 @@ func SQLite324() Capabilities {
 		// a target pinned here cannot parse the clause either. Measured on the
 		// linked engine for the upper arm: sqlite_version() 3.53.3 accepts
 		// `GENERATED ALWAYS AS (n + 1) STORED`.
-		With(GeneratedColumns, false)
+		With(GeneratedColumns, false).
+		// RETURNING arrived in 3.35.
+		With(ReturningClause, false)
 }
 
 // SQLServer2022 is the preset for the portable SQL Server/Azure SQL DDL subset
@@ -2786,6 +2910,13 @@ func SQLServer2022() Capabilities {
 		SerialColumns:        false,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
+		// T-SQL spells RETURNING as OUTPUT, a different clause, and pages
+		// only with `OFFSET n ROWS`.
+		ReturningClause:        false,
+		CommonTableExpressions: true,
+		CorrelatedSubqueries:   true,
+		NonEquiJoins:           true,
+		OffsetWithoutLimit:     false,
 	}
 }
 
@@ -3460,6 +3591,14 @@ func Oracle23() Capabilities {
 		SerialColumns:        false,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
+		// RETURNING needs an INTO clause binding out-parameters (measured on
+		// 23.26, `RETURNING id` alone answers ORA-00925), and OFFSET needs
+		// ROWS.
+		ReturningClause:        false,
+		CommonTableExpressions: true,
+		CorrelatedSubqueries:   true,
+		NonEquiJoins:           true,
+		OffsetWithoutLimit:     false,
 	}
 }
 
@@ -3647,6 +3786,16 @@ func YDB262() Capabilities {
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: true,
 
+		// The query builder's keys, measured from 25.1.4.7 to 26.2.1.14:
+		// RETURNING runs on every statement here, and YQL has no WITH, no
+		// correlated subquery, no JOIN condition beyond equalities and no
+		// bare OFFSET. See each key for the server's answer.
+		ReturningClause:        true,
+		CommonTableExpressions: false,
+		CorrelatedSubqueries:   false,
+		NonEquiJoins:           false,
+		OffsetWithoutLimit:     false,
+
 		// TTL is YDB's own (`TTL = Interval(...) ON col`) and is the TTL
 		// family's work in a later phase; CockroachDB's row-level TTL does not
 		// exist here.
@@ -3696,12 +3845,18 @@ func YDB253() Capabilities {
 	return YDB261().With(AddColumnWithDefault, false)
 }
 
-// YDB252 is the preset for YDB 25.2. It differs from [YDB253] in one key:
-// measured on 25.2.1.24, a JsonDocument or DyNumber column with a literal
-// default answers `Unsupported type of literal: JsonDocument` (and
-// `DyNumber`), where 25.3.1.25 accepts both.
+// YDB252 is the preset for YDB 25.2. It differs from [YDB253] in two keys,
+// each measured on 25.2.1.24 against 25.3.1.25:
+//
+//   - a JsonDocument or DyNumber column with a literal default answers
+//     `Unsupported type of literal: JsonDocument` (and `DyNumber`), where
+//     25.3 accepts both;
+//   - `UPDATE ... RETURNING` on a table with a unique index fails with
+//     `INTERNAL_ERROR ... wrong returning expr type`, where 25.3 runs it.
 func YDB252() Capabilities {
-	return YDB253().With(DocumentTypeDefaults, false)
+	return YDB253().
+		With(DocumentTypeDefaults, false).
+		With(ReturningClause, false)
 }
 
 // YDB251 is the preset for YDB 25.1, the oldest line Ptah measured.

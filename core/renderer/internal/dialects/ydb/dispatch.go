@@ -153,9 +153,14 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.DropContinuousAggregateNode:
 		return r.keyed(capability.ContinuousAggregates, "continuous aggregate", "DROP continuous aggregate "+n.Name)
 
-	// Writing rows is the data phase's work.
+	// An upsert node carries the match columns, update assignments and
+	// predicates of a MERGE as SQL fragments. YDB's own upsert, UPSERT INTO,
+	// matches on the primary key and writes the values it inserts, so it
+	// holds none of them; the query builder writes that statement.
 	case *ast.UpsertNode:
-		return refuseGap(ydbgap.DataChanges, "upsert into "+n.Table)
+		return refuseFact("upsert into "+n.Table, "YDB's UPSERT INTO matches on the primary key and writes "+
+			"the inserted values, so it holds no match columns, update assignments or predicates; "+
+			"build the statement with core/query's UpsertInto")
 
 	// Literal SQL is the author's own YQL and is written as it stands. A
 	// routine body is another engine's code.

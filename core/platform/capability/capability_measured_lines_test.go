@@ -229,6 +229,11 @@ func measuredLines() map[string]measuredLine {
 				capability.SerialColumns:              typeKeyCarried,
 				capability.SmallIntegerDefaults:       typeKeyCarried,
 				capability.DocumentTypeDefaults:       typeKeyCarried,
+				capability.ReturningClause:            queryKeyCarried,
+				capability.CommonTableExpressions:     queryKeyCarried,
+				capability.CorrelatedSubqueries:       queryKeyCarried,
+				capability.NonEquiJoins:               queryKeyCarried,
+				capability.OffsetWithoutLimit:         queryKeyCarried,
 				capability.DeferrableKeys: "this run predates the key and sent no deferrable key. It was " +
 					"measured on 2026-09-27 against PostgreSQL 18.6, CockroachDB v26.3.2, YugabyteDB 2026.1.2 " +
 					"and Oracle Free 23, and carried here from those runs (stokaro/ptah#3824)",
@@ -365,6 +370,11 @@ func measuredLines() map[string]measuredLine {
 				capability.SerialColumns:              typeKeyCarried,
 				capability.SmallIntegerDefaults:       typeKeyCarried,
 				capability.DocumentTypeDefaults:       typeKeyCarried,
+				capability.ReturningClause:            queryKeyCarried,
+				capability.CommonTableExpressions:     queryKeyCarried,
+				capability.CorrelatedSubqueries:       queryKeyCarried,
+				capability.NonEquiJoins:               queryKeyCarried,
+				capability.OffsetWithoutLimit:         queryKeyCarried,
 				capability.DeferrableKeys: "this run predates the key and sent no deferrable key. It was " +
 					"measured on 2026-09-27 against PostgreSQL 18.6, CockroachDB v26.3.2, YugabyteDB 2026.1.2 " +
 					"and Oracle Free 23, and carried here from those runs (stokaro/ptah#3824)",
@@ -502,6 +512,11 @@ func measuredLines() map[string]measuredLine {
 				capability.SerialColumns:              typeKeyCarried,
 				capability.SmallIntegerDefaults:       typeKeyCarried,
 				capability.DocumentTypeDefaults:       typeKeyCarried,
+				capability.ReturningClause:            queryKeyCarried,
+				capability.CommonTableExpressions:     queryKeyCarried,
+				capability.CorrelatedSubqueries:       queryKeyCarried,
+				capability.NonEquiJoins:               queryKeyCarried,
+				capability.OffsetWithoutLimit:         queryKeyCarried,
 				capability.DeferrableKeys: "this run predates the key and sent no deferrable key. It was " +
 					"measured on 2026-09-27 against PostgreSQL 18.6, CockroachDB v26.3.2, YugabyteDB 2026.1.2 " +
 					"and Oracle Free 23, and carried here from those runs (stokaro/ptah#3824)",
@@ -631,4 +646,11 @@ const schemaChangeCarried = "this run predates the key and sent no schema-change
 // asks them on every run through its type experiments, and the value here is
 // the preset's.
 const typeKeyCarried = "this run predates the key and sent no type experiment; the probe asks it " +
+	"on every run through those experiments, and the value here is the preset's"
+
+// queryKeyCarried is why the keys the query builder reads are carried on every
+// measured line: the run named there predates them. The probe asks them on
+// every run through its query experiments, each of which reads back what the
+// statement returned, and the value here is the preset's.
+const queryKeyCarried = "this run predates the key and sent no query experiment; the probe asks it " +
 	"on every run through those experiments, and the value here is the preset's"

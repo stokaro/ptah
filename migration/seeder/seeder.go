@@ -36,8 +36,10 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	"ptah.run/internal/atlasretry"
+	ydbschema "ptah.run/internal/dbschema/ydb"
 	"ptah.run/internal/protectedtable"
-	"ptah.run/internal/ydbgap"
+	"ptah.run/internal/yqlquery"
 )
 
 const (
@@ -84,7 +86,9 @@ type Options struct {
 	// one (see [IsConflictError]) is rolled back as a unit and the run
 	// continues, with the seed still recorded as applied. Any other failure
 	// still fails the run. [Apply] refuses the option on ClickHouse, which has
-	// no transaction to roll back to.
+	// no transaction to roll back to. YDB has no savepoint, and a conflict ends
+	// the transaction it ran in; there the whole transaction is rolled back and
+	// the seed is recorded in a transaction of its own.
 	Idempotent bool
 	// AllowProd disables both protections: the protected-environment refusal
 	// and the protected-tables probe.
@@ -244,7 +248,11 @@ func ValidateOptions(opts Options) error {
 // it is absent, and applies each seed selected for opts.Env (see [Select]) in
 // [Discover] order, each file in its own transaction -- except on ClickHouse,
 // where seeds run without one, so a failed file there can leave its earlier
-// statements applied. A seed already recorded with a matching checksum is
+// statements applied. On YDB a file runs in one serializable transaction
+// together with the row that records it, run again when YDB aborts it for a
+// conflicting transaction, and a file holding a statement YDB runs only
+// outside a transaction -- a scheme statement, or BATCH UPDATE and BATCH
+// DELETE -- is refused before it runs. A seed already recorded with a matching checksum is
 // skipped; a recorded seed whose file changed stops the run with a
 // *[ChecksumMismatchError], retrieved with [errors.As]; [Options.Force]
 // re-applies both. An environment no seed matches is not an error: Apply
@@ -261,11 +269,6 @@ func Apply(ctx context.Context, conn *dbschema.DatabaseConnection, fsys fs.FS, o
 	}
 	if err := ValidateOptions(opts); err != nil {
 		return nil, err
-	}
-	if platform.NormalizeDialect(conn.Info().Dialect) == platform.YDB {
-		// The tracker table, the existing-table check and the savepoints a
-		// seed runs with are another dialect's SQL on YDB.
-		return nil, errors.New(ydbgap.DataChanges.Message())
 	}
 	if opts.Idempotent && platform.NormalizeDialect(conn.Info().Dialect) == platform.ClickHouse {
 		return nil, fmt.Errorf("--idempotent is not supported for clickhouse seeds because transactions and savepoints are unavailable")
@@ -324,9 +327,12 @@ func applySeed(ctx context.Context, conn *dbschema.DatabaseConnection, fsys fs.F
 	// Split with the connection's dialect so a semicolon inside a backslash-
 	// escaped string literal (valid on MySQL/MariaDB/ClickHouse) is not
 	// mis-split into a separately-executed statement.
+	dialect := platform.NormalizeDialect(conn.Info().Dialect)
+	if dialect == platform.YDB {
+		return applyYDBSeed(ctx, conn, seed, string(data), opts)
+	}
 	statements := sqlutil.SplitStatementsForDialect(conn.Info().Dialect, string(data))
 
-	dialect := platform.NormalizeDialect(conn.Info().Dialect)
 	if dialect == platform.ClickHouse {
 		return applySeedWithoutTransaction(ctx, conn, seed, statements, opts)
 	}
@@ -430,6 +436,11 @@ func ensureTracker(ctx context.Context, conn *dbschema.DatabaseConnection) error
 //     ORA-00955, name already used, and raises every other error. The block
 //     does not read [capability.ObjectExistenceGuards]: one statement for both
 //     lines means a 23 server measures exactly what a 21 server is sent.
+//   - YDB declares the key in a clause of its own (an inline PRIMARY KEY is a
+//     parse error) and has no length-limited string, so every text column is
+//     Utf8. The time a seed ran is a Timestamp, the type a Go time.Time binds
+//     as, which every line has. CREATE TABLE IF NOT EXISTS on an existing table
+//     succeeds on every line, with issue text the driver does not return.
 //
 // Every name is unqualified, so each guard looks in the schema the CREATE
 // TABLE and every later tracker statement resolve against.
@@ -466,6 +477,14 @@ END`
     env VARCHAR(128) NOT NULL,
     checksum TEXT NOT NULL,
     applied_at TIMESTAMPTZ NOT NULL
+)`
+	case platform.YDB:
+		return `CREATE TABLE IF NOT EXISTS schema_seeds (
+    seed_path Utf8 NOT NULL,
+    env Utf8 NOT NULL,
+    checksum Utf8 NOT NULL,
+    applied_at Timestamp NOT NULL,
+    PRIMARY KEY (seed_path)
 )`
 	case platform.Oracle:
 		return `BEGIN
@@ -558,6 +577,9 @@ func ensureSafeTarget(ctx context.Context, conn *dbschema.DatabaseConnection, op
 }
 
 func existingTables(ctx context.Context, conn *dbschema.DatabaseConnection) ([]string, error) {
+	if platform.NormalizeDialect(conn.Info().Dialect) == platform.YDB {
+		return existingYDBTables(ctx, conn)
+	}
 	var query string
 	var args []any
 	switch platform.NormalizeDialect(conn.Info().Dialect) {
@@ -661,11 +683,15 @@ func savepointStatements(dialect string) seedSavepoint {
 }
 
 // IsConflictError reports whether err looks like a duplicate-key conflict —
-// the failure [Options.Idempotent] tolerates. PostgreSQL (SQLSTATE 23505) and
-// MySQL/MariaDB (error 1062) are recognized through their driver error types
-// with [errors.As]; any other error falls back to a case-insensitive match on
-// the usual duplicate-key message wordings.
+// the failure [Options.Idempotent] tolerates. PostgreSQL (SQLSTATE 23505),
+// MySQL/MariaDB (error 1062) and YDB (PRECONDITION_FAILED with issue 2012,
+// `Conflict with existing key`) are recognized through their driver error
+// types with [errors.As]; any other error falls back to a case-insensitive
+// match on the usual duplicate-key message wordings.
 func IsConflictError(err error) bool {
+	if ydbschema.KeyConflict(err) {
+		return true
+	}
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		return true
@@ -684,4 +710,127 @@ func IsConflictError(err error) bool {
 		strings.Contains(msg, "duplicate entry") ||
 		strings.Contains(msg, "unique constraint") ||
 		strings.Contains(msg, "unique violation")
+}
+
+// applyYDBSeed runs one seed file on YDB.
+//
+// The file runs as the queries YQL reads it into (internal/yqlquery), so a
+// named expression or an action reaches the statements that use it, and all
+// of them run in one serializable transaction with the row that records the
+// seed: the file and its record commit together or not at all. YDB aborts the
+// transaction of two conflicting ones that commits second, and nothing of it
+// is applied, so the whole transaction runs again (see [ydbSeedTransaction]).
+//
+// A scheme query, or a BATCH UPDATE or BATCH DELETE, runs on YDB only outside
+// a transaction, so a file holding one is refused before anything runs.
+//
+// YDB has no savepoint, and a conflict ends the transaction it ran in -- the
+// next statement in it answers `Transaction not found` -- so with
+// [Options.Idempotent] a file that hits a duplicate key is rolled back whole
+// and the seed is recorded in a transaction of its own. Nothing of the file is
+// applied, as on the engines that roll back to a savepoint.
+func applyYDBSeed(ctx context.Context, conn *dbschema.DatabaseConnection, seed SeedFile, text string, opts Options) error {
+	queries, err := yqlquery.Split(text)
+	if err != nil {
+		return fmt.Errorf("apply seed %s: %w", seed.Filename, err)
+	}
+	for _, query := range queries {
+		if query.Kind != yqlquery.Data {
+			return fmt.Errorf("apply seed %s: YDB runs a %s query only outside a transaction, and a seed runs "+
+				"in one; move this statement to a migration: %s", seed.Filename, query.Kind, query.Source)
+		}
+	}
+	err = ydbSeedTransaction(ctx, conn, func(tx *sql.Tx) error {
+		for _, query := range queries {
+			if _, err := tx.ExecContext(ctx, query.Text); err != nil {
+				return err
+			}
+		}
+		if err := recordYDBSeed(ctx, tx, seed, opts); err != nil {
+			return fmt.Errorf("record the seed: %w", err)
+		}
+		return nil
+	})
+	if err == nil {
+		return nil
+	}
+	if !opts.Idempotent || !IsConflictError(err) {
+		return fmt.Errorf("apply seed %s: %w", seed.Filename, err)
+	}
+	if err := ydbSeedTransaction(ctx, conn, func(tx *sql.Tx) error {
+		return recordYDBSeed(ctx, tx, seed, opts)
+	}); err != nil {
+		return fmt.Errorf("record seed %s: %w", seed.Filename, err)
+	}
+	return nil
+}
+
+// ydbSeedTransactionAttempts bounds how often a seed transaction YDB aborted
+// for a conflicting one is run again.
+const ydbSeedTransactionAttempts = 5
+
+// ydbSeedTransaction runs body in a serializable transaction and commits it,
+// and runs the whole transaction again when YDB aborts it: `Transaction locks
+// invalidated` is the answer for the transaction of two conflicting ones that
+// commits second, and nothing of it was applied. Any other failure is
+// returned, with the transaction rolled back.
+func ydbSeedTransaction(ctx context.Context, conn *dbschema.DatabaseConnection, body func(*sql.Tx) error) error {
+	var err error
+	for attempt := range ydbSeedTransactionAttempts {
+		if err = ydbSeedAttempt(ctx, conn, body); err == nil {
+			return nil
+		}
+		if !atlasretry.IsRetryable(err) || attempt == ydbSeedTransactionAttempts-1 {
+			return err
+		}
+		timer := time.NewTimer(time.Duration(attempt+1) * 50 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return errors.Join(err, ctx.Err())
+		case <-timer.C:
+		}
+	}
+	return err
+}
+
+// ydbSeedAttempt is one attempt of [ydbSeedTransaction].
+func ydbSeedAttempt(ctx context.Context, conn *dbschema.DatabaseConnection, body func(*sql.Tx) error) error {
+	tx, err := conn.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return err
+	}
+	if err := body(tx); err != nil {
+		// A failed statement may have ended the transaction on the server
+		// already, and then the rollback answers `Transaction not found`;
+		// the statement's failure is the one that matters.
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
+// recordYDBSeed writes the row that records a seed. UPSERT replaces the row a
+// forced re-run finds, which is what the DELETE and INSERT pair does on the
+// other engines, in one statement.
+func recordYDBSeed(ctx context.Context, tx *sql.Tx, seed SeedFile, opts Options) error {
+	query := sqlutil.Rebind(platform.YDB,
+		"UPSERT INTO schema_seeds (seed_path, env, checksum, applied_at) VALUES (?, ?, ?, ?)")
+	_, err := tx.ExecContext(ctx, query, seed.Path, opts.Env, seed.Checksum, time.Now().UTC())
+	return err
+}
+
+// existingYDBTables lists the tables in the directory the connection reads as
+// its schema, as the other engines list the tables of their current schema.
+func existingYDBTables(ctx context.Context, conn *dbschema.DatabaseConnection) ([]string, error) {
+	session, err := conn.Conn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query target tables: %w", err)
+	}
+	defer func() { _ = session.Close() }()
+	tables, err := ydbschema.TableNames(ctx, session, conn.Info().Schema)
+	if err != nil {
+		return nil, fmt.Errorf("query target tables: %w", err)
+	}
+	return tables, nil
 }

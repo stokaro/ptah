@@ -66,7 +66,7 @@ edited one.`,
 	cmd.Flags().StringArrayVar(&protectedEnvs, "protected-env", seeder.DefaultProtectedEnvs(), "Environment name that requires --allow-prod; repeat to add more")
 	cmd.Flags().StringArrayVar(&protectedTables, "protected-table", nil, "Existing target table name that requires --allow-prod; repeat to add more")
 	cmd.Flags().BoolVar(&force, "force", false, "Re-run seeds even when they are already recorded in schema_seeds, including a seed file edited since it was applied")
-	cmd.Flags().BoolVar(&idempotent, "idempotent", false, "Treat duplicate-key conflicts as already-applied seed data using a per-file savepoint")
+	cmd.Flags().BoolVar(&idempotent, "idempotent", false, "Treat duplicate-key conflicts as already-applied seed data, rolling the file back to a per-file savepoint (on YDB, which has none, rolling the whole file back)")
 	cmd.Flags().BoolVar(&allowProd, "allow-prod", false, "Allow seeding a protected production-like environment")
 	cmd.Flags().BoolVar(&verbose, "verbose", false, "Enable verbose output")
 	cmd.Flags().StringVar(

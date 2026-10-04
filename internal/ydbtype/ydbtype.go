@@ -1,11 +1,13 @@
 // Package ydbtype maps a declared column type to the YDB type that holds it,
-// and writes a column default as the typed YQL literal that type takes.
+// and writes a column default, or a value a data statement stores, as the
+// typed YQL literal that type takes.
 //
 // It is a package rather than a table inside the renderer because more than
 // one caller needs the SAME answer: the renderer, which writes the type into
-// DDL, and the schema comparison, which has to read a declared VARCHAR(255)
-// and a catalog Utf8 as one type before deciding whether a column changed.
-// A second copy in the comparison is the shape that drifts.
+// DDL, the schema comparison, which has to read a declared VARCHAR(255) and a
+// catalog Utf8 as one type before deciding whether a column changed, and the
+// data diff, which writes each row's values in the type of the column they
+// land in. A second copy in any of them is the shape that drifts.
 //
 // Every mapping was measured on ydbplatform/local-ydb 25.1.4.7 through
 // 26.2.1.14, by creating a column of the YDB type and reading the table back

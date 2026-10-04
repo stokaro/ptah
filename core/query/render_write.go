@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 )
 
 // This file renders the write-side DML statements — INSERT, UPDATE, and DELETE —
@@ -18,26 +19,46 @@ import (
 // DELETE binds its WHERE values — so callers never manage indices by hand.
 
 // RenderInsert renders an INSERT statement to parameterized SQL for the given
-// dialect, returning the SQL text and its positional arguments.
+// dialect, returning the SQL text and its positional arguments. It renders for
+// the dialect's current release line, the capabilities
+// capability.ForDialect returns; [RenderInsertWithCapabilities] renders for a
+// line the caller names.
 //
 // Every value in every row is emitted as a placeholder and returned in args,
 // never interpolated; placeholders are numbered row by row, left to right, in the
 // dialect's style ($1, $2, … for the PostgreSQL family; ? for MySQL, MariaDB,
-// SQLite, and ClickHouse; @p1, @p2, … for SQL Server; :1, :2, … for Oracle).
-// The table and column names are quoted for the dialect. An optional RETURNING
-// clause is emitted only on the PostgreSQL family and SQLite; on every other
-// supported dialect a non-empty RETURNING is an error rather than a clause
-// quietly dropped from the statement. [InsertBuilder.Returning] records why
-// each dialect falls where it does.
+// SQLite, and ClickHouse; @p1, @p2, … for SQL Server; :1, :2, … for Oracle;
+// $p1, $p2, … for YDB, whose arguments are sql.NamedArg values of those
+// names). The table and column names are quoted for the dialect. An optional
+// RETURNING clause is emitted only where the target has
+// capability.ReturningClause; elsewhere a non-empty RETURNING is an error
+// rather than a clause quietly dropped from the statement.
+// [InsertBuilder.Returning] records why each dialect falls where it does.
+//
+// A statement built by [UpsertInto] renders as YDB's UPSERT INTO and is
+// refused on every other dialect, and an ON CONFLICT clause is refused on
+// YDB, which has none.
 //
 // It returns an error for a nil statement, an unsupported dialect, a missing
 // table, an empty column list, an empty row list, or a row whose length does not
 // match the column count.
 func RenderInsert(stmt *InsertStatement, dialect string) (string, []any, error) {
+	return RenderInsertWithCapabilities(stmt, dialect, capability.ForDialect(dialect))
+}
+
+// RenderInsertWithCapabilities renders an INSERT statement as [RenderInsert]
+// does, for a target whose release line has caps. caps decides RETURNING on
+// every dialect, and on YDB everything [RenderSelectWithCapabilities] lists
+// for the SELECT an INSERT reads its rows from.
+func RenderInsertWithCapabilities(
+	stmt *InsertStatement,
+	dialect string,
+	caps capability.Capabilities,
+) (string, []any, error) {
 	if stmt == nil {
 		return "", nil, errors.New("renderer: nil insert statement")
 	}
-	r, err := newWriteRenderer(dialect, "INSERT")
+	r, err := newWriteRenderer(dialect, "INSERT", caps)
 	if err != nil {
 		return "", nil, err
 	}
@@ -48,7 +69,9 @@ func RenderInsert(stmt *InsertStatement, dialect string) (string, []any, error) 
 }
 
 // RenderUpdate renders an UPDATE statement to parameterized SQL for the given
-// dialect, returning the SQL text and its positional arguments.
+// dialect, returning the SQL text and its positional arguments. It renders for
+// the dialect's current release line; [RenderUpdateWithCapabilities] renders
+// for a line the caller names.
 //
 // SET values are bound before WHERE values, matching emission order, so
 // placeholder numbering is a single left-to-right pass. Table and column names
@@ -61,10 +84,23 @@ func RenderInsert(stmt *InsertStatement, dialect string) (string, []any, error) 
 // list, an assignment with an empty column or nil value, or a RETURNING clause on
 // a dialect that cannot execute one.
 func RenderUpdate(stmt *UpdateStatement, dialect string) (string, []any, error) {
+	return RenderUpdateWithCapabilities(stmt, dialect, capability.ForDialect(dialect))
+}
+
+// RenderUpdateWithCapabilities renders an UPDATE statement as [RenderUpdate]
+// does, for a target whose release line has caps. caps decides RETURNING on
+// every dialect: YDB 25.1 and 25.2 lack capability.ReturningClause, so an
+// UPDATE with RETURNING is refused for them, and the YDB lines after them
+// render it.
+func RenderUpdateWithCapabilities(
+	stmt *UpdateStatement,
+	dialect string,
+	caps capability.Capabilities,
+) (string, []any, error) {
 	if stmt == nil {
 		return "", nil, errors.New("renderer: nil update statement")
 	}
-	r, err := newWriteRenderer(dialect, "UPDATE")
+	r, err := newWriteRenderer(dialect, "UPDATE", caps)
 	if err != nil {
 		return "", nil, err
 	}
@@ -75,7 +111,9 @@ func RenderUpdate(stmt *UpdateStatement, dialect string) (string, []any, error) 
 }
 
 // RenderDelete renders a DELETE statement to parameterized SQL for the given
-// dialect, returning the SQL text and its positional arguments.
+// dialect, returning the SQL text and its positional arguments. It renders for
+// the dialect's current release line; [RenderDeleteWithCapabilities] renders
+// for a line the caller names.
 //
 // The table name is quoted and every WHERE value is bound. An optional RETURNING
 // clause is emitted only where the dialect supports it.
@@ -85,10 +123,21 @@ func RenderUpdate(stmt *UpdateStatement, dialect string) (string, []any, error) 
 // nil statement, an unsupported dialect, a missing table, or a RETURNING clause
 // on a dialect that cannot execute one.
 func RenderDelete(stmt *DeleteStatement, dialect string) (string, []any, error) {
+	return RenderDeleteWithCapabilities(stmt, dialect, capability.ForDialect(dialect))
+}
+
+// RenderDeleteWithCapabilities renders a DELETE statement as [RenderDelete]
+// does, for a target whose release line has caps. caps decides RETURNING on
+// every dialect.
+func RenderDeleteWithCapabilities(
+	stmt *DeleteStatement,
+	dialect string,
+	caps capability.Capabilities,
+) (string, []any, error) {
 	if stmt == nil {
 		return "", nil, errors.New("renderer: nil delete statement")
 	}
-	r, err := newWriteRenderer(dialect, "DELETE")
+	r, err := newWriteRenderer(dialect, "DELETE", caps)
 	if err != nil {
 		return "", nil, err
 	}
@@ -103,11 +152,8 @@ func RenderDelete(stmt *DeleteStatement, dialect string) (string, []any, error) 
 // identifier quoting (quote / writeQualifiedIdent / writeTableRef), and
 // expression rendering (renderExpr). kind names the statement in the
 // unsupported-dialect error.
-func newWriteRenderer(dialect, kind string) (*selectRenderer, error) {
+func newWriteRenderer(dialect, kind string, caps capability.Capabilities) (*selectRenderer, error) {
 	normalized := platform.NormalizeDialect(dialect)
-	if err := refuseYDB(normalized, kind); err != nil {
-		return nil, err
-	}
 	style, ok := selectPlaceholderStyle(normalized)
 	if !ok {
 		return nil, fmt.Errorf("renderer: %s rendering is not supported for dialect %q", kind, dialect)
@@ -115,7 +161,7 @@ func newWriteRenderer(dialect, kind string) (*selectRenderer, error) {
 	if err := refuseUnportableWrite(normalized, kind); err != nil {
 		return nil, err
 	}
-	return &selectRenderer{dialect: normalized, placeholder: style}, nil
+	return &selectRenderer{dialect: normalized, caps: caps, placeholder: style}, nil
 }
 
 // refuseUnportableWrite refuses a verb whose portable spelling the dialect does
@@ -172,8 +218,15 @@ func (r *selectRenderer) renderInsert(stmt *InsertStatement) error {
 	if len(stmt.Rows) == 0 && stmt.Select == nil {
 		return errors.New("renderer: insert statement requires at least one row or a SELECT source")
 	}
+	if err := r.checkUpsert(stmt); err != nil {
+		return err
+	}
 
-	r.buf.WriteString("INSERT INTO ")
+	if stmt.Upsert {
+		r.buf.WriteString("UPSERT INTO ")
+	} else {
+		r.buf.WriteString("INSERT INTO ")
+	}
 	r.writeTableRef(stmt.Table, "")
 	r.buf.WriteString(" (")
 	if err := r.writeInsertColumns(stmt.Columns); err != nil {
@@ -222,6 +275,31 @@ func (r *selectRenderer) writeInsertSelect(columns []string, query *SelectStatem
 	return r.render(query)
 }
 
+// checkUpsert refuses an UPSERT where the dialect has no such statement, and
+// one that also carries an ON CONFLICT clause.
+//
+// UPSERT INTO is YDB's statement: it writes each row over the row with the
+// same primary key, keeping the columns the statement does not name, and
+// inserts it where there is none. The other dialects say the same thing only
+// by naming the key in an ON CONFLICT clause, and the builder does not know a
+// table's key, so it refuses rather than guess one.
+func (r *selectRenderer) checkUpsert(stmt *InsertStatement) error {
+	if !stmt.Upsert {
+		return nil
+	}
+	if r.dialect != platform.YDB {
+		return fmt.Errorf(
+			"renderer: %s has no UPSERT statement: UPSERT INTO is YDB's, and here an upsert names "+
+				"the key it watches; use OnConflictDoUpdate", r.dialect)
+	}
+	if stmt.OnConflict != nil {
+		return errors.New(
+			"renderer: an UPSERT carries no ON CONFLICT clause: it already writes each row over the row " +
+				"with the same primary key")
+	}
+	return nil
+}
+
 // renderOnConflict writes the upsert clause in the dialect's own spelling, or
 // refuses the combination the dialect cannot express.
 //
@@ -266,6 +344,13 @@ func (r *selectRenderer) renderOnConflict(clause *OnConflict, inserted []string)
 			"renderer: ClickHouse has no upsert statement: a ReplacingMergeTree deduplicates " +
 				"in the background rather than at insert time, which is a table design and not " +
 				"a clause on this INSERT")
+	case r.dialect == platform.YDB:
+		// Measured on 26.2.1.14 and 25.1.4.7: `INSERT OR IGNORE INTO` answers
+		// `INSERT OR IGNORE is not yet supported for Kikimr`, and YQL has no
+		// ON CONFLICT.
+		return errors.New(
+			"renderer: YDB has no ON CONFLICT: UpsertInto writes each row over the row with the same " +
+				"primary key, and the server refuses INSERT OR IGNORE")
 	default:
 		return fmt.Errorf("renderer: %s has no upsert statement this builder emits", r.dialect)
 	}
@@ -462,15 +547,18 @@ func (r *selectRenderer) renderDelete(stmt *DeleteStatement) error {
 }
 
 // renderReturning appends a RETURNING clause when cols is non-empty, and only for
-// a dialect that can execute one. Each column is quoted like any other
+// a target that can execute one. Each column is quoted like any other
 // identifier; a blank or "*" column is rejected because RETURNING here projects
 // named columns, not a star.
 //
-// RETURNING is supported on the PostgreSQL family (always) and SQLite (since
-// 3.35, 2021). MySQL has no RETURNING at all, and MariaDB supports it only for
-// INSERT and DELETE, not UPDATE — so, to keep one rule across all three write
-// statements, both MySQL and MariaDB are treated as unsupported and a non-empty
-// RETURNING is rejected there rather than emitted as SQL the engine cannot run.
+// The target's capability.ReturningClause decides, which is one key for the
+// three write statements. RETURNING runs on the PostgreSQL family (always),
+// SQLite (since 3.35, 2021) and YDB (from 25.3). MySQL has no RETURNING at
+// all, and MariaDB supports it only for INSERT and DELETE, not UPDATE — so,
+// to keep one rule across all three write statements, both MySQL and MariaDB
+// lack the key and a non-empty RETURNING is rejected there rather than emitted
+// as SQL the engine cannot run. YDB 25.1 and 25.2 lack it for the same kind of
+// reason: UPDATE ... RETURNING fails there on a table with a unique index.
 //
 // "The PostgreSQL family" includes Cloud Spanner's PostgreSQL interface, which
 // is what Ptah targets when the dialect is spanner: RETURNING is emitted there
@@ -484,8 +572,8 @@ func (r *selectRenderer) renderReturning(cols []ColumnRef) error {
 	if len(cols) == 0 {
 		return nil
 	}
-	if !r.supportsReturning() {
-		return fmt.Errorf("renderer: %s does not support RETURNING", r.dialect)
+	if !r.caps.Has(capability.ReturningClause) {
+		return capabilityRefusal(r.dialect, capability.ReturningClause, "RETURNING")
 	}
 	r.buf.WriteString(" RETURNING ")
 	for i := range cols {
@@ -501,23 +589,4 @@ func (r *selectRenderer) renderReturning(cols []ColumnRef) error {
 		r.writeQualifiedIdent(cols[i].Qualifier, cols[i].Name)
 	}
 	return nil
-}
-
-// supportsReturning reports whether the renderer's dialect can execute a
-// RETURNING clause. See renderReturning for the per-dialect rationale.
-//
-// Family membership is asked of platform.IsPostgresFamily rather than spelled
-// out, for the same reason as in selectPlaceholderStyle: a list of names here is
-// a list that drifts, and it had already drifted — it omitted Spanner.
-// supportsReturning reports whether the dialect executes a RETURNING
-// projection.
-//
-// Oracle is absent deliberately rather than by omission. It has the keyword and
-// not this shape: measured on 23.26, `INSERT INTO t (id) VALUES (99) RETURNING
-// id INTO :out` is accepted with an out-parameter bound, while the same
-// statement ending at `RETURNING id` answers ORA-00925, missing INTO keyword.
-// A projection has nowhere to go there, which is the same reason SQL Server's
-// OUTPUT clause is not mapped onto this one.
-func (r *selectRenderer) supportsReturning() bool {
-	return platform.IsPostgresFamily(r.dialect) || r.dialect == platform.SQLite
 }

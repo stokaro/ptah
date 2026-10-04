@@ -132,9 +132,13 @@ func TestYDBConnection_BindsEachIntegerShapeAt64Bits(t *testing.T) {
 
 // An Int64 argument bound to a narrower column is refused by the server
 // rather than converted, and the same value written with the column's own
-// width is accepted. Ptah widens a Go int to 64 bits so that a value too wide
-// for a column fails loudly instead of wrapping; a caller writing a narrow
-// column passes the narrow Go type.
+// width is accepted. The connection binds a value without knowing the column
+// it lands in, so it widens a Go int to 64 bits, where a value too wide for a
+// column fails loudly instead of wrapping, and a caller writing a narrow column
+// passes the narrow Go type. The data diff, declared rows and seeds know the
+// column and write its own type; TestYDBDataDiff_RoundTrips writes a Go int
+// into an Int32 column, and TestYDBDeclaredRows_RefuseAValueTheColumnCannotHold
+// refuses one the column cannot hold.
 func TestYDBConnection_RefusesAWideArgumentForANarrowColumn(t *testing.T) {
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {

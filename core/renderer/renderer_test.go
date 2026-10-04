@@ -1,7 +1,6 @@
 package renderer_test
 
 import (
-	"regexp"
 	"strings"
 	"testing"
 
@@ -12,7 +11,6 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/ydbgap"
 )
 
 func TestSupportedDialects(t *testing.T) {
@@ -231,8 +229,8 @@ func TestRenderSQL_EveryYDBSpellingRendersAsYDB(t *testing.T) {
 	}
 }
 
-// Writing rows is the data phase's work on YDB, and an upsert names that
-// phase rather than rendering YQL nobody has measured.
+// An upsert node is a MERGE in pieces, and YDB's UPSERT INTO holds none of
+// them, so the node is refused with the statement that does exist.
 func TestRenderSQL_UpsertRefusedOnYDB(t *testing.T) {
 	c := qt.New(t)
 	node := ast.NewUpsert("users").AddInsertValue("id", "?").SetMatchColumns("id")
@@ -241,7 +239,9 @@ func TestRenderSQL_UpsertRefusedOnYDB(t *testing.T) {
 
 	c.Assert(sql, qt.Equals, "")
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `upsert into users: `+regexp.QuoteMeta(ydbgap.DataChanges.Message()))
+	c.Assert(err, qt.ErrorMatches, `upsert into users: YDB's UPSERT INTO matches on the primary key and `+
+		`writes the inserted values, so it holds no match columns, update assignments or predicates; `+
+		`build the statement with core/query's UpsertInto`)
 }
 
 func TestRenderSQL_UpsertUnsupportedDialects(t *testing.T) {

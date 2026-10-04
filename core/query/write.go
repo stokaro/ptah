@@ -23,12 +23,29 @@ type InsertBuilder struct {
 	returning    []ColumnRef
 	onConflict   *OnConflict
 	selectSource *SelectStatement
+	upsert       bool
 }
 
 // InsertInto starts an INSERT INTO the given table. Follow it with Columns to
 // declare the column list and one or more Values calls to add rows.
 func InsertInto(table string) *InsertBuilder {
 	return &InsertBuilder{table: table}
+}
+
+// UpsertInto starts an UPSERT INTO the given table: each row is written over
+// the row with the same primary key, keeping the columns the statement does
+// not name, and inserted where there is none. Columns, Values, FromSelect and
+// Returning work as they do for InsertInto.
+//
+//	query.UpsertInto("users").Columns("id", "name").Values(int64(1), "alice")
+//	// UPSERT INTO `users` (`id`, `name`) VALUES ($p1, $p2)
+//
+// It is YDB's statement and renders on YDB only. The other dialects express an
+// upsert by naming the key it watches, which the builder does not know for a
+// table, so RenderInsert refuses it there and OnConflictDoUpdate is the
+// spelling to use.
+func UpsertInto(table string) *InsertBuilder {
+	return &InsertBuilder{table: table, upsert: true}
 }
 
 // Columns declares (or extends) the inserted column list. Each name is rendered
@@ -100,13 +117,15 @@ func (b *InsertBuilder) OnConflictDoUpdate(columns []string, update ...string) *
 }
 
 // Returning adds columns to the RETURNING clause, projecting them from the
-// inserted rows. RETURNING renders only on the PostgreSQL family and SQLite;
-// RenderInsert rejects a non-empty RETURNING on every other supported dialect
-// rather than emit a clause the engine cannot run: MySQL and MariaDB have no
-// portable RETURNING across the three write statements, ClickHouse has none at
-// all, SQL Server spells the idea as OUTPUT (a different clause, not silently
-// mapped), and Oracle accepts RETURNING only with an INTO clause binding
-// out-parameters.
+// inserted rows. RETURNING renders only where the target has
+// capability.ReturningClause: the PostgreSQL family, SQLite 3.35 and later, and
+// YDB from 25.3. RenderInsert rejects a non-empty RETURNING on every other
+// target rather than emit a clause the engine cannot run: MySQL and MariaDB
+// have no portable RETURNING across the three write statements, YDB 25.1 and
+// 25.2 fail it on an UPDATE of a table with a unique index, ClickHouse has none
+// at all, SQL Server spells the idea as OUTPUT (a different clause, not
+// silently mapped), and Oracle accepts RETURNING only with an INTO clause
+// binding out-parameters.
 func (b *InsertBuilder) Returning(columns ...string) *InsertBuilder {
 	b.returning = appendReturning(b.returning, columns)
 	return b
@@ -122,6 +141,7 @@ func (b *InsertBuilder) Build() *InsertStatement {
 		Returning:  b.returning,
 		OnConflict: b.onConflict,
 		Select:     b.selectSource,
+		Upsert:     b.upsert,
 	}
 }
 
