@@ -99,7 +99,7 @@ func deriveRoutine(routine schemamodel.Function, dialect string, columns map[str
 
 	// The view path resolves exactly this shape, and asking it is what keeps
 	// one answer rather than two that drift.
-	viewResult := deriveView(routine.Name, routine.Body, false, columns)
+	viewResult := deriveView(routine.Name, routine.Body, false, columns, bodyReading{})
 	if len(viewResult.Undecided) > 0 {
 		return undecided(viewResult.Undecided[0].Reason)
 	}
@@ -159,7 +159,7 @@ func bodyLanguage(language, dialect string) string {
 // isSingleSelectBody reports whether a body is the shape the read path
 // resolves, which is what decides whether a plain-SQL routine is procedural.
 func isSingleSelectBody(body string, columns map[string][]string) bool {
-	return len(deriveView("", body, false, columns).Undecided) == 0
+	return len(deriveView("", body, false, columns, bodyReading{}).Undecided) == 0
 }
 
 // proceduralReason states what was resolved and what was not.

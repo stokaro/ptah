@@ -377,7 +377,7 @@ func schemaLineage(ctx context.Context, req SchemaLineageRequest) (*SchemaLineag
 	if err != nil {
 		return nil, err
 	}
-	derived := schemalineage.Derive(database)
+	derived := schemalineage.DeriveForDialect(database, dialect)
 	derivedRoutines := schemalineage.DeriveRoutines(database, dialect)
 	// Both lists start non-nil so the encoded answer carries [] rather than
 	// null. A caller reading null as "no lineage" and [] as "no lineage" would

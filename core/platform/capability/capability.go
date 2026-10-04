@@ -151,6 +151,22 @@ const (
 	// (stokaro/ptah#929).
 	Views Capability = "views"
 
+	// CreateOrReplaceView marks a target that replaces an existing view's
+	// query in one statement: CREATE OR REPLACE VIEW, or SQL Server's CREATE
+	// OR ALTER VIEW. Where it is false, a changed view is replaced by dropping
+	// it and creating it again, which leaves a moment with no view: the SQLite
+	// renderer writes the pair for a replacement, and the YDB planner plans it.
+	//
+	// YDB has neither statement, nor ALTER VIEW: measured on 25.1.4.7
+	// (`Unexpected token 'CREATE'`) and 26.2.1.14 (`no viable alternative at
+	// input 'CREATE OR REPLACE VIEW'`). SQLite answers `near "OR": syntax error`
+	// (measured on 3.51.0). The probe replaced a view's query and read the
+	// change back on PostgreSQL 18, CockroachDB v26.3.2, YugabyteDB 2026.1.2,
+	// the Spanner emulator behind PGAdapter 0.56.1, MySQL 8.4, MariaDB 11.8,
+	// ClickHouse 26.9 and SQL Server 2022; Oracle's CREATE OR REPLACE VIEW is
+	// the documented spelling and was not measured.
+	CreateOrReplaceView Capability = "create_or_replace_view"
+
 	// MaterializedViews marks support for CREATE MATERIALIZED VIEW: a view
 	// whose query result is stored rather than recomputed on read. A target
 	// may host plain views and no materialized ones, so this is a separate
@@ -1440,6 +1456,10 @@ var registry = map[Capability]spec{
 	Views: {
 		doc: "standalone CREATE VIEW ... AS <query> objects",
 	},
+	CreateOrReplaceView: {
+		doc:      "a view's query is replaced in one statement: CREATE OR REPLACE VIEW, or SQL Server's CREATE OR ALTER VIEW (not SQLite or YDB)",
+		requires: []Capability{Views},
+	},
 	MaterializedViews: {
 		doc:      "CREATE MATERIALIZED VIEW: a view whose query result is stored",
 		requires: []Capability{Views},
@@ -1917,6 +1937,7 @@ func MySQL84() Capabilities {
 		DropIndexConcurrently:          false,
 		IndexIncludeSPGiST:             false,
 		Views:                          true,
+		CreateOrReplaceView:            true,
 		MaterializedViews:              false,
 		Functions:                      true,
 		Procedures:                     true,
@@ -2126,6 +2147,7 @@ func MariaDB1011() Capabilities {
 		DropIndexConcurrently:          false,
 		IndexIncludeSPGiST:             false,
 		Views:                          true,
+		CreateOrReplaceView:            true,
 		MaterializedViews:              false,
 		Functions:                      true,
 		Procedures:                     true,
@@ -2294,6 +2316,7 @@ func Postgres16() Capabilities {
 		DropIndexConcurrently:              true,
 		IndexIncludeSPGiST:                 true,
 		Views:                              true,
+		CreateOrReplaceView:                true,
 		MaterializedViews:                  true,
 		DomainTypes:                        true,
 		CompositeTypes:                     true,
@@ -2547,6 +2570,7 @@ func ClickHouse24() Capabilities {
 		DropIndexConcurrently:    false,
 		IndexIncludeSPGiST:       false,
 		Views:                    true,
+		CreateOrReplaceView:      true,
 		MaterializedViews:        true,
 		// NOT the lambda alias `CREATE FUNCTION fn AS (x) -> x + 1`, which
 		// ClickHouse accepts. This key names the object ast.CreateFunctionNode
@@ -2738,6 +2762,7 @@ func SQLite3() Capabilities {
 		DropIndexConcurrently:              false,
 		IndexIncludeSPGiST:                 false,
 		Views:                              true,
+		CreateOrReplaceView:                false,
 		MaterializedViews:                  false,
 		Functions:                          false,
 		Procedures:                         false,
@@ -2928,6 +2953,7 @@ func SQLServer2022() Capabilities {
 		DropIndexConcurrently:    false,
 		IndexIncludeSPGiST:       false,
 		Views:                    true,
+		CreateOrReplaceView:      true,
 		MaterializedViews:        false,
 		// Functions is on because all three halves the key requires exist: the
 		// renderer emits CREATE FUNCTION, the reader recovers one from the
@@ -3644,6 +3670,7 @@ func Oracle23() Capabilities {
 		DropIndexConcurrently:   false,
 		IndexIncludeSPGiST:      false,
 		Views:                   true,
+		CreateOrReplaceView:     true,
 		MaterializedViews:       true,
 		// A standalone function and a standalone procedure are rendered, read
 		// back from ALL_PROCEDURES, ALL_ARGUMENTS and ALL_SOURCE, and planned
@@ -3850,8 +3877,8 @@ func Oracle21() Capabilities {
 // a flag on can do more than its line's preset says.
 //
 // A key is true only where Ptah's renderer and planner reach the feature. The
-// object families arrive in later phases of stokaro/ptah#4015, so views and
-// roles read false here whatever the server can do.
+// object families arrive in later phases of stokaro/ptah#4015, so roles read
+// false here whatever the server can do.
 func YDB262() Capabilities {
 	return Capabilities{
 		// Constraints. The grammar has no CHECK, FOREIGN KEY, UNIQUE
@@ -3908,12 +3935,16 @@ func YDB262() Capabilities {
 		GeneratedColumns:               false,
 		AlterGeneratedColumnExpression: false,
 
-		// Views exist on the server and are the views family's work in a later
-		// phase; until it lands the renderer refuses them, so the key is
-		// false. A materialized view does not exist (`CREATE MATERIALIZED
-		// VIEW` is a parse error).
-		Views:             false,
-		MaterializedViews: false,
+		// Views. CREATE VIEW ... WITH (security_invoker = TRUE) AS SELECT
+		// creates one, DescribeView returns its query, and DROP VIEW drops it,
+		// measured on 25.1.4.7 and 26.2.1.14 alike, so every line between them
+		// carries the same answers. There is no CREATE OR REPLACE VIEW and no
+		// ALTER VIEW (`no viable alternative at input`), so a changed view is
+		// dropped and created again. A materialized view does not exist
+		// (`CREATE MATERIALIZED VIEW` is a parse error).
+		Views:               true,
+		CreateOrReplaceView: false,
+		MaterializedViews:   false,
 
 		// No COMMENT statement exists for any object. Comments are stored as
 		// table attributes by a later phase, through the scheme API.

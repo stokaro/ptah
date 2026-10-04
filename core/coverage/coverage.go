@@ -187,7 +187,9 @@ const (
 // nothing plans their removal. Like [ChangeStream], none of them is consulted
 // by a comparator that plans the family, because no planner writes one.
 const (
-	// View is a YDB view (CREATE VIEW ... WITH (security_invoker = TRUE)).
+	// View is a YDB view (CREATE VIEW ... WITH (security_invoker = TRUE)) on
+	// a server without the views capability. Every YDB line Ptah measured has
+	// it, and there the reader describes each view instead.
 	View Kind = "view"
 	// Topic is a YDB topic, a persistent message queue in the scheme tree.
 	Topic Kind = "topic"

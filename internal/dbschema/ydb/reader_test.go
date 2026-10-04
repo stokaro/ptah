@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/ydb-platform/ydb-go-genproto/draft/protos/Ydb_View"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Scheme"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Table"
@@ -26,6 +27,7 @@ import (
 type fakeSource struct {
 	directories map[string][]*Ydb_Scheme.Entry
 	tables      map[string]*Ydb_Table.DescribeTableResult
+	views       map[string]*Ydb_View.DescribeViewResult
 }
 
 func (f fakeSource) ListDirectory(_ context.Context, path string) ([]*Ydb_Scheme.Entry, error) {
@@ -40,6 +42,14 @@ func (f fakeSource) DescribeTable(_ context.Context, path string) (*Ydb_Table.De
 	described, ok := f.tables[path]
 	if !ok {
 		return nil, fmt.Errorf("described %s, which the fixture does not hold", path)
+	}
+	return described, nil
+}
+
+func (f fakeSource) DescribeView(_ context.Context, path string) (*Ydb_View.DescribeViewResult, error) {
+	described, ok := f.views[path]
+	if !ok {
+		return nil, fmt.Errorf("described view %s, which the fixture does not hold", path)
 	}
 	return described, nil
 }
@@ -361,6 +371,7 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 			"/local/app/t":     settings,
 			"/local/app/plain": plainTable(),
 		},
+		views: map[string]*Ydb_View.DescribeViewResult{"/local/v": {QueryText: "SELECT 1 AS a"}},
 	}
 
 	db := readFrom(c, source)
@@ -387,12 +398,12 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 		observed(coverage.Sequence, "seq"),
 		observed(coverage.ExternalDataSource, "src"),
 		observed(coverage.ColumnTable, "store"),
-		observed(coverage.View, "v"),
 		observed(coverage.Transfer, "xfer"),
 		derived(coverage.Role),
 		derived(coverage.Grant),
 	))
 	c.Assert(db.Tables, qt.HasLen, 2)
+	c.Assert(db.Views, qt.DeepEquals, []catalog.View{{Name: "v", Body: "SELECT 1 AS a"}})
 }
 
 // A table setting is recorded only where it differs from what a table created
@@ -902,6 +913,10 @@ func (errorSource) ListDirectory(context.Context, string) ([]*Ydb_Scheme.Entry, 
 }
 
 func (errorSource) DescribeTable(context.Context, string) (*Ydb_Table.DescribeTableResult, error) {
+	return nil, errors.New("connection refused")
+}
+
+func (errorSource) DescribeView(context.Context, string) (*Ydb_View.DescribeViewResult, error) {
 	return nil, errors.New("connection refused")
 }
 

@@ -241,6 +241,28 @@ func TestRender_Changes_HappyPath(t *testing.T) {
 			want: "ALTER TABLE `t` SET (AUTO_PARTITIONING_BY_LOAD = ENABLED);\n",
 		},
 		{
+			// The query goes as written, and the semicolon on a line of its
+			// own, after a trailing line comment the query may end with.
+			name: "a view in a directory, its query as written",
+			caps: capability.YDB251(),
+			node: ast.NewCreateView("app.active").SetBody("SELECT id FROM `app/users` -- live ones\n;\n"),
+			want: "CREATE VIEW `app/active` WITH (security_invoker = TRUE) AS\n" +
+				"SELECT id FROM `app/users` -- live ones\n" +
+				";\n",
+		},
+		{
+			name: "a view dropped",
+			caps: capability.YDB262(),
+			node: ast.NewDropView("app.active"),
+			want: "DROP VIEW `app/active`;\n",
+		},
+		{
+			name: "a view dropped with its guard",
+			caps: capability.YDB262(),
+			node: ast.NewDropView("active").SetIfExists(),
+			want: "DROP VIEW IF EXISTS `active`;\n",
+		},
+		{
 			// A Ptah schema is a directory, which the first table path that
 			// names it creates: no statement makes one.
 			name: "a schema",
