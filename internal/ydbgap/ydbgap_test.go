@@ -26,7 +26,7 @@ func TestLayer_Message_HappyPath(t *testing.T) {
 		{name: "table settings", layer: ydbgap.TableSettings, want: "setting YDB table options (TTL, partitioning, column families, changefeeds) is not implemented yet (stokaro/ptah#4015, phase 10)"},
 		{name: "index families", layer: ydbgap.IndexFamilies, want: "reading or creating a YDB vector, full-text, JSON or column-table index is not implemented yet (stokaro/ptah#4015, phase 10)"},
 		{name: "compatibility", layer: ydbgap.Compatibility, want: "using a YDB database through ptah-compat is not implemented yet (stokaro/ptah#4015, phase 11)"},
-		{name: "other surfaces", layer: ydbgap.OtherSurfaces, want: "running this command against YDB is not implemented yet (stokaro/ptah#4015, phase 12)"},
+		{name: "inference", layer: ydbgap.Inference, want: "running an embedding generation against YDB is not implemented yet (stokaro/ptah#4015, phase 12)"},
 	}
 
 	for _, test := range tests {
@@ -53,7 +53,7 @@ func TestLayers_EveryLayerNamesAPhaseAndAPageEntry(t *testing.T) {
 	layers := ydbgap.Layers()
 	c.Assert(layers, qt.Not(qt.HasLen), 0)
 	c.Assert(layers[0], qt.Equals, ydbgap.SchemaFiles)
-	c.Assert(layers[len(layers)-1], qt.Equals, ydbgap.OtherSurfaces)
+	c.Assert(layers[len(layers)-1], qt.Equals, ydbgap.Inference)
 	for _, layer := range layers {
 		t.Run(layer.Message(), func(t *testing.T) {
 			c := qt.New(t)
@@ -78,5 +78,5 @@ func TestWriteUnsupportedMarkdown(t *testing.T) {
 	lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
 	c.Assert(lines, qt.HasLen, len(ydbgap.Layers()))
 	c.Assert(lines[0], qt.Equals, "- "+ydbgap.SchemaFiles.Unsupported()+";")
-	c.Assert(lines[len(lines)-1], qt.Equals, "- "+ydbgap.OtherSurfaces.Unsupported()+".")
+	c.Assert(lines[len(lines)-1], qt.Equals, "- "+ydbgap.Inference.Unsupported()+".")
 }

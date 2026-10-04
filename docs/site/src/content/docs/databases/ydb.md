@@ -31,9 +31,9 @@ Ptah applies reads back as itself, which the integration suite checks in CI
 against live YDB 26.2 and 25.1 servers. The nightly capability matrix runs the
 same suite on each YDB line it probes.
 
-Dev databases, `ptah-compat` and the YDB object families such as TTL, column
-families, changefeeds, views and vector indexes are not supported yet. See
-[What is not supported yet](#what-is-not-supported-yet).
+Dev databases, `ptah-compat`, inference and the YDB object families such as
+TTL, column families, changefeeds, views and vector indexes are not supported
+yet. See [What is not supported yet](#what-is-not-supported-yet).
 
 ## Connecting
 
@@ -503,6 +503,71 @@ OFFSET without a LIMIT. The builder refuses each before it renders anything,
 with the capability key the target lacks, and `RETURNING` is refused on 25.1
 and 25.2; see the [query builder](../../extend/query-builder/#dialect-coverage).
 
+## Other commands
+
+### Go models from a database
+
+`ptah introspect --db-url ydb://...` writes the row tables as annotated Go
+structs. A field keeps the column's YDB type name as its declared type, such as
+`type="Uint64"` or `type="Timestamp64"`, which renders as the same type again.
+A `Serial` column is written as its integer type with `auto_increment`, which
+renders as the `Serial` type again. The models, planned against the database
+they came from, plan nothing.
+
+The Go type of a field is the type the YDB Go SDK's `database/sql` driver scans
+the column into:
+
+| YDB type | Go type |
+| --- | --- |
+| `Int8` to `Int64`, `Uint8` to `Uint64` | `int8` to `int64`, `uint8` to `uint64` |
+| `Float`, `Double` | `float32`, `float64` |
+| `Bool` | `bool` |
+| `Utf8`, `Json`, `JsonDocument`, `Uuid`, `DyNumber` | `string` |
+| `String`, `Yson` | `[]byte` |
+| `Date`, `Datetime`, `Timestamp` and their 64-bit types | `time.Time` |
+| `Interval`, `Interval64` | `time.Duration` |
+| `Decimal(p,s)` | `types.Decimal` from `github.com/ydb-platform/ydb-go-sdk/v3/table/types` |
+
+A nullable column is a pointer field, except a `[]byte` one. The SDK scans a
+`Decimal` into its own `types.Decimal` only, and refuses a `string` or a
+`float64`, so a package with a `Decimal` field imports the SDK.
+
+YDB accepts a nullable key column, and no Ptah declaration can ask for one,
+because Ptah writes `NOT NULL` on every YDB key column. `ptah introspect`
+refuses such a column by name and writes nothing.
+
+### Schema analysis
+
+`ptah schema stats` counts the tables, columns and indexes the reader
+describes, labeled with the dialect and the `--schemas` directories. Like
+every other dialect, it counts objects and reads no row counts or sizes.
+
+`ptah schema lineage --db-url ydb://...` traces views. YDB has no routines, so a
+directory without views has nothing to trace. The reader does not read a view
+yet, so a directory holding one is refused rather than reported as empty.
+
+`ptah schema security --db-url ydb://...` is refused: the analysis reads the
+access model, and Ptah does not read YDB users, groups and permissions yet.
+
+`ptah viz --dialect ydb` draws a declared schema with its YDB types. With
+`--security`, the rules run under the capabilities of the line
+`--server-version` names, and a rule YDB gives nothing to check, such as the
+row-level security rule, is listed as not checked.
+
+### Agents, editors and CI
+
+The tools of `ptah mcp` take `ydb` as a dialect and a YDB database as a
+configured target. `render_schema` writes YQL, `validate_schema` reports what
+YDB cannot store, and `read_database` reads a target's row tables. The two
+inference tools refuse a YDB target before they connect.
+
+The language server reads YDB models as it reads any other: YDB type names, a
+`platform.ydb.<key>` override and `dialects="ydb"` draw no diagnostic.
+
+The Ptah GitHub Action takes a YDB URL in `db-url` and `ydb` in `dialect`. The
+plan, the safety report, the generated migration files and the lint of them run
+as they do for any other database.
+
 ## What is not supported yet
 
 These are refused with a message that names what is missing:
@@ -517,7 +582,7 @@ These are refused with a message that names what is missing:
 - a table's own settings: TTL, partitioning, column families and changefeeds;
 - vector, full-text, JSON and column-table indexes;
 - every `ptah-compat` command with a YDB URL, from any source;
-- `ptah introspect`, `ptah schema security` and `ptah schema lineage`, which need more of a database than the schema reader describes.
+- `ptah inference` and the inference tools of `ptah mcp`, which wait for the vector index family.
 <!-- END GENERATED YDB GAPS -->
 
 The work is planned in [#4015](https://github.com/stokaro/ptah/issues/4015).

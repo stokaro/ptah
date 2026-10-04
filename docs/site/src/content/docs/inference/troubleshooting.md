@@ -28,6 +28,13 @@ vertical: the run state and the vectors have no dialect-agnostic form.
 
 **Fix.** Point it at a PostgreSQL database. There is no workaround.
 
+## `"ydb://" names a YDB database`
+
+**Cause.** The `--db-url`, or the target an MCP inference tool was given, is a
+YDB database. A generation on YDB's vector indexes is planned and not built yet.
+
+**Fix.** Point it at a PostgreSQL database with pgvector.
+
 ## `preprocessing.null_policy "" is not one this build acts on`
 
 **Cause.** The field is absent. Thirteen fields are required, and each one is
