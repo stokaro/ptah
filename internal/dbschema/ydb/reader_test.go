@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -13,6 +14,7 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 
 	"ptah.run/catalog"
+	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
 	ydbschema "ptah.run/internal/dbschema/ydb"
@@ -78,6 +80,20 @@ func plainTable(columns ...*Ydb_Table.ColumnMeta) *Ydb_Table.DescribeTableResult
 			MinPartitionsCount: 1,
 		},
 		StorageSettings: &Ydb_Table.StorageSettings{StoreExternalBlobs: Ydb.FeatureFlag_DISABLED},
+	}
+}
+
+// implementationTable is the description of a global index's own table, as a
+// new index's reads on 25.1.4.7 and 26.2.1.14: split by size at 2048 MB, not by
+// load, at least one partition, no read replicas.
+func implementationTable() *Ydb_Table.DescribeTableResult {
+	return &Ydb_Table.DescribeTableResult{
+		PartitioningSettings: &Ydb_Table.PartitioningSettings{
+			PartitioningBySize: Ydb.FeatureFlag_ENABLED,
+			PartitionSizeMb:    2048,
+			PartitioningByLoad: Ydb.FeatureFlag_DISABLED,
+			MinPartitionsCount: 1,
+		},
 	}
 }
 
@@ -242,7 +258,12 @@ func TestReader_Indexes(t *testing.T) {
 	}
 	source := fakeSource{
 		directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
-		tables:      map[string]*Ydb_Table.DescribeTableResult{"/local/t": described},
+		tables: map[string]*Ydb_Table.DescribeTableResult{
+			"/local/t":                     described,
+			"/local/t/by_a/indexImplTable": implementationTable(),
+			"/local/t/by_b/indexImplTable": implementationTable(),
+			"/local/t/uniq/indexImplTable": implementationTable(),
+		},
 	}
 
 	db := readFrom(c, source)
@@ -830,6 +851,125 @@ func TestReader_TableColumns_FailurePath(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(exists, qt.IsFalse)
 			c.Assert(columns, qt.IsNil)
+		})
+	}
+}
+
+// An index's partitioning comes from its implementation table, reported as
+// what differs from a new index's: nothing for an index nobody tuned, and each
+// setting a statement changed for one that was. A replica count of zero is no
+// replicas, which is how YDB reports an index whose replicas were cleared.
+func TestReader_IndexPartitioning(t *testing.T) {
+	tuned := &Ydb_Table.DescribeTableResult{
+		PartitioningSettings: &Ydb_Table.PartitioningSettings{
+			PartitioningBySize: Ydb.FeatureFlag_ENABLED,
+			PartitionSizeMb:    100,
+			PartitioningByLoad: Ydb.FeatureFlag_ENABLED,
+			MinPartitionsCount: 6,
+			MaxPartitionsCount: 9,
+		},
+		ReadReplicasSettings: &Ydb_Table.ReadReplicasSettings{
+			Settings: &Ydb_Table.ReadReplicasSettings_AnyAzReadReplicasCount{AnyAzReadReplicasCount: 2},
+		},
+	}
+	unsplit := &Ydb_Table.DescribeTableResult{
+		PartitioningSettings: &Ydb_Table.PartitioningSettings{
+			PartitioningBySize: Ydb.FeatureFlag_DISABLED,
+			PartitioningByLoad: Ydb.FeatureFlag_DISABLED,
+			MinPartitionsCount: 1,
+		},
+		ReadReplicasSettings: &Ydb_Table.ReadReplicasSettings{
+			Settings: &Ydb_Table.ReadReplicasSettings_PerAzReadReplicasCount{PerAzReadReplicasCount: 0},
+		},
+	}
+	unspecified := &Ydb_Table.DescribeTableResult{PartitioningSettings: &Ydb_Table.PartitioningSettings{}}
+
+	tests := []struct {
+		name           string
+		implementation *Ydb_Table.DescribeTableResult
+		want           *ast.IndexPartitioningSpec
+	}{
+		{name: "an index nobody tuned", implementation: implementationTable(), want: nil},
+		{name: "unspecified settings are the defaults", implementation: unspecified, want: nil},
+		{
+			name: "every setting changed", implementation: tuned,
+			want: &ast.IndexPartitioningSpec{
+				PartitionSizeMB: 100, ByLoad: new(true), MinPartitions: 6, MaxPartitions: 9, ReadReplicas: "ANY_AZ:2",
+			},
+		},
+		{name: "not splitting by size, replicas cleared", implementation: unsplit,
+			want: &ast.IndexPartitioningSpec{BySize: new(false)}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			described := plainTable(&Ydb_Table.ColumnMeta{Name: "a", Type: optional(primitive(Ydb.Type_UTF8))})
+			described.Indexes = []*Ydb_Table.TableIndexDescription{
+				{Name: "by_a", IndexColumns: []string{"a"},
+					Type: &Ydb_Table.TableIndexDescription_GlobalIndex{GlobalIndex: &Ydb_Table.GlobalIndex{}}},
+			}
+			source := fakeSource{
+				directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
+				tables: map[string]*Ydb_Table.DescribeTableResult{
+					"/local/t":                     described,
+					"/local/t/by_a/indexImplTable": test.implementation,
+				},
+			}
+
+			db := readFrom(c, source)
+
+			c.Assert(db.Indexes, qt.HasLen, 1)
+			c.Assert(db.Indexes[0].Partitioning, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// An index whose implementation table reports a setting the reader cannot read
+// is refused rather than read as YDB's default, which a plan would then move
+// the index back to.
+func TestReader_IndexPartitioning_FailurePath(t *testing.T) {
+	withUnknownField := implementationTable()
+	unknown := protowire.AppendTag(nil, 99, protowire.VarintType)
+	withUnknownField.PartitioningSettings.ProtoReflect().SetUnknown(protowire.AppendVarint(unknown, 1))
+	withUnknownFlag := implementationTable()
+	withUnknownFlag.PartitioningSettings.PartitioningByLoad = Ydb.FeatureFlag_Status(7)
+
+	const implementation = "/local/t/by_a/indexImplTable"
+	tests := []struct {
+		name            string
+		implementations map[string]*Ydb_Table.DescribeTableResult
+		wantErr         string
+	}{
+		{name: "a field the protocol buffers do not model",
+			implementations: map[string]*Ydb_Table.DescribeTableResult{implementation: withUnknownField},
+			wantErr:         `YDB table /local/t: index "by_a": its partitioning carries field 99, which this build of Ptah does not read`},
+		{name: "a flag value the reader does not know",
+			implementations: map[string]*Ydb_Table.DescribeTableResult{implementation: withUnknownFlag},
+			wantErr:         `YDB table /local/t: index "by_a": partitioning by load: the value 7 is not one this build of Ptah reads`},
+		{name: "no implementation table", implementations: nil,
+			wantErr: `YDB table /local/t: index "by_a": described /local/t/by_a/indexImplTable, which the fixture does not hold`},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			described := plainTable(&Ydb_Table.ColumnMeta{Name: "a", Type: optional(primitive(Ydb.Type_UTF8))})
+			described.Indexes = []*Ydb_Table.TableIndexDescription{
+				{Name: "by_a", IndexColumns: []string{"a"},
+					Type: &Ydb_Table.TableIndexDescription_GlobalIndex{GlobalIndex: &Ydb_Table.GlobalIndex{}}},
+			}
+			tables := map[string]*Ydb_Table.DescribeTableResult{"/local/t": described}
+			maps.Copy(tables, test.implementations)
+			source := fakeSource{
+				directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
+				tables:      tables,
+			}
+
+			db, err := ydbschema.NewReaderFromSource(source, "/local", capability.YDB262()).ReadSchemaContext(context.Background())
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(db, qt.IsNil)
 		})
 	}
 }

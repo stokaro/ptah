@@ -279,13 +279,13 @@ Declares an index for a table.
 | `fields` | No | Comma-separated Go field or column names. |
 | `granularity` | No | ClickHouse data-skipping index granularity. |
 | `key_block_size` | No | MySQL-family index block-size hint. Zero uses the engine default. See [MySQL and MariaDB](../../databases/mysql/) for retention and range limits. |
-| `include` | No | Comma-separated INCLUDE columns for PostgreSQL, YugabyteDB, CockroachDB, or the Spanner PostgreSQL dialect. Order is preserved, and a changed list rebuilds the index. |
+| `include` | No | Comma-separated INCLUDE columns for PostgreSQL, YugabyteDB, CockroachDB, or the Spanner PostgreSQL dialect, and `COVER` columns on YDB. Order is preserved, and a changed list rebuilds the index. |
 | `invisible` | No | Hides the index from the optimizer: `INVISIBLE` on MySQL, `IGNORED` on MariaDB, `NOT VISIBLE` on CockroachDB. `true`/`false`; bare form allowed. A target whose capability set does not carry `invisible_indexes` refuses it at render time rather than building a visible index. |
 | `name` | No | Index name. |
 | `nulls_distinct` | No | Controls NULLS DISTINCT behavior. `true`/`false`. The clause is PostgreSQL's; a target whose capability set does not carry `unique_nulls_distinct_clause` refuses it at render time rather than dropping it, in either spelling. |
 | `ops` | No | PostgreSQL operator class. |
 | `table` | No | Explicit target table. |
-| `type` | No | Index type or method. |
+| `type` | No | Index type or method. On YDB, `async` builds a `GLOBAL ASYNC` index. |
 | `unique` | No | Creates a unique index. `true`/`false`; bare form allowed. |
 | `where` | No | Atlas-style partial index condition alias. |
 
@@ -297,9 +297,24 @@ The accepted access methods depend on the target: PostgreSQL accepts the
 default, `BTREE`, and `GIST`, plus `SPGIST` on PostgreSQL 14 and newer;
 YugabyteDB accepts the default and `LSM`, with `BTREE` normalized to its
 documented default-LSM alias; CockroachDB accepts the default and `BTREE`, and
-refuses `GIN` and `GIST`, both of which name an inverted index there; and the
-Spanner PostgreSQL dialect accepts only the default. Every other dialect rejects
-`include` before emitting SQL.
+refuses `GIN` and `GIST`, both of which name an inverted index there; the
+Spanner PostgreSQL dialect accepts only the default; and YDB writes the columns
+as `COVER (...)` on a synchronous or an asynchronous global index. Every other
+dialect rejects `include` before emitting SQL.
+
+A YDB global index also takes its partitioning, in attributes spelled as YDB
+names the settings, in lower case. Every other dialect refuses an index that
+declares one, rather than build it with the server's defaults. See
+[index partitioning](../../databases/ydb/#index-partitioning).
+
+| Attribute | Value |
+| --- | --- |
+| `auto_partitioning_by_size` | `ENABLED` or `DISABLED` |
+| `auto_partitioning_partition_size_mb` | megabytes, at least 1 |
+| `auto_partitioning_by_load` | `ENABLED` or `DISABLED` |
+| `auto_partitioning_min_partitions_count` | at least 1 |
+| `auto_partitioning_max_partitions_count` | at least 1 |
+| `read_replicas_settings` | `PER_AZ:<n>` or `ANY_AZ:<n>` |
 
 CockroachDB's catalog names its access methods `prefix` and `inverted`, and it
 refuses both as input. `ptah db read` reports them as `btree` and `gin`, the

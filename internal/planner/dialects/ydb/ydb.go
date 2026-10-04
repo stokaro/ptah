@@ -16,12 +16,20 @@
 //  2. DROP INDEX for every index the plan removes, before any column it names
 //     is dropped (measured: `Impossible drop column because table has an index
 //     with that column`, and the same for a covered column);
-//  3. per table, ADD COLUMN, then the in-place column changes, then DROP
+//  3. RENAME INDEX for every index the plan renames, one per statement
+//     (`RENAME INDEX TO can not be used together with another table action`),
+//     then ALTER INDEX ... SET for every index whose partitioning changes in
+//     place, under the name it has once renamed;
+//  4. per table, ADD COLUMN, then the in-place column changes, then DROP
 //     COLUMN;
-//  4. ADD INDEX for every index added to a table that already exists, one per
+//  5. ADD INDEX for every index added to a table that already exists, one per
 //     statement (`Only one index can be added by one operation`), after the
 //     columns it names exist;
-//  5. DROP TABLE for every removed table, last.
+//  6. DROP TABLE for every removed table, last.
+//
+// An index a plan creates, in CREATE TABLE or by ADD INDEX, takes its declared
+// partitioning from an ALTER INDEX the renderer writes after it, because no
+// statement that creates an index takes the settings.
 //
 // Each node renders as statements of its own, and the executor runs one per
 // query: YDB compiles a query against the schema as it stood before the query,
@@ -136,10 +144,15 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := p.refuseIndexAdditions(diff, ownIndexes, semantics); err != nil {
 		return nil, err
 	}
+	if err := p.refuseIndexChangesInPlace(diff); err != nil {
+		return nil, err
+	}
 
 	var result []ast.Node
 	result = append(result, p.createTables(diff, inlineIndexes, semantics)...)
 	result = append(result, dropIndexes(diff.IndexRemovals(), removedTables, rebuilds, semantics)...)
+	result = append(result, renameIndexes(diff.IndexesRenamed, rebuilds, semantics)...)
+	result = append(result, changeIndexPartitioning(diff.IndexPartitioningChanged, rebuilds, semantics)...)
 	rebuiltNodes, err := p.changeTables(diff, rebuilds, semantics)
 	if err != nil {
 		return nil, err
@@ -237,6 +250,80 @@ func dropIndexes(
 		nodes = append(nodes, ast.NewDropIndex(ref.Name).SetTable(ref.TableName))
 	}
 	return nodes
+}
+
+// renameIndexes renames each index the comparison paired, one per statement.
+// An index of a table the plan rebuilds takes its declared name in the new
+// table's CREATE TABLE, so it is not renamed on its own.
+func renameIndexes(renames []difftypes.IndexRename, rebuilds map[string]*tableRebuild, semantics identifier.Semantics) []ast.Node {
+	nodes := make([]ast.Node, 0, len(renames))
+	for _, rename := range renames {
+		if _, rebuilt := rebuilds[semantics.TableIdentityKey(rename.TableName)]; rebuilt {
+			continue
+		}
+		nodes = append(nodes, &ast.AlterTableNode{
+			Name:       rename.TableName,
+			Operations: []ast.AlterOperation{&ast.RenameIndexOperation{From: rename.From, To: rename.To}},
+		})
+	}
+	return nodes
+}
+
+// changeIndexPartitioning changes each index's partitioning in place, carrying
+// the settings it holds so the renderer can write a statement whose outcome
+// does not depend on them. An index of a table the plan rebuilds takes its
+// declared settings in the new table, so it is not changed on its own.
+func changeIndexPartitioning(
+	changes []difftypes.IndexPartitioningChange,
+	rebuilds map[string]*tableRebuild,
+	semantics identifier.Semantics,
+) []ast.Node {
+	nodes := make([]ast.Node, 0, len(changes))
+	for _, change := range changes {
+		if _, rebuilt := rebuilds[semantics.TableIdentityKey(change.TableName)]; rebuilt {
+			continue
+		}
+		nodes = append(nodes, &ast.AlterTableNode{
+			Name: change.TableName,
+			Operations: []ast.AlterOperation{&ast.SetIndexPartitioningOperation{
+				IndexName:    change.Name,
+				Partitioning: change.Partitioning.Clone(),
+				Previous:     change.Previous.Clone(),
+			}},
+		})
+	}
+	return nodes
+}
+
+// refuseIndexChangesInPlace refuses, before anything is emitted, a rename or a
+// change of partitioning this target cannot make: by
+// [capability.IndexRename] and [capability.IndexPartitioning], and a change of
+// partitioning YDB refuses whatever the target, which the renderer would
+// otherwise refuse after the statements before it were planned.
+func (p *Planner) refuseIndexChangesInPlace(diff *difftypes.SchemaDiff) error {
+	if len(diff.IndexesRenamed) > 0 && !p.caps.Has(capability.IndexRename) {
+		rename := diff.IndexesRenamed[0]
+		return refuseKey(capability.IndexRename, fmt.Sprintf("renaming index %q of table %q to %q",
+			rename.From, rename.TableName, rename.To))
+	}
+	for _, change := range diff.IndexPartitioningChanged {
+		subject := fmt.Sprintf("index %q of table %q", change.Name, change.TableName)
+		if !p.caps.Has(capability.IndexPartitioning) {
+			return refuseKey(capability.IndexPartitioning, "changing the partitioning of "+subject)
+		}
+		desired, err := ydbindex.Resolve(change.Partitioning)
+		if err != nil {
+			return refuseFact(subject, err.Error())
+		}
+		previous, err := ydbindex.Resolve(change.Previous)
+		if err != nil {
+			return refuseFact(subject, "the settings it holds: "+err.Error())
+		}
+		if reason := ydbindex.ChangeRefusal(desired, previous); reason != "" {
+			return refuseFact(subject, reason)
+		}
+	}
+	return nil
 }
 
 // addIndexes adds each index the plan gives a table, one per statement, except

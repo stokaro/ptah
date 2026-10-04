@@ -1,6 +1,9 @@
 // Package ydbindex reads the access method an index declaration names as the
 // kind of global index YDB builds for it, and writes the kind back as the
-// clause YQL takes.
+// clause YQL takes. It also holds the other answers about a global index that
+// the renderer, the reader, the comparison and the planner must give alike:
+// how its partitioning resolves and is set ([Resolve], [Clause]), and which
+// unique index a UNIQUE constraint becomes ([UniqueIndexName]).
 //
 // It is one package rather than a switch in the renderer because the schema
 // comparison asks the same question: an index whose kind changed from

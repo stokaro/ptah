@@ -22,6 +22,8 @@ func cloneSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 	clone.IndexesAdded = slices.Clone(diff.IndexesAdded)
 	clone.IndexesRemoved = slices.Clone(diff.IndexesRemoved)
 	clone.ConstraintBackedIndexRemovals = slices.Clone(diff.ConstraintBackedIndexRemovals)
+	clone.IndexesRenamed = slices.Clone(diff.IndexesRenamed)
+	clone.IndexPartitioningChanged = cloneIndexPartitioningChanges(diff.IndexPartitioningChanged)
 	clone.ExtensionsAdded = slices.Clone(diff.ExtensionsAdded)
 	clone.ExtensionsRemoved = slices.Clone(diff.ExtensionsRemoved)
 	clone.ExtensionsModified = slices.Clone(diff.ExtensionsModified)
@@ -118,4 +120,19 @@ func cloneBoolPtr(value *bool) *bool {
 		return nil
 	}
 	return new(*value)
+}
+
+// cloneIndexPartitioningChanges copies the changes and the settings each one
+// points at, so a reversal swapping them leaves the caller's diff alone.
+func cloneIndexPartitioningChanges(changes []difftypes.IndexPartitioningChange) []difftypes.IndexPartitioningChange {
+	if changes == nil {
+		return nil
+	}
+	clone := make([]difftypes.IndexPartitioningChange, len(changes))
+	for i, change := range changes {
+		change.Partitioning = change.Partitioning.Clone()
+		change.Previous = change.Previous.Clone()
+		clone[i] = change
+	}
+	return clone
 }

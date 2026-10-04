@@ -126,11 +126,15 @@ type databaseIndexEntry struct {
 	rowFormat         string
 }
 
+// IndexesWithDialect compares indexes for dialect, with its identifier
+// semantics and its default capability preset.
 func IndexesWithDialect(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff, dialect string) {
-	IndexesWithSemantics(desired, current, diff, dialect, identifier.ForDialect(dialect), nil)
+	IndexesWithSemantics(desired, current, diff, dialect, identifier.ForDialect(dialect), nil, capability.ForDialect(dialect))
 }
 
-// IndexesWithSemantics compares indexes using explicit identifier semantics.
+// IndexesWithSemantics compares indexes using explicit identifier semantics,
+// on a target with caps. A target with [capability.IndexRename] gets an index
+// the declaration renamed as a rename; see [pairIndexRenames].
 func IndexesWithSemantics(
 	desired *schemamodel.Database,
 	database *catalog.Database,
@@ -138,6 +142,7 @@ func IndexesWithSemantics(
 	dialect string,
 	semantics identifier.Semantics,
 	indexes map[string]config.IndexExpression,
+	caps capability.Capabilities,
 ) {
 	genIndexes, ambiguousGenerated := collectGeneratedIndexes(desired, semantics)
 	if platform.NormalizeDialect(dialect) == platform.CockroachDB {
@@ -156,9 +161,7 @@ func IndexesWithSemantics(
 		genIndexes,
 		ambiguousGenerated,
 		dbIndexes,
-		dialect,
-		semantics,
-		indexes,
+		indexComparison{dialect: dialect, semantics: semantics, expressions: indexes, caps: caps},
 	)
 	diff.SetIndexAdditions(diff.IndexesAdded)
 	diff.SetIndexRemovals(diff.IndexRemovals())
@@ -828,35 +831,50 @@ func constraintOwnedDatabaseIndex(
 	return exclusionBacked
 }
 
+// indexComparison is what deciding whether two indexes are one index takes
+// beyond the indexes themselves.
+type indexComparison struct {
+	dialect     string
+	semantics   identifier.Semantics
+	expressions map[string]config.IndexExpression
+	caps        capability.Capabilities
+}
+
+// replacementRequired reports whether the database index has to be dropped and
+// the desired one built in its place.
+func (c indexComparison) replacementRequired(desired generatedIndexEntry, database databaseIndexEntry) bool {
+	return indexReplacementRequired(
+		desired,
+		database,
+		c.dialect,
+		c.semantics,
+		c.expressions[exprkey.Index(c.semantics, desired.ref.TableName, desired.ref.Name)],
+	)
+}
+
 func appendIndexDifferences(
 	diff *difftypes.SchemaDiff,
 	desired map[difftypes.IndexRef]generatedIndexEntry,
 	ambiguousGenerated map[difftypes.IndexRef][]generatedIndexEntry,
 	database map[difftypes.IndexRef]databaseIndexEntry,
-	dialect string,
-	semantics identifier.Semantics,
-	indexes map[string]config.IndexExpression,
+	comparison indexComparison,
 ) {
+	dialect := comparison.dialect
 	for identity, entries := range ambiguousGenerated {
 		for _, entry := range entries {
 			appendIndexAddition(diff, entry)
 		}
 		delete(desired, identity)
 	}
+	var additions []generatedIndexEntry
 	for identity, generatedEntry := range desired {
 		databaseEntry, exists := database[identity]
 		switch {
 		case !exists:
-			appendIndexAddition(diff, generatedEntry)
+			additions = append(additions, generatedEntry)
 		case partitionAttachedIndexIsNotPlannable(databaseEntry):
 			continue
-		case indexReplacementRequired(
-			generatedEntry,
-			databaseEntry,
-			dialect,
-			semantics,
-			indexes[exprkey.Index(semantics, generatedEntry.ref.TableName, generatedEntry.ref.Name)],
-		):
+		case comparison.replacementRequired(generatedEntry, databaseEntry):
 			appendIndexAddition(diff, generatedEntry)
 			diff.IndexesAdded[len(diff.IndexesAdded)-1].RequiresTableCopy = platform.NormalizeDialect(dialect) == platform.MySQL &&
 				mysqlindex.KeepsBlockSize(dialect, databaseEntry.rowFormat) &&
@@ -868,12 +886,15 @@ func appendIndexDifferences(
 				Name:      databaseEntry.ref.Name,
 				Invisible: generatedEntry.index.Invisible,
 			})
+		default:
+			appendPartitioningChange(diff, dialect, databaseEntry.ref, generatedEntry.index, databaseEntry.index)
 		}
 	}
 	slices.SortFunc(diff.IndexVisibilityChanged, func(a, b difftypes.IndexVisibilityChange) int {
 		return cmp.Or(strings.Compare(a.TableName, b.TableName), strings.Compare(a.Name, b.Name))
 	})
 
+	var removals []databaseIndexEntry
 	for identity, entry := range database {
 		if _, ambiguous := ambiguousGenerated[identity]; ambiguous {
 			continue
@@ -882,9 +903,113 @@ func appendIndexDifferences(
 			continue
 		}
 		if _, exists := desired[identity]; !exists {
-			appendIndexRemoval(diff, entry)
+			removals = append(removals, entry)
 		}
 	}
+
+	additions, removals = pairIndexRenames(diff, additions, removals, comparison)
+	for _, entry := range additions {
+		appendIndexAddition(diff, entry)
+	}
+	for _, entry := range removals {
+		appendIndexRemoval(diff, entry)
+	}
+	slices.SortFunc(diff.IndexPartitioningChanged, func(a, b difftypes.IndexPartitioningChange) int {
+		return cmp.Or(strings.Compare(a.TableName, b.TableName), strings.Compare(a.Name, b.Name))
+	})
+}
+
+// pairIndexRenames records, on a target with [capability.IndexRename], each
+// index the declaration adds that is an index the database drops under another
+// name: the same table and the same definition, so that a drop and a create
+// would rebuild the index the database already has. It returns the additions
+// and the removals left unpaired, which the plan creates and drops.
+//
+// Only a name absent from the other side is paired. A rename onto a name the
+// database holds would have to wait for that index to go, and a pair of
+// indexes swapping names needs a third name; both stay a drop and a create,
+// which is what every target without the key plans for every rename. Each
+// side is visited in table and name order, and an addition takes the first
+// removal that matches it, so two equal indexes renamed at once pair the same
+// way on every run.
+//
+// A removal whose object a constraint owns is never paired: dropping it drops
+// the constraint, which a rename would leave in place.
+func pairIndexRenames(
+	diff *difftypes.SchemaDiff,
+	additions []generatedIndexEntry,
+	removals []databaseIndexEntry,
+	comparison indexComparison,
+) ([]generatedIndexEntry, []databaseIndexEntry) {
+	if !comparison.caps.Has(capability.IndexRename) || len(additions) == 0 || len(removals) == 0 {
+		return additions, removals
+	}
+	semantics := comparison.semantics
+	order := func(table, name string) func(string, string) int {
+		return func(otherTable, otherName string) int {
+			return cmp.Or(
+				strings.Compare(semantics.TableIdentityKey(table), semantics.TableIdentityKey(otherTable)),
+				strings.Compare(name, otherName),
+			)
+		}
+	}
+	slices.SortFunc(additions, func(a, b generatedIndexEntry) int {
+		return order(a.ref.TableName, a.ref.Name)(b.ref.TableName, b.ref.Name)
+	})
+	slices.SortFunc(removals, func(a, b databaseIndexEntry) int {
+		return order(a.ref.TableName, a.ref.Name)(b.ref.TableName, b.ref.Name)
+	})
+
+	paired := make([]bool, len(removals))
+	unpaired := additions[:0:0]
+	for _, addition := range additions {
+		match := -1
+		for position, removal := range removals {
+			if paired[position] || removal.constraintBacked ||
+				semantics.TableIdentityKey(removal.ref.TableName) != semantics.TableIdentityKey(addition.ref.TableName) ||
+				comparison.replacementRequired(addition, removal) {
+				continue
+			}
+			match = position
+			break
+		}
+		if match < 0 {
+			unpaired = append(unpaired, addition)
+			continue
+		}
+		paired[match] = true
+		removal := removals[match]
+		diff.IndexesRenamed = append(diff.IndexesRenamed, difftypes.IndexRename{
+			TableName: removal.ref.TableName,
+			From:      removal.ref.Name,
+			To:        addition.ref.Name,
+		})
+		renamed := difftypes.IndexRef{TableName: removal.ref.TableName, Name: addition.ref.Name}
+		appendPartitioningChange(diff, comparison.dialect, renamed, addition.index, removal.index)
+	}
+	left := removals[:0:0]
+	for position, removal := range removals {
+		if !paired[position] {
+			left = append(left, removal)
+		}
+	}
+	return unpaired, left
+}
+
+// appendPartitioningChange records the change of partitioning a YDB index both
+// sides hold makes in place, under ref. It records nothing on another dialect,
+// whose catalog reports no partitioning, and nothing where the two settings
+// are the same; see [ydbPartitioningChanged].
+func appendPartitioningChange(diff *difftypes.SchemaDiff, dialect string, ref difftypes.IndexRef, desired schemamodel.Index, database catalog.Index) {
+	if platform.NormalizeDialect(dialect) != platform.YDB || !ydbPartitioningChanged(desired, database) {
+		return
+	}
+	diff.IndexPartitioningChanged = append(diff.IndexPartitioningChanged, difftypes.IndexPartitioningChange{
+		TableName:    ref.TableName,
+		Name:         ref.Name,
+		Partitioning: desired.Partitioning.Clone(),
+		Previous:     database.Partitioning.Clone(),
+	})
 }
 
 // partitionAttachedIndexIsNotPlannable reports whether a database index is a
@@ -1037,6 +1162,11 @@ func indexPayloadChanged(desired, database []string, dialect string, semantics i
 //
 // The covered columns are compared in order, as the key columns are: YDB
 // reports `data_columns` in the order the COVER clause wrote them.
+//
+// The partitioning is a rebuild only where YDB cannot change it in place,
+// which is removing a maximum partition count ([ydbindex.ChangeRefusal]); any
+// other change of it is made by ALTER INDEX and recorded as
+// [difftypes.SchemaDiff.IndexPartitioningChanged].
 func ydbIndexDefinitionChanged(
 	desired schemamodel.Index,
 	database catalog.Index,
@@ -1047,7 +1177,27 @@ func ydbIndexDefinitionChanged(
 	return desired.Unique != database.IsUnique ||
 		desiredErr != nil || databaseErr != nil || desiredKind != databaseKind ||
 		indexKeyPartsChanged(desired, database, semantics) ||
-		postgresIncludeColumnsChanged(desired.IncludeColumns, database.IncludeColumns, semantics)
+		postgresIncludeColumnsChanged(desired.IncludeColumns, database.IncludeColumns, semantics) ||
+		ydbPartitioningNeedsRebuild(desired, database)
+}
+
+// ydbPartitioningChanged reports whether a YDB index's partitioning differs
+// between the declaration and the database. Both are read through
+// [ydbindex.Resolve], so a setting declared at its default and one left out are
+// the same. A side that does not resolve differs, so the plan reaches the
+// renderer, which refuses it with the reason.
+func ydbPartitioningChanged(desired schemamodel.Index, database catalog.Index) bool {
+	desiredSettings, desiredErr := ydbindex.Resolve(desired.Partitioning)
+	databaseSettings, databaseErr := ydbindex.Resolve(database.Partitioning)
+	return desiredErr != nil || databaseErr != nil || !desiredSettings.Equal(databaseSettings)
+}
+
+// ydbPartitioningNeedsRebuild reports whether a YDB index's partitioning moves
+// in a way only a rebuild reaches.
+func ydbPartitioningNeedsRebuild(desired schemamodel.Index, database catalog.Index) bool {
+	desiredSettings, desiredErr := ydbindex.Resolve(desired.Partitioning)
+	databaseSettings, databaseErr := ydbindex.Resolve(database.Partitioning)
+	return desiredErr == nil && databaseErr == nil && ydbindex.ChangeRefusal(desiredSettings, databaseSettings) != ""
 }
 
 // mysqlIndexDefinitionChanged answers whether a MySQL or MariaDB index has to

@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/modelast"
 )
@@ -31,7 +32,26 @@ func fullyDeclaredIndex() schemamodel.Index {
 		NullsDistinct:  &nullsDistinct,
 		Granularity:    4,
 		Concurrently:   true,
+		Partitioning:   &ast.IndexPartitioningSpec{ByLoad: new(true), MinPartitions: 3},
 	}
+}
+
+// TestFromIndex_CarriesThePartitioning holds the hop from the schema model to
+// the renderer to a YDB index's partitioning: dropped here, the index is built
+// with YDB's defaults and the comparison then plans the settings again on every
+// run. The node carries a copy, so a renderer cannot change the declaration it
+// came from.
+func TestFromIndex_CarriesThePartitioning(t *testing.T) {
+	c := qt.New(t)
+	index := schemamodel.Index{
+		StructName: "Doc", TableName: "docs", Name: "idx_docs_title", Fields: []string{"title"},
+		Partitioning: &ast.IndexPartitioningSpec{ByLoad: new(true), MinPartitions: 3},
+	}
+
+	node := modelast.FromIndex(index)
+	c.Assert(node.Partitioning, qt.DeepEquals, index.Partitioning)
+	*node.Partitioning.ByLoad = false
+	c.Assert(*index.Partitioning.ByLoad, qt.IsTrue)
 }
 
 // TestIndexConverters_CarryTheSameDeclaration is the guard the fix for

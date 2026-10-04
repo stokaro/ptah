@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/planner/columnchange"
 	"ptah.run/internal/planner/keyrelease"
 	"ptah.run/internal/planner/objectlookup"
+	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/tablelookup"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -1337,6 +1338,9 @@ func (p *Planner) handleEnumRemovals(result []ast.Node, diff *difftypes.SchemaDi
 // the diff cannot be planned safely. Each node can be rendered to SQL using a
 // MySQL-specific visitor.
 func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
+	if err := schemaprecondition.RefuseIndexChangesInPlace(p.targetDialect(), diff); err != nil {
+		return nil, err
+	}
 	var result []ast.Node
 	// One fold, at the door, beside the index resolver that has always been
 	// here. A diff the comparator produced arrives with its identities

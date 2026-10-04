@@ -13,6 +13,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/columnsequence"
 	"ptah.run/internal/pgdefaultacl"
@@ -41,6 +42,9 @@ func ToDBSchema(db *schemamodel.Database, dialect string) *catalog.Database {
 	if db == nil {
 		return &catalog.Database{}
 	}
+	// A UNIQUE constraint is a unique index on YDB, so a document converted to
+	// stand for a YDB database holds the index its database would.
+	db = schemaprep.UniqueConstraintsAsIndexesFor(db, dialect, capability.ForDialect(dialect))
 
 	tableByStruct := make(map[string]schemamodel.Table, len(db.Tables))
 	for _, table := range db.Tables {
@@ -272,6 +276,7 @@ func toDBIndexes(
 			Method:         indexAccessMethod(index.Type, dialect),
 			IncludeColumns: append([]string(nil), index.IncludeColumns...),
 			StorageParams:  maps.Clone(index.StorageParams),
+			Partitioning:   index.Partitioning.Clone(),
 			Type:           index.Type,
 			Granularity:    index.Granularity,
 		})

@@ -490,6 +490,11 @@ func prepareIndexNode(dialect string, caps capability.Capabilities, node *ast.In
 	if err := refuseInvisibleIndexNode(dialect, caps, node); err != nil {
 		return nil, err
 	}
+	if !node.Partitioning.IsZero() {
+		if err := refuseIndexPartitioning(dialect, caps, fmt.Sprintf("index %q declares its partitioning", node.Name)); err != nil {
+			return nil, err
+		}
+	}
 	return node, nil
 }
 
@@ -722,8 +727,9 @@ func prepareAlterOperation(
 			return nil, err
 		}
 		return operation, nil
-	case *ast.AddIndexOperation, *ast.ReplaceIndexOperation, *ast.AlterIndexVisibilityOperation:
-		// One arm for the three, for the reason the arm above gives.
+	case *ast.AddIndexOperation, *ast.ReplaceIndexOperation, *ast.AlterIndexVisibilityOperation,
+		*ast.SetIndexPartitioningOperation:
+		// One arm for the four, for the reason the arm above gives.
 		if err := validateIndexOperation(dialect, caps, operation); err != nil {
 			return nil, err
 		}
@@ -748,8 +754,29 @@ func validateIndexOperation(dialect string, caps capability.Capabilities, operat
 		return err
 	case *ast.AlterIndexVisibilityOperation:
 		return refuseInvisibleIndex(dialect, caps, typed.IndexName)
+	case *ast.SetIndexPartitioningOperation:
+		return refuseIndexPartitioning(dialect, caps, fmt.Sprintf("changing the partitioning of index %q", typed.IndexName))
 	}
 	return nil
+}
+
+// refuseIndexPartitioning refuses subject, an index's partitioning, which only
+// YDB's global indexes carry, on a target without
+// [capability.IndexPartitioning]. Built without it, the index would split as
+// the server's defaults say rather than as declared, and nothing would report
+// the difference.
+func refuseIndexPartitioning(dialect string, caps capability.Capabilities, subject string) error {
+	if caps.Has(capability.IndexPartitioning) {
+		return nil
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: string(capability.IndexPartitioning),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
+			subject, capability.IndexPartitioning, normalized),
+	}
 }
 
 // refuseInvisibleIndexNode refuses index when the optimizer is not to use it
@@ -789,6 +816,11 @@ func validateDeclaredIndexOptions(
 	for _, index := range database.Indexes {
 		if err := validateIndexBlockSize(dialect, index.Name, index.KeyBlockSize); err != nil {
 			return err
+		}
+		if !index.Partitioning.IsZero() {
+			if err := refuseIndexPartitioning(dialect, caps, fmt.Sprintf("index %q declares its partitioning", index.Name)); err != nil {
+				return err
+			}
 		}
 		if !index.Invisible {
 			continue

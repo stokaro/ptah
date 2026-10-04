@@ -1048,6 +1048,27 @@ type SchemaDiff struct {
 	// addition and is not here.
 	IndexVisibilityChanged []IndexVisibilityChange `json:"index_visibility_changed"`
 
+	// IndexesRenamed holds the indexes a plan renames in place: an index the
+	// database holds and the declaration does not, paired with one the
+	// declaration holds and the database does not, on the same table and with
+	// the same definition. An index in this list is in neither IndexesAdded
+	// nor IndexesRemoved.
+	//
+	// The comparison pairs them only on a target with
+	// [ptah.run/core/platform/capability.IndexRename], which is YDB's: there
+	// the rename keeps the index and its partitioning where a drop and a
+	// create would rebuild it. Every other target gets the removal and the
+	// addition.
+	IndexesRenamed []IndexRename `json:"indexes_renamed,omitempty"`
+
+	// IndexPartitioningChanged holds the indexes whose partitioning a plan
+	// changes in place, YDB's `ALTER INDEX ... SET (...)`: both sides hold the
+	// index with the same definition, and its settings differ. A renamed
+	// index is here under the name it takes. An index this diff adds, or
+	// drops and adds again, carries its partitioning in the addition and is
+	// not here.
+	IndexPartitioningChanged []IndexPartitioningChange `json:"index_partitioning_changed,omitempty"`
+
 	// ExtensionsAdded is the PostgreSQL extensions that exist in the target
 	// schema and not in the current database, each carrying its declaration;
 	// see [ExtensionChanges].
@@ -1668,7 +1689,38 @@ func (d *SchemaDiff) hasEnumChanges() bool {
 func (d *SchemaDiff) hasIndexChanges() bool {
 	return len(d.IndexesAdded) > 0 ||
 		len(d.IndexesRemoved) > 0 ||
-		len(d.IndexVisibilityChanged) > 0
+		len(d.IndexVisibilityChanged) > 0 ||
+		len(d.IndexesRenamed) > 0 ||
+		len(d.IndexPartitioningChanged) > 0
+}
+
+// IndexRename is an index a plan renames in place; see
+// [SchemaDiff.IndexesRenamed].
+type IndexRename struct {
+	// TableName is the table the index belongs to, qualified the way
+	// [IndexRef.TableName] is.
+	TableName string `json:"table_name"`
+	// From is the name the database holds.
+	From string `json:"from"`
+	// To is the name the declaration gives the index.
+	To string `json:"to"`
+}
+
+// IndexPartitioningChange is an index whose partitioning a plan changes in
+// place; see [SchemaDiff.IndexPartitioningChanged].
+type IndexPartitioningChange struct {
+	// TableName is the table the index belongs to, qualified the way
+	// [IndexRef.TableName] is.
+	TableName string `json:"table_name"`
+	// Name is the index's name once the plan's renames have run.
+	Name string `json:"name"`
+	// Partitioning is the settings the declaration asks for. Nil asks for the
+	// settings YDB gives a new index.
+	Partitioning *ast.IndexPartitioningSpec `json:"partitioning,omitempty"`
+	// Previous is the settings the database holds, which a plan reads because
+	// a statement that sets one setting can reset another, and which a
+	// rollback restores. Nil is the settings YDB gives a new index.
+	Previous *ast.IndexPartitioningSpec `json:"previous,omitempty"`
 }
 
 // IndexVisibilityChange is an index whose visibility to the optimizer

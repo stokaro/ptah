@@ -209,6 +209,58 @@ func (s *RowDeletionPolicySpec) Clone() *RowDeletionPolicySpec {
 	return &out
 }
 
+// IndexPartitioningSpec is how a YDB global index's own table splits into
+// partitions, and how many read replicas it keeps: the settings YDB's
+// `ALTER TABLE ... ALTER INDEX ... SET (...)` takes. Each field names the
+// setting it carries.
+//
+// A field left at its zero value declares nothing, and a setting nobody
+// declared is the value YDB gives a new index. The comparison reads both sides
+// that way, so a spec naming a setting at its default and a spec leaving it out
+// describe the same index. The two booleans are pointers because false is a
+// declaration of its own, and a zero count is no declaration because YDB
+// refuses every count of zero.
+type IndexPartitioningSpec struct {
+	// BySize is AUTO_PARTITIONING_BY_SIZE: whether a partition that grows
+	// past PartitionSizeMB splits.
+	BySize *bool `json:"by_size,omitempty"`
+	// PartitionSizeMB is AUTO_PARTITIONING_PARTITION_SIZE_MB, the size at
+	// which a partition splits. It has a meaning only while BySize holds.
+	PartitionSizeMB uint64 `json:"partition_size_mb,omitempty"`
+	// ByLoad is AUTO_PARTITIONING_BY_LOAD: whether a busy partition splits.
+	ByLoad *bool `json:"by_load,omitempty"`
+	// MinPartitions is AUTO_PARTITIONING_MIN_PARTITIONS_COUNT.
+	MinPartitions uint64 `json:"min_partitions,omitempty"`
+	// MaxPartitions is AUTO_PARTITIONING_MAX_PARTITIONS_COUNT.
+	MaxPartitions uint64 `json:"max_partitions,omitempty"`
+	// ReadReplicas is READ_REPLICAS_SETTINGS as YDB spells it: `PER_AZ:<n>`
+	// for n replicas in every availability zone, or `ANY_AZ:<n>` for n in
+	// all of them together.
+	ReadReplicas string `json:"read_replicas,omitempty"`
+}
+
+// IsZero reports whether the spec declares nothing. Nil is zero.
+func (s *IndexPartitioningSpec) IsZero() bool {
+	return s == nil || *s == (IndexPartitioningSpec{})
+}
+
+// Clone returns an independent copy, so a spec handed to a comparator or a
+// planner cannot be changed through the pointer it shares with the schema it
+// came from. Nil stays nil.
+func (s *IndexPartitioningSpec) Clone() *IndexPartitioningSpec {
+	if s == nil {
+		return nil
+	}
+	out := *s
+	if s.BySize != nil {
+		out.BySize = new(*s.BySize)
+	}
+	if s.ByLoad != nil {
+		out.ByLoad = new(*s.ByLoad)
+	}
+	return &out
+}
+
 // RowTTLSpec is a table's row-level TTL policy, as CockroachDB spells it in
 // table storage parameters.
 //
@@ -917,6 +969,10 @@ type IndexNode struct {
 	// StorageParams contains PostgreSQL index storage parameters rendered as
 	// WITH (key='value'), for example pages_per_range for BRIN indexes.
 	StorageParams map[string]string
+	// Partitioning is how a YDB global index's own table splits into
+	// partitions, and its read replicas; nil declares none. See
+	// [IndexPartitioningSpec].
+	Partitioning *IndexPartitioningSpec
 	// Concurrently requests CREATE INDEX CONCURRENTLY, PostgreSQL's
 	// non-locking index build. Set by planners only when the target
 	// capability set includes capability.CreateIndexConcurrently and the

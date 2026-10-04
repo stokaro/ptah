@@ -14,11 +14,13 @@ import (
 	"strings"
 	"unicode"
 
+	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/uniquename"
+	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbtype"
 )
 
@@ -590,6 +592,34 @@ func fieldAttrs(field schemamodel.Field) []attr {
 }
 
 func indexAttrs(index schemamodel.Index) []attr {
+	return append(indexDefinitionAttrs(index), partitioningAttrs(index.Partitioning)...)
+}
+
+// partitioningAttrs writes a YDB global index's partitioning as the attributes
+// the annotation parser reads it from.
+func partitioningAttrs(spec *ast.IndexPartitioningSpec) []attr {
+	if spec.IsZero() {
+		return nil
+	}
+	enabled := func(on *bool) string {
+		if on != nil && *on {
+			return "ENABLED"
+		}
+		return "DISABLED"
+	}
+	count := func(n uint64) string { return strconv.FormatUint(n, 10) }
+	return []attr{
+		{name: ydbindex.AttributeBySize, value: enabled(spec.BySize), set: spec.BySize != nil},
+		{name: ydbindex.AttributePartitionSizeMB, value: count(spec.PartitionSizeMB), set: spec.PartitionSizeMB != 0},
+		{name: ydbindex.AttributeByLoad, value: enabled(spec.ByLoad), set: spec.ByLoad != nil},
+		{name: ydbindex.AttributeMinPartitions, value: count(spec.MinPartitions), set: spec.MinPartitions != 0},
+		{name: ydbindex.AttributeMaxPartitions, value: count(spec.MaxPartitions), set: spec.MaxPartitions != 0},
+		{name: ydbindex.AttributeReadReplicas, value: spec.ReadReplicas, set: spec.ReadReplicas != ""},
+	}
+}
+
+// indexDefinitionAttrs writes the attributes every dialect's index reads.
+func indexDefinitionAttrs(index schemamodel.Index) []attr {
 	return []attr{
 		{name: "name", value: index.Name, set: true},
 		{name: "fields", value: strings.Join(index.Fields, ","), set: len(index.Fields) > 0},

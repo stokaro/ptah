@@ -70,12 +70,26 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 		quotedKey = append(quotedKey, quote(column))
 	}
 	lines = append(lines, "PRIMARY KEY ("+strings.Join(quotedKey, ", ")+")")
-	for _, index := range node.Indexes {
+	uniques, err := r.uniqueIndexes(node, keyColumns)
+	if err != nil {
+		return err
+	}
+	var partitioning []string
+	named := make(map[string]bool, len(node.Indexes)+len(uniques))
+	for _, index := range append(slices.Clone(node.Indexes), uniques...) {
 		clause, err := r.inlineIndex(node.Name, index, keyColumns, columnTypes)
 		if err != nil {
 			return err
 		}
-		lines = append(lines, clause)
+		if named[clause.name] {
+			return refuseFact(fmt.Sprintf("table %q", node.Name), fmt.Sprintf("two of its indexes are named %q, "+
+				"and YDB names an index once per table", clause.name))
+		}
+		named[clause.name] = true
+		lines = append(lines, clause.String())
+		if statement := clause.partitioningStatement(node.Name); statement != "" {
+			partitioning = append(partitioning, statement)
+		}
 	}
 
 	guard, err := r.createGuard(node)
@@ -86,9 +100,12 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	r.w.WriteLine("    " + strings.Join(lines, ",\n    "))
 	if custom := strings.TrimSpace(node.CustomSQL); custom != "" {
 		r.w.WriteLinef(") %s;", custom)
-		return nil
+	} else {
+		r.w.WriteLine(");")
 	}
-	r.w.WriteLine(");")
+	for _, statement := range partitioning {
+		r.w.WriteLine(statement)
+	}
 	return nil
 }
 
@@ -165,8 +182,11 @@ func (r *Renderer) refuseConstraint(table string, constraint *ast.ConstraintNode
 	case ast.PrimaryKeyConstraint:
 		return r.refuseKeyAttributes(table, constraint)
 	case ast.UniqueConstraint:
-		return r.keyed(capability.UniqueConstraints, "UNIQUE constraint",
-			subject+" is UNIQUE (declare a unique index on those columns instead)")
+		if r.caps.Has(capability.UniqueConstraints) {
+			return r.keyed(capability.UniqueConstraints, "UNIQUE constraint", subject+" is UNIQUE")
+		}
+		_, err := uniqueConstraintIndex(table, constraint)
+		return err
 	case ast.CheckConstraint:
 		return r.keyed(capability.CheckConstraints, "CHECK constraint", subject+" is a CHECK")
 	case ast.ForeignKeyConstraint:
@@ -254,8 +274,13 @@ func checkKeyTypes(table string, keyColumns []string, columnTypes map[string]str
 }
 
 // renderColumnNode writes a column definition on its own, which is how a
-// caller asks for one outside a statement.
+// caller asks for one outside a statement. A UNIQUE column is refused: its
+// UNIQUE is an index of the table, which a definition alone cannot carry.
 func (r *Renderer) renderColumnNode(column *ast.ColumnNode) error {
+	if column.Unique && !r.caps.Has(capability.UniqueConstraints) {
+		return refuseFact(fmt.Sprintf("column %q", column.Name),
+			"its UNIQUE is a unique index of its table on YDB, which a column definition alone cannot carry")
+	}
 	definition, _, err := r.columnDefinition("", column, column.Primary)
 	if err != nil {
 		return err
@@ -264,11 +289,24 @@ func (r *Renderer) renderColumnNode(column *ast.ColumnNode) error {
 	return nil
 }
 
-// renderConstraintNode writes a key clause on its own and refuses every other
-// constraint, as CREATE TABLE does.
+// renderConstraintNode writes a key clause on its own, or the unique index
+// clause a UNIQUE constraint renders as, and refuses every other constraint, as
+// CREATE TABLE does.
 func (r *Renderer) renderConstraintNode(constraint *ast.ConstraintNode) error {
 	if err := r.refuseConstraint("", constraint); err != nil {
 		return err
+	}
+	if constraint.Type == ast.UniqueConstraint {
+		index, err := uniqueConstraintIndex("", constraint)
+		if err != nil {
+			return err
+		}
+		clause, err := r.indexClauseOf(index)
+		if err != nil {
+			return err
+		}
+		r.w.Write(clause.String())
+		return nil
 	}
 	quoted := make([]string, 0, len(constraint.Columns))
 	for _, column := range constraintColumns(constraint) {
@@ -335,9 +373,8 @@ func (r *Renderer) refuseColumnDeclarations(subject string, column *ast.ColumnNo
 		return r.keyed(capability.CheckConstraints, "CHECK constraint", subject+" declares CHECK ("+column.Check+")")
 	case column.ForeignKey != nil:
 		return r.keyed(capability.ForeignKeys, "foreign key", subject+" references "+column.ForeignKey.Table)
-	case column.Unique:
-		return r.keyed(capability.UniqueConstraints, "UNIQUE constraint",
-			subject+" is UNIQUE (declare a unique index on it instead)")
+	case column.Unique && r.caps.Has(capability.UniqueConstraints):
+		return r.keyed(capability.UniqueConstraints, "UNIQUE constraint", subject+" is UNIQUE")
 	case column.GeneratedExpression != "":
 		return r.keyed(capability.GeneratedColumns, "generated column", subject+" is generated")
 	case column.NotNullConstraintName != "":

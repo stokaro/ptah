@@ -288,12 +288,14 @@ indexes:
 | `name` | Index name. Defaults to the map key. |
 | `table` | Target table. Required for top-level indexes. |
 | `fields` / `columns` | Indexed columns. Required. |
+| `include` | Covered columns: `INCLUDE` on the PostgreSQL family, `COVER` on YDB. |
 | `unique` | Emits a unique index. |
 | `comment` | Index comment. |
 | `type` | Dialect-specific index type. |
 | `where` / `condition` | Partial-index condition where supported. `where` matches Atlas terminology. |
 | `ops` | Operator or operator class string. |
 | `granularity` | ClickHouse data-skipping index granularity. |
+| `auto_partitioning_by_size`, `auto_partitioning_partition_size_mb`, `auto_partitioning_by_load`, `auto_partitioning_min_partitions_count`, `auto_partitioning_max_partitions_count`, `read_replicas_settings` | A YDB global index's partitioning and read replicas, with the values the `//ptah:schema:index` attributes of the same names take. Every other dialect refuses them. |
 
 ## Constraints
 

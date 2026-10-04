@@ -600,13 +600,14 @@ func (op *RenameConstraintOperation) Accept(visitor Visitor) error {
 
 func (op *RenameConstraintOperation) alterOperation() {}
 
-// RenameIndexOperation renames an index of the table in place, as MySQL and
-// MariaDB spell it: `ALTER TABLE t RENAME INDEX a TO b`, or `RENAME KEY`.
+// RenameIndexOperation renames an index of the table in place, as MySQL,
+// MariaDB and YDB spell it: `ALTER TABLE t RENAME INDEX a TO b`, or `RENAME
+// KEY` on the first two.
 //
-// On those engines a UNIQUE constraint is an index, so the operation renames
-// one too. The MySQL-family renderers write it; the other renderers refuse it,
-// because their engines rename an index with a statement of its own or not at
-// all.
+// On MySQL and MariaDB a UNIQUE constraint is an index, so the operation
+// renames one too. The MySQL-family renderers and the YDB renderer write it;
+// the other renderers refuse it, because their engines rename an index with a
+// statement of its own or not at all.
 type RenameIndexOperation struct {
 	// From is the name the index has.
 	From string
@@ -641,6 +642,34 @@ func (op *AlterIndexVisibilityOperation) Accept(visitor Visitor) error { return 
 
 // alterOperation implements the marker method for type safety.
 func (op *AlterIndexVisibilityOperation) alterOperation() {}
+
+// SetIndexPartitioningOperation changes how a YDB global index's own table
+// splits into partitions, and its read replicas, in place: `ALTER TABLE t
+// ALTER INDEX i SET (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4, ...)`. The
+// YDB renderer writes it; the other renderers refuse it, because their engines
+// have no such setting.
+//
+// It carries the index's settings before the change as well as after it,
+// because a statement that sets one of them can reset another: on YDB,
+// setting AUTO_PARTITIONING_BY_LOAD resets AUTO_PARTITIONING_MIN_PARTITIONS_COUNT
+// to 1. The renderer reads both to write a statement whose outcome is
+// Partitioning whatever the index held.
+type SetIndexPartitioningOperation struct {
+	// IndexName is the index to change.
+	IndexName string
+	// Partitioning is the settings the index takes. Nil takes YDB's
+	// defaults.
+	Partitioning *IndexPartitioningSpec
+	// Previous is the settings the index holds. Nil is YDB's defaults.
+	Previous *IndexPartitioningSpec
+}
+
+// Accept hands the visitor this operation. The rendering is the ALTER TABLE
+// renderer's, which reads the operation out of the statement that carries it.
+func (op *SetIndexPartitioningOperation) Accept(visitor Visitor) error { return visitor.VisitNode(op) }
+
+// alterOperation implements the marker method for type safety.
+func (op *SetIndexPartitioningOperation) alterOperation() {}
 
 // ReplaceIndexOperation drops an index and adds it again under the same name
 // in one statement: `ALTER TABLE t DROP INDEX k, ADD INDEX k (...)`. It is how

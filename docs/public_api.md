@@ -660,6 +660,17 @@ table. Live comparisons also snapshot catalog identifier semantics into the
 diff so comparison, destructive-change policy, forward planning, and reverse
 planning use one source of truth.
 
+`SchemaDiff.IndexesRenamed` and `SchemaDiff.IndexPartitioningChanged` hold the
+index changes a plan makes in place: a rename, as `IndexRename` entries naming
+the table and both names, and a change of a YDB global index's partitioning,
+as `IndexPartitioningChange` entries carrying the declared settings and the
+ones the database holds. An index in either list is in neither
+`IndexesAdded` nor `IndexesRemoved`. The comparison fills them only on a
+target whose capability set holds `index_rename` or `index_partitioning`,
+which only the YDB presets do, and every planner but YDB's refuses a diff that
+carries one with `ptaherr.ErrUnsupportedFeature`, so a diff built by hand
+cannot reach a planner that would plan nothing for it.
+
 `SchemaDiff.ExtensionsModified` contains `ExtensionDiff` entries with the
 extension name and its `FromSchema`/`ToSchema` placement. Empty and explicit
 default-schema spellings compare under the diff's identifier semantics. The
