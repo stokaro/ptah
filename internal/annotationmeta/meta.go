@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/matviewrefresh"
+	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/ydbindex"
 )
 
@@ -443,6 +444,11 @@ var directives = []Directive{
 			attr("ttl_pause", "CockroachDB row-level TTL: pauses the deletion job without removing the policy. `true`/`false`.", valueBoolean, false, false),
 			attr("ttl_label_metrics", "CockroachDB row-level TTL: labels the job's metrics with the table name. `true`/`false`.", valueBoolean, false, false),
 			attr("ttl_disable_changefeed_replication", "CockroachDB row-level TTL: omits the job's deletes from changefeeds. `true`/`false`.", valueBoolean, false, false),
+			// The row deletion policy: Spanner's TTL clause and YDB's TTL
+			// setting. A policy needs both the column and the interval.
+			attr(rowdeletion.AttributeColumn, "Row deletion policy (Spanner and YDB TTL): the column a row's age is measured from. Needs row_deletion_interval.", valueString, false, false),
+			attr(rowdeletion.AttributeInterval, "Row deletion policy: how long after the column's time a row is deleted, such as `P30D` on YDB or `30 days` on Spanner.", valueString, false, false),
+			attr(rowdeletion.AttributeUnit, "YDB TTL on an integer column: what the column counts since the Unix epoch, SECONDS, MILLISECONDS, MICROSECONDS or NANOSECONDS.", valueString, false, false),
 		},
 	},
 	{

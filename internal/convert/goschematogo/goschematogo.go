@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/dialectscope"
+	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/uniquename"
 	"ptah.run/internal/ydbindex"
@@ -551,17 +552,31 @@ func dialectsAttr(scope []string) attr {
 }
 
 func tableAnnotation(table schemamodel.Table) string {
-	return annotation("ptah:schema:table",
-		attr{name: "name", value: table.Name, set: true},
-		attr{name: "schema", value: table.Schema, set: table.Schema != ""},
-		attr{name: "engine", value: table.Engine, set: table.Engine != ""},
-		attr{name: "charset", value: table.Charset, set: table.Charset != ""},
-		attr{name: "collate", value: table.Collate, set: table.Collate != ""},
-		attr{name: "primary_key_comment", value: table.PrimaryKeyComment, set: table.PrimaryKeyComment != ""},
-		attr{name: "primary_key_block_size", value: strconv.FormatUint(table.PrimaryKeyBlockSize, 10), set: table.PrimaryKeyBlockSize != 0},
-		attr{name: "primary_key", value: strings.Join(table.PrimaryKey, ","), set: len(table.PrimaryKey) > 0},
-		attr{name: "comment", value: table.Comment, set: table.Comment != ""},
-	)
+	attrs := []attr{
+		{name: "name", value: table.Name, set: true},
+		{name: "schema", value: table.Schema, set: table.Schema != ""},
+		{name: "engine", value: table.Engine, set: table.Engine != ""},
+		{name: "charset", value: table.Charset, set: table.Charset != ""},
+		{name: "collate", value: table.Collate, set: table.Collate != ""},
+		{name: "primary_key_comment", value: table.PrimaryKeyComment, set: table.PrimaryKeyComment != ""},
+		{name: "primary_key_block_size", value: strconv.FormatUint(table.PrimaryKeyBlockSize, 10), set: table.PrimaryKeyBlockSize != 0},
+		{name: "primary_key", value: strings.Join(table.PrimaryKey, ","), set: len(table.PrimaryKey) > 0},
+		{name: "comment", value: table.Comment, set: table.Comment != ""},
+	}
+	return annotation("ptah:schema:table", append(attrs, rowDeletionAttrs(table.RowDeletionPolicy)...)...)
+}
+
+// rowDeletionAttrs writes a table's row deletion policy as the attributes the
+// annotation parser reads it from, and nothing for a table with no policy.
+func rowDeletionAttrs(policy *ast.RowDeletionPolicySpec) []attr {
+	if policy.IsZero() {
+		return nil
+	}
+	return []attr{
+		{name: rowdeletion.AttributeColumn, value: policy.Column, set: true},
+		{name: rowdeletion.AttributeInterval, value: policy.Interval, set: true},
+		{name: rowdeletion.AttributeUnit, value: policy.Unit, set: policy.Unit != ""},
+	}
 }
 
 func fieldAttrs(field schemamodel.Field) []attr {

@@ -1,0 +1,123 @@
+package ydb
+
+import (
+	"fmt"
+	"slices"
+	"strings"
+
+	"ptah.run/core/ast"
+	"ptah.run/core/coverage"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/tableref"
+	"ptah.run/internal/ydbttl"
+	"ptah.run/internal/ydbtype"
+	"ptah.run/migration/schemadiff/difftypes"
+)
+
+// How a YDB plan changes a table's TTL, its row deletion policy.
+//
+// `ALTER TABLE t SET (TTL = ...)` puts a TTL on a table and replaces the one it
+// has, and `ALTER TABLE t RESET (TTL)` removes it, so a change is one
+// statement either way. The statement goes after the table's added columns,
+// because a TTL may read a column the plan adds, and before its dropped ones,
+// because YDB refuses to drop the column a TTL reads (`Can't drop TTL column:
+// 'ts', disable TTL first`, measured on 25.1.4.7 and 26.2.1.14) and drops it
+// once the TTL reads another column or none.
+
+// ttlOperation is the operation that takes a table's TTL from change.Current
+// to change.Desired, or nil when the table's TTL does not change.
+func ttlOperation(change *difftypes.RowDeletionPolicyChange) ast.AlterOperation {
+	switch {
+	case change == nil:
+		return nil
+	case change.Desired.IsZero():
+		return &ast.DropRowDeletionPolicyOperation{}
+	default:
+		return &ast.SetRowDeletionPolicyOperation{
+			Column:   change.Desired.Column,
+			Interval: change.Desired.Interval,
+			Unit:     change.Desired.Unit,
+			Replace:  !change.Current.IsZero(),
+		}
+	}
+}
+
+// refuseTTLChange refuses, before anything is emitted, a TTL change this
+// target cannot make or YDB would refuse when the plan reaches it: a policy
+// on a target without [capability.RowDeletionPolicy], an integer column's
+// unit without [capability.RowDeletionPolicyEpochColumn], an interval or unit
+// YDB refuses, and a column of a type YDB reads no TTL from. The renderer
+// writes SET (TTL = ...) without seeing the column's type, so this is where
+// the type is held to [ydbttl.ColumnRefusal].
+//
+// A table the plan rebuilds writes its TTL into the new CREATE TABLE, which
+// the renderer checks whole. A table changed in place keeps what its TTL
+// carries beyond the policy, which SET (TTL = ...) would reset, so a change
+// there is refused while the read recorded such a setting.
+func (p *Planner) refuseTTLChange(tableDiff difftypes.TableDiff, notDescribed coverage.Set, rebuilt bool) error {
+	change := tableDiff.RowDeletionPolicyChange
+	if change == nil {
+		return nil
+	}
+	subject := fmt.Sprintf("the row deletion policy of table %q", tableDiff.TableName)
+	if !p.caps.Has(capability.RowDeletionPolicy) {
+		return refuseKey(capability.RowDeletionPolicy, subject)
+	}
+	desired := change.Desired
+	if desired.IsZero() || rebuilt {
+		return nil
+	}
+	if strings.TrimSpace(desired.Unit) != "" && !p.caps.Has(capability.RowDeletionPolicyEpochColumn) {
+		return refuseKey(capability.RowDeletionPolicyEpochColumn, subject+" reads an integer column counting "+desired.Unit)
+	}
+	if err := ydbttl.Validate(desired); err != nil {
+		return refuseFact(subject, err.Error())
+	}
+	if !change.Current.IsZero() && tableDiff.Desired.HasTable() &&
+		recordsSetting(notDescribed, coverage.TTL, tableDiff.Desired.Table) {
+		return refuseFact(subject, "the table's TTL carries a run interval or a tiering policy Ptah does not model, "+
+			"and SET (TTL = ...) resets it to YDB's default. Change the TTL by hand with `ydb table ttl set`, "+
+			"or reset it first")
+	}
+	return p.refuseTTLColumn(subject, tableDiff.Desired, desired)
+}
+
+// refuseTTLColumn holds the column a policy reads to the types YDB reads a TTL
+// from, through the type map the renderer writes the column with. A
+// modification that carries no declaration of the table is left to the
+// server, which refuses the statement by itself.
+func (p *Planner) refuseTTLColumn(subject string, declaration difftypes.TableDeclaration, policy *ast.RowDeletionPolicySpec) error {
+	if !declaration.HasTable() {
+		return nil
+	}
+	index := slices.IndexFunc(declaration.Fields, func(field schemamodel.Field) bool { return field.Name == policy.Column })
+	if index < 0 {
+		return refuseFact(subject, fmt.Sprintf("it reads column %q, which the table does not declare "+
+			"(`Cannot enable TTL on unknown column`)", policy.Column))
+	}
+	unit, err := ydbttl.Unit(policy.Unit)
+	if err != nil {
+		return refuseFact(subject, err.Error())
+	}
+	// A type the map refuses is the column's refusal, which is reported where
+	// the column is written.
+	if mapping, mapErr := ydbtype.Map(declaration.Fields[index].Type, p.caps); mapErr == nil {
+		if reason := ydbttl.ColumnRefusal(policy.Column, mapping.Type, unit); reason != "" {
+			return refuseFact(subject, reason)
+		}
+	}
+	return nil
+}
+
+// recordsSetting reports whether the read of the database recorded a setting
+// of kind on table as not described. A record naming the whole kind counts: a
+// read that did not look at any table's setting cannot say this table has
+// none.
+func recordsSetting(set coverage.Set, kind coverage.Kind, table schemamodel.Table) bool {
+	canonical := tableref.Canonical(table.Schema, table.Name)
+	return slices.ContainsFunc(set.Objects, func(object coverage.Object) bool {
+		return object.Kind == kind &&
+			(object.WholeKind() || object.Name == canonical || strings.HasPrefix(object.Name, canonical+"/"))
+	})
+}

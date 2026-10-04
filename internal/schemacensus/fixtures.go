@@ -72,6 +72,7 @@ func Fixtures() []Fixture {
 		{Name: "table-override", Schema: tableOverrideFixture()},
 		{Name: "table-rowttl", Schema: tableRowTTLFixture()},
 		{Name: "table-row-deletion", Schema: tableRowDeletionFixture()},
+		{Name: "table-row-deletion-epoch", Schema: tableRowDeletionEpochFixture()},
 		{Name: "fk-field", Schema: foreignKeyFieldFixture()},
 		{Name: "fk-field-deferrable", Schema: foreignKeyDeferrableFixture()},
 		{Name: "fk-table", Schema: foreignKeyTableFixture()},
@@ -786,6 +787,15 @@ func tableRowDeletionFixture() schemamodel.Database {
 		Name:              "t",
 		RowDeletionPolicy: &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "30d"},
 	}, schemamodel.Field{StructName: "T", FieldName: "CreatedAt", Name: "created_at", Type: "TIMESTAMP", Nullable: true})
+}
+
+// tableRowDeletionEpochFixture is a YDB TTL on an integer column, whose unit
+// says what the column counts.
+func tableRowDeletionEpochFixture() schemamodel.Database {
+	return oneTable("T", schemamodel.Table{
+		Name:              "t",
+		RowDeletionPolicy: &ast.RowDeletionPolicySpec{Column: "expires", Interval: "PT1H", Unit: "SECONDS"},
+	}, schemamodel.Field{StructName: "T", FieldName: "Expires", Name: "expires", Type: "BIGINT UNSIGNED", Nullable: true})
 }
 
 func twoTables() schemamodel.Database {

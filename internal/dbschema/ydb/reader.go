@@ -26,10 +26,11 @@ import (
 // with a dot (.sys, .metadata, .tmp, .sys_health, ...), and describes each row
 // table with the table service. It never reads a system view.
 //
-// An object it meets and Ptah does not model -- a view, a topic, a column
-// table, a coordination node, and the rest of [coverage]'s YDB kinds -- is
-// recorded in [catalog.Database.NotDescribed] by its path, as is a table
-// setting such as a TTL or a changefeed. The access model is recorded as a
+// A table's TTL is read as its row deletion policy. An object it meets and
+// Ptah does not model -- a view, a topic, a column table, a coordination node,
+// and the rest of [coverage]'s YDB kinds -- is recorded in
+// [catalog.Database.NotDescribed] by its path, as is a table setting such as
+// a changefeed or a TTL run interval. The access model is recorded as a
 // whole kind, because the reader does not read it. An object or an index kind
 // the reader does not know is refused by name rather than read as the nearest
 // known one.

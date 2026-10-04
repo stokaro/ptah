@@ -279,8 +279,10 @@ func sqlServerPlan() plan {
 			"relation, and the reader the key gates runs only against Oracle, so neither " +
 			"having nor lacking it here would decide the key",
 		capability.RowDeletionPolicy: "the key names a table clause Ptah renders, reads and plans only " +
-			"for Spanner, whose PostgreSQL interface stores it; T-SQL has no such clause, so a refusal " +
+			"for Spanner and YDB, whose servers store it; T-SQL has no such clause, so a refusal " +
 			"would answer a different question",
+		capability.RowDeletionPolicyEpochColumn: "the key names YDB's TTL on an integer column counting a unit " +
+			"since the Unix epoch; T-SQL has no such clause, so a refusal would answer a different question",
 		capability.Hypertables: "create_hypertable is a TimescaleDB function, and TimescaleDB is a PostgreSQL " +
 			"extension SQL Server has no spelling of; its refusal would answer a different question",
 		capability.ContinuousAggregates: "a TimescaleDB continuous aggregate is a PostgreSQL materialized " +

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/dbschema"
@@ -236,6 +237,7 @@ func ydbPlan() plan {
 			after:  []check{accepts("SELECT COUNT(*) FROM rnt2"), refuses("SELECT COUNT(*) FROM rnt")},
 		}),
 		ydbRowDeletionPolicy(t),
+		ydbRowDeletionPolicyEpochColumn(t),
 		acceptanceNote(capability.NamedNotNullConstraints, nil,
 			t.table("nnn", "id Int64 CONSTRAINT nnn_named NOT NULL", "id"),
 			"YQL has no CONSTRAINT clause, so no NOT NULL carries a name for a catalog to report",
@@ -360,8 +362,9 @@ func grantObservation(read Attempt, stored int64) observation {
 }
 
 // ydbRowDeletionPolicy decides RowDeletionPolicy with YDB's TTL, the same idea
-// as Spanner's clause: one interval and one column. No SQL reads a TTL back on
-// every line, so the proof is a use: the column the policy names cannot be
+// as Spanner's clause: one interval and one column. The proof reads the policy
+// back through Ptah's own reader, where DescribeTable reports the column and
+// the seconds, and then uses it: the column the policy names cannot be
 // dropped while the policy stands (`Can't drop TTL column: 'created_at',
 // disable TTL first`), a column it does not name can, and once the policy is
 // reset the named column drops too.
@@ -369,15 +372,73 @@ func ydbRowDeletionPolicy(t tableSpelling) experiment {
 	return proven(capability.RowDeletionPolicy, schemaChange{
 		change: []string{
 			t.table("rdp", "id Int64 NOT NULL, created_at Timestamp, other Int64", "id") +
-				` WITH (TTL = Interval("P30D") ON created_at)`,
+				` WITH (TTL = Interval("PT720H") ON created_at)`,
 		},
 		after: []check{
+			ydbDescribedPolicy("rdp", &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "P30D"}),
 			accepts("ALTER TABLE rdp DROP COLUMN other"),
 			refuses("ALTER TABLE rdp DROP COLUMN created_at"),
 			accepts("ALTER TABLE rdp RESET (TTL)"),
+			ydbDescribedPolicy("rdp", nil),
 			accepts("ALTER TABLE rdp DROP COLUMN created_at"),
 		},
 	})
+}
+
+// ydbRowDeletionPolicyEpochColumn decides RowDeletionPolicyEpochColumn with a
+// TTL on a Uint64 column counting seconds, read back through Ptah's reader with
+// its unit, and then used: the column cannot be dropped while the TTL reads
+// it. It presupposes the policy itself, so a run that did not decide that key
+// true does not ask.
+func ydbRowDeletionPolicyEpochColumn(t tableSpelling) experiment {
+	decided := proven(capability.RowDeletionPolicyEpochColumn, schemaChange{
+		change: []string{
+			t.table("rdpe", "id Int64 NOT NULL, expires Uint64", "id") +
+				` WITH (TTL = Interval("PT1H") ON expires AS SECONDS)`,
+		},
+		after: []check{
+			ydbDescribedPolicy("rdpe", &ast.RowDeletionPolicySpec{Column: "expires", Interval: "PT1H", Unit: "SECONDS"}),
+			refuses("ALTER TABLE rdpe DROP COLUMN expires"),
+		},
+	})
+	decided.requires = []capability.Capability{capability.RowDeletionPolicy}
+	return decided
+}
+
+// ydbDescribedPolicy is a check that reads a table's row deletion policy back
+// through Ptah's own YDB reader, scoped to the probe's directory, and holds
+// when it is want; nil wants none. The reader is the question, because a
+// policy the reader cannot read back is one no comparison could converge on.
+func ydbDescribedPolicy(table string, want *ast.RowDeletionPolicySpec) check {
+	expectation := "no row deletion policy"
+	if want != nil {
+		expectation = fmt.Sprintf("the row deletion policy %s %s %s", want.Column, want.Interval, want.Unit)
+	}
+	return check{
+		describes: expectation,
+		inspect: func(ctx context.Context, s *session) (Attempt, bool, string) {
+			attempt := Attempt{Statement: fmt.Sprintf("read the TTL of table %s through Ptah's YDB reader",
+				path.Join(s.database, s.namespace, table))}
+			db, err := dbschema.ReadSchemaWithSchemasContext(ctx, s.conn, []string{s.namespace})
+			if err != nil {
+				attempt.ServerErr = err.Error()
+				return attempt, false, "was refused"
+			}
+			attempt.Accepted = true
+			for _, found := range db.Tables {
+				if found.Name != table {
+					continue
+				}
+				read := found.RowDeletionPolicy
+				if read == nil {
+					return attempt, want == nil, "read no row deletion policy"
+				}
+				held := want != nil && *read == *want
+				return attempt, held, fmt.Sprintf("read the row deletion policy %s %s %s", read.Column, read.Interval, read.Unit)
+			}
+			return attempt, false, "found no such table"
+		},
+	}
 }
 
 // ydbDescribedIndex is a check that reads an index back through Ptah's own YDB

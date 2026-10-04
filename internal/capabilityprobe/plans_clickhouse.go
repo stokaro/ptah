@@ -297,8 +297,10 @@ func clickHousePlan() plan {
 		capability.SchemaComments: "ClickHouse comments a database in CREATE DATABASE and has no COMMENT ON SCHEMA to accept or refuse, so there is " +
 			"no statement to send. Its renderer emits none either (stokaro/ptah#2651)",
 		capability.RowDeletionPolicy: "the key names a table clause Ptah renders, reads and plans only " +
-			"for Spanner, whose PostgreSQL interface stores it; this server has no such clause, so its " +
+			"for Spanner and YDB, whose servers store it; this server has no such clause, so its " +
 			"refusal would answer a different question",
+		capability.RowDeletionPolicyEpochColumn: "the key names YDB's TTL on an integer column counting a unit " +
+			"since the Unix epoch; this server has no such clause, so a refusal would answer a different question",
 		capability.NamedNotNullConstraints: "the key names a PostgreSQL 18 catalog behavior; this " +
 			"server names no NOT NULL constraint at all, so its answer would be to a different question",
 		capability.SequenceStartCounterOnly: "the key is a restriction on the CREATE SEQUENCE grammar, decided by a " +

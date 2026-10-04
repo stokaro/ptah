@@ -1746,6 +1746,18 @@
               "description": "Name this table carries in the Protobuf export only, overriding api_name there. It is the message identity, so changing it retires the old message.",
               "type": "string"
             },
+            "row_deletion_column": {
+              "description": "Row deletion policy (Spanner and YDB TTL): the column a row's age is measured from. Needs row_deletion_interval.",
+              "type": "string"
+            },
+            "row_deletion_interval": {
+              "description": "Row deletion policy: how long after the column's time a row is deleted, such as `P30D` on YDB or `30 days` on Spanner.",
+              "type": "string"
+            },
+            "row_deletion_unit": {
+              "description": "YDB TTL on an integer column: what the column counts since the Unix epoch, SECONDS, MILLISECONDS, MICROSECONDS or NANOSECONDS.",
+              "type": "string"
+            },
             "schema": {
               "description": "Database schema name.",
               "type": "string"

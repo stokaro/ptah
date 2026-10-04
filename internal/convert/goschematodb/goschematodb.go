@@ -128,6 +128,10 @@ func toDBTables(
 			// output is read back. See stokaro/ptah#1028.
 			VirtualModule:    table.VirtualModule,
 			VirtualArguments: table.VirtualArguments,
+			// A database built from the document carries the policy it
+			// declares, so a file-to-file comparison of one document against
+			// itself has nothing to plan for it.
+			RowDeletionPolicy: table.RowDeletionPolicy.Clone(),
 		})
 	}
 	return out

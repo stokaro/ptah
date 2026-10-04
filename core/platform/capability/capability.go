@@ -611,7 +611,31 @@ const (
 	// The interval that reads back is not the interval that was written, so
 	// what this key promises includes comparing the two as intervals rather
 	// than as text; a declaration compared as text could never converge.
+	//
+	// YDB has it as the table setting `TTL = Interval("P30D") ON created_at`,
+	// which DescribeTable reads back as a column and a whole number of
+	// seconds. Measured on 25.1.4.7 and 26.2.1.14: `Interval("PT720H")` reads
+	// back as 2592000 seconds, `PT1.5S` as 1, and the column the policy names
+	// cannot be dropped while it stands (`Can't drop TTL column: 'ts', disable
+	// TTL first`).
 	RowDeletionPolicy Capability = "row_deletion_policy"
+
+	// RowDeletionPolicyEpochColumn marks that a row deletion policy may read
+	// an integer column holding a time since the Unix epoch, with the unit
+	// the integer counts: YDB's `TTL = Interval("PT1H") ON expires AS
+	// SECONDS`, and MILLISECONDS, MICROSECONDS or NANOSECONDS in place of
+	// SECONDS.
+	//
+	// It is a key of its own because Spanner has [RowDeletionPolicy] and not
+	// this: its clause has no unit, and reads a timestamp column only. On YDB
+	// the column has to be Uint32, Uint64 or DyNumber, and the unit is
+	// required for one and refused for a date column, measured on 25.1.4.7 and
+	// 26.2.1.14:
+	//
+	//	ON e (Uint64)              To enable TTL on integral type column 'ValueSinceUnixEpochModeSettings' should be specified
+	//	ON ts AS SECONDS           To enable TTL on date type column 'DateTypeColumnModeSettings' should be specified
+	//	ON e AS SECONDS (Int64)    Unsupported column type
+	RowDeletionPolicyEpochColumn Capability = "row_deletion_policy_epoch_column"
 
 	// NamedNotNullConstraints marks that a NOT NULL constraint carries a name
 	// the catalog reports back.
@@ -1569,7 +1593,11 @@ var registry = map[Capability]spec{
 		doc: "table storage parameters declaring a row-expiry policy (CockroachDB row-level TTL)",
 	},
 	RowDeletionPolicy: {
-		doc: "a table clause declaring an interval and a timestamp column after which the engine deletes a row (Spanner row deletion policy)",
+		doc: "a table clause declaring an interval and a timestamp column after which the engine deletes a row (Spanner row deletion policy, YDB TTL)",
+	},
+	RowDeletionPolicyEpochColumn: {
+		doc:      "a row deletion policy may read an integer column counting seconds, milliseconds, microseconds or nanoseconds since the Unix epoch (YDB TTL ... AS SECONDS)",
+		requires: []Capability{RowDeletionPolicy},
 	},
 	NamedNotNullConstraints: {
 		doc: "a NOT NULL constraint carries a name the catalog reports back (PostgreSQL 18+)",
@@ -1940,6 +1968,7 @@ func MySQL84() Capabilities {
 		AdvisoryLocks:                   false,
 		RowLevelTTL:                     false,
 		RowDeletionPolicy:               false,
+		RowDeletionPolicyEpochColumn:    false,
 		NamedNotNullConstraints:         false,
 		MigrationLockTimeout:            true,
 		MigrationStatementTimeout:       true,
@@ -2157,6 +2186,7 @@ func MariaDB1011() Capabilities {
 		AdvisoryLocks:                   false,
 		RowLevelTTL:                     false,
 		RowDeletionPolicy:               false,
+		RowDeletionPolicyEpochColumn:    false,
 		NamedNotNullConstraints:         false,
 		MigrationLockTimeout:            true,
 		MigrationStatementTimeout:       true,
@@ -2310,6 +2340,7 @@ func Postgres16() Capabilities {
 		AdvisoryLocks:                   true,
 		RowLevelTTL:                     false,
 		RowDeletionPolicy:               false,
+		RowDeletionPolicyEpochColumn:    false,
 		NamedNotNullConstraints:         false,
 		MigrationLockTimeout:            true,
 		MigrationStatementTimeout:       true,
@@ -2589,6 +2620,7 @@ func ClickHouse24() Capabilities {
 		// syntax error here. Measured both ways on 26.7.3.19.
 		RowLevelTTL:                     false,
 		RowDeletionPolicy:               false,
+		RowDeletionPolicyEpochColumn:    false,
 		NamedNotNullConstraints:         false,
 		MigrationLockTimeout:            false,
 		MigrationStatementTimeout:       false,
@@ -2729,26 +2761,27 @@ func SQLite3() Capabilities {
 		Sequences:                          false,
 		SequenceStartCounterOnly:           false,
 		// SQLite has neither schemas in this sense nor comment statements.
-		SchemaComments:            false,
-		ViewComments:              false,
-		SequenceComments:          false,
-		TypeComments:              false,
-		DomainComments:            false,
-		ExtensionComments:         false,
-		FunctionComments:          false,
-		ProcedureComments:         false,
-		MaterializedViewComments:  false,
-		TriggerComments:           false,
-		PolicyComments:            false,
-		ConstraintComments:        false,
-		XMLType:                   false,
-		AdvisoryLocks:             false,
-		RowLevelTTL:               false,
-		RowDeletionPolicy:         false,
-		NamedNotNullConstraints:   false,
-		MigrationLockTimeout:      false,
-		MigrationStatementTimeout: false,
-		TransactionalDDL:          true,
+		SchemaComments:               false,
+		ViewComments:                 false,
+		SequenceComments:             false,
+		TypeComments:                 false,
+		DomainComments:               false,
+		ExtensionComments:            false,
+		FunctionComments:             false,
+		ProcedureComments:            false,
+		MaterializedViewComments:     false,
+		TriggerComments:              false,
+		PolicyComments:               false,
+		ConstraintComments:           false,
+		XMLType:                      false,
+		AdvisoryLocks:                false,
+		RowLevelTTL:                  false,
+		RowDeletionPolicy:            false,
+		RowDeletionPolicyEpochColumn: false,
+		NamedNotNullConstraints:      false,
+		MigrationLockTimeout:         false,
+		MigrationStatementTimeout:    false,
+		TransactionalDDL:             true,
 		// Both keys name a PostgreSQL catalog, and SQLite has neither.
 		// Measured on 3.53.4: `SELECT COUNT(*) FROM pg_inherits` answers `no
 		// such table: pg_inherits`, and the recursive query over pg_class
@@ -2964,25 +2997,26 @@ func SQLServer2022() Capabilities {
 		Sequences:                true,
 		SequenceStartCounterOnly: false,
 		// SQL Server carries this as an extended property, not COMMENT ON.
-		SchemaComments:            false,
-		ViewComments:              false,
-		SequenceComments:          false,
-		TypeComments:              false,
-		DomainComments:            false,
-		ExtensionComments:         false,
-		FunctionComments:          false,
-		ProcedureComments:         false,
-		MaterializedViewComments:  false,
-		TriggerComments:           false,
-		PolicyComments:            false,
-		ConstraintComments:        false,
-		XMLType:                   true,
-		AdvisoryLocks:             false,
-		RowLevelTTL:               false,
-		RowDeletionPolicy:         false,
-		NamedNotNullConstraints:   false,
-		MigrationLockTimeout:      false,
-		MigrationStatementTimeout: false,
+		SchemaComments:               false,
+		ViewComments:                 false,
+		SequenceComments:             false,
+		TypeComments:                 false,
+		DomainComments:               false,
+		ExtensionComments:            false,
+		FunctionComments:             false,
+		ProcedureComments:            false,
+		MaterializedViewComments:     false,
+		TriggerComments:              false,
+		PolicyComments:               false,
+		ConstraintComments:           false,
+		XMLType:                      true,
+		AdvisoryLocks:                false,
+		RowLevelTTL:                  false,
+		RowDeletionPolicy:            false,
+		RowDeletionPolicyEpochColumn: false,
+		NamedNotNullConstraints:      false,
+		MigrationLockTimeout:         false,
+		MigrationStatementTimeout:    false,
 		// TransactionalDDL is on because both halves the key needs are here.
 		// The engine rolls a schema change back: measured on 17.0.4075.5, one
 		// session inside a throwaway database, six DDL batches -- CREATE TABLE,
@@ -3410,6 +3444,8 @@ func SpannerPostgres() Capabilities {
 		// reads back from information_schema.tables. It is the one row-expiry
 		// surface Spanner has -- RowLevelTTL stays false because the storage
 		// parameters it names are accepted and discarded (stokaro/ptah#2236).
+		// RowDeletionPolicyEpochColumn stays false: the clause has no unit, so
+		// it cannot say what an integer column counts.
 		With(RowDeletionPolicy, true).
 		// Measured on the Cloud Spanner emulator behind PGAdapter 0.55.2:
 		// `CREATE SCHEMA app` is accepted and `COMMENT ON SCHEMA app IS 'x'`
@@ -3695,12 +3731,13 @@ func Oracle23() Capabilities {
 		XMLType:                  true,
 		// pg_advisory_lock is ORA-00904: invalid identifier. Oracle's lock
 		// package is not these functions.
-		AdvisoryLocks:             false,
-		RowLevelTTL:               false,
-		RowDeletionPolicy:         false,
-		NamedNotNullConstraints:   false,
-		MigrationLockTimeout:      false,
-		MigrationStatementTimeout: false,
+		AdvisoryLocks:                false,
+		RowLevelTTL:                  false,
+		RowDeletionPolicy:            false,
+		RowDeletionPolicyEpochColumn: false,
+		NamedNotNullConstraints:      false,
+		MigrationLockTimeout:         false,
+		MigrationStatementTimeout:    false,
 		// A CREATE TABLE inside an explicit transaction survives ROLLBACK:
 		// Oracle commits the transaction in progress before every schema
 		// statement, so there is nothing left to roll back. --tx-mode all
@@ -3813,8 +3850,8 @@ func Oracle21() Capabilities {
 // a flag on can do more than its line's preset says.
 //
 // A key is true only where Ptah's renderer and planner reach the feature. The
-// object families arrive in later phases of stokaro/ptah#4015, so views, roles
-// and the TTL policy read false here whatever the server can do.
+// object families arrive in later phases of stokaro/ptah#4015, so views and
+// roles read false here whatever the server can do.
 func YDB262() Capabilities {
 	return Capabilities{
 		// Constraints. The grammar has no CHECK, FOREIGN KEY, UNIQUE
@@ -3988,11 +4025,17 @@ func YDB262() Capabilities {
 		NonEquiJoins:           false,
 		OffsetWithoutLimit:     false,
 
-		// TTL is YDB's own (`TTL = Interval(...) ON col`) and is the TTL
-		// family's work in a later phase; CockroachDB's row-level TTL does not
-		// exist here.
-		RowLevelTTL:       false,
-		RowDeletionPolicy: false,
+		// TTL is YDB's own: `TTL = Interval("P1D") ON ts` on a date or time
+		// column, and `... ON e AS SECONDS` (or MILLISECONDS, MICROSECONDS,
+		// NANOSECONDS) on a Uint32, Uint64 or DyNumber one. Ptah renders,
+		// reads and plans both as the table's row deletion policy, measured
+		// alike on 25.1.4.7 and 26.2.1.14, so every line between them carries
+		// them too. A tier that moves rows to an external data source is for
+		// column tables only (`Only DELETE via TTL is allowed for row-oriented
+		// tables`). CockroachDB's row-level TTL does not exist here.
+		RowLevelTTL:                  false,
+		RowDeletionPolicy:            true,
+		RowDeletionPolicyEpochColumn: true,
 
 		// Execution. DDL never runs inside a transaction: `Scheme operations
 		// cannot be executed inside transaction`. There is no advisory lock;

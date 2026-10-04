@@ -798,7 +798,7 @@ These are refused with a message that names what is missing:
 - comments on tables, columns and indexes;
 - views;
 - users, groups and permissions;
-- a table's own settings: TTL, partitioning, column families and changefeeds;
+- a table's own settings: partitioning, column families and changefeeds;
 - vector, full-text, JSON and column-table indexes;
 - `ptah inference` and the inference tools of `ptah mcp`, which wait for the vector index family.
 <!-- END GENERATED YDB GAPS -->

@@ -77,6 +77,7 @@ import (
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
+	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/ydbindex"
 )
 
@@ -163,8 +164,29 @@ type tableSpec struct {
 	Indexes     orderedMap[indexSpec]      `yaml:"indexes"`
 	Constraints orderedMap[constraintSpec] `yaml:"constraints"`
 	RLSEnabled  bool                       `yaml:"rls_enabled"`
-	Platform    platformSpec               `yaml:"platform"`
-	Overrides   platformSpec               `yaml:"overrides"`
+	// The row deletion policy, keyed as the annotation keys it.
+	RowDeletionColumn   *stringScalar `yaml:"row_deletion_column"`
+	RowDeletionInterval *stringScalar `yaml:"row_deletion_interval"`
+	RowDeletionUnit     *stringScalar `yaml:"row_deletion_unit"`
+	Platform            platformSpec  `yaml:"platform"`
+	Overrides           platformSpec  `yaml:"overrides"`
+}
+
+// rowDeletionValues are the row deletion attributes the table sets, keyed by
+// attribute name, the way the annotation parser hands them to
+// [rowdeletion.ParseDeclaration].
+func (spec tableSpec) rowDeletionValues() map[string]string {
+	values := make(map[string]string)
+	for attribute, value := range map[string]*stringScalar{
+		rowdeletion.AttributeColumn:   spec.RowDeletionColumn,
+		rowdeletion.AttributeInterval: spec.RowDeletionInterval,
+		rowdeletion.AttributeUnit:     spec.RowDeletionUnit,
+	} {
+		if value != nil {
+			values[attribute] = string(*value)
+		}
+	}
+	return values
 }
 
 type fieldSpec struct {
@@ -529,6 +551,11 @@ func (d document) addTables(db *schemamodel.Database) error {
 		table := d.Tables[tableKey]
 		structName := valueOrDefault(table.StructName, tableKey)
 		tableName := valueOrDefault(table.Name, tableKey)
+		// The error names the table, as the annotation parser's does.
+		rowDeletionPolicy, err := rowdeletion.ParseDeclaration(tableName, table.rowDeletionValues())
+		if err != nil {
+			return err
+		}
 
 		db.Tables = append(db.Tables, schemamodel.Table{
 			StructName: structName,
@@ -545,6 +572,8 @@ func (d document) addTables(db *schemamodel.Database) error {
 			Checks:     cleanStrings(table.Checks),
 			CustomSQL:  string(table.CustomSQL),
 			Overrides:  mergePlatform(table.Platform, table.Overrides),
+
+			RowDeletionPolicy: rowDeletionPolicy,
 		})
 
 		if err := addFields(db, structName, table.Columns, table.Fields); err != nil {

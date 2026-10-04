@@ -818,8 +818,6 @@ var ydbUnderstates = map[capability.Capability]string{
 		"is open work in stokaro/ptah#4015",
 	capability.RoleManagement: "YDB creates a group and stores a GRANT; Ptah does not read or plan YDB's " +
 		"access model, which is open work in stokaro/ptah#4015",
-	capability.RowDeletionPolicy: "YDB stores a TTL on a table; Ptah does not render, read or plan a YDB TTL, " +
-		"which is open work in stokaro/ptah#4015",
 }
 
 // PresetsWithoutCell names every capability preset Ptah ships that no cell

@@ -127,7 +127,22 @@ func (r *Renderer) renderRowDeletionPolicy(node *ast.CreateTableNode) (string, e
 	if !r.capabilities().Has(capability.RowDeletionPolicy) {
 		return "", r.rowDeletionPolicyUnsupported(node.Name)
 	}
+	if err := r.refuseEpochColumn(node.Name, node.RowDeletionPolicy.Unit); err != nil {
+		return "", err
+	}
 	return spannerttl.Render(node.RowDeletionPolicy, r.escapeIdentifier), nil
+}
+
+// refuseEpochColumn refuses a policy that reads an integer column in a unit,
+// which Spanner's clause has no spelling for: written without the unit, the
+// clause would read the column as something it is not.
+func (r *Renderer) refuseEpochColumn(table, unit string) error {
+	if strings.TrimSpace(unit) == "" || r.capabilities().Has(capability.RowDeletionPolicyEpochColumn) {
+		return nil
+	}
+	return unsupportedFeaturef("%s: table %q declares a row deletion policy on an integer column counting %s, which "+
+		"requires target capability %s; this target's clause reads a timestamp column only",
+		r.dialect, table, unit, capability.RowDeletionPolicyEpochColumn)
 }
 
 // rowDeletionPolicyUnsupported is the refusal a target without the capability
@@ -170,6 +185,9 @@ func (r *Renderer) writeSetRowDeletionPolicy(node *ast.AlterTableNode, op *ast.S
 	}
 	if !r.capabilities().Has(capability.RowDeletionPolicy) {
 		return r.rowDeletionPolicyUnsupported(node.Name)
+	}
+	if err := r.refuseEpochColumn(node.Name, op.Unit); err != nil {
+		return err
 	}
 	verb := "ADD"
 	if op.Replace {

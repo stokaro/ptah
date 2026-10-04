@@ -274,14 +274,15 @@ func TestGenerateMigrationAST_TableRebuild_FailurePath(t *testing.T) {
 				`sequence would start at 1 while the copied rows keep theirs, so the next insert would collide .*`,
 		},
 		{
-			name: "a TTL and a changefeed the read did not describe",
+			name: "a TTL run interval and a changefeed the read did not describe",
 			caps: capability.YDB262(),
 			diff: notDescribing(modified(difftypes.TableDiff{TableName: "app.items",
 				Desired: appItems(field("label", "TEXT", true), field("n", "BIGINT", true)), ColumnsModified: typeChange}),
 				coverage.Object{Kind: coverage.TTL, Name: "app.items"},
 				coverage.Object{Kind: coverage.Changefeed, Name: "app.items/updates"},
 				coverage.Object{Kind: coverage.TTL, Name: "app.other"}),
-			wantErr: `rebuilding table "app.items": the table carries a TTL, changefeeds, which Ptah does not model and ` +
+			wantErr: `rebuilding table "app.items": the table carries a TTL run interval or tiering policy, changefeeds, ` +
+				`which Ptah does not model and ` +
 				`so cannot write on the new table: recreating it would drop them\. .*`,
 		},
 		{
