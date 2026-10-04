@@ -49,68 +49,71 @@ const devRealmKept = "ptah_ydb_devrealm_kept"
 // reaches the database's own schema, what the database holds stays, and the
 // realms are gone when the binary exits.
 func TestYDBBinary_DevDatabaseIsARealm(t *testing.T) {
-	url := dbtarget.URL(t, dbtarget.YDB)
 	c := qt.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancel()
-	binary := buildBinary(c, ctx)
-	conn := openYDB(c)
-	dropDirectory(c, conn, devRealmKept, "t")
-	c.Cleanup(func() { dropDirectory(c, conn, devRealmKept, "t") })
-	c.Assert(conn.Writer().ExecuteSQL(ctx,
-		"CREATE TABLE `"+devRealmKept+"/t` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))"), qt.IsNil)
+	binary := buildBinary(c, c.Context())
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			url := dbtarget.URL(t, line.engine)
+			c := qt.New(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+			conn := openYDB(c, line)
+			dropDirectory(c, conn, devRealmKept, "t")
+			c.Cleanup(func() { dropDirectory(c, conn, devRealmKept, "t") })
+			c.Assert(conn.Writer().ExecuteSQL(ctx,
+				"CREATE TABLE `"+devRealmKept+"/t` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))"), qt.IsNil)
 
-	t.Run("a replay runs in a realm", func(t *testing.T) {
-		c := qt.New(t)
-		migrations := filepath.Join(c.TempDir(), "migrations")
-		writeFiles(c, migrations, map[string]string{
-			"0000000001_users.up.sql":   "CREATE TABLE `users` (`id` Int64 NOT NULL, `name` Utf8, PRIMARY KEY (`id`));\n",
-			"0000000001_users.down.sql": "DROP TABLE `users`;\n",
-		})
-		hashed, hashErr := runBinary(ctx, binary, "migrations", "hash", "--dir", migrations)
-		c.Assert(hashErr, qt.IsNil, qt.Commentf("%s", hashed))
+			t.Run("a replay runs in a realm", func(t *testing.T) {
+				c := qt.New(t)
+				migrations := filepath.Join(c.TempDir(), "migrations")
+				writeFiles(c, migrations, map[string]string{
+					"0000000001_users.up.sql":   "CREATE TABLE `users` (`id` Int64 NOT NULL, `name` Utf8, PRIMARY KEY (`id`));\n",
+					"0000000001_users.down.sql": "DROP TABLE `users`;\n",
+				})
+				hashed, hashErr := runBinary(ctx, binary, "migrations", "hash", "--dir", migrations)
+				c.Assert(hashErr, qt.IsNil, qt.Commentf("%s", hashed))
 
-		validated, err := runBinary(ctx, binary, "migrations", "validate", "--dir", migrations, "--dev-url", url)
+				validated, err := runBinary(ctx, binary, "migrations", "validate", "--dir", migrations, "--dev-url", url)
 
-		c.Assert(err, qt.IsNil, qt.Commentf("%s", validated))
-		c.Assert(validated, qt.Contains, "OK: migration SQL validated on dev database")
-		c.Assert(directoryNames(c, ctx), qt.Not(qt.Contains), "users")
-		c.Assert(directoryNames(c, ctx), qt.Not(qt.Contains), ydburl.RealmDirectory)
-	})
+				c.Assert(err, qt.IsNil, qt.Commentf("%s", validated))
+				c.Assert(validated, qt.Contains, "OK: migration SQL validated on dev database")
+				c.Assert(directoryNames(c, ctx, line), qt.Not(qt.Contains), "users")
+				c.Assert(directoryNames(c, ctx, line), qt.Not(qt.Contains), ydburl.RealmDirectory)
+			})
 
-	t.Run("a statement that reaches the whole database is refused", func(t *testing.T) {
-		c := qt.New(t)
-		migrations := filepath.Join(c.TempDir(), "migrations")
-		writeFiles(c, migrations, map[string]string{
-			"0000000001_reader.up.sql":   "CREATE USER ptahydbdevrealmreader PASSWORD 'secret';\n",
-			"0000000001_reader.down.sql": "DROP USER ptahydbdevrealmreader;\n",
-		})
-		hashed, hashErr := runBinary(ctx, binary, "migrations", "hash", "--dir", migrations)
-		c.Assert(hashErr, qt.IsNil, qt.Commentf("%s", hashed))
+			t.Run("a statement that reaches the whole database is refused", func(t *testing.T) {
+				c := qt.New(t)
+				migrations := filepath.Join(c.TempDir(), "migrations")
+				writeFiles(c, migrations, map[string]string{
+					"0000000001_reader.up.sql":   "CREATE USER ptahydbdevrealmreader PASSWORD 'secret';\n",
+					"0000000001_reader.down.sql": "DROP USER ptahydbdevrealmreader;\n",
+				})
+				hashed, hashErr := runBinary(ctx, binary, "migrations", "hash", "--dir", migrations)
+				c.Assert(hashErr, qt.IsNil, qt.Commentf("%s", hashed))
 
-		refused, err := runBinary(ctx, binary, "migrations", "validate", "--dir", migrations, "--dev-url", url)
-		var users int64
-		countErr := conn.QueryRowContext(ctx,
-			"SELECT COUNT(*) FROM `.sys/auth_users` WHERE Sid = 'ptahydbdevrealmreader'").Scan(&users)
+				refused, err := runBinary(ctx, binary, "migrations", "validate", "--dir", migrations, "--dev-url", url)
+				var users int64
+				countErr := conn.QueryRowContext(ctx,
+					"SELECT COUNT(*) FROM `.sys/auth_users` WHERE Sid = 'ptahydbdevrealmreader'").Scan(&users)
 
-		c.Assert(err, qt.IsNotNil)
-		c.Assert(refused, qt.Contains, "ydb migration replay rejects a user of the whole database because its "+
-			"effects cannot be confined to the disposable database realm")
-		c.Assert(countErr, qt.IsNil)
-		c.Assert(users, qt.Equals, int64(0))
-		c.Assert(directoryNames(c, ctx), qt.Not(qt.Contains), ydburl.RealmDirectory)
-	})
+				c.Assert(err, qt.IsNotNil)
+				c.Assert(refused, qt.Contains, "ydb migration replay rejects a user of the whole database because its "+
+					"effects cannot be confined to the disposable database realm")
+				c.Assert(countErr, qt.IsNil)
+				c.Assert(users, qt.Equals, int64(0))
+				c.Assert(directoryNames(c, ctx, line), qt.Not(qt.Contains), ydburl.RealmDirectory)
+			})
 
-	t.Run("parallel test cases each get a realm", func(t *testing.T) {
-		c := qt.New(t)
-		root := c.TempDir()
-		migrations := filepath.Join(root, "migrations")
-		tests := filepath.Join(root, "tests")
-		writeFiles(c, migrations, map[string]string{
-			"0000000001_users.up.sql":   "CREATE TABLE `users` (`id` Int64 NOT NULL, `name` Utf8, PRIMARY KEY (`id`));\n",
-			"0000000001_users.down.sql": "DROP TABLE `users`;\n",
-		})
-		writeFiles(c, tests, map[string]string{"cases.yaml": `cases:
+			t.Run("parallel test cases each get a realm", func(t *testing.T) {
+				c := qt.New(t)
+				root := c.TempDir()
+				migrations := filepath.Join(root, "migrations")
+				tests := filepath.Join(root, "tests")
+				writeFiles(c, migrations, map[string]string{
+					"0000000001_users.up.sql":   "CREATE TABLE `users` (`id` Int64 NOT NULL, `name` Utf8, PRIMARY KEY (`id`));\n",
+					"0000000001_users.down.sql": "DROP TABLE `users`;\n",
+				})
+				writeFiles(c, tests, map[string]string{"cases.yaml": `cases:
   - name: one row
     parallel: true
     steps:
@@ -130,50 +133,52 @@ func TestYDBBinary_DevDatabaseIsARealm(t *testing.T) {
           scalar: "2"
 `})
 
-		tested, err := runBinary(ctx, binary, "migrations", "test", "--db-url", url, "--dir", tests,
-			"--migrations-dir", migrations)
+				tested, err := runBinary(ctx, binary, "migrations", "test", "--db-url", url, "--dir", tests,
+					"--migrations-dir", migrations)
 
-		c.Assert(err, qt.IsNil, qt.Commentf("%s", tested))
-		c.Assert(tested, qt.Contains, `PASS  case "one row"`)
-		c.Assert(tested, qt.Contains, `PASS  case "two rows"`)
-		c.Assert(directoryNames(c, ctx), qt.Not(qt.Contains), "users")
-		c.Assert(directoryNames(c, ctx), qt.Not(qt.Contains), ydburl.RealmDirectory)
-	})
+				c.Assert(err, qt.IsNil, qt.Commentf("%s", tested))
+				c.Assert(tested, qt.Contains, `PASS  case "one row"`)
+				c.Assert(tested, qt.Contains, `PASS  case "two rows"`)
+				c.Assert(directoryNames(c, ctx, line), qt.Not(qt.Contains), "users")
+				c.Assert(directoryNames(c, ctx, line), qt.Not(qt.Contains), ydburl.RealmDirectory)
+			})
 
-	t.Run("a shadow database that is the target is a realm in it", func(t *testing.T) {
-		c := qt.New(t)
-		root := c.TempDir()
-		entities := filepath.Join(root, "entities")
-		migrations := filepath.Join(root, "migrations")
-		writeFiles(c, entities, map[string]string{"items.go": devRealmEntities})
-		c.Assert(os.MkdirAll(migrations, 0o750), qt.IsNil)
+			t.Run("a shadow database that is the target is a realm in it", func(t *testing.T) {
+				c := qt.New(t)
+				root := c.TempDir()
+				entities := filepath.Join(root, "entities")
+				migrations := filepath.Join(root, "migrations")
+				writeFiles(c, entities, map[string]string{"items.go": devRealmEntities})
+				c.Assert(os.MkdirAll(migrations, 0o750), qt.IsNil)
 
-		generated, err := runBinary(ctx, binary, "migrations", "generate", "--db-url", url, "--root-dir", entities,
-			"--migrations-dir", migrations, "--schemas", "ptah_ydb_devrealm", "--shadow-db", url, "--name", "items")
-		written, globErr := filepath.Glob(filepath.Join(migrations, "*_items.up.sql"))
+				generated, err := runBinary(ctx, binary, "migrations", "generate", "--db-url", url, "--root-dir", entities,
+					"--migrations-dir", migrations, "--schemas", "ptah_ydb_devrealm", "--shadow-db", url, "--name", "items")
+				written, globErr := filepath.Glob(filepath.Join(migrations, "*_items.up.sql"))
 
-		c.Assert(err, qt.IsNil, qt.Commentf("%s", generated))
-		c.Assert(globErr, qt.IsNil)
-		c.Assert(written, qt.HasLen, 1)
-		c.Assert(directoryNames(c, ctx), qt.Not(qt.Contains), "ptah_ydb_devrealm")
-		c.Assert(directoryNames(c, ctx), qt.Not(qt.Contains), ydburl.RealmDirectory)
-	})
+				c.Assert(err, qt.IsNil, qt.Commentf("%s", generated))
+				c.Assert(globErr, qt.IsNil)
+				c.Assert(written, qt.HasLen, 1)
+				c.Assert(tableNames(readScoped(c, conn, []string{"ptah_ydb_devrealm"})), qt.HasLen, 0)
+				c.Assert(directoryNames(c, ctx, line), qt.Not(qt.Contains), ydburl.RealmDirectory)
+			})
 
-	t.Run("a rehearsal on the target's URL runs in a realm", func(t *testing.T) {
-		c := qt.New(t)
-		entities := filepath.Join(c.TempDir(), "entities")
-		writeFiles(c, entities, map[string]string{"items.go": devRealmEntities})
-		dropDirectory(c, conn, "ptah_ydb_devrealm", "items")
-		c.Cleanup(func() { dropDirectory(c, conn, "ptah_ydb_devrealm", "items") })
+			t.Run("a rehearsal on the target's URL runs in a realm", func(t *testing.T) {
+				c := qt.New(t)
+				entities := filepath.Join(c.TempDir(), "entities")
+				writeFiles(c, entities, map[string]string{"items.go": devRealmEntities})
+				dropDirectory(c, conn, "ptah_ydb_devrealm", "items")
+				c.Cleanup(func() { dropDirectory(c, conn, "ptah_ydb_devrealm", "items") })
 
-		applied, err := runBinary(ctx, binary, "schema", "apply", "--db-url", url, "--root-dir", entities,
-			"--dev-url", url, "--auto-approve")
+				applied, err := runBinary(ctx, binary, "schema", "apply", "--db-url", url, "--root-dir", entities,
+					"--dev-url", url, "--auto-approve")
 
-		c.Assert(err, qt.IsNil, qt.Commentf("%s", applied))
-		c.Assert(applied, qt.Contains, "Schema apply completed successfully.")
-		c.Assert(directoryNames(c, ctx, "ptah_ydb_devrealm"), qt.DeepEquals, []string{"items"})
-		c.Assert(directoryNames(c, ctx), qt.Not(qt.Contains), ydburl.RealmDirectory)
-	})
+				c.Assert(err, qt.IsNil, qt.Commentf("%s", applied))
+				c.Assert(applied, qt.Contains, "Schema apply completed successfully.")
+				c.Assert(directoryNames(c, ctx, line, "ptah_ydb_devrealm"), qt.DeepEquals, []string{"items"})
+				c.Assert(directoryNames(c, ctx, line), qt.Not(qt.Contains), ydburl.RealmDirectory)
+			})
 
-	c.Assert(directoryNames(c, ctx, devRealmKept), qt.DeepEquals, []string{"t"})
+			c.Assert(directoryNames(c, ctx, line, devRealmKept), qt.DeepEquals, []string{"t"})
+		})
+	}
 }
