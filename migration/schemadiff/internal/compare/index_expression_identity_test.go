@@ -8,6 +8,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/exprkey"
@@ -53,7 +54,7 @@ func TestIndexes_TwoIndexesDifferingOnlyByCaseKeepTheirOwnPredicate(t *testing.T
 	}
 
 	diff := &difftypes.SchemaDiff{}
-	compare.IndexesWithSemantics(desired, current, diff, platform.Postgres, indexSemantics(), indexes)
+	compare.IndexesWithSemantics(desired, current, diff, platform.Postgres, indexSemantics(), indexes, capability.Postgres17())
 
 	c.Assert(indexNames(diff.IndexAdditions()), qt.DeepEquals, []string{"idx"},
 		qt.Commentf("idx's declared predicate differs from its catalog one and must be reported"))

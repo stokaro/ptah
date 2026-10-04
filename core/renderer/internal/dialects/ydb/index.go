@@ -21,6 +21,11 @@ type indexClause struct {
 	unique  bool
 	columns []string
 	cover   []string
+	// settings is the partitioning the index takes. An index starts with
+	// [ydbindex.DefaultSettings], and YDB takes no partitioning in the
+	// clause that creates it, so any other settings are written by an ALTER
+	// INDEX of their own after it; see [indexClause.partitioningStatement].
+	settings ydbindex.Settings
 }
 
 func (c indexClause) String() string {
@@ -36,6 +41,45 @@ func (c indexClause) String() string {
 		clause += " COVER (" + quoted(c.cover) + ")"
 	}
 	return clause
+}
+
+// partitioningStatement is the ALTER INDEX that gives a new index on table the
+// partitioning it declares, or "" for an index that takes YDB's defaults.
+//
+// It is a statement of its own because no clause that creates an index takes
+// the settings. Measured on 25.1.4.7 and 26.2.1.14, `INDEX i GLOBAL ON (v)
+// WITH (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 3)` answers `Unknown index
+// setting: auto_partitioning_min_partitions_count` on 26.2 and `with:
+// alternative is not implemented yet` on 25.1, inline in CREATE TABLE and in
+// ADD INDEX alike, while ALTER INDEX ... SET takes it once the index exists.
+func (c indexClause) partitioningStatement(table string) string {
+	clause := ydbindex.Clause(c.settings, ydbindex.DefaultSettings())
+	if len(clause) == 0 {
+		return ""
+	}
+	return alterIndexSet(table, c.name, clause)
+}
+
+// alterIndexSet writes `ALTER TABLE t ALTER INDEX i SET (...)` with settings.
+func alterIndexSet(table, index string, settings []string) string {
+	return fmt.Sprintf("ALTER TABLE %s ALTER INDEX %s SET (%s);", tablePath(table), quote(index), strings.Join(settings, ", "))
+}
+
+// indexSettings resolves an index's declared partitioning, refusing it on a
+// target without [capability.IndexPartitioning] and refusing what YDB would
+// refuse.
+func (r *Renderer) indexSettings(subject string, spec *ast.IndexPartitioningSpec) (ydbindex.Settings, error) {
+	if spec.IsZero() {
+		return ydbindex.DefaultSettings(), nil
+	}
+	if !r.caps.Has(capability.IndexPartitioning) {
+		return ydbindex.Settings{}, refuseKey(capability.IndexPartitioning, subject+" declares its partitioning")
+	}
+	settings, err := ydbindex.Resolve(spec)
+	if err != nil {
+		return ydbindex.Settings{}, refuseFact(subject, err.Error())
+	}
+	return settings, nil
 }
 
 // indexClauseOf reads an index node into the clause YDB takes, refusing what
@@ -75,9 +119,13 @@ func (r *Renderer) indexClauseOf(index *ast.IndexNode) (indexClause, error) {
 				fmt.Sprintf("column %q is both a key and a covered column, which YDB refuses", covered))
 		}
 	}
+	settings, err := r.indexSettings(subject, index.Partitioning)
+	if err != nil {
+		return indexClause{}, err
+	}
 	return indexClause{
 		name: index.Name, kind: kind, unique: index.Unique,
-		columns: columns, cover: slices.Clone(index.IncludeColumns),
+		columns: columns, cover: slices.Clone(index.IncludeColumns), settings: settings,
 	}, nil
 }
 
@@ -99,7 +147,8 @@ func (r *Renderer) refuseIndexDeclarations(subject string, index *ast.IndexNode)
 	case index.Granularity != 0:
 		return refuseFact(subject, "GRANULARITY is ClickHouse's")
 	case len(index.StorageParams) > 0:
-		return refuseGap(ydbgap.TableSettings, "the storage parameters of "+subject)
+		return refuseFact(subject, "a YDB global index takes no storage parameters; its settings are its "+
+			"partitioning and read replicas, declared with the auto_partitioning_* and read_replicas_settings attributes")
 	case index.Comment != "":
 		return refuseGap(ydbgap.Comments, "the comment on "+subject)
 	}
@@ -132,22 +181,22 @@ func indexColumns(subject string, index *ast.IndexNode) ([]string, error) {
 	return columns, nil
 }
 
-// inlineIndex writes an index declared inside CREATE TABLE, where the table's
+// inlineIndex reads an index declared inside CREATE TABLE, where the table's
 // key and column types are known and the index is held to
 // [ydbindex.ShapeRefusal].
-func (r *Renderer) inlineIndex(table string, index *ast.IndexNode, keyColumns []string, columnTypes map[string]string) (string, error) {
+func (r *Renderer) inlineIndex(table string, index *ast.IndexNode, keyColumns []string, columnTypes map[string]string) (indexClause, error) {
 	clause, err := r.indexClauseOf(index)
 	if err != nil {
-		return "", err
+		return indexClause{}, err
 	}
 	columnType := func(column string) (string, bool) {
 		ydbType, declared := columnTypes[column]
 		return ydbType, declared
 	}
 	if reason := ydbindex.ShapeRefusal(clause.columns, clause.cover, keyColumns, columnType); reason != "" {
-		return "", refuseFact(fmt.Sprintf("index %q on table %q", index.Name, table), reason)
+		return indexClause{}, refuseFact(fmt.Sprintf("index %q on table %q", index.Name, table), reason)
 	}
-	return clause.String(), nil
+	return clause, nil
 }
 
 // renderIndex writes an index added to a table that exists, as ALTER TABLE
@@ -156,35 +205,70 @@ func (r *Renderer) inlineIndex(table string, index *ast.IndexNode, keyColumns []
 // [capability.UniqueIndexOnExistingTable]; a new table's unique index is
 // written inside its CREATE TABLE instead, where every line accepts it.
 func (r *Renderer) renderIndex(index *ast.IndexNode) error {
-	statement, err := r.addIndexStatement(index)
+	statements, err := r.addIndexStatements(index)
 	if err != nil {
 		return err
 	}
-	r.w.WriteLine(statement)
+	for _, statement := range statements {
+		r.w.WriteLine(statement)
+	}
 	return nil
 }
 
-// addIndexStatement is the ALTER TABLE ... ADD INDEX renderIndex writes.
-func (r *Renderer) addIndexStatement(index *ast.IndexNode) (string, error) {
+// addIndexStatements are the ALTER TABLE ... ADD INDEX renderIndex writes, and
+// the ALTER INDEX that gives the index its partitioning after it.
+func (r *Renderer) addIndexStatements(index *ast.IndexNode) ([]string, error) {
 	if index == nil {
-		return "", refuseFact("an index", "the index node is nil")
+		return nil, refuseFact("an index", "the index node is nil")
 	}
 	subject := fmt.Sprintf("index %q", index.Name)
 	switch {
 	case strings.TrimSpace(index.Table) == "":
-		return "", refuseFact(subject, "YDB adds an index through its table, and the index names none")
+		return nil, refuseFact(subject, "YDB adds an index through its table, and the index names none")
 	case index.IfNotExists:
-		return "", refuseFact(subject, "YDB's ADD INDEX has no IF NOT EXISTS guard")
+		return nil, refuseFact(subject, "YDB's ADD INDEX has no IF NOT EXISTS guard")
 	case index.Unique && !r.caps.Has(capability.UniqueIndexOnExistingTable):
-		return "", refuseKey(capability.UniqueIndexOnExistingTable, fmt.Sprintf(
+		return nil, refuseKey(capability.UniqueIndexOnExistingTable, fmt.Sprintf(
 			"unique %s is added to table %q, which exists already (declare it with the table, or enable the flag on the cluster)",
 			subject, index.Table))
 	}
 	clause, err := r.indexClauseOf(index)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return fmt.Sprintf("ALTER TABLE %s ADD %s;", tablePath(index.Table), clause), nil
+	statements := []string{fmt.Sprintf("ALTER TABLE %s ADD %s;", tablePath(index.Table), clause)}
+	if partitioning := clause.partitioningStatement(index.Table); partitioning != "" {
+		statements = append(statements, partitioning)
+	}
+	return statements, nil
+}
+
+// setIndexPartitioning writes the ALTER INDEX that changes an existing index's
+// partitioning in place, refusing the change YDB cannot make that way.
+func (r *Renderer) setIndexPartitioning(table string, op *ast.SetIndexPartitioningOperation) ([]string, error) {
+	subject := fmt.Sprintf("index %q of table %q", op.IndexName, table)
+	if strings.TrimSpace(op.IndexName) == "" {
+		return nil, refuseFact(fmt.Sprintf("table %q", table), "ALTER INDEX ... SET names no index")
+	}
+	if !r.caps.Has(capability.IndexPartitioning) {
+		return nil, refuseKey(capability.IndexPartitioning, "changing the partitioning of "+subject)
+	}
+	desired, err := ydbindex.Resolve(op.Partitioning)
+	if err != nil {
+		return nil, refuseFact(subject, err.Error())
+	}
+	previous, err := ydbindex.Resolve(op.Previous)
+	if err != nil {
+		return nil, refuseFact(subject, "the settings it holds: "+err.Error())
+	}
+	if reason := ydbindex.ChangeRefusal(desired, previous); reason != "" {
+		return nil, refuseFact(subject, reason)
+	}
+	clause := ydbindex.Clause(desired, previous)
+	if len(clause) == 0 {
+		return nil, nil
+	}
+	return []string{alterIndexSet(table, op.IndexName, clause)}, nil
 }
 
 // renderDropIndex drops an index through its table, which is the only spelling

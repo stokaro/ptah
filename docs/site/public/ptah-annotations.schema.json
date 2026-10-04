@@ -944,6 +944,26 @@
         "attributes": {
           "additionalProperties": false,
           "properties": {
+            "auto_partitioning_by_load": {
+              "description": "YDB: whether the index's table splits a busy partition, ENABLED or DISABLED.",
+              "type": "string"
+            },
+            "auto_partitioning_by_size": {
+              "description": "YDB: whether the index's table splits a partition that grows past its size, ENABLED or DISABLED.",
+              "type": "string"
+            },
+            "auto_partitioning_max_partitions_count": {
+              "description": "YDB: the most partitions the index's table splits into.",
+              "type": "string"
+            },
+            "auto_partitioning_min_partitions_count": {
+              "description": "YDB: the fewest partitions the index's table keeps.",
+              "type": "string"
+            },
+            "auto_partitioning_partition_size_mb": {
+              "description": "YDB: the size in MB at which the index's table splits a partition.",
+              "type": "string"
+            },
             "columns": {
               "description": "Legacy synonym for fields.",
               "type": "string",
@@ -966,7 +986,7 @@
               "type": "string"
             },
             "include": {
-              "description": "Comma-separated INCLUDE columns for covering indexes (PostgreSQL: default/BTREE/GIST, plus SPGIST on 14+; YugabyteDB: default/LSM, with BTREE as the default-LSM alias; Spanner PostgreSQL dialect: default only).",
+              "description": "Comma-separated INCLUDE columns for covering indexes (PostgreSQL: default/BTREE/GIST, plus SPGIST on 14+; YugabyteDB: default/LSM, with BTREE as the default-LSM alias; Spanner PostgreSQL dialect: default only; YDB: COVER on a global index).",
               "type": "string"
             },
             "invisible": {
@@ -996,6 +1016,10 @@
             },
             "ops": {
               "description": "PostgreSQL operator class.",
+              "type": "string"
+            },
+            "read_replicas_settings": {
+              "description": "YDB: the index's read replicas, PER_AZ:<n> or ANY_AZ:<n>.",
               "type": "string"
             },
             "table": {

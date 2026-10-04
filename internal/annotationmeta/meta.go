@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/matviewrefresh"
+	"ptah.run/internal/ydbindex"
 )
 
 // Scope describes where a directive is valid in Go source.
@@ -377,7 +378,8 @@ var directives = []Directive{
 			attr(
 				"include",
 				"Comma-separated INCLUDE columns for covering indexes (PostgreSQL: default/BTREE/GIST, plus SPGIST on 14+; "+
-					"YugabyteDB: default/LSM, with BTREE as the default-LSM alias; Spanner PostgreSQL dialect: default only).",
+					"YugabyteDB: default/LSM, with BTREE as the default-LSM alias; Spanner PostgreSQL dialect: default only; "+
+					"YDB: COVER on a global index).",
 				valueList,
 				false,
 				false,
@@ -394,6 +396,15 @@ var directives = []Directive{
 			attr("nulls_distinct", "Controls NULLS DISTINCT behavior where supported.", valueBoolean, false, false),
 			attr("invisible", "Hides the index from the optimizer: INVISIBLE on MySQL, IGNORED on MariaDB, NOT VISIBLE on CockroachDB.",
 				valueBoolean, false, true),
+			attr(ydbindex.AttributeBySize, "YDB: whether the index's table splits a partition that grows past its size, ENABLED or DISABLED.",
+				valueString, false, false),
+			attr(ydbindex.AttributePartitionSizeMB, "YDB: the size in MB at which the index's table splits a partition.",
+				valueString, false, false),
+			attr(ydbindex.AttributeByLoad, "YDB: whether the index's table splits a busy partition, ENABLED or DISABLED.",
+				valueString, false, false),
+			attr(ydbindex.AttributeMinPartitions, "YDB: the fewest partitions the index's table keeps.", valueString, false, false),
+			attr(ydbindex.AttributeMaxPartitions, "YDB: the most partitions the index's table splits into.", valueString, false, false),
+			attr(ydbindex.AttributeReadReplicas, "YDB: the index's read replicas, PER_AZ:<n> or ANY_AZ:<n>.", valueString, false, false),
 		},
 	},
 	{

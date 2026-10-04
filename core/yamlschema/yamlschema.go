@@ -77,6 +77,7 @@ import (
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
+	"ptah.run/internal/ydbindex"
 )
 
 // ParseFile reads a YAML schema file and parses it with Parse, returning the
@@ -211,6 +212,7 @@ type indexSpec struct {
 	Name        stringScalar `yaml:"name"`
 	Fields      stringList   `yaml:"fields"`
 	Columns     stringList   `yaml:"columns"`
+	Include     stringList   `yaml:"include"`
 	Unique      bool         `yaml:"unique"`
 	Comment     stringScalar `yaml:"comment"`
 	Type        stringScalar `yaml:"type"`
@@ -219,6 +221,36 @@ type indexSpec struct {
 	Operator    stringScalar `yaml:"ops"`
 	TableName   stringScalar `yaml:"table"`
 	Granularity int          `yaml:"granularity"`
+
+	// The partitioning of a YDB global index, keyed as the annotation keys
+	// it; see [ydbindex.ParseDeclaration].
+	AutoPartitioningBySize          *stringScalar `yaml:"auto_partitioning_by_size"`
+	AutoPartitioningPartitionSizeMB *stringScalar `yaml:"auto_partitioning_partition_size_mb"`
+	AutoPartitioningByLoad          *stringScalar `yaml:"auto_partitioning_by_load"`
+	AutoPartitioningMinPartitions   *stringScalar `yaml:"auto_partitioning_min_partitions_count"`
+	AutoPartitioningMaxPartitions   *stringScalar `yaml:"auto_partitioning_max_partitions_count"`
+	ReadReplicasSettings            *stringScalar `yaml:"read_replicas_settings"`
+}
+
+// partitioningValues are the partitioning attributes the index sets, keyed by
+// attribute name. An attribute the document leaves out is absent, and one it
+// sets to an empty value is present, so an empty value is refused rather than
+// read as no declaration.
+func (spec indexSpec) partitioningValues() map[string]string {
+	values := make(map[string]string)
+	for attribute, value := range map[string]*stringScalar{
+		ydbindex.AttributeBySize:          spec.AutoPartitioningBySize,
+		ydbindex.AttributePartitionSizeMB: spec.AutoPartitioningPartitionSizeMB,
+		ydbindex.AttributeByLoad:          spec.AutoPartitioningByLoad,
+		ydbindex.AttributeMinPartitions:   spec.AutoPartitioningMinPartitions,
+		ydbindex.AttributeMaxPartitions:   spec.AutoPartitioningMaxPartitions,
+		ydbindex.AttributeReadReplicas:    spec.ReadReplicasSettings,
+	} {
+		if value != nil {
+			values[attribute] = string(*value)
+		}
+	}
+	return values
 }
 
 type constraintSpec struct {
@@ -696,18 +728,31 @@ func buildIndex(key, structName string, spec indexSpec) (schemamodel.Index, erro
 	if structName == "" && string(spec.TableName) == "" {
 		return schemamodel.Index{}, fmt.Errorf("top-level index %q requires table", key)
 	}
+	var include []string
+	if len(spec.Include) > 0 {
+		include = cleanStrings(spec.Include)
+		if len(include) != len(spec.Include) {
+			return schemamodel.Index{}, fmt.Errorf("index %q names an empty include column", key)
+		}
+	}
+	partitioning, err := ydbindex.ParseDeclaration(spec.partitioningValues())
+	if err != nil {
+		return schemamodel.Index{}, fmt.Errorf("index %q: %w", key, err)
+	}
 
 	return schemamodel.Index{
-		StructName:  structName,
-		Name:        valueOrDefault(spec.Name, key),
-		Fields:      fields,
-		Unique:      spec.Unique,
-		Comment:     string(spec.Comment),
-		Type:        string(spec.Type),
-		Condition:   firstNonEmpty(string(spec.Where), string(spec.Condition)),
-		Operator:    string(spec.Operator),
-		TableName:   string(spec.TableName),
-		Granularity: spec.Granularity,
+		StructName:     structName,
+		Name:           valueOrDefault(spec.Name, key),
+		Fields:         fields,
+		IncludeColumns: include,
+		Unique:         spec.Unique,
+		Comment:        string(spec.Comment),
+		Type:           string(spec.Type),
+		Condition:      firstNonEmpty(string(spec.Where), string(spec.Condition)),
+		Operator:       string(spec.Operator),
+		TableName:      string(spec.TableName),
+		Granularity:    spec.Granularity,
+		Partitioning:   partitioning,
 	}, nil
 }
 

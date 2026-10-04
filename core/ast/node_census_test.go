@@ -125,6 +125,7 @@ var nodeCensus = []censusRow{
 	{node: &ast.RenameConstraintOperation{}},
 	{node: &ast.RenameIndexOperation{}},
 	{node: &ast.AlterIndexVisibilityOperation{}},
+	{node: &ast.SetIndexPartitioningOperation{}},
 	{node: &ast.ReplaceIndexOperation{}},
 	{node: &ast.RenameTableOperation{}},
 	{node: &ast.ResetRowTTLOperation{}},

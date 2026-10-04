@@ -268,6 +268,25 @@ rendering on every dialect with `table "<name>" declares a column that has no
 name`; PostgreSQL answers `zero-length delimited identifier` and the MySQL
 family answers `Incorrect column name ''` for the DDL that used to be produced.
 
+## Indexes
+
+An index sits under `tables.<table>.indexes`, or under the top-level `indexes`
+map with a `table` key.
+
+| Key | Meaning |
+| --- | --- |
+| `name` | Index name. Defaults to the map key. |
+| `table` | Target table. Required for a top-level index. |
+| `fields` / `columns` | Indexed columns. Required. |
+| `include` | Covered columns: `INCLUDE` on the PostgreSQL family, `COVER` on YDB. |
+| `unique` | Builds a unique index. |
+| `type` | Dialect-specific index type; `async` on YDB. |
+| `where` / `condition` | Partial-index condition where the target has one. |
+| `ops` | Operator class. |
+| `granularity` | ClickHouse data-skipping index granularity. |
+| `comment` | Index comment. |
+| `auto_partitioning_by_size`, `auto_partitioning_partition_size_mb`, `auto_partitioning_by_load`, `auto_partitioning_min_partitions_count`, `auto_partitioning_max_partitions_count`, `read_replicas_settings` | A YDB global index's [partitioning](../../databases/ydb/#index-partitioning), with the values the annotation attributes of the same names take. Every other dialect refuses them. |
+
 ## Platform overrides
 
 Use `platform` when one dialect needs a different type or option:

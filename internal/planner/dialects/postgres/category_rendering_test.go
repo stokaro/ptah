@@ -72,6 +72,14 @@ var refusedDiffCategories = map[string]refusedFixture{
 			Table: "readings", OldColumn: "ts", NewColumn: "created_at",
 		}}},
 	},
+	"IndexesRenamed": {
+		why:  "the comparison pairs a removed index with an added one only on a target with index_rename, which is YDB's, so a PostgreSQL plan reaches a rename only through a diff built by hand, and planning nothing would leave the index under its old name",
+		diff: &difftypes.SchemaDiff{IndexesRenamed: []difftypes.IndexRename{{TableName: "users", From: "a", To: "b"}}},
+	},
+	"IndexPartitioningChanged": {
+		why:  "index partitioning is YDB's, and the comparison records a change of it only on a target with index_partitioning; planning nothing would report an index settled that is not",
+		diff: &difftypes.SchemaDiff{IndexPartitioningChanged: []difftypes.IndexPartitioningChange{{TableName: "users", Name: "a"}}},
+	},
 	"RLSPolicyIdentityConflicts": {
 		why: "two declared policies that resolve to one identity cannot be planned: the comparison already reduced them to one entry, so applying it would apply whichever the map kept (stokaro/ptah#2440)",
 		diff: &difftypes.SchemaDiff{RLSPolicyIdentityConflicts: []difftypes.RLSPolicyConflict{{

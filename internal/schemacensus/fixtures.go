@@ -92,6 +92,8 @@ func Fixtures() []Fixture {
 		{Name: "index-fulltext", Schema: indexFullTextFixture()},
 		{Name: "index-invisible", Schema: indexInvisibleFixture()},
 		{Name: "index-key-block-size", Schema: indexKeyBlockSizeFixture()},
+		{Name: "index-partitioning", Schema: indexPartitioningFixture()},
+		{Name: "index-partitioning-unsplit", Schema: indexPartitioningUnsplitFixture()},
 		{Name: "enum", Schema: enumFixture()},
 		{Name: "domain", Schema: domainFixture()},
 		{Name: "composite", Schema: compositeFixture()},
@@ -1025,6 +1027,29 @@ func indexStorageFixture() schemamodel.Database {
 	db.Indexes = []schemamodel.Index{{
 		StructName: "T", Name: "idx_t_s", TableName: "t", Fields: []string{"s"},
 		StorageParams: map[string]string{"fillfactor": "70"},
+	}}
+	return db
+}
+
+// indexPartitioningFixture sets every partitioning setting of a YDB global
+// index but the switch that turns splitting by size off, which a partition
+// size cannot share an index with; indexPartitioningUnsplitFixture sets that.
+func indexPartitioningFixture() schemamodel.Database {
+	db := indexedTable()
+	db.Indexes = []schemamodel.Index{{
+		StructName: "T", Name: "idx_t_s", TableName: "t", Fields: []string{"s"},
+		Partitioning: &ast.IndexPartitioningSpec{
+			PartitionSizeMB: 512, ByLoad: new(true), MinPartitions: 3, MaxPartitions: 9, ReadReplicas: "PER_AZ:1",
+		},
+	}}
+	return db
+}
+
+func indexPartitioningUnsplitFixture() schemamodel.Database {
+	db := indexedTable()
+	db.Indexes = []schemamodel.Index{{
+		StructName: "T", Name: "idx_t_s", TableName: "t", Fields: []string{"s"},
+		Partitioning: &ast.IndexPartitioningSpec{BySize: new(false)},
 	}}
 	return db
 }

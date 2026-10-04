@@ -303,6 +303,9 @@ func compareReportingUndecidedAdditions(
 		omitted := schemamodel.OmissionsForDialect(desired, opts.Dialect)
 		desired = schemamodel.ScopeToDialect(desired, opts.Dialect)
 		desired = schemaprep.AssignDefaultForeignKeyNames(desired, opts.Dialect)
+		// A UNIQUE constraint is a unique index on YDB, which is what the
+		// reader reports for one a plan applied.
+		desired = schemaprep.UniqueConstraintsAsIndexesFor(desired, opts.Dialect, caps)
 		database = suppressScopedAway(database, omitted)
 	}
 
@@ -364,7 +367,7 @@ func compareReportingUndecidedAdditions(
 
 	// Compare database index definitions
 	compare.IndexesWithSemantics(
-		desired, database, diff, opts.Dialect, identifierSemantics, opts.IndexExpressions,
+		desired, database, diff, opts.Dialect, identifierSemantics, opts.IndexExpressions, caps,
 	)
 
 	// Compare PostgreSQL extensions with configuration options
