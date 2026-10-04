@@ -14,7 +14,9 @@ import (
 	"regexp"
 	"strings"
 
+	"ptah.run/core/platform"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/ydburl"
 )
 
 const redactedQueryValue = "redacted"
@@ -39,7 +41,7 @@ func Format(dbURL string) string {
 	if err != nil {
 		return dbURL
 	}
-	parsedURL.RawQuery = redactRawQuery(parsedURL.RawQuery)
+	parsedURL.RawQuery = redactRawQuery(parsedURL.RawQuery, urlValuedParameter(parsedURL.Scheme))
 
 	// Hide password
 	if parsedURL.User != nil {
@@ -68,7 +70,7 @@ func redactURLQuery(displayURL string) string {
 	}
 
 	query, fragment, hasFragment := strings.Cut(rawQuery, "#")
-	redactedQuery := redactRawQuery(query)
+	redactedQuery := redactRawQuery(query, noURLValuedParameter)
 	if redactedQuery == "" {
 		if hasFragment {
 			return prefix + "#" + fragment
@@ -83,7 +85,7 @@ func redactURLQuery(displayURL string) string {
 	return result
 }
 
-func redactRawQuery(rawQuery string) string {
+func redactRawQuery(rawQuery string, urlValued func(key string) bool) string {
 	if rawQuery == "" {
 		return ""
 	}
@@ -93,14 +95,58 @@ func redactRawQuery(rawQuery string) string {
 		return ""
 	}
 	for key, values := range query {
-		if isSecretQueryParam(key) {
+		switch {
+		case isSecretQueryParam(key):
 			for idx := range values {
 				values[idx] = redactedQueryValue
 			}
-			query[key] = values
+		case urlValued(key):
+			for idx := range values {
+				values[idx] = redactUserInfo(values[idx])
+			}
 		}
 	}
 	return query.Encode()
+}
+
+// urlValuedParameter reports, for a URL of the given scheme, which query
+// parameters hold a URL of their own. A YDB URL names the cluster's monitoring
+// endpoint that way, and a command prints the URL before internal/ydburl
+// parses it and refuses a user in that endpoint, so the display has to hide
+// the user itself. The parameter name is matched in any case: the display may
+// hide more than the parser reads, never less.
+func urlValuedParameter(scheme string) func(key string) bool {
+	if platform.NormalizeDialect(scheme) != platform.YDB {
+		return noURLValuedParameter
+	}
+	return func(key string) bool {
+		return strings.EqualFold(key, ydburl.MonitoringParameter)
+	}
+}
+
+// noURLValuedParameter is the answer for a scheme whose parameters hold no
+// URL.
+func noURLValuedParameter(string) bool { return false }
+
+// redactUserInfo hides the user info of a URL held in a parameter, the user
+// name included: Ptah sends no credentials to that endpoint, so none of it is
+// needed to read the line, and a user name can itself be a token. A value
+// that carries an @ where no user info can be read -- it does not parse, or it
+// has no authority -- is hidden whole, because where its credentials end
+// cannot be told.
+func redactUserInfo(value string) string {
+	parsed, err := url.Parse(value)
+	switch {
+	case err == nil && parsed.User != nil:
+		parsed.User = url.User(redactedQueryValue)
+		return parsed.String()
+	case err == nil && parsed.Opaque == "":
+		return value
+	case strings.Contains(value, "@"):
+		return redactedQueryValue
+	default:
+		return value
+	}
 }
 
 func isSecretQueryParam(key string) bool {
