@@ -86,12 +86,14 @@ var nodeCensus = []censusRow{
 	{node: &ast.ExtendedPropertyNode{}},
 	{node: &ast.ExtensionNode{}},
 	{node: &ast.GrantPrivilegeNode{}},
+	{node: &ast.GrantRoleMembershipNode{}},
 	{node: &ast.IndexNode{}},
 	{node: &ast.ObjectCommentNode{}},
 	{node: &ast.RawSQLNode{}},
 	{node: &ast.RefreshMaterializedViewNode{}},
 	{node: &ast.RevokeDefaultPrivilegeNode{}},
 	{node: &ast.RevokePrivilegeNode{}},
+	{node: &ast.RevokeRoleMembershipNode{}},
 	{node: &ast.UpsertNode{}},
 
 	// The ALTER TABLE operations that hold a node of their own. Each row fills

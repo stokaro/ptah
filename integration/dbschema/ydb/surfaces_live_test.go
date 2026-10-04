@@ -5,11 +5,12 @@ package ydb_test
 import (
 	"bytes"
 	"context"
+	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
@@ -22,7 +23,6 @@ import (
 	"ptah.run/internal/cli/introspect"
 	"ptah.run/internal/cli/schema"
 	"ptah.run/internal/dbtarget"
-	"ptah.run/internal/ydbgap"
 )
 
 // runCommand runs a command in this process and returns what it wrote to
@@ -145,19 +145,69 @@ func TestYDBSchemaStats_CountsWhatTheReaderDescribes(t *testing.T) {
 	}
 }
 
-// schema security reads the access model, and the YDB reader does not read
-// users, groups or permissions yet, so the command refuses after it connects
-// in the words of that gap rather than report a clean access model it never
-// saw.
-func TestYDBSchemaSecurity_FailurePath_ReadsNoAccessModel(t *testing.T) {
+// TestYDBSchemaSecurity_HappyPath_ReadsTheAccessModel analyzes a database
+// holding a group nobody is a member of, granted a permission on a table: the
+// group is reported as granting to nobody, and the row-level security rule,
+// which YDB gives nothing to check, is listed as not checked.
+func TestYDBSchemaSecurity_HappyPath_ReadsTheAccessModel(t *testing.T) {
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
 			c := qt.New(t)
+			conn := openYDB(c, line)
+			names := newAccessNames(c)
+			dropTables(c, conn, accessSchemas)
+			c.Cleanup(func() {
+				dropTables(c, conn, accessSchemas)
+				removeAccess(c, conn, names)
+			})
+			execute(c, conn,
+				"CREATE TABLE `"+accessSchema+"/orders` (id Int64 NOT NULL, PRIMARY KEY (id))",
+				"CREATE GROUP "+names.group,
+				"GRANT 'ydb.generic.read' ON `"+accessSchema+"/orders` TO "+names.group,
+			)
 
-			stdout, err := runCommand(schema.NewSchemaSecurityCommand(), "--db-url", dbtarget.URL(c, line.engine))
+			stdout, err := runCommand(schema.NewSchemaSecurityCommand(), "--db-url", dbtarget.URL(c, line.engine),
+				"--schemas", accessSchema, "--format", "json")
 
-			c.Assert(err, qt.ErrorMatches,
-				`the analysis reads the access model: `+regexp.QuoteMeta(ydbgap.AccessControl.Message()))
+			c.Assert(err, qt.IsNil)
+			c.Assert(stdout, qt.Contains, `"code": "ROL04"`)
+			c.Assert(stdout, qt.Contains, `"name": "`+names.group+`"`)
+			c.Assert(stdout, qt.Matches, `(?s).*"code": "PRV01",\s*"reason": "the target does not model row-level security".*`)
+		})
+	}
+}
+
+// TestYDBSchemaSecurity_FailurePath_RefusesUnreadPrincipals connects as a user
+// who may list the database and may not read its rows, a member of
+// METADATA-READERS alone. YDB reports its users and groups only through
+// .sys/auth_*, which that user may not read, so the command refuses and says
+// what the connection needs, rather than report a clean access model it never
+// saw. The server answers that read ABORTED, which a retrying client would
+// retry until its context ended, so the command is given a minute to answer.
+func TestYDBSchemaSecurity_FailurePath_RefusesUnreadPrincipals(t *testing.T) {
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			admin := openYDB(c, line)
+			names := newAccessNames(c)
+			c.Cleanup(func() { removeAccess(c, admin, names) })
+			const password = "Lister1!"
+			execute(c, admin,
+				"CREATE USER "+names.user+" PASSWORD '"+password+"'",
+				"ALTER GROUP `METADATA-READERS` ADD USER "+names.user,
+			)
+			parsed, err := url.Parse(dbtarget.URL(c, line.engine))
+			c.Assert(err, qt.IsNil)
+			parsed.User = url.UserPassword(names.user, password)
+
+			ctx, cancel := context.WithTimeout(c.Context(), time.Minute)
+			defer cancel()
+			command := schema.NewSchemaSecurityCommand()
+			command.SetContext(ctx)
+			stdout, err := runCommand(command, "--db-url", parsed.String())
+
+			c.Assert(err, qt.ErrorMatches, `the analysis reads YDB's users and groups from .sys/auth_users, `+
+				`.sys/auth_groups and .sys/auth_group_members, and this connection may not read them; .*`)
 			c.Assert(stdout, qt.Equals, "")
 		})
 	}

@@ -189,7 +189,9 @@ type Database struct {
 	// such as /local, on a target whose statements name some objects by an
 	// absolute path rather than relative to the connection: YDB, whose ALTER
 	// SEQUENCE takes the sequence behind a Serial column only by its absolute
-	// path. A plan built against this read names those objects with it.
+	// path, and whose GRANT takes the database itself the same way, and on its
+	// older lines an object at the database root too. A plan built against
+	// this read names those objects with it.
 	//
 	// Empty from every other reader, and from a description that did not come
 	// from a live read. It describes where the database is rather than what
@@ -1744,6 +1746,12 @@ type Role struct {
 	Replication   bool              `json:"replication"`    // Whether role can initiate replication
 	PasswordState RolePasswordState `json:"password_state"` // What the reader established about password presence
 	Comment       string            `json:"comment"`        // Role comment/description
+
+	// Group is YDB's: it reports a group, a principal CREATE GROUP made, which
+	// never logs in and is the only kind with members. False is a role, which
+	// on YDB is a user. Every other reader reports roles of one kind and
+	// leaves it false; omitempty keeps their serialization byte-identical.
+	Group bool `json:"group,omitempty"`
 }
 
 // ObjectOwner is the owner of one schema object.

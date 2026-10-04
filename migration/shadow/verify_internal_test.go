@@ -127,13 +127,15 @@ func TestCollectMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 			{Table: "forced_table", Forced: true},
 			{Table: "unforced_table", Forced: false},
 		},
-		RolesAdded:          difftypes.RoleChanges{{Name: "missing_role"}},
-		RolesRemoved:        difftypes.RoleChanges{{Name: "extra_role"}},
-		RolesModified:       []difftypes.RoleDiff{{RoleName: "changed_role", Changes: changes}},
-		GrantsAdded:         []difftypes.GrantRef{{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users"}},
-		GrantsRemoved:       []difftypes.GrantRef{{Role: "app", Privilege: "INSERT", ObjectType: "TABLE", ObjectName: "users"}},
-		GrantOptionsAdded:   []difftypes.GrantRef{{Role: "app", Privilege: "UPDATE", ObjectType: "TABLE", ObjectName: "users"}},
-		GrantOptionsRevoked: []difftypes.GrantRef{{Role: "app", Privilege: "DELETE", ObjectType: "TABLE", ObjectName: "users"}},
+		RolesAdded:             difftypes.RoleChanges{{Name: "missing_role"}},
+		RolesRemoved:           difftypes.RoleChanges{{Name: "extra_role"}},
+		RolesModified:          []difftypes.RoleDiff{{RoleName: "changed_role", Changes: changes}},
+		RoleMembershipsAdded:   []difftypes.RoleMembershipRef{{Role: "readers", Member: "app"}},
+		RoleMembershipsRemoved: []difftypes.RoleMembershipRef{{Role: "writers", Member: "app"}},
+		GrantsAdded:            []difftypes.GrantRef{{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users"}},
+		GrantsRemoved:          []difftypes.GrantRef{{Role: "app", Privilege: "INSERT", ObjectType: "TABLE", ObjectName: "users"}},
+		GrantOptionsAdded:      []difftypes.GrantRef{{Role: "app", Privilege: "UPDATE", ObjectType: "TABLE", ObjectName: "users"}},
+		GrantOptionsRevoked:    []difftypes.GrantRef{{Role: "app", Privilege: "DELETE", ObjectType: "TABLE", ObjectName: "users"}},
 		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 			Name:      "missing_global_constraint",
 			TableName: "accounts",
@@ -195,6 +197,8 @@ func TestCollectMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 		"missing_role",
 		"extra_role",
 		"role_mismatch",
+		"missing_role_membership",
+		"extra_role_membership",
 		"missing_grant",
 		"extra_grant",
 		"missing_grant_option",
@@ -206,6 +210,9 @@ func TestCollectMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 	c.Assert(mismatches[len(mismatches)-2].Table, qt.Equals, "accounts")
 	c.Assert(mismatches[len(mismatches)-1].Object, qt.Equals, "accounts.extra_global_constraint")
 	c.Assert(mismatches[len(mismatches)-1].Table, qt.Equals, "accounts")
+	c.Assert(mismatches[49], qt.DeepEquals, Mismatch{
+		Kind: "missing_role_membership", Object: "app in readers", Message: "missing membership app in readers",
+	})
 	c.Assert(mismatches[15], qt.DeepEquals, Mismatch{
 		Kind:    "extension_mismatch",
 		Object:  "changed_extension",

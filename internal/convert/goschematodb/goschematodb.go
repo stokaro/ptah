@@ -46,6 +46,9 @@ func ToDBSchema(db *schemamodel.Database, dialect string) *catalog.Database {
 	// A UNIQUE constraint is a unique index on YDB, so a document converted to
 	// stand for a YDB database holds the index its database would.
 	db = schemaprep.UniqueConstraintsAsIndexesFor(db, dialect, capability.ForDialect(dialect))
+	// A YDB privilege is held under its permission name, whichever spelling
+	// the document used.
+	db = schemaprep.YDBPermissionNamesFor(db, dialect)
 
 	tableByStruct := make(map[string]schemamodel.Table, len(db.Tables))
 	for _, table := range db.Tables {
@@ -70,6 +73,8 @@ func ToDBSchema(db *schemamodel.Database, dialect string) *catalog.Database {
 		RLSPolicies: toDBRLSPolicies(db.RLSPolicies),
 		Roles:       toDBRoles(db.Roles),
 		Grants:      toDBGrants(db, dialect),
+
+		RoleMemberships: toDBRoleMemberships(db.Roles),
 		// A default privilege is an object family of its own rather than an
 		// attribute of a grant. Without this line the declaration still parses
 		// and the model still carries it, while this side of a file-to-file
@@ -755,7 +760,23 @@ func toDBRoles(roles []schemamodel.Role) []catalog.Role {
 			Replication:   role.Replication,
 			PasswordState: passwordState,
 			Comment:       role.Comment,
+			Group:         role.Group,
 		})
+	}
+	return out
+}
+
+// toDBRoleMemberships describes each declared membership the way a catalog
+// read reports it: one edge from the group to its member, in declaration
+// order.
+func toDBRoleMemberships(roles []schemamodel.Role) []catalog.RoleMembership {
+	var out []catalog.RoleMembership
+	for _, role := range roles {
+		for _, group := range role.MemberOf {
+			if group = strings.TrimSpace(group); group != "" {
+				out = append(out, catalog.RoleMembership{Role: group, Member: role.Name})
+			}
+		}
 	}
 	return out
 }
@@ -770,6 +791,9 @@ func toDBGrants(db *schemamodel.Database, dialect string) []catalog.Grant {
 			objectSchema := ""
 			arguments := ""
 			switch {
+			case grant.OnDatabase:
+				objectType = "DATABASE"
+				objectName = ""
 			case grant.OnSchema != "":
 				objectType = "SCHEMA"
 				objectName = grant.OnSchema

@@ -735,8 +735,10 @@ Declares a database role.
 | `createdb` | No | Allows database creation. `true`/`false`. |
 | `createrole` | No | Allows role creation. `true`/`false`. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
+| `group` | No | Declares a group, which never logs in and has members. YDB only. `true`/`false`. |
 | `inherit` | No | Controls role inheritance; defaults to true. `true`/`false`. |
 | `login` | No | Creates the role with LOGIN. `true`/`false`. |
+| `member_of` | No | Comma-separated groups the role is a member of. YDB only. |
 | `name` | No | Role name. |
 | `password` | No | Role password. |
 | `replication` | No | Allows replication. `true`/`false`. |
@@ -753,6 +755,13 @@ are refused there. `inherit="false"` is refused too: a role on those engines
 always passes on the privileges of the roles granted to it. See
 [MySQL and MariaDB](../../databases/mysql/).
 
+On YDB a role is a user, and `group="true"` declares a group instead. A user
+takes `login` and `password`; a group takes neither. `member_of` names the
+groups a user or a group joins, a group of the cluster's own such as
+`DATA-READERS` included. The other attributes are refused, and so is a name
+holding anything but lower-case letters and digits. See
+[YDB users, groups and permissions](../../databases/ydb/#users-groups-and-permissions).
+
 ### `//ptah:schema:grant`
 
 Declares database grants.
@@ -763,6 +772,7 @@ Declares database grants.
 | `comment` | No | Grant comment. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `grant_option` | No | Alias for `with_option`. `true`/`false`. |
+| `on_database` | No | Targets the database itself. YDB only. `true`/`false`. |
 | `on_function` | No | Target function with its argument types, such as `purge(uuid)`. PostgreSQL only. |
 | `on_procedure` | No | Target procedure with its argument types, such as `archive(uuid)`. PostgreSQL only. |
 | `on_schema` | No | Target schema. |
@@ -789,6 +799,12 @@ name would win. Privilege names the server rewrites on the way in — `ALL`,
 read back as written. See
 [ClickHouse roles and grants](../../databases/clickhouse/#roles-and-grants).
 
+On YDB a grant is on the database (`on_database="true"`), a directory
+(`on_schema`) or a table (`on_table`). A privilege is a YDB permission, by its
+name, such as `ydb.granular.select_row`, or as `GRANT` spells it, such as
+`SELECT ROW`. `with_option` is refused: YDB records the grant option as a
+permission of its own, so grant `ydb.access.grant` instead.
+
 ### `//ptah:schema:revoke`
 
 Declares privileges a role must not hold, including ones it holds without a
@@ -800,6 +816,7 @@ PRIVILEGES` gives a role on a new table.
 | `columns` | No | Comma-separated columns of `on_table` the privileges are limited to, such as `state,decided_at`. PostgreSQL only. |
 | `comment` | No | Comment. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
+| `on_database` | No | Targets the database itself. YDB only. `true`/`false`. |
 | `on_function` | No | Target function with its argument types, such as `purge(uuid)`. PostgreSQL only. |
 | `on_procedure` | No | Target procedure with its argument types, such as `archive(uuid)`. PostgreSQL only. |
 | `on_schema` | No | Target schema. |

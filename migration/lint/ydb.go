@@ -50,6 +50,8 @@ func ydbRules() []Rule {
 		ydbNarrowSerialSequenceRule(),
 		ydbReplayedRestartRule(),
 		ydbMovedTableWithChangefeedRule(),
+		ydbGrantOptionRevokeRule(),
+		ydbPrincipalDropRule(),
 	}
 }
 
@@ -968,4 +970,58 @@ func stateThrough(ups []int, files []File, after map[int64]*ydbSchema, version i
 		latest = after[files[index].Version]
 	}
 	return latest
+}
+
+// ydbGrantOptionRevokeRule reports REVOKE GRANT OPTION FOR, which on YDB takes
+// away the permission it names together with the right to grant it. YDB keeps
+// WITH GRANT OPTION as a permission of its own, ydb.access.grant, beside the
+// one it was written with, and the clause revokes both. Measured on 25.1.4.7
+// and 26.2.1.14: after `GRANT SELECT ... WITH GRANT OPTION`, the object holds
+// ydb.generic.read and ydb.access.grant for the subject, and `REVOKE GRANT
+// OPTION FOR SELECT ...` leaves it neither, where the statement reads as
+// keeping SELECT. Revoking the GRANT permission alone takes the option and
+// keeps the rest.
+func ydbGrantOptionRevokeRule() Rule {
+	return Rule{
+		Code:          "YD110",
+		Title:         "REVOKE GRANT OPTION FOR revokes the permission too",
+		Severity:      SeverityError,
+		Dialects:      ydbOnly,
+		AppliesToDown: true,
+		CheckStatement: func(stmt *Statement) (bool, string) {
+			if !ydbRun(stmt.Target) || !hasWordPrefix(stmt.Words, "REVOKE", "GRANT", "OPTION", "FOR") {
+				return false, ""
+			}
+			return true, "REVOKE GRANT OPTION FOR takes away the permission it names as well as " +
+				"the right to grant it, because YDB keeps the grant option as the permission ydb.access.grant; " +
+				"revoke 'ydb.access.grant' alone to keep the permission"
+		},
+	}
+}
+
+// ydbPrincipalDropRule reports DROP USER and DROP GROUP, which leave every
+// permission entry of the principal behind. Measured on 25.1.4.7 and
+// 26.2.1.14: after `DROP USER u`, .sys/auth_permissions still lists u's
+// entries, and a user created later under the same name holds them. DS107
+// reports the drop itself; this rule says what it leaves.
+func ydbPrincipalDropRule() Rule {
+	return Rule{
+		Code:          "YD111",
+		Title:         "dropped user or group keeps its permissions",
+		Severity:      SeverityWarning,
+		Dialects:      ydbOnly,
+		AppliesToDown: true,
+		CheckStatement: func(stmt *Statement) (bool, string) {
+			if !ydbRun(stmt.Target) || !hasWordPrefix(stmt.Words, "DROP") || len(stmt.Words) < 2 {
+				return false, ""
+			}
+			kind := stmt.Words[1]
+			if kind != "USER" && kind != "GROUP" {
+				return false, ""
+			}
+			return true, fmt.Sprintf("DROP %s leaves the %s's permissions on every object it was granted, and a "+
+				"user or group created later under the same name holds them; REVOKE ALL ON each object FROM it first",
+				kind, strings.ToLower(kind))
+		},
+	}
 }
