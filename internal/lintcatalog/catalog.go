@@ -86,6 +86,7 @@ var families = []Family{
 	{Prefix: "CAP", Origin: OriginPtah, Summary: "the target server version lacks a capability the statement needs"},
 	{Prefix: "AC", Origin: OriginPtah, Summary: "analysis coverage: what the linter did not read, so a clean result is not mistaken for a checked one"},
 	{Prefix: "ON", Origin: OriginPtah, Summary: "online-DDL proof: statements the online mode could not prove take no conflicting lock, reported only when that mode is selected"},
+	{Prefix: "YD", Origin: OriginPtah, Summary: "YDB statements the server refuses, or runs with an effect the statement does not state"},
 }
 
 // Entry is one rule, joined from a registry and this package's declaration.
@@ -113,7 +114,40 @@ type Entry struct {
 	// CompatAnalyzer and CompatCode are what ptah-compat prints for this rule.
 	CompatAnalyzer string
 	CompatCode     string
+	// YDB is what a migration lint rule with no dialect restriction does on a
+	// YDB run, and empty for every other rule; see [YDBVerdict].
+	YDB YDBVerdict
+	// YDBNote says what the verdict rests on: the YQL statement the rule
+	// reads, the one YQL does not have, or the rule that replaces it.
+	YDBNote string
 }
+
+// YDBVerdict classifies what a migration lint rule that runs on every dialect
+// does on YDB.
+//
+// A rule with no dialect restriction runs on a YDB run whether or not anyone
+// asked what it does there, so each one carries a verdict, declared here and
+// checked against the analyzer: [Validate] refuses such a rule without one,
+// and a test drives every rule marked [YDBApplies] over YQL it must report.
+// The YD family is YDB's own and needs none.
+type YDBVerdict string
+
+const (
+	// YDBApplies marks a rule that reads the YQL spelling of its statement
+	// and reports a hazard YDB has.
+	YDBApplies YDBVerdict = "applies"
+	// YDBNoSuchStatement marks a rule whose statement YQL does not have: YDB
+	// refuses it as a syntax error or has no such object, so the rule cannot
+	// report on a migration YDB runs.
+	YDBNoSuchStatement YDBVerdict = "no such statement in YQL"
+	// YDBReplaced marks a rule whose every finding on YDB a YD rule reports
+	// instead, with the reason the statement fails there.
+	YDBReplaced YDBVerdict = "replaced"
+	// YDBNeedsDevDatabase marks a rule that reads the state a dev database
+	// replay supplies, which a YDB database cannot be yet. The run names the
+	// rule as unmet rather than reporting less in silence.
+	YDBNeedsDevDatabase YDBVerdict = "needs a dev database"
+)
 
 // ruleMeta is everything about a rule that no registry can carry.
 type ruleMeta struct {
@@ -128,6 +162,10 @@ type ruleMeta struct {
 	// pinned by a test that runs the analyzer under both profiles, so it cannot
 	// become a claim about behavior that has changed.
 	NativeOnly bool
+	// YDB and YDBNote are the rule's [YDBVerdict] and what it rests on, for a
+	// rule that runs on every dialect.
+	YDB     YDBVerdict
+	YDBNote string
 }
 
 // migrationRuleMeta declares the documentation-only facts about each migration
@@ -137,10 +175,14 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"BC103": {
 		Summary:   "dropping a table retires a name deployed clients still query, which is a rollout break a backup does not mitigate",
 		AtlasCode: "BC103",
+		YDB:       YDBApplies,
+		YDBNote:   "`DROP TABLE`",
 	},
 	"BC104": {
 		Summary:   "dropping a column retires a name deployed clients still select and insert, whether or not the column held rows",
 		AtlasCode: "BC104",
+		YDB:       YDBApplies,
+		YDBNote:   "`ALTER TABLE ... DROP COLUMN`",
 	},
 	"PG108": {
 		Summary:   "an index on a partitioned table locks the parent and every partition at once, and CONCURRENTLY is refused there",
@@ -207,29 +249,45 @@ var migrationRuleMeta = map[string]ruleMeta{
 	},
 	"DD102": {
 		Summary: "a routine declared immutable calls something whose result changes between two calls with the same arguments",
+		YDB:     YDBNoSuchStatement,
+		YDBNote: "YQL stores no routine",
 	},
 	"DS101": {
 		Summary:   "DROP TABLE, and on MariaDB CREATE OR REPLACE TABLE, destroys the table and every row in it; a rename reports here on the compatibility surface, retiring the old name without moving the rows",
 		AtlasCode: "DS102",
+		YDB:       YDBApplies,
+		YDBNote:   "`DROP TABLE`",
 	},
 	"DS110P": {
 		Summary: "a column a view or routine reads is dropped, and the finding names what breaks",
+		YDB:     YDBNeedsDevDatabase,
+		YDBNote: "what reads a column comes from a dev database replay",
 	},
 	"DS102": {
 		Summary:   "DROP COLUMN destroys the column and every value stored in it",
 		AtlasCode: "DS103",
+		YDB:       YDBApplies,
+		YDBNote:   "`ALTER TABLE ... DROP COLUMN`",
 	},
 	"DS103": {
 		Summary: "a column type change can truncate or reject existing values and may rewrite the table under a lock; a clause that restates the column's current type, as the dev database records it, is not reported",
+		YDB:     YDBNoSuchStatement,
+		YDBNote: "YQL changes no column type; `ALTER COLUMN ... TYPE` is a syntax error",
 	},
 	"DS104": {
 		Summary: "DROP NOT NULL removes a column-level data protection",
+		YDB:     YDBApplies,
+		YDBNote: "`ALTER TABLE ... ALTER COLUMN ... DROP NOT NULL`",
 	},
 	"DS105": {
 		Summary: "an untyped DROP CONSTRAINT removes a data protection the SQL does not name",
+		YDB:     YDBNoSuchStatement,
+		YDBNote: "YDB has no named constraint to drop",
 	},
 	"DS106": {
 		Summary: "removing an enum value can invalidate rows that still hold it",
+		YDB:     YDBNoSuchStatement,
+		YDBNote: "YDB has no enum type",
 	},
 	"DS107": {
 		// Broader than Atlas DS101, which is the schema drop alone: this rule
@@ -237,9 +295,13 @@ var migrationRuleMeta = map[string]ruleMeta{
 		// ROLE, and POLICY, so the rule is ours even though it covers the Atlas
 		// one.
 		Summary: "dropping a schema, type, extension, function, procedure, trigger, role, or policy removes behavior",
+		YDB:     YDBNoSuchStatement,
+		YDBNote: "YDB has none of the objects it reads; it does not read `DROP USER` or `DROP GROUP`",
 	},
 	"AC101": {
 		Summary: "the migration defines a routine whose body is not analyzed, so a clean result says nothing about what the body does",
+		YDB:     YDBNoSuchStatement,
+		YDBNote: "YQL stores no routine",
 	},
 	"ON101": {
 		Summary: "the statement is outside the set measured to take no lock conflicting with reads and writes on PostgreSQL",
@@ -252,50 +314,76 @@ var migrationRuleMeta = map[string]ruleMeta{
 	},
 	"DS108": {
 		Summary: "TRUNCATE deletes every row in the table",
+		YDB:     YDBApplies,
+		YDBNote: "`TRUNCATE TABLE`, on lines with `truncate_table`",
 	},
 	"DS109": {
 		Summary: "DISABLE ROW LEVEL SECURITY removes an access-control protection",
+		YDB:     YDBNoSuchStatement,
+		YDBNote: "YDB has no row-level security",
 	},
 	"DS111P": {
 		Summary: "NO FORCE ROW LEVEL SECURITY exempts the table owner from every policy on the table",
+		YDB:     YDBNoSuchStatement,
+		YDBNote: "YDB has no row-level security",
 	},
 	"CD101": {
 		Summary:   "dropping a foreign key removes referential-integrity enforcement",
 		AtlasCode: "CD101",
+		YDB:       YDBNoSuchStatement,
+		YDBNote:   "YDB has no foreign key",
 	},
 	"CD102": {
 		Summary:   "dropping a check constraint removes a value-validation guarantee",
 		AtlasCode: "CD102",
+		YDB:       YDBNoSuchStatement,
+		YDBNote:   "YDB has no `CHECK` constraint",
 	},
 	"CD103": {
 		Summary:   "dropping a primary key removes row identity and can break replication",
 		AtlasCode: "CD103",
+		YDB:       YDBNoSuchStatement,
+		YDBNote:   "YDB cannot drop a primary key",
 	},
 	"DD101": {
 		Summary:   "adding a NOT NULL column without a default fails or blocks on a populated table",
 		AtlasCode: "MF103",
+		YDB:       YDBReplaced,
+		YDBNote:   "`YD103`, since YDB refuses a NOT NULL column without a default even on an empty table",
 	},
 	"MF101P": {
 		Summary: "no matching .down.sql exists, so a failed deploy cannot be rolled back mechanically",
+		YDB:     YDBApplies,
+		YDBNote: "the migration directory's files",
 	},
 	"MF102P": {
 		Summary: "the migration carries no executable statements",
+		YDB:     YDBApplies,
+		YDBNote: "the migration directory's files",
 	},
 	"MF101": {
 		Summary:   "a unique index built over existing rows fails on the first duplicate",
 		AtlasCode: "MF101",
+		YDB:       YDBApplies,
+		YDBNote:   "`ADD INDEX ... UNIQUE` where the target adds one to an existing table; `YD101` replaces it where it does not",
 	},
 	"MF102": {
 		Summary:   "an index dropped and rebuilt as unique fails on the first duplicate and leaves the table without it",
 		AtlasCode: "MF102",
+		YDB:       YDBApplies,
+		YDBNote:   "`DROP INDEX` then `ADD INDEX ... UNIQUE`, where the target adds one; `YD101` replaces it where it does not",
 	},
 	"MF103": {
 		Summary: "the file name does not follow the migration file-name convention",
+		YDB:     YDBApplies,
+		YDBNote: "the migration directory's files",
 	},
 	"BC101": {
 		Summary:    "a rename retires a name deployed code still refers to",
 		AtlasCode:  "BC101",
 		NativeOnly: true,
+		YDB:        YDBApplies,
+		YDBNote:    "`ALTER TABLE ... RENAME TO`",
 	},
 	"PG101": {
 		Summary:   "CREATE INDEX without CONCURRENTLY blocks writes for the whole build",
@@ -380,30 +468,44 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"SA101": {
 		Summary:   "a routine builds and runs a statement from a value it does not quote",
 		AtlasCode: "SA101",
+		YDB:       YDBNoSuchStatement,
+		YDBNote:   "YQL stores no routine",
 	},
 	"NM101": {
 		Summary:   "a schema this migration creates or renames to violates the configured naming convention",
 		AtlasCode: "NM101",
+		YDB:       YDBNoSuchStatement,
+		YDBNote:   "YDB has no schema to create",
 	},
 	"NM102": {
 		Summary:   "a table this migration creates or renames to violates the configured naming convention",
 		AtlasCode: "NM102",
+		YDB:       YDBApplies,
+		YDBNote:   "`CREATE TABLE` and `RENAME TO`, judged on the unquoted path",
 	},
 	"NM103": {
 		Summary:   "a column this migration declares, adds, or renames to violates the configured naming convention",
 		AtlasCode: "NM103",
+		YDB:       YDBApplies,
+		YDBNote:   "the columns of `CREATE TABLE` and `ADD COLUMN`",
 	},
 	"NM104": {
 		Summary:   "an index or unique key this migration names violates the configured naming convention",
 		AtlasCode: "NM104",
+		YDB:       YDBApplies,
+		YDBNote:   "`INDEX` in `CREATE TABLE`, `ADD INDEX` and `RENAME INDEX`",
 	},
 	"NM105": {
 		Summary:   "a foreign key this migration names violates the configured naming convention",
 		AtlasCode: "NM105",
+		YDB:       YDBNoSuchStatement,
+		YDBNote:   "YDB has no foreign key",
 	},
 	"NM106": {
 		Summary:   "a check constraint this migration names violates the configured naming convention",
 		AtlasCode: "NM106",
+		YDB:       YDBNoSuchStatement,
+		YDBNote:   "YDB has no `CHECK` constraint",
 	},
 	"MY101": {
 		Summary: "this ALTER TABLE form usually rebuilds the table and blocks writes for the duration",
@@ -486,6 +588,24 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"TX201": {
 		Summary:   "an explicit BEGIN/COMMIT block fights the migrator's transaction management",
 		AtlasCode: "TX201",
+	},
+	"YD101": {
+		Summary: "a unique index added to a table that exists, which a YDB line without `unique_index_on_existing_table` refuses",
+	},
+	"YD102": {
+		Summary: "a block or an action call that runs a scheme statement and a statement reading or writing a table in one query, which YDB refuses whole",
+	},
+	"YD103": {
+		Summary: "an `ADD COLUMN` YDB refuses: NOT NULL without a default on every line, or a default where `add_column_with_default` is false",
+	},
+	"YD104": {
+		Summary: "a `DROP COLUMN` of a column an index keys or covers, or the TTL reads, which YDB refuses until the index or the TTL is gone",
+	},
+	"YD105": {
+		Summary: "turning auto partitioning by size or by load on resets the minimum partition count to 1 unless the same statement sets it",
+	},
+	"YD106": {
+		Summary: "a `DROP TABLE` of a table a view reads: YDB drops the table, keeps the view, and every read of the view fails",
 	},
 }
 
@@ -689,6 +809,8 @@ func migrationEntriesFrom(rules []lint.Rule) ([]Entry, error) {
 			AtlasCode:      meta.AtlasCode,
 			CompatAnalyzer: identity.Analyzer,
 			CompatCode:     identity.Code,
+			YDB:            meta.YDB,
+			YDBNote:        meta.YDBNote,
 		})
 	}
 	if err := checkOrphans(migrationRuleMeta, declared, "migration lint"); err != nil {
@@ -785,6 +907,7 @@ func Validate(entries []Entry) error {
 		if strings.TrimSpace(entry.Summary) == "" {
 			problems = append(problems, fmt.Sprintf("rule %s has no one-line meaning", entry.Code))
 		}
+		problems = append(problems, ydbVerdictProblems(entry)...)
 	}
 	for _, check := range atlasChecks {
 		for _, code := range check.PtahRules {
@@ -811,6 +934,27 @@ func Validate(entries []Entry) error {
 	}
 	return fmt.Errorf("lint catalog is inconsistent with the code:\n  %s", strings.Join(problems, "\n  "))
 }
+
+// ydbVerdictProblems checks that a migration lint rule says what it does on
+// YDB exactly when it runs there without being YDB's own: a rule with no
+// dialect restriction carries a known verdict and a note, and every other rule
+// carries neither.
+func ydbVerdictProblems(entry Entry) []string {
+	everyDialect := entry.Kind == KindMigration && len(entry.Dialects) == 0
+	switch {
+	case everyDialect && !slices.Contains(ydbVerdicts, entry.YDB):
+		return []string{fmt.Sprintf("rule %s runs on every dialect and says nothing known about YDB (%q): "+
+			"declare its YDBVerdict in migrationRuleMeta", entry.Code, entry.YDB)}
+	case everyDialect && strings.TrimSpace(entry.YDBNote) == "":
+		return []string{fmt.Sprintf("rule %s has a YDB verdict and no note saying what it rests on", entry.Code)}
+	case !everyDialect && (entry.YDB != "" || entry.YDBNote != ""):
+		return []string{fmt.Sprintf("rule %s declares a YDB verdict but does not run on every dialect", entry.Code)}
+	}
+	return nil
+}
+
+// ydbVerdicts are the verdicts a rule may carry.
+var ydbVerdicts = []YDBVerdict{YDBApplies, YDBNoSuchStatement, YDBReplaced, YDBNeedsDevDatabase}
 
 // atlasReferenceProblems compares the Atlas check catalog against the reviewed
 // snapshot, code for code.

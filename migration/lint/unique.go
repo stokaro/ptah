@@ -5,6 +5,8 @@ import (
 	"maps"
 	"slices"
 	"strings"
+
+	"ptah.run/core/platform"
 )
 
 // A unique index is built over the rows a table already holds, and the
@@ -61,9 +63,11 @@ type uniqueIndexSite struct {
 	// change what a failure leaves behind and what counts as a duplicate.
 	concurrently     bool
 	nullsNotDistinct bool
-	// spelled is the clause head for the message: CREATE UNIQUE INDEX or
-	// ADD UNIQUE.
+	// spelled is the clause head for the message: CREATE UNIQUE INDEX,
+	// ADD UNIQUE, or YQL's ADD INDEX.
 	spelled string
+	// yql records YQL's spelling, whose failure YDB words its own way.
+	yql bool
 }
 
 // uniqueIndexStatements lists the statements that build a unique index, for
@@ -97,6 +101,9 @@ func uniqueIndexSites(file *File) []uniqueIndexSite {
 			table := alterTableReference(w, stmt.sourceWords)
 			for _, i := range clauseStarts(w) {
 				site, ok := addUniqueSite(w, stmt.sourceWords, i)
+				if !ok && file.dialect == platform.YDB {
+					site, ok = yqlUniqueIndexSite(w, stmt.sourceWords, i)
+				}
 				if !ok {
 					continue
 				}
@@ -180,6 +187,31 @@ func addUniqueSite(w, sourceWords []string, i int) (uniqueIndexSite, bool) {
 	site.columns = columns
 	site.nullsNotDistinct = hasWordSeq(w[next:end], "NULLS", "NOT", "DISTINCT")
 	return site, true
+}
+
+// yqlUniqueIndexSite reads YQL's ADD INDEX name [GLOBAL] UNIQUE [SYNC] [USING
+// kind] ON (columns) at a clause start. YQL is the only dialect that writes
+// UNIQUE after the index name, and it is read only on a YDB run, where the
+// statement is lexed as YQL.
+func yqlUniqueIndexSite(w, sourceWords []string, i int) (uniqueIndexSite, bool) {
+	end := clauseEnd(w, i)
+	site := uniqueIndexSite{spelled: "ADD INDEX", yql: true}
+	if i+2 >= end || w[i] != "ADD" || w[i+1] != "INDEX" || !identLike(w[i+2]) {
+		return site, false
+	}
+	site.name = sourceWordAt(w, sourceWords, i+2)
+	unique := false
+	for j := i + 3; j < end; j++ {
+		switch w[j] {
+		case "UNIQUE":
+			unique = true
+		case "ON":
+			columns, _, ok := keyColumnList(w[:end], sourceWords, j+1)
+			site.columns = columns
+			return site, ok && unique
+		}
+	}
+	return site, false
 }
 
 // uniqueNameAndMethod reads the optional index name and USING method between
@@ -418,7 +450,14 @@ func (s uniqueIndexSite) label() string {
 }
 
 // uniqueFailure is the failure both families report, and what it leaves.
+//
+// YDB words it its own way: measured on 26.2.1.14 with EnableAddUniqueIndex
+// on, ADD INDEX ... GLOBAL UNIQUE SYNC over two rows holding the same value
+// answers `Duplicate key found: (v=a)`.
 func uniqueFailure(site uniqueIndexSite) string {
+	if site.yql {
+		return "fails on the first duplicate it meets (YDB: Duplicate key found), leaving the migration half applied"
+	}
 	message := "fails on the first duplicate it meets (PostgreSQL: could not create unique index; MySQL and MariaDB: Duplicate entry for key), " +
 		"leaving the migration half applied"
 	if site.concurrently {

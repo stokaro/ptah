@@ -1,14 +1,12 @@
 package lint_test
 
 import (
-	"regexp"
 	"testing"
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform/capability"
-	"ptah.run/internal/ydbgap"
 	"ptah.run/migration/lint"
 )
 
@@ -47,6 +45,19 @@ func TestResolveTarget_HappyPath(t *testing.T) {
 		target := lint.TargetFromServer("oracle", "23.0.0", nil, "")
 
 		c.Assert(target.Dialect, qt.Equals, "oracle")
+	})
+
+	// YDB's TLS URL scheme is a spelling of the dialect, and a YDB line
+	// answers the capability the YD rules read.
+	t.Run("a YDB release line", func(t *testing.T) {
+		c := qt.New(t)
+
+		target, err := lint.ResolveTarget("ydbs", "25.1.4.7")
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(target.Dialect, qt.Equals, "ydb")
+		c.Assert(target.Note, qt.Equals, "")
+		c.Assert(target.Capabilities, qt.DeepEquals, capability.YDB251())
 	})
 
 	t.Run("a newer release line answers differently", func(t *testing.T) {
@@ -110,15 +121,6 @@ func TestResolveTarget_FailurePath(t *testing.T) {
 		target, err := lint.ResolveTarget("oracle", "23")
 
 		c.Assert(err, qt.ErrorMatches, `unsupported lint dialect "oracle": expected postgres, mysql,.*`)
-		c.Assert(target, qt.DeepEquals, lint.Target{})
-	})
-
-	t.Run("YDB, which lint does not read", func(t *testing.T) {
-		c := qt.New(t)
-
-		target, err := lint.ResolveTarget("ydbs", "")
-
-		c.Assert(err, qt.ErrorMatches, `unsupported lint dialect "ydbs": `+regexp.QuoteMeta(ydbgap.Linting.Message()))
 		c.Assert(target, qt.DeepEquals, lint.Target{})
 	})
 

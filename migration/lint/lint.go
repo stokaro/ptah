@@ -706,9 +706,7 @@ func splitStatementsWithLines(
 	var activeSuppressions []atlaslint.Target
 	compound := sqlcompound.New(mode.dialect)
 	for _, tok := range scanSQL(raw, mode) {
-		if tok.kind == tokWord {
-			compound.Word(tok.text)
-		}
+		observeCompoundToken(&compound, tok, mode)
 		switch tok.kind {
 		case tokSemicolon:
 			if compound.KeepSemicolonInsideStatement() {
@@ -779,6 +777,22 @@ func splitStatementsWithLines(
 		})
 	}
 	return statements
+}
+
+// observeCompoundToken feeds one token to the compound-body tracker the way
+// core/sqlutil feeds it the same text, so the linter and the migrator cut a
+// statement at the same semicolon. Words are fed on every dialect. YQL also
+// needs its punctuation, for the braces around a lambda's body, and its
+// backticked names, which core/sqlutil feeds as words because the YQL lexer
+// reads them as identifiers; neither changes the answer for another dialect,
+// whose quoted names were never fed.
+func observeCompoundToken(compound *sqlcompound.State, tok lintToken, mode scanMode) {
+	switch {
+	case tok.kind == tokWord, mode.yql && tok.kind == tokQuotedIdent:
+		compound.Word(tok.text)
+	case mode.yql && tok.kind == tokOp:
+		compound.Symbol(tok.text)
+	}
 }
 
 func parseNoLintDirective(

@@ -4,13 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"testing"
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/internal/ydbgap"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -1318,14 +1316,6 @@ func TestLoadConfig_FailurePath(t *testing.T) {
 		c := qt.New(t)
 		_, err := lint.LoadConfig(dir + "/bad-dialect.yaml")
 		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*unsupported lint dialect "oracle": expected postgres.*`)
-	})
-
-	c.Assert(writeFile(dir+"/ydb-dialect.yaml", "dialect: ydb\n"), qt.IsNil)
-	t.Run("YDB, which lint does not read", func(t *testing.T) {
-		c := qt.New(t)
-		_, err := lint.LoadConfig(dir + "/ydb-dialect.yaml")
-		c.Assert(err, qt.ErrorMatches,
-			`failed to parse lint config .*unsupported lint dialect "ydb": `+regexp.QuoteMeta(ydbgap.Linting.Message()))
 	})
 
 	c.Assert(writeFile(dir+"/bad-exclude.yaml", "rules:\n  DS102:\n    exclude:\n      - '[legacy/**'\n"), qt.IsNil)

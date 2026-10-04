@@ -1,13 +1,11 @@
 package planlint_test
 
 import (
-	"regexp"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/planlint"
-	"ptah.run/internal/ydbgap"
 	migrationlint "ptah.run/migration/lint"
 )
 
@@ -72,6 +70,20 @@ func TestAnalyze_HappyPath(t *testing.T) {
 			dialect:   "sqlite",
 			wantRules: nil,
 		},
+		{
+			// A plan with no server version is judged against the newest
+			// YDB line, which adds no unique index to an existing table.
+			name:      "a YDB plan is read as YQL and judged by the YD rules",
+			sql:       "ALTER TABLE `shop/users` ADD INDEX users_email GLOBAL UNIQUE SYNC ON (email);\n",
+			dialect:   "ydbs",
+			wantRules: []string{"YD101"},
+		},
+		{
+			name:      "a YQL string holding a semicolon and DROP is one literal",
+			sql:       "UPSERT INTO notes (id, body) VALUES (1, \"x\\\"; DROP TABLE users;\"u);\n",
+			dialect:   "ydb",
+			wantRules: nil,
+		},
 	}
 
 	for _, test := range tests {
@@ -122,11 +134,6 @@ func TestAnalyze_FailurePath(t *testing.T) {
 			name:    "unknown dialect",
 			dialect: "frobnicate",
 			wantErr: `unsupported lint dialect "frobnicate"; expected postgres, .*`,
-		},
-		{
-			name:    "YDB, which lint does not read",
-			dialect: "ydb",
-			wantErr: `unsupported lint dialect "ydb"; ` + regexp.QuoteMeta(ydbgap.Linting.Message()),
 		},
 	}
 

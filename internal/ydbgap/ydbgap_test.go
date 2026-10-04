@@ -19,7 +19,6 @@ func TestLayer_Message_HappyPath(t *testing.T) {
 		{name: "schema files", layer: ydbgap.SchemaFiles, want: "reading a YDB schema file is not implemented yet (stokaro/ptah#4015, phase 10)"},
 		{name: "query building", layer: ydbgap.QueryBuilding, want: "building a YQL query is not implemented yet (stokaro/ptah#4015, phase 7)"},
 		{name: "data changes", layer: ydbgap.DataChanges, want: "writing YDB rows is not implemented yet (stokaro/ptah#4015, phase 7)"},
-		{name: "linting", layer: ydbgap.Linting, want: "linting YQL for YDB is not implemented yet (stokaro/ptah#4015, phase 8)"},
 		{name: "creating databases", layer: ydbgap.CreatingDatabases, want: "creating a YDB database is not implemented yet (stokaro/ptah#4015, phase 9)"},
 		{name: "dev databases", layer: ydbgap.DevDatabases, want: "using a YDB database as a dev or shadow database is not implemented yet (stokaro/ptah#4015, phase 9)"},
 		{name: "comments", layer: ydbgap.Comments, want: "storing a comment on a YDB object is not implemented yet (stokaro/ptah#4015, phase 10)"},

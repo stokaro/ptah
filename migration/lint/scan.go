@@ -1,6 +1,12 @@
 package lint
 
-import "strings"
+import (
+	"strings"
+
+	"ptah.run/core/platform"
+	"ptah.run/internal/dialectlexer"
+	"ptah.run/internal/lexer"
+)
 
 // scanMode selects dialect-specific lexing behavior for the lint scanner.
 // SQL comment and string syntax differ between the supported dialects in
@@ -32,6 +38,14 @@ type scanMode struct {
 	dollarQuotes bool
 	// nestedComments lets block comments nest (PostgreSQL).
 	nestedComments bool
+	// yql reads the text with the YQL lexer of internal/lexer instead of
+	// this file's scanner (YDB). YQL's strings, names and comments share
+	// little with the other dialects -- a double-quoted "x" is a string,
+	// backslashes escape in both quote styles, @@...@@ is a string, $x is a
+	// name -- and the lexer that splits a YDB migration for the migrator
+	// already reads them, so the linter reads what the migrator runs rather
+	// than keeping a second YQL scanner.
+	yql bool
 }
 
 // modeForDialect maps a lint target dialect to its lexing behavior. An empty
@@ -61,6 +75,8 @@ func modeForDialect(dialect string) scanMode {
 		return scanMode{dialect: dialect, hashComments: true, backslashEscapes: true, execComments: true}
 	case "postgres":
 		return scanMode{dialect: dialect, dollarQuotes: true, nestedComments: true}
+	case platform.YDB:
+		return scanMode{dialect: dialect, yql: true}
 	default:
 		return scanMode{dialect: dialect, execComments: true, dollarQuotes: true}
 	}
@@ -96,6 +112,9 @@ type lintToken struct {
 // scanSQL tokenizes SQL under the given dialect mode. It never fails: an
 // unterminated string or comment consumes the rest of the input.
 func scanSQL(input string, mode scanMode) []lintToken {
+	if mode.yql {
+		return scanYQL(input)
+	}
 	var toks []lintToken
 	n := len(input)
 	i := 0
@@ -298,4 +317,50 @@ func dollarQuoteEnd(input string, i int) (int, bool) {
 		return n, true // unterminated: consume the rest of the input
 	}
 	return j + 1 + rest + len(delim), true
+}
+
+// scanYQL tokenizes YQL with internal/lexer in its YQL mode, which is how the
+// migrator reads the same text, and maps each token onto the kinds the rules
+// read. A backticked name is a quoted identifier; every other identifier --
+// a keyword, a name, a $name, a number with its suffix -- is a word. A
+// translation setting such as --!syntax_v1 at the head of the text is a
+// comment here: it starts no statement.
+func scanYQL(input string) []lintToken {
+	start := 0
+	if strings.HasPrefix(input, "\uFEFF") {
+		start = len("\uFEFF") // a UTF-8 BOM must not become part of the first word
+	}
+	lexr := lexer.NewLexerWithOptions(input[start:], dialectlexer.Options(platform.YDB))
+	var toks []lintToken
+	line := 1
+	for {
+		token := lexr.NextToken()
+		if token.Type == lexer.TokenEOF {
+			return toks
+		}
+		begin, end := start+token.Start, start+token.End
+		toks = append(toks, lintToken{kind: yqlTokenKind(token), text: input[begin:end], start: begin, end: end, line: line})
+		line += strings.Count(input[begin:end], "\n")
+	}
+}
+
+// yqlTokenKind is the scanner kind of one YQL lexer token.
+func yqlTokenKind(token lexer.Token) lintTokenKind {
+	switch token.Type {
+	case lexer.TokenWhitespace:
+		return tokWhitespace
+	case lexer.TokenComment, lexer.TokenUnknown:
+		return tokComment
+	case lexer.TokenString:
+		return tokString
+	case lexer.TokenSemicolon:
+		return tokSemicolon
+	case lexer.TokenIdentifier:
+		if strings.HasPrefix(token.Value, "`") {
+			return tokQuotedIdent
+		}
+		return tokWord
+	default:
+		return tokOp
+	}
 }

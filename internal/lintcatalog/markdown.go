@@ -32,6 +32,7 @@ func WriteMarkdown(w io.Writer) error {
 	sections := []func(io.Writer, []Entry) error{
 		writeFamilies,
 		writeMigrationRules,
+		writeYDBVerdicts,
 		writeSQLRules,
 		writeSeverities,
 		writeCompatIdentities,
@@ -130,6 +131,27 @@ func groupByDialects(rules []Entry) []dialectGroup {
 		groups = append(groups, dialectGroup{heading: heading, rules: byLabel[label]})
 	}
 	return groups
+}
+
+// writeYDBVerdicts says what each rule that runs on every dialect does on
+// YDB, from the verdicts the catalog declares.
+func writeYDBVerdicts(w io.Writer, entries []Entry) error {
+	var out strings.Builder
+	out.WriteString("### What the rules for every dialect do on YDB\n\n")
+	out.WriteString("A YDB run reads migrations as YQL. The `YD` family above is YDB's own, and every rule with no " +
+		"dialect restriction runs there too. This table says what each of those does on YDB: it applies, the statement " +
+		"it reads does not exist in YQL, a `YD` rule replaces it, or it needs a dev database, which a YDB database cannot " +
+		"be yet, and the run names it as unmet.\n\n")
+	out.WriteString("| Rule | On YDB | What it rests on |\n| --- | --- | --- |\n")
+	for _, entry := range entries {
+		if entry.YDB == "" {
+			continue
+		}
+		fmt.Fprintf(&out, "| `%s` | %s | %s |\n", entry.Code, entry.YDB, entry.YDBNote)
+	}
+	out.WriteString("\n")
+	_, err := io.WriteString(w, out.String())
+	return err
 }
 
 func writeSQLRules(w io.Writer, entries []Entry) error {

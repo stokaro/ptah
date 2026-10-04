@@ -10,13 +10,14 @@
 // removes its constant together with every refusal that names it.
 //
 // The renderer, the planner, the connection, the schema reader, the schema
-// writer and the versioned migrator exist. The object families they do not
-// carry yet -- comments, views, access control, table settings, the index kinds
-// beyond global ones -- are layers here too, because a declaration of one
-// reaches the renderer by name, and a database holding one reaches the reader,
-// and each has to be refused there rather than handled as something else. So
-// are the commands that connect and then need a layer that does not exist yet:
-// data changes, the compatibility surface and the surfaces planned last.
+// writer, the versioned migrator and both linters exist. The object families
+// they do not carry yet -- comments, views, access control, table settings,
+// the index kinds beyond global ones -- are layers here too, because a
+// declaration of one reaches the renderer by name, and a database holding one
+// reaches the reader, and each has to be refused there rather than handled as
+// something else. So are the commands that connect and then need a layer that
+// does not exist yet: data changes, the compatibility surface and the surfaces
+// planned last.
 package ydbgap
 
 import "fmt"
@@ -39,8 +40,6 @@ const (
 	QueryBuilding
 	// DataChanges is writing rows: an upsert, a data diff, a seed.
 	DataChanges
-	// Linting is `ptah sql lint` and `ptah migrations lint` over YQL.
-	Linting
 	// CreatingDatabases is making a new YDB database for a scratch or dev
 	// run. SQL cannot create one; the alternative is designed with the dev
 	// database work.
@@ -79,8 +78,6 @@ func (l Layer) work() string {
 		return "building a YQL query"
 	case DataChanges:
 		return "writing YDB rows"
-	case Linting:
-		return "linting YQL for YDB"
 	case CreatingDatabases:
 		return "creating a YDB database"
 	case DevDatabases:
@@ -110,8 +107,6 @@ func (l Layer) Phase() int {
 	switch l {
 	case QueryBuilding, DataChanges:
 		return 7
-	case Linting:
-		return 8
 	case CreatingDatabases, DevDatabases:
 		return 9
 	case SchemaFiles, Comments, Views, AccessControl, TableSettings, IndexFamilies:
