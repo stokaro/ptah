@@ -47,11 +47,7 @@ func schemaChangesFor(dialect string) (schemaChanges, map[capability.Capability]
 	case platform.SQLite:
 		return sqliteSchemaChanges(), nil
 	case platform.SQLServer:
-		return sqlServerSchemaChanges(), map[capability.Capability]string{
-			capability.IndexCoveringColumns: "the server takes INCLUDE on an index, and Ptah's SQL Server " +
-				"renderer does not emit it, so the key stays false until the renderer, the reader and the " +
-				"planner carry the payload; asking the server would answer a different question",
-		}
+		return sqlServerSchemaChanges(), nil
 	case platform.Oracle:
 		return oracleSchemaChanges(), nil
 	case platform.Spanner:
@@ -424,7 +420,16 @@ func sqlServerSchemaChanges() schemaChanges {
 		"CREATE INDEX sc_cix_n ON sc_cix (n)",
 		"DROP INDEX sc_cix_n ON sc_cix",
 	)
-	sc.coverSetup, sc.cover = nil, ""
+	// The key says Ptah reads the payload back, so acceptance is not enough:
+	// the index is read through Ptah's reader, which reports the INCLUDE
+	// columns from sys.index_columns.
+	sc.coverRead = []check{readBackIndex("sc_cov", "sc_cov_ix", "the index to include b",
+		func(*session) string { return "dbo" },
+		func(index catalog.Index) bool { return slices.Equal(index.IncludeColumns, []string{"b"}) },
+		func(s *session) string {
+			return fmt.Sprintf("read index sc_cov_ix of table %s.dbo.sc_cov through Ptah's SQL Server reader", s.namespace)
+		},
+	)}
 	return sc
 }
 

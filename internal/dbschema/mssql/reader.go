@@ -366,7 +366,7 @@ func (r *Reader) readColumnsByTable(ctx context.Context) (map[catalogTableKey][]
 
 func (r *Reader) readIndexes(ctx context.Context) ([]catalog.Index, error) {
 	query := `
-		SELECT s.name, t.name, i.name, i.is_unique, i.is_primary_key, c.name, ic.key_ordinal, ic.is_descending_key, COALESCE(i.filter_definition, '')
+		SELECT s.name, t.name, i.name, i.is_unique, i.is_primary_key, c.name, ic.is_included_column, ic.is_descending_key, COALESCE(i.filter_definition, '')
 		FROM sys.indexes AS i
 		JOIN sys.tables AS t ON t.object_id = i.object_id
 		JOIN sys.schemas AS s ON s.schema_id = t.schema_id
@@ -377,11 +377,15 @@ func (r *Reader) readIndexes(ctx context.Context) ([]catalog.Index, error) {
 		  AND i.name IS NOT NULL
 		  AND i.is_primary_key = 0
 		  AND i.is_unique_constraint = 0
-		  AND ic.is_included_column = 0
-		  AND ic.key_ordinal > 0
+		  AND (ic.key_ordinal > 0 OR ic.is_included_column = 1)
 		  AND t.name NOT IN (` + revisiontable.DefaultSQLNames + `)
 		  AND (` + schemaPredicatePlaceholder + `)
-		ORDER BY s.name, t.name, i.name, ic.key_ordinal`
+		-- Key columns in key order, then the payload in the order the index
+		-- holds it: a payload column has no key ordinal, and index_column_id
+		-- keeps the order the CREATE INDEX wrote, measured on 16.0.4295.3 and
+		-- 17.0.5005.3.
+		ORDER BY s.name, t.name, i.name, ic.is_included_column,
+			CASE WHEN ic.is_included_column = 1 THEN ic.index_column_id ELSE ic.key_ordinal END`
 	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(query), r.schemaArgs()...)
 	if err != nil {
 		return nil, err
@@ -393,10 +397,9 @@ func (r *Reader) readIndexes(ctx context.Context) ([]catalog.Index, error) {
 	for rows.Next() {
 		var (
 			schemaName, tableName, indexName, columnName, filter string
-			unique, primary, desc                                bool
-			ordinal                                              int
+			unique, primary, included, desc                      bool
 		)
-		if err := rows.Scan(&schemaName, &tableName, &indexName, &unique, &primary, &columnName, &ordinal, &desc, &filter); err != nil {
+		if err := rows.Scan(&schemaName, &tableName, &indexName, &unique, &primary, &columnName, &included, &desc, &filter); err != nil {
 			return nil, err
 		}
 		key := catalogObjectKey{
@@ -415,6 +418,10 @@ func (r *Reader) readIndexes(ctx context.Context) ([]catalog.Index, error) {
 			}
 			indexByKey[key] = index
 			order = append(order, key)
+		}
+		if included {
+			index.IncludeColumns = append(index.IncludeColumns, columnName)
+			continue
 		}
 		index.Columns = append(index.Columns, columnName)
 		index.Parts = append(index.Parts, catalog.IndexPart{

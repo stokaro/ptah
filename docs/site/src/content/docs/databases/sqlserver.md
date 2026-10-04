@@ -349,8 +349,9 @@ leaves the default where it is.
   and fails when something uses it, which is SQL Server's own behavior.
 - View and trigger introspection records the persisted definition text without
   normalizing it into drift-safe definitions.
-- Index planning preserves key order, direction, and filtered predicates, but
-  not included columns.
+- Index planning preserves key order, direction, filtered predicates, and
+  `INCLUDE` columns in the order written. A change to the included columns
+  rebuilds the index with `DROP INDEX` and `CREATE INDEX`.
 - Engine-specific options such as `WITH (ONLINE = ON)` are not planned.
 - Dev-database cleanup rejects database replication, replicated tables, and
   unsupported database-scoped artifacts before its first DDL statement.

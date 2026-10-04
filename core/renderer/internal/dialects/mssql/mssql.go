@@ -325,6 +325,16 @@ func (r *Renderer) renderIndex(node *ast.IndexNode) error {
 	}
 	parts = append(parts, "INDEX", escapeIdentifier(node.Name), "ON", escapeQualifiedIdentifier(node.Table))
 	parts = append(parts, "("+strings.Join(renderIndexParts(node.EffectiveParts()), ", ")+")")
+	// The payload comes after the key list and before the filter, which is
+	// the order the server takes them in. Measured on 16.0.4295.3 and
+	// 17.0.5005.3, sys.index_columns reports the payload in the order written.
+	if len(node.IncludeColumns) > 0 {
+		included := make([]string, 0, len(node.IncludeColumns))
+		for _, column := range node.IncludeColumns {
+			included = append(included, escapeIdentifier(column))
+		}
+		parts = append(parts, "INCLUDE", "("+strings.Join(included, ", ")+")")
+	}
 	if strings.TrimSpace(node.Condition) != "" {
 		parts = append(parts, "WHERE", strings.TrimSpace(node.Condition))
 	}
