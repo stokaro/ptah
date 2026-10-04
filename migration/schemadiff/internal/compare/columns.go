@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/catalogfield"
+	"ptah.run/internal/chkey"
 	"ptah.run/internal/constraintowner"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/normalize"
@@ -156,6 +157,7 @@ func tableColumnsWithSemantics(
 		genColumns[semantics.ColumnIdentityKey(field.Name)] = field
 	}
 	keyColumns := sqlitekey.KeyColumns(genTable, genFields)
+	clickHouseKey, clickHouseKeyDeclared := clickHouseDeclaredKey(dialect, genTable, genFields)
 
 	dbColumns := make(map[string]catalog.Column)
 	for _, col := range dbTable.Columns {
@@ -180,7 +182,10 @@ func tableColumnsWithSemantics(
 	// Find modified columns
 	for identity, genCol := range genColumns {
 		if dbCol, exists := dbColumns[identity]; exists {
-			if columnInTablePrimaryKey(genTable, genCol.Name) || columnInDeclaredPrimaryKey(desired, genTable, genCol.Name) {
+			switch {
+			case clickHouseKeyDeclared:
+				genCol.Primary = clickHouseKey[genCol.Name]
+			case columnInTablePrimaryKey(genTable, genCol.Name) || columnInDeclaredPrimaryKey(desired, genTable, genCol.Name):
 				genCol = normalizeTablePrimaryKeyColumn(genCol, dbCol, dialect)
 			}
 			if sqliteKeyColumnImpliesNotNull(dialect, genTable, keyColumns, genCol) {
@@ -1305,6 +1310,28 @@ func normalizeTablePrimaryKeyColumn(genCol schemamodel.Field, dbCol catalog.Colu
 	}
 	genCol.Primary = dbCol.IsPrimaryKey
 	return genCol
+}
+
+// clickHouseDeclaredKey returns the columns a ClickHouse table's declared key
+// clauses use, and whether the table declares one, so a declared column is a
+// key column exactly when the server would flag it is_in_primary_key.
+//
+// A SQL, YAML or annotation declaration states a ClickHouse key as PRIMARY KEY
+// or ORDER BY on the engine, never on the column, while the reader marks every
+// column the key uses. Compared column by column, a table identical to its
+// declaration reported `primary_key: true -> false` for each key column and
+// planned a MODIFY COLUMN that changes nothing, on every run
+// (stokaro/ptah#4104). Read from the clauses, the two sides agree, and a key
+// that really differs still shows on the columns it moves.
+func clickHouseDeclaredKey(dialect string, table schemamodel.Table, fields []schemamodel.Field) (map[string]bool, bool) {
+	if platform.NormalizeDialect(dialect) != platform.ClickHouse {
+		return nil, false
+	}
+	names := make([]string, 0, len(fields))
+	for _, field := range fields {
+		names = append(names, field.Name)
+	}
+	return chkey.PrimaryKeyColumns(table, names)
 }
 
 func columnInTablePrimaryKey(table schemamodel.Table, column string) bool {

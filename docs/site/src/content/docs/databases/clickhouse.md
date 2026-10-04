@@ -51,6 +51,18 @@ describes. Before this the read dropped the key entirely: a declaration carrying
 exited 2 against any ClickHouse database Ptah could create because the
 description it produced could not be rendered (stokaro/ptah#1603).
 
+A declaration states the key on the engine, as `PRIMARY KEY` or `ORDER BY`, and
+the comparison reads the key columns from those clauses as the server does: the
+`PRIMARY KEY` clause, or `ORDER BY` without one, and every column either names,
+inside an expression too. A table identical to its SQL or YAML declaration
+therefore compares as identical.
+
+A declaration whose key moves a column into or out of the table's primary key
+is refused when the plan is made. ClickHouse fixes a MergeTree table's primary
+key when the table is created: `MODIFY PRIMARY KEY` is not a statement, and
+`MODIFY ORDER BY` has to keep the primary key as a prefix of the sorting key.
+Create the table again with the new key and copy its rows.
+
 Every other clause of the engine is carried with it, so a table read and
 replayed is the table that was read rather than a MergeTree that happens to hold
 the same columns. The engine is taken with its parameters — a
