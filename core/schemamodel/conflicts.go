@@ -300,6 +300,7 @@ func validateDuplicateSchemaObjectDefinitions(r *Database) error {
 		validator.ranges,
 		validator.views,
 		validator.materializedViews,
+		validator.topics,
 		validator.triggers,
 		validator.rlsPolicies,
 		validator.rlsEnabledTables,
@@ -487,6 +488,22 @@ func (v compositeDefinitionValidator) views() error {
 		canonicalViewDefinition,
 		func(view View, _ string) error {
 			return fmt.Errorf("conflicting view %q definitions", view.Name)
+		},
+	)
+}
+
+// topics refuses two declarations of one topic that differ. A topic is
+// identified by its directory and name, as a YDB table is.
+func (v compositeDefinitionValidator) topics() error {
+	return validateNamedDefinitions(
+		v.database.Topics,
+		func(topic Topic) string { return topic.QualifiedName() },
+		func(topic Topic) Topic {
+			topic.StructName = ""
+			return topic
+		},
+		func(_ Topic, key string) error {
+			return fmt.Errorf("conflicting topic %q definitions", key)
 		},
 	)
 }

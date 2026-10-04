@@ -65,6 +65,11 @@ type Database struct {
 	Views       []View             `json:"views"`      // Database views
 	MatViews    []MaterializedView `json:"matviews"`   // Database materialized views
 	Synonyms    []Synonym          `json:"synonyms"`   // SQL Server synonyms
+	// Topics are the YDB topics this description covers, each with its
+	// settings and consumers. A changefeed's topic is not one of them: it
+	// belongs to its table. omitempty keeps the serialization of every
+	// dialect that has no topics byte-identical.
+	Topics []Topic `json:"topics,omitempty"`
 	// ExtendedProperties are the SQL Server extended properties this
 	// description covers: schema-, table- and column-scoped ones. See
 	// [ExtendedProperty] for what is deliberately not in it.
@@ -1450,6 +1455,27 @@ type Synonym struct {
 	TargetSchema   string `json:"target_schema,omitempty"`
 	TargetObject   string `json:"target_object"`
 	Comment        string `json:"comment,omitempty"` // Synonym comment/description
+}
+
+// Topic is a YDB topic read from the database: a persistent message queue at a
+// path of the scheme tree, with its settings and the consumers that each keep
+// a position in it.
+//
+// Schema is the directory that holds the topic, "" for the database root, as
+// it is for a table. The reader fills Spec with what the server holds rather
+// than with what a declaration named: every setting the topic carries, the
+// auto-partitioning ones only while auto-partitioning is enabled, since YDB
+// keeps no maximum otherwise.
+type Topic struct {
+	Name   string        `json:"name"`
+	Schema string        `json:"schema,omitempty"`
+	Spec   ast.TopicSpec `json:"spec"`
+}
+
+// QualifiedName returns the topic's canonical reference: schema.name, or the
+// name alone at the database root.
+func (t Topic) QualifiedName() string {
+	return tableref.Canonical(t.Schema, t.Name)
 }
 
 // ContinuousAggregate is one TimescaleDB continuous aggregate.

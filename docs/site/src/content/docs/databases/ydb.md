@@ -21,7 +21,7 @@ owns:
   - dialect-ydb
 ---
 
-Ptah renders YQL for YDB row tables, views and the users, groups and
+Ptah renders YQL for YDB row tables, views, topics and the users, groups and
 permissions of a database, plans a migration between two schemas,
 connects to a live database, reads its tables back, applies DDL to it, runs
 versioned migrations against it, lints YQL for it, and writes data to it:
@@ -543,7 +543,86 @@ disabled is added again too.
 that carries one (`Cannot move table with cdc streams`, lint rule `YD109`), and
 on 26.2 to `TRUNCATE` it. The consumers of a changefeed's topic belong to the
 changefeed, which creates and drops the topic; a topic made with `CREATE
-TOPIC` is a different object, which a read records.
+TOPIC` is a different object, described under [Topics](#topics).
+
+## Topics
+
+A topic is YDB's persistent message queue: a path that writers append to and
+named consumers read from, each consumer with a read position of its own. Ptah
+declares, reads, plans and applies topics and their consumers under the
+capability key `topics`, which only the YDB presets carry, and every other
+target refuses a declared topic by name. A changefeed's topic lives under its
+table and belongs to the changefeed, so it is not declared as a topic.
+
+Declare a topic on a struct, and its consumers in the same file:
+
+```go
+//ptah:schema:topic name="order_events" schema="app" min_active_partitions="2" retention_period="PT36H" supported_codecs="raw,gzip"
+//ptah:schema:topic:consumer name="billing" topic="order_events" schema="app" important="true"
+//ptah:schema:topic:consumer name="audit" topic="order_events" schema="app" read_from="2026-01-01T00:00:00Z"
+type OrderEvents struct{}
+```
+
+The same topic in a YAML schema:
+
+```yaml
+topics:
+  order_events:
+    schema: app
+    min_active_partitions: 2
+    retention_period: PT36H
+    supported_codecs: [raw, gzip]
+    consumers:
+      billing: { important: true }
+      audit: { read_from: "2026-01-01T00:00:00Z" }
+```
+
+The attributes carry the YQL setting names, and the
+[annotation reference](../../reference/go-annotations/#ptahschematopic) lists
+them. A setting the declaration leaves out stands for the value YDB gives a new
+topic: one partition, auto-partitioning disabled, a retention of 24 hours, a
+write speed of 1 MiB per second per partition, a burst equal to the write speed,
+and no codec list. A topic created with a strategy splits a partition at 90% of
+its write speed, merges at 30%, and waits five minutes before either.
+
+A declaration YDB would accept and keep as something else is refused when it is
+read:
+
+- `max_active_partitions`, a utilization threshold or the stabilization window
+  on a topic whose `auto_partitioning_strategy` is absent or `disabled`. YDB
+  keeps none of them, and `max_active_partitions = 5` reads back as 1.
+- a codec other than `raw`, `gzip`, `lzop`, `zstd` and `custom`. YDB keeps a
+  list that names one as no list at all.
+- a retention period or a window with a fraction of a second, which YDB drops,
+  and a `max_active_partitions` below `min_active_partitions`.
+- an `important` consumer with an `availability_period`, which YDB refuses.
+- a consumer's `availability_period` on a line without the
+  `topic_consumer_availability_period` key, which YDB 25.4 and later have.
+
+A plan changes a topic with one `ALTER TOPIC` that names every setting, not
+only the changed ones, because YDB keeps the value a topic was created with for
+a setting a statement leaves out: the burst does not follow a write speed
+changed later, and a topic given a strategy after it was created splits at 80%
+and merges at 20%. The same statement drops, changes and adds consumers. YDB
+cannot empty a consumer's codec list (`unknown codec found or codecs list is
+malformed`), so a consumer whose list the declaration removes is dropped and
+added again, and starts reading from the beginning. A plan refuses the changes
+YDB refuses in place:
+
+- fewer partitions (`Invalid total groups count specified`). Drop the topic and
+  create it again to lower the count.
+- auto-partitioning disabled once it is on (`Can't disable auto partitioning.`).
+  Declare `paused` to stop it.
+
+A dropped topic loses every message it holds, and a dropped or re-added consumer
+loses its read position, so the safety report classifies each as destructive.
+
+The read describes each topic with `DescribeTopic`. A topic that holds a setting
+Ptah does not model, such as a storage limit, a partition count limit, a
+metering mode, a read speed quota or a shared consumer, is refused rather than
+read without it. YQL sets none of them outside a serverless database. Atlas HCL
+has no block for a topic, so a plan from an HCL document leaves every topic
+alone, and an HCL export reports each topic it leaves out.
 
 ## Planning changes
 
@@ -556,25 +635,28 @@ statement needs one that has not run yet:
    reads.
 2. Revoke the permissions and remove the memberships the plan takes away, then
    create and change users and groups.
-3. Create the added tables, with their indexes and changefeeds, each followed
+3. Drop the removed topics, so a table created at a topic's path finds it free.
+4. Create the added tables, with their indexes and changefeeds, each followed
    by the `ALTER SEQUENCE` that gives a Serial column its declared start and
    increment.
-4. Drop the indexes the plan removes, before any column they name. YDB refuses
+5. Drop the indexes the plan removes, before any column they name. YDB refuses
    to drop an indexed or a covered column.
-5. Rename the indexes the declaration renames, then change the partitioning of
+6. Rename the indexes the declaration renames, then change the partitioning of
    the indexes that keep their definition.
-6. Per table: add columns, then change columns in place, then set or reset
+7. Per table: add columns, then change columns in place, then set or reset
    the TTL, then drop columns. YDB refuses to drop the column a TTL reads.
-7. Change the start and the increment of the Serial columns of existing tables.
-8. Add the new indexes of existing tables.
-9. Per table: drop changefeeds, then add changefeeds with their consumers, then
-   change topics in place. Drops come first, so a table that swaps one
-   changefeed for another stays within YDB's limit.
-10. Drop the removed tables.
-11. Create the added and replaced views, a view after the view it reads. YDB
+8. Change the start and the increment of the Serial columns of existing tables.
+9. Add the new indexes of existing tables.
+10. Per table: drop changefeeds, then add changefeeds with their consumers,
+    then change topics in place. Drops come first, so a table that swaps one
+    changefeed for another stays within YDB's limit.
+11. Drop the removed tables.
+12. Create the added topics, then change the changed ones, so a topic created
+    at a dropped table's path finds it free.
+13. Create the added and replaced views, a view after the view it reads. YDB
     checks a view's query against the schema when it creates the view.
-12. Add memberships and grants, once the tables they name exist.
-13. Drop the removed users and groups, after revoking what they hold:
+14. Add memberships and grants, once the tables they name exist.
+15. Drop the removed users and groups, after revoking what they hold:
     `DROP USER` leaves its permissions behind, and a user created later under
     the name would hold them.
 
@@ -726,10 +808,11 @@ database read every row table under the database root, its columns, defaults,
 `Serial` columns with their sequence's start, increment and last restart,
 primary key, TTL and global indexes, with each index's partitioning and read
 replicas, its changefeeds, each with the retention and the consumers of its
-topic, every view with the query the server stores, and the users, groups and
-permissions; see [Users, groups and permissions](#users-groups-and-permissions).
+topic, every view with the query the server stores, every topic with its
+settings and consumers, and the users, groups and permissions; see
+[Users, groups and permissions](#users-groups-and-permissions).
 
-What Ptah does not model yet is recorded rather than dropped: topics,
+What Ptah does not model yet is recorded rather than dropped:
 column-oriented tables, sequences other than a `Serial` column's, the settings
 of a table such as a TTL run interval, column families and partitioning
 options, and a changefeed holding a setting Ptah does not read, such as
@@ -777,9 +860,11 @@ existing table, a block that mixes schema and data statements, an `ADD COLUMN`
 the line refuses, a dropped column an index or the TTL uses, a partitioning
 change that resets the minimum partition count, a table a view reads that is
 dropped or renamed, a renamed table that carries a changefeed,
-a `REVOKE GRANT OPTION FOR`, which takes the permission too, and a dropped user
-or group, which leaves its permissions behind. `DS107` reports a dropped user
-or group as it reports a dropped role elsewhere.
+a `REVOKE GRANT OPTION FOR`, which takes the permission too, a dropped user
+or group, which leaves its permissions behind, a topic setting reset that
+changes nothing, and a topic setting YDB keeps as nothing. `DS107` reports a
+dropped user or group as it reports a dropped role elsewhere, and a dropped
+topic.
 [Lint rules](../../reference/lint-rules/#ydb) lists each rule with its
 meaning.
 
@@ -905,7 +990,6 @@ effect it does not confine:
 - `DEFINE ACTION`, `DO` and `EVALUATE`, which run statements they compute;
 - users, groups, `GRANT` and `REVOKE`, secrets, resource pools, backups and
   `ALTER DATABASE`, which belong to the whole database;
-- a topic, which the reset has no statement to drop;
 - external data sources and tables, async replication, transfers and streaming
   queries, which reach outside the server.
 
