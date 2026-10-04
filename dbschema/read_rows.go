@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"ptah.run/core/platform"
+	ydbschema "ptah.run/internal/dbschema/ydb"
 	"ptah.run/internal/sqlident"
 )
 
@@ -22,11 +24,14 @@ import (
 // keys of the returned maps: each returned row is a map[string]any keyed by the
 // requested column names, in the exact spelling passed in.
 //
-// A value from a binary column (bytea, binary, varbinary, blob, image or raw) is
-// returned as []byte holding exactly the bytes the database stores. Several
-// drivers also scan character, numeric, date and JSON columns as []byte; those
-// values are returned as string, so text compares stably regardless of driver.
-// All other values are returned as scanned.
+// A value from a binary column (bytea, binary, varbinary, blob, image or raw,
+// and YDB's String and Yson) is returned as []byte holding exactly the bytes
+// the database stores. Several drivers also scan character, numeric, date and
+// JSON columns as []byte; those values are returned as string, so text
+// compares stably regardless of driver. On YDB a Decimal is returned as its
+// digits in a string and a moment as a time.Time in UTC, where the driver hands
+// over a type of its own and the local zone. All other values are returned as
+// scanned.
 //
 // No ORDER BY is applied, so the returned row order is whatever the database
 // yields and must not be relied upon. This suits set-oriented callers such as
@@ -77,8 +82,13 @@ func ReadTableRows(ctx context.Context, conn *DatabaseConnection, schema, table 
 	if len(columnTypes) != len(columns) {
 		return nil, fmt.Errorf("dbschema: table %q returned %d columns, want %d", table, len(columnTypes), len(columns))
 	}
+	isYDB := platform.NormalizeDialect(dialect) == platform.YDB
 	binary := make([]bool, len(columnTypes))
 	for i, columnType := range columnTypes {
+		if isYDB {
+			binary[i] = ydbschema.HoldsBytes(columnType.DatabaseTypeName())
+			continue
+		}
 		binary[i] = holdsBinary(columnType.DatabaseTypeName())
 	}
 
@@ -103,6 +113,11 @@ func ReadTableRows(ctx context.Context, conn *DatabaseConnection, schema, table 
 			// refuses outright on SQL Server (stokaro/ptah#3297).
 			if raw, isBytes := value.([]byte); isBytes && !binary[i] {
 				value = string(raw)
+			}
+			if isYDB {
+				if value, err = ydbschema.RowValue(value); err != nil {
+					return nil, fmt.Errorf("dbschema: column %q of table %q: %w", col, table, err)
+				}
 			}
 			row[col] = value
 		}
