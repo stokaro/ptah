@@ -2,7 +2,6 @@ package schema
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -151,7 +150,7 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 	// The YDB reader reads no users, groups or permissions, so an analysis of
 	// its description would report a clean access model it never saw.
 	if platform.NormalizeDialect(conn.Info().Dialect) == platform.YDB {
-		return cmdutil.Fail(cmd, errors.New(ydbgap.OtherSurfaces.Message()))
+		return cmdutil.Fail(cmd, fmt.Errorf("the analysis reads the access model: %s", ydbgap.AccessControl.Message()))
 	}
 
 	live, err := dbschema.ReadSchemaWithSchemasContext(cmd.Context(), conn, atlasschema.SplitSchemaNames([]string{opts.schemas}))

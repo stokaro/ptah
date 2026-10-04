@@ -438,7 +438,7 @@ These are refused with a message that names what is missing:
 - table settings: TTL, partitioning, column families and changefeeds;
 - vector, full-text, JSON and column-table indexes;
 - every `ptah-compat` command with a YDB URL, from any source;
-- `ptah introspect`, `ptah schema security` and `ptah schema lineage`, which need more of a database than the schema reader describes.
+- `ptah inference` and the inference tools of `ptah mcp`, which wait for the vector index family.
 <!-- END GENERATED YDB GAPS -->
 
 The work is planned in [#4015](https://github.com/stokaro/ptah/issues/4015).
