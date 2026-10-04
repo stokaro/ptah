@@ -1559,6 +1559,22 @@ func FromSynonym(synonym schemamodel.Synonym) *ast.CreateSynonymNode {
 		SetComment(synonym.Comment)
 }
 
+// FromTopic converts a schemamodel.Topic to an ast.CreateTopicNode carrying
+// the topic's settings and consumers.
+func FromTopic(topic schemamodel.Topic) *ast.CreateTopicNode {
+	return ast.NewCreateTopic(topic.QualifiedName(), topic.Spec)
+}
+
+// appendTopicStatements adds a CREATE TOPIC node for each declared topic.
+func appendTopicStatements(visit func(ast.Node) error, topics []schemamodel.Topic) error {
+	for _, topic := range topics {
+		if err := visit(FromTopic(topic)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // appendSynonymStatements adds a CREATE SYNONYM node for each declared synonym.
 func appendSynonymStatements(visit func(ast.Node) error, synonyms []schemamodel.Synonym) error {
 	for _, synonym := range synonyms {
@@ -2160,6 +2176,12 @@ func WalkDatabase(
 	// ordinary table answers `invalid continuous aggregate view`. It therefore
 	// comes after the create_hypertable calls above rather than with the views.
 	if err := appendContinuousAggregateStatements(visit, database.ContinuousAggregates); err != nil {
+		return err
+	}
+
+	// 9b4. A YDB topic depends on no other object, and comes after the
+	// tables so a reader of the script finds the tables first.
+	if err := appendTopicStatements(visit, database.Topics); err != nil {
 		return err
 	}
 

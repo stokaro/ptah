@@ -18,26 +18,30 @@ import (
 	"ptah.run/internal/ydburl"
 )
 
-// Reader describes a YDB database's row tables.
+// Reader describes a YDB database's row tables, views and topics.
 //
 // A Ptah schema is a directory on YDB, and "" is the database root, so a table
 // at /local/app/users is table users in schema app. The reader walks the whole
 // tree with the scheme service, skipping every directory whose name begins
 // with a dot (.sys, .metadata, .tmp, .sys_health, ...), and describes each row
-// table with the table service and each view with the view service. It never
-// reads a system view.
+// table with the table service, each view with the view service and each topic
+// with the topic service. It never reads a system view. A changefeed's topic
+// sits under its table rather than in a directory, so the walk does not meet
+// it as a topic.
 //
-// A view is read only on a server with [capability.Views], which every YDB
-// line Ptah measured has; on one without it, a view is recorded like the
-// objects below, so a plan never meets a view the renderer would refuse. A
-// table's TTL is read as its row deletion policy.
+// A view is read only on a server with [capability.Views], and a topic only on
+// one with [capability.Topics]; every YDB line Ptah measured has both. On a
+// server without the key, the object is recorded like the objects below, so a
+// plan never meets one the renderer would refuse. A table's TTL is read as its
+// row deletion policy.
 //
-// An object it meets and Ptah does not model -- a topic, a column table, a
-// coordination node, and the rest of [coverage]'s YDB kinds -- is recorded in
-// [catalog.Database.NotDescribed] by its path, as is a table setting such as a
-// changefeed or a TTL run interval. The access model is recorded as a whole
-// kind, because the reader does not read it. An object or an index kind the
-// reader does not know is refused by name rather than read as the nearest
+// An object it meets and Ptah does not model -- a column table, a
+// coordination node, a topic of the older persistent queue kind, and the rest
+// of [coverage]'s YDB kinds -- is recorded in [catalog.Database.NotDescribed]
+// by its path, as is a table setting such as a changefeed or a TTL run
+// interval. The access model is recorded as a whole kind, because the reader
+// does not read it. An object or an index kind the reader does not know is
+// refused by name rather than read as the nearest
 // known one.
 type Reader struct {
 	open     func(context.Context) (Source, func(), error)
@@ -172,6 +176,11 @@ func (r *Reader) entry(
 			return err
 		}
 		return r.view(schema, name, described, db)
+	case Ydb_Scheme.Entry_TOPIC:
+		if !r.caps.Has(capability.Topics) || !r.inScope(schema) {
+			break
+		}
+		return r.topic(ctx, source, schema, name, db)
 	case Ydb_Scheme.Entry_DATABASE:
 		// Another database whose root sits under this one. It is not part
 		// of the database this connection reads.
@@ -214,8 +223,9 @@ func (r *Reader) directory(ctx context.Context, source Source, schema, name stri
 }
 
 // unmodeledEntries maps each scheme entry type Ptah does not model to the
-// coverage kind it is recorded under. A view is here for a server without
-// [capability.Views], whose reader records it rather than describing it.
+// coverage kind it is recorded under. A view and a topic are here for a
+// server without [capability.Views] or [capability.Topics], whose reader
+// records them rather than describing them.
 var unmodeledEntries = map[Ydb_Scheme.Entry_Type]coverage.Kind{
 	Ydb_Scheme.Entry_VIEW:                 coverage.View,
 	Ydb_Scheme.Entry_TOPIC:                coverage.Topic,

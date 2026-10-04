@@ -126,6 +126,10 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	if assertBothSurfacesRefuseTheDomain(c, dialect, &desired) {
 		return
 	}
+	// A topic is refused the same way on every target without the topics key,
+	// which is every PostgreSQL-family one. Once both surfaces are seen to
+	// refuse it, the census below runs over the rest of the fixture.
+	refused := assertBothSurfacesRefuseTheTopic(c, dialect, &desired)
 
 	renderCensus := surfaceCensus(c, dialect,
 		modelast.CollectDatabase(desired, dialect).Statements)
@@ -143,12 +147,12 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	// object of every kind in routedKinds, and each of those kinds is one
 	// AST node kind, so a surface that carried them all reports exactly
 	// that many rows, plus the kinds below that the fixture causes without
-	// declaring.
+	// declaring, less the kinds both surfaces refused above.
 	//
 	// Check rather than Assert so a surface that lost a kind still reaches
 	// the comparison below, which is the assertion that names which kind
 	// went missing on which side.
-	c.Check(renderCensus, qt.HasLen, len(routedKinds)+len(derivedNodeKinds),
+	c.Check(renderCensus, qt.HasLen, len(routedKinds)+len(derivedNodeKinds)-refused,
 		qt.Commentf("render surface census:\n%s", strings.Join(renderCensus, "\n")))
 
 	c.Assert(planCensus, qt.DeepEquals, renderCensus,
@@ -220,4 +224,25 @@ func assertBothSurfacesRefuseTheDomain(c *qt.C, dialect string, desired *schemam
 	c.Assert(planErr.Error(), qt.Contains, "CREATE DOMAIN")
 	c.Assert(renderErr.Error(), qt.Contains, "CREATE DOMAIN")
 	return true
+}
+
+// assertBothSurfacesRefuseTheTopic checks that a target without the topics key
+// refuses the fixture's topic on both surfaces, through the one validation they
+// share, and takes the topic out of desired so the census can run over the
+// rest. It returns how many routed kinds it took out.
+func assertBothSurfacesRefuseTheTopic(c *qt.C, dialect string, desired *schemamodel.Database) int {
+	c.Helper()
+	if capability.ForDialect(dialect).Has(capability.Topics) {
+		return 0
+	}
+	_, planErr := schemadiff.CompareWithDatabaseInfo(
+		desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil,
+	)
+	renderErr := renderer.ValidateSchema(desired, dialect)
+	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(planErr.Error(), qt.Contains, "requires target capability topics")
+	c.Assert(renderErr.Error(), qt.Contains, "requires target capability topics")
+	desired.Topics = nil
+	return 1
 }

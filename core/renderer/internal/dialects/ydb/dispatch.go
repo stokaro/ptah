@@ -142,6 +142,14 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.AlterTableForceRLSNode:
 		return r.keyed(capability.RowLevelSecurity, "row-level security", "forced row-level security on "+n.Table)
 
+	// Topics and their consumers.
+	case *ast.CreateTopicNode:
+		return r.renderCreateTopic(n)
+	case *ast.AlterTopicNode:
+		return r.renderAlterTopic(n)
+	case *ast.DropTopicNode:
+		return r.renderDropTopic(n)
+
 	// Objects of other engines.
 	case *ast.CreateSynonymNode:
 		return refuseFact("synonym "+n.Name, "YDB has no synonyms")

@@ -125,6 +125,7 @@ var includeSelectableTypes = map[string]struct{}{
 	"view":              {},
 	"materialized_view": {},
 	"synonym":           {},
+	"topic":             {},
 	"function":          {},
 	"enum":              {},
 	"extension":         {},

@@ -407,6 +407,12 @@ func prepareASTNodeForRendering(
 		return prepareExtensionNode(dialect, typed)
 	case *ast.CreateMaterializedViewNode:
 		return prepareCreateMaterializedViewNode(dialect, typed)
+	case *ast.CreateTopicNode:
+		return node, refuseTopic(dialect, caps, "topic "+typed.Name)
+	case *ast.AlterTopicNode:
+		return node, refuseTopic(dialect, caps, "ALTER TOPIC "+typed.Name)
+	case *ast.DropTopicNode:
+		return node, refuseTopic(dialect, caps, "DROP TOPIC "+typed.Name)
 	default:
 		if isNilInterface(node) {
 			return nil, invalidASTForeignKeyError(dialect, "AST node is nil")
@@ -890,6 +896,50 @@ func validateDeclaredChangefeeds(dialect string, caps capability.Capabilities, d
 		subject := fmt.Sprintf("table %q declares changefeed %q", table.QualifiedName(), table.Changefeeds[0].Name)
 		if err := refuseChangefeeds(dialect, caps, subject); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// refuseTopic refuses subject, a topic, on a target without
+// [capability.Topics]: a topic is YDB's, and a target that built nothing for
+// it would report the declaration applied.
+func refuseTopic(dialect string, caps capability.Capabilities, subject string) error {
+	if caps.Has(capability.Topics) {
+		return nil
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: string(capability.Topics),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
+			subject, capability.Topics, normalized),
+	}
+}
+
+// validateDeclaredTopics refuses a declared topic the target cannot create,
+// before any statement is emitted: on a target without [capability.Topics],
+// and on YDB a topic whose path a declared table holds, since a path names
+// one object (measured: `CREATE TOPIC` over a table's path answers
+// `unexpected path type ... EPathTypeTable`).
+func validateDeclaredTopics(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
+	tables := make(map[string]bool, len(database.Tables))
+	for _, table := range database.Tables {
+		tables[table.QualifiedName()] = true
+	}
+	for _, topic := range database.Topics {
+		name := topic.QualifiedName()
+		if err := refuseTopic(dialect, caps, "topic "+name); err != nil {
+			return err
+		}
+		if tables[name] {
+			return &ptaherr.RenderError{
+				Dialect: platform.NormalizeDialect(dialect),
+				Err:     ptaherr.ErrUnsupportedFeature,
+				Message: fmt.Sprintf("topic %s has the path of a declared table, and YDB keeps one object "+
+					"at a path (`unexpected path type`)", name),
+			}
 		}
 	}
 	return nil
@@ -1761,6 +1811,23 @@ func validateDatabaseDeclarations(
 	if err := validateRoutineOverloads(dialect, database.Functions); err != nil {
 		return err
 	}
+	if err := validateDeclaredKeysAndConstraints(dialect, caps, database); err != nil {
+		return err
+	}
+	if err := validateDeclaredTopics(dialect, caps, database); err != nil {
+		return err
+	}
+	return validateDeclaredIndexIncludes(dialect, caps, database.Indexes)
+}
+
+// validateDeclaredKeysAndConstraints refuses the index, key and constraint
+// options of a declaration the target cannot write, in the order
+// [validateDatabaseDeclarations] reports them.
+func validateDeclaredKeysAndConstraints(
+	dialect string,
+	caps capability.Capabilities,
+	database *schemamodel.Database,
+) error {
 	if err := validateDeclaredConstraintIncludes(dialect, database); err != nil {
 		return err
 	}
@@ -1779,10 +1846,7 @@ func validateDatabaseDeclarations(
 	if err := validateDeclaredConstraintMethods(dialect, database); err != nil {
 		return err
 	}
-	if err := validateDeclaredEnforcementAndMatch(dialect, caps, database); err != nil {
-		return err
-	}
-	return validateDeclaredIndexIncludes(dialect, caps, database.Indexes)
+	return validateDeclaredEnforcementAndMatch(dialect, caps, database)
 }
 
 // validateDeclaredPrimaryKeyOptions refuses options the target cannot write,

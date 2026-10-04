@@ -23,8 +23,8 @@ import (
 
 // Source is what the reader asks a YDB database: the entries of a directory,
 // the description of a row table or a view, and the description of a topic,
-// which is how a changefeed's retention and consumers are read. Each takes
-// an absolute path.
+// which is how a standalone topic and a changefeed's retention and consumers
+// are read. Each takes an absolute path.
 type Source interface {
 	ListDirectory(ctx context.Context, path string) ([]*Ydb_Scheme.Entry, error)
 	DescribeTable(ctx context.Context, path string) (*Ydb_Table.DescribeTableResult, error)
@@ -128,10 +128,11 @@ func (s *grpcSource) DescribeView(ctx context.Context, path string) (*Ydb_View.D
 	return &described, nil
 }
 
-// DescribeTopic describes the topic at path. A changefeed's topic is
-// described at `<table>/<changefeed>`: measured on 25.1.4.7 and 26.2.1.14,
-// the path names the changefeed's stream, and DescribeTopic on it answers
-// with its retention, partitions and consumers.
+// DescribeTopic describes the topic at path: its settings and its consumers,
+// without statistics. A changefeed's topic is described at
+// `<table>/<changefeed>`: measured on 25.1.4.7 and 26.2.1.14, the path names
+// the changefeed's stream, and DescribeTopic on it answers with its
+// retention, partitions and consumers.
 func (s *grpcSource) DescribeTopic(ctx context.Context, path string) (*Ydb_Topic.DescribeTopicResult, error) {
 	response, err := s.topic.DescribeTopic(ctx, &Ydb_Topic.DescribeTopicRequest{Path: path})
 	if err != nil {
