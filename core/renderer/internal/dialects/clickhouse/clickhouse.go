@@ -1016,7 +1016,7 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 				r.w.WriteLinef("ALTER TABLE %s MODIFY TTL %s;", node.Name, op.Expression)
 			}
 		default:
-			return fmt.Errorf("clickhouse: unknown ALTER TABLE operation %T", op)
+			return fmt.Errorf("%w: %s: this renderer has no ALTER TABLE spelling for %T", ptaherr.ErrUnsupportedFeature, DialectName, op)
 		}
 	}
 	return nil

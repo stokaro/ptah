@@ -26,6 +26,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"maps"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -48,7 +49,7 @@ type NodeKind struct {
 	Name string
 	// File is where the method that identified the kind is declared, relative
 	// to the module root: Accept for [NodeKinds], the marker for
-	// [AlterOperationKinds].
+	// [MarkedKinds].
 	File string
 	// Line is that method's line.
 	Line int
@@ -95,26 +96,64 @@ func NodeKinds(root string) ([]NodeKind, error) {
 	return kinds, nil
 }
 
-// alterOperationMarker is the unexported method that makes a node an
-// ast.AlterOperation. The interface is ast.Node plus this method, so a type
-// declaring it, with no parameters and no results, is an alter operation.
-const alterOperationMarker = "alterOperation"
+// Marker is an unexported method core/ast declares on the parts of a
+// statement, to group them under an interface: ast.AlterOperation is ast.Node
+// plus the alterOperation marker. A marker method has no parameters, no
+// results and an empty body.
+type Marker string
 
-// AlterOperationKinds returns every concrete type in core/ast that implements
-// ast.AlterOperation, sorted by name.
+// The markers core/ast declares. Each names a kind of fragment: a node that is
+// part of a statement and renders inside the statement that carries it.
+const (
+	// AlterOperationMarker makes an ast.AlterOperation, carried by an ALTER
+	// TABLE.
+	AlterOperationMarker Marker = "alterOperation"
+	// TypeDefinitionMarker makes an ast.TypeDefinition, carried by a CREATE
+	// TYPE.
+	TypeDefinitionMarker Marker = "typeDefinition"
+	// TypeOperationMarker makes an ast.TypeOperation, carried by an ALTER
+	// TYPE.
+	TypeOperationMarker Marker = "typeOperation"
+)
+
+// MarkedKinds returns every concrete type in core/ast that declares marker,
+// sorted by name.
 //
 // It reads the same files [NodeKinds] reads, for the same reason, and matches
 // the marker method rather than type-checking the package. A test that has to
-// hold every alter operation to a rule asks here rather than keeping a list,
-// because a list is a second place to forget the operation a change adds.
-func AlterOperationKinds(root string) ([]NodeKind, error) {
+// hold every fragment of one kind to a rule asks here rather than keeping a
+// list, because a list is a second place to forget the fragment a change adds.
+func MarkedKinds(root string, marker Marker) ([]NodeKind, error) {
+	marked, err := markerMethods(root)
+	if err != nil {
+		return nil, err
+	}
+	return marked[marker], nil
+}
+
+// Markers returns every marker core/ast declares, sorted.
+//
+// It is the control on the fragment kinds: a test that holds the fragments to
+// a rule names the markers it knows, and compares them with this list, so a
+// new kind of fragment fails that test rather than escaping it.
+func Markers(root string) ([]Marker, error) {
+	marked, err := markerMethods(root)
+	if err != nil {
+		return nil, err
+	}
+	return slices.Sorted(maps.Keys(marked)), nil
+}
+
+// markerMethods reads every marker method in core/ast, by marker, each list
+// sorted by type name.
+func markerMethods(root string) (map[Marker][]NodeKind, error) {
 	files, err := trackedFiles(root, "core/ast/*.go")
 	if err != nil {
 		return nil, err
 	}
 
 	fileSet := token.NewFileSet()
-	var kinds []NodeKind
+	marked := make(map[Marker][]NodeKind)
 	for _, file := range files {
 		if strings.HasSuffix(file, "_test.go") {
 			continue
@@ -123,36 +162,46 @@ func AlterOperationKinds(root string) ([]NodeKind, error) {
 		if parseErr != nil {
 			return nil, fmt.Errorf("astrouteguard: parsing %s: %w", file, parseErr)
 		}
-		kinds = append(kinds, markerReceivers(fileSet, parsed, file)...)
+		collectMarkers(fileSet, parsed, file, marked)
 	}
 
-	slices.SortFunc(kinds, func(a, b NodeKind) int { return strings.Compare(a.Name, b.Name) })
-	return kinds, nil
+	for _, kinds := range marked {
+		slices.SortFunc(kinds, func(a, b NodeKind) int { return strings.Compare(a.Name, b.Name) })
+	}
+	return marked, nil
 }
 
-// markerReceivers collects the receiver type of every alterOperation marker
-// method in one file.
-func markerReceivers(fileSet *token.FileSet, file *ast.File, path string) []NodeKind {
-	var kinds []NodeKind
+// collectMarkers adds the receiver of every marker method in one file to
+// marked, under the method's name.
+func collectMarkers(fileSet *token.FileSet, file *ast.File, path string, marked map[Marker][]NodeKind) {
 	for _, declaration := range file.Decls {
 		function, ok := declaration.(*ast.FuncDecl)
-		if !ok || function.Name.Name != alterOperationMarker || function.Recv == nil || len(function.Recv.List) != 1 {
-			continue
-		}
-		if function.Type.Params.NumFields() != 0 || function.Type.Results.NumFields() != 0 {
+		if !ok || !isMarkerMethod(function) {
 			continue
 		}
 		name, ok := receiverTypeName(function.Recv.List[0].Type)
 		if !ok {
 			continue
 		}
-		kinds = append(kinds, NodeKind{
+		marker := Marker(function.Name.Name)
+		marked[marker] = append(marked[marker], NodeKind{
 			Name: name,
 			File: path,
 			Line: fileSet.Position(function.Pos()).Line,
 		})
 	}
-	return kinds
+}
+
+// isMarkerMethod reports whether function is a method with an unexported
+// name, no parameters, no results and an empty body.
+func isMarkerMethod(function *ast.FuncDecl) bool {
+	if function.Recv == nil || len(function.Recv.List) != 1 || function.Name.IsExported() {
+		return false
+	}
+	if function.Type.Params.NumFields() != 0 || function.Type.Results.NumFields() != 0 {
+		return false
+	}
+	return function.Body != nil && len(function.Body.List) == 0
 }
 
 // acceptReceivers collects the receiver type of every Accept method in one file.

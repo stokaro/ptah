@@ -1380,7 +1380,7 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 				return err
 			}
 		default:
-			return fmt.Errorf("unknown alter operation type: %T", operation)
+			return unsupportedFeaturef("%s: this renderer has no ALTER TABLE spelling for %T", r.dialect, operation)
 		}
 	}
 

@@ -544,11 +544,11 @@ func (r *Renderer) renderCreateType(node *ast.CreateTypeNode) error {
 	// `schema render` exit 0 on a model the planner refuses at apply time,
 	// which is the reason the SQLite renderer stopped commenting its
 	// materialized views.
-	return unsupportedFeaturef("CREATE TYPE %s: user types are not rendered for Oracle", node.Name)
+	return unsupportedFeaturef("%s: user types are not rendered for Oracle", strings.TrimSpace("CREATE TYPE "+node.Name))
 }
 
 func (r *Renderer) renderAlterType(node *ast.AlterTypeNode) error {
-	return unsupportedFeaturef("ALTER TYPE %s: user types are not rendered for Oracle", node.Name)
+	return unsupportedFeaturef("%s: user types are not rendered for Oracle", strings.TrimSpace("ALTER TYPE "+node.Name))
 }
 
 func (r *Renderer) renderDropType(node *ast.DropTypeNode) error {
