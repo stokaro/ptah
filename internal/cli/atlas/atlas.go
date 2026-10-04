@@ -176,7 +176,7 @@ existing Ptah equivalent forward to that native command.`, policy)
 	// happened to override a printer.
 	cmdutil.SetErrorPrefixPolicy(cmd, atlasErrorPrefix)
 	// Last, so its pre-run wraps every other one and runs first.
-	installAtlasConnectGate(cmd)
+	installAtlasStrictConnectGate(cmd, policy)
 	return cmd
 }
 
@@ -1326,11 +1326,6 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 		if err := rejectNativeOnlyAtlasFlags(group, verb, args); err != nil {
 			return nil, nil, err
 		}
-		// In the Atlas form first, so a refusal names the flag as it was
-		// typed; the forwarded form below also sees what mapping adds.
-		if err := refuseAtlasYDBArgs(args); err != nil {
-			return nil, nil, err
-		}
 		args, nativeTail, err := mapAtlasPositionalArgs(group, verb, args)
 		if err != nil {
 			return nil, nil, err
@@ -1353,9 +1348,6 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 		mapped = append(quietingLogLevelArgs(verb, args), mapped...)
 		mapped = append(mapped, project.nativeArgs...)
 		mapped = append(mapped, nativeTail...)
-		if err := refuseAtlasYDBForwardedURLs(verb, mapped); err != nil {
-			return nil, nil, err
-		}
 		return mapped, project.context, nil
 	}
 }

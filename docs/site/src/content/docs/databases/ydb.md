@@ -437,7 +437,6 @@ These are refused with a message that names what is missing:
 - users, groups and permissions;
 - table settings: TTL, partitioning, column families and changefeeds;
 - vector, full-text, JSON and column-table indexes;
-- every `ptah-compat` command with a YDB URL, from any source;
 - `ptah introspect`, `ptah schema security` and `ptah schema lineage`, which need more of a database than the schema reader describes.
 <!-- END GENERATED YDB GAPS -->
 

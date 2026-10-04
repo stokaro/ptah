@@ -25,7 +25,6 @@ func TestLayer_Message_HappyPath(t *testing.T) {
 		{name: "access control", layer: ydbgap.AccessControl, want: "managing YDB users, groups and permissions is not implemented yet (stokaro/ptah#4015, phase 10)"},
 		{name: "table settings", layer: ydbgap.TableSettings, want: "setting YDB table options (TTL, partitioning, column families, changefeeds) is not implemented yet (stokaro/ptah#4015, phase 10)"},
 		{name: "index families", layer: ydbgap.IndexFamilies, want: "reading or creating a YDB vector, full-text, JSON or column-table index is not implemented yet (stokaro/ptah#4015, phase 10)"},
-		{name: "compatibility", layer: ydbgap.Compatibility, want: "using a YDB database through ptah-compat is not implemented yet (stokaro/ptah#4015, phase 11)"},
 		{name: "other surfaces", layer: ydbgap.OtherSurfaces, want: "running this command against YDB is not implemented yet (stokaro/ptah#4015, phase 12)"},
 	}
 

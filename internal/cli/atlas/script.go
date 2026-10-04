@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/atlasscript"
@@ -88,9 +89,6 @@ func runAtlasScript(cmd *cobra.Command, kind atlasscript.Kind, opts *scriptOptio
 	if opts.url == "" {
 		return failAtlasCommand(cmd, fmt.Errorf(`required flag(s) "url" not set`))
 	}
-	if err := refuseAtlasYDBURLFlags(cmd); err != nil {
-		return failAtlasCommand(cmd, err)
-	}
 
 	data, err := os.ReadFile(opts.file) // #nosec G304 -- the operator named this file
 	if err != nil {
@@ -111,11 +109,24 @@ func runAtlasScript(cmd *cobra.Command, kind atlasscript.Kind, opts *scriptOptio
 	}
 	defer func() { _ = conn.Close() }()
 
-	runOpts := atlasscript.RunOptions{Out: cmd.OutOrStdout()}
+	runOpts := atlasscript.RunOptions{
+		Out:                 cmd.OutOrStdout(),
+		RowCountsUnreported: rowCountsUnreported(conn.Info().Dialect),
+	}
 	if !opts.quiet {
 		runOpts.Report = cmd.ErrOrStderr()
 	}
 	return runSelectedScript(cmd, conn, script, runOpts)
+}
+
+// rowCountsUnreported reports whether the driver for dialect answers a write
+// with a row count it did not measure. ydb-go-sdk does on YDB: measured on
+// 26.2.1.14, an UPDATE by key that changed one row inside a transaction
+// reported zero rows, and migration/migrator records a DELETE by key reporting
+// one row for a key no row held. A script then reads the count as unreported,
+// so expect_rows is refused rather than judged against it.
+func rowCountsUnreported(dialect string) bool {
+	return platform.NormalizeDialect(dialect) == platform.YDB
 }
 
 // runSelectedScript dispatches on the kind the block declared.

@@ -47,6 +47,11 @@ type RunOptions struct {
 	// behavior is being hit, and a test that has to run ten thousand batches
 	// to see it would be too slow to keep.
 	MaxBatches int
+	// RowCountsUnreported says the driver answers a write with a row count it
+	// did not measure, so every exec step reads its count as not reported: the
+	// report says so, and an expect_rows assertion is refused rather than
+	// judged against the number. The caller knows its driver; a script cannot.
+	RowCountsUnreported bool
 }
 
 // RunQuery runs a query script and writes its rows.

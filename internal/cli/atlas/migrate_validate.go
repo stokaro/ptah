@@ -68,11 +68,6 @@ func runAtlasMigrateValidate(
 	policy atlascompatpolicy.Policy,
 	source atlasMigrateSource,
 ) error {
-	// Before the directory is read: a dev URL naming YDB is refused however
-	// little this run would do with it, and an empty directory does nothing.
-	if err := refuseAtlasYDBDirectURLs("", source.devURL); err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
 	// Resolved before the integrity gate, whose clean and unhashed answers
 	// return before any replay, so a malformed declaration fails every run of
 	// this branch. The forwarding branch reaches `ptah migrations validate`,
@@ -136,6 +131,12 @@ func runAtlasMigrateValidate(
 	// driver "notadriver"` there, where Ptah wrapped a connector error into a
 	// 130-byte sentence naming an internal replay step.
 	if err := atlasDevURLDriverDiagnostic(source.devURL); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	// In the same place, for a dev URL whose driver Ptah has and the strict
+	// profile refuses: the pinned binary answers `ydb://` as it answers
+	// `notadriver://`, after the integrity gate.
+	if err := policy.ValidateURL(source.devURL); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	if err := policy.ValidateMigrationSourceForURL(fsys, source.devURL); err != nil {

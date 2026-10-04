@@ -367,9 +367,6 @@ func openAtlasProjectWithPolicy(
 	if err != nil {
 		return atlasProject{}, false, errors.Join(err, source.Close())
 	}
-	if err := refuseAtlasYDBProjectURLs(source.path, cfg); err != nil {
-		return atlasProject{}, false, errors.Join(err, source.Close())
-	}
 	root := source.root
 	source.root = nil
 	return newAtlasProject(cfg, root), true, nil
@@ -395,11 +392,6 @@ func openAtlasProjectsWithPolicy(
 	)
 	if err != nil {
 		return atlasProjectSet{}, false, errors.Join(err, source.Close())
-	}
-	for _, cfg := range configs {
-		if err := refuseAtlasYDBProjectURLs(source.path, cfg); err != nil {
-			return atlasProjectSet{}, false, errors.Join(err, source.Close())
-		}
 	}
 	projects := make([]atlasProject, 0, len(configs))
 	for _, cfg := range configs {
@@ -908,10 +900,6 @@ func wrapAtlasProjectFlagReset(cmd, group *cobra.Command) {
 			// process's stderr. A caller embedding the tree and reading
 			// cmd.SetErr sees the refusal either way, and the printed bytes stay
 			// the one line the pinned binary prints.
-			return cmdutil.Fail(cmd, err)
-		}
-		if err := refuseAtlasYDBURLFlags(cmd); err != nil {
-			resetAtlasExecutionFlags(cmd, group)
 			return cmdutil.Fail(cmd, err)
 		}
 		if preRunE != nil {

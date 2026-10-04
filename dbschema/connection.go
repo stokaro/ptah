@@ -103,9 +103,9 @@ func acceptServer(string, *url.URL) error {
 }
 
 // admittedDialect is the dialect of parsedURL once the caller's context and
-// scope both accept a connection to it. A surface that does not reach a
-// dialect yet refuses it through the context, for every path a URL can take
-// to a connection; see internal/connectgate.
+// scope both accept a connection to it. A surface that refuses a dialect
+// refuses it through the context, for every path a URL can take to a
+// connection; see internal/connectgate.
 func admittedDialect(ctx context.Context, parsedURL *url.URL, scope scopeRule) (string, error) {
 	dialect, err := connectionDialect(parsedURL)
 	if err != nil {
