@@ -3,12 +3,16 @@ package generator
 import (
 	"context"
 	"fmt"
+	"path"
 	"slices"
 	"sort"
 	"strings"
 
+	"ptah.run/catalog"
+	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/internal/ydbtype"
 	"ptah.run/migration/datadiff"
 )
 
@@ -69,12 +73,17 @@ func renderBootstrapTable(
 	if err != nil {
 		return "", fmt.Errorf("checkpoint generation failed: read bootstrap rows for %s: %w", name, err)
 	}
+	columnTypes, rows, err := bootstrapColumnTypes(ctx, conn, tableSchema, table, rows)
+	if err != nil {
+		return "", fmt.Errorf("checkpoint generation failed: read bootstrap rows for %s: %w", name, err)
+	}
 	sortBootstrapRows(rows, columns)
 	up, _, err := datadiff.Render(&datadiff.DataDiff{
-		Schema:  tableSchema,
-		Table:   table,
-		Keys:    keys,
-		Inserts: rows,
+		Schema:      tableSchema,
+		Table:       table,
+		Keys:        keys,
+		ColumnTypes: columnTypes,
+		Inserts:     rows,
 	}, conn.Info().Dialect)
 	if err != nil {
 		return "", fmt.Errorf("checkpoint generation failed: render bootstrap rows for %s: %w", name, err)
@@ -84,6 +93,47 @@ func renderBootstrapTable(
 		return header, nil
 	}
 	return header + up, nil
+}
+
+// bootstrapColumnTypes answers, on YDB, the type of each column of the table as
+// the shadow database holds it, and the rows with every value in the form
+// ydbtype.CanonicalValue gives it; every other dialect renders a value from
+// its Go value alone, and gets rows back as they are.
+//
+// YQL types every literal, so a statement that inserts a row writes each value
+// in its column's YDB type, and the replayed table is where that type is: it is
+// the table the checkpoint's version produces. The canonical form is what the
+// driver's local time, a Decimal's digits and a UUID's case read as one value
+// in, so two runs over one history write the same bytes.
+func bootstrapColumnTypes(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	tableSchema, table string,
+	rows []map[string]any,
+) (map[string]string, []map[string]any, error) {
+	if platform.NormalizeDialect(conn.Info().Dialect) != platform.YDB {
+		return nil, rows, nil
+	}
+	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{tableSchema})
+	if err != nil {
+		return nil, nil, fmt.Errorf("read the column types: %w", err)
+	}
+	index := slices.IndexFunc(live.Tables, func(candidate catalog.Table) bool {
+		return candidate.Schema == tableSchema && candidate.Name == table
+	})
+	if index < 0 {
+		return nil, nil, fmt.Errorf("the shadow database has no table %s to read the column types of",
+			path.Join(tableSchema, table))
+	}
+	columnTypes := make(map[string]string, len(live.Tables[index].Columns))
+	for _, column := range live.Tables[index].Columns {
+		columnTypes[column.Name] = column.DataType
+	}
+	typed, err := ydbtype.CanonicalRows(columnTypes, rows)
+	if err != nil {
+		return nil, nil, err
+	}
+	return columnTypes, typed, nil
 }
 
 // bootstrapColumns names what is read and what identifies a row.
