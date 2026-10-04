@@ -2,6 +2,7 @@ package ydb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ydb-platform/ydb-go-genproto/Ydb_Operation_V1"
 	"github.com/ydb-platform/ydb-go-genproto/Ydb_Scheme_V1"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Scheme"
 	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
@@ -51,15 +53,31 @@ type Writer struct {
 	scheme   Scheme
 	database string
 	dryRun   bool
+	// builds reaches the operation service, which cancels a build; nil for a
+	// writer made over a scheme alone.
+	builds *Builds
 	// pause waits before a retry, and is replaced in tests.
 	pause func(context.Context, int) error
 }
 
 // NewWriter returns a writer that executes through runner and reaches the
-// scheme service through driver.
+// scheme and operation services through driver.
 func NewWriter(runner sqlrunner.Runner, driver *ydbsdk.Driver) *Writer {
-	return NewWriterFromScheme(runner, grpcScheme{client: Ydb_Scheme_V1.NewSchemeServiceClient(ydbsdk.GRPCConn(driver))},
+	connection := ydbsdk.GRPCConn(driver)
+	writer := NewWriterFromScheme(runner, grpcScheme{client: Ydb_Scheme_V1.NewSchemeServiceClient(connection)},
 		driver.Name())
+	writer.builds = NewBuilds(Ydb_Operation_V1.NewOperationServiceClient(connection), writer.database)
+	return writer
+}
+
+// CancelRunningBuild cancels the build running on table and reports how it
+// ended; see [Builds.CancelRunning]. A writer made by [NewWriterFromScheme]
+// reaches no operation service and answers with an error.
+func (w *Writer) CancelRunningBuild(ctx context.Context, table string, wait BuildWait) (BuildOutcome, error) {
+	if w.builds == nil {
+		return BuildUnsettled, errors.New("this YDB writer reaches no operation service to cancel a build through")
+	}
+	return w.builds.CancelRunning(ctx, table, wait)
 }
 
 // NewWriterFromScheme returns a writer that executes through runner and asks

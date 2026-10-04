@@ -119,6 +119,29 @@ func TestTimeoutStatements(t *testing.T) {
 			},
 			wantErr: `migration timeouts are not supported for dialect "spanner": .*`,
 		},
+		{
+			// The statement timeout is a deadline on each query, which the
+			// executor sets; nothing is sent to the session.
+			name:    "ydb statement timeout",
+			dialect: "ydb",
+			timeouts: migrationfile.Timeouts{
+				StatementTimeout:    time.Second,
+				HasStatementTimeout: true,
+			},
+		},
+		{
+			name:    "ydb lock timeout",
+			dialect: "ydb",
+			timeouts: migrationfile.Timeouts{
+				LockTimeout:         time.Second,
+				StatementTimeout:    time.Second,
+				HasLockTimeout:      true,
+				HasStatementTimeout: true,
+			},
+			wantErr: `migration timeouts are not supported for dialect "ydb": this target has no lock wait Ptah ` +
+				`bounds around a migration \(capability migration_lock_timeout\), so a lock timeout cannot be ` +
+				`honored; remove it`,
+		},
 	}
 
 	for _, tt := range tests {

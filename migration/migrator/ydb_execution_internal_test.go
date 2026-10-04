@@ -237,6 +237,9 @@ type fakeTxDriver struct {
 	queryAttempt    int
 	checkpointCount int
 	commitAttempt   int
+	// queryBlocks makes the data query run until its context ends, the way a
+	// query outliving the statement timeout does.
+	queryBlocks bool
 }
 
 func (d *fakeTxDriver) Connect(context.Context) (driver.Conn, error) { return fakeTxConn{d: d}, nil }
@@ -252,8 +255,12 @@ func (c fakeTxConn) BeginTx(_ context.Context, opts driver.TxOptions) (driver.Tx
 	return fakeTx(c), nil
 }
 
-func (c fakeTxConn) ExecContext(_ context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+func (c fakeTxConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
 	c.d.log = append(c.d.log, fmt.Sprintf("exec %s (%d args)", query, len(args)))
+	if query == "UPSERT data" && c.d.queryBlocks {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	if query == "UPSERT data" {
 		attempt := c.d.queryAttempt
 		c.d.queryAttempt++

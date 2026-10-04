@@ -53,8 +53,9 @@ func writeCLIMigrations(c *qt.C) (migrations, tests string) {
 
 // TestYDBBinary_RunsVersionedMigrations drives the shipped binary's versioned
 // verbs against a live YDB database: hash and validate the directory, apply
-// it, report it up to date, refuse a statement timeout YDB cannot carry, run
-// the declarative tests, and roll everything back.
+// it under a statement timeout, report it up to date, refuse a lock timeout
+// YDB has no lock wait for, run the declarative tests, and roll everything
+// back.
 func TestYDBBinary_RunsVersionedMigrations(t *testing.T) {
 	c := qt.New(t)
 	binary := buildBinary(c, c.Context())
@@ -72,10 +73,10 @@ func TestYDBBinary_RunsVersionedMigrations(t *testing.T) {
 
 			hashed, hashErr := runBinary(ctx, binary, "migrations", "hash", "--dir", migrations)
 			validated, validateErr := runBinary(ctx, binary, "migrations", "validate", "--dir", migrations)
-			applied, upErr := runBinary(ctx, binary, append([]string{"migrations", "up"}, target...)...)
+			applied, upErr := runBinary(ctx, binary, append([]string{"migrations", "up", "--statement-timeout", "30s"}, target...)...)
 			status, statusErr := runBinary(ctx, binary, append([]string{"migrations", "status"}, target...)...)
 			refused, refusedErr := runBinary(ctx, binary,
-				append([]string{"migrations", "up", "--statement-timeout", "5s"}, target...)...)
+				append([]string{"migrations", "up", "--lock-timeout", "5s"}, target...)...)
 			tested, testErr := runBinary(ctx, binary, "migrations", "test", "--db-url", url, "--dir", tests,
 				"--migrations-dir", migrations, "--migrations-schema", cliMigrationsDir)
 			rolledBack, downErr := runBinary(ctx, binary,
@@ -89,8 +90,8 @@ func TestYDBBinary_RunsVersionedMigrations(t *testing.T) {
 			c.Assert(status, qt.Contains, "Current Version: 2")
 			c.Assert(status, qt.Contains, "Pending Migrations: 0")
 			c.Assert(refusedErr, qt.IsNotNil)
-			c.Assert(refused, qt.Contains, `--statement-timeout sets a timeout for every migration, and dialect "ydb" `+
-				`has no lock or statement timeout Ptah can set and restore around a migration`)
+			c.Assert(refused, qt.Contains, `--lock-timeout sets a timeout for every migration, and dialect "ydb" has `+
+				`no lock wait Ptah can bound around a migration (target capability migration_lock_timeout)`)
 			c.Assert(testErr, qt.IsNil, qt.Commentf("test:\n%s", tested))
 			c.Assert(tested, qt.Contains, `PASS  case "the first user exists"`)
 			c.Assert(downErr, qt.IsNil, qt.Commentf("down:\n%s", rolledBack))

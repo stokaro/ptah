@@ -380,3 +380,11 @@ v0.5.0 ptah.run/migration/schemadiff/difftypes
 # actually said. There is no faithful single-Boolean spelling to keep beside
 # them, so the old field goes rather than becoming a lossy alias.
 v0.7.0 ptah.run/migration/importer
+
+# capability.MigrationTimeouts named two runtime policies with one key, and a
+# target can carry one without the other: YDB bounds each statement of a
+# migration and has no lock wait for a lock timeout to bound. The key is split
+# into MigrationLockTimeout and MigrationStatementTimeout. A single key cannot
+# say what YDB does, so the old one goes rather than staying as an alias that
+# would read false on a target that takes a statement timeout.
+v0.12.0 ptah.run/core/platform/capability

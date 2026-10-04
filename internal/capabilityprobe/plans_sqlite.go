@@ -295,8 +295,8 @@ func sqlitePlan() plan {
 			"view with an extension option, which SQLite has no spelling of",
 		capability.TransactionalDDL: "the key names whether a failed migration rolls back as a unit, which one " +
 			"accepted statement cannot show; it is decided by the engine's DDL semantics rather than by a statement",
-		capability.MigrationTimeouts: "the key names a runtime policy the migrator applies around a migration, not a " +
-			"statement this probe can send",
+		capability.MigrationLockTimeout:      runtimePolicyReason,
+		capability.MigrationStatementTimeout: runtimePolicyReason,
 		capability.ShowRoutinePrivilege: "the key names a MySQL global privilege. SQLite has no principal to hold " +
 			"one and no statement that grants anything, so there is nothing to ask",
 	}}

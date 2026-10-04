@@ -1007,7 +1007,7 @@ func runMigrationFileStatement(
 		}
 	}
 	if !handled {
-		if err := executeMigrationStatement(ctx, conn, event.Statement, mode); err != nil {
+		if err := executeBoundedStatement(ctx, conn, event.Statement, mode); err != nil {
 			return migrationFileStatementError(err, event)
 		}
 	}
