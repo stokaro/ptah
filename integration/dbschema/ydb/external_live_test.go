@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	ydbschema "ptah.run/internal/dbschema/ydb"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/schemadiff"
@@ -324,6 +325,11 @@ func TestYDBChecks_RefuseAReadOfAnExternalTable(t *testing.T) {
 			var checkErr *migrator.CheckFailedError
 			c.Assert(guarded, qt.ErrorAs, &checkErr)
 			c.Assert(checkErr.Name, qt.Equals, "no_files")
+			// The refusal, not a read that failed: a read of the table runs
+			// until its compilation times out against the unreachable
+			// location, and fails the check too.
+			c.Assert(guarded, qt.ErrorIs, ydbschema.ErrReadLeavesDatabase)
+			c.Assert(report.Results[0].Err, qt.ErrorIs, ydbschema.ErrReadLeavesDatabase)
 			c.Assert(tableNames(readScoped(c, conn, externalSchemas)), qt.DeepEquals, []string{externalSchema + "|rows"})
 		})
 	}
