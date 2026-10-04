@@ -27,11 +27,12 @@ import (
 // these values changes a runtime policy and says so here.
 func TestRuntimePolicies_ReachEveryTargetTheirCapabilityClaims(t *testing.T) {
 	tests := []struct {
-		dialect      string
-		wantTimeouts bool
-		wantTxAll    bool
+		dialect              string
+		wantLockTimeout      bool
+		wantStatementTimeout bool
+		wantTxAll            bool
 	}{
-		{dialect: platform.Postgres, wantTimeouts: true, wantTxAll: true},
+		{dialect: platform.Postgres, wantLockTimeout: true, wantStatementTimeout: true, wantTxAll: true},
 		// The two the dialect switch excluded, both measured live.
 		//
 		// CockroachDB carries the timeout policy and not the rollback one. A
@@ -42,23 +43,26 @@ func TestRuntimePolicies_ReachEveryTargetTheirCapabilityClaims(t *testing.T) {
 		// the true through the version ladder, which is where a version is
 		// known; here there is none, and promising a rollback that may not
 		// happen is the worse of the two errors.
-		{dialect: platform.CockroachDB, wantTimeouts: true, wantTxAll: false},
-		{dialect: platform.YugabyteDB, wantTimeouts: true, wantTxAll: true},
+		{dialect: platform.CockroachDB, wantLockTimeout: true, wantStatementTimeout: true, wantTxAll: false},
+		{dialect: platform.YugabyteDB, wantLockTimeout: true, wantStatementTimeout: true, wantTxAll: true},
 		// The MySQL family sets and restores session variables, and commits
 		// DDL as it runs -- so it carries one policy and not the other.
-		{dialect: platform.MySQL, wantTimeouts: true, wantTxAll: false},
-		{dialect: platform.MariaDB, wantTimeouts: true, wantTxAll: false},
+		{dialect: platform.MySQL, wantLockTimeout: true, wantStatementTimeout: true, wantTxAll: false},
+		{dialect: platform.MariaDB, wantLockTimeout: true, wantStatementTimeout: true, wantTxAll: false},
 		// SQLite is the mirror image: one transaction spans the run, and there
 		// is no session timeout Ptah sets around a migration.
-		{dialect: platform.SQLite, wantTimeouts: false, wantTxAll: true},
+		{dialect: platform.SQLite, wantLockTimeout: false, wantStatementTimeout: false, wantTxAll: true},
 		// SQL Server carries the rollback policy and not the timeout one. The
 		// engine rolls a schema change back inside an explicit transaction, and
 		// the migrator's tx-mode all path is dialect-neutral, so the key admits
 		// a target that was refused while the value read false
 		// (stokaro/ptah#3192).
-		{dialect: platform.SQLServer, wantTimeouts: false, wantTxAll: true},
-		{dialect: platform.ClickHouse, wantTimeouts: false, wantTxAll: false},
-		{dialect: platform.Spanner, wantTimeouts: false, wantTxAll: false},
+		{dialect: platform.SQLServer, wantLockTimeout: false, wantStatementTimeout: false, wantTxAll: true},
+		{dialect: platform.ClickHouse, wantLockTimeout: false, wantStatementTimeout: false, wantTxAll: false},
+		{dialect: platform.Spanner, wantLockTimeout: false, wantStatementTimeout: false, wantTxAll: false},
+		// YDB carries one timeout and not the other: no statement waits for a
+		// lock there, and the migrator bounds each query with a deadline.
+		{dialect: platform.YDB, wantLockTimeout: false, wantStatementTimeout: true, wantTxAll: false},
 	}
 
 	for _, test := range tests {
@@ -66,7 +70,8 @@ func TestRuntimePolicies_ReachEveryTargetTheirCapabilityClaims(t *testing.T) {
 			c := qt.New(t)
 			caps := capability.ForDialect(test.dialect)
 
-			c.Assert(caps.Has(capability.MigrationTimeouts), qt.Equals, test.wantTimeouts)
+			c.Assert(caps.Has(capability.MigrationLockTimeout), qt.Equals, test.wantLockTimeout)
+			c.Assert(caps.Has(capability.MigrationStatementTimeout), qt.Equals, test.wantStatementTimeout)
 			c.Assert(caps.Has(capability.TransactionalDDL), qt.Equals, test.wantTxAll)
 		})
 	}

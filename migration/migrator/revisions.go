@@ -3604,11 +3604,11 @@ func (m *Migrator) resumeMigrationDirectionOnSession(
 	if err != nil {
 		return err
 	}
-	restoreTimeouts, err := m.applySessionTimeouts(ctx, migration, timeouts)
+	boundedCtx, restoreTimeouts, err := m.applySessionTimeouts(ctx, migration, timeouts)
 	if err != nil {
 		return err
 	}
-	if err := m.resumeStatementsOnSession(ctx, migration, statements, resumeFrom, direction); err != nil {
+	if err := m.resumeStatementsOnSession(boundedCtx, migration, statements, resumeFrom, direction); err != nil {
 		return m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
 	}
 	return m.restoreTimeouts(ctx, migration.Version, restoreTimeouts)
@@ -3651,7 +3651,7 @@ func (m *Migrator) resumeStatementsOnSession(
 		if err := m.markMigrationStatementInFlight(ctx, migration, startedAt, event, direction); err != nil {
 			return fmt.Errorf("failed to record resumed %s %d at statement %d: %w", operation, migration.Version, event.Index, err)
 		}
-		if err := executeSQLOutsideTransaction(ctx, executionConn, stmt); err != nil {
+		if err := executeBoundedStatement(ctx, executionConn, stmt, migrationExecutionNoTransaction); err != nil {
 			return m.failResumedMigrationDirection(ctx, migration, startedAt, err, event, direction)
 		}
 		if err := m.checkpointMigrationRevision(ctx, migration, startedAt, event, direction); err != nil {

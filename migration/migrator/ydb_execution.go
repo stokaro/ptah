@@ -251,11 +251,18 @@ func (d dataQueryCommit) try(ctx context.Context) (committing bool, err error) {
 	if err != nil {
 		return false, err
 	}
-	if _, err := tx.ExecContext(ctx, d.query); err != nil {
+	queryCtx, done, timeout := boundedQueryContext(ctx)
+	_, err = tx.ExecContext(queryCtx, d.query)
+	if timedOut := done(); err != nil {
 		// YDB has ended the transaction already: a rollback of it answers
 		// `Transaction not found`, and the statement's failure is the one
 		// that matters.
 		_ = tx.Rollback()
+		if timedOut {
+			// The transaction holds the checkpoint too and never commits,
+			// so the query is known not to have been applied.
+			return false, queryNotAppliedError(timeout, "YDB canceled the query, whose transaction never committed")
+		}
 		return false, err
 	}
 	checkpoint, args := d.checkpoint()

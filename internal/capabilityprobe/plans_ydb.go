@@ -288,8 +288,12 @@ func ydbUndecided() map[capability.Capability]string {
 			"transaction is the migrator's wrapper rather than a statement this probe sends",
 		capability.TransactionalDDL: "the key names whether a failed migration rolls back as a unit, which is how " +
 			"YDB runs schema statements rather than one statement's answer",
-		capability.MigrationTimeouts: "the key names a runtime policy the migrator applies around a migration; " +
-			"this server accepting a timeout setting says nothing about whether Ptah sets and restores it",
+		capability.MigrationLockTimeout: "the key names a runtime policy the migrator applies around a migration, and " +
+			"YDB has no lock-wait setting for a statement to send: a schema statement on a table under another schema " +
+			"operation fails at once rather than waiting",
+		capability.MigrationStatementTimeout: "the key names a runtime policy the migrator applies around a migration: " +
+			"a deadline on each query, and the cancellation of a build it stops, which no statement this probe sends " +
+			"can show",
 		capability.ShowRoutinePrivilege: "the probe cannot ask whether a privilege exists without granting it, and " +
 			"YDB has no routines for a SHOW_ROUTINE privilege to cover",
 		capability.Hypertables: "create_hypertable is a TimescaleDB function, and TimescaleDB is a PostgreSQL " +

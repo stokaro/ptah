@@ -282,8 +282,12 @@ The migration lock is a semaphore on the coordination node `ptah_locks` at the
 database root, which Ptah creates on first use and keeps. A run that loses it
 stops before its next statement; see
 [locking](../../versioned/apply/#locking-and---migration-lock-timeout).
-`--lock-timeout` and `--statement-timeout` are refused: YDB has no lock wait to
-bound, and a client timeout cannot promise a schema statement did not commit.
+`--statement-timeout` puts a deadline on each query of a migration: a data
+query it stops applies nothing, and an index build or a column backfill it stops
+is canceled; any other schema statement YDB keeps running, and the run records
+its outcome as unknown. `--lock-timeout` is refused, because no statement on
+YDB waits for a lock. See
+[statement timeouts on YDB](../../versioned/apply/#statement-timeouts-on-ydb).
 
 ## What is not supported yet
 
