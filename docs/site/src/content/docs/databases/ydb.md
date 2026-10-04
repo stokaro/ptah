@@ -9,6 +9,7 @@ goal: "Look up what Ptah renders, plans, reads and applies on YDB."
 sourceOfTruth:
   - "internal/capabilityprobe/cells.go"
   - "internal/dbschema/ydb"
+  - "internal/ydbgap"
   - "internal/ydbtype"
 generated: false
 searchAliases:
@@ -288,13 +289,21 @@ bound, and a client timeout cannot promise a schema statement did not commit.
 
 These are refused with a message that names what is missing:
 
-- the query builder and data changes: seeds, data plans and declared rows;
+<!-- BEGIN GENERATED YDB GAPS -->
+- a YQL file as the desired schema (Go structs and YAML schemas work);
+- the query builder;
+- data changes: seeds, data plans and declared rows;
 - `ptah sql lint` and `ptah migrations lint` over YQL;
+- a scratch database for each case of `ptah migrations test` and `ptah schema test`, since YQL cannot create a database;
 - a YDB database as a dev or shadow database;
-- comments, views, users, groups and permissions;
+- comments on tables, columns and indexes;
+- views;
+- users, groups and permissions;
 - table settings: TTL, partitioning, column families and changefeeds;
 - vector, full-text, JSON and column-table indexes;
-- every `ptah-compat` command with a YDB URL, from any source.
+- every `ptah-compat` command with a YDB URL, from any source;
+- `ptah introspect`, `ptah schema security` and `ptah schema lineage`, which need more of a database than the schema reader describes.
+<!-- END GENERATED YDB GAPS -->
 
 The work is planned in [#4015](https://github.com/stokaro/ptah/issues/4015).
 
