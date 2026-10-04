@@ -117,9 +117,10 @@ func TestRenderSQL_YDBRefusesCoordinationNodes(t *testing.T) {
 	}
 }
 
-// A YDB target without the key refuses a node on both layers: the renderer's
-// central check, which RenderSQLWithCapabilities runs, and the YDB renderer's
-// own, which a caller that visits the node with the renderer reaches.
+// A YDB target without the key refuses a node through RenderSQLWithCapabilities
+// and through a visit alike: a visit runs the renderer's central check as
+// RenderSQL does, so there is no way past it through the renderer. The YDB
+// renderer's own check of the key is covered in its package.
 func TestRenderSQL_YDBWithoutTheKeyRefusesCoordinationNodes(t *testing.T) {
 	c := qt.New(t)
 	caps := capability.YDB262().With(capability.CoordinationNodes, false)
