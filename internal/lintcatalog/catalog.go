@@ -624,6 +624,9 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"YD111": {
 		Summary: "`DROP USER` or `DROP GROUP` on YDB leaves the principal's permissions behind, and a principal created later under the name holds them",
 	},
+	"YD112": {
+		Summary: "a dropped coordination node, which YDB deletes with its persistent semaphores and rate limiter resources even while a session holds a lock on it",
+	},
 }
 
 // sqlRuleMeta declares the same facts for the standalone SQL linter, which

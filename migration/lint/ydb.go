@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbsequence"
 	"ptah.run/internal/yqlddl"
 	"ptah.run/internal/yqlquery"
@@ -52,6 +53,7 @@ func ydbRules() []Rule {
 		ydbMovedTableWithChangefeedRule(),
 		ydbGrantOptionRevokeRule(),
 		ydbPrincipalDropRule(),
+		ydbCoordinationNodeDroppedRule(),
 	}
 }
 
@@ -850,6 +852,37 @@ func ydbReplayedRestartRule() Rule {
 				state.apply(read)
 			}
 			return findings
+		},
+	}
+}
+
+// ydbCoordinationNodeDroppedRule reports Ptah's statement that drops a
+// coordination node. YQL has none; Ptah's connection runs the statement
+// through the coordination service (see internal/ydbcoordination). Measured on
+// 26.2.1.14 and 25.1.4.7, DropNode succeeds while a session holds a semaphore
+// on the node; the holder's session and lease end about five seconds later,
+// and a node created again under the same path holds none of the persistent
+// semaphores the dropped one held. Its rate limiter resources go with it.
+func ydbCoordinationNodeDroppedRule() Rule {
+	return Rule{
+		Code:          "YD112",
+		Title:         "coordination node dropped",
+		Severity:      SeverityError,
+		Dialects:      ydbOnly,
+		AppliesToDown: true,
+		CheckStatement: func(stmt *Statement) (bool, string) {
+			if !ydbRun(stmt.Target) {
+				return false, ""
+			}
+			query, recognized, err := ydbcoordination.Recognize(stmt.SQL)
+			if err != nil || !recognized || query.Verb != ydbcoordination.Drop {
+				return false, ""
+			}
+			return true, fmt.Sprintf(
+				"DROP COORDINATION NODE %s deletes the node with its persistent semaphores and rate limiter resources, "+
+					"and YDB drops it even while a session holds a semaphore on it, ending that session's locks; stop "+
+					"the applications that use the node first",
+				query.Path)
 		},
 	}
 }
