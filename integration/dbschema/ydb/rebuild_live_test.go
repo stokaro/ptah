@@ -10,6 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasretry"
@@ -154,6 +155,43 @@ func TestYDBRebuild_PreservesTheRows(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// withTTL gives the table a nullable Timestamp column, seen, and a TTL on it
+// after interval.
+func withTTL(interval string) func(*schemamodel.Database) {
+	return func(db *schemamodel.Database) {
+		db.Fields = append(db.Fields, schemamodel.Field{StructName: "Item", Name: "seen", Type: "Timestamp", Nullable: true})
+		db.Tables[0].RowDeletionPolicy = &ast.RowDeletionPolicySpec{Column: "seen", Interval: interval}
+	}
+}
+
+// A rebuilt table gets the declared TTL in its new CREATE TABLE, and a TTL
+// change in the same plan travels with it: the table reads back with the
+// declared TTL and both rows, and nothing is left to plan.
+func TestYDBRebuild_CarriesTheTTL(t *testing.T) {
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			cleanRebuild(c, conn)
+			c.Cleanup(func() { cleanRebuild(c, conn) })
+			seedRebuildItems(c, conn, rebuildItems(withTTL("P1D")), twoRows)
+			after := rebuildItems(withTTL("P3D"), withField("n", func(f *schemamodel.Field) { f.Type = "BIGINT" }))
+
+			file, err := rebuildPlan(c, conn, after, true)
+			c.Assert(err, qt.IsNil)
+			c.Assert(file, qt.Contains, ") WITH (TTL = Interval(\"P3D\") ON `seen`);")
+			c.Assert(file, qt.Not(qt.Contains), "SET (TTL")
+			c.Assert(rebuildMigrator(c, conn, file, nil).MigrateUp(c.Context()), qt.IsNil)
+
+			c.Assert(planAgainst(c, conn, after, rebuildSchemas), qt.HasLen, 0)
+			live := readScoped(c, conn, rebuildSchemas)
+			c.Assert(tableNamed(c, live, rebuildSchema, "items").RowDeletionPolicy, qt.DeepEquals,
+				&ast.RowDeletionPolicySpec{Column: "seen", Interval: "P3D"})
+			c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+rebuildSchema+"/items`"), qt.Equals, int64(2))
+		})
 	}
 }
 

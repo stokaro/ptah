@@ -341,7 +341,8 @@ func TestReader_Indexes(t *testing.T) {
 func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 	c := qt.New(t)
 	settings := plainTable(&Ydb_Table.ColumnMeta{Name: "ts", Type: optional(primitive(Ydb.Type_TIMESTAMP))})
-	settings.TtlSettings = &Ydb_Table.TtlSettings{}
+	settings.TtlSettings = dateTTL("ts", 86400)
+	settings.TtlSettings.RunIntervalSeconds = 1800
 	settings.Changefeeds = []*Ydb_Table.ChangefeedDescription{{Name: "feed"}}
 	settings.ColumnFamilies = append(settings.ColumnFamilies, &Ydb_Table.ColumnFamily{Name: "cold"})
 	settings.KeyBloomFilter = Ydb.FeatureFlag_ENABLED
@@ -555,14 +556,96 @@ func TestReader_RecordsEachColumnFamilyLayout(t *testing.T) {
 	}
 }
 
-// Expiry is recorded whether it is a TTL, a tiering policy, or both.
+// dateTTL is a TTL on a date column, as DescribeTable reports one.
+func dateTTL(column string, seconds uint32) *Ydb_Table.TtlSettings {
+	return &Ydb_Table.TtlSettings{Mode: &Ydb_Table.TtlSettings_DateTypeColumn{
+		DateTypeColumn: &Ydb_Table.DateTypeColumnModeSettings{ColumnName: column, ExpireAfterSeconds: seconds},
+	}}
+}
+
+// epochTTL is a TTL on an integer column, as DescribeTable reports one.
+func epochTTL(column string, unit Ydb_Table.ValueSinceUnixEpochModeSettings_Unit, seconds uint32) *Ydb_Table.TtlSettings {
+	return &Ydb_Table.TtlSettings{Mode: &Ydb_Table.TtlSettings_ValueSinceUnixEpoch{
+		ValueSinceUnixEpoch: &Ydb_Table.ValueSinceUnixEpochModeSettings{
+			ColumnName: column, ColumnUnit: unit, ExpireAfterSeconds: seconds,
+		},
+	}}
+}
+
+// A table's TTL is its row deletion policy: the column, the interval written
+// the way YDB shows it, and an integer column's unit. Reading it records
+// nothing as not described.
+func TestReader_ReadsTheTTL(t *testing.T) {
+	tests := []struct {
+		name string
+		ttl  *Ydb_Table.TtlSettings
+		want *ast.RowDeletionPolicySpec
+	}{
+		{name: "no TTL"},
+		{
+			name: "a date column",
+			ttl:  dateTTL("ts", 2592000),
+			want: &ast.RowDeletionPolicySpec{Column: "ts", Interval: "P30D"},
+		},
+		{
+			name: "a date column with no interval",
+			ttl:  dateTTL("ts", 0),
+			want: &ast.RowDeletionPolicySpec{Column: "ts", Interval: "PT0S"},
+		},
+		{
+			name: "seconds",
+			ttl:  epochTTL("e", Ydb_Table.ValueSinceUnixEpochModeSettings_UNIT_SECONDS, 95415),
+			want: &ast.RowDeletionPolicySpec{Column: "e", Interval: "P1DT2H30M15S", Unit: "SECONDS"},
+		},
+		{
+			name: "milliseconds",
+			ttl:  epochTTL("e", Ydb_Table.ValueSinceUnixEpochModeSettings_UNIT_MILLISECONDS, 3600),
+			want: &ast.RowDeletionPolicySpec{Column: "e", Interval: "PT1H", Unit: "MILLISECONDS"},
+		},
+		{
+			name: "microseconds",
+			ttl:  epochTTL("e", Ydb_Table.ValueSinceUnixEpochModeSettings_UNIT_MICROSECONDS, 60),
+			want: &ast.RowDeletionPolicySpec{Column: "e", Interval: "PT1M", Unit: "MICROSECONDS"},
+		},
+		{
+			name: "nanoseconds",
+			ttl:  epochTTL("e", Ydb_Table.ValueSinceUnixEpochModeSettings_UNIT_NANOSECONDS, 1),
+			want: &ast.RowDeletionPolicySpec{Column: "e", Interval: "PT1S", Unit: "NANOSECONDS"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			described := plainTable()
+			described.TtlSettings = test.ttl
+			source := fakeSource{
+				directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
+				tables:      map[string]*Ydb_Table.DescribeTableResult{"/local/t": described},
+			}
+
+			db := readFrom(c, source)
+
+			c.Assert(db.Tables, qt.HasLen, 1)
+			c.Assert(db.Tables[0].RowDeletionPolicy, qt.DeepEquals, test.want)
+			c.Assert(db.NotDescribed.Describes(coverage.TTL, "t"), qt.IsTrue)
+		})
+	}
+}
+
+// What YQL cannot write about a TTL is recorded: the run interval, which
+// SET (TTL = ...) resets, and a tiering policy.
 func TestReader_RecordsExpiry(t *testing.T) {
 	tests := []struct {
 		name    string
 		ttl     *Ydb_Table.TtlSettings
 		tiering string
 	}{
-		{name: "a TTL", ttl: &Ydb_Table.TtlSettings{}},
+		{name: "a TTL run interval", ttl: func() *Ydb_Table.TtlSettings {
+			ttl := dateTTL("ts", 3600)
+			ttl.RunIntervalSeconds = 1800
+			return ttl
+		}()},
 		{name: "a tiering policy", tiering: "/local/.metadata/tiers"},
 	}
 
@@ -729,6 +812,76 @@ func TestReader_FailurePath(t *testing.T) {
 				})},
 			},
 			wantErr: `YDB table /local/t: column "tz": its type TZ_TIMESTAMP is not a type Ptah reads in a table column`,
+		},
+		{
+			// The pinned protocol buffers have no tiered mode, field 4, and a
+			// row table describes even a TTL set in it in one of the modes the
+			// reader reads; one arriving there is refused rather than read as
+			// no TTL.
+			name: "a tiered TTL",
+			source: fakeSource{
+				directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
+				tables: map[string]*Ydb_Table.DescribeTableResult{"/local/t": func() *Ydb_Table.DescribeTableResult {
+					described := plainTable()
+					described.TtlSettings = &Ydb_Table.TtlSettings{}
+					unknown := protowire.AppendTag(nil, 4, protowire.BytesType)
+					described.TtlSettings.ProtoReflect().SetUnknown(protowire.AppendBytes(unknown, nil))
+					return described
+				}()},
+			},
+			wantErr: `YDB table /local/t: its TTL carries field 4 \(field 4 is a tiered TTL\), which this build of Ptah does not read`,
+		},
+		{
+			name: "a TTL with no mode",
+			source: fakeSource{
+				directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
+				tables: map[string]*Ydb_Table.DescribeTableResult{"/local/t": func() *Ydb_Table.DescribeTableResult {
+					described := plainTable()
+					described.TtlSettings = &Ydb_Table.TtlSettings{RunIntervalSeconds: 3600}
+					return described
+				}()},
+			},
+			wantErr: `YDB table /local/t: its TTL has a mode this build of Ptah does not read \(<nil>\)`,
+		},
+		{
+			name: "a TTL on a date column with a field the reader does not know",
+			source: fakeSource{
+				directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
+				tables: map[string]*Ydb_Table.DescribeTableResult{"/local/t": func() *Ydb_Table.DescribeTableResult {
+					described := plainTable()
+					described.TtlSettings = dateTTL("ts", 60)
+					unknown := protowire.AppendTag(nil, 3, protowire.VarintType)
+					described.TtlSettings.GetDateTypeColumn().ProtoReflect().SetUnknown(protowire.AppendVarint(unknown, 1))
+					return described
+				}()},
+			},
+			wantErr: `YDB table /local/t: its TTL on a date column carries field 3, which this build of Ptah does not read`,
+		},
+		{
+			name: "a TTL on an integer column with a field the reader does not know",
+			source: fakeSource{
+				directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
+				tables: map[string]*Ydb_Table.DescribeTableResult{"/local/t": func() *Ydb_Table.DescribeTableResult {
+					described := plainTable()
+					described.TtlSettings = epochTTL("e", Ydb_Table.ValueSinceUnixEpochModeSettings_UNIT_SECONDS, 60)
+					unknown := protowire.AppendTag(nil, 4, protowire.VarintType)
+					described.TtlSettings.GetValueSinceUnixEpoch().ProtoReflect().SetUnknown(protowire.AppendVarint(unknown, 1))
+					return described
+				}()},
+			},
+			wantErr: `YDB table /local/t: its TTL on an integer column carries field 4, which this build of Ptah does not read`,
+		},
+		{
+			name: "a TTL on an integer column with no unit",
+			source: fakeSource{
+				directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
+				tables: map[string]*Ydb_Table.DescribeTableResult{"/local/t": func() *Ydb_Table.DescribeTableResult {
+					described := plainTable()
+					described.TtlSettings = epochTTL("e", Ydb_Table.ValueSinceUnixEpochModeSettings_UNIT_UNSPECIFIED, 60)
+					return described
+				}()},
+			},
+			wantErr: `YDB table /local/t: its TTL reads column "e" in unit UNIT_UNSPECIFIED, which this build of Ptah does not read`,
 		},
 		{
 			name: "a listing the server refuses",

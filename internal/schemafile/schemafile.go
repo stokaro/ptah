@@ -329,11 +329,18 @@ var yamlOnlyExtensions = []string{".yaml", ".yml"}
 //     type or a range. A YAML schema declaring one table was measured planning
 //     `DROP SEQUENCE`, `DROP DOMAIN` and both `DROP TYPE`s against a database
 //     holding one of each.
+//   - HCL and DBML have no spelling for a table's row deletion policy, which
+//     a Go schema, a YAML schema and Spanner's SQL do. Measured on YDB
+//     26.2.1.14, a TTL table inspected through `ptah-compat schema inspect`
+//     and applied back from that HCL planned `ALTER TABLE ... RESET (TTL)`.
 func withFormatLimits(database *schemamodel.Database, resolved string) *schemamodel.Database {
 	if database == nil {
 		return nil
 	}
 	extension := strings.ToLower(filepath.Ext(resolved))
+	if extension == dirHCLExtension || extension == dbmlExtension {
+		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(coverage.TTL)...)
+	}
 	if extension != dirSQLExtension {
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(coverage.VirtualTable)...)
 	}

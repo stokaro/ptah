@@ -1423,7 +1423,7 @@ type SchemaDiff struct {
 	// A comparison concludes nothing about what a read did not look at, so no
 	// entry above carries it. A plan that recreates a table writes the new one
 	// from the declaration, though, and a setting the reader left out -- on
-	// YDB a table's TTL, changefeeds, column families and partitioning
+	// YDB a TTL's run interval, changefeeds, column families and partitioning
 	// options -- would go with the old table without a word. This is how a
 	// planner sees that the table has one, and refuses the recreation.
 	//

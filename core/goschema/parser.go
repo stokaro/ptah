@@ -25,6 +25,7 @@ import (
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
+	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbindex"
 )
@@ -628,6 +629,16 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 	if err != nil {
 		return err
 	}
+	rowDeletionPolicy, err := rowdeletion.ParseDeclaration(tableName, kv)
+	if err != nil {
+		return &ptaherr.ParseError{
+			File:      s.filename,
+			Line:      s.annotationContext(comment, "//ptah:schema:table", structName).line,
+			Directive: "ptah:schema:table",
+			Err:       ptaherr.ErrInvalidAttributeValue,
+			Message:   err.Error(),
+		}
+	}
 	s.tableDirectives = append(s.tableDirectives, schemamodel.Table{
 		StructName:          structName,
 		Name:                tableName,
@@ -643,6 +654,7 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 		DependsOn:           splitDependsOn(kv["depends_on"]),
 		CustomSQL:           kv["custom"],
 		RowTTL:              rowTTL,
+		RowDeletionPolicy:   rowDeletionPolicy,
 		Overrides:           parseutils.ParsePlatformSpecific(kv),
 	})
 	return nil

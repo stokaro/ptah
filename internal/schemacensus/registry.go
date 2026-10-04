@@ -21,6 +21,7 @@ var registry = []Entry{
 	{Field: "ast.IndexPartitioningSpec.ReadReplicas", Disposition: DDL},
 	{Field: "ast.RowDeletionPolicySpec.Column", Disposition: DDL},
 	{Field: "ast.RowDeletionPolicySpec.Interval", Disposition: DDL},
+	{Field: "ast.RowDeletionPolicySpec.Unit", Disposition: DDL},
 	{Field: "ast.RowTTLSpec.DeleteBatchSize", Disposition: DDL},
 	{Field: "ast.RowTTLSpec.DeleteRateLimit", Disposition: DDL},
 	{Field: "ast.RowTTLSpec.DisableChangefeedReplication", Disposition: DDL},

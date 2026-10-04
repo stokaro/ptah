@@ -22,8 +22,9 @@
 //     (`RENAME INDEX TO can not be used together with another table action`),
 //     then ALTER INDEX ... SET for every index whose partitioning changes in
 //     place, under the name it has once renamed;
-//  5. per table, ADD COLUMN, then the in-place column changes, then DROP
-//     COLUMN;
+//  5. per table, ADD COLUMN, then the in-place column changes, then SET
+//     (TTL = ...) or RESET (TTL), then DROP COLUMN: a TTL may read a column
+//     the plan adds, and YDB refuses to drop the column a TTL reads;
 //  6. ADD INDEX for every index added to a table that already exists, one per
 //     statement (`Only one index can be added by one operation`), after the
 //     columns it names exist;
@@ -49,6 +50,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
@@ -136,11 +138,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 		return nil, err
 	}
 	for _, tableDiff := range diff.TablesModified {
-		refuse := p.refuseTableChanges
-		if _, rebuilt := rebuilds[semantics.TableIdentityKey(tableDiff.TableName)]; rebuilt {
-			refuse = p.refuseRebuiltTableChanges
-		}
-		if err := refuse(tableDiff); err != nil {
+		if err := p.refuseModification(tableDiff, rebuilds, semantics, diff.CurrentNotDescribed); err != nil {
 			return nil, err
 		}
 	}
@@ -188,6 +186,27 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	}
 	result = append(result, p.createViews(diff)...)
 	return result, nil
+}
+
+// refuseModification refuses what one table's modification asks that the
+// plan cannot make: in place, or through the rebuild the plan makes of the
+// table, which writes the declared TTL into the new table.
+func (p *Planner) refuseModification(
+	tableDiff difftypes.TableDiff,
+	rebuilds map[string]*tableRebuild,
+	semantics identifier.Semantics,
+	notDescribed coverage.Set,
+) error {
+	if _, rebuilt := rebuilds[semantics.TableIdentityKey(tableDiff.TableName)]; rebuilt {
+		if err := p.refuseRebuiltTableChanges(tableDiff); err != nil {
+			return err
+		}
+		return p.refuseTTLKey(tableDiff)
+	}
+	if err := p.refuseTableChanges(tableDiff); err != nil {
+		return err
+	}
+	return p.refuseTTLChange(tableDiff, notDescribed)
 }
 
 // changeTables writes each modified table's changes, in place or as a
@@ -375,9 +394,11 @@ func addIndexes(changes difftypes.IndexChanges, inlineIndexes map[string]bool, s
 	return nodes
 }
 
-// changeTable writes one table's column changes: additions, then in-place
-// changes, then drops. The drops come after the index drops the plan emitted
-// before it, so an indexed or covered column is free by then.
+// changeTable writes one table's changes: added columns, then in-place
+// changes, then the TTL, then dropped columns. The drops come after the index
+// drops the plan emitted before it, so an indexed or covered column is free by
+// then, and after the TTL, so the column the TTL read is free too; the TTL
+// comes after the additions, so a column it reads exists.
 func (p *Planner) changeTable(tableDiff difftypes.TableDiff, enums []schemamodel.Enum) []ast.Node {
 	var nodes []ast.Node
 	alter := func(operation ast.AlterOperation) {
@@ -396,6 +417,9 @@ func (p *Planner) changeTable(tableDiff difftypes.TableDiff, enums []schemamodel
 			Changed:    changed,
 			HasChanged: true,
 		})
+	}
+	if operation := ttlOperation(tableDiff.RowDeletionPolicyChange); operation != nil {
+		alter(operation)
 	}
 	for _, column := range tableDiff.ColumnsRemoved {
 		alter(&ast.DropColumnOperation{ColumnName: column.Name})
@@ -546,8 +570,6 @@ func (p *Planner) refuseTableSettings(tableDiff difftypes.TableDiff, subject str
 		return refuseGap(ydbgap.Comments, "the comment on "+subject)
 	case tableDiff.RowTTLChange != nil:
 		return p.keyed(capability.RowLevelTTL, "row-level TTL", "the row-level TTL of "+subject)
-	case tableDiff.RowDeletionPolicyChange != nil:
-		return refuseGap(ydbgap.TableSettings, "the row deletion policy of "+subject)
 	case len(tableDiff.ConstraintsAdded)+len(tableDiff.ConstraintsRemoved) > 0:
 		return refuseFact(subject, "YDB has no constraint but the key, and the key never changes")
 	}

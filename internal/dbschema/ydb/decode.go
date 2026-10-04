@@ -14,11 +14,13 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 
 	"ptah.run/catalog"
+	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbgap"
 	"ptah.run/internal/ydbindex"
+	"ptah.run/internal/ydbttl"
 	"ptah.run/internal/ydbtype"
 )
 
@@ -51,6 +53,11 @@ func (r *Reader) table(
 		column.IsPrimaryKey = slices.Contains(key, meta.GetName())
 		table.Columns = append(table.Columns, column)
 	}
+	policy, err := rowDeletionPolicy(described.GetTtlSettings())
+	if err != nil {
+		return fmt.Errorf("%s: %w", subject, err)
+	}
+	table.RowDeletionPolicy = policy
 	db.Tables = append(db.Tables, table)
 
 	if len(key) > 0 {
@@ -392,15 +399,78 @@ func quotedList(names []string) string {
 	return strings.Join(quoted, ", ")
 }
 
+// rowDeletionPolicy reads a table's TTL as its row deletion policy: the column,
+// the interval as the seconds YDB keeps written the way YDB shows them, and an
+// integer column's unit. A table with no TTL has no policy.
+//
+// A TTL the pinned protocol buffers do not model is refused by name. Measured
+// on 25.1.4.7 and 26.2.1.14, a row table describes its TTL in one of the two
+// modes read here even when it was set in the tiered mode, field 4, as one
+// DELETE tier; a tier that moves rows elsewhere is refused on a row table.
+func rowDeletionPolicy(settings *Ydb_Table.TtlSettings) (*ast.RowDeletionPolicySpec, error) {
+	if settings == nil {
+		return nil, nil
+	}
+	if unknown := unknownFields(settings); len(unknown) > 0 {
+		return nil, fmt.Errorf("its TTL carries field %s (field 4 is a tiered TTL), which this build of Ptah does not read",
+			joinNumbers(unknown))
+	}
+	switch mode := settings.GetMode().(type) {
+	case *Ydb_Table.TtlSettings_DateTypeColumn:
+		date := mode.DateTypeColumn
+		if unknown := unknownFields(date); len(unknown) > 0 {
+			return nil, fmt.Errorf("its TTL on a date column carries field %s, which this build of Ptah does not read",
+				joinNumbers(unknown))
+		}
+		return &ast.RowDeletionPolicySpec{
+			Column:   date.GetColumnName(),
+			Interval: ydbttl.FormatInterval(uint64(date.GetExpireAfterSeconds())),
+		}, nil
+	case *Ydb_Table.TtlSettings_ValueSinceUnixEpoch:
+		epoch := mode.ValueSinceUnixEpoch
+		if unknown := unknownFields(epoch); len(unknown) > 0 {
+			return nil, fmt.Errorf("its TTL on an integer column carries field %s, which this build of Ptah does not read",
+				joinNumbers(unknown))
+		}
+		unit, known := epochUnits[epoch.GetColumnUnit()]
+		if !known {
+			return nil, fmt.Errorf("its TTL reads column %q in unit %s, which this build of Ptah does not read",
+				epoch.GetColumnName(), epoch.GetColumnUnit())
+		}
+		return &ast.RowDeletionPolicySpec{
+			Column:   epoch.GetColumnName(),
+			Interval: ydbttl.FormatInterval(uint64(epoch.GetExpireAfterSeconds())),
+			Unit:     unit,
+		}, nil
+	default:
+		return nil, fmt.Errorf("its TTL has a mode this build of Ptah does not read (%T)", settings.GetMode())
+	}
+}
+
+// epochUnits names the units an integer TTL column counts in.
+var epochUnits = map[Ydb_Table.ValueSinceUnixEpochModeSettings_Unit]string{
+	Ydb_Table.ValueSinceUnixEpochModeSettings_UNIT_SECONDS:      ydbttl.Seconds,
+	Ydb_Table.ValueSinceUnixEpochModeSettings_UNIT_MILLISECONDS: ydbttl.Milliseconds,
+	Ydb_Table.ValueSinceUnixEpochModeSettings_UNIT_MICROSECONDS: ydbttl.Microseconds,
+	Ydb_Table.ValueSinceUnixEpochModeSettings_UNIT_NANOSECONDS:  ydbttl.Nanoseconds,
+}
+
 // unmodeledSettings records the table settings Ptah does not model yet. A
 // setting is recorded where it differs from what a table created without one
-// carries, measured on local-ydb 26.2.1.14: one column family, `default`,
-// uncompressed and with no pool of its own; partitioning by size at 2048 MB,
-// not by load, with at least one partition; no read replicas, no key bloom
-// filter, and external blobs off with no storage pools named.
+// carries, measured on local-ydb 26.2.1.14: no TTL run interval and no tiering
+// policy; one column family, `default`, uncompressed and with no pool of its
+// own; partitioning by size at 2048 MB, not by load, with at least one
+// partition; no read replicas, no key bloom filter, and external blobs off
+// with no storage pools named.
+//
+// The TTL itself is the table's row deletion policy. What is recorded under
+// [coverage.TTL] is what YQL cannot write about it: the run interval, which
+// only the SDK and the CLI set and which `SET (TTL = ...)` resets (a table set
+// to 1800 seconds with `ydb table ttl set --run-interval` reads back with none
+// after it, on 25.1.4.7 and 26.2.1.14), and a column table's tiering policy.
 func unmodeledSettings(schema, name string, described *Ydb_Table.DescribeTableResult) []coverage.Object {
 	var records []coverage.Object
-	if described.GetTtlSettings() != nil || described.GetTiering() != "" {
+	if described.GetTtlSettings().GetRunIntervalSeconds() != 0 || described.GetTiering() != "" {
 		records = append(records, unmodeled(coverage.TTL, schema, name))
 	}
 	for _, feed := range described.GetChangefeeds() {

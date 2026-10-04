@@ -32,8 +32,8 @@ against live YDB 26.2 and 25.1 servers. The nightly capability matrix runs the
 same suite on each YDB line it probes.
 
 `ptah-compat` takes a YDB URL on every verb; see [ptah-compat](#ptah-compat).
-Inference and the YDB object families such as TTL, column families,
-changefeeds and vector indexes are not supported yet. See
+Inference and the YDB object families such as column families, changefeeds
+and vector indexes are not supported yet. See
 [What is not supported yet](#what-is-not-supported-yet).
 
 ## Connecting
@@ -355,6 +355,67 @@ view reads, and the reading view fails from then on. A plan drops views before
 anything else and creates them last, and lint rule `YD106` reports a migration
 that drops a table a view still reads.
 
+## TTL
+
+A table's TTL is its row deletion policy: YDB deletes a row once an interval
+has passed since the time one of its columns holds. A table declares it with
+three attributes:
+
+| Attribute | Value |
+| --- | --- |
+| `row_deletion_column` | the column the interval is measured from |
+| `row_deletion_interval` | an ISO 8601 duration such as `P30D` or `PT1H30M` |
+| `row_deletion_unit` | for an integer column, the unit it counts since 1970 |
+
+This table:
+
+```go
+//ptah:schema:table name="events" row_deletion_column="created_at" row_deletion_interval="P30D"
+```
+
+renders as:
+
+```sql
+CREATE TABLE `events` (
+    `id` Int64 NOT NULL,
+    `created_at` Timestamp64,
+    PRIMARY KEY (`id`)
+) WITH (TTL = Interval("P30D") ON `created_at`);
+```
+
+The same keys work on a table in a YAML schema. The column is either a date or
+time column (`Date`, `Datetime`, `Timestamp` or their 64-bit forms) and names
+no unit, or a `Uint32`, `Uint64` or `DyNumber` column that counts `SECONDS`,
+`MILLISECONDS`, `MICROSECONDS` or `NANOSECONDS` since the Unix epoch. YDB
+refuses any other column type, and so does Ptah, before anything runs.
+
+The interval takes weeks, days, hours, minutes and seconds. YDB keeps it as a
+whole number of seconds and drops the rest in silence, so an interval with a
+fraction of a second is refused. Months and years have no fixed length and are
+not intervals. The comparison reads both sides as seconds: `PT720H` and `P30D`
+are one TTL, and a TTL reads back in the form YDB shows, `P30D`.
+
+On a table that exists, `ALTER TABLE ... SET (TTL = ...)` adds or replaces the
+TTL, and `ALTER TABLE ... RESET (TTL)` removes it. YDB refuses to drop the
+column a TTL reads, so a plan changes the TTL after it adds columns and before
+it drops them.
+
+A TTL tier that moves rows to an external data source is for column-oriented
+tables only, and a row table refuses it. A run interval set with
+`ydb table ttl set --run-interval` has no YQL spelling, and
+`SET (TTL = ...)` resets it to YDB's default. Ptah reads such a table's TTL,
+records its run interval as not described, and refuses a change to the TTL that
+would reset it. Removing the TTL removes the run interval with it.
+
+HCL and DBML have no spelling for a TTL. `schema inspect` warns about each TTL
+it leaves out of an HCL document, on `ptah` and `ptah-compat` alike. A desired
+state read from either format keeps every table's TTL as the database holds it,
+rather than reading its silence as a request to remove it, and a table it
+rebuilds gets that TTL on the new table.
+
+Spanner takes the same attributes, with its own interval spelling (`30 days`)
+and no unit. Every other dialect refuses a row deletion policy.
+
 ## Planning changes
 
 YDB changes a table in place less than the SQL engines do, and runs a schema
@@ -370,7 +431,8 @@ statement needs one that has not run yet:
    to drop an indexed or a covered column.
 4. Rename the indexes the declaration renames, then change the partitioning of
    the indexes that keep their definition.
-5. Per table: add columns, then change columns in place, then drop columns.
+5. Per table: add columns, then change columns in place, then set or reset
+   the TTL, then drop columns. YDB refuses to drop the column a TTL reads.
 6. Change the start and the increment of the Serial columns of existing tables.
 7. Add the new indexes of existing tables.
 8. Drop the removed tables.
@@ -397,7 +459,7 @@ ask with the variable `PTAH_ALLOW_TABLE_REBUILD=1` instead (see
 [ptah-compat](#ptah-compat)). The rebuild is the same:
 
 1. `CREATE TABLE` a scratch table, `__ptah_rebuild_<table>`, from the
-   declaration, with its indexes inside it.
+   declaration, with its indexes and its TTL inside it.
 2. `INSERT INTO` the scratch table `SELECT` the old rows, converting each
    changed column.
 3. `ALTER TABLE` the old table `RENAME TO __ptah_replaced_<table>`.
@@ -433,9 +495,9 @@ Even with the flag, a rebuild is refused when it would damage the table:
 - a table with a Serial column. The new table's sequence would start at 1 while
   the copied rows keep their values, so the next insert would collide, and YDB's
   `ALTER SEQUENCE ... RESTART WITH` takes only a literal;
-- a table carrying a setting Ptah does not model yet: a TTL, changefeeds,
-  column families, or partitioning, read replica and key bloom filter options.
-  Recreating the table would drop them.
+- a table carrying a setting Ptah does not model yet: a TTL run interval,
+  changefeeds, column families, or partitioning, read replica and key bloom
+  filter options. Recreating the table would drop them.
 
 ## What each release line does
 
@@ -511,13 +573,13 @@ the [support matrix](../support-matrix/).
 `ptah db read --db-url ydb://...` and the commands that compare against a
 database read every row table under the database root, its columns, defaults,
 `Serial` columns with their sequence's start, increment and last restart,
-primary key and global indexes, with each index's partitioning and read
+primary key, TTL and global indexes, with each index's partitioning and read
 replicas, and every view with the query the server stores.
 
 What Ptah does not model yet is recorded rather than dropped: topics,
 column-oriented tables, sequences other than a `Serial` column's, and the
-settings of a table such as TTL, column families, partitioning options and
-changefeeds. A command reports them, and a plan neither drops nor changes them.
+settings of a table such as a TTL run interval, column families, partitioning
+options and changefeeds. A command reports them, and a plan neither drops nor changes them.
 
 An index kind Ptah cannot read, such as a vector or a full-text index, is
 refused by name rather than read as a plain index.
@@ -848,7 +910,7 @@ These are refused with a message that names what is missing:
 - a YQL file as the desired schema (Go structs and YAML schemas work);
 - comments on tables, columns and indexes;
 - users, groups and permissions;
-- a table's own settings: TTL, partitioning, column families and changefeeds;
+- a table's own settings: partitioning, column families and changefeeds;
 - vector, full-text, JSON and column-table indexes;
 - `ptah inference` and the inference tools of `ptah mcp`, which wait for the vector index family.
 <!-- END GENERATED YDB GAPS -->

@@ -213,6 +213,10 @@ schema does, so silence about one of those in this format still removes it —
 except a hypertable, whose removal TimescaleDB has no statement for and which is
 refused instead. YAML has a key for none of the four.
 
+A table's row deletion policy, a Spanner or YDB TTL, has no HCL spelling
+either. This command warns about each one it leaves out, and a document read
+back keeps the table's policy.
+
 Both commands write a `permission` block by the same three rules: a schema is
 declared whenever anything references one, a grantee is a `role.<name>`
 reference only where the document declares that role block, and a target names

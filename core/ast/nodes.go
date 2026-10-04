@@ -167,25 +167,34 @@ type CreateTableNode struct {
 }
 
 // RowDeletionPolicySpec is a table's row deletion policy: the engine deletes a
-// row once Interval has passed since the timestamp in Column.
+// row once Interval has passed since the time in Column.
 //
-// Spanner is the engine that has it, spelled `TTL INTERVAL '30 days' ON
-// created_at`.
+// Two engines have it. Spanner spells it `TTL INTERVAL '30 days' ON
+// created_at`, and YDB spells it as the table setting `TTL = Interval("P30D")
+// ON created_at`, where an integer column also names the Unit its value counts
+// in: `TTL = Interval("PT1H") ON expires AS SECONDS`.
 //
-// Interval is stored as the author wrote it and is NOT compared as text. The
+// Interval is stored as the author wrote it and is NOT compared as text. Each
 // server rewrites it: measured against the Cloud Spanner emulator behind
 // PGAdapter 0.55.2, `INTERVAL '30 days'` reads back as
-// `INTERVAL '4 WEEKS 2 DAYS'`, so a declaration compared as text could never
-// converge. Comparison goes through
-// [ptah.run/internal/crdbinterval], which reads both sides into the value
-// they denote -- the same answer stokaro/ptah#1612 reached for the CockroachDB
-// policy, for the same reason.
+// `INTERVAL '4 WEEKS 2 DAYS'`, and YDB keeps only a whole number of seconds,
+// so `PT720H` reads back as `P30D`. A declaration compared as text could never
+// converge, so each engine's interval is compared as the value it denotes.
 type RowDeletionPolicySpec struct {
-	// Column is the timestamp column the interval is measured from.
+	// Column is the column the interval is measured from: a date or time
+	// column, or on YDB an integer column that counts Unit since the Unix
+	// epoch.
 	Column string `json:"column,omitempty"`
 	// Interval is the interval literal, without the INTERVAL keyword and
-	// without quotes: `30 days`.
+	// without quotes: `30 days` on Spanner, the ISO 8601 duration `P30D` on
+	// YDB.
 	Interval string `json:"interval,omitempty"`
+	// Unit is what an integer Column counts since the Unix epoch: SECONDS,
+	// MILLISECONDS, MICROSECONDS or NANOSECONDS. It is empty for a date or
+	// time column, and a target without
+	// [ptah.run/core/platform/capability.RowDeletionPolicyEpochColumn] refuses
+	// a policy that sets it.
+	Unit string `json:"unit,omitempty"`
 }
 
 // IsZero reports whether this is a policy at all. Nil is zero, and so is a spec

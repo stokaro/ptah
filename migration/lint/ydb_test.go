@@ -122,6 +122,18 @@ func TestYDBRules_ReportWhatTheServerRefuses(t *testing.T) {
 			want: []string{"0003_t.up.sql:1:YD104", "0003_t.up.sql:2:YD104"},
 		},
 		{
+			// The statements Ptah's planner writes, column names quoted and an
+			// integer column's unit after the column.
+			name: "the column a TTL Ptah wrote reads, dropped",
+			files: map[string]string{
+				"0001_t.up.sql": "CREATE TABLE `dir/t` (\n    `id` Int64 NOT NULL,\n    `e` Uint64,\n    PRIMARY KEY (`id`)\n" +
+					") WITH (TTL = Interval(\"PT1H\") ON `e` AS SECONDS);\n",
+				"0002_t.up.sql": "ALTER TABLE `dir/t` ADD COLUMN `ts` Timestamp;\n" +
+					"ALTER TABLE `dir/t` SET (TTL = Interval(\"P1D\") ON `ts`);\nALTER TABLE `dir/t` DROP COLUMN `ts`;\n",
+			},
+			want: []string{"0002_t.up.sql:3:YD104"},
+		},
+		{
 			name: "a down half dropping a column its up half indexed",
 			files: map[string]string{
 				"0001_t.up.sql":   "CREATE TABLE t (id Uint64 NOT NULL, PRIMARY KEY (id));\n",
@@ -187,6 +199,12 @@ func TestYDBRules_LeaveWhatTheServerRuns(t *testing.T) {
 			"0001_users.up.sql": usersTable,
 			"0002_drop.up.sql": "ALTER TABLE `shop/users` DROP INDEX users_email;\nALTER TABLE `shop/users` DROP COLUMN email;\n" +
 				"ALTER TABLE `shop/users` DROP COLUMN name;\nALTER TABLE `shop/users` RESET (TTL);\nALTER TABLE `shop/users` DROP COLUMN expires;\n"}},
+		{name: "the statements Ptah's planner writes: the TTL moved, then its old column dropped", files: map[string]string{
+			"0001_t.up.sql": "CREATE TABLE `dir/t` (\n    `id` Int64 NOT NULL,\n    `ts` Timestamp,\n    PRIMARY KEY (`id`)\n" +
+				") WITH (TTL = Interval(\"P1D\") ON `ts`);\n",
+			"0002_t.up.sql": "ALTER TABLE `dir/t` ADD COLUMN `e` Uint64;\n" +
+				"ALTER TABLE `dir/t` SET (TTL = Interval(\"PT1H\") ON `e` AS SECONDS);\nALTER TABLE `dir/t` DROP COLUMN `ts`;\n" +
+				"ALTER TABLE `dir/t` RESET (TTL);\nALTER TABLE `dir/t` DROP COLUMN `e`;\n"}},
 		{name: "an index dropped in the same ALTER TABLE, before the column", files: map[string]string{
 			"0001_users.up.sql": usersTable,
 			"0002_drop.up.sql":  "ALTER TABLE `shop/users` DROP INDEX users_email, DROP COLUMN email;\n"}},
