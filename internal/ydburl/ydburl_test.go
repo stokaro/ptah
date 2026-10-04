@@ -167,6 +167,7 @@ func TestWithRealm_HappyPath(t *testing.T) {
 		raw  string
 		want string
 	}{
+		// #nosec G101 -- a fixture with a made-up password, not credentials
 		{
 			name: "a URL with no realm",
 			raw:  "ydb://alice:s3cret@h:2136/local?go_balancer=disable",
@@ -238,6 +239,7 @@ func TestWithoutRealm_HappyPath(t *testing.T) {
 		raw  string
 		want string
 	}{
+		// #nosec G101 -- a fixture with a made-up password, not credentials
 		{
 			name: "a URL with a realm",
 			raw:  "ydb://alice:s3cret@h:2136/local?dev_realm=r1&go_balancer=disable",

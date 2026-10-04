@@ -315,8 +315,8 @@ func (u URL) Endpoint() string {
 
 // foldDatabase spells a database path with one leading slash and no trailing
 // one, and the empty path as "".
-func foldDatabase(path string) string {
-	trimmed := strings.Trim(path, "/")
+func foldDatabase(value string) string {
+	trimmed := strings.Trim(value, "/")
 	if trimmed == "" {
 		return ""
 	}
