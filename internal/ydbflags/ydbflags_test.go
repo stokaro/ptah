@@ -37,7 +37,7 @@ func TestRefine_EveryLineDefaultIsItsPreset(t *testing.T) {
 		{page: "local-ydb-25.1.4.7.json", preset: capability.YDB251},
 		{page: "local-ydb-25.2.1.24.json", preset: capability.YDB252},
 		{page: "local-ydb-25.3.1.25.json", preset: capability.YDB253},
-		{page: "local-ydb-25.4.1.15.json", preset: capability.YDB253},
+		{page: "local-ydb-25.4.1.15.json", preset: capability.YDB254},
 		{page: "local-ydb-26.1.1.22.json", preset: capability.YDB261},
 		{page: "local-ydb-26.2.1.14.json", preset: capability.YDB262},
 	} {
@@ -88,6 +88,12 @@ func TestRefine_HappyPath(t *testing.T) {
 			flags: ydbflags.Flags{"EnableMoveIndex": false},
 			key:   capability.IndexRename,
 			want:  false,
+		},
+		{
+			name:  "a changefeed's auto-partitioned topic follows its flag",
+			flags: ydbflags.Flags{"EnableTopicAutopartitioningForCDC": true},
+			key:   capability.ChangefeedTopicAutoPartitioning,
+			want:  true,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -431,6 +437,13 @@ func TestRefused_HappyPath(t *testing.T) {
 			refusal:  "Status: PRECONDITION_FAILED Issues: <main>: Error: Move index is not supported yet, code: 2029",
 			wantKey:  capability.IndexRename,
 			wantFlag: "EnableMoveIndex",
+		},
+		{
+			name: "25.1.4.7 a changefeed with an auto-partitioned topic",
+			refusal: "operation/BAD_REQUEST (code = 400010, issues = [{#2017 'Topic autopartitioning for CDC " +
+				"is disabled'}])",
+			wantKey:  capability.ChangefeedTopicAutoPartitioning,
+			wantFlag: "EnableTopicAutopartitioningForCDC",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

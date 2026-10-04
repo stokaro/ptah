@@ -1246,6 +1246,50 @@ const (
 	// table rather than on the index.
 	IndexPartitioning Capability = "index_partitioning"
 
+	// Changefeeds marks a target on which Ptah declares, reads and plans a
+	// changefeed: YDB's stream of a row table's changes, added with `ALTER
+	// TABLE ... ADD CHANGEFEED ... WITH (MODE = ..., FORMAT = ...)` and kept
+	// in a topic at `<table>/<changefeed>`, together with the retention and
+	// the consumers of that topic.
+	//
+	// Measured on every YDB line from 25.1.4.7 to 26.2.1.14: a changefeed is
+	// added only to a table that exists, one per statement (`Only one
+	// changefeed can be added by one operation`), and none of its options
+	// changes in place (`ALTER CHANGEFEED ... SET (MODE = ...)` answers `MODE
+	// alter is not supported`), while `ALTER TOPIC <table>/<changefeed>`
+	// changes the retention and the consumers. DescribeTable reports a
+	// changefeed's options and state, and DescribeTopic on its path the
+	// retention, partitions and consumers. CockroachDB's CREATE CHANGEFEED
+	// is a job rather than a table setting, and Ptah models none.
+	Changefeeds Capability = "changefeeds"
+
+	// ChangefeedUserSIDs marks a target whose changefeed takes `USER_SIDS =
+	// TRUE`, naming the user who made each change in its record. Measured:
+	// accepted on YDB 26.1.1.22 and 26.2.1.14, and `Unknown changefeed
+	// setting: USER_SIDS` on 25.1.4.7 to 25.4.1.15.
+	ChangefeedUserSIDs Capability = "changefeed_user_sids"
+
+	// ChangefeedSchemaChanges marks a target whose changefeed takes
+	// `SCHEMA_CHANGES = TRUE`, writing a record for each change of the
+	// table's schema. Measured: accepted on YDB 25.3.1.25 and later, and
+	// `Unknown changefeed setting: SCHEMA_CHANGES` on 25.1.4.7 and 25.2.1.24.
+	ChangefeedSchemaChanges Capability = "changefeed_schema_changes"
+
+	// ChangefeedTopicAutoPartitioning marks a target whose changefeed takes
+	// `TOPIC_AUTO_PARTITIONING = 'ENABLED'`, a topic that gains partitions as
+	// the table's write rate grows. It is behind YDB's
+	// EnableTopicAutopartitioningForCDC flag: off on 25.1.4.7, where the
+	// statement answers `Topic autopartitioning for CDC is disabled` and is
+	// accepted once the flag is on, and on from 25.2.1.24.
+	ChangefeedTopicAutoPartitioning Capability = "changefeed_topic_auto_partitioning"
+
+	// TopicConsumerAvailabilityPeriod marks a target whose topic consumer
+	// takes `availability_period`, the time the topic keeps a record that
+	// consumer has not read beyond the retention period. Measured: accepted
+	// on YDB 25.4.1.15 and later, and `AVAILABILITY_PERIOD: unknown option
+	// for consumer` on 25.1.4.7 to 25.3.1.25.
+	TopicConsumerAvailabilityPeriod Capability = "topic_consumer_availability_period"
+
 	// SerialColumns marks a target whose SERIAL column types fill the column
 	// on insert without the application naming a value: PostgreSQL's serial
 	// pseudo-types and YDB's Serial, BigSerial and SmallSerial, each backed by
@@ -1695,6 +1739,21 @@ var registry = map[Capability]spec{
 	IndexPartitioning: {
 		doc: "Ptah declares, reads and changes a global index's partitioning and read replicas (YDB's ALTER INDEX ... SET)",
 	},
+	Changefeeds: {
+		doc: "Ptah declares, reads and plans a table's changefeeds and their topics' consumers (YDB's ADD CHANGEFEED)",
+	},
+	ChangefeedUserSIDs: {
+		doc: "a changefeed names the user of each change, USER_SIDS (YDB 26.1 and later)",
+	},
+	ChangefeedSchemaChanges: {
+		doc: "a changefeed writes a record for each schema change, SCHEMA_CHANGES (YDB 25.3 and later)",
+	},
+	ChangefeedTopicAutoPartitioning: {
+		doc: "a changefeed's topic gains partitions as writes grow, TOPIC_AUTO_PARTITIONING (behind a flag on YDB 25.1)",
+	},
+	TopicConsumerAvailabilityPeriod: {
+		doc: "a topic consumer keeps unread records past the retention, availability_period (YDB 25.4 and later)",
+	},
 	SerialColumns: {
 		doc: "SERIAL column types fill the column from an implicit sequence (PostgreSQL serial, YDB Serial)",
 	},
@@ -1987,11 +2046,18 @@ func MySQL84() Capabilities {
 		AsyncIndexes:         false,
 		// Only the YDB planner pairs a removed index with an added one, and
 		// index partitioning is YDB's, so both index keys are false here.
-		IndexRename:          false,
-		IndexPartitioning:    false,
-		SerialColumns:        true,
-		SmallIntegerDefaults: true,
-		DocumentTypeDefaults: false,
+		IndexRename:       false,
+		IndexPartitioning: false,
+		// A changefeed and the topic consumers it carries are YDB's, so the
+		// five changefeed keys are false here.
+		Changefeeds:                     false,
+		ChangefeedUserSIDs:              false,
+		ChangefeedSchemaChanges:         false,
+		ChangefeedTopicAutoPartitioning: false,
+		TopicConsumerAvailabilityPeriod: false,
+		SerialColumns:                   true,
+		SmallIntegerDefaults:            true,
+		DocumentTypeDefaults:            false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -2202,11 +2268,18 @@ func MariaDB1011() Capabilities {
 		AsyncIndexes:         false,
 		// Only the YDB planner pairs a removed index with an added one, and
 		// index partitioning is YDB's, so both index keys are false here.
-		IndexRename:          false,
-		IndexPartitioning:    false,
-		SerialColumns:        true,
-		SmallIntegerDefaults: true,
-		DocumentTypeDefaults: false,
+		IndexRename:       false,
+		IndexPartitioning: false,
+		// A changefeed and the topic consumers it carries are YDB's, so the
+		// five changefeed keys are false here.
+		Changefeeds:                     false,
+		ChangefeedUserSIDs:              false,
+		ChangefeedSchemaChanges:         false,
+		ChangefeedTopicAutoPartitioning: false,
+		TopicConsumerAvailabilityPeriod: false,
+		SerialColumns:                   true,
+		SmallIntegerDefaults:            true,
+		DocumentTypeDefaults:            false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -2356,11 +2429,20 @@ func Postgres16() Capabilities {
 		AsyncIndexes:         false,
 		// Only the YDB planner pairs a removed index with an added one, and
 		// index partitioning is YDB's, so both index keys are false here.
-		IndexRename:          false,
-		IndexPartitioning:    false,
-		SerialColumns:        true,
-		SmallIntegerDefaults: true,
-		DocumentTypeDefaults: false,
+		IndexRename:       false,
+		IndexPartitioning: false,
+		// A changefeed and the topic consumers it carries are YDB's, so the
+		// five changefeed keys are false here. CockroachDB's CREATE
+		// CHANGEFEED, inherited from this preset, is a job that exports rows
+		// rather than a setting of the table, and Ptah models none.
+		Changefeeds:                     false,
+		ChangefeedUserSIDs:              false,
+		ChangefeedSchemaChanges:         false,
+		ChangefeedTopicAutoPartitioning: false,
+		TopicConsumerAvailabilityPeriod: false,
+		SerialColumns:                   true,
+		SmallIntegerDefaults:            true,
+		DocumentTypeDefaults:            false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -2636,11 +2718,18 @@ func ClickHouse24() Capabilities {
 		AsyncIndexes:         false,
 		// Only the YDB planner pairs a removed index with an added one, and
 		// index partitioning is YDB's, so both index keys are false here.
-		IndexRename:          false,
-		IndexPartitioning:    false,
-		SerialColumns:        false,
-		SmallIntegerDefaults: true,
-		DocumentTypeDefaults: false,
+		IndexRename:       false,
+		IndexPartitioning: false,
+		// A changefeed and the topic consumers it carries are YDB's, so the
+		// five changefeed keys are false here.
+		Changefeeds:                     false,
+		ChangefeedUserSIDs:              false,
+		ChangefeedSchemaChanges:         false,
+		ChangefeedTopicAutoPartitioning: false,
+		TopicConsumerAvailabilityPeriod: false,
+		SerialColumns:                   false,
+		SmallIntegerDefaults:            true,
+		DocumentTypeDefaults:            false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -2811,11 +2900,18 @@ func SQLite3() Capabilities {
 		AsyncIndexes:         false,
 		// Only the YDB planner pairs a removed index with an added one, and
 		// index partitioning is YDB's, so both index keys are false here.
-		IndexRename:          false,
-		IndexPartitioning:    false,
-		SerialColumns:        false,
-		SmallIntegerDefaults: true,
-		DocumentTypeDefaults: false,
+		IndexRename:       false,
+		IndexPartitioning: false,
+		// A changefeed and the topic consumers it carries are YDB's, so the
+		// five changefeed keys are false here.
+		Changefeeds:                     false,
+		ChangefeedUserSIDs:              false,
+		ChangefeedSchemaChanges:         false,
+		ChangefeedTopicAutoPartitioning: false,
+		TopicConsumerAvailabilityPeriod: false,
+		SerialColumns:                   false,
+		SmallIntegerDefaults:            true,
+		DocumentTypeDefaults:            false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -3065,11 +3161,18 @@ func SQLServer2022() Capabilities {
 		AsyncIndexes:         false,
 		// Only the YDB planner pairs a removed index with an added one, and
 		// index partitioning is YDB's, so both index keys are false here.
-		IndexRename:          false,
-		IndexPartitioning:    false,
-		SerialColumns:        false,
-		SmallIntegerDefaults: true,
-		DocumentTypeDefaults: false,
+		IndexRename:       false,
+		IndexPartitioning: false,
+		// A changefeed and the topic consumers it carries are YDB's, so the
+		// five changefeed keys are false here.
+		Changefeeds:                     false,
+		ChangefeedUserSIDs:              false,
+		ChangefeedSchemaChanges:         false,
+		ChangefeedTopicAutoPartitioning: false,
+		TopicConsumerAvailabilityPeriod: false,
+		SerialColumns:                   false,
+		SmallIntegerDefaults:            true,
+		DocumentTypeDefaults:            false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -3755,11 +3858,18 @@ func Oracle23() Capabilities {
 		AsyncIndexes:         false,
 		// Only the YDB planner pairs a removed index with an added one, and
 		// index partitioning is YDB's, so both index keys are false here.
-		IndexRename:          false,
-		IndexPartitioning:    false,
-		SerialColumns:        false,
-		SmallIntegerDefaults: true,
-		DocumentTypeDefaults: false,
+		IndexRename:       false,
+		IndexPartitioning: false,
+		// A changefeed and the topic consumers it carries are YDB's, so the
+		// five changefeed keys are false here.
+		Changefeeds:                     false,
+		ChangefeedUserSIDs:              false,
+		ChangefeedSchemaChanges:         false,
+		ChangefeedTopicAutoPartitioning: false,
+		TopicConsumerAvailabilityPeriod: false,
+		SerialColumns:                   false,
+		SmallIntegerDefaults:            true,
+		DocumentTypeDefaults:            false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -3938,6 +4048,22 @@ func YDB262() Capabilities {
 		IndexRename:       true,
 		IndexPartitioning: true,
 
+		// Changefeeds, measured on 26.2.1.14 and on every line down to
+		// 25.1.4.7 with the same statements: a changefeed is added with ALTER
+		// TABLE ... ADD CHANGEFEED, one per statement, on a table that exists
+		// (CREATE TABLE takes no CHANGEFEED clause: `TCoAtomStub(): requirement
+		// Match(node.Get()) failed`), and dropped with DROP CHANGEFEED. No
+		// option of one changes in place (`MODE alter is not supported`), and
+		// ALTER TOPIC <table>/<changefeed> changes the retention and the
+		// consumers. On this line USER_SIDS, SCHEMA_CHANGES, an
+		// auto-partitioned topic and a consumer's availability_period are all
+		// accepted and read back.
+		Changefeeds:                     true,
+		ChangefeedUserSIDs:              true,
+		ChangefeedSchemaChanges:         true,
+		ChangefeedTopicAutoPartitioning: true,
+		TopicConsumerAvailabilityPeriod: true,
+
 		// Tables and their in-place changes. A table needs a key (`Primary
 		// key is required for ydb tables.`), and no ALTER changes it. A
 		// column's type never changes and a column is never renamed: `ALTER
@@ -4029,43 +4155,62 @@ func YDB261() Capabilities {
 	return YDB262().With(AlterColumnDefault, false)
 }
 
-// YDB253 is the preset for YDB 25.3 and 25.4, which answered every measured
-// statement alike. It differs from [YDB261] in one key: ADD COLUMN with a
-// default is refused on an empty table and on one holding rows, as `Adding
-// columns with defaults is disabled` (measured on 25.3.1.25 and 25.4.1.15).
-func YDB253() Capabilities {
-	return YDB261().With(AddColumnWithDefault, false)
+// YDB254 is the preset for YDB 25.4. It differs from [YDB261] in two keys,
+// each measured on 25.4.1.15:
+//
+//   - ADD COLUMN with a default is refused on an empty table and on one
+//     holding rows, as `Adding columns with defaults is disabled`;
+//   - a changefeed's USER_SIDS answers `Unknown changefeed setting:
+//     USER_SIDS`.
+func YDB254() Capabilities {
+	return YDB261().
+		With(AddColumnWithDefault, false).
+		With(ChangefeedUserSIDs, false)
 }
 
-// YDB252 is the preset for YDB 25.2. It differs from [YDB253] in two keys,
+// YDB253 is the preset for YDB 25.3. It differs from [YDB254] in one key: a
+// topic consumer's availability_period answers `AVAILABILITY_PERIOD: unknown
+// option for consumer` on 25.3.1.25, where 25.4.1.15 takes it and reads it
+// back. Every other statement measured on the two lines answered alike.
+func YDB253() Capabilities {
+	return YDB254().With(TopicConsumerAvailabilityPeriod, false)
+}
+
+// YDB252 is the preset for YDB 25.2. It differs from [YDB253] in three keys,
 // each measured on 25.2.1.24 against 25.3.1.25:
 //
 //   - a JsonDocument or DyNumber column with a literal default answers
 //     `Unsupported type of literal: JsonDocument` (and `DyNumber`), where
 //     25.3 accepts both;
 //   - `UPDATE ... RETURNING` on a table with a unique index fails with
-//     `INTERNAL_ERROR ... wrong returning expr type`, where 25.3 runs it.
+//     `INTERNAL_ERROR ... wrong returning expr type`, where 25.3 runs it;
+//   - a changefeed's SCHEMA_CHANGES answers `Unknown changefeed setting:
+//     SCHEMA_CHANGES`, where 25.3 takes it and reads it back.
 func YDB252() Capabilities {
 	return YDB253().
 		With(DocumentTypeDefaults, false).
-		With(ReturningClause, false)
+		With(ReturningClause, false).
+		With(ChangefeedSchemaChanges, false)
 }
 
 // YDB251 is the preset for YDB 25.1, the oldest line Ptah measured.
 //
-// It differs from [YDB252] in three keys, each measured on 25.1.4.7:
+// It differs from [YDB252] in four keys, each measured on 25.1.4.7:
 //
 //   - the 64-bit date and time types are behind a flag that is off (`support
 //     for new date/time 64 types is disabled`);
 //   - Decimal takes no precision but (22,9) (`support for parametrized decimal
 //     is disabled`);
 //   - an Int16 or Uint16 column with a literal default fails the CREATE TABLE
-//     with `INTERNAL_ERROR ... Unexpected type slot Int16`.
+//     with `INTERNAL_ERROR ... Unexpected type slot Int16`;
+//   - a changefeed's auto-partitioned topic is behind a flag that is off
+//     (`Topic autopartitioning for CDC is disabled`).
 func YDB251() Capabilities {
 	return YDB252().
 		With(WideDateTimeTypes, false).
 		With(ParameterizedDecimal, false).
-		With(SmallIntegerDefaults, false)
+		With(SmallIntegerDefaults, false).
+		With(ChangefeedTopicAutoPartitioning, false)
 }
 
 var defaultDialectPresets = map[string]func() Capabilities{
@@ -4139,6 +4284,7 @@ func NamedPresets() []NamedPreset {
 		{"YDB251", YDB251()},
 		{"YDB252", YDB252()},
 		{"YDB253", YDB253()},
+		{"YDB254", YDB254()},
 		{"YDB261", YDB261()},
 		{"YDB262", YDB262()},
 	}
@@ -4724,13 +4870,15 @@ func ydbServerVersion(version string) (serverVersion, bool) {
 }
 
 // ydbForVersion picks the arm. Each step is a line the measurement separated
-// from the one below it; 25.3 and 25.4 answered alike and share a preset.
+// from the one below it.
 func ydbForVersion(v serverVersion) Capabilities {
 	switch {
 	case atLeastLine(v, capabilityline.YDB262):
 		return YDB262()
 	case atLeastLine(v, capabilityline.YDB261):
 		return YDB261()
+	case atLeastLine(v, capabilityline.YDB254):
+		return YDB254()
 	case atLeastLine(v, capabilityline.YDB253):
 		return YDB253()
 	case atLeastLine(v, capabilityline.YDB252):

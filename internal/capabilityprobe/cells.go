@@ -752,13 +752,13 @@ var Cells = []Cell{
 	},
 	{
 		Dialect: platform.YDB, Line: capabilityline.YDB254,
-		Preset: capability.YDB253, PresetName: "YDB253",
+		Preset: capability.YDB254, PresetName: "YDB254",
 		Refinement: RefinedByVersion, Support: capability.BestEffort,
 		Image: "ydbplatform/local-ydb:25.4", ResolveNewestPatch: true,
 		Unprobed:    ydbUnprobed,
 		Understates: ydbUnderstates,
-		Note: ydbUnprobedNote("25.4.1.15") + " It answers every statement as 25.3 does, and reports its version " +
-			"as `stable-25-4-1`.",
+		Note: ydbUnprobedNote("25.4.1.15") + " The first line whose topic consumer takes availability_period, " +
+			"and it reports its version as `stable-25-4-1`.",
 	},
 	{
 		Dialect: platform.YDB, Line: capabilityline.YDB253,

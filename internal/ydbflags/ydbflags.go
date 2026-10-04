@@ -104,6 +104,14 @@ var gates = []Gate{
 		Flag:     "EnableMoveIndex",
 		refusals: []string{"Move index is not supported yet"},
 	},
+	{
+		// Off on 25.1 and on from 25.2. With the flag on, 25.1 takes a
+		// changefeed with TOPIC_AUTO_PARTITIONING = 'ENABLED' and reads it
+		// back as an auto-partitioned topic.
+		Key:      capability.ChangefeedTopicAutoPartitioning,
+		Flag:     "EnableTopicAutopartitioningForCDC",
+		refusals: []string{"Topic autopartitioning for CDC is disabled"},
+	},
 }
 
 // Gates returns every capability a flag decides, in a fixed order.
