@@ -8,9 +8,9 @@
 //
 //   - The scheme service lists a secret as an entry of type SECRET, and
 //     describing its path returns the entry and its permissions. Nothing
-//     returns the value: SELECT, SHOW CREATE and DROP TABLE on the path answer
-//     `Path is not a table or topic`, and the secret service's DescribeSecret
-//     answers Unimplemented.
+//     returns the value: SELECT, SHOW CREATE TABLE and DROP TABLE on the path
+//     answer `Path is not a table or topic`, and the secret service's
+//     DescribeSecret answers Unimplemented.
 //   - A value is a String literal or a named expression holding one. A query
 //     parameter is not: `DECLARE $v AS String; CREATE SECRET s WITH (value =
 //     $v)` fails at compile time (`GetParameterValue(): requirement ...
@@ -22,18 +22,20 @@
 //     statements, though the upstream documentation describes them, and ALTER
 //     SECRET takes only the value (`parameter VALUE must be set`).
 //
-// 25.1.4.7 to 25.4.1.15 have only the deprecated `CREATE OBJECT name (TYPE
-// SECRET)`, which keeps the value in `.metadata/secrets/values` and every value
-// it ever held in `values_history`, both readable in clear by the database
-// administrator, and not listable by the user who created the secret.
-// Ptah neither reads nor writes that form, and a line without
-// [capability.Secrets] refuses a declared secret.
+// 25.4.1.15 and later have these statements by default, and 25.3.1.25 behind
+// YDB's EnableSchemaSecrets flag. 25.1.4.7 and 25.2.1.24 have only the
+// deprecated `CREATE OBJECT name (TYPE SECRET)`, which keeps the value in
+// `.metadata/secrets/values` and every value it ever held in
+// `values_history`, both readable in clear by the database administrator, and
+// which the user who created the secret cannot list. Ptah neither reads nor
+// writes that form, and a line without [capability.Secrets] refuses a declared
+// secret.
 //
 // So a declaration never carries the value. It names an environment variable
 // whose name starts with [ValuePrefix], every statement Ptah writes refers to
 // that variable as the named expression `$<variable>`, and the YDB connection
-// defines the expression from the environment just before the statement is
-// sent, through [Expand]. A migration file, a plan and a log hold the
+// defines the expression from the environment as the statement is sent,
+// through [Expand]. A migration file, a plan and a log hold the
 // variable's name, and a statement run without Ptah fails loudly on an unknown
 // name instead of creating a secret with some other value.
 package ydbsecret

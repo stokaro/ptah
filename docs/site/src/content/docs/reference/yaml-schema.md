@@ -82,6 +82,7 @@ Top-level objects are maps. Their keys are used as default object names when a
 | `revokes` | Privileges a role must not hold, named like a grant: `role`, `privileges`, one target, and `comment`. |
 | `default_privileges` | PostgreSQL default privileges: what a grantee receives on objects a role creates later. |
 | `topics` | YDB topics: the settings their annotation takes, and `consumers` keyed by name. See [Topics](../../databases/ydb/#topics). |
+| `secrets` | YDB secrets, each by its directory and the environment variable its value comes from; see [Secrets](#secrets). |
 
 Unknown keys fail. Ptah does not silently ignore fields that look meaningful but
 are outside the supported schema.
@@ -312,6 +313,22 @@ tables:
             important: true
           search:
             supported_codecs: [raw, gzip]
+```
+
+## Secrets
+
+A YDB secret sits under `secrets`, keyed by name, with the attributes of
+`//ptah:schema:secret`: `name` when the key is not the name, `schema` for its
+directory, and `value_env` for the environment variable that holds the value,
+whose name starts with `PTAH_SECRET_`. A document never holds the value: a
+`value` key is refused, and the error names the key and not what it held. Every
+other dialect refuses a secret. See [secrets](../../databases/ydb/#secrets).
+
+```yaml
+secrets:
+  pg_password:
+    schema: ext
+    value_env: PTAH_SECRET_PG_PASSWORD
 ```
 
 ## Platform overrides

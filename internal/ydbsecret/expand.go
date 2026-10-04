@@ -58,7 +58,7 @@ var ErrReference = errors.New("a secret value is referred to outside the value o
 // name itself is refused the same way. A variable that is not set refuses the
 // query, naming the variable; one that is set and empty is the empty value.
 //
-// The definitions are written just before the first statement that uses
+// The definitions are written in front of the first statement that uses
 // them, after any translation setting and PRAGMA ahead of it, and each value
 // is a String literal: YDB takes a secret's value as a String and refuses a
 // Utf8 one (`String (or named expression with type String) was expected`).

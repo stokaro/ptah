@@ -624,6 +624,86 @@ read without it. YQL sets none of them outside a serverless database. Atlas HCL
 has no block for a topic, so a plan from an HCL document leaves every topic
 alone, and an HCL export reports each topic it leaves out.
 
+## Secrets
+
+A secret is a scheme object whose value YDB keeps and never returns. An
+external data source reads a password or an access key from one. A secret is
+declared by its path and by the environment variable its value comes from:
+
+```go
+//ptah:schema:secret name="pg_password" schema="ext" value_env="PTAH_SECRET_PG_PASSWORD"
+type Credentials struct{}
+```
+
+A YAML schema takes the same keys under `secrets`. A declaration never holds
+the value. One that writes `value` is refused, and the error names the
+attribute and not what it held. The variable's name has to start with
+`PTAH_SECRET_`. Ptah reads the value on the machine that runs the statement,
+and the prefix keeps a migration file from copying any other variable of that
+machine, such as a cloud credential, into a secret that an external data
+source could then send elsewhere.
+
+Every statement Ptah writes refers to the variable as a named expression:
+
+```sql
+CREATE SECRET `ext/pg_password` WITH (value = $PTAH_SECRET_PG_PASSWORD);
+```
+
+The connection defines the expression from the environment as it sends the
+statement, as `$PTAH_SECRET_PG_PASSWORD = '...';` in the same query. So
+a migration file, a plan, a dry run and a log hold the variable's name and
+never the value, and the value is taken out of any error the server answers
+with. The same statement run without Ptah fails with `Unknown name:
+$PTAH_SECRET_PG_PASSWORD` instead of creating a secret with some other value.
+YDB takes a secret's value only in the query text: a query parameter is refused
+when the query compiles. The value therefore reaches the server in the query,
+as it does for any `CREATE SECRET`.
+
+The connection defines a value only as the value of `CREATE SECRET` or `ALTER
+SECRET`. It refuses, before anything is sent, a query that refers to a
+`$PTAH_SECRET_...` name anywhere else, a query that defines one itself, a
+prepared statement that refers to one, and a reference to a variable that is
+not set. A variable that is set and empty is the empty value. A replay on a
+[dev realm](#dev-shadow-and-scratch-databases) runs the statement too, so the
+variable has to be set there as well; any value works for a replay.
+
+The reader lists each secret by its path, and nothing YDB answers holds its
+value. A secret both sides hold is therefore equal whatever its value, and a
+plan creates a declared secret the database lacks and drops one the
+declaration leaves out. Dropping a secret is destructive, since nothing can
+read its value back. YDB records no dependency on a secret: it drops one an
+external data source still names, and the source fails at its next read.
+
+A changed value is planned only when asked for. `--rotate-secret <dir/name>`
+on `schema apply`, `schema plan`, `schema diff`, `schema compare`, `migrations
+plan` and `migrations generate` names a declared secret the database holds,
+and the plan gives it the value its variable holds when the plan runs:
+
+```sql
+ALTER SECRET `ext/pg_password` WITH (value = $PTAH_SECRET_PG_PASSWORD);
+```
+
+The flag is repeatable and reads no environment variable. A name the
+declaration does not hold is refused. A rollback drops a secret the change
+created, and creates a dropped one again with the value of the variable its
+path names, `PTAH_SECRET_EXT_PG_PASSWORD` for `ext/pg_password`. It does not
+restore a rotated value, which Ptah never read.
+
+Ptah creates a secret with YDB's default permissions: it inherits only
+`DESCRIBE SCHEMA` from its directory, and its owner holds every right on it.
+An external data source reads a secret with the `SELECT ROW` right on it.
+
+Secrets need the `secrets` key: YDB 25.4 and later have them, and 25.3 has them
+behind the `EnableSchemaSecrets` flag, which is off by default (`Secrets are
+disabled. Please contact your system administrator to enable it`). 25.1 and
+25.2 have only the deprecated `CREATE OBJECT ... (TYPE SECRET)`. A user cannot
+list such a secret, and the database administrator reads its value, and every
+value it ever held, in clear from `.metadata/secrets`. Ptah models it on no
+line, never reads `.metadata`, and lint rule `YD120` reports a migration that
+writes a secret's value, in either form. HCL, DBML and SQL documents cannot
+name a secret, so their silence does not plan a drop, and `schema inspect`
+warns about each secret it leaves out of an HCL document.
+
 ## Planning changes
 
 YDB changes a table in place less than the SQL engines do, and runs a schema
@@ -635,7 +715,8 @@ statement needs one that has not run yet:
    reads.
 2. Revoke the permissions and remove the memberships the plan takes away, then
    create and change users and groups.
-3. Drop the removed topics, so a table created at a topic's path finds it free.
+3. Drop the removed topics and secrets, so a table created at the path of
+   either finds it free.
 4. Create the added tables, with their indexes and changefeeds, each followed
    by the `ALTER SEQUENCE` that gives a Serial column its declared start and
    increment.
@@ -651,8 +732,9 @@ statement needs one that has not run yet:
     then change topics in place. Drops come first, so a table that swaps one
     changefeed for another stays within YDB's limit.
 11. Drop the removed tables.
-12. Create the added topics, then change the changed ones, so a topic created
-    at a dropped table's path finds it free.
+12. Create the added topics and change the changed ones, then create the added
+    secrets and rotate the ones the command was asked to. Both follow the
+    drops, so an object created at a dropped table's path finds it free.
 13. Create the added and replaced views, a view after the view it reads. YDB
     checks a view's query against the schema when it creates the view.
 14. Add memberships and grants, once the tables they name exist.
@@ -741,7 +823,7 @@ or `stable-25-4-1`:
 | `YDB262` | 26.2 | — |
 | `YDB261` | 26.1 | `SET DEFAULT` and `DROP DEFAULT` on an existing column |
 | `YDB254` | 25.4 | a column added with a default, a changefeed's `USER_SIDS`, a `GRANT` on a root object by its relative name |
-| `YDB253` | 25.3 | a consumer's `availability_period` |
+| `YDB253` | 25.3 | a consumer's `availability_period`, secrets (behind a flag) |
 | `YDB252` | 25.2 | a `JsonDocument` or `DyNumber` default, `UPDATE ... RETURNING` on a table with a unique index, a changefeed's `SCHEMA_CHANGES` |
 | `YDB251` | 25.1 | the 64-bit date and time types, `Decimal` precision other than 22,9, an `Int16` or `Uint16` default, an auto-partitioned changefeed topic |
 
@@ -773,6 +855,7 @@ The flags decide these capabilities:
 | `EnableParameterizedDecimal` | `parameterized_decimal` |
 | `EnableMoveIndex` | `index_rename` |
 | `EnableTopicAutopartitioningForCDC` | `changefeed_topic_auto_partitioning` |
+| `EnableSchemaSecrets` | `secrets` |
 
 `EnableAsyncIndexes` decides no capability: a cluster with the flag off still
 builds a `GLOBAL ASYNC` index, so `async_indexes` keeps the preset's answer.
@@ -809,7 +892,8 @@ database read every row table under the database root, its columns, defaults,
 primary key, TTL and global indexes, with each index's partitioning and read
 replicas, its changefeeds, each with the retention and the consumers of its
 topic, every view with the query the server stores, every topic with its
-settings and consumers, and the users, groups and permissions; see
+settings and consumers, every secret by its path, and the users, groups and
+permissions; see
 [Users, groups and permissions](#users-groups-and-permissions).
 
 What Ptah does not model yet is recorded rather than dropped:
@@ -862,9 +946,9 @@ change that resets the minimum partition count, a table a view reads that is
 dropped or renamed, a renamed table that carries a changefeed,
 a `REVOKE GRANT OPTION FOR`, which takes the permission too, a dropped user
 or group, which leaves its permissions behind, a topic setting reset that
-changes nothing, and a topic setting YDB keeps as nothing. `DS107` reports a
-dropped user or group as it reports a dropped role elsewhere, and a dropped
-topic.
+changes nothing, a topic setting YDB keeps as nothing, and a secret's value
+written into the migration. `DS107` reports a dropped user or group as it
+reports a dropped role elsewhere, and a dropped topic.
 [Lint rules](../../reference/lint-rules/#ydb) lists each rule with its
 meaning.
 
@@ -988,8 +1072,9 @@ effect it does not confine:
   through a `$` expression or names a cluster, an `ALTER TABLE ... RENAME TO`
   either, and `PRAGMA TablePathPrefix`;
 - `DEFINE ACTION`, `DO` and `EVALUATE`, which run statements they compute;
-- users, groups, `GRANT` and `REVOKE`, secrets, resource pools, backups and
-  `ALTER DATABASE`, which belong to the whole database;
+- users, groups, `GRANT` and `REVOKE`, the deprecated secret object made with
+  `CREATE OBJECT`, resource pools, backups and `ALTER DATABASE`, which belong
+  to the whole database;
 - external data sources and tables, async replication, transfers and streaming
   queries, which reach outside the server.
 
@@ -1061,6 +1146,12 @@ nothing about one. Applying it leaves the database's changefeeds as they are,
 and a rebuild adds them to the new table. `schema inspect` and `ptah schema
 export` warn about each changefeed they leave out, and `--cleanup-go-annotations`
 refuses to delete one.
+
+Neither has a block for a secret either. Applying such a document drops no
+secret, and `schema inspect` warns about each secret it leaves out. A secret's
+value reaches the server only from the environment, as on the native commands,
+and `ptah-compat` takes no flag that rotates one: `--rotate-secret` is a native
+request.
 
 The YDB driver reports a row count it did not measure, so a `script exec` or
 `script loop` step reports its count as not reported, and `expect_rows` is
