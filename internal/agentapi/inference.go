@@ -160,7 +160,12 @@ func (s *Session) openInference(
 // The PostgreSQL driver directly rather than dbschema, because the run state
 // and the vector catalogs this reads are a PostgreSQL vertical: there is no
 // dialect-agnostic form of them to read through a dialect-agnostic connection.
+// A target naming another engine is refused before it is dialed, in the words
+// `ptah inference` uses for the same URL.
 func openInferenceDatabase(ctx context.Context, target *agenttarget.Target) (*sql.DB, error) {
+	if err := embedpg.RefuseAnotherEngine(target.URL()); err != nil {
+		return nil, agentdiag.Errorf(agentdiag.CodeInvalidRequest, "target %s: %w", target.Name(), err)
+	}
 	db, err := sql.Open("pgx", target.URL())
 	if err != nil {
 		return nil, agentdiag.Errorf(agentdiag.CodeDatabaseUnreachable, "connect: %w", err)

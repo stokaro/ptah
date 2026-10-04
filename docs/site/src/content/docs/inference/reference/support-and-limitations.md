@@ -45,6 +45,18 @@ vertical, so there is nothing here to run against mysql
 The PostgreSQL family is refused too. CockroachDB, YugabyteDB and Spanner speak
 the wire protocol pgvector's driver connects with and have no pgvector.
 
+YDB is refused with a different message, because a generation on YDB's own
+vector indexes is planned in [#4015](https://github.com/stokaro/ptah/issues/4015):
+
+```console
+$ ptah inference plan --spec spec.yaml --db-url "ydb://localhost:2136/local"
+error: "ydb://" names a YDB database: running an embedding generation against
+YDB is not implemented yet (stokaro/ptah#4015, phase 12)
+```
+
+The `inference_plan` and `inference_status` tools of `ptah mcp` give the same
+answers for a configured target, before they connect to it.
+
 **No other provider API.** A provider that is not OpenAI-compatible needs a
 gateway in front of it.
 

@@ -2,13 +2,14 @@ package schema
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/internal/cli/internal/cmdutil"
@@ -194,17 +195,21 @@ func runSchemaLineageLive(cmd *cobra.Command, opts schemaLineageOptions) error {
 		return cmdutil.Fail(cmd, fmt.Errorf("connect to database: %w", err))
 	}
 	defer dbschema.CloseAndWarn(conn)
-	// The YDB reader does not read views, so a lineage of its description
-	// would report no view where the database has some.
-	if platform.NormalizeDialect(conn.Info().Dialect) == platform.YDB {
-		return cmdutil.Fail(cmd, errors.New(ydbgap.OtherSurfaces.Message()))
-	}
 
 	live, err := dbschema.ReadSchemaWithSchemasContext(
 		cmd.Context(), conn, dbcli.ParseSchemas(opts.schemas),
 	)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("read database schema: %w", err))
+	}
+	// The YDB reader records each view it meets and reads none, so a lineage
+	// of its description would report nothing for a view the database holds.
+	// A database without views has nothing to trace on YDB, which has no
+	// routines either, and is answered.
+	if platform.NormalizeDialect(conn.Info().Dialect) == platform.YDB {
+		if view, found := undescribedView(live.NotDescribed); found {
+			return cmdutil.Fail(cmd, fmt.Errorf("view %s: %s", view, ydbgap.Views.Message()))
+		}
 	}
 	// The dialect the server reports rather than the flag: a lineage traced
 	// against a live database is about that database, and a routine body is
@@ -216,6 +221,21 @@ func runSchemaLineageLive(cmd *cobra.Command, opts schemaLineageOptions) error {
 		Routines: schemalineage.DeriveRoutines(database, dialect),
 	}
 	return writeLineage(cmd.OutOrStdout(), opts.format, document)
+}
+
+// undescribedView names the first view a read recorded and did not describe,
+// or "the views" when it declined the whole kind.
+func undescribedView(notDescribed coverage.Set) (string, bool) {
+	for _, object := range notDescribed.Objects {
+		if object.Kind != coverage.View {
+			continue
+		}
+		if object.WholeKind() {
+			return "the views", true
+		}
+		return strconv.Quote(object.Name), true
+	}
+	return "", false
 }
 
 func writeLineageJSON(w io.Writer, document lineageDocument) error {
