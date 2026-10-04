@@ -1005,14 +1005,20 @@ discarded session, so body-local temporary objects cannot shadow the metadata
 table.
 
 **A non-transactional statement was interrupted.** If the process exits, the
-context is canceled, or its deadline expires while an autocommit statement is
-in flight, the revision row preserves the last known completed statement and
-marks the interrupted statement's outcome as unknown. Inspect the database
-before repair. Both `repair --resume-from` and `up --allow-dirty` refuse the
-row while this marker is present, because the SQL may already have committed
-and neither verb can tell. The refusal holds when the marker sits on the first
-statement, where the row records no completed statement at all: zero says no
-checkpoint was written, not that nothing ran.
+context is canceled, its deadline expires, or the connection breaks while an
+autocommit statement is in flight, the revision row preserves the last known
+completed statement and marks the interrupted statement's outcome as unknown.
+
+A broken connection is a reset, an end of stream or a network error that
+arrives after the statement was sent, and on YDB a transport error: the server
+may have applied the statement and lost the way to say so. A refusal the server
+sent is an answer, and is recorded as an ordinary failure.
+
+Inspect the database before repair. Both `repair --resume-from` and `up
+--allow-dirty` refuse the row while this marker is present, because the SQL may
+already have committed and neither verb can tell. The refusal holds when the
+marker sits on the first statement, where the row records no completed
+statement at all: zero says no checkpoint was written, not that nothing ran.
 
 **A concurrent index build failed on PostgreSQL** (exit `2`). The invalid index
 left behind keeps the name, so re-issuing the generated `IF NOT EXISTS`
