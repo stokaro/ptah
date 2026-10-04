@@ -9,6 +9,8 @@ import (
 	"github.com/ydb-platform/ydb-go-genproto/Ydb_Scheme_V1"
 	"github.com/ydb-platform/ydb-go-genproto/Ydb_Table_V1"
 	"github.com/ydb-platform/ydb-go-genproto/Ydb_Topic_V1"
+	"github.com/ydb-platform/ydb-go-genproto/draft/Ydb_View_V1"
+	"github.com/ydb-platform/ydb-go-genproto/draft/protos/Ydb_View"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Issue"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Operations"
@@ -20,12 +22,13 @@ import (
 )
 
 // Source is what the reader asks a YDB database: the entries of a directory,
-// the description of a row table, and the description of a topic, which is
-// how a changefeed's retention and consumers are read. Each takes an absolute
-// path.
+// the description of a row table or a view, and the description of a topic,
+// which is how a changefeed's retention and consumers are read. Each takes
+// an absolute path.
 type Source interface {
 	ListDirectory(ctx context.Context, path string) ([]*Ydb_Scheme.Entry, error)
 	DescribeTable(ctx context.Context, path string) (*Ydb_Table.DescribeTableResult, error)
+	DescribeView(ctx context.Context, path string) (*Ydb_View.DescribeViewResult, error)
 	DescribeTopic(ctx context.Context, path string) (*Ydb_Topic.DescribeTopicResult, error)
 }
 
@@ -40,6 +43,7 @@ type Source interface {
 type grpcSource struct {
 	scheme  Ydb_Scheme_V1.SchemeServiceClient
 	table   Ydb_Table_V1.TableServiceClient
+	view    Ydb_View_V1.ViewServiceClient
 	topic   Ydb_Topic_V1.TopicServiceClient
 	session string
 }
@@ -51,6 +55,7 @@ func newGRPCSource(ctx context.Context, driver *ydbsdk.Driver) (*grpcSource, fun
 	source := &grpcSource{
 		scheme: Ydb_Scheme_V1.NewSchemeServiceClient(connection),
 		table:  Ydb_Table_V1.NewTableServiceClient(connection),
+		view:   Ydb_View_V1.NewViewServiceClient(connection),
 		topic:  Ydb_Topic_V1.NewTopicServiceClient(connection),
 	}
 	response, err := source.table.CreateSession(ctx, &Ydb_Table.CreateSessionRequest{})
@@ -98,6 +103,27 @@ func (s *grpcSource) DescribeTable(ctx context.Context, path string) (*Ydb_Table
 	var described Ydb_Table.DescribeTableResult
 	if err := operationResult(response.GetOperation(), &described); err != nil {
 		return nil, fmt.Errorf("describe YDB table %s: %w", path, err)
+	}
+	return &described, nil
+}
+
+// DescribeView describes the view at path.
+//
+// The view service's protocol buffers sit in ydb-go-genproto's draft tree,
+// and the service answers on every line Ptah measured: 25.1.4.7 and 26.2.1.14
+// both return the view's query, and a path that is not a view is a
+// SCHEME_ERROR (`Expected a view, but got: EPathTypeTable`). SHOW CREATE VIEW
+// is not the source: 25.1.4.7 answers it with a parse error (`Missing TABLE`),
+// and 26.2.1.14, which has it, writes the query in a layout of its own rather
+// than the text it stores.
+func (s *grpcSource) DescribeView(ctx context.Context, path string) (*Ydb_View.DescribeViewResult, error) {
+	response, err := s.view.DescribeView(ctx, &Ydb_View.DescribeViewRequest{Path: path})
+	if err != nil {
+		return nil, fmt.Errorf("describe YDB view %s: %w", path, WithoutStackFrames(err))
+	}
+	var described Ydb_View.DescribeViewResult
+	if err := operationResult(response.GetOperation(), &described); err != nil {
+		return nil, fmt.Errorf("describe YDB view %s: %w", path, err)
 	}
 	return &described, nil
 }

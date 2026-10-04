@@ -1,6 +1,7 @@
 package ydb
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -232,15 +233,17 @@ func (t *transaction) Commit() error { return nil }
 // request is not wrong; YDB has nothing it could undo.
 func (t *transaction) Rollback() error { return nil }
 
-// DropAllTables drops every row table in the database and then removes each
-// directory that dropping them left empty, deepest first.
+// DropAllTables drops every view and row table in the database and then
+// removes each directory that dropping them left empty, deepest first.
 //
 // It drops what the schema reader describes and nothing else. A column table,
-// a view, a topic and the other objects the reader records as not described
-// stay, and so does the directory that holds one, so a cleanup planned from a
-// read removes exactly what the plan listed. Dot-directories are never
-// entered, nor is ydburl.RealmDirectory at the root, and a directory that was
-// empty before is left alone.
+// a topic and the other objects the reader records as not described stay, and
+// so does the directory that holds one, so a cleanup planned from a read
+// removes exactly what the plan listed. Dot-directories are never entered, nor
+// is ydburl.RealmDirectory at the root, and a directory that was empty before
+// is left alone. A directory's views go before its tables; YDB would take
+// either order, since it records no dependency on a view or on the table a
+// view reads.
 func (w *Writer) DropAllTables(ctx context.Context) error {
 	if w.scheme == nil {
 		return fmt.Errorf("no YDB scheme connection")
@@ -257,11 +260,21 @@ func (w *Writer) dropDirectory(ctx context.Context, dir string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	slices.SortFunc(entries, func(a, b *Ydb_Scheme.Entry) int { return strings.Compare(a.GetName(), b.GetName()) })
+	slices.SortFunc(entries, func(a, b *Ydb_Scheme.Entry) int {
+		if viewFirst := cmp.Compare(dropRank(a), dropRank(b)); viewFirst != 0 {
+			return viewFirst
+		}
+		return strings.Compare(a.GetName(), b.GetName())
+	})
 	changed := false
 	for _, entry := range entries {
 		name := entry.GetName()
 		switch {
+		case entry.GetType() == Ydb_Scheme.Entry_VIEW:
+			if err := w.ExecuteSQL(ctx, "DROP VIEW "+sqlident.Quote(platform.YDB, path.Join(dir, name))); err != nil {
+				return changed, err
+			}
+			changed = true
 		case entry.GetType() == Ydb_Scheme.Entry_TABLE:
 			if err := w.ExecuteSQL(ctx, "DROP TABLE "+sqlident.Quote(platform.YDB, path.Join(dir, name))); err != nil {
 				return changed, err
@@ -284,6 +297,15 @@ func (w *Writer) dropDirectory(ctx context.Context, dir string) (bool, error) {
 		}
 	}
 	return changed, nil
+}
+
+// dropRank orders a directory's entries for DropAllTables: views first, then
+// everything else.
+func dropRank(entry *Ydb_Scheme.Entry) int {
+	if entry.GetType() == Ydb_Scheme.Entry_VIEW {
+		return 0
+	}
+	return 1
 }
 
 // DropDirectory drops dir, a directory relative to the database root, together

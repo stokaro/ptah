@@ -59,6 +59,7 @@ func TestGetOrderedCreateStatements_ClickHouseViewCapabilityDisabled(t *testing.
 	}}}
 	caps := capability.ClickHouse24().
 		With(capability.MaterializedViews, false).
+		With(capability.CreateOrReplaceView, false).
 		With(capability.Views, false)
 
 	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(

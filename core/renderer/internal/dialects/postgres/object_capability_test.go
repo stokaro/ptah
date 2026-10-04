@@ -98,7 +98,8 @@ func objectKindDeniedCaps(key capability.Capability) capability.Capabilities {
 		With(capability.ProcedureComments, false).
 		With(capability.MaterializedViewComments, false).
 		With(capability.TriggerComments, false).
-		With(capability.CreateOrReplaceTrigger, false)
+		With(capability.CreateOrReplaceTrigger, false).
+		With(capability.CreateOrReplaceView, false)
 }
 
 // TestPostgreSQLRenderer_ObjectKindCapabilities is the renderer half of

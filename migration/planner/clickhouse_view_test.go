@@ -70,6 +70,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseViewLifecycle(t *testing.T) {
 func TestGenerateSchemaDiffSQLStatements_ClickHouseViewCapabilityDisabled(t *testing.T) {
 	caps := capability.ClickHouse24().
 		With(capability.MaterializedViews, false).
+		With(capability.CreateOrReplaceView, false).
 		With(capability.Views, false)
 	tests := []struct {
 		name string

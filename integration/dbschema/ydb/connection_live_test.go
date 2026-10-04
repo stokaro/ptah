@@ -11,6 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
@@ -281,7 +282,8 @@ func TestYDBWriter_StatementsSucceedByStatus(t *testing.T) {
 }
 
 // An object Ptah does not model is recorded by the read, not dropped from it
-// in silence, and a table setting is recorded the same way.
+// in silence, and a table setting is recorded the same way. A view is
+// described, with the query the server stores.
 func TestYDBReader_RecordsWhatItDoesNotModel(t *testing.T) {
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
@@ -307,7 +309,8 @@ func TestYDBReader_RecordsWhatItDoesNotModel(t *testing.T) {
 			live := readScoped(c, conn, connectionSchemas)
 
 			c.Assert(tableNames(live), qt.DeepEquals, []string{"ptah_ydb_connection|base"})
-			c.Assert(live.NotDescribed.Describes(coverage.View, "ptah_ydb_connection.v"), qt.IsFalse)
+			c.Assert(live.Views, qt.DeepEquals, []catalog.View{{Name: "v", Schema: "ptah_ydb_connection", Body: "SELECT 1 AS a"}})
+			c.Assert(live.NotDescribed.Describes(coverage.View, "ptah_ydb_connection.v"), qt.IsTrue)
 			c.Assert(live.NotDescribed.Describes(coverage.Topic, "ptah_ydb_connection.events"), qt.IsFalse)
 			c.Assert(live.NotDescribed.Describes(coverage.ColumnTable, "ptah_ydb_connection.olap"), qt.IsFalse)
 			c.Assert(live.NotDescribed.Describes(coverage.TTL, "ptah_ydb_connection.base"), qt.IsFalse)

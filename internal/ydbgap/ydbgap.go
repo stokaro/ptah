@@ -12,7 +12,7 @@
 // The renderer, the planner, the connection, the schema reader, the schema
 // writer, the versioned migrator, both linters, the query builder, the data
 // layer -- the data diff, declared rows and seeds -- and the dev databases
-// exist. The object families they do not carry yet -- comments, views, access
+// exist. The object families they do not carry yet -- comments, access
 // control, table settings, the index kinds beyond global ones -- are layers
 // here too, because a declaration of one reaches the renderer by name, and a
 // database holding one reaches the reader, and each has to be refused there
@@ -43,8 +43,6 @@ const (
 	// no COMMENT statement; the comments family stores them as table
 	// attributes through the scheme API.
 	Comments
-	// Views is creating, replacing and dropping a view.
-	Views
 	// AccessControl is users, groups, membership and permissions.
 	AccessControl
 	// TableSettings is a table's YDB settings: TTL, partitioning and column
@@ -80,8 +78,6 @@ func (l Layer) work() string {
 		return "reading a YDB schema file"
 	case Comments:
 		return "storing a comment on a YDB object"
-	case Views:
-		return "managing YDB views"
 	case AccessControl:
 		return "managing YDB users, groups and permissions"
 	case TableSettings:
@@ -99,7 +95,7 @@ func (l Layer) work() string {
 // that names no layer.
 func (l Layer) Phase() int {
 	switch l {
-	case SchemaFiles, Comments, Views, AccessControl, TableSettings, IndexFamilies:
+	case SchemaFiles, Comments, AccessControl, TableSettings, IndexFamilies:
 		return 10
 	case Inference:
 		return 12
@@ -123,8 +119,6 @@ func (l Layer) Unsupported() string {
 		return "a YQL file as the desired schema (Go structs and YAML schemas work)"
 	case Comments:
 		return "comments on tables, columns and indexes"
-	case Views:
-		return "views"
 	case AccessControl:
 		return "users, groups and permissions"
 	case TableSettings:

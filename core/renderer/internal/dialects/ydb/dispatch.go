@@ -77,12 +77,11 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.DropTypeNode:
 		return refuseKey(capability.EnumCustomType, "DROP TYPE "+n.Name)
 
-	// Views are a family of their own in a later phase; a materialized view
-	// does not exist.
+	// Views. A materialized view does not exist.
 	case *ast.CreateViewNode:
-		return refuseGap(ydbgap.Views, "view "+n.Name)
+		return r.renderCreateView(n)
 	case *ast.DropViewNode:
-		return refuseGap(ydbgap.Views, "DROP VIEW "+n.Name)
+		return r.renderDropView(n)
 	case *ast.CreateMaterializedViewNode:
 		return r.keyed(capability.MaterializedViews, "materialized view", "materialized view "+n.Name)
 	case *ast.DropMaterializedViewNode:

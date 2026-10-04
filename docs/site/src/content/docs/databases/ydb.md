@@ -1,6 +1,6 @@
 ---
 title: YDB
-description: YDB in Ptah - connecting with ydb:// URLs, what renders and plans for row tables, type mappings, keys, defaults and indexes, what each release line can do, linting YQL, seeds, declared rows and the query builder, and what is not supported yet.
+description: YDB in Ptah - connecting with ydb:// URLs, what renders and plans for row tables and views, type mappings, keys, defaults and indexes, what each release line can do, linting YQL, seeds, declared rows and the query builder, and what is not supported yet.
 type: reference
 audience:
   - "database-engineer"
@@ -21,7 +21,7 @@ owns:
   - dialect-ydb
 ---
 
-Ptah renders YQL for YDB row tables, plans a migration between two schemas,
+Ptah renders YQL for YDB row tables and views, plans a migration between two schemas,
 connects to a live database, reads its tables back, applies DDL to it, runs
 versioned migrations against it, lints YQL for it, and writes data to it:
 seeds, declared rows and the statements the query builder renders. The
@@ -32,8 +32,8 @@ against live YDB 26.2 and 25.1 servers. The nightly capability matrix runs the
 same suite on each YDB line it probes.
 
 `ptah-compat` takes a YDB URL on every verb; see [ptah-compat](#ptah-compat).
-Inference and the YDB object families such as TTL, column families,
-views and vector indexes are not supported yet. See
+Inference and the YDB object families such as TTL, column families and vector
+indexes are not supported yet. See
 [What is not supported yet](#what-is-not-supported-yet).
 
 ## Connecting
@@ -314,6 +314,47 @@ increment below 1. The read reports a sequence's start, increment and last
 restart. `YD107` and `YD108` in `ptah migrations lint` report the same traps in
 a migration written by hand.
 
+## Views
+
+A view renders with the security clause YDB requires on every view:
+
+```sql
+CREATE VIEW `shop/active_users` WITH (security_invoker = TRUE) AS
+SELECT id, email FROM `shop/users` WHERE deleted_at IS NULL
+;
+```
+
+YDB runs a view's query with the rights of the user who reads the view, and
+refuses a view without `security_invoker = TRUE`. Ptah writes the clause on
+every view and takes no other `WITH` attribute. A view's name follows the
+table rules: a view in the schema `shop` is the path `shop/active_users`, and
+creating it creates the directory.
+
+YDB resolves the names in a view's query from the database root, not from the
+view's directory. Name a table by its whole path, `` `shop/users` `` rather than
+`users`.
+
+YDB stores a view's query in its own form: comments are dropped, and the
+tokens are joined by single spaces. Ptah reads the declared query into the same
+form before it compares the two, so a view applied once plans nothing, and a
+change of case is a change. A `PRAGMA` that ran before the `CREATE VIEW` in the
+same query, such as `TablePathPrefix`, is stored with the view and changes what
+its names mean. Such a view does not match a declaration of the query alone,
+and a plan replaces it once.
+
+YDB has no `CREATE OR REPLACE VIEW` and no `ALTER VIEW`, which the
+`create_or_replace_view` key records. A view whose query changed is dropped and
+created again, so for a moment the view does not exist.
+
+A view's `WITH CHECK OPTION` is refused: a YDB view cannot be written through,
+and YDB reads the words after the query as a table hint that checks nothing. A
+comment on a view waits for comment support.
+
+YDB records no dependency on a view. It drops a table or a view that another
+view reads, and the reading view fails from then on. A plan drops views before
+anything else and creates them last, and lint rule `YD106` reports a migration
+that drops a table a view still reads.
+
 ## Changefeeds
 
 A changefeed is YDB's stream of a row table's changes, kept in a topic at
@@ -388,20 +429,24 @@ statement outside any transaction. A plan therefore refuses what the server
 cannot do before it emits anything, and orders what it emits so that no
 statement needs one that has not run yet:
 
-1. Create the added tables, with their indexes and changefeeds, each followed
+1. Drop the views the plan removes or replaces, a view before the view it
+   reads.
+2. Create the added tables, with their indexes and changefeeds, each followed
    by the `ALTER SEQUENCE` that gives a Serial column its declared start and
    increment.
-2. Drop the indexes the plan removes, before any column they name. YDB refuses
+3. Drop the indexes the plan removes, before any column they name. YDB refuses
    to drop an indexed or a covered column.
-3. Rename the indexes the declaration renames, then change the partitioning of
+4. Rename the indexes the declaration renames, then change the partitioning of
    the indexes that keep their definition.
-4. Per table: add columns, then change columns in place, then drop columns.
-5. Change the start and the increment of the Serial columns of existing tables.
-6. Add the new indexes of existing tables.
-7. Per table: drop changefeeds, then add changefeeds with their consumers, then
+5. Per table: add columns, then change columns in place, then drop columns.
+6. Change the start and the increment of the Serial columns of existing tables.
+7. Add the new indexes of existing tables.
+8. Per table: drop changefeeds, then add changefeeds with their consumers, then
    change topics in place. Drops come first, so a table that swaps one
    changefeed for another stays within YDB's limit.
-8. Drop the removed tables.
+9. Drop the removed tables.
+10. Create the added and replaced views, a view after the view it reads. YDB
+    checks a view's query against the schema when it creates the view.
 
 Each statement runs as its own query. A query of several schema statements is
 not atomic on YDB, and each of its statements compiles against the schema as it
@@ -516,6 +561,10 @@ The flags decide these capabilities:
 `EnableAsyncIndexes` decides no capability: a cluster with the flag off still
 builds a `GLOBAL ASYNC` index, so `async_indexes` keeps the preset's answer.
 
+`EnableViews` is not read. Turned off on 25.1, it refuses every view statement
+with `Views are disabled`; 26.2 creates and reads views with it off, so the flag
+does not say whether a cluster has views.
+
 A flag the cluster does not list leaves the capability as the release line's
 preset has it. A failed read fails the connection rather than planning without
 the flags. `ptah db capabilities` lists the keys the flags changed under
@@ -542,10 +591,10 @@ the [support matrix](../support-matrix/).
 database read every row table under the database root, its columns, defaults,
 `Serial` columns with their sequence's start, increment and last restart,
 primary key and global indexes, with each index's partitioning and read
-replicas, and its changefeeds, each with the retention and the consumers of
-its topic.
+replicas, its changefeeds, each with the retention and the consumers of its
+topic, and every view with the query the server stores.
 
-What Ptah does not model yet is recorded rather than dropped: views, topics,
+What Ptah does not model yet is recorded rather than dropped: topics,
 column-oriented tables, sequences other than a `Serial` column's, the settings
 of a table such as TTL, column families and partitioning options, and a
 changefeed holding a setting Ptah does not read, such as attributes, an AWS
@@ -853,9 +902,11 @@ refuses such a column by name and writes nothing.
 describes, labeled with the dialect and the `--schemas` directories. Like
 every other dialect, it counts objects and reads no row counts or sizes.
 
-`ptah schema lineage --db-url ydb://...` traces views. YDB has no routines, so a
-directory without views has nothing to trace. The reader does not read a view
-yet, so a directory holding one is refused rather than reported as empty.
+`ptah schema lineage --db-url ydb://...` traces views from the queries the
+server stores. A view's source is its table's Ptah name, such as `shop.items`
+for the path `shop/items`, so a view over a view links to the view it reads,
+and a double-quoted text is a YQL string, which feeds no column. YDB has no
+routines, so a directory without views has nothing to trace.
 
 `ptah schema security --db-url ydb://...` is refused: the analysis reads the
 access model, and Ptah does not read YDB users, groups and permissions yet.
@@ -886,7 +937,6 @@ These are refused with a message that names what is missing:
 <!-- BEGIN GENERATED YDB GAPS -->
 - a YQL file as the desired schema (Go structs and YAML schemas work);
 - comments on tables, columns and indexes;
-- views;
 - users, groups and permissions;
 - a table's own settings: TTL, partitioning and column families;
 - vector, full-text, JSON and column-table indexes;

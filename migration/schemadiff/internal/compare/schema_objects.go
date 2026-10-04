@@ -24,6 +24,7 @@ import (
 	"ptah.run/internal/routineparallel"
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/ydbview"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -1148,7 +1149,17 @@ type declaredBodies struct {
 // server says. It is what matches a body the server rewrites beyond any fold,
 // such as a function in FROM, which PostgreSQL prints with the function's
 // whole result as a column alias list (stokaro/ptah#4057).
+//
+// YDB is answered on its own and exactly. The server stores a view's query as
+// its tokens and nothing else, so both sides are read into that form and
+// compared as they stand: YDB names are case-sensitive, so the case folding
+// the other dialects share would call two different views one, and the server
+// keeps a `*` and the qualifiers it was given, so there is nothing for the
+// later folds to undo.
 func declaredBodyEqual(generatedBody, databaseBody, dialect, databaseSchema string, bodies declaredBodies) bool {
+	if platform.NormalizeDialect(dialect) == platform.YDB {
+		return ydbview.QueryText(generatedBody) == ydbview.QueryText(databaseBody)
+	}
 	if schemaObjectBodiesEqual(generatedBody, databaseBody, dialect, databaseSchema) {
 		return true
 	}
