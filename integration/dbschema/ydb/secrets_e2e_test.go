@@ -18,10 +18,10 @@ import (
 // The directory the binary's secret runs write into, and the variable and
 // values its secret takes, each carrying a marker no output may show.
 const (
-	secretsE2EDir    = "ptah_ydb_secrets_e2e"
-	secretsE2EEnv    = "PTAH_SECRET_E2E_PG_PASSWORD"
-	secretsE2EFirst  = "e2e-SENTINEL-first"
-	secretsE2ESecond = "e2e-SENTINEL-second"
+	secretsE2EDir    = "ptah_ydb_secrets_e2e"        // #nosec G101 -- a directory name, not a credential
+	secretsE2EEnv    = "PTAH_SECRET_E2E_PG_PASSWORD" // #nosec G101 -- a variable name, not a credential
+	secretsE2EFirst  = "e2e-SENTINEL-first"          // #nosec G101 -- a made-up value every output is searched for
+	secretsE2ESecond = "e2e-SENTINEL-second"         // #nosec G101 -- a made-up value every output is searched for
 )
 
 // secretsE2EEntities declares a table and the secret beside it.
@@ -135,12 +135,12 @@ func TestYDBBinary_ReplaysASecretInADevRealm(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	confined, refusing := filepath.Join(c.TempDir(), "migrations"), filepath.Join(c.TempDir(), "migrations")
-	writeFiles(c, confined, map[string]string{
+	writeFiles(c, confined, map[string]string{ // #nosec G101 -- statements that name a variable, not a credential
 		"0000000001_secret.up.sql": "CREATE SECRET `ptah_ydb_devrealm_secrets/pw` WITH (value = $" + secretsE2EEnv + ");\n" +
 			"ALTER SECRET `ptah_ydb_devrealm_secrets/pw` WITH (value = $" + secretsE2EEnv + ");\n",
 		"0000000001_secret.down.sql": "DROP SECRET `ptah_ydb_devrealm_secrets/pw`;\n",
 	})
-	writeFiles(c, refusing, map[string]string{
+	writeFiles(c, refusing, map[string]string{ // #nosec G101 -- a made-up value the replay refuses
 		"0000000001_secret.up.sql":   "CREATE OBJECT ptah_ydb_devrealm_secret (TYPE SECRET) WITH value = 'x';\n",
 		"0000000001_secret.down.sql": "DROP OBJECT ptah_ydb_devrealm_secret (TYPE SECRET);\n",
 	})

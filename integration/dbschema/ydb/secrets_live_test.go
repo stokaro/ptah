@@ -21,8 +21,8 @@ import (
 // The directories the secret tests write into: a secret at the top of one,
 // and one in a directory below it.
 const (
-	secretsSchema       = "ptah_ydb_secrets"
-	secretsNestedSchema = "ptah_ydb_secrets/ext"
+	secretsSchema       = "ptah_ydb_secrets"     // #nosec G101 -- a directory name, not a credential
+	secretsNestedSchema = "ptah_ydb_secrets/ext" // #nosec G101 -- a directory name, not a credential
 )
 
 var secretsSchemas = []string{secretsSchema, secretsNestedSchema}
@@ -30,10 +30,10 @@ var secretsSchemas = []string{secretsSchema, secretsNestedSchema}
 // The variables the secret tests' values come from, and the values, each
 // carrying a marker no output may show.
 const (
-	secretPasswordEnv   = "PTAH_SECRET_LIVE_PG_PASSWORD"
-	secretPasswordValue = "pg-SENTINEL-v1 'quoted' \\ back"
-	secretKeyEnv        = "PTAH_SECRET_LIVE_S3_KEY"
-	secretKeyValue      = "s3-SENTINEL-v1"
+	secretPasswordEnv   = "PTAH_SECRET_LIVE_PG_PASSWORD"    // #nosec G101 -- a variable name, not a credential
+	secretPasswordValue = "pg-SENTINEL-v1 'quoted' \\ back" // #nosec G101 -- a made-up value every output is searched for
+	secretKeyEnv        = "PTAH_SECRET_LIVE_S3_KEY"         // #nosec G101 -- a variable name, not a credential
+	secretKeyValue      = "s3-SENTINEL-v1"                  // #nosec G101 -- a made-up value every output is searched for
 )
 
 // secretsDeclaration declares the two secrets.
