@@ -76,8 +76,9 @@ type Step struct {
 	Name string
 	// SQL is the statement, for every kind but output.
 	SQL string
-	// Args are the placeholder arguments, written as raw expressions because
-	// the values a loop supplies are not known until it runs.
+	// Args are the placeholder arguments, each a constant written as a
+	// string. A reference or a null is refused when the script is parsed,
+	// because nothing binds a value for one.
 	Args []string
 	// ExpectRows is exec's assertion on the row count. Nil means no assertion,
 	// which is different from zero -- a script that expects to change nothing
@@ -289,6 +290,9 @@ func parseStep(block *hclsyntax.Block, masks map[string]Mask) (Step, error) {
 	step.SQL = sql
 
 	if attr := block.Body.Attributes["args"]; attr != nil {
+		if err := refuseUnboundStepArgs(attr); err != nil {
+			return Step{}, err
+		}
 		args, err := rawList(attr)
 		if err != nil {
 			return Step{}, err
@@ -353,12 +357,55 @@ func intAttr(block *hclsyntax.Block, attr *hclsyntax.Attribute) (int, error) {
 	return int(count), nil
 }
 
-// rawList returns a list attribute's elements as their source text.
+// refuseUnboundStepArgs refuses an element of a step's args that is not a
+// constant value. A step binds its arguments as written, and nothing resolves a
+// reference such as cursor.id or binds a null there, so either would reach the
+// database as an empty string: an UPDATE ... WHERE id = ? that matched no row
+// and reported success. Only the iterator's next query takes the cursor, and
+// its args are not read through here.
+func refuseUnboundStepArgs(attr *hclsyntax.Attribute) error {
+	list, ok := attr.Expr.(*hclsyntax.TupleConsExpr)
+	if !ok {
+		return &ParseError{Range: attr.SrcRange, Message: "args must be a list"}
+	}
+	for _, expr := range list.Exprs {
+		if variables := expr.Variables(); len(variables) > 0 {
+			return &ParseError{Range: expr.Range(), Message: fmt.Sprintf(
+				"args element %s is a reference, and a step binds constant values only: "+
+					"only the iterator's next query reads the cursor",
+				traversalText(variables[0]))}
+		}
+		if value, diags := expr.Value(nil); !diags.HasErrors() && value.IsNull() {
+			return &ParseError{Range: expr.Range(), Message: "args element null binds no value: " +
+				"a step binds constant values only"}
+		}
+	}
+	return nil
+}
+
+// traversalText spells a reference the way it was written, such as cursor.id.
+func traversalText(traversal hcl.Traversal) string {
+	var text strings.Builder
+	for _, step := range traversal {
+		switch step := step.(type) {
+		case hcl.TraverseRoot:
+			text.WriteString(step.Name)
+		case hcl.TraverseAttr:
+			text.WriteString("." + step.Name)
+		default:
+			text.WriteString("[...]")
+		}
+	}
+	return text.String()
+}
+
+// rawList returns a list attribute's elements as strings: a constant as its
+// value, and an element that does not evaluate to one as the empty string.
 //
-// Source text rather than values, because a loop's arguments reference the
-// cursor and are not evaluable until it runs. Reading them as text keeps the
-// grammar honest about what it has: the executor resolves them, and a step that
-// reaches an unresolved reference refuses there rather than here.
+// The iterator's next args reference the cursor and are not evaluable here;
+// the loop binds the cursor row to that query itself. A step's args are
+// refused by [refuseUnboundStepArgs] before this reads them, so the empty
+// string never reaches a step.
 func rawList(attr *hclsyntax.Attribute) ([]string, error) {
 	list, ok := attr.Expr.(*hclsyntax.TupleConsExpr)
 	if !ok {

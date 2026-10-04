@@ -166,6 +166,10 @@ func connect(ctx context.Context, dbURL string, scope scopeRule) (*DatabaseConne
 	}
 
 	// Get database info
+	var ticket ticketSource
+	if ydbConnection != nil {
+		ticket = ydbConnection.Ticket
+	}
 	info, resolution, err := getDatabaseInfoWithCapabilities(
 		ctx,
 		db,
@@ -173,6 +177,7 @@ func connect(ctx context.Context, dbURL string, scope scopeRule) (*DatabaseConne
 		parsedURL,
 		dbURL,
 		resolveSchema,
+		ticket,
 	)
 	if err != nil {
 		_ = db.Close()
@@ -357,6 +362,7 @@ func getDatabaseInfoWithCapabilities(
 	parsedURL *url.URL,
 	dbURL string,
 	resolveSchema schemaResolver,
+	ticket ticketSource,
 ) (catalog.ServerInfo, capability.VersionResolution, error) {
 	info, err := getDatabaseInfo(ctx, db, dialect, parsedURL, dbURL, resolveSchema)
 	if err != nil {
@@ -364,7 +370,7 @@ func getDatabaseInfoWithCapabilities(
 	}
 	resolution := resolveDatabaseCapabilities(info)
 	info.Capabilities = refineExtensionCapabilities(ctx, db, info.Dialect, resolution.Capabilities)
-	info.Capabilities, err = refineFeatureFlagCapabilities(ctx, info.Dialect, dbURL, info.Capabilities)
+	info.Capabilities, err = refineFeatureFlagCapabilities(ctx, info.Dialect, dbURL, info.Capabilities, ticket)
 	if err != nil {
 		return catalog.ServerInfo{}, capability.VersionResolution{}, err
 	}
@@ -430,10 +436,16 @@ func refineExtensionCapabilities(
 // connection rather than falling back to the preset: the operator asked for
 // the cluster's answer, and planning without it would be planning with an
 // answer nobody asked for.
+//
+// The page is read with the connection's own credential, which ticket hands
+// over, because a cluster that enforces authentication serves the page only
+// to a user it knows (measured on 26.2.1.14 and 25.1.4.7). A credential the
+// connection carries over TLS is not sent to a plain http:// endpoint.
 func refineFeatureFlagCapabilities(
 	ctx context.Context,
 	dialect, dbURL string,
 	caps capability.Capabilities,
+	ticket ticketSource,
 ) (capability.Capabilities, error) {
 	if platform.NormalizeDialect(dialect) != platform.YDB {
 		return caps, nil
@@ -445,7 +457,16 @@ func refineFeatureFlagCapabilities(
 	if parsed.Monitoring == nil {
 		return caps, nil
 	}
-	flags, err := ydbflags.Read(ctx, parsed.Monitoring, parsed.Database)
+	credential, err := ticket.read(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read YDB feature flags: %w", err)
+	}
+	if credential != "" && parsed.Secure && parsed.Monitoring.Scheme == "http" {
+		return nil, fmt.Errorf("read YDB feature flags from %s: the connection's credential travels over TLS, "+
+			"and Ptah does not send it to a plain http:// endpoint; name the endpoint as https://%s",
+			parsed.Monitoring, parsed.Monitoring.Host)
+	}
+	flags, err := ydbflags.Read(ctx, parsed.Monitoring, parsed.Database, credential)
 	if err != nil {
 		return nil, err
 	}
@@ -454,6 +475,18 @@ func refineFeatureFlagCapabilities(
 		slog.Debug("YDB feature flags changed the capability set", "keys", changed)
 	}
 	return refined, nil
+}
+
+// ticketSource returns the credential a connection presents to its server.
+// Nil stands for a connection that has none to present.
+type ticketSource func(context.Context) (string, error)
+
+// read asks the source for the credential; a nil source has none.
+func (src ticketSource) read(ctx context.Context) (string, error) {
+	if src == nil {
+		return "", nil
+	}
+	return src(ctx)
 }
 
 // deltaKeys names, sorted, the keys two capability sets disagree on.

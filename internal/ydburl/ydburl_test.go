@@ -349,8 +349,8 @@ func TestParse_FailurePath(t *testing.T) {
 		{
 			name: "the monitoring parameter carries a user",
 			raw:  "ydb://h/local?monitoring=http://viewer@h:8765",
-			wantErr: `the monitoring parameter for http://h:8765 carries a user; Ptah sends no credentials there, ` +
-				`so name the endpoint only, as monitoring=http://h:8765`,
+			wantErr: `the monitoring parameter for http://h:8765 carries a user; Ptah reads that endpoint with ` +
+				`the connection's own credential, so name the endpoint only, as monitoring=http://h:8765`,
 		},
 		{
 			name: "the monitoring parameter names the page rather than the endpoint",

@@ -45,6 +45,67 @@ func TestFormat(t *testing.T) {
 			expected: "not-a-url",
 		},
 		{
+			// net/url reads the rest of the password as a fragment and refuses
+			// the port it is left with.
+			name:     "PostgreSQL URL with a # in its password",
+			input:    "postgres://user:p#ss@localhost:5432/mydb",
+			expected: "postgres://user:***@localhost:5432/mydb",
+		},
+		{
+			name:     "PostgreSQL URL with a % that starts no escape in its password",
+			input:    "postgres://user:p%zz@localhost:5432/mydb",
+			expected: "postgres://user:***@localhost:5432/mydb",
+		},
+		{
+			// Parsed, this is host user, port 5 and a path holding the rest
+			// of the password; the @ in the path is what gives it away.
+			name:     "PostgreSQL URL with a / in its password",
+			input:    "postgres://user:5/ss@localhost/mydb",
+			expected: "postgres://user:***@localhost/mydb",
+		},
+		{
+			name:     "PostgreSQL URL with a ? in its password and a secret in its query",
+			input:    "postgres://user:p?ss@localhost/mydb?sslmode=disable&sslpassword=querysecret",
+			expected: "postgres://user:***@localhost/mydb?sslmode=disable&sslpassword=redacted",
+		},
+		{
+			// Parsed, this is user p, host ss and a fragment holding the
+			// rest; the first @ is part of the password.
+			name:     "PostgreSQL URL with an @ and a # in its password",
+			input:    "postgres://user:p@ss#word@localhost/mydb",
+			expected: "postgres://user:***@localhost/mydb",
+		},
+		{
+			// Parsed, this is host user, port 5 and a query whose key holds
+			// the rest of the password.
+			name:     "PostgreSQL URL with a ? after a digit in its password",
+			input:    "postgres://user:5?ss@localhost/mydb",
+			expected: "postgres://user:***@localhost/mydb",
+		},
+		{
+			// An @ in the query is a value, not the end of credentials.
+			name:     "PostgreSQL URL with an @ in a query value",
+			input:    "postgres://localhost:5432/mydb?application_name=ops@example",
+			expected: "postgres://localhost:5432/mydb?application_name=ops%40example",
+		},
+		{
+			name:     "keyword/value string with a password",
+			input:    "host=127.0.0.1 port=5432 user=app password=s3cret dbname=mydb",
+			expected: "host=127.0.0.1 port=5432 user=app password=redacted dbname=mydb",
+		},
+		{
+			// A quoted value, a backslash-escaped one, and the spacing around
+			// the = signs are read the way libpq reads them and kept as written.
+			name:     "keyword/value string with quoted and escaped secrets",
+			input:    `host = db  password = 'it\'s a secret'  sslpassword=a\ b dbname=mydb`,
+			expected: `host = db  password = redacted  sslpassword=redacted dbname=mydb`,
+		},
+		{
+			name:     "keyword/value string without a secret",
+			input:    "host=/tmp dbname=mydb sslmode=disable",
+			expected: "host=/tmp dbname=mydb sslmode=disable",
+		},
+		{
 			// The YDB SDK reads a static user and password from the
 			// authority and an access token from the token parameter; it
 			// reads no other credential from a URL.
@@ -66,7 +127,7 @@ func TestFormat(t *testing.T) {
 			expected: "ydb://h:2136/local?go_balancer=disable&monitoring=http%3A%2F%2Fredacted%40mon.example%3A8765",
 		},
 		{
-			// A user name alone can be a token, and Ptah sends none there.
+			// A user name alone can be a token, and the endpoint takes none of its own.
 			name:     "YDB URL with a user name alone in its monitoring endpoint",
 			input:    "ydbs://h/local?monitoring=https://t0k3n@mon.example:8765",
 			expected: "ydbs://h/local?monitoring=https%3A%2F%2Fredacted%40mon.example%3A8765",

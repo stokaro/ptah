@@ -33,6 +33,14 @@ CREATE INDEX [users_created_ix] ON [users] ([created_at]);
 CREATE UNIQUE INDEX [users_email_uq] ON [users] ([email]);
 DROP INDEX IF EXISTS [users_name_ix] ON [users];
 -- render: a covering index
--- refused: sqlserver does not support INCLUDE columns on index "users_name_ix"; target cockroachdb, postgres, spanner, ydb, or yugabytedb
+CREATE TABLE [users] (
+  [id] BIGINT PRIMARY KEY,
+  [email] NVARCHAR(255) NOT NULL,
+  [name] NVARCHAR(100)
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'users_name_ix' AND object_id = OBJECT_ID('users'))
+CREATE INDEX [users_name_ix] ON [users] ([name]) INCLUDE ([email]);
 -- plan: the current schema to a covering index
--- refused: sqlserver does not support INCLUDE columns on index "users_name_ix"; target cockroachdb, postgres, spanner, ydb, or yugabytedb
+DROP INDEX IF EXISTS [users_name_ix] ON [users];
+CREATE INDEX [users_name_ix] ON [users] ([name]) INCLUDE ([email]);

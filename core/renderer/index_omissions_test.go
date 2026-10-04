@@ -500,7 +500,6 @@ func TestGetOrderedCreateStatementsReportingOmissions_IncludeColumnsAreRefusedRa
 		{name: "mysql", dialect: platform.MySQL},
 		{name: "mariadb", dialect: platform.MariaDB},
 		{name: "sqlite", dialect: platform.SQLite},
-		{name: "sql server", dialect: platform.SQLServer},
 		{name: "oracle", dialect: platform.Oracle},
 		{name: "clickhouse", dialect: platform.ClickHouse},
 	}

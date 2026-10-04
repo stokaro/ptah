@@ -25,9 +25,6 @@ type ydbLine struct {
 	// TestYDBConnection_DescribesTheServer instead of measuring that line
 	// under this one's name.
 	preset func() capability.Capabilities
-	// monitoringPort is where go-integration-tests.yml publishes the
-	// server's monitoring endpoint, on the host its URL names.
-	monitoringPort string
 }
 
 // ydbLines are the lines whose capability cells are certified: 26.2, the
@@ -37,8 +34,8 @@ type ydbLine struct {
 // looked line-independent until 25.1 answered the abort at the write rather
 // than at the commit.
 var ydbLines = []ydbLine{
-	{name: "26.2", engine: dbtarget.YDB, preset: capability.YDB262, monitoringPort: "8765"},
-	{name: "25.1", engine: dbtarget.YDB251, preset: capability.YDB251, monitoringPort: "8766"},
+	{name: "26.2", engine: dbtarget.YDB, preset: capability.YDB262},
+	{name: "25.1", engine: dbtarget.YDB251, preset: capability.YDB251},
 }
 
 // openYDB connects to the line's database.

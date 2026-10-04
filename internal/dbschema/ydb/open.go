@@ -17,6 +17,8 @@ import (
 	environ "github.com/ydb-platform/ydb-go-sdk-auth-environ"
 	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
 	"github.com/ydb-platform/ydb-go-sdk/v3/balancers"
+	"github.com/ydb-platform/ydb-go-sdk/v3/config"
+	"google.golang.org/grpc"
 
 	"ptah.run/internal/ydbtype"
 	"ptah.run/internal/ydburl"
@@ -35,6 +37,9 @@ type Connection struct {
 	Root string
 	// Realm is the dev realm the URL names, "" for none.
 	Realm string
+	// authenticated reports a credential source in the URL; without one the
+	// connection is anonymous and has no ticket to hand out.
+	authenticated bool
 }
 
 // The parameters a YDB URL may carry besides database, monitoring and
@@ -100,7 +105,10 @@ func Open(ctx context.Context, rawURL string) (*Connection, error) {
 		return nil, fmt.Errorf("invalid YDB URL: %w", err)
 	}
 
-	options := []ydbsdk.Option{ydbsdk.WithApplicationName("ptah")}
+	options := []ydbsdk.Option{
+		ydbsdk.WithApplicationName("ptah"),
+		ydbsdk.With(config.WithGrpcOptions(grpc.WithChainUnaryInterceptor(recordTicket))),
+	}
 	if credentials != nil {
 		options = append(options, credentials)
 	}
@@ -119,9 +127,10 @@ func Open(ctx context.Context, rawURL string) (*Connection, error) {
 			prefix:  pathPrefix(parsed),
 			onClose: func() error { return closeDriver(driver) },
 		}),
-		Driver: driver,
-		Root:   parsed.Root(),
-		Realm:  parsed.Realm,
+		Driver:        driver,
+		Root:          parsed.Root(),
+		Realm:         parsed.Realm,
+		authenticated: credentials != nil,
 	}, nil
 }
 

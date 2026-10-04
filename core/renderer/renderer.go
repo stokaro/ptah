@@ -2261,9 +2261,33 @@ func validateIndexInclude(
 	}
 
 	method := strings.ToUpper(trimmedIndexType)
-	var allowed bool
-	var supportedMethods string
-	switch normalizedDialect {
+	allowed, supportedMethods := indexIncludeAccessMethod(normalizedDialect, method, trimmedIndexType, caps)
+	if allowed {
+		return nil
+	}
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: "index INCLUDE access method",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf(
+			"%s INCLUDE columns on index %q require %s; access method %q is not supported",
+			normalizedDialect,
+			indexName,
+			supportedMethods,
+			method,
+		),
+	}
+}
+
+// indexIncludeAccessMethod answers whether dialect takes an INCLUDE payload on
+// an index of access method, upper-cased, and names the methods it does take
+// for the refusal. indexType is the declared spelling, which YDB reads as an
+// index kind rather than an access method.
+func indexIncludeAccessMethod(
+	dialect, method, indexType string,
+	caps capability.Capabilities,
+) (allowed bool, supportedMethods string) {
+	switch dialect {
 	case platform.Postgres:
 		allowed = method == "" || method == "BTREE" || method == "GIST" ||
 			(method == "SPGIST" && caps.Has(capability.IndexIncludeSPGiST))
@@ -2285,10 +2309,20 @@ func validateIndexInclude(
 	case platform.Spanner:
 		allowed = method == ""
 		supportedMethods = "the default access method"
+	case platform.SQLServer:
+		// Ptah writes every SQL Server index as a nonclustered rowstore index,
+		// which takes INCLUDE, and reports any other declared access method as
+		// lost. The payload is accepted beside the methods that describe what
+		// is built, so it never rides on a declaration the render discards. A
+		// clustered index refuses one, `Cannot specify included columns for a
+		// clustered index` (Msg 10601, measured on 16.0.4295.3 and 17.0.5005.3),
+		// and no declaration renders one.
+		allowed = method == "" || method == "BTREE"
+		supportedMethods = "the default or BTREE access method"
 	case platform.YDB:
 		// COVER is a clause of a global index, synchronous or asynchronous,
 		// and of nothing else a YDB row table has.
-		_, err := ydbindex.KindOf(trimmedIndexType)
+		_, err := ydbindex.KindOf(indexType)
 		allowed = err == nil
 		supportedMethods = "a global index, synchronous or asynchronous"
 	default:
@@ -2297,21 +2331,7 @@ func validateIndexInclude(
 		// payload is a per-engine fact this switch has to be told.
 		supportedMethods = "an access method this renderer knows for it"
 	}
-	if allowed {
-		return nil
-	}
-	return &ptaherr.CapabilityError{
-		Dialect: dialect,
-		Feature: "index INCLUDE access method",
-		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf(
-			"%s INCLUDE columns on index %q require %s; access method %q is not supported",
-			normalizedDialect,
-			indexName,
-			supportedMethods,
-			method,
-		),
-	}
+	return allowed, supportedMethods
 }
 
 // constraintIncludeTargets names the dialects that attach an INCLUDE payload to

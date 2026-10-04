@@ -321,3 +321,107 @@ func TestParse_ARefusalNamesWhereItHappened(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `purge\.hcl:4: .*`)
 }
+
+// A step binds its args as written, and nothing resolves a reference or binds a
+// null there, so such an element would reach the database as an empty string:
+// an UPDATE ... WHERE id = ? that matches no row and reports success. Each is
+// refused where it was written, in a loop body and in an exec script alike.
+func TestParse_RefusesAStepArgThatIsNotAConstant(t *testing.T) {
+	tests := []struct {
+		name     string
+		document string
+		want     string
+	}{
+		{
+			name: "a cursor reference in a loop body",
+			document: `
+script "loop" "touch" {
+  iterator "keyset" {
+    cursor {
+      id = int
+    }
+    init {
+      sql = "SELECT id FROM items ORDER BY id LIMIT 1"
+    }
+    next {
+      sql  = "SELECT id FROM items WHERE id > ? ORDER BY id LIMIT 1"
+      args = [cursor.id]
+    }
+  }
+  do {
+    exec "touch" {
+      sql  = "UPDATE items SET price = price + 100 WHERE id = ?"
+      args = [cursor.id]
+    }
+  }
+}`,
+			want: `script\.hcl:18: args element cursor\.id is a reference, and a step binds constant values only: ` +
+				`only the iterator's next query reads the cursor`,
+		},
+		{
+			name: "a reference in an exec script, which has no cursor",
+			document: `
+script "exec" "one" {
+  exec "touch" {
+    sql  = "UPDATE items SET price = 7 WHERE id = ?"
+    args = [1, row.id]
+  }
+}`,
+			want: `script\.hcl:5: args element row\.id is a reference, and a step binds constant values only: ` +
+				`only the iterator's next query reads the cursor`,
+		},
+		{
+			name: "a null",
+			document: `
+script "exec" "one" {
+  exec "touch" {
+    sql  = "UPDATE items SET note = ? WHERE id = 1"
+    args = [null]
+  }
+}`,
+			want: `script\.hcl:5: args element null binds no value: a step binds constant values only`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			scripts, err := atlasscript.Parse([]byte(test.document), "script.hcl")
+
+			c.Assert(err, qt.ErrorMatches, test.want)
+			c.Assert(scripts, qt.IsNil)
+		})
+	}
+}
+
+// The control: constants bind as written, and the iterator's next query keeps
+// its cursor reference.
+func TestParse_KeepsConstantStepArgs(t *testing.T) {
+	c := qt.New(t)
+
+	scripts := parse(c, `
+script "loop" "touch" {
+  iterator "keyset" {
+    cursor {
+      id = int
+    }
+    init {
+      sql = "SELECT id FROM items ORDER BY id LIMIT 1"
+    }
+    next {
+      sql  = "SELECT id FROM items WHERE id > ? ORDER BY id LIMIT 1"
+      args = [cursor.id]
+    }
+  }
+  do {
+    exec "touch" {
+      sql  = "UPDATE items SET price = ? WHERE note = ? AND active = ?"
+      args = [100, "x", true]
+    }
+  }
+}
+`)
+
+	c.Assert(scripts[0].Steps, qt.HasLen, 1)
+	c.Assert(scripts[0].Steps[0].Args, qt.DeepEquals, []string{"100", "x", "true"})
+}
