@@ -151,7 +151,7 @@ func (l Layer) Unsupported() string {
 	case AccessControl:
 		return "users, groups and permissions"
 	case TableSettings:
-		return "table settings: TTL, partitioning, column families and changefeeds"
+		return "a table's own settings: TTL, partitioning, column families and changefeeds"
 	case IndexFamilies:
 		return "vector, full-text, JSON and column-table indexes"
 	case Compatibility:
