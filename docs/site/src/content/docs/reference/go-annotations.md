@@ -1004,7 +1004,14 @@ other dialect refuses one. See
 | `source_type` | Yes | `SOURCE_TYPE`, such as `ObjectStorage`, `PostgreSQL` or `ClickHouse`. |
 | `location` | No | `LOCATION`: the bucket's address or the server's host and port. |
 | `auth_method` | Yes | `AUTH_METHOD`, such as `NONE`, `BASIC` or `SERVICE_ACCOUNT`. |
-| `options` | No | Every other option, `NAME=value` separated by `;`, such as `DATABASE_NAME=app;LOGIN=reader;PASSWORD_SECRET_PATH=ext/pg_password`. `\;` writes a semicolon into a value. |
+| `options` | No | Every other option, `NAME=value` separated by `;`. `\;` writes a semicolon into a value. |
+
+A PostgreSQL source whose password the secret `ext/pg_password` holds:
+
+```go
+//ptah:schema:externaldatasource name="warehouse" schema="ext" source_type="PostgreSQL" location="pg:5432" auth_method="BASIC" options="DATABASE_NAME=app;LOGIN=reader;PASSWORD_SECRET_PATH=ext/pg_password"
+type Warehouse struct{}
+```
 
 ### `//ptah:schema:externaltable`
 
@@ -1019,7 +1026,7 @@ refuses one.
 | `data_source` | Yes | Path of the data source the table reads, relative to the database root. |
 | `location` | Yes | `LOCATION`: the files' path under the data source. |
 | `columns` | Yes | Columns, `name Type [NOT NULL]` separated by commas, such as `id Int64 NOT NULL, amount Decimal(22,9)`. A default, a key or a column family is refused. |
-| `options` | No | Every other option, `NAME=value` separated by `;`, such as `FORMAT=json_each_row;COMPRESSION=gzip`. |
+| `options` | No | Every other option, such as `FORMAT` and `COMPRESSION`, `NAME=value` separated by `;`. |
 
 ## Reference data
 
