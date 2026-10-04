@@ -210,3 +210,44 @@ func TestYDBGlobalIndexes_AddedToATableThatExists(t *testing.T) {
 	apply(c, conn, planAgainst(c, conn, after, globalIndexSchemas))
 	c.Assert(planAgainst(c, conn, after, globalIndexSchemas), qt.HasLen, 0)
 }
+
+// TestYDBGlobalIndexes_SettingOneResetsAnother changes an index's settings
+// where writing only the ones that differ would leave others reset: setting
+// AUTO_PARTITIONING_BY_LOAD resets the minimum partition count, and setting
+// AUTO_PARTITIONING_BY_SIZE resets it and the size. Each change converges in
+// one apply, which it does only because the statement names every setting.
+func TestYDBGlobalIndexes_SettingOneResetsAnother(t *testing.T) {
+	steps := []struct {
+		name   string
+		before map[string]*ast.IndexPartitioningSpec
+		after  map[string]*ast.IndexPartitioningSpec
+	}{
+		{
+			name:   "splitting by load turned on beside a minimum",
+			before: map[string]*ast.IndexPartitioningSpec{"idx_items_kind": {MinPartitions: 5}},
+			after:  map[string]*ast.IndexPartitioningSpec{"idx_items_kind": {ByLoad: new(true), MinPartitions: 5}},
+		},
+		{
+			name:   "splitting by size turned back on beside a minimum",
+			before: map[string]*ast.IndexPartitioningSpec{"idx_items_kind": {BySize: new(false), MinPartitions: 6}},
+			after:  map[string]*ast.IndexPartitioningSpec{"idx_items_kind": {PartitionSizeMB: 100, MinPartitions: 6}},
+		},
+	}
+
+	for _, step := range steps {
+		t.Run(step.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c)
+			dropTables(c, conn, globalIndexSchemas)
+			c.Cleanup(func() { dropTables(c, conn, globalIndexSchemas) })
+			apply(c, conn, planAgainst(c, conn, globalIndexDeclaration(step.before, nil), globalIndexSchemas))
+
+			declared := globalIndexDeclaration(step.after, nil)
+			apply(c, conn, planAgainst(c, conn, declared, globalIndexSchemas))
+
+			c.Assert(planAgainst(c, conn, declared, globalIndexSchemas), qt.HasLen, 0)
+			c.Assert(indexNamed(c, readScoped(c, conn, globalIndexSchemas), "idx_items_kind").Partitioning, qt.DeepEquals,
+				step.after["idx_items_kind"])
+		})
+	}
+}
