@@ -104,7 +104,9 @@ func (r silentRunner) Available(ctx context.Context) error { return r.inner.Avai
 func (r silentRunner) Start(ctx context.Context, name, image, port string, env []string) (string, error) {
 	return r.inner.Start(ctx, name, image, port, env)
 }
-func (r silentRunner) Remove(ctx context.Context, name string) error { return r.inner.Remove(ctx, name) }
+func (r silentRunner) Remove(ctx context.Context, name string) error {
+	return r.inner.Remove(ctx, name)
+}
 func (r silentRunner) Stopped(ctx context.Context, name string) (string, error) {
 	return r.inner.Stopped(ctx, name)
 }
