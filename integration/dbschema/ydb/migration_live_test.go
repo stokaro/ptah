@@ -22,32 +22,36 @@ var migrationSchemas = []string{migrationSchema}
 // statement per query because a query of several DDL statements is compiled
 // against the schema as it stood before the query.
 func TestYDBMigration_PlannedAgainstTheLiveDatabase(t *testing.T) {
-	c := qt.New(t)
-	conn := openYDB(c)
-	dropTables(c, conn, migrationSchemas)
-	c.Cleanup(func() { dropTables(c, conn, migrationSchemas) })
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			dropTables(c, conn, migrationSchemas)
+			c.Cleanup(func() { dropTables(c, conn, migrationSchemas) })
 
-	apply(c, conn, planAgainst(c, conn, migrationBefore(), migrationSchemas))
-	c.Assert(conn.Writer().ExecuteSQL(c.Context(),
-		"UPSERT INTO `ptah_ydb_migration/items` (`id`, `name`, `sku`, `legacy`) "+
-			"VALUES (1l, 'one'u, 'A-1'u, 'x'u), (2l, 'two'u, 'B-2'u, 'y'u)"), qt.IsNil)
+			apply(c, conn, planAgainst(c, conn, migrationBefore(), migrationSchemas))
+			c.Assert(conn.Writer().ExecuteSQL(c.Context(),
+				"UPSERT INTO `ptah_ydb_migration/items` (`id`, `name`, `sku`, `legacy`) "+
+					"VALUES (1l, 'one'u, 'A-1'u, 'x'u), (2l, 'two'u, 'B-2'u, 'y'u)"), qt.IsNil)
 
-	after := migrationAfter()
-	planned := planAgainst(c, conn, after, migrationSchemas)
-	c.Assert(planned, qt.Not(qt.HasLen), 0)
-	apply(c, conn, planned)
+			after := migrationAfter()
+			planned := planAgainst(c, conn, after, migrationSchemas)
+			c.Assert(planned, qt.Not(qt.HasLen), 0)
+			apply(c, conn, planned)
 
-	c.Assert(planAgainst(c, conn, after, migrationSchemas), qt.HasLen, 0)
-	live := readScoped(c, conn, migrationSchemas)
-	c.Assert(tableNames(live), qt.DeepEquals, []string{"ptah_ydb_migration|items"})
-	c.Assert(columnNamesOf(tableNamed(c, live, migrationSchema, "items")), qt.DeepEquals,
-		[]string{"id", "name", "sku", "stock"})
-	c.Assert(indexNamesOf(live), qt.DeepEquals, []string{"idx_items_name"})
+			c.Assert(planAgainst(c, conn, after, migrationSchemas), qt.HasLen, 0)
+			live := readScoped(c, conn, migrationSchemas)
+			c.Assert(tableNames(live), qt.DeepEquals, []string{"ptah_ydb_migration|items"})
+			c.Assert(columnNamesOf(tableNamed(c, live, migrationSchema, "items")), qt.DeepEquals,
+				[]string{"id", "name", "sku", "stock"})
+			c.Assert(indexNamesOf(live), qt.DeepEquals, []string{"idx_items_name"})
 
-	var rows int64
-	c.Assert(conn.QueryRowContext(c.Context(),
-		"SELECT COUNT(*) FROM `ptah_ydb_migration/items` WHERE `stock` IS NULL").Scan(&rows), qt.IsNil)
-	c.Assert(rows, qt.Equals, int64(2))
+			var rows int64
+			c.Assert(conn.QueryRowContext(c.Context(),
+				"SELECT COUNT(*) FROM `ptah_ydb_migration/items` WHERE `stock` IS NULL").Scan(&rows), qt.IsNil)
+			c.Assert(rows, qt.Equals, int64(2))
+		})
+	}
 }
 
 func migrationBefore() *schemamodel.Database {

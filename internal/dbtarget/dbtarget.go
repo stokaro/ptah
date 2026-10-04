@@ -131,6 +131,17 @@ const (
 	// YDB is a YDB database, reached over gRPC through a ydb:// or ydbs://
 	// URL that names the database.
 	YDB
+	// YDB251 is a YDB database on a second server, one that runs the 25.1
+	// release line.
+	//
+	// It is an engine of its own because the line is what it is for. 25.1 is
+	// the one YDB line with a published support date, and it lacks what the
+	// current line has: the 64-bit date and time types, a Decimal other than
+	// Decimal(22,9), a default on a 16-bit integer, and vector indexes without
+	// a feature flag. Nothing in an address says which line the server runs,
+	// so a test pointed at YDB_TEST_URL alone would report 25.1 as covered by
+	// a server that is not on it.
+	YDB251
 )
 
 // source is where one engine's address comes from.
@@ -261,6 +272,10 @@ var sources = map[Engine]source{
 		canonical: "YDB_TEST_URL",
 		scheme:    []string{"ydb", "ydbs"},
 	},
+	YDB251: {
+		canonical: "YDB251_TEST_URL",
+		scheme:    []string{"ydb", "ydbs"},
+	},
 }
 
 // String names the engine as its canonical variable does.
@@ -380,6 +395,7 @@ var engineNames = map[Engine]string{
 	MySQLDevServer:    "second MySQL server",
 	MariaDBDevServer:  "second MariaDB server",
 	YDB:               "YDB",
+	YDB251:            "YDB 25.1",
 }
 
 // DriverDSN returns the address in the form a raw database/sql driver parses,
@@ -472,7 +488,7 @@ func driverForm(engine Engine, address string) string {
 		// wire protocol, and a raw pgx caller handed `spanner://` cannot parse
 		// it (stokaro/ptah#1719).
 		return postgresWireURL(address)
-	case YDB:
+	case YDB, YDB251:
 		// ydb-go-sdk reads grpc:// and grpcs://, the two transports ydb:// and
 		// ydbs:// name.
 		return ydbSDKURL(address)
@@ -548,7 +564,7 @@ func Engines() []Engine {
 		PostgreSQL, MySQL, MySQLAdmin, MariaDB, MariaDBAdmin,
 		ClickHouse, SQLServer, CockroachDB, YugabyteDB,
 		MySQLSocket, MariaDBSocket, PostgreSQLAliased, PostgreSQLAlias,
-		MySQLDevServer, MariaDBDevServer, YDB,
+		MySQLDevServer, MariaDBDevServer, YDB, YDB251,
 	}
 }
 

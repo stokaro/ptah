@@ -56,42 +56,47 @@ func writeCLIMigrations(c *qt.C) (migrations, tests string) {
 // it, report it up to date, refuse a statement timeout YDB cannot carry, run
 // the declarative tests, and roll everything back.
 func TestYDBBinary_RunsVersionedMigrations(t *testing.T) {
-	url := dbtarget.URL(t, dbtarget.YDB)
 	c := qt.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancel()
-	conn := openYDB(c)
-	dropDirectory(c, conn, cliMigrationsDir, "users", "posts")
-	c.Cleanup(func() { dropDirectory(c, conn, cliMigrationsDir, "users", "posts") })
-	binary := buildBinary(c, ctx)
-	migrations, tests := writeCLIMigrations(c)
-	target := []string{"--db-url", url, "--migrations-dir", migrations, "--migrations-schema", cliMigrationsDir}
+	binary := buildBinary(c, c.Context())
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			url := dbtarget.URL(t, line.engine)
+			c := qt.New(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+			conn := openYDB(c, line)
+			dropDirectory(c, conn, cliMigrationsDir, "users", "posts")
+			c.Cleanup(func() { dropDirectory(c, conn, cliMigrationsDir, "users", "posts") })
+			migrations, tests := writeCLIMigrations(c)
+			target := []string{"--db-url", url, "--migrations-dir", migrations, "--migrations-schema", cliMigrationsDir}
 
-	hashed, hashErr := runBinary(ctx, binary, "migrations", "hash", "--dir", migrations)
-	validated, validateErr := runBinary(ctx, binary, "migrations", "validate", "--dir", migrations)
-	applied, upErr := runBinary(ctx, binary, append([]string{"migrations", "up"}, target...)...)
-	status, statusErr := runBinary(ctx, binary, append([]string{"migrations", "status"}, target...)...)
-	refused, refusedErr := runBinary(ctx, binary,
-		append([]string{"migrations", "up", "--statement-timeout", "5s"}, target...)...)
-	tested, testErr := runBinary(ctx, binary, "migrations", "test", "--db-url", url, "--dir", tests,
-		"--migrations-dir", migrations, "--migrations-schema", cliMigrationsDir)
-	rolledBack, downErr := runBinary(ctx, binary,
-		append([]string{"migrations", "down", "--target", "0", "--confirm"}, target...)...)
+			hashed, hashErr := runBinary(ctx, binary, "migrations", "hash", "--dir", migrations)
+			validated, validateErr := runBinary(ctx, binary, "migrations", "validate", "--dir", migrations)
+			applied, upErr := runBinary(ctx, binary, append([]string{"migrations", "up"}, target...)...)
+			status, statusErr := runBinary(ctx, binary, append([]string{"migrations", "status"}, target...)...)
+			refused, refusedErr := runBinary(ctx, binary,
+				append([]string{"migrations", "up", "--statement-timeout", "5s"}, target...)...)
+			tested, testErr := runBinary(ctx, binary, "migrations", "test", "--db-url", url, "--dir", tests,
+				"--migrations-dir", migrations, "--migrations-schema", cliMigrationsDir)
+			rolledBack, downErr := runBinary(ctx, binary,
+				append([]string{"migrations", "down", "--target", "0", "--confirm"}, target...)...)
 
-	c.Assert(hashErr, qt.IsNil, qt.Commentf("hash:\n%s", hashed))
-	c.Assert(validateErr, qt.IsNil, qt.Commentf("validate:\n%s", validated))
-	c.Assert(upErr, qt.IsNil, qt.Commentf("up:\n%s", applied))
-	c.Assert(applied, qt.Contains, "Database is now at version: 2")
-	c.Assert(statusErr, qt.IsNil, qt.Commentf("status:\n%s", status))
-	c.Assert(status, qt.Contains, "Current Version: 2")
-	c.Assert(status, qt.Contains, "Pending Migrations: 0")
-	c.Assert(refusedErr, qt.IsNotNil)
-	c.Assert(refused, qt.Contains, `--statement-timeout sets a timeout for every migration, and dialect "ydb" has no lock `+
-		`or statement timeout Ptah can set and restore around a migration`)
-	c.Assert(testErr, qt.IsNil, qt.Commentf("test:\n%s", tested))
-	c.Assert(tested, qt.Contains, `PASS  case "the first user exists"`)
-	c.Assert(downErr, qt.IsNil, qt.Commentf("down:\n%s", rolledBack))
-	c.Assert(tableNames(readScoped(c, conn, []string{cliMigrationsDir})), qt.HasLen, 0)
+			c.Assert(hashErr, qt.IsNil, qt.Commentf("hash:\n%s", hashed))
+			c.Assert(validateErr, qt.IsNil, qt.Commentf("validate:\n%s", validated))
+			c.Assert(upErr, qt.IsNil, qt.Commentf("up:\n%s", applied))
+			c.Assert(applied, qt.Contains, "Database is now at version: 2")
+			c.Assert(statusErr, qt.IsNil, qt.Commentf("status:\n%s", status))
+			c.Assert(status, qt.Contains, "Current Version: 2")
+			c.Assert(status, qt.Contains, "Pending Migrations: 0")
+			c.Assert(refusedErr, qt.IsNotNil)
+			c.Assert(refused, qt.Contains, `--statement-timeout sets a timeout for every migration, and dialect "ydb" `+
+				`has no lock or statement timeout Ptah can set and restore around a migration`)
+			c.Assert(testErr, qt.IsNil, qt.Commentf("test:\n%s", tested))
+			c.Assert(tested, qt.Contains, `PASS  case "the first user exists"`)
+			c.Assert(downErr, qt.IsNil, qt.Commentf("down:\n%s", rolledBack))
+			c.Assert(tableNames(readScoped(c, conn, []string{cliMigrationsDir})), qt.HasLen, 0)
+		})
+	}
 }
 
 // TestYDBBinary_MigrationsUpWaitsForTheLock runs `migrations up` while another
@@ -100,51 +105,56 @@ func TestYDBBinary_RunsVersionedMigrations(t *testing.T) {
 // runs started together over the same directory then apply it once, which the
 // INSERT in the first migration would refuse to do twice.
 func TestYDBBinary_MigrationsUpWaitsForTheLock(t *testing.T) {
-	url := dbtarget.URL(t, dbtarget.YDB)
 	c := qt.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancel()
-	conn := openYDB(c)
-	dropDirectory(c, conn, cliMigrationsDir, "users", "posts")
-	c.Cleanup(func() { dropDirectory(c, conn, cliMigrationsDir, "users", "posts") })
-	binary := buildBinary(c, ctx)
-	migrations, _ := writeCLIMigrations(c)
-	up := []string{"migrations", "up", "--db-url", url, "--migrations-dir", migrations,
-		"--migrations-schema", cliMigrationsDir}
+	binary := buildBinary(c, c.Context())
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			url := dbtarget.URL(t, line.engine)
+			c := qt.New(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+			conn := openYDB(c, line)
+			dropDirectory(c, conn, cliMigrationsDir, "users", "posts")
+			c.Cleanup(func() { dropDirectory(c, conn, cliMigrationsDir, "users", "posts") })
+			migrations, _ := writeCLIMigrations(c)
+			up := []string{"migrations", "up", "--db-url", url, "--migrations-dir", migrations,
+				"--migrations-schema", cliMigrationsDir}
 
-	lock, err := dblock.Acquire(ctx, openYDB(c), "ptah_migrate", 0)
-	c.Assert(err, qt.IsNil)
-	timedOut, timeoutErr := runBinary(ctx, binary, append(up, "--migration-lock-timeout", "1s")...)
-	c.Assert(timeoutErr, qt.IsNotNil)
-	c.Assert(timedOut, qt.Contains, `timed out acquiring migration lock "ptah_migrate" for ydb after 1s`)
+			lock, err := dblock.Acquire(ctx, openYDB(c, line), "ptah_migrate", 0)
+			c.Assert(err, qt.IsNil)
+			timedOut, timeoutErr := runBinary(ctx, binary, append(up, "--migration-lock-timeout", "1s")...)
+			c.Assert(timeoutErr, qt.IsNotNil)
+			c.Assert(timedOut, qt.Contains, `timed out acquiring migration lock "ptah_migrate" for ydb after 1s`)
 
-	var waitingOutput bytes.Buffer
-	waiting := exec.CommandContext(ctx, binary, up...)
-	waiting.Stdout, waiting.Stderr = &waitingOutput, &waitingOutput
-	c.Assert(waiting.Start(), qt.IsNil)
-	exited := make(chan error, 1)
-	go func() { exited <- waiting.Wait() }()
-	time.Sleep(3 * time.Second)
-	c.Assert(exited, qt.HasLen, 0, qt.Commentf("output:\n%s", &waitingOutput))
-	c.Assert(tableNames(readScoped(c, conn, []string{cliMigrationsDir})), qt.HasLen, 0)
-	c.Assert(lock.Release(context.Background()), qt.IsNil)
-	c.Assert(<-exited, qt.IsNil, qt.Commentf("output:\n%s", &waitingOutput))
-	c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+cliMigrationsDir+"/users`"), qt.Equals, int64(1))
+			var waitingOutput bytes.Buffer
+			waiting := exec.CommandContext(ctx, binary, up...)
+			waiting.Stdout, waiting.Stderr = &waitingOutput, &waitingOutput
+			c.Assert(waiting.Start(), qt.IsNil)
+			exited := make(chan error, 1)
+			go func() { exited <- waiting.Wait() }()
+			time.Sleep(3 * time.Second)
+			c.Assert(exited, qt.HasLen, 0, qt.Commentf("output:\n%s", &waitingOutput))
+			c.Assert(tableNames(readScoped(c, conn, []string{cliMigrationsDir})), qt.HasLen, 0)
+			c.Assert(lock.Release(context.Background()), qt.IsNil)
+			c.Assert(<-exited, qt.IsNil, qt.Commentf("output:\n%s", &waitingOutput))
+			c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+cliMigrationsDir+"/users`"), qt.Equals, int64(1))
 
-	down := []string{"migrations", "down", "--target", "0", "--confirm", "--db-url", url,
-		"--migrations-dir", migrations, "--migrations-schema", cliMigrationsDir}
-	rolledBack, downErr := runBinary(ctx, binary, down...)
-	c.Assert(downErr, qt.IsNil, qt.Commentf("down:\n%s", rolledBack))
+			down := []string{"migrations", "down", "--target", "0", "--confirm", "--db-url", url,
+				"--migrations-dir", migrations, "--migrations-schema", cliMigrationsDir}
+			rolledBack, downErr := runBinary(ctx, binary, down...)
+			c.Assert(downErr, qt.IsNil, qt.Commentf("down:\n%s", rolledBack))
 
-	results := make(chan string, 2)
-	for range 2 {
-		go func() {
-			output, err := runBinary(ctx, binary, up...)
-			results <- output + "\nerror: " + fmt.Sprint(err)
-		}()
+			results := make(chan string, 2)
+			for range 2 {
+				go func() {
+					output, err := runBinary(ctx, binary, up...)
+					results <- output + "\nerror: " + fmt.Sprint(err)
+				}()
+			}
+			first, second := <-results, <-results
+			c.Assert(first, qt.Contains, "\nerror: <nil>")
+			c.Assert(second, qt.Contains, "\nerror: <nil>")
+			c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+cliMigrationsDir+"/users`"), qt.Equals, int64(1))
+		})
 	}
-	first, second := <-results, <-results
-	c.Assert(first, qt.Contains, "\nerror: <nil>")
-	c.Assert(second, qt.Contains, "\nerror: <nil>")
-	c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+cliMigrationsDir+"/users`"), qt.Equals, int64(1))
 }

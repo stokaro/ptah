@@ -25,47 +25,54 @@ import (
 // server another dialect's SQL. Each row is reached through a connection to a
 // live server, which is the only way to reach it at all.
 func TestYDBConnectedLayersRefuse(t *testing.T) {
-	c := qt.New(t)
-	conn := openYDB(c)
-	ctx := c.Context()
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			ctx := c.Context()
 
-	_, seedErr := seeder.Apply(ctx, conn, fstest.MapFS{}, seeder.Options{Env: "dev"})
-	devErr := migrateclean.DevRefusal(ctx, conn)
-	_, realmErr := devlock.SameRealm(ctx, conn, conn)
+			_, seedErr := seeder.Apply(ctx, conn, fstest.MapFS{}, seeder.Options{Env: "dev"})
+			devErr := migrateclean.DevRefusal(ctx, conn)
+			_, realmErr := devlock.SameRealm(ctx, conn, conn)
 
-	c.Assert(seedErr, qt.ErrorMatches, `(?s).*`+regexp.QuoteMeta(ydbgap.DataChanges.Message()))
-	c.Assert(devErr, qt.ErrorMatches, `(?s).*`+regexp.QuoteMeta(ydbgap.DevDatabases.Message()))
-	c.Assert(realmErr, qt.ErrorMatches, `(?s).*`+regexp.QuoteMeta(ydbgap.DevDatabases.Message()))
+			c.Assert(seedErr, qt.ErrorMatches, `(?s).*`+regexp.QuoteMeta(ydbgap.DataChanges.Message()))
+			c.Assert(devErr, qt.ErrorMatches, `(?s).*`+regexp.QuoteMeta(ydbgap.DevDatabases.Message()))
+			c.Assert(realmErr, qt.ErrorMatches, `(?s).*`+regexp.QuoteMeta(ydbgap.DevDatabases.Message()))
+		})
+	}
 }
 
 // The commands whose answer would be built from what the reader does not read
 // refuse after they connect.
 func TestYDBCommandsThatNeedMoreThanTheReaderRefuse(t *testing.T) {
-	url := dbtarget.URL(t, dbtarget.YDB)
 	tests := []struct {
 		name    string
 		command func() *cobra.Command
 		args    []string
 	}{
-		{name: "introspect", command: introspect.NewIntrospectCommand,
-			args: []string{"--db-url", url, "--out", "models"}},
-		{name: "schema security", command: schema.NewSchemaSecurityCommand, args: []string{"--db-url", url}},
-		{name: "schema lineage", command: schema.NewSchemaLineageCommand, args: []string{"--db-url", url}},
+		{name: "introspect", command: introspect.NewIntrospectCommand, args: []string{"--out", "models"}},
+		{name: "schema security", command: schema.NewSchemaSecurityCommand},
+		{name: "schema lineage", command: schema.NewSchemaLineageCommand},
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			cmd := test.command()
-			var stdout, stderr bytes.Buffer
-			cmd.SetOut(&stdout)
-			cmd.SetErr(&stderr)
-			cmd.SetArgs(test.args)
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			url := dbtarget.URL(t, line.engine)
+			for _, test := range tests {
+				t.Run(test.name, func(t *testing.T) {
+					c := qt.New(t)
+					cmd := test.command()
+					var stdout, stderr bytes.Buffer
+					cmd.SetOut(&stdout)
+					cmd.SetErr(&stderr)
+					cmd.SetArgs(append([]string{"--db-url", url}, test.args...))
 
-			err := cmd.Execute()
+					err := cmd.Execute()
 
-			c.Assert(err, qt.ErrorMatches, `(?s).*`+regexp.QuoteMeta(ydbgap.OtherSurfaces.Message()))
-			c.Assert(stdout.String(), qt.Equals, "")
+					c.Assert(err, qt.ErrorMatches, `(?s).*`+regexp.QuoteMeta(ydbgap.OtherSurfaces.Message()))
+					c.Assert(stdout.String(), qt.Equals, "")
+				})
+			}
 		})
 	}
 }

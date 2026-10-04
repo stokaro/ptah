@@ -44,39 +44,44 @@ type Item struct {
 // directory, `db read` describes it, `schema compare` finds nothing left to
 // change, and `db drop-all` drops it and removes the directories it emptied.
 //
-// It shares the database with every test in this package and runs among them
+// It shares each server with every test in this package and runs among them
 // one at a time, as the tests of one package do; drop-all empties the whole
-// database, which is why it is last here and why no other package in the
-// contour writes to YDB.
+// database, which is why no other package in the contour writes to YDB.
 func TestYDBBinary_AppliesReadsAndDropsASchema(t *testing.T) {
-	url := dbtarget.URL(t, dbtarget.YDB)
 	c := qt.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
-	binary := buildBinary(c, ctx)
-	entities := c.TempDir()
-	c.Assert(os.WriteFile(filepath.Join(entities, "items.go"), []byte(e2eEntities), 0o600), qt.IsNil)
+	binary := buildBinary(c, c.Context())
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			url := dbtarget.URL(t, line.engine)
+			c := qt.New(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			entities := c.TempDir()
+			c.Assert(os.WriteFile(filepath.Join(entities, "items.go"), []byte(e2eEntities), 0o600), qt.IsNil)
 
-	applied, applyErr := runBinary(ctx, binary, "schema", "apply", "--db-url", url, "--root-dir", entities, "--auto-approve")
-	read, readErr := runBinary(ctx, binary, "db", "read", "--db-url", url, "--schemas", "ptah_ydb_e2e/nested")
-	compared, compareErr := runBinary(ctx, binary, "schema", "compare", "--db-url", url, "--root-dir", entities,
-		"--schemas", "ptah_ydb_e2e/nested", "--exit-code")
-	dropped, dropErr := runBinary(ctx, binary, "db", "drop-all", "--db-url", url, "--auto-approve")
+			applied, applyErr := runBinary(ctx, binary, "schema", "apply", "--db-url", url, "--root-dir", entities,
+				"--auto-approve")
+			read, readErr := runBinary(ctx, binary, "db", "read", "--db-url", url, "--schemas", "ptah_ydb_e2e/nested")
+			compared, compareErr := runBinary(ctx, binary, "schema", "compare", "--db-url", url, "--root-dir", entities,
+				"--schemas", "ptah_ydb_e2e/nested", "--exit-code")
+			dropped, dropErr := runBinary(ctx, binary, "db", "drop-all", "--db-url", url, "--auto-approve")
 
-	c.Assert(applyErr, qt.IsNil, qt.Commentf("schema apply:\n%s", applied))
-	c.Assert(readErr, qt.IsNil, qt.Commentf("db read:\n%s", read))
-	c.Assert(read, qt.Contains, "CREATE TABLE `ptah_ydb_e2e/nested/items` (")
-	c.Assert(read, qt.Contains, "`id` BigSerial NOT NULL,")
-	c.Assert(read, qt.Contains, "`title` Utf8 NOT NULL DEFAULT 'untitled'u,")
-	c.Assert(read, qt.Contains, "INDEX `idx_items_title` GLOBAL SYNC ON (`title`)")
-	c.Assert(compareErr, qt.IsNil, qt.Commentf("schema compare:\n%s", compared))
-	c.Assert(dropErr, qt.IsNil, qt.Commentf("db drop-all:\n%s", dropped))
+			c.Assert(applyErr, qt.IsNil, qt.Commentf("schema apply:\n%s", applied))
+			c.Assert(readErr, qt.IsNil, qt.Commentf("db read:\n%s", read))
+			c.Assert(read, qt.Contains, "CREATE TABLE `ptah_ydb_e2e/nested/items` (")
+			c.Assert(read, qt.Contains, "`id` BigSerial NOT NULL,")
+			c.Assert(read, qt.Contains, "`title` Utf8 NOT NULL DEFAULT 'untitled'u,")
+			c.Assert(read, qt.Contains, "INDEX `idx_items_title` GLOBAL SYNC ON (`title`)")
+			c.Assert(compareErr, qt.IsNil, qt.Commentf("schema compare:\n%s", compared))
+			c.Assert(dropErr, qt.IsNil, qt.Commentf("db drop-all:\n%s", dropped))
 
-	conn := openYDB(c)
-	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, nil)
-	c.Assert(err, qt.IsNil)
-	c.Assert(live.Tables, qt.HasLen, 0)
-	c.Assert(directoryNames(c, ctx), qt.Not(qt.Contains), "ptah_ydb_e2e")
+			conn := openYDB(c, line)
+			live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, nil)
+			c.Assert(err, qt.IsNil)
+			c.Assert(live.Tables, qt.HasLen, 0)
+			c.Assert(directoryNames(c, ctx, line), qt.Not(qt.Contains), "ptah_ydb_e2e")
+		})
+	}
 }
 
 // buildBinary builds ptah from this checkout.
@@ -101,9 +106,9 @@ func runBinary(ctx context.Context, binary string, args ...string) (string, erro
 
 // directoryNames lists the entries of a directory under the database root,
 // asked of the scheme service directly rather than through Ptah's reader.
-func directoryNames(c *qt.C, ctx context.Context, segments ...string) []string {
+func directoryNames(c *qt.C, ctx context.Context, line ydbLine, segments ...string) []string {
 	c.Helper()
-	driver, err := ydbsdk.Open(ctx, dbtarget.DriverDSN(c, dbtarget.YDB))
+	driver, err := ydbsdk.Open(ctx, dbtarget.DriverDSN(c, line.engine))
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = driver.Close(context.Background()) }()
 	directory, err := driver.Scheme().ListDirectory(ctx, path.Join(append([]string{driver.Name()}, segments...)...))

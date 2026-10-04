@@ -98,45 +98,49 @@ func TestYDBMigrator_RunsQueriesAndRollsBack(t *testing.T) {
 		{name: "ptah format", format: migrator.RevisionTableFormatPtah, dir: "ptah_ydb_mig_native"},
 		{name: "atlas format", format: migrator.RevisionTableFormatAtlas, dir: "ptah_ydb_mig_atlas"},
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			conn := openYDB(c)
-			dropDirectory(c, conn, test.dir, "items", "tags")
-			c.Cleanup(func() { dropDirectory(c, conn, test.dir, "items", "tags") })
-			files := map[string]string{
-				"0000000001_items.up.sql": "--!syntax_v1\n" +
-					"CREATE TABLE `" + test.dir + "/items` (id Int64 NOT NULL, name Utf8, PRIMARY KEY (id));\n" +
-					"$name = 'first'u;\n" +
-					"UPSERT INTO `" + test.dir + "/items` (id, name) VALUES (1l, $name);\n" +
-					"UPSERT INTO `" + test.dir + "/items` (id, name) VALUES (2l, $name || 'x'u);\n" +
-					"ALTER TABLE `" + test.dir + "/items` ADD COLUMN note Utf8;\n" +
-					"UPDATE `" + test.dir + "/items` SET note = $name WHERE id = 1l;\n",
-				"0000000001_items.down.sql": "DROP TABLE `" + test.dir + "/items`;\n",
-				"0000000002_tags.up.sql": "CREATE TABLE `" + test.dir + "/tags` (id Int64 NOT NULL, PRIMARY KEY (id));\n" +
-					"INSERT INTO `" + test.dir + "/tags` (id) VALUES (1l);\n",
-				"0000000002_tags.down.sql": "DROP TABLE `" + test.dir + "/tags`;\n",
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			for _, test := range tests {
+				t.Run(test.name, func(t *testing.T) {
+					c := qt.New(t)
+					conn := openYDB(c, line)
+					dropDirectory(c, conn, test.dir, "items", "tags")
+					c.Cleanup(func() { dropDirectory(c, conn, test.dir, "items", "tags") })
+					files := map[string]string{
+						"0000000001_items.up.sql": "--!syntax_v1\n" +
+							"CREATE TABLE `" + test.dir + "/items` (id Int64 NOT NULL, name Utf8, PRIMARY KEY (id));\n" +
+							"$name = 'first'u;\n" +
+							"UPSERT INTO `" + test.dir + "/items` (id, name) VALUES (1l, $name);\n" +
+							"UPSERT INTO `" + test.dir + "/items` (id, name) VALUES (2l, $name || 'x'u);\n" +
+							"ALTER TABLE `" + test.dir + "/items` ADD COLUMN note Utf8;\n" +
+							"UPDATE `" + test.dir + "/items` SET note = $name WHERE id = 1l;\n",
+						"0000000001_items.down.sql": "DROP TABLE `" + test.dir + "/items`;\n",
+						"0000000002_tags.up.sql": "CREATE TABLE `" + test.dir + "/tags` (id Int64 NOT NULL, PRIMARY KEY (id));\n" +
+							"INSERT INTO `" + test.dir + "/tags` (id) VALUES (1l);\n",
+						"0000000002_tags.down.sql": "DROP TABLE `" + test.dir + "/tags`;\n",
+					}
+					m := newMigrator(c, conn, files, test.format, test.dir)
+
+					presentBefore, err := m.MetadataPresent(c.Context())
+					c.Assert(err, qt.IsNil)
+					c.Assert(presentBefore, qt.IsFalse)
+
+					c.Assert(m.MigrateUp(c.Context()), qt.IsNil)
+					c.Assert(revisionProgress(c, m), qt.DeepEquals, []progress{
+						{Version: 1, State: "applied", Applied: 4, Total: 4},
+						{Version: 2, State: "applied", Applied: 2, Total: 2},
+					})
+					c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+test.dir+"/items`"), qt.Equals, int64(2))
+					c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+test.dir+"/items` WHERE note = 'first'u AND id = 1l"),
+						qt.Equals, int64(1))
+					c.Assert(tableNames(readScoped(c, conn, []string{test.dir})), qt.DeepEquals,
+						[]string{test.dir + "|items", test.dir + "|tags"})
+
+					c.Assert(m.MigrateDownTo(c.Context(), 0), qt.IsNil)
+					c.Assert(revisionProgress(c, m), qt.HasLen, 0)
+					c.Assert(tableNames(readScoped(c, conn, []string{test.dir})), qt.HasLen, 0)
+				})
 			}
-			m := newMigrator(c, conn, files, test.format, test.dir)
-
-			presentBefore, err := m.MetadataPresent(c.Context())
-			c.Assert(err, qt.IsNil)
-			c.Assert(presentBefore, qt.IsFalse)
-
-			c.Assert(m.MigrateUp(c.Context()), qt.IsNil)
-			c.Assert(revisionProgress(c, m), qt.DeepEquals, []progress{
-				{Version: 1, State: "applied", Applied: 4, Total: 4},
-				{Version: 2, State: "applied", Applied: 2, Total: 2},
-			})
-			c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+test.dir+"/items`"), qt.Equals, int64(2))
-			c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+test.dir+"/items` WHERE note = 'first'u AND id = 1l"),
-				qt.Equals, int64(1))
-			c.Assert(tableNames(readScoped(c, conn, []string{test.dir})), qt.DeepEquals,
-				[]string{test.dir + "|items", test.dir + "|tags"})
-
-			c.Assert(m.MigrateDownTo(c.Context(), 0), qt.IsNil)
-			c.Assert(revisionProgress(c, m), qt.HasLen, 0)
-			c.Assert(tableNames(readScoped(c, conn, []string{test.dir})), qt.HasLen, 0)
 		})
 	}
 }
@@ -148,67 +152,75 @@ func TestYDBMigrator_RunsQueriesAndRollsBack(t *testing.T) {
 // existing key`, and its query, which opens with a named expression, carries
 // no session state the resumed run would have to replay.
 func TestYDBMigrator_ResumesWhereAFailedMigrationStopped(t *testing.T) {
-	c := qt.New(t)
-	conn := openYDB(c)
-	const dir = "ptah_ydb_mig_resume"
-	dropDirectory(c, conn, dir, "a", "b")
-	c.Cleanup(func() { dropDirectory(c, conn, dir, "a", "b") })
-	head := "CREATE TABLE `" + dir + "/a` (id Int64 NOT NULL, PRIMARY KEY (id));\n" +
-		"$id = 1l;\nINSERT INTO `" + dir + "/a` (id) VALUES ($id);\n"
-	broken := map[string]string{
-		"0000000001_tables.up.sql":   head + "CREATE TABLE `" + dir + "/b` (id NoSuchType NOT NULL, PRIMARY KEY (id));\n",
-		"0000000001_tables.down.sql": "DROP TABLE `" + dir + "/b`;\nDROP TABLE `" + dir + "/a`;\n",
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			const dir = "ptah_ydb_mig_resume"
+			dropDirectory(c, conn, dir, "a", "b")
+			c.Cleanup(func() { dropDirectory(c, conn, dir, "a", "b") })
+			head := "CREATE TABLE `" + dir + "/a` (id Int64 NOT NULL, PRIMARY KEY (id));\n" +
+				"$id = 1l;\nINSERT INTO `" + dir + "/a` (id) VALUES ($id);\n"
+			broken := map[string]string{
+				"0000000001_tables.up.sql":   head + "CREATE TABLE `" + dir + "/b` (id NoSuchType NOT NULL, PRIMARY KEY (id));\n",
+				"0000000001_tables.down.sql": "DROP TABLE `" + dir + "/b`;\nDROP TABLE `" + dir + "/a`;\n",
+			}
+			fixed := map[string]string{
+				"0000000001_tables.up.sql":   head + "CREATE TABLE `" + dir + "/b` (id Int64 NOT NULL, PRIMARY KEY (id));\n",
+				"0000000001_tables.down.sql": broken["0000000001_tables.down.sql"],
+			}
+
+			failed := newMigrator(c, conn, broken, migrator.RevisionTableFormatPtah, dir).MigrateUp(c.Context())
+
+			c.Assert(failed, qt.ErrorMatches, `(?s)failed to apply migration 1: .*NoSuchType.*`)
+			c.Assert(revisionProgress(c, newMigrator(c, conn, broken, migrator.RevisionTableFormatPtah, dir)),
+				qt.DeepEquals, []progress{{Version: 1, State: "failed", Applied: 2, Total: 3}})
+			c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+dir+"/a`"), qt.Equals, int64(1))
+
+			resumed := newMigrator(c, conn, fixed, migrator.RevisionTableFormatPtah, dir)
+			c.Assert(resumed.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true}), qt.IsNil)
+			c.Assert(revisionProgress(c, resumed), qt.DeepEquals, []progress{{Version: 1, State: "applied", Applied: 3, Total: 3}})
+			c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+dir+"/a`"), qt.Equals, int64(1))
+			c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.DeepEquals, []string{dir + "|a", dir + "|b"})
+		})
 	}
-	fixed := map[string]string{
-		"0000000001_tables.up.sql":   head + "CREATE TABLE `" + dir + "/b` (id Int64 NOT NULL, PRIMARY KEY (id));\n",
-		"0000000001_tables.down.sql": broken["0000000001_tables.down.sql"],
-	}
-
-	failed := newMigrator(c, conn, broken, migrator.RevisionTableFormatPtah, dir).MigrateUp(c.Context())
-
-	c.Assert(failed, qt.ErrorMatches, `(?s)failed to apply migration 1: .*NoSuchType.*`)
-	c.Assert(revisionProgress(c, newMigrator(c, conn, broken, migrator.RevisionTableFormatPtah, dir)),
-		qt.DeepEquals, []progress{{Version: 1, State: "failed", Applied: 2, Total: 3}})
-	c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+dir+"/a`"), qt.Equals, int64(1))
-
-	resumed := newMigrator(c, conn, fixed, migrator.RevisionTableFormatPtah, dir)
-	c.Assert(resumed.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true}), qt.IsNil)
-	c.Assert(revisionProgress(c, resumed), qt.DeepEquals, []progress{{Version: 1, State: "applied", Applied: 3, Total: 3}})
-	c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+dir+"/a`"), qt.Equals, int64(1))
-	c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.DeepEquals, []string{dir + "|a", dir + "|b"})
 }
 
 // The data statements between two scheme statements run as one transaction:
 // when the second INSERT conflicts, the first is not applied either, and the
 // revision says no data query ran. The fixed file resumes at that query.
 func TestYDBMigrator_RunsADataQueryAsOneTransaction(t *testing.T) {
-	c := qt.New(t)
-	conn := openYDB(c)
-	const dir = "ptah_ydb_mig_atomic"
-	dropDirectory(c, conn, dir, "c")
-	c.Cleanup(func() { dropDirectory(c, conn, dir, "c") })
-	create := "CREATE TABLE `" + dir + "/c` (id Int64 NOT NULL, PRIMARY KEY (id));\n"
-	conflicting := map[string]string{
-		"0000000001_rows.up.sql": create +
-			"INSERT INTO `" + dir + "/c` (id) VALUES (1l);\nINSERT INTO `" + dir + "/c` (id) VALUES (1l);\n",
-		"0000000001_rows.down.sql": "DROP TABLE `" + dir + "/c`;\n",
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			const dir = "ptah_ydb_mig_atomic"
+			dropDirectory(c, conn, dir, "c")
+			c.Cleanup(func() { dropDirectory(c, conn, dir, "c") })
+			create := "CREATE TABLE `" + dir + "/c` (id Int64 NOT NULL, PRIMARY KEY (id));\n"
+			conflicting := map[string]string{
+				"0000000001_rows.up.sql": create +
+					"INSERT INTO `" + dir + "/c` (id) VALUES (1l);\nINSERT INTO `" + dir + "/c` (id) VALUES (1l);\n",
+				"0000000001_rows.down.sql": "DROP TABLE `" + dir + "/c`;\n",
+			}
+			fixed := map[string]string{
+				"0000000001_rows.up.sql": create +
+					"INSERT INTO `" + dir + "/c` (id) VALUES (1l);\nINSERT INTO `" + dir + "/c` (id) VALUES (2l);\n",
+				"0000000001_rows.down.sql": conflicting["0000000001_rows.down.sql"],
+			}
+
+			failed := newMigrator(c, conn, conflicting, migrator.RevisionTableFormatPtah, dir).MigrateUp(c.Context())
+
+			c.Assert(failed, qt.ErrorMatches, `(?s)failed to apply migration 1: .*Conflict with existing key.*`)
+			c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+dir+"/c`"), qt.Equals, int64(0))
+			c.Assert(revisionProgress(c, newMigrator(c, conn, conflicting, migrator.RevisionTableFormatPtah, dir)),
+				qt.DeepEquals, []progress{{Version: 1, State: "failed", Applied: 1, Total: 2}})
+
+			resumed := newMigrator(c, conn, fixed, migrator.RevisionTableFormatPtah, dir)
+			c.Assert(resumed.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true}), qt.IsNil)
+			c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+dir+"/c`"), qt.Equals, int64(2))
+		})
 	}
-	fixed := map[string]string{
-		"0000000001_rows.up.sql": create +
-			"INSERT INTO `" + dir + "/c` (id) VALUES (1l);\nINSERT INTO `" + dir + "/c` (id) VALUES (2l);\n",
-		"0000000001_rows.down.sql": conflicting["0000000001_rows.down.sql"],
-	}
-
-	failed := newMigrator(c, conn, conflicting, migrator.RevisionTableFormatPtah, dir).MigrateUp(c.Context())
-
-	c.Assert(failed, qt.ErrorMatches, `(?s)failed to apply migration 1: .*Conflict with existing key.*`)
-	c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+dir+"/c`"), qt.Equals, int64(0))
-	c.Assert(revisionProgress(c, newMigrator(c, conn, conflicting, migrator.RevisionTableFormatPtah, dir)),
-		qt.DeepEquals, []progress{{Version: 1, State: "failed", Applied: 1, Total: 2}})
-
-	resumed := newMigrator(c, conn, fixed, migrator.RevisionTableFormatPtah, dir)
-	c.Assert(resumed.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true}), qt.IsNil)
-	c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+dir+"/c`"), qt.Equals, int64(2))
 }
 
 // A body the migrator cannot split the way YDB reads it is refused before any
@@ -230,23 +242,27 @@ func TestYDBMigrator_RefusesWhatItCannotSplit(t *testing.T) {
 		{name: "a commit", body: create + "INSERT INTO `" + dir + "/r` (id) VALUES (1l);\nCOMMIT;\n",
 			wantErr: `(?s)migration 1 cannot run up on ydb: "COMMIT" controls a transaction.*`},
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			conn := openYDB(c)
-			dropDirectory(c, conn, dir, "r")
-			c.Cleanup(func() { dropDirectory(c, conn, dir, "r") })
-			files := map[string]string{
-				"0000000001_r.up.sql":   test.body,
-				"0000000001_r.down.sql": "DROP TABLE `" + dir + "/r`;\n",
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			for _, test := range tests {
+				t.Run(test.name, func(t *testing.T) {
+					c := qt.New(t)
+					conn := openYDB(c, line)
+					dropDirectory(c, conn, dir, "r")
+					c.Cleanup(func() { dropDirectory(c, conn, dir, "r") })
+					files := map[string]string{
+						"0000000001_r.up.sql":   test.body,
+						"0000000001_r.down.sql": "DROP TABLE `" + dir + "/r`;\n",
+					}
+					m := newMigrator(c, conn, files, migrator.RevisionTableFormatPtah, dir)
+
+					err := m.MigrateUp(c.Context())
+
+					c.Assert(err, qt.ErrorMatches, test.wantErr)
+					c.Assert(revisionProgress(c, m), qt.HasLen, 0)
+					c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.HasLen, 0)
+				})
 			}
-			m := newMigrator(c, conn, files, migrator.RevisionTableFormatPtah, dir)
-
-			err := m.MigrateUp(c.Context())
-
-			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(revisionProgress(c, m), qt.HasLen, 0)
-			c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.HasLen, 0)
 		})
 	}
 }
@@ -255,37 +271,41 @@ func TestYDBMigrator_RefusesWhatItCannotSplit(t *testing.T) {
 // gives up and applies nothing, and without one it applies once the holder
 // releases, and not before.
 func TestYDBMigrator_WaitsForTheMigrationLock(t *testing.T) {
-	c := qt.New(t)
-	conn := openYDB(c)
-	holder := openYDB(c)
-	const dir = "ptah_ydb_mig_lock"
-	dropDirectory(c, conn, dir, "w")
-	c.Cleanup(func() { dropDirectory(c, conn, dir, "w") })
-	files := map[string]string{
-		"0000000001_w.up.sql":   "CREATE TABLE `" + dir + "/w` (id Int64 NOT NULL, PRIMARY KEY (id));\n",
-		"0000000001_w.down.sql": "DROP TABLE `" + dir + "/w`;\n",
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			holder := openYDB(c, line)
+			const dir = "ptah_ydb_mig_lock"
+			dropDirectory(c, conn, dir, "w")
+			c.Cleanup(func() { dropDirectory(c, conn, dir, "w") })
+			files := map[string]string{
+				"0000000001_w.up.sql":   "CREATE TABLE `" + dir + "/w` (id Int64 NOT NULL, PRIMARY KEY (id));\n",
+				"0000000001_w.down.sql": "DROP TABLE `" + dir + "/w`;\n",
+			}
+			m := newMigrator(c, conn, files, migrator.RevisionTableFormatPtah, dir).WithMigrationLockName("ptah_ydb_mig_lock")
+
+			lock, err := dblock.Acquire(c.Context(), holder, "ptah_ydb_mig_lock", 0)
+			c.Assert(err, qt.IsNil)
+			c.Assert(lock.Supported(), qt.IsTrue)
+
+			timedOut := m.WithMigrationLockTimeout(time.Second).MigrateUp(c.Context())
+			c.Assert(migrator.IsMigrationLockTimeout(timedOut), qt.IsTrue, qt.Commentf("error: %v", timedOut))
+			c.Assert(timedOut, qt.ErrorMatches, `.*timed out acquiring migration lock "ptah_ydb_mig_lock" for ydb after 1s`)
+
+			done := make(chan error, 1)
+			started := time.Now()
+			go func() { done <- m.MigrateUp(context.Background()) }()
+			time.Sleep(2 * time.Second)
+			c.Assert(done, qt.HasLen, 0)
+			c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.HasLen, 0)
+			c.Assert(lock.Release(context.Background()), qt.IsNil)
+
+			c.Assert(<-done, qt.IsNil)
+			c.Assert(time.Since(started) >= 2*time.Second, qt.IsTrue)
+			c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.DeepEquals, []string{dir + "|w"})
+		})
 	}
-	m := newMigrator(c, conn, files, migrator.RevisionTableFormatPtah, dir).WithMigrationLockName("ptah_ydb_mig_lock")
-
-	lock, err := dblock.Acquire(c.Context(), holder, "ptah_ydb_mig_lock", 0)
-	c.Assert(err, qt.IsNil)
-	c.Assert(lock.Supported(), qt.IsTrue)
-
-	timedOut := m.WithMigrationLockTimeout(time.Second).MigrateUp(c.Context())
-	c.Assert(migrator.IsMigrationLockTimeout(timedOut), qt.IsTrue, qt.Commentf("error: %v", timedOut))
-	c.Assert(timedOut, qt.ErrorMatches, `.*timed out acquiring migration lock "ptah_ydb_mig_lock" for ydb after 1s`)
-
-	done := make(chan error, 1)
-	started := time.Now()
-	go func() { done <- m.MigrateUp(context.Background()) }()
-	time.Sleep(2 * time.Second)
-	c.Assert(done, qt.HasLen, 0)
-	c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.HasLen, 0)
-	c.Assert(lock.Release(context.Background()), qt.IsNil)
-
-	c.Assert(<-done, qt.IsNil)
-	c.Assert(time.Since(started) >= 2*time.Second, qt.IsTrue)
-	c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.DeepEquals, []string{dir + "|w"})
 }
 
 // Two runs started together over the same history apply it once: the lock
@@ -293,86 +313,98 @@ func TestYDBMigrator_WaitsForTheMigrationLock(t *testing.T) {
 // answer `Conflict with existing key` if both ran it, and the revision
 // INSERT would conflict as well.
 func TestYDBMigrator_ConcurrentRunsApplyOnce(t *testing.T) {
-	c := qt.New(t)
-	const dir = "ptah_ydb_mig_parallel"
-	conn := openYDB(c)
-	dropDirectory(c, conn, dir, "p")
-	c.Cleanup(func() { dropDirectory(c, conn, dir, "p") })
-	files := map[string]string{
-		"0000000001_p.up.sql": "CREATE TABLE `" + dir + "/p` (id Int64 NOT NULL, PRIMARY KEY (id));\n" +
-			"INSERT INTO `" + dir + "/p` (id) VALUES (1l);\n",
-		"0000000001_p.down.sql": "DROP TABLE `" + dir + "/p`;\n",
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			const dir = "ptah_ydb_mig_parallel"
+			conn := openYDB(c, line)
+			dropDirectory(c, conn, dir, "p")
+			c.Cleanup(func() { dropDirectory(c, conn, dir, "p") })
+			files := map[string]string{
+				"0000000001_p.up.sql": "CREATE TABLE `" + dir + "/p` (id Int64 NOT NULL, PRIMARY KEY (id));\n" +
+					"INSERT INTO `" + dir + "/p` (id) VALUES (1l);\n",
+				"0000000001_p.down.sql": "DROP TABLE `" + dir + "/p`;\n",
+			}
+			first := newMigrator(c, openYDB(c, line), files, migrator.RevisionTableFormatPtah, dir)
+			second := newMigrator(c, openYDB(c, line), files, migrator.RevisionTableFormatPtah, dir)
+
+			results := make(chan error, 2)
+			go func() { results <- first.MigrateUp(context.Background()) }()
+			go func() { results <- second.MigrateUp(context.Background()) }()
+
+			c.Assert(errors.Join(<-results, <-results), qt.IsNil)
+			c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+dir+"/p`"), qt.Equals, int64(1))
+			c.Assert(revisionProgress(c, first), qt.DeepEquals, []progress{{Version: 1, State: "applied", Applied: 2, Total: 2}})
+		})
 	}
-	first := newMigrator(c, openYDB(c), files, migrator.RevisionTableFormatPtah, dir)
-	second := newMigrator(c, openYDB(c), files, migrator.RevisionTableFormatPtah, dir)
-
-	results := make(chan error, 2)
-	go func() { results <- first.MigrateUp(context.Background()) }()
-	go func() { results <- second.MigrateUp(context.Background()) }()
-
-	c.Assert(errors.Join(<-results, <-results), qt.IsNil)
-	c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+dir+"/p`"), qt.Equals, int64(1))
-	c.Assert(revisionProgress(c, first), qt.DeepEquals, []progress{{Version: 1, State: "applied", Applied: 2, Total: 2}})
 }
 
 // The lock is a semaphore on a coordination node at the database root: a
 // second session is refused it at once under dblock.NoWait while the first
 // holds it, and takes it once the first releases.
 func TestYDBLock_ExcludesASecondSession(t *testing.T) {
-	c := qt.New(t)
-	first := openYDB(c)
-	second := openYDB(c)
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			first := openYDB(c, line)
+			second := openYDB(c, line)
 
-	held, err := dblock.Acquire(c.Context(), first, "ptah_ydb_lock_probe", dblock.NoWait)
-	c.Assert(err, qt.IsNil)
-	asked := time.Now()
-	refused, refusal := dblock.Acquire(c.Context(), second, "ptah_ydb_lock_probe", dblock.NoWait)
-	// NoWait asks the server not to queue the request: measured, it answers
-	// within milliseconds rather than after a wait.
-	c.Assert(time.Since(asked) < 10*time.Second, qt.IsTrue, qt.Commentf("waited %s", time.Since(asked)))
-	c.Assert(refusal, qt.ErrorMatches, `advisory lock "ptah_ydb_lock_probe" on ydb is held by another session`)
-	c.Assert(dblock.IsTimeout(refusal), qt.IsTrue)
-	c.Assert(refused, qt.IsNil)
-	c.Assert(held.Release(context.Background()), qt.IsNil)
+			held, err := dblock.Acquire(c.Context(), first, "ptah_ydb_lock_probe", dblock.NoWait)
+			c.Assert(err, qt.IsNil)
+			asked := time.Now()
+			refused, refusal := dblock.Acquire(c.Context(), second, "ptah_ydb_lock_probe", dblock.NoWait)
+			// NoWait asks the server not to queue the request: measured, it answers
+			// within milliseconds rather than after a wait.
+			c.Assert(time.Since(asked) < 10*time.Second, qt.IsTrue, qt.Commentf("waited %s", time.Since(asked)))
+			c.Assert(refusal, qt.ErrorMatches, `advisory lock "ptah_ydb_lock_probe" on ydb is held by another session`)
+			c.Assert(dblock.IsTimeout(refusal), qt.IsTrue)
+			c.Assert(refused, qt.IsNil)
+			c.Assert(held.Release(context.Background()), qt.IsNil)
 
-	taken, err := dblock.Acquire(c.Context(), second, "ptah_ydb_lock_probe", dblock.NoWait)
-	c.Assert(err, qt.IsNil)
-	c.Assert(taken.Release(context.Background()), qt.IsNil)
-	c.Assert(directoryNames(c, c.Context()), qt.Contains, dblock.YDBLockNode)
+			taken, err := dblock.Acquire(c.Context(), second, "ptah_ydb_lock_probe", dblock.NoWait)
+			c.Assert(err, qt.IsNil)
+			c.Assert(taken.Release(context.Background()), qt.IsNil)
+			c.Assert(directoryNames(c, c.Context(), line), qt.Contains, dblock.YDBLockNode)
+		})
+	}
 }
 
 // A tag is written with UPSERT, so recording it again moves it, and the log
 // records each attempt. Both tables live in the migrations directory.
 func TestYDBMigrator_RecordsTagsAndTheLog(t *testing.T) {
-	c := qt.New(t)
-	conn := openYDB(c)
-	const dir = "ptah_ydb_mig_tags"
-	dropDirectory(c, conn, dir, "t")
-	c.Cleanup(func() { dropDirectory(c, conn, dir, "t") })
-	files := map[string]string{
-		"0000000001_t.up.sql":   "CREATE TABLE `" + dir + "/t` (id Int64 NOT NULL, PRIMARY KEY (id));\n",
-		"0000000001_t.down.sql": "DROP TABLE `" + dir + "/t`;\n",
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			const dir = "ptah_ydb_mig_tags"
+			dropDirectory(c, conn, dir, "t")
+			c.Cleanup(func() { dropDirectory(c, conn, dir, "t") })
+			files := map[string]string{
+				"0000000001_t.up.sql":   "CREATE TABLE `" + dir + "/t` (id Int64 NOT NULL, PRIMARY KEY (id));\n",
+				"0000000001_t.down.sql": "DROP TABLE `" + dir + "/t`;\n",
+			}
+			m := newMigrator(c, conn, files, migrator.RevisionTableFormatPtah, dir)
+			c.Assert(m.MigrateUp(c.Context()), qt.IsNil)
+
+			c.Assert(m.RecordMigrationTag(c.Context(), "release", 0), qt.IsNil)
+			c.Assert(m.RecordMigrationTag(c.Context(), "release", 1), qt.IsNil)
+			version, err := m.ResolveMigrationTag(c.Context(), "release")
+			c.Assert(err, qt.IsNil)
+			c.Assert(version, qt.Equals, int64(1))
+			tags, err := m.MigrationTags(c.Context())
+			c.Assert(err, qt.IsNil)
+			c.Assert(tags, qt.HasLen, 1)
+			c.Assert(m.DeleteMigrationTag(c.Context(), "release"), qt.IsNil)
+			c.Assert(m.DeleteMigrationTag(c.Context(), "release"), qt.ErrorIs, migrator.ErrMigrationTagNotFound)
+
+			attempts, err := m.MigrationLog(c.Context(), 0)
+			c.Assert(err, qt.IsNil)
+			c.Assert(attempts, qt.HasLen, 1)
+			c.Assert(string(attempts[0].Outcome.State), qt.Equals, "applied")
+			c.Assert(directoryNames(c, c.Context(), line, dir), qt.Contains, "ptah_migration_tags")
+			c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.DeepEquals, []string{dir + "|t"})
+		})
 	}
-	m := newMigrator(c, conn, files, migrator.RevisionTableFormatPtah, dir)
-	c.Assert(m.MigrateUp(c.Context()), qt.IsNil)
-
-	c.Assert(m.RecordMigrationTag(c.Context(), "release", 0), qt.IsNil)
-	c.Assert(m.RecordMigrationTag(c.Context(), "release", 1), qt.IsNil)
-	version, err := m.ResolveMigrationTag(c.Context(), "release")
-	c.Assert(err, qt.IsNil)
-	c.Assert(version, qt.Equals, int64(1))
-	tags, err := m.MigrationTags(c.Context())
-	c.Assert(err, qt.IsNil)
-	c.Assert(tags, qt.HasLen, 1)
-	c.Assert(m.DeleteMigrationTag(c.Context(), "release"), qt.IsNil)
-	c.Assert(m.DeleteMigrationTag(c.Context(), "release"), qt.ErrorIs, migrator.ErrMigrationTagNotFound)
-
-	attempts, err := m.MigrationLog(c.Context(), 0)
-	c.Assert(err, qt.IsNil)
-	c.Assert(attempts, qt.HasLen, 1)
-	c.Assert(string(attempts[0].Outcome.State), qt.Equals, "applied")
-	c.Assert(directoryNames(c, c.Context(), dir), qt.Contains, "ptah_migration_tags")
-	c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.DeepEquals, []string{dir + "|t"})
 }
 
 // Progress is recorded after each query rather than once the file is done:
@@ -380,66 +412,74 @@ func TestYDBMigrator_RecordsTagsAndTheLog(t *testing.T) {
 // The file holds a scheme query, a run of data statements and another scheme
 // query, and YDB commits each on its own.
 func TestYDBMigrator_RecordsProgressAfterEachQuery(t *testing.T) {
-	c := qt.New(t)
-	conn := openYDB(c)
-	observer := openYDB(c)
-	const dir = "ptah_ydb_mig_progress"
-	dropDirectory(c, conn, dir, "g")
-	c.Cleanup(func() { dropDirectory(c, conn, dir, "g") })
-	files := migrationFiles(map[string]string{
-		"0000000001_g.up.sql": "CREATE TABLE `" + dir + "/g` (id Int64 NOT NULL, PRIMARY KEY (id));\n" +
-			"INSERT INTO `" + dir + "/g` (id) VALUES (1l);\nINSERT INTO `" + dir + "/g` (id) VALUES (2l);\n" +
-			"ALTER TABLE `" + dir + "/g` ADD COLUMN note Utf8;\n",
-		"0000000001_g.down.sql": "DROP TABLE `" + dir + "/g`;\n",
-	})
-	var seen []int64
-	record := migrator.StatementObserverFunc(func(ctx context.Context, _ migrator.StatementEvent) error {
-		var applied int64
-		err := observer.QueryRowContext(ctx,
-			"SELECT applied FROM `"+dir+"/schema_migrations` WHERE version = 1l").Scan(&applied)
-		seen = append(seen, applied)
-		return err
-	})
-	m, err := migrator.NewFSMigrator(conn, files, migrator.WithStatementObserver(record))
-	c.Assert(err, qt.IsNil)
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			observer := openYDB(c, line)
+			const dir = "ptah_ydb_mig_progress"
+			dropDirectory(c, conn, dir, "g")
+			c.Cleanup(func() { dropDirectory(c, conn, dir, "g") })
+			files := migrationFiles(map[string]string{
+				"0000000001_g.up.sql": "CREATE TABLE `" + dir + "/g` (id Int64 NOT NULL, PRIMARY KEY (id));\n" +
+					"INSERT INTO `" + dir + "/g` (id) VALUES (1l);\nINSERT INTO `" + dir + "/g` (id) VALUES (2l);\n" +
+					"ALTER TABLE `" + dir + "/g` ADD COLUMN note Utf8;\n",
+				"0000000001_g.down.sql": "DROP TABLE `" + dir + "/g`;\n",
+			})
+			var seen []int64
+			record := migrator.StatementObserverFunc(func(ctx context.Context, _ migrator.StatementEvent) error {
+				var applied int64
+				err := observer.QueryRowContext(ctx,
+					"SELECT applied FROM `"+dir+"/schema_migrations` WHERE version = 1l").Scan(&applied)
+				seen = append(seen, applied)
+				return err
+			})
+			m, err := migrator.NewFSMigrator(conn, files, migrator.WithStatementObserver(record))
+			c.Assert(err, qt.IsNil)
 
-	c.Assert(m.WithMigrationsTable(dir, "").MigrateUp(c.Context()), qt.IsNil)
-	c.Assert(seen, qt.DeepEquals, []int64{1, 2, 3})
+			c.Assert(m.WithMigrationsTable(dir, "").MigrateUp(c.Context()), qt.IsNil)
+			c.Assert(seen, qt.DeepEquals, []int64{1, 2, 3})
+		})
+	}
 }
 
 // A resume skips only a prefix it can prove unchanged: the digest of the
 // committed queries is recorded with the progress, and a file whose committed
 // INSERT was edited is refused rather than resumed past the edit.
 func TestYDBMigrator_RefusesToResumeOverAnEditedPrefix(t *testing.T) {
-	c := qt.New(t)
-	conn := openYDB(c)
-	const dir = "ptah_ydb_mig_edited"
-	dropDirectory(c, conn, dir, "e", "f")
-	c.Cleanup(func() { dropDirectory(c, conn, dir, "e", "f") })
-	// The edit is in the INSERT, the second statement of the second query, so
-	// a digest over statements rather than queries would stop short of it.
-	body := func(value, fType string) string {
-		return "CREATE TABLE `" + dir + "/e` (id Int64 NOT NULL, PRIMARY KEY (id));\n" +
-			"$id = 1l;\nINSERT INTO `" + dir + "/e` (id) VALUES (" + value + ");\n" +
-			"CREATE TABLE `" + dir + "/f` (id " + fType + " NOT NULL, PRIMARY KEY (id));\n"
-	}
-	files := func(up string) map[string]string {
-		return map[string]string{
-			"0000000001_e.up.sql":   up,
-			"0000000001_e.down.sql": "DROP TABLE `" + dir + "/f`;\nDROP TABLE `" + dir + "/e`;\n",
-		}
-	}
-	failed := newMigrator(c, conn, files(body("$id", "NoSuchType")), migrator.RevisionTableFormatPtah, dir).
-		MigrateUp(c.Context())
-	c.Assert(failed, qt.IsNotNil)
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			const dir = "ptah_ydb_mig_edited"
+			dropDirectory(c, conn, dir, "e", "f")
+			c.Cleanup(func() { dropDirectory(c, conn, dir, "e", "f") })
+			// The edit is in the INSERT, the second statement of the second query, so
+			// a digest over statements rather than queries would stop short of it.
+			body := func(value, fType string) string {
+				return "CREATE TABLE `" + dir + "/e` (id Int64 NOT NULL, PRIMARY KEY (id));\n" +
+					"$id = 1l;\nINSERT INTO `" + dir + "/e` (id) VALUES (" + value + ");\n" +
+					"CREATE TABLE `" + dir + "/f` (id " + fType + " NOT NULL, PRIMARY KEY (id));\n"
+			}
+			files := func(up string) map[string]string {
+				return map[string]string{
+					"0000000001_e.up.sql":   up,
+					"0000000001_e.down.sql": "DROP TABLE `" + dir + "/f`;\nDROP TABLE `" + dir + "/e`;\n",
+				}
+			}
+			failed := newMigrator(c, conn, files(body("$id", "NoSuchType")), migrator.RevisionTableFormatPtah, dir).
+				MigrateUp(c.Context())
+			c.Assert(failed, qt.IsNotNil)
 
-	edited := newMigrator(c, conn, files(body("$id * 7l", "Int64")), migrator.RevisionTableFormatPtah, dir)
-	err := edited.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true})
+			edited := newMigrator(c, conn, files(body("$id * 7l", "Int64")), migrator.RevisionTableFormatPtah, dir)
+			err := edited.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true})
 
-	c.Assert(err, qt.ErrorMatches, `migration 1 cannot resume automatically: the already committed statement prefix `+
-		`changed after 2 of 3 statements committed; inspect the database before choosing a repair point`)
-	c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+dir+"/e` WHERE id = 7l"), qt.Equals, int64(0))
-	c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.DeepEquals, []string{dir + "|e"})
+			c.Assert(err, qt.ErrorMatches, `migration 1 cannot resume automatically: the already committed statement prefix `+
+				`changed after 2 of 3 statements committed; inspect the database before choosing a repair point`)
+			c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+dir+"/e` WHERE id = 7l"), qt.Equals, int64(0))
+			c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.DeepEquals, []string{dir + "|e"})
+		})
+	}
 }
 
 // YDB cannot add a NOT NULL column to a table that has rows on every line
@@ -447,44 +487,52 @@ func TestYDBMigrator_RefusesToResumeOverAnEditedPrefix(t *testing.T) {
 // so a revision table missing a column was made by something else and is
 // refused rather than altered.
 func TestYDBMigrator_RefusesARevisionTableItDidNotCreate(t *testing.T) {
-	c := qt.New(t)
-	conn := openYDB(c)
-	const dir = "ptah_ydb_mig_foreign"
-	dropDirectory(c, conn, dir)
-	c.Cleanup(func() { dropDirectory(c, conn, dir) })
-	c.Assert(conn.Writer().ExecuteSQL(c.Context(), "CREATE TABLE `"+dir+"/schema_migrations` "+
-		"(version Int64 NOT NULL, description Utf8 NOT NULL, applied_at Timestamp NOT NULL, PRIMARY KEY (version))"),
-		qt.IsNil)
-	m := newMigrator(c, conn, map[string]string{
-		"0000000001_x.up.sql":   "CREATE TABLE `" + dir + "/x` (id Int64 NOT NULL, PRIMARY KEY (id));\n",
-		"0000000001_x.down.sql": "DROP TABLE `" + dir + "/x`;\n",
-	}, migrator.RevisionTableFormatPtah, dir)
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			const dir = "ptah_ydb_mig_foreign"
+			dropDirectory(c, conn, dir)
+			c.Cleanup(func() { dropDirectory(c, conn, dir) })
+			c.Assert(conn.Writer().ExecuteSQL(c.Context(), "CREATE TABLE `"+dir+"/schema_migrations` "+
+				"(version Int64 NOT NULL, description Utf8 NOT NULL, applied_at Timestamp NOT NULL, PRIMARY KEY (version))"),
+				qt.IsNil)
+			m := newMigrator(c, conn, map[string]string{
+				"0000000001_x.up.sql":   "CREATE TABLE `" + dir + "/x` (id Int64 NOT NULL, PRIMARY KEY (id));\n",
+				"0000000001_x.down.sql": "DROP TABLE `" + dir + "/x`;\n",
+			}, migrator.RevisionTableFormatPtah, dir)
 
-	err := m.Initialize(c.Context())
+			err := m.Initialize(c.Context())
 
-	c.Assert(err, qt.ErrorMatches, "failed to prepare migrations revision columns: migration metadata table `"+
-		dir+"/schema_migrations` has no column state, applied, total, error, error_stmt, execution_time_ms, "+
-		"checksum, so Ptah did not create it; drop it and let Ptah create it, or configure another migrations table")
-	c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.HasLen, 0)
+			c.Assert(err, qt.ErrorMatches, "failed to prepare migrations revision columns: migration metadata table `"+
+				dir+"/schema_migrations` has no column state, applied, total, error, error_stmt, execution_time_ms, "+
+				"checksum, so Ptah did not create it; drop it and let Ptah create it, or configure another migrations table")
+			c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.HasLen, 0)
+		})
+	}
 }
 
 // The migrations directory need not exist: a revision table there is absent
 // until the first run creates the directory along with it, and asking about
 // it creates nothing.
 func TestYDBMigrator_AsksAboutADirectoryThatDoesNotExist(t *testing.T) {
-	c := qt.New(t)
-	conn := openYDB(c)
-	dir := fmt.Sprintf("ptah_ydb_mig_absent_%d", time.Now().UnixNano())
-	m := newMigrator(c, conn, map[string]string{
-		"0000000001_a.up.sql":   "CREATE TABLE `" + dir + "/a` (id Int64 NOT NULL, PRIMARY KEY (id));\n",
-		"0000000001_a.down.sql": "DROP TABLE `" + dir + "/a`;\n",
-	}, migrator.RevisionTableFormatPtah, dir)
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			dir := fmt.Sprintf("ptah_ydb_mig_absent_%d", time.Now().UnixNano())
+			m := newMigrator(c, conn, map[string]string{
+				"0000000001_a.up.sql":   "CREATE TABLE `" + dir + "/a` (id Int64 NOT NULL, PRIMARY KEY (id));\n",
+				"0000000001_a.down.sql": "DROP TABLE `" + dir + "/a`;\n",
+			}, migrator.RevisionTableFormatPtah, dir)
 
-	present, err := m.MetadataPresent(c.Context())
+			present, err := m.MetadataPresent(c.Context())
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(present, qt.IsFalse)
-	c.Assert(directoryNames(c, c.Context()), qt.Not(qt.Contains), dir)
+			c.Assert(err, qt.IsNil)
+			c.Assert(present, qt.IsFalse)
+			c.Assert(directoryNames(c, c.Context(), line), qt.Not(qt.Contains), dir)
+		})
+	}
 }
 
 // offeredStatements is an interceptor that takes over nothing and records each
@@ -505,27 +553,31 @@ func (o *offeredStatements) ExecuteStatement(
 // so the steps a scheme query passes through, an interceptor among them, never
 // see it.
 func TestYDBMigrator_RunsADataQueryWithItsCheckpoint(t *testing.T) {
-	c := qt.New(t)
-	conn := openYDB(c)
-	const dir = "ptah_ydb_mig_commit"
-	dropDirectory(c, conn, dir, "h")
-	c.Cleanup(func() { dropDirectory(c, conn, dir, "h") })
-	files := migrationFiles(map[string]string{
-		"0000000001_h.up.sql": "CREATE TABLE `" + dir + "/h` (id Int64 NOT NULL, PRIMARY KEY (id));\n" +
-			"INSERT INTO `" + dir + "/h` (id) VALUES (1l);\n" +
-			"ALTER TABLE `" + dir + "/h` ADD COLUMN note Utf8;\n",
-		"0000000001_h.down.sql": "DROP TABLE `" + dir + "/h`;\n",
-	})
-	interceptor := &offeredStatements{}
-	m, err := migrator.NewFSMigrator(conn, files, migrator.WithStatementInterceptor(interceptor))
-	c.Assert(err, qt.IsNil)
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			const dir = "ptah_ydb_mig_commit"
+			dropDirectory(c, conn, dir, "h")
+			c.Cleanup(func() { dropDirectory(c, conn, dir, "h") })
+			files := migrationFiles(map[string]string{
+				"0000000001_h.up.sql": "CREATE TABLE `" + dir + "/h` (id Int64 NOT NULL, PRIMARY KEY (id));\n" +
+					"INSERT INTO `" + dir + "/h` (id) VALUES (1l);\n" +
+					"ALTER TABLE `" + dir + "/h` ADD COLUMN note Utf8;\n",
+				"0000000001_h.down.sql": "DROP TABLE `" + dir + "/h`;\n",
+			})
+			interceptor := &offeredStatements{}
+			m, err := migrator.NewFSMigrator(conn, files, migrator.WithStatementInterceptor(interceptor))
+			c.Assert(err, qt.IsNil)
 
-	c.Assert(m.WithMigrationsTable(dir, "").MigrateUp(c.Context()), qt.IsNil)
-	c.Assert(interceptor.offered, qt.DeepEquals, []string{
-		"CREATE TABLE `" + dir + "/h` (id Int64 NOT NULL, PRIMARY KEY (id))",
-		"ALTER TABLE `" + dir + "/h` ADD COLUMN note Utf8",
-	})
-	c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+dir+"/h`"), qt.Equals, int64(1))
+			c.Assert(m.WithMigrationsTable(dir, "").MigrateUp(c.Context()), qt.IsNil)
+			c.Assert(interceptor.offered, qt.DeepEquals, []string{
+				"CREATE TABLE `" + dir + "/h` (id Int64 NOT NULL, PRIMARY KEY (id))",
+				"ALTER TABLE `" + dir + "/h` ADD COLUMN note Utf8",
+			})
+			c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+dir+"/h`"), qt.Equals, int64(1))
+		})
+	}
 }
 
 // lostAnswer is an interceptor that runs one statement on a connection of its
@@ -581,36 +633,40 @@ func TestYDBMigrator_FailureKeepsTheProgressTheRowRecords(t *testing.T) {
 				"SET applied = 2l, error = ''u, error_stmt = ''u WHERE version = '1'u",
 		},
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			conn := openYDB(c)
-			dropDirectory(c, conn, test.dir, "l", "m")
-			c.Cleanup(func() { dropDirectory(c, conn, test.dir, "l", "m") })
-			lost := "CREATE TABLE `" + test.dir + "/m` (id Int64 NOT NULL, PRIMARY KEY (id))"
-			files := migrationFiles(map[string]string{
-				"0000000001_l.up.sql": "CREATE TABLE `" + test.dir + "/l` (id Int64 NOT NULL, PRIMARY KEY (id));\n" +
-					lost + ";\nINSERT INTO `" + test.dir + "/l` (id) VALUES (1l);\n",
-				"0000000001_l.down.sql": "DROP TABLE `" + test.dir + "/m`;\nDROP TABLE `" + test.dir + "/l`;\n",
-			})
-			interceptor := &lostAnswer{other: openYDB(c), statement: lost, checkpoint: test.checkpoint}
-			failing, err := migrator.NewFSMigrator(conn, files, migrator.WithStatementInterceptor(interceptor))
-			c.Assert(err, qt.IsNil)
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			for _, test := range tests {
+				t.Run(test.name, func(t *testing.T) {
+					c := qt.New(t)
+					conn := openYDB(c, line)
+					dropDirectory(c, conn, test.dir, "l", "m")
+					c.Cleanup(func() { dropDirectory(c, conn, test.dir, "l", "m") })
+					lost := "CREATE TABLE `" + test.dir + "/m` (id Int64 NOT NULL, PRIMARY KEY (id))"
+					files := migrationFiles(map[string]string{
+						"0000000001_l.up.sql": "CREATE TABLE `" + test.dir + "/l` (id Int64 NOT NULL, PRIMARY KEY (id));\n" +
+							lost + ";\nINSERT INTO `" + test.dir + "/l` (id) VALUES (1l);\n",
+						"0000000001_l.down.sql": "DROP TABLE `" + test.dir + "/m`;\nDROP TABLE `" + test.dir + "/l`;\n",
+					})
+					interceptor := &lostAnswer{other: openYDB(c, line), statement: lost, checkpoint: test.checkpoint}
+					failing, err := migrator.NewFSMigrator(conn, files, migrator.WithStatementInterceptor(interceptor))
+					c.Assert(err, qt.IsNil)
 
-			failed := failing.WithRevisionTableFormat(test.format).WithMigrationsTable(test.dir, "").
-				MigrateUp(c.Context())
+					failed := failing.WithRevisionTableFormat(test.format).WithMigrationsTable(test.dir, "").
+						MigrateUp(c.Context())
 
-			c.Assert(failed, qt.ErrorMatches, `(?s).*the connection closed before the answer arrived.*`)
-			resumed, err := migrator.NewFSMigrator(conn, files)
-			c.Assert(err, qt.IsNil)
-			resumed = resumed.WithRevisionTableFormat(test.format).WithMigrationsTable(test.dir, "")
-			c.Assert(revisionProgress(c, resumed), qt.DeepEquals,
-				[]progress{{Version: 1, State: "failed", Applied: 2, Total: 3}})
+					c.Assert(failed, qt.ErrorMatches, `(?s).*the connection closed before the answer arrived.*`)
+					resumed, err := migrator.NewFSMigrator(conn, files)
+					c.Assert(err, qt.IsNil)
+					resumed = resumed.WithRevisionTableFormat(test.format).WithMigrationsTable(test.dir, "")
+					c.Assert(revisionProgress(c, resumed), qt.DeepEquals,
+						[]progress{{Version: 1, State: "failed", Applied: 2, Total: 3}})
 
-			c.Assert(resumed.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true}), qt.IsNil)
-			c.Assert(revisionProgress(c, resumed), qt.DeepEquals,
-				[]progress{{Version: 1, State: "applied", Applied: 3, Total: 3}})
-			c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+test.dir+"/l`"), qt.Equals, int64(1))
+					c.Assert(resumed.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true}), qt.IsNil)
+					c.Assert(revisionProgress(c, resumed), qt.DeepEquals,
+						[]progress{{Version: 1, State: "applied", Applied: 3, Total: 3}})
+					c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+test.dir+"/l`"), qt.Equals, int64(1))
+				})
+			}
 		})
 	}
 }
@@ -629,61 +685,69 @@ func text(c *qt.C, conn *dbschema.DatabaseConnection, query string) string {
 // the failure the first run recorded; a mark would have replaced that with the
 // INSERT itself.
 func TestYDBMigrator_RepairRunsADataQueryWithItsCheckpoint(t *testing.T) {
-	c := qt.New(t)
-	conn := openYDB(c)
-	const dir = "ptah_ydb_mig_repair"
-	dropDirectory(c, conn, dir, "r")
-	c.Cleanup(func() { dropDirectory(c, conn, dir, "r") })
-	head := "CREATE TABLE `" + dir + "/r` (id Int64 NOT NULL, note Utf8, PRIMARY KEY (id));\n"
-	broken := map[string]string{
-		"0000000001_r.up.sql":   head + "CREATE TABLE `" + dir + "/bad` (id NoSuchType NOT NULL, PRIMARY KEY (id));\n",
-		"0000000001_r.down.sql": "DROP TABLE `" + dir + "/r`;\n",
-	}
-	fixed := map[string]string{
-		"0000000001_r.up.sql": head + "INSERT INTO `" + dir + "/r` " +
-			"SELECT 1l AS id, error_stmt AS note FROM `" + dir + "/schema_migrations` WHERE version = 1l;\n",
-		"0000000001_r.down.sql": broken["0000000001_r.down.sql"],
-	}
-	c.Assert(newMigrator(c, conn, broken, migrator.RevisionTableFormatPtah, dir).MigrateUp(c.Context()), qt.IsNotNil)
-	failedStatement := text(c, conn, "SELECT error_stmt FROM `"+dir+"/schema_migrations` WHERE version = 1l")
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			const dir = "ptah_ydb_mig_repair"
+			dropDirectory(c, conn, dir, "r")
+			c.Cleanup(func() { dropDirectory(c, conn, dir, "r") })
+			head := "CREATE TABLE `" + dir + "/r` (id Int64 NOT NULL, note Utf8, PRIMARY KEY (id));\n"
+			broken := map[string]string{
+				"0000000001_r.up.sql":   head + "CREATE TABLE `" + dir + "/bad` (id NoSuchType NOT NULL, PRIMARY KEY (id));\n",
+				"0000000001_r.down.sql": "DROP TABLE `" + dir + "/r`;\n",
+			}
+			fixed := map[string]string{
+				"0000000001_r.up.sql": head + "INSERT INTO `" + dir + "/r` " +
+					"SELECT 1l AS id, error_stmt AS note FROM `" + dir + "/schema_migrations` WHERE version = 1l;\n",
+				"0000000001_r.down.sql": broken["0000000001_r.down.sql"],
+			}
+			c.Assert(newMigrator(c, conn, broken, migrator.RevisionTableFormatPtah, dir).MigrateUp(c.Context()), qt.IsNotNil)
+			failedStatement := text(c, conn, "SELECT error_stmt FROM `"+dir+"/schema_migrations` WHERE version = 1l")
 
-	repaired := newMigrator(c, conn, fixed, migrator.RevisionTableFormatPtah, dir)
-	err := repaired.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 2})
+			repaired := newMigrator(c, conn, fixed, migrator.RevisionTableFormatPtah, dir)
+			err := repaired.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 2})
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(failedStatement, qt.Equals, "CREATE TABLE `"+dir+"/bad` (id NoSuchType NOT NULL, PRIMARY KEY (id))")
-	c.Assert(text(c, conn, "SELECT note FROM `"+dir+"/r` WHERE id = 1l"), qt.Equals, failedStatement)
-	c.Assert(revisionProgress(c, repaired), qt.DeepEquals, []progress{{Version: 1, State: "applied", Applied: 2, Total: 2}})
+			c.Assert(err, qt.IsNil)
+			c.Assert(failedStatement, qt.Equals, "CREATE TABLE `"+dir+"/bad` (id NoSuchType NOT NULL, PRIMARY KEY (id))")
+			c.Assert(text(c, conn, "SELECT note FROM `"+dir+"/r` WHERE id = 1l"), qt.Equals, failedStatement)
+			c.Assert(revisionProgress(c, repaired), qt.DeepEquals, []progress{{Version: 1, State: "applied", Applied: 2, Total: 2}})
+		})
+	}
 }
 
 // A repair that resumes the body refuses what a run refuses, before any of the
 // resumed statements runs: the CREATE TABLE after the client delimiter, which
 // a splitter honoring the directive would run, is not run.
 func TestYDBMigrator_RepairRefusesWhatItCannotSplit(t *testing.T) {
-	c := qt.New(t)
-	conn := openYDB(c)
-	const dir = "ptah_ydb_mig_repair_refused"
-	dropDirectory(c, conn, dir, "r", "s")
-	c.Cleanup(func() { dropDirectory(c, conn, dir, "r", "s") })
-	head := "CREATE TABLE `" + dir + "/r` (id Int64 NOT NULL, PRIMARY KEY (id));\n"
-	broken := map[string]string{
-		"0000000001_r.up.sql":   head + "CREATE TABLE `" + dir + "/bad` (id NoSuchType NOT NULL, PRIMARY KEY (id));\n",
-		"0000000001_r.down.sql": "DROP TABLE `" + dir + "/r`;\n",
-	}
-	delimited := map[string]string{
-		"0000000001_r.up.sql": head + "DELIMITER //\n" +
-			"CREATE TABLE `" + dir + "/s` (id Int64 NOT NULL, PRIMARY KEY (id))//\n",
-		"0000000001_r.down.sql": broken["0000000001_r.down.sql"],
-	}
-	c.Assert(newMigrator(c, conn, broken, migrator.RevisionTableFormatPtah, dir).MigrateUp(c.Context()), qt.IsNotNil)
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			const dir = "ptah_ydb_mig_repair_refused"
+			dropDirectory(c, conn, dir, "r", "s")
+			c.Cleanup(func() { dropDirectory(c, conn, dir, "r", "s") })
+			head := "CREATE TABLE `" + dir + "/r` (id Int64 NOT NULL, PRIMARY KEY (id));\n"
+			broken := map[string]string{
+				"0000000001_r.up.sql":   head + "CREATE TABLE `" + dir + "/bad` (id NoSuchType NOT NULL, PRIMARY KEY (id));\n",
+				"0000000001_r.down.sql": "DROP TABLE `" + dir + "/r`;\n",
+			}
+			delimited := map[string]string{
+				"0000000001_r.up.sql": head + "DELIMITER //\n" +
+					"CREATE TABLE `" + dir + "/s` (id Int64 NOT NULL, PRIMARY KEY (id))//\n",
+				"0000000001_r.down.sql": broken["0000000001_r.down.sql"],
+			}
+			c.Assert(newMigrator(c, conn, broken, migrator.RevisionTableFormatPtah, dir).MigrateUp(c.Context()), qt.IsNotNil)
 
-	repaired := newMigrator(c, conn, delimited, migrator.RevisionTableFormatPtah, dir)
-	err := repaired.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 2})
+			repaired := newMigrator(c, conn, delimited, migrator.RevisionTableFormatPtah, dir)
+			err := repaired.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 2})
 
-	c.Assert(err, qt.ErrorMatches,
-		`(?s)migration 1 cannot run up on ydb: client delimiter directive in YQL: "DELIMITER //".*`)
-	c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.DeepEquals, []string{dir + "|r"})
-	c.Assert(revisionProgress(c, repaired), qt.DeepEquals, []progress{{Version: 1, State: "failed", Applied: 1, Total: 2}})
+			c.Assert(err, qt.ErrorMatches,
+				`(?s)migration 1 cannot run up on ydb: client delimiter directive in YQL: "DELIMITER //".*`)
+			c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.DeepEquals, []string{dir + "|r"})
+			c.Assert(revisionProgress(c, repaired), qt.DeepEquals, []progress{{Version: 1, State: "failed", Applied: 1, Total: 2}})
+		})
+	}
 }
 
 // A block or an action that runs a scheme statement, and a BATCH statement,
@@ -692,52 +756,60 @@ func TestYDBMigrator_RepairRefusesWhatItCannotSplit(t *testing.T) {
 // executed inside transaction` and the second with `BATCH operation can be
 // executed only in the implicit transaction mode`.
 func TestYDBMigrator_RunsBlocksAndBatchStatementsOutsideATransaction(t *testing.T) {
-	c := qt.New(t)
-	conn := openYDB(c)
-	const dir = "ptah_ydb_mig_blocks"
-	dropDirectory(c, conn, dir, "a", "b", "c", "d")
-	c.Cleanup(func() { dropDirectory(c, conn, dir, "a", "b", "c", "d") })
-	m := newMigrator(c, conn, map[string]string{
-		"0000000001_blocks.up.sql": "DO BEGIN\n  CREATE TABLE `" + dir + "/a` (id Int64 NOT NULL, n Int64, PRIMARY KEY (id));\nEND DO;\n" +
-			"DEFINE ACTION $make($name) AS\n  CREATE TABLE $name (id Int64 NOT NULL, PRIMARY KEY (id));\nEND DEFINE;\n" +
-			"EVALUATE FOR $table IN AsList('" + dir + "/b', '" + dir + "/c') DO $make($table);\n" +
-			"UPSERT INTO `" + dir + "/a` (id, n) VALUES (1l, 1l), (2l, 2l), (3l, 3l);\n" +
-			"BATCH DELETE FROM `" + dir + "/a` WHERE id = 2l;\n" +
-			"BATCH UPDATE `" + dir + "/a` SET n = 0l WHERE id > 0l;\n" +
-			"DO $make('" + dir + "/d');\n",
-		"0000000001_blocks.down.sql": "DROP TABLE `" + dir + "/d`;\nDROP TABLE `" + dir + "/c`;\nDROP TABLE `" + dir +
-			"/b`;\nDROP TABLE `" + dir + "/a`;\n",
-	}, migrator.RevisionTableFormatPtah, dir)
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			const dir = "ptah_ydb_mig_blocks"
+			dropDirectory(c, conn, dir, "a", "b", "c", "d")
+			c.Cleanup(func() { dropDirectory(c, conn, dir, "a", "b", "c", "d") })
+			m := newMigrator(c, conn, map[string]string{
+				"0000000001_blocks.up.sql": "DO BEGIN\n  CREATE TABLE `" + dir + "/a` (id Int64 NOT NULL, n Int64, PRIMARY KEY (id));\nEND DO;\n" +
+					"DEFINE ACTION $make($name) AS\n  CREATE TABLE $name (id Int64 NOT NULL, PRIMARY KEY (id));\nEND DEFINE;\n" +
+					"EVALUATE FOR $table IN AsList('" + dir + "/b', '" + dir + "/c') DO $make($table);\n" +
+					"UPSERT INTO `" + dir + "/a` (id, n) VALUES (1l, 1l), (2l, 2l), (3l, 3l);\n" +
+					"BATCH DELETE FROM `" + dir + "/a` WHERE id = 2l;\n" +
+					"BATCH UPDATE `" + dir + "/a` SET n = 0l WHERE id > 0l;\n" +
+					"DO $make('" + dir + "/d');\n",
+				"0000000001_blocks.down.sql": "DROP TABLE `" + dir + "/d`;\nDROP TABLE `" + dir + "/c`;\nDROP TABLE `" + dir +
+					"/b`;\nDROP TABLE `" + dir + "/a`;\n",
+			}, migrator.RevisionTableFormatPtah, dir)
 
-	c.Assert(m.MigrateUp(c.Context()), qt.IsNil)
+			c.Assert(m.MigrateUp(c.Context()), qt.IsNil)
 
-	c.Assert(revisionProgress(c, m), qt.DeepEquals, []progress{{Version: 1, State: "applied", Applied: 6, Total: 6}})
-	c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.DeepEquals,
-		[]string{dir + "|a", dir + "|b", dir + "|c", dir + "|d"})
-	c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+dir+"/a` WHERE n = 0l"), qt.Equals, int64(2))
+			c.Assert(revisionProgress(c, m), qt.DeepEquals, []progress{{Version: 1, State: "applied", Applied: 6, Total: 6}})
+			c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.DeepEquals,
+				[]string{dir + "|a", dir + "|b", dir + "|c", dir + "|d"})
+			c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+dir+"/a` WHERE n = 0l"), qt.Equals, int64(2))
+		})
+	}
 }
 
 // A dry run executes nothing, a data query included: the data query that
 // commits with its checkpoint is not run in a transaction of its own when the
 // writer only logs.
 func TestYDBMigrator_DryRunRunsNoDataQuery(t *testing.T) {
-	c := qt.New(t)
-	conn := openYDB(c)
-	const dir = "ptah_ydb_mig_dry"
-	dropDirectory(c, conn, dir, "q", "r")
-	c.Cleanup(func() { dropDirectory(c, conn, dir, "q", "r") })
-	c.Assert(conn.Writer().ExecuteSQL(c.Context(),
-		"CREATE TABLE `"+dir+"/q` (id Int64 NOT NULL, PRIMARY KEY (id))"), qt.IsNil)
-	dry := openYDB(c)
-	dry.SchemaWriter().SetDryRun(true)
-	m := newMigrator(c, dry, map[string]string{
-		"0000000001_q.up.sql": "INSERT INTO `" + dir + "/q` (id) VALUES (1l);\n" +
-			"CREATE TABLE `" + dir + "/r` (id Int64 NOT NULL, PRIMARY KEY (id));\n",
-		"0000000001_q.down.sql": "DROP TABLE `" + dir + "/r`;\n",
-	}, migrator.RevisionTableFormatPtah, dir)
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			const dir = "ptah_ydb_mig_dry"
+			dropDirectory(c, conn, dir, "q", "r")
+			c.Cleanup(func() { dropDirectory(c, conn, dir, "q", "r") })
+			c.Assert(conn.Writer().ExecuteSQL(c.Context(),
+				"CREATE TABLE `"+dir+"/q` (id Int64 NOT NULL, PRIMARY KEY (id))"), qt.IsNil)
+			dry := openYDB(c, line)
+			dry.SchemaWriter().SetDryRun(true)
+			m := newMigrator(c, dry, map[string]string{
+				"0000000001_q.up.sql": "INSERT INTO `" + dir + "/q` (id) VALUES (1l);\n" +
+					"CREATE TABLE `" + dir + "/r` (id Int64 NOT NULL, PRIMARY KEY (id));\n",
+				"0000000001_q.down.sql": "DROP TABLE `" + dir + "/r`;\n",
+			}, migrator.RevisionTableFormatPtah, dir)
 
-	c.Assert(m.MigrateUp(c.Context()), qt.IsNil)
+			c.Assert(m.MigrateUp(c.Context()), qt.IsNil)
 
-	c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+dir+"/q`"), qt.Equals, int64(0))
-	c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.DeepEquals, []string{dir + "|q"})
+			c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+dir+"/q`"), qt.Equals, int64(0))
+			c.Assert(tableNames(readScoped(c, conn, []string{dir})), qt.DeepEquals, []string{dir + "|q"})
+		})
+	}
 }

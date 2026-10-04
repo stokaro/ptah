@@ -17,28 +17,32 @@ import (
 // that holds it. A directory whose tables went, and whose subdirectory went,
 // is removed.
 func TestYDBWriter_DropAllTablesKeepsWhatItDoesNotDescribe(t *testing.T) {
-	c := qt.New(t)
-	conn := openYDB(c)
-	c.Cleanup(func() {
-		c.Assert(conn.Writer().ExecuteSQL(context.Background(), "DROP TOPIC IF EXISTS `ptah_ydb_dropall/keep/events`"),
-			qt.IsNil)
-	})
-	for _, statement := range []string{
-		"CREATE TABLE `ptah_ydb_dropall/gone/t1` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))",
-		"CREATE TABLE `ptah_ydb_dropall/gone/deeper/t2` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))",
-		"CREATE TABLE `ptah_ydb_dropall/keep/t3` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))",
-		"CREATE TOPIC `ptah_ydb_dropall/keep/events`",
-	} {
-		c.Assert(conn.Writer().ExecuteSQL(c.Context(), statement), qt.IsNil, qt.Commentf("execute: %s", statement))
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			c.Cleanup(func() {
+				c.Assert(conn.Writer().ExecuteSQL(context.Background(), "DROP TOPIC IF EXISTS `ptah_ydb_dropall/keep/events`"),
+					qt.IsNil)
+			})
+			for _, statement := range []string{
+				"CREATE TABLE `ptah_ydb_dropall/gone/t1` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))",
+				"CREATE TABLE `ptah_ydb_dropall/gone/deeper/t2` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))",
+				"CREATE TABLE `ptah_ydb_dropall/keep/t3` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))",
+				"CREATE TOPIC `ptah_ydb_dropall/keep/events`",
+			} {
+				c.Assert(conn.Writer().ExecuteSQL(c.Context(), statement), qt.IsNil, qt.Commentf("execute: %s", statement))
+			}
+
+			c.Assert(conn.SchemaWriter().DropAllTables(c.Context()), qt.IsNil)
+
+			live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, nil)
+			c.Assert(err, qt.IsNil)
+			c.Assert(live.Tables, qt.HasLen, 0)
+			c.Assert(live.NotDescribed.Describes(coverage.Topic, "ptah_ydb_dropall/keep.events"), qt.IsFalse)
+			c.Assert(directoryNames(c, c.Context(), line, "ptah_ydb_dropall"), qt.DeepEquals, []string{"keep"})
+		})
 	}
-
-	c.Assert(conn.SchemaWriter().DropAllTables(c.Context()), qt.IsNil)
-
-	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, nil)
-	c.Assert(err, qt.IsNil)
-	c.Assert(live.Tables, qt.HasLen, 0)
-	c.Assert(live.NotDescribed.Describes(coverage.Topic, "ptah_ydb_dropall/keep.events"), qt.IsFalse)
-	c.Assert(directoryNames(c, c.Context(), "ptah_ydb_dropall"), qt.DeepEquals, []string{"keep"})
 }
 
 // TestYDBWriter_DropDirectoryRemovesEverythingInIt drops a directory a caller
@@ -46,27 +50,31 @@ func TestYDBWriter_DropAllTablesKeepsWhatItDoesNotDescribe(t *testing.T) {
 // and leaves the directory beside it alone. It is the teardown of the
 // capability probe's namespace, which nothing else in YDB's SQL can remove.
 func TestYDBWriter_DropDirectoryRemovesEverythingInIt(t *testing.T) {
-	c := qt.New(t)
-	conn := openYDB(c)
-	dropper, ok := conn.SchemaWriter().(interface {
-		DropDirectory(ctx context.Context, dir string) error
-	})
-	c.Assert(ok, qt.IsTrue, qt.Commentf("the YDB schema writer %T removes no directory", conn.SchemaWriter()))
-	c.Cleanup(func() { c.Check(dropper.DropDirectory(context.Background(), "ptah_ydb_dropdir"), qt.IsNil) })
-	for _, statement := range []string{
-		"CREATE TABLE `ptah_ydb_dropdir/probe/t1` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))",
-		"CREATE TABLE `ptah_ydb_dropdir/probe/deeper/t2` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))",
-		"CREATE TABLE `ptah_ydb_dropdir/probe/olap` (`id` Int64 NOT NULL, PRIMARY KEY (`id`)) " +
-			"PARTITION BY HASH(`id`) WITH (STORE = COLUMN)",
-		"CREATE VIEW `ptah_ydb_dropdir/probe/v` WITH (security_invoker = TRUE) AS " +
-			"SELECT `id` FROM `ptah_ydb_dropdir/probe/t1`",
-		"CREATE TABLE `ptah_ydb_dropdir/keep/t3` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))",
-	} {
-		c.Assert(conn.Writer().ExecuteSQL(c.Context(), statement), qt.IsNil, qt.Commentf("execute: %s", statement))
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			dropper, ok := conn.SchemaWriter().(interface {
+				DropDirectory(ctx context.Context, dir string) error
+			})
+			c.Assert(ok, qt.IsTrue, qt.Commentf("the YDB schema writer %T removes no directory", conn.SchemaWriter()))
+			c.Cleanup(func() { c.Check(dropper.DropDirectory(context.Background(), "ptah_ydb_dropdir"), qt.IsNil) })
+			for _, statement := range []string{
+				"CREATE TABLE `ptah_ydb_dropdir/probe/t1` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))",
+				"CREATE TABLE `ptah_ydb_dropdir/probe/deeper/t2` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))",
+				"CREATE TABLE `ptah_ydb_dropdir/probe/olap` (`id` Int64 NOT NULL, PRIMARY KEY (`id`)) " +
+					"PARTITION BY HASH(`id`) WITH (STORE = COLUMN)",
+				"CREATE VIEW `ptah_ydb_dropdir/probe/v` WITH (security_invoker = TRUE) AS " +
+					"SELECT `id` FROM `ptah_ydb_dropdir/probe/t1`",
+				"CREATE TABLE `ptah_ydb_dropdir/keep/t3` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))",
+			} {
+				c.Assert(conn.Writer().ExecuteSQL(c.Context(), statement), qt.IsNil, qt.Commentf("execute: %s", statement))
+			}
+
+			c.Assert(dropper.DropDirectory(c.Context(), "ptah_ydb_dropdir/probe"), qt.IsNil)
+
+			c.Assert(directoryNames(c, c.Context(), line, "ptah_ydb_dropdir"), qt.DeepEquals, []string{"keep"})
+			c.Assert(directoryNames(c, c.Context(), line, "ptah_ydb_dropdir", "keep"), qt.DeepEquals, []string{"t3"})
+		})
 	}
-
-	c.Assert(dropper.DropDirectory(c.Context(), "ptah_ydb_dropdir/probe"), qt.IsNil)
-
-	c.Assert(directoryNames(c, c.Context(), "ptah_ydb_dropdir"), qt.DeepEquals, []string{"keep"})
-	c.Assert(directoryNames(c, c.Context(), "ptah_ydb_dropdir", "keep"), qt.DeepEquals, []string{"t3"})
 }
