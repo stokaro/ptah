@@ -153,8 +153,6 @@ func (l Layer) Unsupported() string {
 		return "the query builder"
 	case DataChanges:
 		return "data changes: seeds, data plans and declared rows"
-	case Linting:
-		return "`ptah sql lint` and `ptah migrations lint` over YQL"
 	case CreatingDatabases:
 		return "a scratch database for each case of `ptah migrations test` and `ptah schema test`, " +
 			"since YQL cannot create a database"
