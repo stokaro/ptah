@@ -105,6 +105,19 @@ the column's type and, when the column declares one, its default. The default
 is in the statement because a `MODIFY COLUMN` that names only a type keeps the
 default the column already had.
 
+A default the declaration takes away is removed with its own statement, written
+before the one that states the type:
+
+```sql
+ALTER TABLE asn MODIFY COLUMN n REMOVE DEFAULT;
+ALTER TABLE asn MODIFY COLUMN n Int32;
+```
+
+`REMOVE DEFAULT` comes first. A type the old default cannot take is refused
+while the default is still there. In a single `ALTER`, ClickHouse 24.10 keeps
+the default and reports no error. A down migration that takes a default away is
+planned the same way.
+
 Making a nullable column `NOT NULL` depends on the server line:
 
 | Server | Column declares a default | Column declares no default |

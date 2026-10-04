@@ -484,13 +484,14 @@ func (p *Planner) modifyExistingColumns(
 		result = append(result, astCommentNode)
 
 		// Generate ALTER COLUMN statements using AST
+		previousDefault, defaultChanged := columnchange.PreviousDefault(colDiff)
 		modify := &ast.ModifyColumnOperation{
 			Column:              columnNode,
 			PreviousType:        previousColumnType(colDiff.Changes["type"]),
 			PreviousNullable:    previousColumnNullable(colDiff.Changes["nullable"]),
 			HasPreviousNullable: colDiff.Changes["nullable"] != "",
-			PreviousDefault:     previousColumnDefault(colDiff.Changes),
-			HasPreviousDefault:  columnDefaultChanged(colDiff.Changes),
+			PreviousDefault:     previousDefault,
+			HasPreviousDefault:  defaultChanged,
 			// Stated although MODIFY restates the whole column, because the
 			// statement cannot say what changed: it repeats NOT NULL on a
 			// type change as on a nullability change, and migration/safety
@@ -2386,32 +2387,6 @@ func previousColumnType(change string) string {
 		return ""
 	}
 	return strings.TrimSpace(before)
-}
-
-// previousColumnDefault returns the default a column carried before the change.
-//
-// The comparison records the change under one of two keys -- "default" for a
-// literal and "default_expr" for an expression -- so both are read. An empty
-// answer means the column had no default, which is a different fact from not
-// knowing; columnDefaultChanged carries that one.
-func previousColumnDefault(changes map[string]string) string {
-	for _, key := range []string{"default", "default_expr"} {
-		if change, present := changes[key]; present {
-			before, _, ok := strings.Cut(change, " -> ")
-			if ok {
-				return strings.TrimSpace(before)
-			}
-		}
-	}
-	return ""
-}
-
-// columnDefaultChanged reports whether the comparison recorded a default change
-// at all.
-func columnDefaultChanged(changes map[string]string) bool {
-	_, literal := changes["default"]
-	_, expression := changes["default_expr"]
-	return literal || expression
 }
 
 func previousColumnNullable(change string) bool {

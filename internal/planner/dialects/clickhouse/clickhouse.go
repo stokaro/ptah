@@ -38,6 +38,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
+	"ptah.run/internal/planner/columnchange"
 	"ptah.run/internal/planner/objectlookup"
 	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -180,6 +181,10 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.Schema
 				continue
 			}
 			col := modelast.FromField(colDiff.Desired, diff.DeclaredUserTypes.Enums, platform.ClickHouse)
+			// The previous default is what lets the renderer remove one: a
+			// MODIFY COLUMN that names only a type keeps the default the column
+			// had (stokaro/ptah#4030).
+			previousDefault, defaultChanged := columnchange.PreviousDefault(colDiff)
 			result = append(result, &ast.AlterTableNode{
 				Name: td.TableName,
 				Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{
@@ -187,6 +192,10 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.Schema
 					PreviousType:        previousColumnType(colDiff.Changes["type"]),
 					PreviousNullable:    previousColumnNullable(colDiff.Changes["nullable"]),
 					HasPreviousNullable: colDiff.Changes["nullable"] != "",
+					PreviousDefault:     previousDefault,
+					HasPreviousDefault:  defaultChanged,
+					Changed:             columnchange.Properties(colDiff),
+					HasChanged:          true,
 				}},
 			})
 		}
