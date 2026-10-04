@@ -409,14 +409,22 @@ func diffResolvedStates(
 		return atlasreport.SchemaDiff{}, nil, err
 	}
 	// The target validation the erroring comparator makes, applied here for
-	// the same reason the refusals above are: this surface reaches the
-	// comparator through the variant that returns no error, so a desired
-	// schema this target cannot host would otherwise reach the planner
-	// (stokaro/ptah#2315).
-	if err := validateDesiredDiffComparison(
-		to, fromSide.database, dialect, capabilities,
-	); err != nil {
-		return atlasreport.SchemaDiff{}, nil, err
+	// the same reason the refusals above are: without a held connection this
+	// surface reaches the comparator through the variant that returns no
+	// error, so a desired schema this target cannot host would otherwise reach
+	// the planner (stokaro/ptah#2315).
+	//
+	// A held connection reaches the erroring variant, which validates the same
+	// schema with the identifier semantics that server resolves. Run here
+	// instead, the validation would use the offline rules, and on SQL Server
+	// those keep no two names apart: every table with two columns would be
+	// refused (stokaro/ptah#4122).
+	if conn == nil {
+		if err := validateDesiredDiffComparison(
+			to, fromSide.database, dialect, capabilities,
+		); err != nil {
+			return atlasreport.SchemaDiff{}, nil, err
+		}
 	}
 
 	// The comparison reports what the --from document's coverage record made
