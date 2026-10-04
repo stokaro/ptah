@@ -1,6 +1,6 @@
 ---
 title: YDB
-description: YDB in Ptah - connecting with ydb:// URLs, what renders and plans for row tables, type mappings, keys, defaults and indexes, what each release line can do, and what is not supported yet.
+description: YDB in Ptah - connecting with ydb:// URLs, what renders and plans for row tables, type mappings, keys, defaults and indexes, what each release line can do, linting YQL, and what is not supported yet.
 type: reference
 audience:
   - "database-engineer"
@@ -21,16 +21,16 @@ owns:
 ---
 
 Ptah renders YQL for YDB row tables, plans a migration between two schemas,
-connects to a live database, reads its tables back, applies DDL to it and runs
-versioned migrations against it. The
+connects to a live database, reads its tables back, applies DDL to it, runs
+versioned migrations against it and lints YQL for it. The
 dialect name is `ydb`. YDB is its own dialect rather than a PostgreSQL-family
 one: Ptah writes YQL and talks to the server through the YDB Go SDK. A schema
 Ptah applies reads back as itself, which the integration suite checks in CI
 against live YDB 26.2 and 25.1 servers. The nightly capability matrix runs the
 same suite on each YDB line it probes.
 
-Data changes, lint, dev databases, `ptah-compat` and the YDB object families
-such as TTL, column families, changefeeds, views and vector indexes are not
+Data changes, dev databases, `ptah-compat` and the YDB object families such
+as TTL, column families, changefeeds, views and vector indexes are not
 supported yet. See [What is not supported yet](#what-is-not-supported-yet).
 
 ## Connecting
@@ -287,12 +287,42 @@ its outcome as unknown. `--lock-timeout` is refused, because no statement on
 YDB waits for a lock. See
 [statement timeouts on YDB](../../versioned/apply/#statement-timeouts-on-ydb).
 
+## Linting
+
+`ptah migrations lint --dialect ydb` and `ptah sql lint --dialect ydb` read
+YQL by the rules the migrator splits it with: a double-quoted `"x"` is a
+string, a backslash escapes a quote, and a block or an action body is one
+statement. `--server-version` names the release line a capability is read
+from, and the newest line is used without it.
+
+Migration lint reports the statements YDB refuses, or runs with an effect the
+statement does not state, under the `YD` family: a unique index added to an
+existing table, a block that mixes schema and data statements, an `ADD COLUMN`
+the line refuses, a dropped column an index or the TTL uses, a partitioning
+change that resets the minimum partition count, and a dropped table a view
+reads. [Lint rules](../../reference/lint-rules/#ydb) lists each rule with its
+meaning.
+
+`YD104` and `YD106` read the indexes, TTL and views the directory's own
+earlier migrations declare, because a YDB database cannot be a dev database
+yet; a table the directory never created is unknown to them. The rules for
+every dialect run too, and the
+[lint rules](../../reference/lint-rules/#what-the-rules-for-every-dialect-do-on-ydb)
+say what each does on YDB.
+
+`ptah sql lint` reads YQL without the SQL parser, which has no YQL grammar. It
+reports a `CREATE TABLE` without a primary key, which YDB refuses, as `DDL001`,
+and a capability an `ALTER TABLE` needs that the line lacks as `CAP001`.
+
+`ptah migrations up` blocks on the `DS` family on YDB as on every engine. A
+`.ptah-lint.yaml` with `gate: { families: [YD] }` refuses a pending migration
+that carries a `YD` error before any migration runs.
+
 ## What is not supported yet
 
 These are refused with a message that names what is missing:
 
 - the query builder and data changes: seeds, data plans and declared rows;
-- `ptah sql lint` and `ptah migrations lint` over YQL;
 - a YDB database as a dev or shadow database;
 - comments, views, users, groups and permissions;
 - table settings: TTL, partitioning, column families and changefeeds;

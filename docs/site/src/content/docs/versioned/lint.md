@@ -142,8 +142,9 @@ Useful controls, all designed for CI:
   `codequality` artifact — [CI](../../testing/ci/) shows both upload steps.
 - `--dialect` gates dialect-specific rules; accepted values are `postgres`,
   `mysql`, `mariadb`, `sqlite`, `sqlserver`, `clickhouse`, `cockroachdb`,
-  `yugabytedb`, and `spanner`. Every documented alias resolves to the canonical
-  name — see [Dialects and capabilities](../../concepts/dialects-and-capabilities/)
+  `yugabytedb`, `spanner`, and `ydb`, which reads YQL and adds the `YD` rules
+  [YDB](../../databases/ydb/#linting) describes. Every documented alias
+  resolves to the canonical name — see [Dialects and capabilities](../../concepts/dialects-and-capabilities/)
   for the spelling table. `--dev-url` infers the dialect and replays the
   directory on the dev database. Before each analyzed version
   the run reads the schema state that version starts from and hands it to
@@ -512,7 +513,7 @@ or execution. The families are the ones on
 | `mariadb` | MySQL | matches — one family |
 | `mysql` or `mariadb` | PostgreSQL | **does not match** |
 | `postgres` | MySQL or MariaDB | **does not match** |
-| `sqlite`, `sqlserver`, `clickhouse` | anything else | **does not match** — each stands alone |
+| `sqlite`, `sqlserver`, `clickhouse`, `ydb` | anything else | **does not match** — each stands alone |
 
 Naming a family member rather than the exact engine is accepted because it
 does not change the analysis: every built-in MySQL-family rule applies to both
