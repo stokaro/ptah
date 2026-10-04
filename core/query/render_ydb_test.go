@@ -113,6 +113,16 @@ func TestRenderYDB_HappyPath(t *testing.T) {
 			wantArgs: []any{sql.Named("p1", "paid"), sql.Named("p2", int64(5))},
 		},
 		{
+			ydbRender: ydbRender{name: "a subquery that reads its own joined table", caps: capability.YDB262(),
+				render: selectFor(query.Select("id").From("users").Where(query.Exists(
+					query.Select().Columns(query.Col("o", "id")).FromAs("orders", "o").
+						InnerJoin("refunds", "r", query.Col("r", "order_id").EqCol(query.Col("o", "id"))).
+						Where(query.Col("r", "amount").Gt(int64(1))))))},
+			wantSQL: "SELECT `id` FROM `users` WHERE EXISTS (SELECT `o`.`id` FROM `orders` `o` " +
+				"INNER JOIN `refunds` `r` ON `r`.`order_id` = `o`.`id` WHERE `r`.`amount` > $p1)",
+			wantArgs: []any{sql.Named("p1", int64(1))},
+		},
+		{
 			ydbRender: ydbRender{name: "a WITH clause where the target has the key", render: selectFor(
 				query.Select("id").With("c", query.Select("id").From("users")).From("c")),
 				caps: capability.YDB262().With(capability.CommonTableExpressions, true)},
