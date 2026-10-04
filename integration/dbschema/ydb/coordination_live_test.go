@@ -162,8 +162,9 @@ func TestYDBCoordinationNodes_RoundTrip(t *testing.T) {
 // connection makes before the coordination service changes anything: Ptah's
 // lock node, a creation of a node that exists, which the service would answer
 // with success and leave as it was, a change the node would not run with as
-// written, and a statement inside a transaction, which a rollback could not
-// undo. The node each refusal is about is read back unchanged.
+// written, a statement given arguments or run as a query, and a statement
+// inside a transaction, which a rollback could not undo. The node each refusal
+// is about is read back unchanged.
 func TestYDBCoordinationNodes_ConnectionRefuses(t *testing.T) {
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
@@ -189,6 +190,11 @@ func TestYDBCoordinationNodes_ConnectionRefuses(t *testing.T) {
 				"ALTER COORDINATION NODE `ptah_ydb_coordination/n` SET (session_grace_period = Interval('PT2.5S'))"),
 				qt.ErrorMatches, `(?s).*session_grace_period PT2.5S: YDB runs a node with a grace period from the self-check `+
 					`period plus PT1S \(PT3S here\).*`)
+			_, withArguments := conn.ExecContext(c.Context(),
+				"ALTER COORDINATION NODE `ptah_ydb_coordination/n` SET (read_consistency_mode = 'strict')", 1)
+			c.Assert(withArguments, qt.ErrorMatches, `(?s).*a coordination node statement takes no arguments, and 1 were given.*`)
+			asQuery := conn.QueryRowContext(c.Context(), "DROP COORDINATION NODE `ptah_ydb_coordination/n`").Err()
+			c.Assert(asQuery, qt.ErrorMatches, `(?s).*a coordination node statement returns no rows; execute it.*`)
 			tx, err := conn.BeginTx(c.Context(), nil)
 			c.Assert(err, qt.IsNil)
 			_, inTransaction := tx.ExecContext(c.Context(),
@@ -229,9 +235,11 @@ func TestYDBCoordinationNodes_ReaderLeavesTheLockNodeOut(t *testing.T) {
 	}
 }
 
-// TestYDBCoordinationNodes_InADevRealm creates a node through a dev realm's
+// TestYDBCoordinationNodes_InADevRealm creates nodes through a dev realm's
 // connection, whose relative paths land under the realm, and resets the
-// realm, which drops it.
+// realm, which drops them. Ptah's lock node is at the root of the database, so
+// a node of its name at the realm's root is an ordinary node, read and reset
+// like the others.
 func TestYDBCoordinationNodes_InADevRealm(t *testing.T) {
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
@@ -241,7 +249,10 @@ func TestYDBCoordinationNodes_InADevRealm(t *testing.T) {
 			driver := coordinationDriver(c, line)
 			relative := path.Join(realmPath(c, realmURL), "app/locks")
 
-			apply(c, realm, []string{"CREATE COORDINATION NODE `app/locks` WITH (attach_consistency_mode = 'relaxed')"})
+			apply(c, realm, []string{
+				"CREATE COORDINATION NODE `app/locks` WITH (attach_consistency_mode = 'relaxed')",
+				"CREATE COORDINATION NODE ptah_locks",
+			})
 			served, err := nodeConfig(c, driver, relative)
 			c.Assert(err, qt.IsNil)
 			c.Assert(served, qt.DeepEquals, coordination.NodeConfig{AttachConsistencyMode: coordination.ConsistencyModeRelaxed})
@@ -249,6 +260,7 @@ func TestYDBCoordinationNodes_InADevRealm(t *testing.T) {
 			c.Assert(readErr, qt.IsNil)
 			c.Assert(inRealm.CoordinationNodes, qt.DeepEquals, []catalog.CoordinationNode{
 				{Schema: "app", Name: "locks", Spec: ast.CoordinationNodeSpec{AttachConsistencyMode: "relaxed"}},
+				{Name: "ptah_locks"},
 			})
 
 			resetter, ok := realm.SchemaWriter().(interface {
@@ -257,6 +269,8 @@ func TestYDBCoordinationNodes_InADevRealm(t *testing.T) {
 			c.Assert(ok, qt.IsTrue)
 			c.Assert(resetter.DropDatabaseRealm(c.Context()), qt.IsNil)
 			_, err = nodeConfig(c, driver, relative)
+			c.Assert(err, qt.ErrorMatches, noNode)
+			_, err = nodeConfig(c, driver, path.Join(realmPath(c, realmURL), "ptah_locks"))
 			c.Assert(err, qt.ErrorMatches, noNode)
 		})
 	}
