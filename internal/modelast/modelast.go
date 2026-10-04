@@ -2390,15 +2390,17 @@ func withInlineIndexes(table *ast.CreateTableNode, indexes []*ast.IndexNode) *as
 
 // inlineTableIndexes splits the table indexes a target declares inside CREATE
 // TABLE from the ones it emits on their own; see
-// [schemaprep.DeclaresIndexesInCreateTable]. An index whose table the
-// declaration does not resolve stays standalone, so the renderer answers for it
-// rather than this split dropping it.
+// [schemaprep.DeclaresIndexesInCreateTable]. The walk asks no server, so the
+// target's default preset answers, as it does for every other key the walk
+// reads. An index whose table the declaration does not resolve stays
+// standalone, so the renderer answers for it rather than this split dropping
+// it.
 func inlineTableIndexes(
 	tables []schemamodel.Table,
 	indexes []schemamodel.Index,
 	targetPlatform string,
 ) (map[string][]*ast.IndexNode, []schemamodel.Index) {
-	if !schemaprep.DeclaresIndexesInCreateTable(targetPlatform) {
+	if !schemaprep.DeclaresIndexesInCreateTable(capability.ForDialect(targetPlatform)) {
 		return nil, indexes
 	}
 	owners := schemamodel.ResolveIndexTableNames(indexes, tables)

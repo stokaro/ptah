@@ -19,7 +19,10 @@
 // data changes, the compatibility surface and the surfaces planned last.
 package ydbgap
 
-import "fmt"
+import (
+	"fmt"
+	"io"
+)
 
 // Plan is the issue that plans YDB support and owns every gap named here.
 const Plan = "stokaro/ptah#4015"
@@ -68,7 +71,20 @@ const (
 	// Go struct generation from a database, schema security analysis and the
 	// other surfaces that read more than the schema reader describes.
 	OtherSurfaces
+
+	// endOfLayers is one past the last layer and names none. It keeps
+	// [Layers] derived from this block rather than from a second list.
+	endOfLayers
 )
+
+// Layers returns every layer YDB does not reach yet, in declaration order.
+func Layers() []Layer {
+	layers := make([]Layer, 0, int(endOfLayers)-int(SchemaFiles))
+	for layer := SchemaFiles; layer < endOfLayers; layer++ {
+		layers = append(layers, layer)
+	}
+	return layers
+}
 
 // work is what a layer does, as a refusal prints it.
 func (l Layer) work() string {
@@ -129,4 +145,57 @@ func (l Layer) Phase() int {
 // the work is planned. It names YDB, so a caller does not repeat the dialect.
 func (l Layer) Message() string {
 	return fmt.Sprintf("%s is not implemented yet (%s, phase %d)", l.work(), Plan, l.Phase())
+}
+
+// Unsupported says, in the words of the YDB page, what a reader cannot do
+// on YDB until the layer exists, and names the commands a layer refuses as a
+// whole. It is empty for a value that names no layer.
+func (l Layer) Unsupported() string {
+	switch l {
+	case SchemaFiles:
+		return "a YQL file as the desired schema (Go structs and YAML schemas work)"
+	case QueryBuilding:
+		return "the query builder"
+	case DataChanges:
+		return "data changes: seeds, data plans and declared rows"
+	case Linting:
+		return "`ptah sql lint` and `ptah migrations lint` over YQL"
+	case CreatingDatabases:
+		return "a scratch database for each case of `ptah migrations test` and `ptah schema test`, " +
+			"since YQL cannot create a database"
+	case DevDatabases:
+		return "a YDB database as a dev or shadow database"
+	case Comments:
+		return "comments on tables, columns and indexes"
+	case Views:
+		return "views"
+	case AccessControl:
+		return "users, groups and permissions"
+	case TableSettings:
+		return "table settings: TTL, partitioning, column families and changefeeds"
+	case IndexFamilies:
+		return "vector, full-text, JSON and column-table indexes"
+	case Compatibility:
+		return "every `ptah-compat` command with a YDB URL, from any source"
+	case OtherSurfaces:
+		return "`ptah introspect`, `ptah schema security` and `ptah schema lineage`, " +
+			"which need more of a database than the schema reader describes"
+	default:
+		return ""
+	}
+}
+
+// WriteUnsupportedMarkdown writes the YDB page's list of what is not
+// supported yet: one item per layer, in declaration order. The page carries
+// it as a generated block, so a layer added here or removed with the phase
+// that implements it changes the page in the same change.
+func WriteUnsupportedMarkdown(w io.Writer) {
+	layers := Layers()
+	for i, layer := range layers {
+		end := ";"
+		if i == len(layers)-1 {
+			end = "."
+		}
+		fmt.Fprintf(w, "- %s%s\n", layer.Unsupported(), end)
+	}
 }

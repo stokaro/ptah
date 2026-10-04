@@ -58,6 +58,49 @@ func TestFormat(t *testing.T) {
 			expected: "ydb://localhost:2136/?database=%2Flocal&token=redacted",
 		},
 		{
+			// internal/ydburl refuses a user in the monitoring endpoint, and
+			// a command prints the URL before it is parsed: the line naming
+			// the target must not carry the password the refusal is about.
+			name:     "YDB URL with credentials in its monitoring endpoint",
+			input:    "ydb://h:2136/local?monitoring=http://viewer:s3cret@mon.example:8765&go_balancer=disable",
+			expected: "ydb://h:2136/local?go_balancer=disable&monitoring=http%3A%2F%2Fredacted%40mon.example%3A8765",
+		},
+		{
+			// A user name alone can be a token, and Ptah sends none there.
+			name:     "YDB URL with a user name alone in its monitoring endpoint",
+			input:    "ydbs://h/local?monitoring=https://t0k3n@mon.example:8765",
+			expected: "ydbs://h/local?monitoring=https%3A%2F%2Fredacted%40mon.example%3A8765",
+		},
+		{
+			name:     "YDB URL with credentials in a monitoring parameter spelled in capitals",
+			input:    "ydb://h/local?MONITORING=http://viewer:s3cret@mon.example:8765",
+			expected: "ydb://h/local?MONITORING=http%3A%2F%2Fredacted%40mon.example%3A8765",
+		},
+		{
+			// No scheme, so no user info can be read: the value goes whole.
+			name:     "YDB URL with credentials in a monitoring endpoint that names no scheme",
+			input:    "ydb://h/local?monitoring=viewer:s3cret@mon.example:8765",
+			expected: "ydb://h/local?monitoring=redacted",
+		},
+		{
+			// The port does not parse, so neither does the endpoint.
+			name:     "YDB URL with a monitoring endpoint that does not parse",
+			input:    "ydb://h/local?monitoring=http://viewer:s3cret@mon.example:87x5",
+			expected: "ydb://h/local?monitoring=redacted",
+		},
+		{
+			name:     "YDB URL with a monitoring endpoint and no credentials",
+			input:    "ydb://h/local?monitoring=http://mon.example:8765",
+			expected: "ydb://h/local?monitoring=http%3A%2F%2Fmon.example%3A8765",
+		},
+		{
+			// The parameter is YDB's; another scheme's URL is left as it is,
+			// as the MySQL rows below leave a URL-shaped value alone.
+			name:     "PostgreSQL URL with a monitoring parameter",
+			input:    "postgres://user@localhost:5432/mydb?monitoring=http://viewer:s3cret@mon.example:8765",
+			expected: "postgres://user@localhost:5432/mydb?monitoring=http%3A%2F%2Fviewer%3As3cret%40mon.example%3A8765",
+		},
+		{
 			name:     "MySQL URL with password",
 			input:    "mysql://root:password@localhost:3306/testdb",
 			expected: "mysql://root:***@localhost:3306/testdb",

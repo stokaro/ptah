@@ -5,21 +5,53 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"slices"
 	"strings"
 )
 
-// RendererFloor is the smallest number of dialect renderers this guard accepts.
-//
-// A glob that stopped matching finds no renderers, and a gate that checked no
-// renderer reports no unrouted kind -- which reads exactly like a tree where
-// every renderer routes everything.
-const RendererFloor = 8
-
 // dialectsDirectory holds one package per renderer.
 const dialectsDirectory = "core/renderer/internal/dialects"
+
+// rendererRoot is the package every dialect renderer is linked into.
+const rendererRoot = "./core/renderer"
+
+// LinkedRenderers lists the dialect renderer packages the renderer links, as
+// the go command resolves its imports, spelled as [Renderer.Package] spells
+// them. A package below a renderer, such as the helpers under the dialects'
+// own internal directory, is not one.
+//
+// It is the count [Renderers] has to reach, derived rather than written down.
+// A glob that stopped matching finds no renderers, and a gate that checked no
+// renderer reports no unrouted kind -- which reads exactly like a tree where
+// every renderer routes everything. A floor written as a number has to be
+// raised by hand when a renderer ships; the build's own import graph cannot
+// fall behind the renderers it links.
+func LinkedRenderers(root string) ([]string, error) {
+	command := exec.Command("go", "list", "-deps",
+		"-f", "{{with .Module}}{{.Path}}{{end}} {{.ImportPath}}", rendererRoot)
+	command.Dir = root
+	output, err := command.Output()
+	if err != nil {
+		return nil, fmt.Errorf("astrouteguard: listing what %s links: %w", rendererRoot, err)
+	}
+	var renderers []string
+	for line := range strings.SplitSeq(strings.TrimSpace(string(output)), "\n") {
+		module, importPath, found := strings.Cut(line, " ")
+		if !found || module == "" {
+			continue
+		}
+		relative, inModule := strings.CutPrefix(importPath, module+"/")
+		if !inModule || path.Dir(relative) != dialectsDirectory || path.Base(relative) == "internal" {
+			continue
+		}
+		renderers = append(renderers, relative)
+	}
+	slices.Sort(renderers)
+	return renderers, nil
+}
 
 // Renderer is one dialect renderer and the node kinds its dispatcher names.
 type Renderer struct {

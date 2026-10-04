@@ -147,7 +147,8 @@ func acquireYDBSemaphore(
 				"coordination node at the database root, which creates it, and grant this user the right "+
 				"to use it", node)
 		case err != nil:
-			return nil, fmt.Errorf("create the YDB coordination node %s, which holds Ptah's locks: %w", node, err)
+			return nil, fmt.Errorf("create the YDB coordination node %s, which holds Ptah's locks: %w",
+				node, ydbschema.WithoutStackFrames(err))
 		}
 	}
 	session, err := openYDBLockSession(ctx, sdk, node)
@@ -157,11 +158,12 @@ func acquireYDBSemaphore(
 	lease, err := session.AcquireSemaphore(ctx, name, coordination.Exclusive,
 		options.WithEphemeral(true), ydbAcquireTimeout(timeout))
 	if err != nil {
-		closeErr := session.Close(context.WithoutCancel(ctx))
+		closeErr := ydbschema.WithoutStackFrames(session.Close(context.WithoutCancel(ctx)))
 		if errors.Is(err, coordination.ErrAcquireTimeout) {
 			return nil, errors.Join(&TimeoutError{Dialect: platform.YDB, Name: name, Timeout: timeout}, closeErr)
 		}
-		return nil, errors.Join(fmt.Errorf("acquire the YDB semaphore %q on %s: %w", name, node, err), closeErr)
+		return nil, errors.Join(fmt.Errorf("acquire the YDB semaphore %q on %s: %w",
+			name, node, ydbschema.WithoutStackFrames(err)), closeErr)
 	}
 	return newYDBHold(session, lease, name, time.Now), nil
 }
@@ -184,7 +186,7 @@ func openYDBLockSession(ctx context.Context, sdk *ydbsdk.Driver, node string) (c
 			"the server opened none within %s. It refuses one to a user who may not use the node without "+
 			"saying so, so check that this user may use it", node, ydbSessionStartTimeout)
 	default:
-		return nil, fmt.Errorf("open a session on the YDB coordination node %s: %w", node, err)
+		return nil, fmt.Errorf("open a session on the YDB coordination node %s: %w", node, ydbschema.WithoutStackFrames(err))
 	}
 }
 
@@ -204,7 +206,7 @@ func ydbLockNodeExists(ctx context.Context, sdk *ydbsdk.Driver, node string) (bo
 		return false, fmt.Errorf("this user may not use the YDB coordination node %s, which holds Ptah's "+
 			"locks (UNAUTHORIZED); grant the user the right to use it", node)
 	default:
-		return false, fmt.Errorf("describe the YDB coordination node %s: %w", node, err)
+		return false, fmt.Errorf("describe the YDB coordination node %s: %w", node, ydbschema.WithoutStackFrames(err))
 	}
 }
 
@@ -376,16 +378,16 @@ func (h *ydbHold) release(ctx context.Context) error {
 	h.stopWatch()
 	<-h.watching
 	if !wasHeld {
-		return h.session.Close(ctx)
+		return ydbschema.WithoutStackFrames(h.session.Close(ctx))
 	}
 	released := make(chan error, 1)
 	go func() { released <- h.lease.Release() }()
 	select {
 	case err := <-released:
 		if err != nil {
-			err = fmt.Errorf("release the YDB semaphore %q: %w", h.name, err)
+			err = fmt.Errorf("release the YDB semaphore %q: %w", h.name, ydbschema.WithoutStackFrames(err))
 		}
-		return errors.Join(err, h.session.Close(ctx))
+		return errors.Join(err, ydbschema.WithoutStackFrames(h.session.Close(ctx)))
 	case <-ctx.Done():
 		_ = h.session.Close(ctx)
 		return fmt.Errorf("release the YDB semaphore %q: %w", h.name, ctx.Err())

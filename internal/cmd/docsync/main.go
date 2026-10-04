@@ -26,6 +26,7 @@ import (
 	"ptah.run/internal/docsync"
 	"ptah.run/internal/lintcatalog"
 	"ptah.run/internal/schemacensus"
+	"ptah.run/internal/ydbgap"
 )
 
 const usage = `usage: docsync [--write]
@@ -64,6 +65,12 @@ func targets() []docsync.Target {
 			Begin: "<!-- BEGIN GENERATED PRESET MATRIX -->", End: "<!-- END GENERATED PRESET MATRIX -->",
 			Source: "capability.NamedPresets",
 			Render: writerOf(capabilityprobe.WritePresetMarkdown),
+		},
+		{
+			Name: "the YDB gaps", Path: "docs/site/src/content/docs/databases/ydb.md",
+			Begin: "<!-- BEGIN GENERATED YDB GAPS -->", End: "<!-- END GENERATED YDB GAPS -->",
+			Source: "internal/ydbgap",
+			Render: writerOf(ydbgap.WriteUnsupportedMarkdown),
 		},
 		{
 			Name: "the lint rules", Path: "docs/site/src/content/docs/reference/lint-rules.md",

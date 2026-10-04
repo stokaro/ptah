@@ -1340,8 +1340,12 @@ func ValidateSchemaWithCapabilities(
 // adds such an index to a table that exists sees the index alone, so without
 // this a schema that validates would plan an ADD INDEX the server refuses
 // partway through a migration.
+//
+// Which target that is, is asked of the dialect's default preset rather than
+// of caps, because that is the set the walk below asks when it puts the indexes
+// into the table: the tables validated here are the ones the walk builds.
 func validateTablesWithInlineIndexes(dialect string, caps capability.Capabilities, database schemamodel.Database) error {
-	if !schemaprep.DeclaresIndexesInCreateTable(dialect) {
+	if !schemaprep.DeclaresIndexesInCreateTable(capability.ForDialect(dialect)) {
 		return nil
 	}
 	return modelast.WalkDatabase(database, dialect, func(node ast.Node) error {

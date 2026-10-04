@@ -410,7 +410,7 @@ func (s grpcScheme) ListDirectory(ctx context.Context, absolute string) ([]*Ydb_
 func (s grpcScheme) RemoveDirectory(ctx context.Context, absolute string) error {
 	response, err := s.client.RemoveDirectory(ctx, &Ydb_Scheme.RemoveDirectoryRequest{Path: absolute})
 	if err != nil {
-		return err
+		return WithoutStackFrames(err)
 	}
 	return operationStatus(response.GetOperation())
 }

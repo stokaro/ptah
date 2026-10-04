@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 )
 
@@ -151,18 +152,20 @@ func fieldWithPlatformValues(
 	return field
 }
 
-// DeclaresIndexesInCreateTable reports whether a new table's indexes are
-// written inside its CREATE TABLE rather than as statements after it.
+// DeclaresIndexesInCreateTable reports whether a target writes a new table's
+// indexes inside its CREATE TABLE rather than as statements after it: the
+// targets without a CREATE INDEX statement, [capability.CreateIndexStatement].
 //
-// It is a generator choice about where Ptah writes an index, not a fact a
-// capability key can carry, the way the enum lists in this package are: a
-// target that takes inline indexes may take standalone ones too. YDB is the
-// target that needs it. Its only standalone form is ALTER TABLE ... ADD INDEX,
-// and that refuses a unique index on every measured line (`Adding a unique
-// index to an existing table is disabled`, even on an empty table), while the
-// same index inside CREATE TABLE is accepted. Writing every index of a new
-// table there keeps one rule for unique and plain indexes alike, and makes the
-// table and its indexes one statement.
-func DeclaresIndexesInCreateTable(targetPlatform string) bool {
-	return platform.NormalizeDialect(targetPlatform) == platform.YDB
+// YDB is the target that has none. Its only standalone form is ALTER TABLE ...
+// ADD INDEX, and that refuses a unique index on every measured line (`Adding a
+// unique index to an existing table is disabled`, even on an empty table),
+// while the same index inside CREATE TABLE is accepted. Writing every index of
+// a new table there keeps one rule for unique and plain indexes alike, and
+// makes the table and its indexes one statement.
+//
+// A nil set, which is what a dialect without a preset has, keeps indexes
+// standalone: that is what every target with a CREATE INDEX statement does,
+// and the renderer refuses such a dialect anyway.
+func DeclaresIndexesInCreateTable(caps capability.Capabilities) bool {
+	return caps != nil && !caps.Has(capability.CreateIndexStatement)
 }
