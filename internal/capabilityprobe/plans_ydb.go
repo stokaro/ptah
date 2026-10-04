@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"strconv"
 	"strings"
 
 	"ptah.run/catalog"
@@ -11,6 +12,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/dbschema"
 	"ptah.run/internal/sqlident"
+	"ptah.run/internal/ydbview"
 )
 
 // ydbSpelling writes the throwaway tables the YDB experiments take. A YDB table
@@ -102,12 +104,16 @@ func ydbPlan() plan {
 			[]string{t.table("iis", "k Utf8 NOT NULL, payload Int64", "k")},
 			"CREATE INDEX iis_idx ON iis USING SPGIST (k) INCLUDE (payload)",
 		),
-		// The option is mandatory (YDB refuses a view without it), and the
-		// count proves the view reads its source.
+		// The option is mandatory (YDB refuses a view without it), the count
+		// proves the view reads its source, and Ptah's reader has to describe
+		// it with its query, which the server stores without the comment.
 		proven(capability.Views, schemaChange{
 			setup:  []string{t.table("vsrc", "n Int64 NOT NULL", "n"), "INSERT INTO vsrc (n) VALUES (1)"},
-			change: []string{"CREATE VIEW vw WITH (security_invoker = TRUE) AS SELECT n FROM vsrc"},
-			after:  []check{counts("SELECT COUNT(*) FROM vw", 1)},
+			change: []string{"CREATE VIEW vw " + ydbview.SecurityClause + " AS SELECT n FROM vsrc -- read back"},
+			after: []check{
+				counts("SELECT COUNT(*) FROM vw", 1),
+				ydbDescribedView("vw", "SELECT n FROM vsrc"),
+			},
 		}),
 		storedResult(capability.MaterializedViews,
 			[]string{t.table("mvs", "n Int64 NOT NULL", "n")},
@@ -378,6 +384,40 @@ func ydbRowDeletionPolicy(t tableSpelling) experiment {
 			accepts("ALTER TABLE rdp DROP COLUMN created_at"),
 		},
 	})
+}
+
+// ydbDescribedView reads view through Ptah's YDB reader and holds when the
+// reader describes it with a query that reads as query does: the server keeps
+// its own form of the text, which [ydbview.QueryText] reads both sides into.
+// It is what proves a view the experiment created is one Ptah reads back,
+// which the server's acceptance of CREATE VIEW does not say.
+//
+// The session sends its path pragma ahead of every statement, and YDB stores
+// the pragmas a CREATE VIEW ran under ahead of the view's query, because they
+// decide what the query's names mean. So the query the check expects carries
+// the session's pragma too.
+func ydbDescribedView(view, query string) check {
+	return check{
+		describes: fmt.Sprintf("view %s described with the query %q", view, query),
+		inspect: func(ctx context.Context, s *session) (Attempt, bool, string) {
+			query := s.prefix + query
+			attempt := Attempt{Statement: fmt.Sprintf("read view %s through Ptah's YDB reader",
+				path.Join(s.database, s.namespace, view))}
+			db, err := dbschema.ReadSchemaWithSchemasContext(ctx, s.conn, []string{s.namespace})
+			if err != nil {
+				attempt.ServerErr = err.Error()
+				return attempt, false, "was refused"
+			}
+			attempt.Accepted = true
+			for _, found := range db.Views {
+				if found.Name == view {
+					return attempt, ydbview.QueryText(found.Body) == ydbview.QueryText(query),
+						"read the query " + strconv.Quote(found.Body)
+				}
+			}
+			return attempt, false, "found no such view"
+		},
+	}
 }
 
 // ydbDescribedIndex is a check that reads an index back through Ptah's own YDB

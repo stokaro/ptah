@@ -236,6 +236,7 @@ func measuredLines() map[string]measuredLine {
 				capability.CorrelatedSubqueries:       queryKeyCarried,
 				capability.NonEquiJoins:               queryKeyCarried,
 				capability.OffsetWithoutLimit:         queryKeyCarried,
+				capability.CreateOrReplaceView:        viewKeyCarried,
 				capability.DeferrableKeys: "this run predates the key and sent no deferrable key. It was " +
 					"measured on 2026-09-27 against PostgreSQL 18.6, CockroachDB v26.3.2, YugabyteDB 2026.1.2 " +
 					"and Oracle Free 23, and carried here from those runs (stokaro/ptah#3824)",
@@ -380,6 +381,7 @@ func measuredLines() map[string]measuredLine {
 				capability.CorrelatedSubqueries:       queryKeyCarried,
 				capability.NonEquiJoins:               queryKeyCarried,
 				capability.OffsetWithoutLimit:         queryKeyCarried,
+				capability.CreateOrReplaceView:        viewKeyCarried,
 				capability.DeferrableKeys: "this run predates the key and sent no deferrable key. It was " +
 					"measured on 2026-09-27 against PostgreSQL 18.6, CockroachDB v26.3.2, YugabyteDB 2026.1.2 " +
 					"and Oracle Free 23, and carried here from those runs (stokaro/ptah#3824)",
@@ -525,6 +527,7 @@ func measuredLines() map[string]measuredLine {
 				capability.CorrelatedSubqueries:       queryKeyCarried,
 				capability.NonEquiJoins:               queryKeyCarried,
 				capability.OffsetWithoutLimit:         queryKeyCarried,
+				capability.CreateOrReplaceView:        viewKeyCarried,
 				capability.DeferrableKeys: "this run predates the key and sent no deferrable key. It was " +
 					"measured on 2026-09-27 against PostgreSQL 18.6, CockroachDB v26.3.2, YugabyteDB 2026.1.2 " +
 					"and Oracle Free 23, and carried here from those runs (stokaro/ptah#3824)",
@@ -670,3 +673,10 @@ const queryKeyCarried = "this run predates the key and sent no query experiment;
 // experiments, and the value here is the preset's.
 const indexKeyCarried = "this run predates the key and sent no index experiment; the probe asks it " +
 	"on every run through those experiments, and the value here is the preset's"
+
+// viewKeyCarried is why the key about replacing a view in one statement is
+// carried on every measured line: the run named there predates it. The probe
+// asks it on every run through its view experiment, which reads the replaced
+// view back, and the value here is the preset's.
+const viewKeyCarried = "this run predates the key and sent no view-replacement experiment; the probe asks it " +
+	"on every run through that experiment, and the value here is the preset's"

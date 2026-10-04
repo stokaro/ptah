@@ -799,7 +799,7 @@ const ydbUnprobed = "YDB publishes no support period for its open-source lines, 
 // ydbProbedNote opens the note of a YDB cell the probe runs.
 func ydbProbedNote(version string) string {
 	return "probed on every run of the tiered workflows. Measured on " + version + " through this cell's " +
-		"launch recipe: 94 rows, 77 agree, 3 are understated on purpose, 14 are undecidable and none disagrees."
+		"launch recipe: 105 rows, 88 agree, 2 are understated on purpose, 15 are undecidable and none disagrees."
 }
 
 // ydbUnprobedNote opens the note of a YDB cell the probe skips.
@@ -814,8 +814,6 @@ func ydbUnprobedNote(version string) string {
 // plans: until the YDB object family lands, Ptah refuses the declaration
 // rather than emitting a statement its reader would never see again.
 var ydbUnderstates = map[capability.Capability]string{
-	capability.Views: "YDB creates and reads a view; Ptah's YDB renderer refuses one, and the views family " +
-		"is open work in stokaro/ptah#4015",
 	capability.RoleManagement: "YDB creates a group and stores a GRANT; Ptah does not read or plan YDB's " +
 		"access model, which is open work in stokaro/ptah#4015",
 	capability.RowDeletionPolicy: "YDB stores a TTL on a table; Ptah does not render, read or plan a YDB TTL, " +

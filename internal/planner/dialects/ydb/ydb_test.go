@@ -264,6 +264,9 @@ func TestGenerateMigrationAST_RefusesByCapability_FailurePath(t *testing.T) {
 		{name: "a sequence", caps: capability.YDB262(),
 			diff:    &difftypes.SchemaDiff{SequencesAdded: difftypes.SequenceChanges{{Name: "s"}}},
 			wantKey: capability.Sequences, wantErr: `the plan changes a sequence, which requires target capability sequences, .*`},
+		{name: "a view where the target has none", caps: capability.YDB262().With(capability.Views, false),
+			diff:    &difftypes.SchemaDiff{ViewsAdded: difftypes.ViewChanges{{Name: "v", Body: "SELECT 1 AS a"}}},
+			wantKey: capability.Views, wantErr: `the plan changes a view, which requires target capability views, .*`},
 	}
 
 	for _, test := range tests {
@@ -317,9 +320,6 @@ func TestGenerateMigrationAST_RefusesWhatYDBCannotDo_FailurePath(t *testing.T) {
 			diff: modified(difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(),
 				ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", CommentChange: &difftypes.CommentChange{}}}}),
 			wantErr: `the comment on column "n" of table "items": storing a comment on a YDB object is not implemented yet .*`},
-		{name: "a view",
-			diff:    &difftypes.SchemaDiff{ViewsAdded: difftypes.ViewChanges{{Name: "v"}}},
-			wantErr: `the plan changes a view: managing YDB views is not implemented yet .*`},
 		{name: "a role",
 			diff:    &difftypes.SchemaDiff{RolesAdded: difftypes.RoleChanges{{Name: "r"}}},
 			wantErr: `the plan changes a role or a privilege: managing YDB users, groups and permissions is not implemented yet .*`},

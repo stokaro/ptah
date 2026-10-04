@@ -23,10 +23,15 @@ import (
 // at /local/app/users is table users in schema app. The reader walks the whole
 // tree with the scheme service, skipping every directory whose name begins
 // with a dot (.sys, .metadata, .tmp, .sys_health, ...), and describes each row
-// table with the table service. It never reads a system view.
+// table with the table service and each view with the view service. It never
+// reads a system view.
 //
-// An object it meets and Ptah does not model -- a view, a topic, a column
-// table, a coordination node, and the rest of [coverage]'s YDB kinds -- is
+// A view is read only on a server with [capability.Views], which every YDB
+// line Ptah measured has; on one without it, a view is recorded like the
+// objects below, so a plan never meets a view the renderer would refuse.
+//
+// An object it meets and Ptah does not model -- a topic, a column table, a
+// coordination node, and the rest of [coverage]'s YDB kinds -- is
 // recorded in [catalog.Database.NotDescribed] by its path, as is a table
 // setting such as a TTL or a changefeed. The access model is recorded as a
 // whole kind, because the reader does not read it. An object or an index kind
@@ -159,6 +164,15 @@ func (r *Reader) entry(
 			return err
 		}
 		return r.table(ctx, source, schema, name, described, db)
+	case Ydb_Scheme.Entry_VIEW:
+		if !r.caps.Has(capability.Views) || !r.inScope(schema) {
+			break
+		}
+		described, err := source.DescribeView(ctx, r.absolute(schema, name))
+		if err != nil {
+			return err
+		}
+		return r.view(schema, name, described, db)
 	case Ydb_Scheme.Entry_DATABASE:
 		// Another database whose root sits under this one. It is not part
 		// of the database this connection reads.
@@ -185,7 +199,8 @@ func (r *Reader) entry(
 }
 
 // unmodeledEntries maps each scheme entry type Ptah does not model to the
-// coverage kind it is recorded under.
+// coverage kind it is recorded under. A view is here for a server without
+// [capability.Views], whose reader records it rather than describing it.
 var unmodeledEntries = map[Ydb_Scheme.Entry_Type]coverage.Kind{
 	Ydb_Scheme.Entry_VIEW:                 coverage.View,
 	Ydb_Scheme.Entry_TOPIC:                coverage.Topic,

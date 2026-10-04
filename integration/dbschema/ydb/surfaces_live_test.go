@@ -184,28 +184,6 @@ func TestYDBSchemaLineage_HappyPath_NoViews(t *testing.T) {
 	}
 }
 
-// The reader records a view and does not read it, so a lineage of a directory
-// holding one refuses in the words of the views gap rather than report nothing
-// for the view.
-func TestYDBSchemaLineage_FailurePath_AView(t *testing.T) {
-	const directory = "ptah_ydb_lineage_view"
-	for _, line := range ydbLines {
-		t.Run(line.name, func(t *testing.T) {
-			c := qt.New(t)
-			conn := openYDB(c, line)
-			execute(c, conn, "DROP VIEW IF EXISTS `"+directory+"/v`")
-			c.Cleanup(func() { execute(c, conn, "DROP VIEW IF EXISTS `"+directory+"/v`") })
-			execute(c, conn, "CREATE VIEW `"+directory+"/v` WITH (security_invoker = TRUE) AS SELECT 1 AS a")
-
-			stdout, err := runCommand(schema.NewSchemaLineageCommand(),
-				"--db-url", dbtarget.URL(c, line.engine), "--schemas", directory)
-
-			c.Assert(err, qt.ErrorMatches, `view "`+directory+`.v": `+regexp.QuoteMeta(ydbgap.Views.Message()))
-			c.Assert(stdout, qt.Equals, "")
-		})
-	}
-}
-
 // The agent surface's read_database takes a YDB target the operator
 // configured, and reads the row tables of the directories the caller names.
 func TestYDBAgentReadDatabase_ReadsTheNamedDirectory(t *testing.T) {
