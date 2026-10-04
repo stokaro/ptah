@@ -13,12 +13,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/dblock"
+	"ptah.run/internal/devclean"
 	"ptah.run/internal/ydbgap"
 )
 
@@ -33,6 +35,9 @@ var errLocked = errors.New("dev database realm is locked")
 type Lock struct {
 	advisory *dblock.Lock
 	file     *os.File
+	// dialect and realm name the dev database the lock serializes, for the
+	// error of a run that lost it.
+	dialect, realm string
 }
 
 // SameRealm reports whether two live connections select the same destructive
@@ -110,7 +115,7 @@ func Acquire(
 		if err != nil {
 			return nil, fmt.Errorf("acquire dev database realm lock: %w", err)
 		}
-		lock, err := finishAcquire(ctx, &Lock{advisory: advisory})
+		lock, err := finishAcquire(ctx, &Lock{advisory: advisory, dialect: dialect, realm: identity})
 		if err != nil {
 			return nil, fmt.Errorf("acquire dev database realm lock: %w", err)
 		}
@@ -145,16 +150,63 @@ func Acquire(
 // connections, so the end of that session reaches the work through this
 // context alone; another replay may take the realm then. A file lock is never
 // lost, and its context ends only with ctx.
+//
+// A cleanup of the dev database that runs under the context asks [MayClean]
+// first. After a loss it does not run, and the error settle returns says that
+// the dev database was left as it was, which one, and how to empty it.
 func (l *Lock) Guard(ctx context.Context) (guarded context.Context, settle func(err error) error) {
 	var advisory *dblock.Lock
 	if l != nil {
 		advisory = l.advisory
 	}
 	guarded, stop := advisory.Guard(ctx)
+	state := &guardState{lock: advisory}
+	guarded = context.WithValue(guarded, guardStateKey{}, state)
 	return guarded, func(err error) error {
 		defer stop()
-		return advisory.Settle("dev database lock", "the work on the dev database", err)
+		settled := advisory.Settle("dev database lock", "the work on the dev database", err)
+		if state.skipped.Load() && dblock.IsLost(settled) {
+			return fmt.Errorf("%w; %s", settled, l.leftInPlace())
+		}
+		return settled
 	}
+}
+
+// guardStateKey carries the [guardState] of a context [Lock.Guard] returned.
+type guardStateKey struct{}
+
+// guardState is what a guarded context knows about its lock: the lock, and
+// whether a cleanup was skipped because the lock was lost.
+type guardState struct {
+	lock    *dblock.Lock
+	skipped atomic.Bool
+}
+
+// MayClean reports whether a cleanup of the dev database may run under ctx: it
+// may unless ctx came from [Lock.Guard] and the realm's lock has been lost,
+// which it asks the lock itself rather than the context, so a loss the context
+// has not heard of yet still counts.
+//
+// After a loss another run may hold the realm, and a cleanup would drop what
+// that run put there, silently. Left alone, the realm keeps this run's
+// objects, and the next run that claims it refuses it as not clean, loudly.
+// A cleanup MayClean refuses is recorded, and the guard's settle reports it.
+func MayClean(ctx context.Context) bool {
+	state, ok := ctx.Value(guardStateKey{}).(*guardState)
+	if !ok || state.lock.Err() == nil {
+		return true
+	}
+	state.skipped.Store(true)
+	return false
+}
+
+// leftInPlace says what a run that lost the lock left behind, and how to empty
+// it: the claim the next run makes refuses it with the remedy
+// [devclean.NotCleanRemedy] names.
+func (l *Lock) leftInPlace() string {
+	return fmt.Sprintf("the %s dev database %s was left as it was, since another run may be using it now: "+
+		"empty it by hand once no run uses it (ptah db drop-all empties a database), or %s",
+		l.dialect, l.realm, devclean.NotCleanRemedy)
 }
 
 // Release releases the realm lock. It uses a bounded background context so a

@@ -550,6 +550,11 @@ func withMaterializedDevSchema(
 			return err
 		}
 		defer func() {
+			if !devlock.MayClean(ctx) {
+				// The realm's lock was lost, and another run may hold the
+				// realm; settle says what was left. See devlock.MayClean.
+				return
+			}
 			cleanupCtx, release := devclean.CleanupContext(ctx, devclean.CleanupGrace)
 			defer release()
 			if cleanupErr := devclean.DatabaseRealmKeeping(cleanupCtx, materializedConn, baseline); cleanupErr != nil {

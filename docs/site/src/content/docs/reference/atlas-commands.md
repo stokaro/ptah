@@ -839,7 +839,8 @@ Atlas:
 A session advisory lock lives on a database session of its own while the
 replay runs on other connections. When the server ends that session, the
 replay stops and the command fails with the lost lock, because another run may
-hold the dev database by then.
+hold the dev database by then. The dev database is left as it was rather than
+cleaned, and the next run refuses it as not clean until it is emptied by hand.
 
 Cross-host ClickHouse and CockroachDB replay is unsupported.
 
