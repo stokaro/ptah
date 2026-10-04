@@ -189,6 +189,7 @@ Each entry under `tables` declares one table.
 | `columns` / `fields` | Ordered column map. Use one or the other; duplicate names across both are rejected. |
 | `indexes` | Ordered table-local index map. |
 | `constraints` | Ordered table-local constraint map. |
+| `column_families` | Ordered map of a YDB table's column families; see [Column families](#column-families). |
 | `changefeeds` | Ordered map of a YDB table's changefeeds; see [Changefeeds](#changefeeds). |
 | `rls_enabled` | Adds row-level security enablement for this table. |
 | `row_deletion_column`, `row_deletion_interval`, `row_deletion_unit` | The table's row deletion policy: the column a row's age is measured from, the interval after which a row is deleted, and for a YDB integer column the unit it counts. The values are the `//ptah:schema:table` attributes of the same names. Spanner and YDB have one; every other dialect refuses it. |
@@ -298,6 +299,26 @@ indexes:
 | `ops` | Operator or operator class string. |
 | `granularity` | ClickHouse data-skipping index granularity. |
 | `auto_partitioning_by_size`, `auto_partitioning_partition_size_mb`, `auto_partitioning_by_load`, `auto_partitioning_min_partitions_count`, `auto_partitioning_max_partitions_count`, `read_replicas_settings` | A YDB global index's partitioning and read replicas, with the values the `//ptah:schema:index` attributes of the same names take. Every other dialect refuses them. |
+
+## Column families
+
+A YDB table's column families sit under `tables.<table>.column_families`, keyed
+by name. The keys are the attributes of `//ptah:schema:columnfamily`, with the
+same values; `fields` is a list of the columns the family holds. Every other
+dialect refuses a table that declares a column family. See
+[column families](site/src/content/docs/databases/ydb.md#column-families).
+
+```yaml
+tables:
+  documents:
+    column_families:
+      default:
+        compression: lz4
+      cold:
+        data: hdd
+        compression: lz4
+        fields: [body, attachment]
+```
 
 ## Changefeeds
 
