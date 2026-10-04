@@ -132,6 +132,15 @@ func TestYDBRules_ReportWhatTheServerRefuses(t *testing.T) {
 			want: []string{"0002_t.down.sql:1:YD104"},
 		},
 		{
+			name: "statements a down half runs, which the server refuses or resets the same way",
+			files: map[string]string{
+				"0001_t.up.sql": "ALTER TABLE t DROP COLUMN a;\n",
+				"0001_t.down.sql": "ALTER TABLE t ADD COLUMN a Int64 NOT NULL;\nALTER TABLE t ADD INDEX t_a GLOBAL UNIQUE ON (a);\n" +
+					"ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = ENABLED);\n",
+			},
+			want: []string{"0001_t.down.sql:1:YD103", "0001_t.down.sql:2:YD101", "0001_t.down.sql:3:YD105"},
+		},
+		{
 			name: "auto partitioning turned on without the minimum",
 			files: map[string]string{
 				"0001_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = ENABLED);\nALTER TABLE t SET AUTO_PARTITIONING_BY_LOAD ENABLED;\n",
