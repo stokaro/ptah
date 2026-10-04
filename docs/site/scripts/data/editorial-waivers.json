@@ -54,6 +54,12 @@
     "reason": "The engine reference keeps PostgreSQL-family object and release behavior together for target-specific lookup."
   },
   {
+    "route": "/databases/ydb/",
+    "check": "page-length",
+    "target": "page",
+    "reason": "The engine reference keeps YDB object, migration, data and dev-database behavior together for target-specific lookup, beside the gaps Ptah still refuses on YDB and the issue that owns them."
+  },
+  {
     "route": "/faq/",
     "check": "page-length",
     "target": "page",
