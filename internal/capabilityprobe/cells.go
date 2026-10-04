@@ -799,7 +799,7 @@ const ydbUnprobed = "YDB publishes no support period for its open-source lines, 
 // ydbProbedNote opens the note of a YDB cell the probe runs.
 func ydbProbedNote(version string) string {
 	return "probed on every run of the tiered workflows. Measured on " + version + " through this cell's " +
-		"launch recipe: 105 rows, 88 agree, 2 are understated on purpose, 15 are undecidable and none disagrees."
+		"launch recipe: 107 rows, 90 agree, 2 are understated on purpose, 15 are undecidable and none disagrees."
 }
 
 // ydbUnprobedNote opens the note of a YDB cell the probe skips.

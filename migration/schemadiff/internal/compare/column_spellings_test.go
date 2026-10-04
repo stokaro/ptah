@@ -41,7 +41,7 @@ func spellingsDiff(desired *schemamodel.Database, current *catalog.Database, spe
 	diff := &difftypes.SchemaDiff{}
 	compare.TablesAndColumnsWithServerSpellings(desired, current, diff, "postgres",
 		identifier.ForDialect("postgres"), compare.CoverageOf(desired, current),
-		compare.ServerSpellings{Columns: spellings})
+		compare.ServerSpellings{Columns: spellings}, nil)
 	return diff
 }
 

@@ -83,7 +83,8 @@ func (r *Reader) table(
 // column decodes one column. A column whose type is not wrapped in Optional is
 // NOT NULL; a column filled from a sequence is a Serial column and is reported
 // as its integer type with IsAutoIncrement set, which is how the comparison
-// reads an incrementing integer on either side.
+// reads an incrementing integer on either side, and with the start and the
+// increment its sequence has; see [sequence].
 func (r *Reader) column(meta *Ydb_Table.ColumnMeta, position int) (catalog.Column, error) {
 	if unknown := unknownFields(meta); len(unknown) > 0 {
 		// A default of a kind the pinned protocol buffers do not model arrives
@@ -117,6 +118,9 @@ func (r *Reader) column(meta *Ydb_Table.ColumnMeta, position int) (catalog.Colum
 	switch {
 	case meta.GetFromSequence() != nil:
 		column.IsAutoIncrement = true
+		if err := sequence(&column, ydbType, meta.GetFromSequence()); err != nil {
+			return catalog.Column{}, fmt.Errorf("column %q: %w", meta.GetName(), err)
+		}
 	case meta.GetFromLiteral() != nil:
 		literal, err := defaultLiteral(ydbType, meta.GetFromLiteral())
 		if err != nil {

@@ -169,3 +169,35 @@ func TestStrictCompatRefusesAYDBURL(t *testing.T) {
 		})
 	}
 }
+
+// Strict mode refuses docker://ydb in the pinned community binary's words:
+// measured on v1.3.0, `--dev-url docker://ydb/...` answers `unsupported docker
+// image "ydb"` at exit 1. docker://sqlite is the control: an engine that binary
+// does not start either, refused in the same words before and after.
+func TestStrictCompatRefusesDockerYDBAsTheBinaryDoes(t *testing.T) {
+	tests := []struct {
+		name   string
+		devURL string
+		want   string
+	}{
+		{name: "ydb", devURL: "docker://ydb/26.2.1.14/local", want: "Error: unsupported docker image \"ydb\"\n"},
+		{name: "ydb with no path", devURL: "docker://ydb", want: "Error: unsupported docker image \"ydb\"\n"},
+		{name: "sqlite", devURL: "docker://sqlite/dev", want: "Error: unsupported docker image \"sqlite\"\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			cmd := atlas.NewCompatCommandWithPolicy("atlas", atlascompatpolicy.StrictCE())
+			var stdout, stderr bytes.Buffer
+			cmd.SetOut(&stdout)
+			cmd.SetErr(&stderr)
+			cmd.SetArgs([]string{"schema", "inspect", "--url", "file://schema.sql", "--dev-url", test.devURL})
+
+			err := cmd.Execute()
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(stdout.String(), qt.Equals, "")
+			c.Assert(stderr.String(), qt.Equals, test.want)
+		})
+	}
+}

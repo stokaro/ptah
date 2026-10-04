@@ -19,7 +19,6 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/dblock"
-	"ptah.run/internal/ydbgap"
 )
 
 const (
@@ -38,7 +37,9 @@ type Lock struct {
 // SameRealm reports whether two live connections select the same destructive
 // database realm. Network endpoints are intentionally excluded from the
 // identity: aliases and replicated members cannot be proven independent before
-// cleanup, so equal live database/catalog names fail closed across hosts.
+// cleanup, so equal live database/catalog names fail closed across hosts. A
+// YDB database is named by its path and the moment its server created it, so
+// two servers that each serve /local are two realms; see ydbIdentity.
 //
 // A connection to a whole MySQL or MariaDB server holds every database on it,
 // so when either side is one, the two are compared by the server they reached;
@@ -182,10 +183,33 @@ func realmIdentity(
 	case platform.SQLite:
 		return sqliteIdentity(ctx, conn)
 	case platform.YDB:
-		return "", errors.New(ydbgap.DevDatabases.Message())
+		return ydbIdentity(ctx, conn)
 	default:
 		return "", fmt.Errorf("unsupported dev database lock dialect %q", dialect)
 	}
+}
+
+// realmIdentifier is what a YDB connection's writer says about the dev
+// database its root is.
+type realmIdentifier interface {
+	RealmIdentity(ctx context.Context) (string, error)
+}
+
+// ydbIdentity names the dev database a YDB connection treats as its database:
+// the database, told apart from one of the same path on another server by the
+// moment its server created it, and the dev realm in it the URL named. Two
+// realms of one database are two realms, and so are a realm and the database
+// that holds it, whose reads and resets leave the realms alone.
+func ydbIdentity(ctx context.Context, conn *dbschema.DatabaseConnection) (string, error) {
+	identifier, ok := conn.SchemaWriter().(realmIdentifier)
+	if !ok {
+		return "", fmt.Errorf("resolve ydb dev database realm: the writer %T cannot name its realm", conn.SchemaWriter())
+	}
+	identity, err := identifier.RealmIdentity(ctx)
+	if err != nil {
+		return "", fmt.Errorf("resolve ydb dev database realm: %w", err)
+	}
+	return identity, nil
 }
 
 // mysqlServerIdentity names the server a MySQL-family connection reached,

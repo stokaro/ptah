@@ -165,10 +165,14 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := p.refuseIndexChangesInPlace(diff); err != nil {
 		return nil, err
 	}
+	sequences, err := p.planSerialSequences(diff, rebuilds, semantics)
+	if err != nil {
+		return nil, err
+	}
 
 	var result []ast.Node
 	result = append(result, p.dropViews(diff)...)
-	result = append(result, p.createTables(diff, inlineIndexes, semantics)...)
+	result = append(result, p.createTables(diff, inlineIndexes, sequences.created, semantics)...)
 	result = append(result, dropIndexes(diff.IndexRemovals(), removedTables, rebuilds, semantics)...)
 	result = append(result, renameIndexes(diff.IndexesRenamed, rebuilds, semantics)...)
 	result = append(result, changeIndexPartitioning(diff.IndexPartitioningChanged, rebuilds, semantics)...)
@@ -177,6 +181,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 		return nil, err
 	}
 	result = append(result, rebuiltNodes...)
+	result = append(result, sequences.changed...)
 	result = append(result, addIndexes(diff.IndexesAdded, ownIndexes, semantics)...)
 	for _, name := range diff.TablesRemoved {
 		result = append(result, ast.NewDropTable(name))
@@ -225,10 +230,13 @@ func (p *Planner) changeTables(
 }
 
 // createTables writes each added table, with the indexes the plan gives it
-// when inlineIndexes names the table.
+// when inlineIndexes names the table, and after it the ALTER SEQUENCE
+// statements sequences holds for it: the sequence exists once the table does,
+// and every statement runs as a query of its own.
 func (p *Planner) createTables(
 	diff *difftypes.SchemaDiff,
 	inlineIndexes map[string]bool,
+	sequences map[string][]*ast.AlterSerialSequenceNode,
 	semantics identifier.Semantics,
 ) []ast.Node {
 	creations := diff.TablesAdded.Qualified(diff.DeclaredUserTypes, platform.YDB).InDependencyOrder()
@@ -236,19 +244,21 @@ func (p *Planner) createTables(
 	for _, creation := range creations {
 		table := modelast.FromTableWithConstraints(creation.Table, creation.Fields, creation.Enums, platform.YDB, creation.Constraints)
 		key := semantics.TableIdentityKey(creation.Name)
-		if !inlineIndexes[key] {
-			nodes = append(nodes, table)
-			continue
-		}
-		for _, change := range diff.IndexesAdded {
-			if semantics.TableIdentityKey(change.TableName) != key {
-				continue
+		withoutPlannedSequenceSettings(table, sequences[key])
+		if inlineIndexes[key] {
+			for _, change := range diff.IndexesAdded {
+				if semantics.TableIdentityKey(change.TableName) != key {
+					continue
+				}
+				index := change.Index
+				index.TableName = change.TableName
+				table.AddIndex(modelast.FromIndex(index))
 			}
-			index := change.Index
-			index.TableName = change.TableName
-			table.AddIndex(modelast.FromIndex(index))
 		}
 		nodes = append(nodes, table)
+		for _, sequence := range sequences[key] {
+			nodes = append(nodes, sequence)
+		}
 	}
 	return nodes
 }
@@ -607,6 +617,10 @@ func (p *Planner) refuseChangeKey(subject, key string, colDiff difftypes.ColumnD
 		return p.keyed(capability.UniqueConstraints, "UNIQUE constraint", "changing whether "+subject+" is UNIQUE ("+change+")")
 	case "generated":
 		return p.keyed(capability.GeneratedColumns, "generated column", "changing the generation of "+subject)
+	case "identity_start", "identity_increment":
+		// The sequence's own statement; planSerialSequences refuses what it
+		// cannot write.
+		return nil
 	case "nullable":
 		if strings.HasSuffix(change, "-> false") && !p.caps.Has(capability.AlterColumnSetNotNull) {
 			return p.rebuildable(capability.AlterColumnSetNotNull, "SET NOT NULL", "making "+subject+" NOT NULL")

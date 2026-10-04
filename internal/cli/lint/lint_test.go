@@ -1074,8 +1074,8 @@ func TestRunLint_LintsYQLForYDB(t *testing.T) {
 			stdout, stderr, err := execute("--dir", dir, "--dialect", test.dialect, "--server-version", test.version, "--fail-on", "none")
 
 			c.Assert(err, qt.IsNil)
-			// A YDB database cannot be a dev database yet, so the rules that
-			// read the starting state say they went without it.
+			// The run names no dev database, so the rules that read the
+			// starting state say they went without it.
 			c.Assert(stderr, qt.Equals, "warning: DS110P ran without the baseline schema it reads, so this analysis is "+
 				"thinner than the same directory would get against a dev database the run can read\n"+
 				"warning: MF101, MF102 ran without the baseline schema that refines the statement text it reads, so this "+

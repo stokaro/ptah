@@ -105,7 +105,8 @@ the shadow database again after each run.
 `ptah schema test` run cases against: by default a fresh ephemeral SQLite
 database per case, or the database passed with `--db-url` when tests must
 exercise a real server dialect — see
-[Test migrations and schemas](../../testing/migrations-and-schema/).
+[Test migrations and schemas](../../testing/migrations-and-schema/). On YDB the
+cases run in a dev realm in that database.
 
 ## Consequences
 
@@ -144,7 +145,12 @@ exercise a real server dialect — see
   taken back, so a Supabase image works as a dev database.
   MySQL, MariaDB, and ClickHouse cleanup owns the selected database. SQL
   Server cleanup owns all supported user schemas in the selected database.
-  SQLite cleanup owns `main` on one pinned session.
+  SQLite cleanup owns `main` on one pinned session. YDB has no SQL that
+  creates a database, so a run gets a dev realm instead: a directory under
+  `ptah_dev` in the database its dev, shadow or test URL names, which the run
+  treats as its whole database and removes at the end. A run against the
+  database itself leaves `ptah_dev` out, so the URL may name the target; see
+  [YDB](../../databases/ydb/#dev-shadow-and-scratch-databases).
 - **PostgreSQL cleanup gives back the schema it empties.** The schema the dev
   URL selects, `public` when it selects none, comes back after the cleanup
   with the owner, grants and comment it had. A role created on the server
@@ -194,7 +200,9 @@ exercise a real server dialect — see
   database. It also rejects statement forms whose nested SQL cannot be
   confined safely during replay.
 - **Replay cleanup is serialized by realm.** PostgreSQL, YugabyteDB, MySQL,
-  MariaDB, and SQL Server use database advisory locks. SQLite, ClickHouse, and
+  MariaDB, and SQL Server use database advisory locks, and YDB a semaphore on
+  the coordination node `ptah_locks`, keyed by the database and the dev realm.
+  SQLite, ClickHouse, and
   CockroachDB use an operating-system file lock keyed by the normalized
   database identity. That file lock coordinates only Ptah processes that
   resolve the same temporary lock path and can access it, normally processes
@@ -230,6 +238,12 @@ proven to stay inside the disposable realm:
   external dictionary sources, and `FREEZE`/`UNFREEZE`. Tables and standalone
   materialized views must select an explicitly allowlisted engine.
 - SQLite `ATTACH`, `DETACH`, temporary objects, and non-restorable pragmas.
+- YDB writes whose target is an absolute path, climbs out of the dev realm
+  with `..`, is named through a `$` expression or names a cluster,
+  `PRAGMA TablePathPrefix`, `DEFINE ACTION`, `DO`, `EVALUATE`, users, groups,
+  `GRANT`, `REVOKE`, secrets, resource pools, backups, `ALTER DATABASE`,
+  topics, external data sources and tables, async replication, transfers, and
+  streaming queries.
 
 Replay runs every migration of a directory on one session, so a PostgreSQL
 `SET` or `RESET` that changes the session would carry into the migrations after
@@ -272,6 +286,10 @@ reaches past the dev database:
   `REASSIGN OWNED`, and `COMMENT ON ROLE` or `DATABASE`.
 - MySQL and MariaDB routines, triggers, `CALL`, `GRANT`, `REVOKE`, `CREATE`
   and `DROP` of a user, role or database, and writes to another database.
+- YDB writes anywhere in the server, `PRAGMA TablePathPrefix`, actions, users,
+  groups, permissions, secrets, resource pools, backups and topics, on
+  `docker://ydb/<tag>`. YDB gets no dev realm there: the database is the dev
+  database.
 
 So a migration directory that creates its role in a `DO` block or defines a
 function replays on `docker://postgres/18/dev`.
@@ -284,6 +302,12 @@ event triggers, casts, languages), reach past the container (foreign servers,
 subscriptions, `dblink`, an external `COPY`), or mutate a protected namespace
 such as `pg_catalog`. A MySQL or MariaDB event stays refused because the
 scheduler runs it during the rest of the command.
+
+A YDB external data source or table, async replication, a transfer and a
+streaming query reach outside the container and stay refused. local-ydb takes
+every connection without a credential, so `docker://ydb` is refused when the
+container runtime is on another machine, where its port would be published on
+every interface of that host.
 
 The decision reads what Ptah recorded when it started the server, not the
 URL's spelling. A named server keeps the whole list, since it may hold
@@ -302,7 +326,9 @@ PTAH_DEV_SERVER_DISPOSABLE=1 ptah migrations validate --dir migrations --dev-url
 ```
 
 The declaration covers the whole server, its default database (`postgres`)
-included; Ptah cleans only the dev database after a replay. A role or
+included; Ptah cleans only the dev database after a replay. A YDB dev URL
+declared this way gets no dev realm: its database is the dev database, and it
+has to be empty. A role or
 database a replay creates stays on the server until the container is removed.
 A later command that replays the same directory on the same server meets it,
 so a migration that creates a role without checking for it first fails the

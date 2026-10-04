@@ -10,14 +10,14 @@
 // removes its constant together with every refusal that names it.
 //
 // The renderer, the planner, the connection, the schema reader, the schema
-// writer, the versioned migrator, both linters, the query builder and the data
-// layer -- the data diff, declared rows and seeds -- exist. The object families
-// they do not carry yet -- comments, access control, table settings, the
-// index kinds beyond global ones -- are layers here too, because a
-// declaration of one reaches the renderer by name, and a database holding one
-// reaches the reader, and each has to be refused there rather than handled as
-// something else. So are the commands that connect and then need a layer that
-// does not exist yet: inference.
+// writer, the versioned migrator, both linters, the query builder, the data
+// layer -- the data diff, declared rows and seeds -- and the dev databases
+// exist. The object families they do not carry yet -- comments, access
+// control, table settings, the index kinds beyond global ones -- are layers
+// here too, because a declaration of one reaches the renderer by name, and a
+// database holding one reaches the reader, and each has to be refused there
+// rather than handled as something else. So are the commands that connect and
+// then need a layer that does not exist yet: inference.
 package ydbgap
 
 import (
@@ -39,13 +39,6 @@ const (
 	// dialect has. It lands with the object families, because each family
 	// brings the clauses the parser has to read.
 	SchemaFiles Layer = iota + 1
-	// CreatingDatabases is making a new YDB database for a scratch or dev
-	// run. SQL cannot create one; the alternative is designed with the dev
-	// database work.
-	CreatingDatabases
-	// DevDatabases is a YDB database a run claims, resets and replays into as
-	// its dev or shadow database.
-	DevDatabases
 	// Comments is storing a comment on a table, a column or an index. YQL has
 	// no COMMENT statement; the comments family stores them as table
 	// attributes through the scheme API.
@@ -83,10 +76,6 @@ func (l Layer) work() string {
 	switch l {
 	case SchemaFiles:
 		return "reading a YDB schema file"
-	case CreatingDatabases:
-		return "creating a YDB database"
-	case DevDatabases:
-		return "using a YDB database as a dev or shadow database"
 	case Comments:
 		return "storing a comment on a YDB object"
 	case AccessControl:
@@ -106,8 +95,6 @@ func (l Layer) work() string {
 // that names no layer.
 func (l Layer) Phase() int {
 	switch l {
-	case CreatingDatabases, DevDatabases:
-		return 9
 	case SchemaFiles, Comments, AccessControl, TableSettings, IndexFamilies:
 		return 10
 	case Inference:
@@ -130,11 +117,6 @@ func (l Layer) Unsupported() string {
 	switch l {
 	case SchemaFiles:
 		return "a YQL file as the desired schema (Go structs and YAML schemas work)"
-	case CreatingDatabases:
-		return "a scratch database for each case of `ptah migrations test` and `ptah schema test`, " +
-			"since YQL cannot create a database"
-	case DevDatabases:
-		return "a YDB database as a dev or shadow database"
 	case Comments:
 		return "comments on tables, columns and indexes"
 	case AccessControl:

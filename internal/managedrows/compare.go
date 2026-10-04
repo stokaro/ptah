@@ -320,11 +320,11 @@ func typedYDBRows(
 		}
 		columnTypes[column] = mapping.Type
 	}
-	typedDesired, err := canonicalRows(columnTypes, desired)
+	typedDesired, err := ydbtype.CanonicalRows(columnTypes, desired)
 	if err != nil {
 		return typedRows{}, fmt.Errorf("declared %w", err)
 	}
-	typedLive, err := canonicalRows(columnTypes, live)
+	typedLive, err := ydbtype.CanonicalRows(columnTypes, live)
 	if err != nil {
 		return typedRows{}, fmt.Errorf("live %w", err)
 	}
@@ -336,31 +336,4 @@ func typedYDBRows(
 type typedRows struct {
 	columnTypes   map[string]string
 	desired, live []map[string]any
-}
-
-// canonicalRows returns copies of rows with every value of a typed column in
-// canonical form. A column with no type keeps its value; the diff refuses to
-// write it.
-func canonicalRows(columnTypes map[string]string, rows []map[string]any) ([]map[string]any, error) {
-	if rows == nil {
-		return nil, nil
-	}
-	out := make([]map[string]any, len(rows))
-	for i, row := range rows {
-		typed := make(map[string]any, len(row))
-		for column, value := range row {
-			ydbType, ok := columnTypes[column]
-			if !ok {
-				typed[column] = value
-				continue
-			}
-			canonical, err := ydbtype.CanonicalValue(ydbType, value)
-			if err != nil {
-				return nil, fmt.Errorf("row %d, column %q: %w", i+1, column, err)
-			}
-			typed[column] = canonical
-		}
-		out[i] = typed
-	}
-	return out, nil
 }

@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/ydbgap"
+	"ptah.run/internal/ydbsequence"
 	"ptah.run/internal/ydbtype"
 )
 
@@ -330,6 +331,11 @@ func (r *Renderer) columnDefinition(table string, column *ast.ColumnNode, key bo
 	if err != nil {
 		return "", "", err
 	}
+	if mapping.Serial {
+		if err := r.serialSequence(subject, table, column); err != nil {
+			return "", "", err
+		}
+	}
 	if mapping.Dropped != "" {
 		r.sink.Record(renderdiag.PropertyOmission(renderdiag.ColumnKind,
 			renderdiag.ColumnName(table, column.Name), renderdiag.TypeModifierProperty,
@@ -413,9 +419,6 @@ func (r *Renderer) columnType(subject string, column *ast.ColumnNode) (ydbtype.M
 	if !column.AutoInc && column.IdentityGeneration == "" {
 		return mapping, nil
 	}
-	if err := refuseIdentityOptions(subject, column); err != nil {
-		return ydbtype.Mapping{}, err
-	}
 	serial, ok := ydbtype.SerialFor(mapping.Type)
 	switch {
 	case mapping.Serial:
@@ -429,30 +432,44 @@ func (r *Renderer) columnType(subject string, column *ast.ColumnNode) (ydbtype.M
 	return ydbtype.Mapping{Type: serial, Dropped: mapping.Dropped, Serial: true}, nil
 }
 
-// refuseIdentityOptions refuses an identity the Serial types cannot carry. A
-// Serial fills the column only when the insert names no value, which is
-// PostgreSQL's BY DEFAULT; and its sequence starts at 1 and steps by 1, which
-// only ALTER SEQUENCE changes, and Ptah does not plan that statement. Every
-// property that disagrees is named, so one refusal says all there is to fix.
-func refuseIdentityOptions(subject string, column *ast.ColumnNode) error {
+// serialSequence checks what a Serial column declares of its sequence.
+//
+// A Serial fills the column only when the insert names no value, which is
+// PostgreSQL's BY DEFAULT, so GENERATED ALWAYS is refused. Its sequence takes a
+// start and an increment and nothing else (measured: MINVALUE, MAXVALUE, CACHE
+// and CYCLE in ALTER SEQUENCE are parse errors), so raw identity options are
+// refused, and a start or an increment YDB would refuse is refused here with
+// [ydbsequence.Parse]'s reason.
+//
+// A valid start or increment other than 1 is not written here: CREATE TABLE
+// has no clause for it, and the ALTER SEQUENCE that sets it names the sequence
+// by an absolute path that includes the database, which a render without one
+// cannot know. A plan writes that statement after the table and takes the
+// settings off the column it hands this renderer; one that reaches this
+// renderer anyway is reported as dropped.
+func (r *Renderer) serialSequence(subject, table string, column *ast.ColumnNode) error {
 	if strings.EqualFold(column.IdentityGeneration, "ALWAYS") {
 		return refuseFact(subject, "GENERATED ALWAYS refuses an explicit value, and a YDB Serial takes one")
 	}
-	var declared []string
-	if column.IdentityStart != "" && column.IdentityStart != "1" {
-		declared = append(declared, "start "+column.IdentityStart)
-	}
-	if column.IdentityIncrement != "" && column.IdentityIncrement != "1" {
-		declared = append(declared, "increment "+column.IdentityIncrement)
-	}
 	if column.IdentityOptions != "" {
-		declared = append(declared, "options "+column.IdentityOptions)
+		return refuseFact(subject, "a YDB Serial's sequence takes a start and an increment and nothing else, "+
+			"so declare those with identity_start and identity_increment rather than the options "+column.IdentityOptions)
 	}
-	if len(declared) == 0 {
+	settings, err := ydbsequence.Parse(column.IdentityStart, column.IdentityIncrement)
+	if err != nil {
+		return refuseFact(subject, err.Error())
+	}
+	if settings.IsDefault() {
 		return nil
 	}
-	return refuseFact(subject, "a YDB Serial starts at 1, steps by 1 and takes no sequence options, and the column declares "+
-		strings.Join(declared, ", "))
+	if !r.caps.Has(capability.SerialSequenceOptions) {
+		return refuseKey(capability.SerialSequenceOptions, subject+" gives its sequence a start or an increment")
+	}
+	r.sink.RecordLostIdentity(renderdiag.ColumnName(table, column.Name), renderdiag.Identity{
+		Start:     column.IdentityStart,
+		Increment: column.IdentityIncrement,
+	})
+	return nil
 }
 
 // defaultClause writes a column's DEFAULT, or nothing.

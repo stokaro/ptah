@@ -144,8 +144,8 @@ const (
 	// instead, with the reason the statement fails there.
 	YDBReplaced YDBVerdict = "replaced"
 	// YDBNeedsDevDatabase marks a rule that reads the state a dev database
-	// replay supplies, which a YDB database cannot be yet. The run names the
-	// rule as unmet rather than reporting less in silence.
+	// replay supplies, on YDB a replay in a dev realm. A run without a dev
+	// database names the rule as unmet rather than reporting less in silence.
 	YDBNeedsDevDatabase YDBVerdict = "needs a dev database"
 )
 
@@ -606,6 +606,12 @@ var migrationRuleMeta = map[string]ruleMeta{
 	},
 	"YD106": {
 		Summary: "a `DROP TABLE` of a table a view reads: YDB drops the table, keeps the view, and every read of the view fails",
+	},
+	"YD107": {
+		Summary: "an `ALTER SEQUENCE` on a 16-bit or 32-bit Serial's sequence, which raises its maximum to the Int64 maximum, so the column wraps to negative values without an error",
+	},
+	"YD108": {
+		Summary: "an `ALTER SEQUENCE` without a `RESTART` on a sequence an earlier statement restarted, which YDB replays, so the next insert takes a key a row holds",
 	},
 }
 

@@ -505,11 +505,16 @@ func (s Set) EnsureDevDatabase(devURL string) error {
 // cannot read returns "may be the same" -- so a docker URL carrying no
 // recognizable database name would come back true and refuse every legitimate
 // run with a sentence about an alias that does not exist.
+//
+// A YDB devURL is not asked either: its dev database is a dev realm the run
+// creates, which is not the database the URL names (see
+// [devdocker.ResolvedPerRun]). Every caller hands [Set.DevProtected] to the
+// reset, which compares the connections.
 func (s Set) EnsureDevIsolation(devURL string) error {
 	if s.Kind != KindDatabase || len(s.Sources) == 0 || strings.TrimSpace(devURL) == "" {
 		return nil
 	}
-	if devdocker.IsURL(devURL) {
+	if devdocker.ResolvedPerRun(devURL) {
 		return nil
 	}
 	// A URL naming no MySQL-family database is a whole server, and every

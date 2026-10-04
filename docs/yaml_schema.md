@@ -215,8 +215,8 @@ Columns support the same information as field annotations:
 | `primary` | Marks the column as a primary key. |
 | `auto_increment` / `auto_inc` | Marks the column as auto-incrementing. |
 | `identity_generation` | PostgreSQL identity mode: `ALWAYS` or `BY_DEFAULT`. Defaults to `BY_DEFAULT` when another identity key is set. |
-| `identity_start` | Optional PostgreSQL identity `START WITH` value. |
-| `identity_increment` | Optional PostgreSQL identity `INCREMENT BY` value. |
+| `identity_start` | Optional identity `START WITH` value; on YDB, the start of a Serial column's sequence. |
+| `identity_increment` | Optional identity `INCREMENT BY` value; on YDB, the step of a Serial column's sequence. |
 | `identity_options` | Raw PostgreSQL identity option clause. When set, it is rendered inside `AS IDENTITY (...)` instead of rebuilding options from `identity_start` and `identity_increment`. |
 | `unique` | Marks the column unique. |
 | `unique_expr` | Uniqueness over an expression. Not implemented; rendering refuses it rather than enforcing uniqueness on the column instead. |

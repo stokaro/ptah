@@ -58,8 +58,13 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	// `dir/sub/t`` creates dir and sub). So a schema renders no statement.
 	case *ast.CreateSchemaNode:
 		return nil
+	// No SQL creates a YDB database either: measured on 26.2.1.14 and
+	// 25.1.4.7, `CREATE DATABASE` is a parse error. A cluster's databases
+	// are its administrators', and a run that needs a database of its own
+	// gets a dev realm instead (internal/ydbrealm).
 	case *ast.CreateDatabaseNode:
-		return refuseGap(ydbgap.CreatingDatabases, "CREATE DATABASE "+n.Name)
+		return refuseFact("CREATE DATABASE "+n.Name,
+			"YDB has no CREATE DATABASE statement; a YDB database is created by the cluster's administrators")
 
 	// User-defined types. YDB has none: CREATE TYPE and CREATE DOMAIN are
 	// parse errors, and an enum is neither a column type nor a named type.
@@ -96,14 +101,17 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.DropTriggerNode:
 		return r.keyed(capability.Triggers, "trigger", "DROP TRIGGER "+n.Name)
 
-	// A sequence exists only behind a Serial column; there is no CREATE
-	// SEQUENCE (parse error) and no DROP SEQUENCE.
+	// A sequence exists only behind a Serial column, and ALTER SEQUENCE on
+	// that one is the only sequence statement YDB has: CREATE SEQUENCE and
+	// DROP SEQUENCE are parse errors on every line.
 	case *ast.CreateSequenceNode:
 		return r.keyed(capability.Sequences, "sequence", "sequence "+n.Name)
 	case *ast.AlterSequenceNode:
 		return r.keyed(capability.Sequences, "sequence", "ALTER SEQUENCE "+n.Name)
 	case *ast.DropSequenceNode:
 		return r.keyed(capability.Sequences, "sequence", "DROP SEQUENCE "+n.Name)
+	case *ast.AlterSerialSequenceNode:
+		return r.renderAlterSerialSequence(n)
 
 	// Users, groups and permissions are YDB's own access model, a family of
 	// its own in a later phase.

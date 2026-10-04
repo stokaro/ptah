@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/ydburl"
 )
 
 // Reader describes a YDB database's row tables.
@@ -44,20 +45,21 @@ type Reader struct {
 	schemas  []string
 }
 
-// NewReader returns a reader for the database driver is connected to, on a
-// server with caps.
-func NewReader(driver *ydbsdk.Driver, caps capability.Capabilities) *Reader {
+// NewReader returns a reader that reads root, an absolute path in the database
+// driver is connected to, on a server with caps. root is the database itself,
+// or the directory of the dev realm a URL named; see [Connection.Root].
+func NewReader(driver *ydbsdk.Driver, root string, caps capability.Capabilities) *Reader {
 	return &Reader{
 		open: func(ctx context.Context) (Source, func(), error) {
 			return newGRPCSource(ctx, driver)
 		},
-		database: driver.Name(),
+		database: "/" + strings.Trim(root, "/"),
 		caps:     caps.Clone(),
 	}
 }
 
 // NewReaderFromSource returns a reader that asks source about database, an
-// absolute path such as /local.
+// absolute path such as /local, and reads it as [NewReader] reads its root.
 func NewReaderFromSource(source Source, database string, caps capability.Capabilities) *Reader {
 	return &Reader{
 		open: func(context.Context) (Source, func(), error) {
@@ -97,7 +99,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	}
 	defer end()
 
-	db := &catalog.Database{}
+	db := &catalog.Database{DatabasePath: "/" + strings.Trim(r.database, "/")}
 	if err := r.walk(ctx, source, "", db); err != nil {
 		return nil, err
 	}
@@ -131,6 +133,7 @@ func (r *Reader) walk(ctx context.Context, source Source, schema string, db *cat
 // are Ptah's locks (see internal/dblock). The reader leaves it out of every
 // schema, as it leaves out the migrator's tables: it is Ptah's bookkeeping,
 // and a plan that dropped it would only have the next run create it again.
+// It leaves out ydburl.RealmDirectory at the root for the same reason.
 const LockNode = "ptah_locks"
 
 // entry reads one directory entry.
@@ -144,12 +147,7 @@ func (r *Reader) entry(
 	name := entry.GetName()
 	switch entry.GetType() {
 	case Ydb_Scheme.Entry_DIRECTORY:
-		if strings.HasPrefix(name, ".") {
-			// .sys, .metadata, .tmp and every other dot-directory belong to
-			// the server.
-			return nil
-		}
-		return r.walk(ctx, source, path.Join(schema, name), db)
+		return r.directory(ctx, source, schema, name, db)
 	case Ydb_Scheme.Entry_TABLE:
 		if !r.inScope(schema) || revisiontable.IsDefault(name) || name == revisiontable.Tags {
 			// The migrator's own tables are its bookkeeping, not the
@@ -196,6 +194,22 @@ func (r *Reader) entry(
 	}
 	db.NotDescribed = db.NotDescribed.With(unmodeled(kind, schema, name))
 	return nil
+}
+
+// directory reads the directory name in schema, unless it belongs to the
+// server or to the dev realms.
+func (r *Reader) directory(ctx context.Context, source Source, schema, name string, db *catalog.Database) error {
+	if strings.HasPrefix(name, ".") {
+		// .sys, .metadata, .tmp and every other dot-directory belong to the
+		// server.
+		return nil
+	}
+	if schema == "" && name == ydburl.RealmDirectory {
+		// The dev realms runs create here are theirs, and no part of the
+		// database's schema.
+		return nil
+	}
+	return r.walk(ctx, source, path.Join(schema, name), db)
 }
 
 // unmodeledEntries maps each scheme entry type Ptah does not model to the

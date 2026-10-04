@@ -196,6 +196,11 @@ func toDBColumn(field schemamodel.Field, ordinal int) catalog.Column {
 		Charset:               field.Charset,
 		Collate:               field.Collate,
 		GeneratedKind:         field.GeneratedKind,
+		// The start and the increment a declaration gives an identity or a
+		// Serial, which a YDB comparison reads a Serial's sequence by: a
+		// description compared with itself has to find them equal.
+		IdentityStart:     field.IdentityStart,
+		IdentityIncrement: field.IdentityIncrement,
 	}
 	if field.DefaultSet {
 		column.ColumnDefault = new(field.Default)

@@ -76,6 +76,8 @@ func (r *Renderer) VisitNode(node ast.Node) error { //nolint:gocyclo // one case
 		return r.renderAlterSequence(n)
 	case *ast.DropSequenceNode:
 		return r.renderDropSequence(n)
+	case *ast.AlterSerialSequenceNode:
+		return nodedispatch.RefuseSerialSequence(DialectName, n)
 	case *ast.CreateViewNode:
 		return r.renderCreateView(n)
 	case *ast.DropViewNode:

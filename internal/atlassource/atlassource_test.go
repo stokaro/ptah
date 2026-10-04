@@ -544,6 +544,22 @@ func TestSetEnsureDevIsolation_SkipsADockerDevURL(t *testing.T) {
 		`--to database must differ from --dev-url because the dev database is reset during planning`)
 }
 
+// A YDB dev URL names the database a dev realm is created in, so the URL that
+// names the desired database names a realm beside it; the pair is compared
+// live, through DevProtected. The control is the same desired database beside
+// a PostgreSQL dev URL naming it, which the text still refuses.
+func TestSetEnsureDevIsolation_LeavesAYDBDevURLToTheLiveComparison(t *testing.T) {
+	c := qt.New(t)
+	set, err := atlassource.ClassifySet("--to", []string{"ydb://localhost:2136/local"}, atlassource.ProjectEnv{})
+	c.Assert(err, qt.IsNil)
+	pgSet, err := atlassource.ClassifySet("--to", []string{"postgres://localhost/app"}, atlassource.ProjectEnv{})
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(set.EnsureDevIsolation("ydb://localhost:2136/local"), qt.IsNil)
+	c.Assert(pgSet.EnsureDevIsolation("postgres://localhost/app"), qt.ErrorMatches,
+		`--to database must differ from --dev-url because the dev database is reset during planning`)
+}
+
 // TestSetEnsureDevIsolation_LeavesAWholeServerToTheLiveComparison does not
 // compare URLs when either side names no MySQL-family database: such a URL is
 // a whole server, which "may" be any database, so the comparison would refuse

@@ -287,11 +287,11 @@ from an unpiped invocation:
 | --- | --- | --- | --- |
 | `schema inspect`, `schema apply`, `schema diff`, `schema clean`, `migrate apply`, `migrate status`, `migrate set` on `ydb://...` | 1, `sql/sqlclient: unknown driver "ydb". See: https://atlasgo.io/url` | 0 | 1, byte-identical |
 | the same on `ydbs://...` | 1, the same with `"ydbs"` | dials over TLS | 1, byte-identical |
-| `migrate validate --dev-url ydb://...` on a hashed directory | 1, `unknown driver "ydb"` | 1, a YDB dev database is not implemented yet | 1, byte-identical, after the integrity gate as on CE |
+| `migrate validate --dev-url ydb://...` on a hashed directory | 1, `unknown driver "ydb"` | 0, replayed in a dev realm | 1, byte-identical, after the integrity gate as on CE |
 | `migrate validate --dev-url ydb://...` on an unhashed directory | 1, `checksum file not found` | 1, the same | 1, the same |
 | an `atlas.hcl` env whose `url`, `dev` or `src` names YDB | 1, `unknown driver "ydb"` | 0 | 1, byte-identical |
 | a `data "sql"` source on `ydb://...` | 1, `data.sql.tenants: opening connection: sql/sqlclient: unknown driver "ydb"…` | 0 | 1, `data.sql.tenants: opening database: sql/sqlclient: unknown driver "ydb"…` |
-| `--dev-url docker://ydb/26.2.1.14/local` | 1, `unsupported docker image "ydb"` | 1, byte-identical | 1, byte-identical |
+| `--dev-url docker://ydb/26.2.1.14/local` | 1, `unsupported docker image "ydb"` | 0, on a local-ydb container started for the run | 1, byte-identical |
 
 The default profile serves YDB with no `PTAH_*` variable, because a YDB URL asks
 for an engine the binary lacks rather than making a mistake the binary catches.
@@ -313,6 +313,13 @@ widened to `Int64` without it exits 1 and leaves the column `Int32`, and with
 it rebuilds the table, keeps its rows and then reports the schema synced. The
 community binary plans no rebuild, so strict mode refuses the variable:
 `PTAH_ATLAS_STRICT_COMPAT does not allow PTAH_ALLOW_TABLE_REBUILD`.
+
+A `docker://ydb` dev URL is checked before its dialect, so strict mode answers
+it as the pinned binary answers an image it does not start, not as it answers a
+`ydb://` URL. `internal/atlascompatpolicy/policy_test.go` and
+`internal/cli/atlas/compat_ydb_url_test.go` pin that answer. A YDB dev URL in
+the default profile gets a dev realm, as on the native commands, on the target's
+server or on another one.
 
 ## Never a Copied Defect
 

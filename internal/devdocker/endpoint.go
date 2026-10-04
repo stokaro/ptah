@@ -124,19 +124,7 @@ func (e dockerEndpoint) connectHost() string {
 // `ssh://remote-dev`, and a full `schema inspect` run against it exits 0 with
 // the remote-exposure warning and leaves no container behind.
 func (d DockerCLI) endpoint(ctx context.Context) (dockerEndpoint, error) {
-	raw := strings.TrimSpace(os.Getenv("DOCKER_HOST"))
-	if raw == "" {
-		var err error
-		raw, err = d.contextEndpoint(ctx)
-		if err != nil {
-			return dockerEndpoint{}, err
-		}
-	}
-	endpoint, err := parseDockerEndpoint(raw)
-	if err != nil {
-		return dockerEndpoint{}, err
-	}
-	endpoint, err = resolveSSHDestination(ctx, endpoint)
+	endpoint, raw, err := d.resolveEndpoint(ctx)
 	if err != nil {
 		return dockerEndpoint{}, err
 	}
@@ -145,6 +133,29 @@ func (d DockerCLI) endpoint(ctx context.Context) (dockerEndpoint, error) {
 			"daemon", raw, "host", endpoint.host)
 	}
 	return endpoint, nil
+}
+
+// resolveEndpoint is endpoint without the warning, for a caller that asks
+// where the runtime is before deciding whether to start anything there. It
+// also returns the endpoint as the CLI spells it.
+func (d DockerCLI) resolveEndpoint(ctx context.Context) (dockerEndpoint, string, error) {
+	raw := strings.TrimSpace(os.Getenv("DOCKER_HOST"))
+	if raw == "" {
+		var err error
+		raw, err = d.contextEndpoint(ctx)
+		if err != nil {
+			return dockerEndpoint{}, "", err
+		}
+	}
+	endpoint, err := parseDockerEndpoint(raw)
+	if err != nil {
+		return dockerEndpoint{}, "", err
+	}
+	endpoint, err = resolveSSHDestination(ctx, endpoint)
+	if err != nil {
+		return dockerEndpoint{}, "", err
+	}
+	return endpoint, raw, nil
 }
 
 // contextEndpoint asks the CLI which endpoint the active context selects.

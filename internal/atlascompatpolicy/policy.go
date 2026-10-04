@@ -417,6 +417,14 @@ func (p Policy) ValidateURL(rawURL string) error {
 		return nil
 	}
 	if atlasurl.IsDockerScheme(parsed.Scheme) {
+		// An engine Ptah starts and the pinned binary does not is refused in
+		// that binary's words: measured on v1.3.0, `docker://ydb/...`
+		// answers `unsupported docker image "ydb"`. It is asked before the
+		// dialect, which reads "ydb" here and would answer as a ydb:// URL
+		// does.
+		if parsed.Scheme == "docker" && atlasurl.DockerEngineIsExtension(parsed.Host) {
+			return fmt.Errorf("unsupported docker image %q", parsed.Host)
+		}
 		dialect, err := atlasurl.DialectFromURL(rawURL)
 		if err != nil {
 			return nil

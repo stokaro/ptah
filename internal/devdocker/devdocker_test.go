@@ -248,6 +248,15 @@ type fakeRunner struct {
 	// container that still runs.
 	stopped    string
 	stoppedErr error
+
+	// remoteHost and remoteErr are what every RemoteHost call answers: "" for
+	// a runtime on this machine.
+	remoteHost string
+	remoteErr  error
+}
+
+func (f *fakeRunner) RemoteHost(context.Context) (string, error) {
+	return f.remoteHost, f.remoteErr
 }
 
 // recordedBuild is one Build call a fakeRunner saw.
