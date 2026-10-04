@@ -159,6 +159,60 @@ func TestYDBCoordinationNodes_RoundTrip(t *testing.T) {
 	}
 }
 
+// TestYDBCoordinationNodes_TradeAPathWithATable applies one plan in which a
+// table takes the path of a node the plan drops and a node takes the path of
+// a table the plan drops. A path names one object: before the plan runs, YDB
+// refuses a table at the node's path and a node at the table's path, so only
+// the plan's order, every drop before the creation that needs its path, lets
+// the plan apply. A second plan is empty.
+func TestYDBCoordinationNodes_TradeAPathWithATable(t *testing.T) {
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			driver := coordinationDriver(c, line)
+			dropCoordinationDirectory(c, conn, coordinationSchema)
+			c.Cleanup(func() { dropCoordinationDirectory(c, conn, coordinationSchema) })
+			apply(c, conn, []string{
+				"CREATE COORDINATION NODE `ptah_ydb_coordination/to_table`",
+				"CREATE TABLE `ptah_ydb_coordination/to_node` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))",
+			})
+			tableOverNode := conn.Writer().ExecuteSQL(c.Context(),
+				"CREATE TABLE `ptah_ydb_coordination/to_table` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))")
+			nodeOverTable := conn.Writer().ExecuteSQL(c.Context(), "CREATE COORDINATION NODE `ptah_ydb_coordination/to_node`")
+			declared := &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "T", Name: "to_table", Schema: coordinationSchema}},
+				Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "BIGINT", Primary: true}},
+				CoordinationNodes: []schemamodel.CoordinationNode{
+					{Schema: coordinationSchema, Name: "to_node", Spec: ast.CoordinationNodeSpec{SelfCheckPeriodMillis: 2000}},
+				},
+			}
+			schemamodel.Finalize(declared)
+
+			plan := planAgainst(c, conn, declared, coordinationSchemas)
+			apply(c, conn, plan)
+
+			// 26.2.1.14 answers `Path is not a table or topic`, 25.1.4.7
+			// `PathNotTable`.
+			c.Assert(tableOverNode, qt.ErrorMatches, `(?s).*SCHEME_ERROR.*(Path is not a table or topic|PathNotTable).*`)
+			c.Assert(nodeOverTable, qt.ErrorMatches,
+				`(?s).*unexpected path type .*EPathTypeTable.*expected types: EPathTypeKesus.*`)
+			c.Assert(plan, qt.DeepEquals, []string{
+				"DROP COORDINATION NODE `ptah_ydb_coordination/to_table`",
+				"CREATE TABLE `ptah_ydb_coordination/to_table` (\n    `id` Int64 NOT NULL,\n    PRIMARY KEY (`id`)\n)",
+				"DROP TABLE `ptah_ydb_coordination/to_node`",
+				"CREATE COORDINATION NODE `ptah_ydb_coordination/to_node` WITH (self_check_period = Interval('PT2S'))",
+			})
+			c.Assert(planAgainst(c, conn, declared, coordinationSchemas), qt.HasLen, 0)
+			c.Assert(tableNames(readScoped(c, conn, coordinationSchemas)), qt.DeepEquals,
+				[]string{coordinationSchema + "|to_table"})
+			served, err := nodeConfig(c, driver, coordinationSchema+"/to_node")
+			c.Assert(err, qt.IsNil)
+			c.Assert(served, qt.DeepEquals, coordination.NodeConfig{SelfCheckPeriodMillis: 2000})
+		})
+	}
+}
+
 // TestYDBCoordinationNodes_ConnectionRefuses holds the refusals Ptah's
 // connection makes before the coordination service changes anything: Ptah's
 // lock node, a creation of a node that exists, which the service would answer
