@@ -275,3 +275,39 @@ func TestApplyLockSupported_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// A lock that reports no loss runs the work under a context that ends only
+// with the caller's, and returns the work's own answer; so does the nil lock a
+// caller that declined to lock holds.
+func TestApplyLockRun_WithoutALoss(t *testing.T) {
+	c := qt.New(t)
+	conn := connectSQLite(c, filepath.Join(c.TB.TempDir(), "lock-run.db"))
+	defer dbschema.CloseAndWarn(conn)
+	noOp, err := atlasschema.AcquireApplyLock(c.Context(), conn, "", 0)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { _ = noOp.Release() })
+	tests := []struct {
+		name    string
+		lock    *atlasschema.ApplyLock
+		workErr error
+		want    string
+	}{
+		{name: "a no-op lock, and the work succeeds", lock: noOp, want: "<nil>"},
+		{name: "a no-op lock, and the work fails", lock: noOp, workErr: fmt.Errorf("syntax error"), want: "syntax error"},
+		{name: "no lock, and the work fails", workErr: fmt.Errorf("syntax error"), want: "syntax error"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var live bool
+
+			err := test.lock.Run(c.Context(), func(ctx context.Context) error {
+				live = ctx.Err() == nil
+				return test.workErr
+			})
+
+			c.Assert(fmt.Sprint(err), qt.Equals, test.want)
+			c.Assert(live, qt.IsTrue)
+		})
+	}
+}

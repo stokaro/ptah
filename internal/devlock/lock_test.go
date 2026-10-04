@@ -154,3 +154,23 @@ func TestAcquire_SQLiteSerializesHardLinkAliases(t *testing.T) {
 	c.Assert(blockedLock, qt.IsNil)
 	c.Assert(firstLock.Release(), qt.IsNil)
 }
+
+// A cleanup may run under a context no realm lock guards, and under one a lock
+// that cannot be lost guards: a file lock, which SQLite takes. settle then
+// returns the work's own answer.
+func TestMayClean_WithoutALoss(t *testing.T) {
+	c := qt.New(t)
+	devURL := atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "dev.db"))
+	conn, err := dbschema.ConnectToDatabase(t.Context(), devURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	lock, err := devlock.Acquire(t.Context(), conn, 0)
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Check(lock.Release(), qt.IsNil) }()
+
+	guarded, settle := lock.Guard(t.Context())
+
+	c.Assert(devlock.MayClean(t.Context()), qt.IsTrue)
+	c.Assert(devlock.MayClean(guarded), qt.IsTrue)
+	c.Assert(settle(nil), qt.IsNil)
+}

@@ -74,6 +74,7 @@ func Fixtures() []Fixture {
 		{Name: "table-row-deletion", Schema: tableRowDeletionFixture()},
 		{Name: "table-changefeed", Schema: tableChangefeedFixture()},
 		{Name: "table-changefeed-disabled", Schema: tableChangefeedDisabledFixture()},
+		{Name: "table-row-deletion-epoch", Schema: tableRowDeletionEpochFixture()},
 		{Name: "fk-field", Schema: foreignKeyFieldFixture()},
 		{Name: "fk-field-deferrable", Schema: foreignKeyDeferrableFixture()},
 		{Name: "fk-table", Schema: foreignKeyTableFixture()},
@@ -818,6 +819,15 @@ func tableChangefeedDisabledFixture() schemamodel.Database {
 		Name:        "t",
 		Changefeeds: []ast.ChangefeedSpec{{Name: "updates", Mode: "UPDATES", Format: "JSON", Disabled: true}},
 	})
+}
+
+// tableRowDeletionEpochFixture is a YDB TTL on an integer column, whose unit
+// says what the column counts.
+func tableRowDeletionEpochFixture() schemamodel.Database {
+	return oneTable("T", schemamodel.Table{
+		Name:              "t",
+		RowDeletionPolicy: &ast.RowDeletionPolicySpec{Column: "expires", Interval: "PT1H", Unit: "SECONDS"},
+	}, schemamodel.Field{StructName: "T", FieldName: "Expires", Name: "expires", Type: "BIGINT UNSIGNED", Nullable: true})
 }
 
 func twoTables() schemamodel.Database {

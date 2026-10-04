@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbchangefeed"
+	"ptah.run/internal/ydbttl"
 )
 
 // changefeedModes and changefeedFormats spell the values DescribeTable
@@ -123,7 +124,7 @@ func (r *Reader) changefeed(
 		return ast.ChangefeedSpec{}, false, nil
 	}
 	if resolved > 0 {
-		spec.ResolvedTimestamps = ydbchangefeed.FormatSeconds(resolved)
+		spec.ResolvedTimestamps = ydbttl.FormatInterval(resolved)
 	}
 	topic, err := source.DescribeTopic(ctx, r.absolute(schema, path.Join(table, feed.GetName())))
 	if err != nil {
@@ -178,7 +179,7 @@ func readTopic(spec *ast.ChangefeedSpec, topic *Ydb_Topic.DescribeTopicResult) b
 		return false
 	}
 	if retention != 0 && retention != ydbchangefeed.DefaultRetentionSeconds {
-		spec.RetentionPeriod = ydbchangefeed.FormatSeconds(retention)
+		spec.RetentionPeriod = ydbttl.FormatInterval(retention)
 	}
 	partitioning := topic.GetPartitioningSettings()
 	if minimum := partitioning.GetMinActivePartitions(); minimum > 1 {
@@ -228,7 +229,7 @@ func readConsumer(consumer *Ydb_Topic.Consumer) (ast.TopicConsumerSpec, bool) {
 		return ast.TopicConsumerSpec{}, false
 	}
 	if availability > 0 {
-		read.AvailabilityPeriod = ydbchangefeed.FormatSeconds(availability)
+		read.AvailabilityPeriod = ydbttl.FormatInterval(availability)
 	}
 	return read, true
 }

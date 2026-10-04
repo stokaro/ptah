@@ -244,7 +244,8 @@ func replayOnConnection(
 	defer func() {
 		resultErr = errors.Join(resultErr, lock.Release())
 	}()
-	return replayOnLockedConnection(ctx, conn, fsys, dirFormat, atlasTemplateData, revisionVersions, hooks)
+	ctx, settle := lock.Guard(ctx)
+	return settle(replayOnLockedConnection(ctx, conn, fsys, dirFormat, atlasTemplateData, revisionVersions, hooks))
 }
 
 func replayOnLockedConnection(
@@ -304,6 +305,12 @@ func replayMigrations(
 	}
 	replaySucceeded := false
 	defer func() {
+		if !devlock.MayClean(ctx) {
+			// The realm's lock was lost, and another replay may hold the
+			// realm; the lock's settle says what was left. See
+			// devlock.MayClean.
+			return
+		}
 		cleanupCtx, release := devclean.CleanupContext(ctx, devclean.CleanupGrace)
 		defer release()
 		if cleanupErr := devclean.DatabaseRealmKeeping(cleanupCtx, conn, baseline); cleanupErr != nil {

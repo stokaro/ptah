@@ -253,7 +253,9 @@ var migrationRuleMeta = map[string]ruleMeta{
 		YDBNote: "YQL stores no routine",
 	},
 	"DS101": {
-		Summary:   "DROP TABLE, and on MariaDB CREATE OR REPLACE TABLE, destroys the table and every row in it; a rename reports here on the compatibility surface, retiring the old name without moving the rows",
+		Summary: "DROP TABLE, and on MariaDB CREATE OR REPLACE TABLE, destroys the table and every row in it; " +
+			"a rename reports here on the compatibility surface, retiring the old name without moving the rows. " +
+			"The native surface leaves out the drop that ends a table rebuild, whose copy keeps every row under the old name",
 		AtlasCode: "DS102",
 		YDB:       YDBApplies,
 		YDBNote:   "`DROP TABLE`",
@@ -602,10 +604,10 @@ var migrationRuleMeta = map[string]ruleMeta{
 		Summary: "a `DROP COLUMN` of a column an index keys or covers, or the TTL reads, which YDB refuses until the index or the TTL is gone",
 	},
 	"YD105": {
-		Summary: "turning auto partitioning by size or by load on resets the minimum partition count to 1 unless the same statement sets it",
+		Summary: "turning auto partitioning by size or by load on resets the minimum partition count to 1 unless the same statement sets it; silent where the directory's own migrations left the minimum at 1",
 	},
 	"YD106": {
-		Summary: "a `DROP TABLE` of a table a view reads: YDB drops the table, keeps the view, and every read of the view fails",
+		Summary: "a `DROP TABLE` or `ALTER TABLE ... RENAME TO` of a table a view reads: YDB keeps the view, which reads its table by path, and every read of the view fails",
 	},
 	"YD107": {
 		Summary: "an `ALTER SEQUENCE` on a 16-bit or 32-bit Serial's sequence, which raises its maximum to the Int64 maximum, so the column wraps to negative values without an error",

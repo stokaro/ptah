@@ -615,6 +615,15 @@ SQL: ALTER TABLE missing ADD COLUMN nickname TEXT
 The dev database is dropped clean on every run — point it at a scratch
 database of the target engine, never at a real environment.
 
+One case leaves it as it was. A run holds a lock on the dev database, and on
+PostgreSQL, MySQL, MariaDB and SQL Server that lock lives on a database session
+of its own. When the server ends that session, another run may take the dev
+database at once, so the run stops and does not clean up, because a cleanup
+would drop that other run's objects. Its error names the dev database it left.
+The next run refuses that database as not clean until it is empty: empty it by
+hand once no run uses it, for example with `ptah db drop-all`, or point
+`--dev-url` at an empty database.
+
 Replay refuses a statement whose effect would reach past the dev database,
 such as a `DO` block that creates a role, before the migration runs. A
 `docker://` dev URL gives the run a server of its own, where those statements

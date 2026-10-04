@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	"ptah.run/internal/execoutcome"
 	"ptah.run/internal/sqliterebuild"
 	"ptah.run/migration/migrationfile"
 )
@@ -260,6 +261,18 @@ func recordStatementProgressBefore(ctx context.Context, event StatementEvent) er
 		}
 	}
 	return nil
+}
+
+// markedStatementFailure wraps the failure of a statement that ran after
+// recordStatementProgressBefore, when that recorded a mark: only a marked
+// statement has an outcome a failure can leave unknown. A canceled run is
+// judged by preservesUnknownStatementOutcome from the context.
+func markedStatementFailure(ctx context.Context, err error) error {
+	hooks, _ := ctx.Value(statementProgressRecorderContextKey{}).(statementProgressHooks)
+	if hooks.before == nil || ctx.Err() != nil {
+		return err
+	}
+	return &markedStatementError{err: err, outcomeUnknown: execoutcome.Unknown(err)}
 }
 
 func recordStatementProgressAfter(ctx context.Context, event StatementEvent) error {
@@ -883,7 +896,7 @@ func executeSQLStatements(ctx context.Context, conn *dbschema.DatabaseConnection
 		}
 		if err := executeMigrationStatement(ctx, conn, stmt, mode); err != nil {
 			return &MigrationExecutionError{
-				Err:            fmt.Errorf("failed to execute SQL statement: %w", err),
+				Err:            fmt.Errorf("failed to execute SQL statement: %w", markedStatementFailure(ctx, err)),
 				Statement:      stmt,
 				StatementIndex: i + 1,
 				Total:          len(statements),
@@ -1003,12 +1016,12 @@ func runMigrationFileStatement(
 	if hooks.interceptor != nil {
 		handled, err = hooks.interceptor.ExecuteStatement(ctx, conn, event.Statement, interceptorDirectives)
 		if err != nil {
-			return migrationFileStatementError(err, event)
+			return migrationFileStatementError(markedStatementFailure(ctx, err), event)
 		}
 	}
 	if !handled {
 		if err := executeBoundedStatement(ctx, conn, event.Statement, mode); err != nil {
-			return migrationFileStatementError(err, event)
+			return migrationFileStatementError(markedStatementFailure(ctx, err), event)
 		}
 	}
 	if err := recordAndObserveExecutedStatement(ctx, event); err != nil {

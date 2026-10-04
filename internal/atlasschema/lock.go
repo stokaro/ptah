@@ -98,11 +98,9 @@ type ApplyLock struct {
 // pool is used only for the independent PostgreSQL exclusion witness. The
 // lock is released before the pinned session is discarded.
 //
-// use runs under a context that ends when the lock is lost (see
-// [dblock.Lock.Guard]); only a YDB lock, which a coordination session of its
-// own holds, reports a loss. A lock lost while use ran is the run's error even
-// when use succeeded: another session may have taken the lock and changed the
-// schema the apply planned against.
+// use runs under [ApplyLock.Run]. Only a YDB lock, which a coordination
+// session of its own holds, reports a loss here: every other lock lives on the
+// pinned session use works on, so losing it fails the work itself.
 //
 // When use fails, its error and a secondary release error are returned
 // separately so callers can preserve the operation failure while reporting a
@@ -164,18 +162,10 @@ func withApplyLockSession(
 		timeout,
 		func(pinned *dbschema.DatabaseConnection, lock *dblock.Lock) error {
 			callbackStarted = true
-			guarded, stop := lock.Guard(ctx)
-			useErr := use(guarded, pinned, &ApplyLock{lock: lock})
-			lostErr := lock.Err()
-			stop()
-			if lostErr == nil {
-				return useErr
-			}
-			lostErr = fmt.Errorf("schema apply lock: %w; the apply stopped there", lostErr)
-			if useErr != nil && !dblock.IsLost(useErr) && !errors.Is(useErr, context.Canceled) {
-				return fmt.Errorf("%w (the apply reported: %v)", lostErr, useErr)
-			}
-			return lostErr
+			applyLock := &ApplyLock{lock: lock}
+			return applyLock.Run(ctx, func(guarded context.Context) error {
+				return use(guarded, pinned, applyLock)
+			})
 		},
 	)
 	if runErr != nil && !callbackStarted {
@@ -184,9 +174,30 @@ func withApplyLockSession(
 	return runErr, releaseErr
 }
 
+// Run runs use under a context that ends when the lock is lost (see
+// [dblock.Lock.Guard]), so a step use takes on that context stops with the
+// lock. A lock lost while use ran is the run's error even when use succeeded:
+// another session may have taken the lock and changed the schema the apply
+// planned against. The error wraps the [dblock.LostError], and names what use
+// reported when that was something other than the loss itself.
+//
+// A nil lock, which a caller that declined to lock holds, runs use under ctx.
+func (l *ApplyLock) Run(ctx context.Context, use func(context.Context) error) error {
+	if l == nil {
+		return use(ctx)
+	}
+	guarded, stop := l.lock.Guard(ctx)
+	defer stop()
+	return l.lock.Settle("schema apply lock", "the apply", use(guarded))
+}
+
 // AcquireApplyLock takes the dialect-specific session advisory lock that
 // serializes schema apply runs on conn's database. It must be held before the
-// target inspection and planning that the apply serializes. A zero timeout
+// target inspection and planning that the apply serializes, and the work it
+// serializes runs through [ApplyLock.Run], which stops it when the lock is
+// lost: the lock lives on a session of its own while the apply works over
+// conn's pool, so the end of that session reaches the apply through the run's
+// context alone. A zero timeout
 // waits indefinitely and a negative one does not wait ([dblock.NoWait]);
 // context cancellation always interrupts the wait, and an elapsed or refused
 // wait surfaces as a wrapped [dblock.TimeoutError] recognized by

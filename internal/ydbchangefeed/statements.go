@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/ydbttl"
 )
 
 // TablePath writes table, a canonical table reference, as one quoted YDB
@@ -29,7 +30,7 @@ func TablePath(table string) string {
 //
 // The WITH clause names MODE and FORMAT, which YDB requires, and each other
 // option only where spec declares it. An interval is written as
-// [FormatSeconds] writes the seconds it denotes, a spelling YDB takes.
+// [ydbttl.FormatInterval] writes the seconds it denotes, a spelling YDB takes.
 func AddStatements(table string, spec ast.ChangefeedSpec) []string {
 	options := []string{
 		"MODE = " + quoteString(strings.ToUpper(spec.Mode)),
@@ -187,14 +188,14 @@ func quoteString(value string) string {
 }
 
 // intervalLiteral writes an interval as YDB's Interval literal, in the
-// spelling [FormatSeconds] gives the seconds it denotes.
+// spelling [ydbttl.FormatInterval] gives the seconds it denotes.
 func intervalLiteral(text string) string {
 	return secondsLiteral(intervalSeconds(text, 0))
 }
 
 // secondsLiteral writes a number of seconds as YDB's Interval literal.
 func secondsLiteral(seconds uint64) string {
-	return "Interval(" + quoteString(FormatSeconds(seconds)) + ")"
+	return "Interval(" + quoteString(ydbttl.FormatInterval(seconds)) + ")"
 }
 
 // timestampLiteral writes an RFC 3339 time as YDB's Timestamp literal.

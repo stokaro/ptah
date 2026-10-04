@@ -213,8 +213,10 @@ schema does, so silence about one of those in this format still removes it —
 except a hypertable, whose removal TimescaleDB has no statement for and which is
 refused instead. YAML has a key for none of the four.
 
-A YDB changefeed has no HCL or DBML spelling. This command warns about each one
-it leaves out, and a document read back keeps the table's changefeeds.
+A table's row deletion policy, a Spanner or YDB TTL, has no HCL spelling
+either, and a YDB changefeed has no HCL or DBML spelling. This command warns
+about each one it leaves out, and a document read back keeps the table's
+policy and changefeeds.
 
 Both commands write a `permission` block by the same three rules: a schema is
 declared whenever anything references one, a grantee is a `role.<name>`

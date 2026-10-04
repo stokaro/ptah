@@ -69,6 +69,9 @@ type Statement struct {
 	// TTLColumn is the column a CREATE TABLE's TTL setting reads, and empty
 	// when it sets none.
 	TTLColumn string
+	// Settings are the settings the WITH clause of a CREATE TABLE sets, in
+	// order.
+	Settings []Setting
 
 	// Actions are the actions an ALTER TABLE takes, in order.
 	Actions []Action
@@ -171,6 +174,10 @@ type Setting struct {
 	Value string
 	// Column is the column a TTL setting reads, and empty for any other.
 	Column string
+	// Items is the number of items in a value written as a parenthesized
+	// list, such as the keys PARTITION_AT_KEYS splits a table at, and zero
+	// for any other value.
+	Items int
 }
 
 // Requirement is a capability a statement needs from the YDB line it runs on.
@@ -301,7 +308,8 @@ func readCreateTable(tokens []lexer.Token) Statement {
 	for i := range rest {
 		if rest[i].MatchIdentifierValue("WITH") && i+1 < len(rest) && rest[i+1].MatchOperatorValue("(") {
 			settings, _ := parenthesized(rest[i+1:])
-			for _, setting := range readSettings(settings) {
+			stmt.Settings = readSettings(settings)
+			for _, setting := range stmt.Settings {
 				if setting.Name == "TTL" {
 					stmt.TTLColumn = setting.Column
 				}
@@ -414,6 +422,9 @@ func readSetting(name lexer.Token, value []lexer.Token) Setting {
 	setting := Setting{Name: strings.ToUpper(name.Value)}
 	if len(value) > 0 && value[0].Type == lexer.TokenIdentifier {
 		setting.Value = strings.ToUpper(value[0].Value)
+	}
+	if list, _ := parenthesized(value); len(list) > 0 {
+		setting.Items = len(splitTopLevel(list))
 	}
 	if setting.Name == "TTL" {
 		for i := range value {

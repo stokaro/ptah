@@ -69,10 +69,10 @@ func TestParseDeclaration_FailurePath(t *testing.T) {
 			"format": "JSON", "virtual_timestamps": "yes"}, wantErr: `invalid virtual_timestamps "yes": takes true or false`},
 		{name: "a fraction of a second", values: map[string]string{"name": "f", "mode": "UPDATES",
 			"format": "JSON", "retention_period": "PT1.5S"},
-			wantErr: `invalid retention_period "PT1.5S": YDB keeps whole seconds, and drops the fraction of this one`},
+			wantErr: `invalid retention_period "PT1.5S": interval "PT1.5S" has a fraction of a second, .*`},
 		{name: "a zero interval", values: map[string]string{"name": "f", "mode": "UPDATES",
 			"format": "JSON", "resolved_timestamps": "PT0S"},
-			wantErr: `invalid resolved_timestamps "PT0S": is no time at all, and YDB takes only a positive interval`},
+			wantErr: `invalid resolved_timestamps "PT0S": interval "PT0S" is no time at all, and YDB takes only a positive interval`},
 		{name: "zero partitions", values: map[string]string{"name": "f", "mode": "UPDATES",
 			"format": "JSON", "topic_min_active_partitions": "0"},
 			wantErr: `invalid topic_min_active_partitions "0": takes a count of at least 1 .*`},
@@ -145,6 +145,8 @@ func TestParseConsumer_FailurePath(t *testing.T) {
 	}
 }
 
+// TestSeconds_HappyPath reads an interval in YDB's grammar, which
+// ydbttl.IntervalSeconds holds, in any case.
 func TestSeconds_HappyPath(t *testing.T) {
 	tests := []struct {
 		text string
@@ -152,10 +154,8 @@ func TestSeconds_HappyPath(t *testing.T) {
 	}{
 		{text: "PT1S", want: 1},
 		{text: "PT90M", want: 5400},
-		{text: "PT12H", want: 43200},
-		{text: "P1D", want: 86400},
-		{text: "P1W", want: 604800},
 		{text: "P1DT2H30M5S", want: 95405},
+		{text: "P2W3D", want: 17 * 86400},
 		{text: "pt12h", want: 43200},
 	}
 	for _, test := range tests {
@@ -168,21 +168,16 @@ func TestSeconds_HappyPath(t *testing.T) {
 	}
 }
 
+// TestSeconds_FailurePath refuses what ydbttl.IntervalSeconds refuses, and an
+// interval of no length, which a TTL takes and a changefeed does not.
 func TestSeconds_FailurePath(t *testing.T) {
 	tests := []struct {
 		text    string
 		wantErr string
 	}{
-		{text: "", wantErr: `takes an ISO 8601 duration such as PT12H or P1D`},
-		{text: "12h", wantErr: `takes an ISO 8601 duration such as PT12H or P1D`},
-		{text: "P1M", wantErr: `takes no "M" designator here: .*`},
-		{text: "P1Y", wantErr: `takes no "Y" designator here: .*`},
-		{text: "PT", wantErr: `takes an ISO 8601 duration with a time after T`},
-		{text: "PT0S", wantErr: `is no time at all, and YDB takes only a positive interval`},
-		{text: "PT0.5S", wantErr: `YDB keeps whole seconds, and drops the fraction of this one`},
-		{text: "P2W1D", wantErr: `takes weeks alone, as ISO 8601 writes them: P2W, not P2W1D`},
-		{text: "PT1H1H", wantErr: `names the designator "H" twice`},
-		{text: "PT12", wantErr: `takes a designator after every number, as in PT12H`},
+		{text: "PT0S", wantErr: `interval "PT0S" is no time at all, and YDB takes only a positive interval`},
+		{text: "PT0.5S", wantErr: `interval "PT0.5S" has a fraction of a second, .*`},
+		{text: "P1M", wantErr: `interval "P1M" is not an ISO 8601 duration YDB takes .*`},
 	}
 	for _, test := range tests {
 		t.Run(test.text, func(t *testing.T) {
@@ -190,26 +185,6 @@ func TestSeconds_FailurePath(t *testing.T) {
 			got, err := ydbchangefeed.Seconds(test.text)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(got, qt.Equals, uint64(0))
-		})
-	}
-}
-
-func TestFormatSeconds(t *testing.T) {
-	tests := []struct {
-		seconds uint64
-		want    string
-	}{
-		{seconds: 0, want: "PT0S"},
-		{seconds: 1, want: "PT1S"},
-		{seconds: 5400, want: "PT1H30M"},
-		{seconds: 86400, want: "P1D"},
-		{seconds: 95405, want: "P1DT2H30M5S"},
-		{seconds: 2678400, want: "P31D"},
-	}
-	for _, test := range tests {
-		t.Run(test.want, func(t *testing.T) {
-			c := qt.New(t)
-			c.Assert(ydbchangefeed.FormatSeconds(test.seconds), qt.Equals, test.want)
 		})
 	}
 }
@@ -300,7 +275,7 @@ func TestCheck_RefusesWhatYDBRefusesEverywhere(t *testing.T) {
 		{name: "a slash in the name", spec: ast.ChangefeedSpec{Name: "a/b", Mode: "UPDATES", Format: "JSON"},
 			wantReason: "a changefeed needs a name without a slash .*"},
 		{name: "a fractional retention", spec: ast.ChangefeedSpec{Name: "f", Mode: "UPDATES", Format: "JSON",
-			RetentionPeriod: "PT1.5S"}, wantReason: `its retention_period "PT1.5S": YDB keeps whole seconds.*`},
+			RetentionPeriod: "PT1.5S"}, wantReason: `its retention_period "PT1.5S": interval "PT1.5S" has a fraction of a second, .*`},
 		{name: "two consumers of one name", spec: ast.ChangefeedSpec{Name: "f", Mode: "UPDATES", Format: "JSON",
 			Consumers: []ast.TopicConsumerSpec{{Name: "c"}, {Name: "c"}}},
 			wantReason: `two of its consumers are named "c", .*`},

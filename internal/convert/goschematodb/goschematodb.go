@@ -132,6 +132,10 @@ func toDBTables(
 			// A declaration compared as the current side of a file-to-file
 			// comparison carries its changefeeds as a database would.
 			Changefeeds: ast.CloneChangefeeds(table.Changefeeds),
+			// A database built from the document carries the policy it
+			// declares, so a file-to-file comparison of one document against
+			// itself has nothing to plan for it.
+			RowDeletionPolicy: table.RowDeletionPolicy.Clone(),
 		})
 	}
 	return out

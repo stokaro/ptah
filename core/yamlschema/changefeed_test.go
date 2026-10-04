@@ -63,7 +63,7 @@ func TestParse_YDBChangefeed_FailurePath(t *testing.T) {
 		{name: "no format", changefeed: "mode: UPDATES",
 			wantErr: `table "items": changefeed "feed": invalid format "": takes one of JSON, DEBEZIUM_JSON`},
 		{name: "an empty retention", changefeed: "mode: UPDATES\n        format: JSON\n        retention_period: ''",
-			wantErr: `table "items": changefeed "feed": invalid retention_period "": takes an ISO 8601 duration .*`},
+			wantErr: `table "items": changefeed "feed": invalid retention_period "": interval "" is not an ISO 8601 duration YDB takes .*`},
 		{name: "a consumer of both kinds", changefeed: "mode: UPDATES\n        format: JSON\n        consumers:\n" +
 			"          c:\n            important: true\n            availability_period: PT1H",
 			wantErr: `table "items": changefeed "feed": consumer "c": invalid availability_period "PT1H": .*`},

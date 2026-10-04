@@ -13,6 +13,7 @@ import (
 	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbgap"
 	"ptah.run/internal/ydbsequence"
+	"ptah.run/internal/ydbttl"
 	"ptah.run/internal/ydbtype"
 )
 
@@ -67,6 +68,10 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	if err := checkKeyTypes(node.Name, keyColumns, columnTypes); err != nil {
 		return err
 	}
+	settings, err := r.tableSettings(node, columnTypes)
+	if err != nil {
+		return err
+	}
 	quotedKey := make([]string, 0, len(keyColumns))
 	for _, column := range keyColumns {
 		quotedKey = append(quotedKey, quote(column))
@@ -104,11 +109,14 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	}
 	r.w.WriteLinef("CREATE TABLE%s %s (", guard, tablePath(node.Name))
 	r.w.WriteLine("    " + strings.Join(lines, ",\n    "))
-	if custom := strings.TrimSpace(node.CustomSQL); custom != "" {
-		r.w.WriteLinef(") %s;", custom)
-	} else {
-		r.w.WriteLine(");")
+	closing := ")"
+	if len(settings) > 0 {
+		closing += " WITH (" + strings.Join(settings, ", ") + ")"
 	}
+	if custom := strings.TrimSpace(node.CustomSQL); custom != "" {
+		closing += " " + custom
+	}
+	r.w.WriteLine(closing + ";")
 	for _, statement := range partitioning {
 		r.w.WriteLine(statement)
 	}
@@ -190,8 +198,6 @@ func (r *Renderer) refuseTableDeclarations(node *ast.CreateTableNode) error {
 			"which is a table setting rather than a clause")
 	case node.RowTTL != nil:
 		return r.keyed(capability.RowLevelTTL, "row-level TTL", "the row-level TTL on "+subject)
-	case !node.RowDeletionPolicy.IsZero():
-		return refuseGap(ydbgap.TableSettings, "the row deletion policy on "+subject)
 	}
 	var dropped map[string]string
 	// Sorted, so that of two options YDB cannot carry the refusal names the
@@ -209,6 +215,52 @@ func (r *Renderer) refuseTableDeclarations(node *ast.CreateTableNode) error {
 	}
 	r.sink.RecordDroppedTableOptions(node.Name, dropped)
 	return r.refuseTableConstraints(node)
+}
+
+// tableSettings writes the settings the table's WITH clause carries: its TTL,
+// from the row deletion policy. The policy's column has to be one the table
+// declares, of a type YDB reads a TTL from; see [ydbttl.ColumnRefusal].
+func (r *Renderer) tableSettings(node *ast.CreateTableNode, columnTypes map[string]string) ([]string, error) {
+	policy := node.RowDeletionPolicy
+	if policy.IsZero() {
+		return nil, nil
+	}
+	subject := fmt.Sprintf("the row deletion policy of table %q", node.Name)
+	setting, err := r.ttlSetting(subject, policy)
+	if err != nil {
+		return nil, err
+	}
+	ydbType, declared := columnTypes[policy.Column]
+	if !declared {
+		return nil, refuseFact(subject, fmt.Sprintf("it reads column %q, which the table does not declare "+
+			"(`Cannot enable TTL on unknown column`)", policy.Column))
+	}
+	unit, err := ydbttl.Unit(policy.Unit)
+	if err != nil {
+		return nil, refuseFact(subject, err.Error())
+	}
+	if reason := ydbttl.ColumnRefusal(policy.Column, ydbType, unit); reason != "" {
+		return nil, refuseFact(subject, reason)
+	}
+	return []string{"TTL = " + setting}, nil
+}
+
+// ttlSetting writes a row deletion policy as the value of YDB's TTL setting,
+// refusing an integer column's unit on a target without
+// [capability.RowDeletionPolicyEpochColumn], and an interval or unit YDB
+// would refuse or keep as something else.
+func (r *Renderer) ttlSetting(subject string, policy *ast.RowDeletionPolicySpec) (string, error) {
+	if !r.caps.Has(capability.RowDeletionPolicy) {
+		return "", refuseKey(capability.RowDeletionPolicy, subject)
+	}
+	if strings.TrimSpace(policy.Unit) != "" && !r.caps.Has(capability.RowDeletionPolicyEpochColumn) {
+		return "", refuseKey(capability.RowDeletionPolicyEpochColumn, subject+" reads an integer column counting "+policy.Unit)
+	}
+	setting, err := ydbttl.Setting(policy, quote)
+	if err != nil {
+		return "", refuseFact(subject, err.Error())
+	}
+	return setting, nil
 }
 
 // refuseTableConstraints refuses every table constraint but the key. YDB has

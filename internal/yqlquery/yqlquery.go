@@ -97,6 +97,10 @@ type Query struct {
 	// from each one's first token through its semicolon, one per line. It
 	// is what a digest of the query covers.
 	Source string
+	// Mixed reports that YDB refuses the query whole: it is a block or an
+	// action call that runs a scheme statement and a statement that reads or
+	// writes a table (see [Reader.Mixed]). Only a [Scheme] query can be one.
+	Mixed bool
 }
 
 // ErrTranslationSetting is returned for a translation setting other than
@@ -170,13 +174,15 @@ type splitter struct {
 // statements and their source.
 type draft struct {
 	kind       Kind
+	mixed      bool
 	prefix     []string
 	statements []string
 	source     string
 }
 
 func (s *splitter) add(statement, source string) {
-	switch kind := s.reader.read(statement).kind; kind {
+	read := s.reader.read(statement)
+	switch kind := read.kind; kind {
 	case definition:
 		s.carried = append(s.carried, statement)
 		if s.open != nil {
@@ -189,6 +195,7 @@ func (s *splitter) add(statement, source string) {
 	case Scheme, Batch:
 		s.close()
 		query := s.start(kind)
+		query.mixed = read.mixed
 		query.statements = append(query.statements, statement)
 		query.source = joinSource(query.source, source)
 		s.drafts = append(s.drafts, query)
@@ -245,6 +252,7 @@ func (s *splitter) finish() []Query {
 			Text:       s.header + strings.Join(parts, ";\n"),
 			Statements: query.statements,
 			Source:     query.source,
+			Mixed:      query.mixed,
 		})
 	}
 	return queries

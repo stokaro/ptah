@@ -14,7 +14,7 @@ import (
 	"ptah.run/internal/crdbttl"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/objectidentity"
-	"ptah.run/internal/spannerttl"
+	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/tableref"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -351,14 +351,16 @@ func rowTTLChange(desired, current *ast.RowTTLSpec) *difftypes.RowTTLChange {
 // Equality is NOT exact here, and that is the difference from rowTTLChange
 // above. The server rewrites the interval it stores -- measured against the
 // Cloud Spanner emulator behind PGAdapter 0.55.2, `INTERVAL '30 days'` reads
-// back as `INTERVAL '4 WEEKS 2 DAYS'` -- so comparing the two as text would
+// back as `INTERVAL '4 WEEKS 2 DAYS'`, and YDB keeps a whole number of seconds,
+// so `PT720H` reads back as `P30D` -- so comparing the two as text would
 // report a difference between a database and its own description, forever.
-// [ptah.run/internal/spannerttl] owns that comparison (stokaro/ptah#2236).
+// [ptah.run/internal/rowdeletion] owns that comparison, and reads each
+// engine's spelling as that engine does (stokaro/ptah#2236).
 func rowDeletionPolicyChange(
 	desired, current *ast.RowDeletionPolicySpec,
 	semantics identifier.Semantics,
 ) *difftypes.RowDeletionPolicyChange {
-	if spannerttl.Equal(desired, current, semantics.ColumnIdentityKey) {
+	if rowdeletion.Equal(desired, current, semantics.ColumnIdentityKey) {
 		return nil
 	}
 	return &difftypes.RowDeletionPolicyChange{Desired: desired.Clone(), Current: current.Clone()}

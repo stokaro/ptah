@@ -45,7 +45,8 @@ const (
 	Comments
 	// AccessControl is users, groups, membership and permissions.
 	AccessControl
-	// TableSettings is a table's YDB settings: TTL, partitioning and column
+	// TableSettings is a table's YDB settings beyond its TTL, which is its
+	// row deletion policy, and its changefeeds: partitioning and column
 	// families.
 	TableSettings
 	// IndexFamilies is the index kinds beyond a row table's global indexes:
@@ -81,7 +82,7 @@ func (l Layer) work() string {
 	case AccessControl:
 		return "managing YDB users, groups and permissions"
 	case TableSettings:
-		return "setting YDB table options (TTL, partitioning, column families)"
+		return "setting YDB table options (partitioning, column families)"
 	case IndexFamilies:
 		return "reading or creating a YDB vector, full-text, JSON or column-table index"
 	case Inference:
@@ -122,7 +123,7 @@ func (l Layer) Unsupported() string {
 	case AccessControl:
 		return "users, groups and permissions"
 	case TableSettings:
-		return "a table's own settings: TTL, partitioning and column families"
+		return "a table's own settings: partitioning and column families"
 	case IndexFamilies:
 		return "vector, full-text, JSON and column-table indexes"
 	case Inference:

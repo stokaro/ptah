@@ -185,6 +185,9 @@ Maps a Go struct to a database table.
 | `primary_key` | No | Comma-separated primary key columns. |
 | `primary_key_block_size` | No | MySQL-family primary index block-size hint. Zero uses the engine default. |
 | `primary_key_comment` | No | MySQL-family primary index comment. |
+| `row_deletion_column` | No | Row deletion policy (Spanner and YDB TTL): the column a row's age is measured from. Needs `row_deletion_interval`. |
+| `row_deletion_interval` | No | Row deletion policy: how long after the column's time a row is deleted, such as `P30D` on YDB or `30 days` on Spanner. |
+| `row_deletion_unit` | No | YDB TTL on an integer column: what the column counts since the Unix epoch, `SECONDS`, `MILLISECONDS`, `MICROSECONDS` or `NANOSECONDS`. |
 | `schema` | No | Database schema name. |
 | `ttl_delete_batch_size` | No | CockroachDB row-level TTL: rows deleted per batch; at least 1. |
 | `ttl_delete_rate_limit` | No | CockroachDB row-level TTL: rows deleted per second; at least 1. |
@@ -210,6 +213,11 @@ real CockroachDB parameter is deliberately absent — `ttl_row_stats_poll_interv
 second entirely, so a declaration could never read back as written; declaring it
 is refused by name with the reason.
 See [CockroachDB row-level TTL](../../databases/distributed/#cockroachdb-row-level-ttl).
+
+The `row_deletion_` attributes declare a row deletion policy, which Spanner and
+YDB have and every other target refuses. A policy needs its column and its
+interval, and each engine reads the interval in its own spelling. See
+[YDB TTL](../../databases/ydb/#ttl).
 
 Platform overrides: yes.
 

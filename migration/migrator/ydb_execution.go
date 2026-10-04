@@ -75,13 +75,19 @@ func sourceStatementsForDialect(sqlText, dialect string) []sqlutil.SourceStateme
 }
 
 // refuseUnsplittableSQL refuses a YDB body the migrator cannot split the way
-// YDB reads it, or one holding a statement that controls a transaction. Every
-// other dialect passes.
+// YDB reads it, one holding a statement that controls a transaction, and one
+// holding a query YDB refuses whole. Every other dialect passes.
 //
 // YQL refuses COMMIT inside a query (`COMMIT not supported inside YDB
 // query`, measured on 26.2.1.14), and the migrator decides where each
 // transaction begins and ends, so a body that names one is refused here,
 // before its first query, rather than by the server halfway through.
+//
+// A block or an action call that runs a scheme statement and a statement that
+// reads or writes a table is refused by YDB whole (`Queries with mixed data and
+// scheme operations are not supported`; see [yqlquery.Reader.Mixed]). A scheme
+// statement runs outside any transaction, so the queries before such a block
+// would stay applied when it fails; it is refused here, before any of them.
 func refuseUnsplittableSQL(dialect, sqlText string) error {
 	if platform.NormalizeDialect(dialect) != platform.YDB {
 		return nil
@@ -91,6 +97,11 @@ func refuseUnsplittableSQL(dialect, sqlText string) error {
 		return err
 	}
 	for _, query := range queries {
+		if query.Mixed {
+			return fmt.Errorf("%q runs a scheme statement and a statement that reads or writes a table in one "+
+				"query, which YDB refuses whole (Queries with mixed data and scheme operations are not supported); "+
+				"move the scheme statement out of the block or action into a statement of its own", query.Source)
+		}
 		for _, statement := range query.Statements {
 			if isTransactionControlStatement(statement, platform.YDB) {
 				return fmt.Errorf("%q controls a transaction, and on YDB the migrator runs each data query "+

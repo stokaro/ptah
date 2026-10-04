@@ -280,6 +280,28 @@ func TestSplit_SourcesCoverEveryStatementOnce(t *testing.T) {
 	})
 }
 
+// A query YDB refuses whole is marked as one, and its neighbors are not: the
+// mark is the one Reader.Mixed answers for the statement, read with the
+// actions the text defined above it.
+func TestSplit_MarksAMixedQuery(t *testing.T) {
+	c := qt.New(t)
+	text := "CREATE TABLE m (id Int64 NOT NULL, PRIMARY KEY (id));\n" +
+		"DEFINE ACTION $a() AS UPSERT INTO t (id) VALUES (5l); CREATE TABLE n (id Int64 NOT NULL, PRIMARY KEY (id)); END DEFINE;\n" +
+		"UPSERT INTO t (id) VALUES (1l);\n" +
+		"DO $a();\n" +
+		"DO BEGIN CREATE TABLE o (id Int64 NOT NULL, PRIMARY KEY (id)); END DO;\n" +
+		"EVALUATE FOR $i IN AsList(7, 8) DO BEGIN UPSERT INTO t (id) VALUES ($i); DROP TABLE m; END DO;"
+
+	queries, err := yqlquery.Split(text)
+
+	c.Assert(err, qt.IsNil)
+	mixed := make([]bool, 0, len(queries))
+	for _, query := range queries {
+		mixed = append(mixed, query.Mixed)
+	}
+	c.Assert(mixed, qt.DeepEquals, []bool{false, false, true, false, true})
+}
+
 func TestSplit_FailurePath(t *testing.T) {
 	tests := []struct {
 		name     string

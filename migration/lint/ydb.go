@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 
 	"ptah.run/core/platform"
@@ -23,13 +24,13 @@ import (
 // it runs, which the server decides the same way in either direction, so each
 // one reads the down half of a migration as well.
 //
-// YD104 and YD106 need to know what the table looks like before the
+// YD104, YD105 and YD106 need to know what the table looks like before the
 // statement: whether an index uses a column, which column the TTL reads,
-// which views read a table. They read that state from the directory itself,
-// whether or not the run has a dev database: the up migrations before the
-// analyzed version, in version order, then the statements of the file before
-// the one analyzed. A table created outside the directory is unknown to it,
-// and an unknown table reports nothing.
+// what its minimum partition count is, which views read a table. They read
+// that state from the directory itself, whether or not the run has a dev
+// database: the up migrations before the analyzed version, in version order,
+// then the statements of the file before the one analyzed. A table created
+// outside the directory is unknown to it, and an unknown table reports nothing.
 //
 // A run that names no dialect runs every rule, YD included, and reads the
 // text with the hybrid lexer, which does not read YQL, against a target that
@@ -263,42 +264,139 @@ func ydbDropUsedColumnRule() Rule {
 //	SET (..._BY_LOAD = DISABLED), or a size or maximum setting      minimum 4
 //
 // With the minimum at 1, YDB may merge the table down to one partition. A
-// table whose minimum was 1 loses nothing, which the statement cannot say, so
-// the rule warns.
+// table whose minimum was 1 already loses nothing, so the rule stays silent
+// where the directory's own history says so (see [ydbTable.minPartitions]),
+// and warns where it does not know.
 func ydbPartitionMinimumResetRule() Rule {
 	return Rule{
-		Code:          "YD105",
-		Title:         "partitioning change resets the minimum partition count",
-		Severity:      SeverityWarning,
-		Dialects:      ydbOnly,
-		AppliesToDown: true,
-		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !ydbRun(stmt.Target) {
-				return false, ""
+		Code:     "YD105",
+		Title:    "partitioning change resets the minimum partition count",
+		Severity: SeverityWarning,
+		Dialects: ydbOnly,
+		CheckFile: func(file *File) []Finding {
+			if !ydbRun(file.Target) {
+				return nil
 			}
-			read := yqlddl.Read(stmt.SQL)
-			if read.Kind != yqlddl.AlterTable {
-				return false, ""
-			}
-			enabled := ""
-			for _, setting := range settingsSet(read) {
-				switch {
-				case setting.Name == ydbMinPartitions:
-					return false, ""
-				case enabled == "" && setting.Value == "ENABLED" &&
-					(setting.Name == "AUTO_PARTITIONING_BY_SIZE" || setting.Name == "AUTO_PARTITIONING_BY_LOAD"):
-					enabled = setting.Name
+			state := file.ydbBefore.clone()
+			var findings []Finding
+			for i := range file.Statements {
+				stmt := &file.Statements[i]
+				read := yqlddl.Read(stmt.SQL)
+				if message, resets := partitionMinimumReset(read, state.table(read.Name)); resets {
+					findings = append(findings, Finding{
+						Rule:     "YD105",
+						Title:    "partitioning change resets the minimum partition count",
+						Severity: SeverityWarning,
+						File:     file.Path,
+						Line:     stmt.Line,
+						Message:  message,
+						Context:  statementFindingContext(i, Subject{Kind: SubjectTable, Name: read.Name}),
+					})
 				}
+				state.apply(read)
 			}
-			if enabled == "" {
-				return false, ""
-			}
-			return true, fmt.Sprintf(
-				"setting %s = ENABLED resets %s of %s to 1, so YDB may merge its partitions down to one; "+
-					"set %s in the same ALTER TABLE to keep it",
-				enabled, ydbMinPartitions, read.Name, ydbMinPartitions)
+			return findings
 		},
 	}
+}
+
+// partitionMinimumReset says why an ALTER TABLE of table resets its minimum
+// partition count to 1, and reports whether it does. A table already at a
+// minimum of 1 has nothing to lose.
+func partitionMinimumReset(read yqlddl.Statement, table ydbTable) (string, bool) {
+	if read.Kind != yqlddl.AlterTable || (table.minKnown && table.minPartitions == 1) {
+		return "", false
+	}
+	enabled := ""
+	for _, setting := range settingsSet(read) {
+		switch {
+		case setting.Name == ydbMinPartitions:
+			return "", false
+		case enabled == "" && setting.Value == "ENABLED" &&
+			(setting.Name == "AUTO_PARTITIONING_BY_SIZE" || setting.Name == "AUTO_PARTITIONING_BY_LOAD"):
+			enabled = setting.Name
+		}
+	}
+	if enabled == "" {
+		return "", false
+	}
+	return fmt.Sprintf(
+		"setting %s = ENABLED resets %s of %s to 1, so YDB may merge its partitions down to one; "+
+			"set %s in the same ALTER TABLE to keep it",
+		enabled, ydbMinPartitions, read.Name, ydbMinPartitions), true
+}
+
+// createdMinPartitions is the minimum partition count a CREATE TABLE leaves,
+// and whether it is known. Measured on 26.2.1.14 and 25.1.4.7: a table
+// created with no partitioning setting, or with AUTO_PARTITIONING_BY_SIZE or
+// _BY_LOAD alone, has a minimum of 1; UNIFORM_PARTITIONS = 4 leaves 4, also
+// beside AUTO_PARTITIONING_BY_SIZE = ENABLED in either order;
+// PARTITION_AT_KEYS with two split points leaves 3, and with three composite
+// ones 4; and AUTO_PARTITIONING_MIN_PARTITIONS_COUNT wins over either, so
+// UNIFORM_PARTITIONS = 4 with a minimum of 2 leaves 2. A value the reader
+// cannot read, or both kinds of split together, leaves it unknown.
+func createdMinPartitions(settings []yqlddl.Setting) (int, bool) {
+	var explicit, uniform, atKeys int
+	for _, setting := range settings {
+		switch setting.Name {
+		case ydbMinPartitions:
+			value, ok := partitionCount(setting)
+			if !ok {
+				return 0, false
+			}
+			explicit = value
+		case "UNIFORM_PARTITIONS":
+			value, ok := partitionCount(setting)
+			if !ok {
+				return 0, false
+			}
+			uniform = value
+		case "PARTITION_AT_KEYS":
+			if setting.Items == 0 {
+				return 0, false
+			}
+			atKeys = setting.Items + 1
+		}
+	}
+	switch {
+	case explicit > 0:
+		return explicit, true
+	case uniform > 0 && atKeys > 0:
+		return 0, false
+	case uniform > 0:
+		return uniform, true
+	case atKeys > 0:
+		return atKeys, true
+	default:
+		return 1, true
+	}
+}
+
+// partitionCount reads a setting whose value is a count of partitions.
+func partitionCount(setting yqlddl.Setting) (int, bool) {
+	value, err := strconv.Atoi(setting.Value)
+	return value, err == nil && value > 0
+}
+
+// alteredMinPartitions is the minimum partition count an ALTER TABLE leaves
+// on table: the count it sets, wherever in the statement; 1 when it turns
+// auto partitioning by size or by load on without one; and the table's own
+// otherwise. YDB refuses RESET (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT) and
+// a change of UNIFORM_PARTITIONS, measured on both lines.
+func alteredMinPartitions(read yqlddl.Statement, table ydbTable) (int, bool) {
+	settings := settingsSet(read)
+	for _, setting := range settings {
+		if setting.Name == ydbMinPartitions {
+			return partitionCount(setting)
+		}
+	}
+	for _, setting := range settings {
+		if setting.Value == "ENABLED" &&
+			(setting.Name == "AUTO_PARTITIONING_BY_SIZE" || setting.Name == "AUTO_PARTITIONING_BY_LOAD") {
+			return 1, true
+		}
+	}
+	return table.minPartitions, table.minKnown
 }
 
 // missingRequirement returns the first action of a statement that needs key,
@@ -330,42 +428,61 @@ func settingsSet(read yqlddl.Statement) []yqlddl.Setting {
 	return settings
 }
 
-// ydbViewOrphanedRule reports a DROP TABLE of a table a view reads. YDB drops
-// the table and keeps the view, and every read of the view then fails.
-// Measured on 26.2.1.14 and 25.1.4.7: after `CREATE VIEW vv WITH
-// (security_invoker = TRUE) AS SELECT id FROM vbase`, `DROP TABLE vbase`
-// succeeds, and `SELECT * FROM vv` answers `Cannot find table
-// 'db.[/local/vbase]' because it does not exist`.
+// ydbViewOrphanedRule reports a DROP TABLE of a table a view reads, and an
+// ALTER TABLE ... RENAME TO of one. A view reads its table by path when it is
+// read, so YDB keeps a view whose table is dropped or moved, and every read of
+// the view then fails. Measured on 26.2.1.14 and 25.1.4.7: after `CREATE VIEW
+// vv WITH (security_invoker = TRUE) AS SELECT id FROM vbase`, `DROP TABLE
+// vbase` succeeds, and `SELECT * FROM vv` answers `Cannot find table
+// 'db.[/local/vbase]' because it does not exist`. After `ALTER TABLE vbase
+// RENAME TO vmoved` the read answers the same, and renaming the table back
+// makes the view read it again.
+//
+// The renames of a table rebuild are left out (see [fileRebuilds]): the copy
+// takes the table's name back in the next statement, and the view reads it.
 func ydbViewOrphanedRule() Rule {
 	return Rule{
 		Code:     "YD106",
-		Title:    "table dropped while a view reads it",
+		Title:    "table dropped or renamed while a view reads it",
 		Severity: SeverityError,
 		Dialects: ydbOnly,
 		CheckFile: func(file *File) []Finding {
 			if !ydbRun(file.Target) {
 				return nil
 			}
+			rebuilds := fileRebuilds(file)
 			state := file.ydbBefore.clone()
 			var findings []Finding
 			for i := range file.Statements {
 				stmt := &file.Statements[i]
 				read := yqlddl.Read(stmt.SQL)
-				if read.Kind == yqlddl.DropTable {
-					if views := state.viewsReading(read.Name); len(views) > 0 {
-						findings = append(findings, Finding{
-							Rule:     "YD106",
-							Title:    "table dropped while a view reads it",
-							Severity: SeverityError,
-							File:     file.Path,
-							Line:     stmt.Line,
-							Message: fmt.Sprintf(
-								"DROP TABLE %s leaves %s reading a table that does not exist: YDB keeps a view whose table is dropped, "+
-									"and every read of it fails; drop or recreate %s first",
-								read.Name, viewList(views), pronounFor(views)),
-							Context: statementFindingContext(i, Subject{Kind: SubjectTable, Name: read.Name}),
-						})
+				views := state.viewsReading(read.Name)
+				var message string
+				switch {
+				case len(views) == 0:
+				case read.Kind == yqlddl.DropTable:
+					message = fmt.Sprintf(
+						"DROP TABLE %s leaves %s reading a table that does not exist: YDB keeps a view whose table is dropped, "+
+							"and every read of it fails; drop or recreate %s first",
+						read.Name, viewList(views), pronounFor(views))
+				case read.Kind == yqlddl.AlterTable && !rebuilds.renames[i]:
+					if newName, renamed := tableRenamedTo(read); renamed {
+						message = fmt.Sprintf(
+							"ALTER TABLE %s RENAME TO %s leaves %s reading a table that does not exist: a view reads its table "+
+								"by path, so every read of it fails until a table takes the name %s again; recreate %s over %s",
+							read.Name, newName, viewList(views), read.Name, pronounFor(views), newName)
 					}
+				}
+				if message != "" {
+					findings = append(findings, Finding{
+						Rule:     "YD106",
+						Title:    "table dropped or renamed while a view reads it",
+						Severity: SeverityError,
+						File:     file.Path,
+						Line:     stmt.Line,
+						Message:  message,
+						Context:  statementFindingContext(i, Subject{Kind: SubjectTable, Name: read.Name}),
+					})
 				}
 				state.apply(read)
 			}
@@ -436,6 +553,17 @@ func changefeedList(changefeeds []string) string {
 	return "changefeeds " + strings.Join(changefeeds, ", ")
 }
 
+// tableRenamedTo returns the name an ALTER TABLE moves its table to, and reports
+// whether it renames it.
+func tableRenamedTo(read yqlddl.Statement) (string, bool) {
+	for _, action := range read.Actions {
+		if action.Kind == yqlddl.RenameTable && action.NewName != "" {
+			return action.NewName, true
+		}
+	}
+	return "", false
+}
+
 func viewList(views []string) string {
 	if len(views) == 1 {
 		return "view " + views[0]
@@ -463,6 +591,15 @@ type ydbTable struct {
 	indexes []yqlddl.Index
 	// ttl is the column the TTL reads, empty when the table has none.
 	ttl string
+	// columns are the table's columns, in order, when columnsKnown: a table
+	// the directory created has them all, and one it only altered does not.
+	columns      []string
+	columnsKnown bool
+	// minPartitions is the table's AUTO_PARTITIONING_MIN_PARTITIONS_COUNT
+	// when minKnown: set by the CREATE TABLE the directory ran, or by an
+	// ALTER TABLE that sets the count or resets it.
+	minPartitions int
+	minKnown      bool
 	// serials are the YDB types of the table's Serial columns, by column:
 	// Serial, BigSerial or SmallSerial, whichever alias the CREATE TABLE
 	// wrote.
@@ -481,10 +618,10 @@ func (s *ydbSchema) clone() *ydbSchema {
 	}
 	for name, table := range s.tables {
 		cloned.tables[name] = ydbTable{
-			indexes:     slices.Clone(table.indexes),
-			ttl:         table.ttl,
-			serials:     maps.Clone(table.serials),
-			restarts:    maps.Clone(table.restarts),
+			indexes: slices.Clone(table.indexes), ttl: table.ttl,
+			columns: slices.Clone(table.columns), columnsKnown: table.columnsKnown,
+			minPartitions: table.minPartitions, minKnown: table.minKnown,
+			serials: maps.Clone(table.serials), restarts: maps.Clone(table.restarts),
 			changefeeds: slices.Clone(table.changefeeds),
 		}
 	}
@@ -526,12 +663,21 @@ func (s *ydbSchema) apply(read yqlddl.Statement) {
 		if _, exists := s.tables[read.Name]; exists && read.IfExists {
 			return
 		}
-		s.tables[read.Name] = ydbTable{indexes: slices.Clone(read.Indexes), ttl: read.TTLColumn, serials: serialColumns(read)}
+		columns := make([]string, 0, len(read.Columns))
+		for _, column := range read.Columns {
+			columns = append(columns, column.Name)
+		}
+		minimum, minKnown := createdMinPartitions(read.Settings)
+		s.tables[read.Name] = ydbTable{
+			indexes: slices.Clone(read.Indexes), ttl: read.TTLColumn, columns: columns, columnsKnown: true,
+			minPartitions: minimum, minKnown: minKnown, serials: serialColumns(read),
+		}
 	case yqlddl.AlterTable:
 		table := s.table(read.Name)
 		for _, action := range read.Actions {
 			table = table.applyAction(action)
 		}
+		table.minPartitions, table.minKnown = alteredMinPartitions(read, table)
 		s.store(read, table)
 	case yqlddl.DropTable:
 		delete(s.tables, read.Name)
@@ -722,6 +868,10 @@ func (s *ydbSchema) viewsReading(table string) []string {
 func (t ydbTable) applyAction(action yqlddl.Action) ydbTable {
 	indexes := slices.Clone(t.indexes)
 	switch action.Kind {
+	case yqlddl.AddColumn:
+		t.columns = append(slices.Clone(t.columns), action.Column.Name)
+	case yqlddl.DropColumn:
+		t.columns = slices.DeleteFunc(slices.Clone(t.columns), func(name string) bool { return name == action.Column.Name })
 	case yqlddl.AddIndex:
 		indexes = slices.DeleteFunc(indexes, func(index yqlddl.Index) bool { return index.Name == action.Index.Name })
 		indexes = append(indexes, action.Index)

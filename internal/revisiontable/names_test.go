@@ -28,9 +28,9 @@ func TestSQLNamesMatchTheNameLists(t *testing.T) {
 	c.Assert(revisiontable.DefaultSQLNames, qt.Equals, sqlLiterals(revisiontable.DefaultNames()))
 }
 
-// TestIsNative answers for Ptah's own tables under their default names and
-// for nothing else, the Atlas revision table included: the community binary
-// lists that one from `schema inspect`.
+// TestIsNative answers for Ptah's own tables under their default names, the
+// tags table included, and for nothing else, the Atlas revision table
+// included: the community binary lists that one from `schema inspect`.
 func TestIsNative(t *testing.T) {
 	tests := []struct {
 		name string
@@ -38,6 +38,7 @@ func TestIsNative(t *testing.T) {
 	}{
 		{name: "schema_migrations", want: true},
 		{name: "schema_migrations_log", want: true},
+		{name: "ptah_migration_tags", want: true},
 		{name: "atlas_schema_revisions", want: false},
 		{name: "custom_revs", want: false},
 		{name: "SCHEMA_MIGRATIONS", want: false},
@@ -59,6 +60,7 @@ func TestIsDefault(t *testing.T) {
 		{name: "schema_migrations", want: true},
 		{name: "schema_migrations_log", want: true},
 		{name: "atlas_schema_revisions", want: true},
+		{name: "ptah_migration_tags", want: true},
 		{name: "custom_revs", want: false},
 	}
 	for _, test := range tests {

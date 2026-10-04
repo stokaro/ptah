@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-422 fields are reachable from the desired schema, and each one carries
+423 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 361 | reaches rendered SQL on at least one target |
+| `ddl` | 362 | reaches rendered SQL on at least one target |
 | `comparison` | 7 | read when two schemas are compared, and written into no statement |
 | `planning` | 7 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -92,6 +92,7 @@ None.
 | `ast.MatViewRefreshSpec.Randomize` | `ddl` | — |
 | `ast.RowDeletionPolicySpec.Column` | `ddl` | — |
 | `ast.RowDeletionPolicySpec.Interval` | `ddl` | — |
+| `ast.RowDeletionPolicySpec.Unit` | `ddl` | — |
 | `ast.RowTTLSpec.DeleteBatchSize` | `ddl` | — |
 | `ast.RowTTLSpec.DeleteRateLimit` | `ddl` | — |
 | `ast.RowTTLSpec.DisableChangefeedReplication` | `ddl` | — |

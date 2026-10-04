@@ -93,6 +93,16 @@ func TestRefuseUnsplittableSQL_FailurePath(t *testing.T) {
 			wantErr: `unsupported YQL translation setting "--!ansi_lexer": .*`},
 		{name: "a commit inside a data run", body: "UPSERT INTO `t` (id) VALUES (1l);\nCOMMIT;\nUPSERT INTO `t` (id) VALUES (2l);",
 			wantErr: `"COMMIT" controls a transaction, and on YDB the migrator runs each data query in a transaction of its own; remove it`},
+		{name: "a block that writes and creates, after a scheme statement",
+			body: "CREATE TABLE `t` (id Int64 NOT NULL, PRIMARY KEY (id));\n" +
+				"DO BEGIN UPSERT INTO `t` (id) VALUES (1l); CREATE TABLE `m` (id Int64 NOT NULL, PRIMARY KEY (id)); END DO;",
+			wantErr: `"DO BEGIN UPSERT INTO .t. \(id\) VALUES \(1l\); CREATE TABLE .m. .*END DO;" runs a scheme statement and a ` +
+				`statement that reads or writes a table in one query, which YDB refuses whole \(Queries with mixed data and ` +
+				`scheme operations are not supported\); move the scheme statement out of the block or action into a ` +
+				`statement of its own`},
+		{name: "a call of an action that writes and drops",
+			body:    "DEFINE ACTION $a() AS UPSERT INTO `t` (id) VALUES (5l); DROP TABLE `m`; END DEFINE;\nDO $a();",
+			wantErr: `"DEFINE ACTION .*\\nDO \$a\(\);" runs a scheme statement and a statement that reads or writes a table in one query.*`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -111,6 +121,8 @@ func TestRefuseUnsplittableSQL_HappyPath(t *testing.T) {
 		body    string
 	}{
 		{name: "a YDB body", dialect: platform.YDB, body: ydbBody},
+		{name: "a block that only creates, and a write apart from it", dialect: platform.YDB,
+			body: "DO BEGIN CREATE TABLE `m` (id Int64 NOT NULL, PRIMARY KEY (id)); END DO;\nUPSERT INTO `m` (id) VALUES (1l);"},
 		{name: "a YDB body under the supported setting", dialect: platform.YDB, body: "--!syntax_v1\n" + ydbBody},
 		{name: "a client delimiter on MySQL", dialect: platform.MySQL, body: "DELIMITER //\nDROP TABLE t //"},
 		{name: "a commit on PostgreSQL", dialect: platform.Postgres, body: "COMMIT;"},

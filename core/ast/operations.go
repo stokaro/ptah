@@ -477,12 +477,16 @@ func (op *SetRowTTLOperation) alterOperation() {}
 //	ALTER TABLE t ALTER TTL INTERVAL '20 days' ON ts   -> INTERVAL '2 WEEKS 6 DAYS' ON ts
 //
 // Only the planner knows which side the table was on, because only the diff
-// carries both.
+// carries both. YDB has one verb for both, `ALTER TABLE t SET (TTL = ...)`,
+// and its renderer ignores Replace.
 type SetRowDeletionPolicyOperation struct {
-	// Column is the timestamp column the interval is measured from.
+	// Column is the column the interval is measured from.
 	Column string
 	// Interval is the interval literal as the author wrote it.
 	Interval string
+	// Unit is what an integer Column counts since the Unix epoch, and empty
+	// for a date or time column; see [RowDeletionPolicySpec.Unit].
+	Unit string
 	// Replace picks ALTER over ADD, for a table that already has a policy.
 	Replace bool
 }
@@ -500,7 +504,8 @@ func (op *SetRowDeletionPolicyOperation) Accept(visitor Visitor) error {
 func (op *SetRowDeletionPolicyOperation) alterOperation() {}
 
 // DropRowDeletionPolicyOperation represents ALTER TABLE ... DROP TTL, which
-// removes the policy and leaves the column it named alone.
+// removes the policy and leaves the column it named alone. YDB spells it
+// `ALTER TABLE t RESET (TTL)`.
 type DropRowDeletionPolicyOperation struct{}
 
 // Accept implements the Node interface for DropRowDeletionPolicyOperation.

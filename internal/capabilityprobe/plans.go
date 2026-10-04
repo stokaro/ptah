@@ -543,6 +543,9 @@ func postgresFamilyUndecided() map[capability.Capability]string {
 		capability.TransactionalDDL: "the key names whether a failed migration rolls back as a unit, which is the engine's DDL semantics rather than one statement's answer",
 		capability.ShowRoutinePrivilege: "the probe cannot ask whether a privilege exists without granting it, " +
 			"and an acceptance test cannot separate an unknown privilege from an absent grantee",
+		capability.RowDeletionPolicyEpochColumn: "the key names YDB's TTL on an integer column counting a unit since " +
+			"the Unix epoch; Spanner's TTL clause has no unit and reads a timestamp column, and the other engines of " +
+			"this family have no such clause, so no statement in this dialect's spelling asks the question",
 		// The key is decided by an EXTENSION on the connection rather than by a
 		// version line. Every PostgreSQL image on this ladder answers
 		// `function create_hypertable(unknown, unknown) does not exist`, and
@@ -860,8 +863,10 @@ func mysqlFamilyUndecided() map[capability.Capability]string {
 			"server does not have and no MySQL-family reader calls; its absence here says nothing about the " +
 			"PostgreSQL-family trigger read the key gates",
 		capability.RowDeletionPolicy: "the key names a table clause Ptah renders, reads and plans only " +
-			"for Spanner, whose PostgreSQL interface stores it; this server has no such clause, so its " +
+			"for Spanner and YDB, whose servers store it; this server has no such clause, so its " +
 			"refusal would answer a different question",
+		capability.RowDeletionPolicyEpochColumn: "the key names YDB's TTL on an integer column counting a unit " +
+			"since the Unix epoch; this server has no such clause, so a refusal would answer a different question",
 		capability.NamedNotNullConstraints: "the key names a PostgreSQL 18 catalog behavior; this " +
 			"server names no NOT NULL constraint at all, so its answer would be to a different question",
 		capability.RowLevelTTL: "the key names a table storage parameter Ptah renders, reads and plans " +

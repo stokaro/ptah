@@ -209,6 +209,7 @@ Each entry under `tables` declares one table.
 | `constraints` | Ordered table-local constraint map. |
 | `changefeeds` | Ordered map of a YDB table's changefeeds; see [Changefeeds](#changefeeds). |
 | `rls_enabled` | Enables row-level security for the table. |
+| `row_deletion_column`, `row_deletion_interval`, `row_deletion_unit` | The table's [row deletion policy](../../databases/ydb/#ttl), with the values the annotation attributes of the same names take. Spanner and YDB have one; every other dialect refuses it. |
 | `platform` / `overrides` | Dialect-specific override map. |
 
 Table-local `columns`, `fields`, `indexes`, and `constraints` preserve YAML

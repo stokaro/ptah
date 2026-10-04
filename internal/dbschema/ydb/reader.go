@@ -29,14 +29,15 @@ import (
 //
 // A view is read only on a server with [capability.Views], which every YDB
 // line Ptah measured has; on one without it, a view is recorded like the
-// objects below, so a plan never meets a view the renderer would refuse.
+// objects below, so a plan never meets a view the renderer would refuse. A
+// table's TTL is read as its row deletion policy.
 //
 // An object it meets and Ptah does not model -- a topic, a column table, a
-// coordination node, and the rest of [coverage]'s YDB kinds -- is
-// recorded in [catalog.Database.NotDescribed] by its path, as is a table
-// setting such as a TTL or a changefeed. The access model is recorded as a
-// whole kind, because the reader does not read it. An object or an index kind
-// the reader does not know is refused by name rather than read as the nearest
+// coordination node, and the rest of [coverage]'s YDB kinds -- is recorded in
+// [catalog.Database.NotDescribed] by its path, as is a table setting such as a
+// changefeed or a TTL run interval. The access model is recorded as a whole
+// kind, because the reader does not read it. An object or an index kind the
+// reader does not know is refused by name rather than read as the nearest
 // known one.
 type Reader struct {
 	open     func(context.Context) (Source, func(), error)
@@ -149,7 +150,7 @@ func (r *Reader) entry(
 	case Ydb_Scheme.Entry_DIRECTORY:
 		return r.directory(ctx, source, schema, name, db)
 	case Ydb_Scheme.Entry_TABLE:
-		if !r.inScope(schema) || revisiontable.IsDefault(name) || name == revisiontable.Tags {
+		if !r.inScope(schema) || revisiontable.IsDefault(name) {
 			// The migrator's own tables are its bookkeeping, not the
 			// schema, as every other reader treats its revision tables.
 			// The tag table is one of them: measured on 26.2.1.14, a read

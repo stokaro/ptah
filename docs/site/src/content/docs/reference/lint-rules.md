@@ -108,6 +108,16 @@ the parent itself. Where it fires it replaces `PG101`, and with the state in
 hand `PG101` also leaves `CREATE INDEX ... ON ONLY` a partitioned parent alone,
 because that creates the parent's index without reading a row.
 
+`DS101` recognizes a table rebuild from the text: a new table, a copy of every
+row of the old one into it, and the copy renamed over the old name, as
+`migrations generate` writes one for SQLite and for YDB with
+`--allow-table-rebuild`. The drop that ends it loses no row, so `DS101`,
+`BC101` and `BC103` do not report its steps on the native surface. A column the
+copy leaves out is lost all the same, and only the old table's columns show it:
+`DS101` reads them from the starting state, and on YDB from the directory's
+earlier migrations, and reports the drop when the copy misses one. Without a
+dev database the notice above names `DS101`.
+
 ## How identifiers are spelled
 
 An identifier is a two- or three-letter family prefix and a number. The prefix
@@ -195,7 +205,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `CD103` | dropping a primary key removes row identity and can break replication | both | Atlas |
 | `DD101` | adding a NOT NULL column without a default fails or blocks on a populated table | both | Atlas |
 | `DD102` | a routine declared immutable calls something whose result changes between two calls with the same arguments | both | Ptah |
-| `DS101` | DROP TABLE, and on MariaDB CREATE OR REPLACE TABLE, destroys the table and every row in it; a rename reports here on the compatibility surface, retiring the old name without moving the rows | both | Atlas |
+| `DS101` | DROP TABLE, and on MariaDB CREATE OR REPLACE TABLE, destroys the table and every row in it; a rename reports here on the compatibility surface, retiring the old name without moving the rows. The native surface leaves out the drop that ends a table rebuild, whose copy keeps every row under the old name | both | Atlas |
 | `DS102` | DROP COLUMN destroys the column and every value stored in it | both | Atlas |
 | `DS103` | a column type change can truncate or reject existing values and may rewrite the table under a lock; a clause that restates the column's current type, as the dev database records it, is not reported | both | Ptah |
 | `DS104` | DROP NOT NULL removes a column-level data protection | both | Ptah |
@@ -323,8 +333,8 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `YD102` | a block or an action call that runs a scheme statement and a statement reading or writing a table in one query, which YDB refuses whole | both | Ptah |
 | `YD103` | an `ADD COLUMN` YDB refuses: NOT NULL without a default on every line, or a default where `add_column_with_default` is false | both | Ptah |
 | `YD104` | a `DROP COLUMN` of a column an index keys or covers, or the TTL reads, which YDB refuses until the index or the TTL is gone | both | Ptah |
-| `YD105` | turning auto partitioning by size or by load on resets the minimum partition count to 1 unless the same statement sets it | both | Ptah |
-| `YD106` | a `DROP TABLE` of a table a view reads: YDB drops the table, keeps the view, and every read of the view fails | both | Ptah |
+| `YD105` | turning auto partitioning by size or by load on resets the minimum partition count to 1 unless the same statement sets it; silent where the directory's own migrations left the minimum at 1 | both | Ptah |
+| `YD106` | a `DROP TABLE` or `ALTER TABLE ... RENAME TO` of a table a view reads: YDB keeps the view, which reads its table by path, and every read of the view fails | both | Ptah |
 | `YD107` | an `ALTER SEQUENCE` on a 16-bit or 32-bit Serial's sequence, which raises its maximum to the Int64 maximum, so the column wraps to negative values without an error | both | Ptah |
 | `YD108` | an `ALTER SEQUENCE` without a `RESTART` on a sequence an earlier statement restarted, which YDB replays, so the next insert takes a key a row holds | both | Ptah |
 | `YD109` | a `RENAME TO` of a table that carries a changefeed, which YDB refuses until every changefeed is dropped | both | Ptah |

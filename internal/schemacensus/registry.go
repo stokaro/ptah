@@ -39,6 +39,7 @@ var registry = []Entry{
 	{Field: "ast.TopicConsumerSpec.ReadFrom", Disposition: DDL},
 	{Field: "ast.TopicConsumerSpec.SupportedCodecs", Disposition: DDL},
 	{Field: "ast.RowDeletionPolicySpec.Interval", Disposition: DDL},
+	{Field: "ast.RowDeletionPolicySpec.Unit", Disposition: DDL},
 	{Field: "ast.RowTTLSpec.DeleteBatchSize", Disposition: DDL},
 	{Field: "ast.RowTTLSpec.DeleteRateLimit", Disposition: DDL},
 	{Field: "ast.RowTTLSpec.DisableChangefeedReplication", Disposition: DDL},

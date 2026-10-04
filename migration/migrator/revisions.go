@@ -2536,8 +2536,33 @@ func preservesUnknownStatementOutcome(ctx context.Context, failure error, txMode
 	if !errors.As(failure, &execErr) {
 		return false
 	}
-	return ctx.Err() != nil || errors.Is(execErr.Err, context.Canceled) || errors.Is(execErr.Err, context.DeadlineExceeded)
+	if ctx.Err() != nil || errors.Is(execErr.Err, context.Canceled) || errors.Is(execErr.Err, context.DeadlineExceeded) {
+		return true
+	}
+	marked, ok := errors.AsType[*markedStatementError](execErr.Err)
+	return ok && marked.outcomeUnknown
 }
+
+// markedStatementError is the failure of a statement the migrator marked in
+// flight before running it outside a transaction. outcomeUnknown records that
+// the failure was the connection's rather than the server's answer (see
+// [execoutcome.Unknown]), so the statement may have been applied: the mark
+// stays, and a resume refuses to run the statement again on a guess. A server
+// that refused the statement answered, and its failure replaces the mark. The
+// message is the failure's own; the revision's mark says the rest.
+//
+// Measured on YDB 26.2.1.14 and 25.1.4.7 through a proxy that dropped the
+// connection while ALTER TABLE ... ADD INDEX ran: the client got
+// `transport/Unavailable ... error reading from server: EOF`, and the server
+// built the index all the same.
+type markedStatementError struct {
+	err            error
+	outcomeUnknown bool
+}
+
+func (e *markedStatementError) Error() string { return e.err.Error() }
+
+func (e *markedStatementError) Unwrap() error { return e.err }
 
 func durableRevisionWriteContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(ctx), revisionWriteTimeout)

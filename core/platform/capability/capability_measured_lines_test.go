@@ -299,8 +299,10 @@ func measuredLines() map[string]measuredLine {
 				capability.CatalogTriggerDefinitions: "the key names pg_get_triggerdef, which this run never called: the key was registered after the run, so its artifact cannot decide it",
 				capability.RowLevelTTL: "this run predates the key and sent no TTL statement. PostgreSQL is the engine the key is false FOR, so a refusal here would restate the premise rather than measure this line; " +
 					"what decides the key is CockroachDB accepting the parameter, which internal/capabilityprobe asks on the CockroachDB cells (stokaro/ptah#1027)",
-				capability.RowDeletionPolicy: "the key names a table clause only Spanner has, and PostgreSQL 18 answers `syntax error` to a construct that is not in its grammar -- which measures the grammar, not this line. " +
+				capability.RowDeletionPolicy: "the key names a table clause only Spanner and YDB have, and PostgreSQL 18 answers `syntax error` to a construct that is not in its grammar -- which measures the grammar, not this line. " +
 					"What decides the key is Spanner STORING the clause and reading it back from information_schema.tables.row_deletion_policy_expression, which is asked on the Spanner cells (stokaro/ptah#2236)",
+				capability.RowDeletionPolicyEpochColumn: "this run predates the key and sent no TTL statement. The key presupposes row_deletion_policy, which PostgreSQL does not have, " +
+					"so what decides it is YDB taking `TTL = Interval(...) ON col AS SECONDS` on an integer column, which internal/capabilityprobe asks on the YDB cells",
 				capability.CheckGrantStatement:             "the key names ClickHouse's CHECK GRANT, which this server has no spelling of; its answer would be to a different question. What decides the key is ClickHouse accepting the statement on one declared line and refusing it as a syntax error on another, which internal/capabilityprobe asks on the ClickHouse cells (stokaro/ptah#916)",
 				capability.CatalogViewDependencies:         "the key names information_schema.VIEW_TABLE_USAGE, a MySQL catalog view. PostgreSQL answers view dependencies through pg_depend and pg_rewrite instead, which is a different catalog and a different question",
 				capability.CatalogRecursiveCTE:             "this run asked no recursive-CTE question. What decides the key is whether the server accepts a WITH RECURSIVE query that also reads the pg catalogs, which every real PostgreSQL-family server does; only Cloud Spanner's PostgreSQL interface refuses, and for a reason in the interface rather than the engine",
@@ -453,8 +455,10 @@ func measuredLines() map[string]measuredLine {
 					"this server has no such parameter to accept or refuse, so its answer would be to a different question",
 				capability.NamedNotNullConstraints: "the key names a PostgreSQL 18 catalog behavior; this server names no NOT NULL constraint at all, " +
 					"so its answer would be to a different question (stokaro/ptah#2161)",
-				capability.RowDeletionPolicy: "the key names a table clause only Spanner has, and no MySQL-family renderer, reader or planner emits it; " +
+				capability.RowDeletionPolicy: "the key names a table clause only Spanner and YDB have, and no MySQL-family renderer, reader or planner emits it; " +
 					"this server has nothing to accept or refuse, so its answer would be to a different question (stokaro/ptah#2236)",
+				capability.RowDeletionPolicyEpochColumn: "the key names YDB's TTL on an integer column, and no MySQL-family renderer, reader or planner emits a row deletion policy; " +
+					"this server has nothing to accept or refuse, so its answer would be to a different question",
 				capability.CheckGrantStatement:             "the key names ClickHouse's CHECK GRANT, which this server has no spelling of; its answer would be to a different question. What decides the key is ClickHouse accepting the statement on one declared line and refusing it as a syntax error on another, which internal/capabilityprobe asks on the ClickHouse cells (stokaro/ptah#916)",
 				capability.CatalogViewDependencies:         "this run predates the key and asked no catalog question for it. What decides it is whether information_schema.VIEW_TABLE_USAGE resolves, which MySQL added in 8.0.13 and every measured MySQL line has",
 				capability.CatalogRecursiveCTE:             "the key is about reading the pg catalogs through a recursive CTE, which is not a question this MySQL run could ask",
@@ -609,8 +613,10 @@ func measuredLines() map[string]measuredLine {
 					"this server has no such parameter to accept or refuse, so its answer would be to a different question",
 				capability.NamedNotNullConstraints: "the key names a PostgreSQL 18 catalog behavior; this server names no NOT NULL constraint at all, " +
 					"so its answer would be to a different question (stokaro/ptah#2161)",
-				capability.RowDeletionPolicy: "the key names a table clause only Spanner has, and no MySQL-family renderer, reader or planner emits it; " +
+				capability.RowDeletionPolicy: "the key names a table clause only Spanner and YDB have, and no MySQL-family renderer, reader or planner emits it; " +
 					"this server has nothing to accept or refuse, so its answer would be to a different question (stokaro/ptah#2236)",
+				capability.RowDeletionPolicyEpochColumn: "the key names YDB's TTL on an integer column, and no MySQL-family renderer, reader or planner emits a row deletion policy; " +
+					"this server has nothing to accept or refuse, so its answer would be to a different question",
 				capability.CheckGrantStatement:             "the key names ClickHouse's CHECK GRANT, which this server has no spelling of; its answer would be to a different question. What decides the key is ClickHouse accepting the statement on one declared line and refusing it as a syntax error on another, which internal/capabilityprobe asks on the ClickHouse cells (stokaro/ptah#916)",
 				capability.CatalogViewDependencies:         "MariaDB has no information_schema.VIEW_TABLE_USAGE at any version, so the key is false for the dialect rather than for this line",
 				capability.CatalogRecursiveCTE:             "the key is about reading the pg catalogs through a recursive CTE, which is not a question this MariaDB run could ask",

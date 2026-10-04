@@ -231,19 +231,28 @@ func tableDroppedRule() Rule {
 		Code:     "DS101",
 		Title:    "table dropped",
 		Severity: SeverityError,
+		// The text recognizes a table rebuild, whose copy keeps the rows
+		// (see [fileRebuilds]); the dev database's starting state refines
+		// that, by showing a column the copy leaves out.
+		Input:            InputBaselineRefinement,
+		BaselineSubjects: rebuildBaselineSubjects,
 		// File-level: dropping a table this same migration created (the
 		// create-staging/backfill/drop pattern) destroys no pre-existing
-		// data and is exempt.
+		// data and is exempt, and so is the drop that ends a table rebuild.
 		CheckFile: func(file *File) []Finding {
 			if !file.IsUp {
 				return nil
 			}
+			rebuilds := fileRebuilds(file)
 			var findings []Finding
 			created := make(map[string]bool)
 			for i := range file.Statements {
 				stmt := &file.Statements[i]
 				if ref := createdTableRef(stmt.Words); ref != "" {
 					created[ref] = true
+					continue
+				}
+				if rebuilds.drops[i] {
 					continue
 				}
 				if ref, isReplace := replacedTableRef(stmt.Words, stmt.sourceWords); isReplace {

@@ -13,7 +13,6 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/sqlident"
-	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbtype"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -247,32 +246,18 @@ var settingKinds = []struct {
 	kind  coverage.Kind
 	words string
 }{
-	{coverage.TTL, "a TTL"},
+	{coverage.TTL, "a TTL run interval or tiering policy"},
 	{coverage.Changefeed, "changefeeds with settings Ptah does not read"},
 	{coverage.ColumnFamily, "column families"},
 	{coverage.TableOption, "partitioning, read replica or key bloom filter options"},
 }
 
 // undescribedSettings names the settings of table that the read of the
-// database recorded as not described. A record naming the whole kind counts:
-// a read that did not look at any table's TTL cannot say this table has none.
-//
-// A format's limit does not count. It is what a document's loader records for
-// a family the format has no spelling for -- an HCL document standing for the
-// current state cannot say whether a table has a changefeed -- and it says
-// nothing about a table carrying one, where these records are read as exactly
-// that. A changefeed such a document leaves out still stops the rebuild: YDB
-// refuses to move the table (`Cannot move table with cdc streams`) before the
-// old one is dropped.
+// database recorded as not described; see [recordsSetting].
 func undescribedSettings(set coverage.Set, table schemamodel.Table) []string {
-	canonical := tableref.Canonical(table.Schema, table.Name)
 	var settings []string
 	for _, setting := range settingKinds {
-		if slices.ContainsFunc(set.Objects, func(object coverage.Object) bool {
-			formatLimit := object.Reason == coverage.Unsupported && object.Provenance == coverage.DerivedFromFact
-			return object.Kind == setting.kind && !formatLimit &&
-				(object.WholeKind() || object.Name == canonical || strings.HasPrefix(object.Name, canonical+"/"))
-		}) {
+		if recordsSetting(set, setting.kind, table) {
 			settings = append(settings, setting.words)
 		}
 	}
@@ -305,8 +290,8 @@ func freeTableName(diff *difftypes.SchemaDiff, table schemamodel.Table, prefix s
 
 // refuseRebuiltTableChanges refuses what a rebuild cannot carry in a table's
 // modification. The new table is written from the declaration, so a column
-// added or dropped, a default and an index change travel with it; a comment,
-// a TTL and a constraint other than the key do not exist on YDB.
+// added or dropped, a default, an index change and the TTL travel with it; a
+// comment and a constraint other than the key do not exist on YDB.
 func (p *Planner) refuseRebuiltTableChanges(tableDiff difftypes.TableDiff) error {
 	subject := fmt.Sprintf("table %q", tableDiff.TableName)
 	if err := p.refuseTableSettings(tableDiff, subject); err != nil {

@@ -240,51 +240,74 @@ func TestYDBLint_RulesReportWhatTheServerRefuses(t *testing.T) {
 const usedColumnsTable = "CREATE TABLE `{dir}/t` (id Uint64 NOT NULL, k Utf8, c Utf8, ts Timestamp, free Utf8, " +
 	"PRIMARY KEY (id), INDEX t_k GLOBAL SYNC ON (k) COVER (c)) WITH (TTL = Interval(\"P1D\") ON ts)"
 
-// YDB runs a DROP TABLE a view reads and keeps the view, which then fails on
-// every read. YD106 reports the drop, and the server shows what it reports.
-func TestYDBLint_DroppedTableLeavesItsViewFailing(t *testing.T) {
+// YDB runs a DROP TABLE a view reads, and an ALTER TABLE ... RENAME TO of it,
+// and keeps the view, which reads its table by path and then fails on every
+// read. YD106 reports both, and the server shows what it reports.
+func TestYDBLint_DroppedOrRenamedTableLeavesItsViewFailing(t *testing.T) {
 	dir := lintDir + "/view"
 	setup := []string{
 		"CREATE TABLE `" + dir + "/base` (id Uint64 NOT NULL, PRIMARY KEY (id))",
 		"CREATE VIEW `" + dir + "/v` WITH (security_invoker = TRUE) AS SELECT id FROM `" + dir + "/base`",
 	}
-	statement := "DROP TABLE `" + dir + "/base`"
+	tests := []struct {
+		name      string
+		statement string
+	}{
+		{name: "dropped", statement: "DROP TABLE `" + dir + "/base`"},
+		{name: "renamed", statement: "ALTER TABLE `" + dir + "/base` RENAME TO `" + dir + "/moved`"},
+	}
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
-			c := qt.New(t)
-			conn := openYDB(c, line)
-			c.Cleanup(func() { dropLintDir(c, conn) })
-			for _, step := range setup {
-				c.Assert(conn.Writer().ExecuteSQL(c.Context(), step), qt.IsNil, qt.Commentf("setup: %s", step))
+			for _, test := range tests {
+				t.Run(test.name, func(t *testing.T) {
+					c := qt.New(t)
+					conn := openYDB(c, line)
+					c.Cleanup(func() { dropLintDir(c, conn) })
+					for _, step := range setup {
+						c.Assert(conn.Writer().ExecuteSQL(c.Context(), step), qt.IsNil, qt.Commentf("setup: %s", step))
+					}
+
+					reported := lintAgainst(c, conn, setup, test.statement)
+					runErr := conn.Writer().ExecuteSQL(c.Context(), test.statement)
+					var count int64
+					readErr := conn.QueryRowContext(c.Context(), "SELECT COUNT(*) FROM `"+dir+"/v`").Scan(&count)
+
+					c.Assert(reported, qt.Contains, "YD106")
+					c.Assert(runErr, qt.IsNil)
+					c.Assert(readErr, qt.ErrorMatches, `(?s).*Cannot find table 'db\.\[/local/`+regexp.QuoteMeta(dir)+`/base\]'.*`)
+				})
 			}
-
-			reported := lintAgainst(c, conn, setup, statement)
-			dropErr := conn.Writer().ExecuteSQL(c.Context(), statement)
-			var count int64
-			readErr := conn.QueryRowContext(c.Context(), "SELECT COUNT(*) FROM `"+dir+"/v`").Scan(&count)
-
-			c.Assert(reported, qt.Contains, "YD106")
-			c.Assert(dropErr, qt.IsNil)
-			c.Assert(readErr, qt.ErrorMatches, `(?s).*Cannot find table 'db\.\[/local/`+regexp.QuoteMeta(dir)+`/base\]'.*`)
 		})
 	}
 }
 
 // YD105 reports the ALTER TABLE that resets a table's minimum partition count,
 // and the count the server keeps afterwards, read back through the scheme
-// service, is what the rule says it is.
+// service, is what the rule says it is. A table whose minimum the directory
+// left at 1 loses nothing, and the rule stays silent there.
 func TestYDBLint_PartitioningChangeResetsTheMinimum(t *testing.T) {
+	const minimumOfFour = "AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4, AUTO_PARTITIONING_BY_SIZE = DISABLED, " +
+		"AUTO_PARTITIONING_BY_LOAD = DISABLED"
 	tests := []struct {
 		name     string
+		with     string
 		set      string
 		reported bool
 		minimum  uint64
 	}{
-		{name: "auto partitioning by size turned on", set: "SET (AUTO_PARTITIONING_BY_SIZE = ENABLED)", reported: true, minimum: 1},
-		{name: "auto partitioning by load turned on, without parentheses", set: "SET AUTO_PARTITIONING_BY_LOAD ENABLED", reported: true, minimum: 1},
-		{name: "turned on with the minimum in the same statement",
+		{name: "auto partitioning by size turned on", with: minimumOfFour,
+			set: "SET (AUTO_PARTITIONING_BY_SIZE = ENABLED)", reported: true, minimum: 1},
+		{name: "auto partitioning by load turned on, without parentheses", with: minimumOfFour,
+			set: "SET AUTO_PARTITIONING_BY_LOAD ENABLED", reported: true, minimum: 1},
+		{name: "turned on with the minimum in the same statement", with: minimumOfFour,
 			set: "SET (AUTO_PARTITIONING_BY_LOAD = ENABLED), SET (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4)", minimum: 4},
-		{name: "a size setting", set: "SET (AUTO_PARTITIONING_PARTITION_SIZE_MB = 100)", minimum: 4},
+		{name: "a size setting", with: minimumOfFour, set: "SET (AUTO_PARTITIONING_PARTITION_SIZE_MB = 100)", minimum: 4},
+		{name: "turned on for a table created with four uniform partitions",
+			with: "UNIFORM_PARTITIONS = 4, AUTO_PARTITIONING_BY_SIZE = DISABLED",
+			set:  "SET (AUTO_PARTITIONING_BY_LOAD = ENABLED)", reported: true, minimum: 1},
+		{name: "turned on for a table whose minimum is already 1",
+			with: "AUTO_PARTITIONING_BY_SIZE = DISABLED, AUTO_PARTITIONING_BY_LOAD = DISABLED",
+			set:  "SET (AUTO_PARTITIONING_BY_SIZE = ENABLED)", minimum: 1},
 	}
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
@@ -294,8 +317,7 @@ func TestYDBLint_PartitioningChangeResetsTheMinimum(t *testing.T) {
 					c := qt.New(t)
 					c.Cleanup(func() { dropLintDir(c, conn) })
 					name := fmt.Sprintf("%s/partitions_%d", lintDir, i)
-					create := "CREATE TABLE `" + name + "` (id Uint64 NOT NULL, PRIMARY KEY (id)) WITH (" +
-						"AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4, AUTO_PARTITIONING_BY_SIZE = DISABLED, AUTO_PARTITIONING_BY_LOAD = DISABLED)"
+					create := "CREATE TABLE `" + name + "` (id Uint64 NOT NULL, PRIMARY KEY (id)) WITH (" + test.with + ")"
 					c.Assert(conn.Writer().ExecuteSQL(c.Context(), create), qt.IsNil)
 					statement := "ALTER TABLE `" + name + "` " + test.set
 
