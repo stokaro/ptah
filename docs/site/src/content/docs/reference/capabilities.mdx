@@ -53,6 +53,8 @@ Capabilities answer questions that a dialect name alone cannot answer:
   `role_management`, `row_level_security`, `xml_type`, `advisory_locks`
 - Which schema objects can this target host?
   `views`, `materialized_views`, `functions`, `triggers`
+- Can a view's query be replaced in one statement, or is the view dropped and
+  created again? `create_or_replace_view`
 - Does the target support foreign keys, and how is the referenced key backed?
   `foreign_keys`, `foreign_keys_require_unique_reference`,
   `foreign_keys_require_indexed_reference`,
@@ -71,8 +73,9 @@ is named rather than dropped:
 `-- SPANNER: trigger users_touch is not supported by this target; skipped.`
 appears in place of the DDL, identically in `ptah schema render` and in the plan
 `ptah schema apply` builds, because both pass through the same renderer. A
-materialized view presupposes a view and `create_or_replace_trigger`
-presupposes `triggers`, so those two requirement edges are validated.
+materialized view and `create_or_replace_view` presuppose a view, and
+`create_or_replace_trigger` presupposes `triggers`, so those requirement edges
+are validated.
 
 `sequences`, `role_management`, and `row_level_security` use the same named
 skip when a PostgreSQL-family preset disables them. They used to fail the

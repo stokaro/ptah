@@ -17,14 +17,15 @@ type objectChange struct {
 
 // refuseObjects refuses every family of objects the YDB planner does not plan:
 // the ones YDB has no counterpart for, by their capability key, and the ones a
-// later phase implements, by that phase.
+// later phase implements, by that phase. Views are planned where the target
+// has [capability.Views] and refused by the key where it does not.
 //
 // The named families come first so a refusal says what it refused. The last
-// check is a catch-all over [difftypes.SchemaDiff.HasChanges]: with the tables
-// and indexes this planner does plan taken out -- additions, removals, renames
-// and changes of partitioning -- a diff that still reports a
-// change carries a family nobody named here, and planning nothing for it would
-// report the database synced.
+// check is a catch-all over [difftypes.SchemaDiff.HasChanges]: with the
+// tables, indexes and views this planner does plan taken out -- additions,
+// removals, index renames and changes of partitioning -- a diff that still
+// reports a change carries a family nobody named here, and planning nothing
+// for it would report the database synced.
 func (p *Planner) refuseObjects(diff *difftypes.SchemaDiff) error {
 	for _, change := range p.objectChanges(diff) {
 		if change.present {
@@ -35,6 +36,7 @@ func (p *Planner) refuseObjects(diff *difftypes.SchemaDiff) error {
 	rest.TablesAdded, rest.TablesRemoved, rest.TablesModified = nil, nil, nil
 	rest.IndexesAdded, rest.IndexesRemoved = nil, nil
 	rest.IndexesRenamed, rest.IndexPartitioningChanged = nil, nil
+	rest.ViewsAdded, rest.ViewsRemoved, rest.ViewsModified = nil, nil, nil
 	if rest.HasChanges() {
 		return refuseFact("the plan", "it changes objects the YDB planner does not plan")
 	}
@@ -64,8 +66,8 @@ func (p *Planner) objectChanges(diff *difftypes.SchemaDiff) []objectChange {
 			keyed(capability.Functions, "routine", "the plan changes a function or a procedure")},
 		{len(diff.SequencesAdded)+len(diff.SequencesRemoved)+len(diff.SequencesModified) > 0,
 			keyed(capability.Sequences, "sequence", "the plan changes a sequence")},
-		{len(diff.ViewsAdded)+len(diff.ViewsRemoved)+len(diff.ViewsModified) > 0,
-			gap(ydbgap.Views, "the plan changes a view")},
+		{viewChanges(diff) && !p.caps.Has(capability.Views),
+			keyed(capability.Views, "view", "the plan changes a view")},
 		{len(diff.MaterializedViewsAdded)+len(diff.MaterializedViewsRemoved)+len(diff.MaterializedViewsModified) > 0,
 			keyed(capability.MaterializedViews, "materialized view", "the plan changes a materialized view")},
 		{len(diff.TriggersAdded)+len(diff.TriggersRemoved)+len(diff.TriggersModified) > 0,

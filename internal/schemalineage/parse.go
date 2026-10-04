@@ -2,10 +2,14 @@ package schemalineage
 
 import (
 	"fmt"
+	"path"
 	"slices"
 	"strings"
 
+	"ptah.run/core/platform"
+	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/tableref"
 )
 
 // deriveView resolves one view body into edges, or records why it could not.
@@ -15,11 +19,11 @@ import (
 // other shape becomes an [Undecided] naming what stopped it, because a view
 // whose dependencies were not resolved must not be indistinguishable from a
 // view with none.
-func deriveView(name, body string, materialized bool, columns map[string][]string) Result {
+func deriveView(name, body string, materialized bool, columns map[string][]string, reading bodyReading) Result {
 	undecided := func(reason string) Result {
 		return Result{Undecided: []Undecided{{View: name, Reason: reason, Materialized: materialized}}}
 	}
-	tokens := tokenize(body)
+	tokens := tokenize(body, reading)
 	if len(tokens) == 0 {
 		return undecided("the body is empty")
 	}
@@ -27,7 +31,7 @@ func deriveView(name, body string, materialized bool, columns map[string][]strin
 	if err != nil {
 		return undecided(err.Error())
 	}
-	source, err := singleSource(tokens, fromStart)
+	source, err := singleSource(tokens, fromStart, reading)
 	if err != nil {
 		return undecided(err.Error())
 	}
@@ -47,10 +51,25 @@ func deriveView(name, body string, materialized bool, columns map[string][]strin
 	return Result{Edges: edges}
 }
 
+// bodyReading is how one dialect's view bodies are read.
+type bodyReading struct {
+	// yql reads a body as YQL: by the YQL lexer, with a FROM source that is
+	// a YDB path.
+	yql bool
+}
+
+// readingFor is the reading of dialect's bodies.
+func readingFor(dialect string) bodyReading {
+	return bodyReading{yql: platform.NormalizeDialect(dialect) == platform.YDB}
+}
+
 // tokenize drops whitespace and comments, which carry no lineage and would
 // otherwise have to be skipped at every step below.
-func tokenize(body string) []lexer.Token {
+func tokenize(body string, reading bodyReading) []lexer.Token {
 	lex := lexer.NewLexer(body)
+	if reading.yql {
+		lex = lexer.NewLexerWithOptions(body, dialectlexer.Options(platform.YDB))
+	}
 	var tokens []lexer.Token
 	for {
 		token := lex.NextToken()
@@ -102,7 +121,7 @@ func selectAndFrom(tokens []lexer.Token) (selectStart, fromStart int, err error)
 // at: with more than one source in scope, an unqualified column cannot be
 // attributed to a table, and attributing it to the wrong one is worse than
 // saying so.
-func singleSource(tokens []lexer.Token, fromStart int) (sourceRef, error) {
+func singleSource(tokens []lexer.Token, fromStart int, reading bodyReading) (sourceRef, error) {
 	rest := tokens[fromStart+1:]
 	if len(rest) == 0 {
 		return sourceRef{}, fmt.Errorf("the FROM clause names no source")
@@ -114,7 +133,11 @@ func singleSource(tokens []lexer.Token, fromStart int) (sourceRef, error) {
 	if err != nil {
 		return sourceRef{}, err
 	}
-	source := sourceRef{table: table, alias: table}
+	source := sourceRef{table: table, alias: table, columnsKey: table}
+	if reading.yql {
+		source = ydbSource(rest[0])
+		consumed = 1
+	}
 	rest = rest[consumed:]
 	if len(rest) > 0 && rest[0].MatchIdentifierValue("as") {
 		rest = rest[1:]
@@ -144,6 +167,26 @@ func singleSource(tokens []lexer.Token, fromStart int) (sourceRef, error) {
 type sourceRef struct {
 	table string
 	alias string
+	// columnsKey is the name the table's declared columns are found under,
+	// its bare name: the schema's tables are indexed without their schema.
+	columnsKey string
+}
+
+// ydbSource reads a YDB FROM source: one identifier holding the table's
+// path, which a `.` never qualifies, since YQL reads `dir`.`t` as a cluster
+// and a table. The table goes by its Ptah name, its directory as the schema,
+// and the path stays the name a column may be qualified with.
+func ydbSource(token lexer.Token) sourceRef {
+	value, ok := lexer.YQLIdentifierValue(token.Value)
+	if !ok {
+		value = unquote(token.Value)
+	}
+	directory, name := path.Split(value)
+	return sourceRef{
+		table:      tableref.Canonical(strings.TrimSuffix(directory, "/"), name),
+		alias:      value,
+		columnsKey: name,
+	}
 }
 
 func isJoinKeyword(token lexer.Token) bool {

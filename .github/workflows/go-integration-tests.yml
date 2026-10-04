@@ -72,7 +72,10 @@ jobs:
     # pull request, and the scope job above says why it was skipped.
     if: github.event_name != 'pull_request' || needs.scope.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # The whole contour runs in one job, because testcontour fails on a skip
+    # and no package selector may narrow it. Master's run took 59 minutes on
+    # 4390d7216, and a pull request adding live tests was canceled at 60.
+    timeout-minutes: 90
     
     services:
       postgres:

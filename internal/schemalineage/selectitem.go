@@ -48,7 +48,7 @@ func resolveSelectItem(
 	// schema declares that table, and is undecidable when it does not -- the
 	// names live in the table, not in the view.
 	if star, ok := starProjection(item, source); ok {
-		names := columns[lowerName(source.table)]
+		names := columns[lowerName(source.columnsKey)]
 		if len(names) == 0 {
 			return nil, fmt.Errorf(
 				"the select list is %s and table %q declares no columns here, so its names are unknown",

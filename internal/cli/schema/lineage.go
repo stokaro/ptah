@@ -4,13 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"strconv"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
-	"ptah.run/core/coverage"
-	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
@@ -18,7 +15,6 @@ import (
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/schemalineage"
 	"ptah.run/internal/schemaload"
-	"ptah.run/internal/ydbgap"
 )
 
 const (
@@ -134,7 +130,7 @@ func runSchemaLineage(cmd *cobra.Command, opts schemaLineageOptions) error {
 		return cmdutil.Fail(cmd, err)
 	}
 	document := lineageDocument{
-		Result:   schemalineage.Derive(database),
+		Result:   schemalineage.DeriveForDialect(database, opts.dialect),
 		Routines: schemalineage.DeriveRoutines(database, opts.dialect),
 	}
 	return writeLineage(cmd.OutOrStdout(), opts.format, document)
@@ -202,40 +198,16 @@ func runSchemaLineageLive(cmd *cobra.Command, opts schemaLineageOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("read database schema: %w", err))
 	}
-	// The YDB reader records each view it meets and reads none, so a lineage
-	// of its description would report nothing for a view the database holds.
-	// A database without views has nothing to trace on YDB, which has no
-	// routines either, and is answered.
-	if platform.NormalizeDialect(conn.Info().Dialect) == platform.YDB {
-		if view, found := undescribedView(live.NotDescribed); found {
-			return cmdutil.Fail(cmd, fmt.Errorf("view %s: %s", view, ydbgap.Views.Message()))
-		}
-	}
 	// The dialect the server reports rather than the flag: a lineage traced
 	// against a live database is about that database, and a routine body is
 	// read by its own engine's parser.
 	dialect := conn.Info().Dialect
 	database := dbschematogo.ConvertDBSchemaToGoSchema(live, conn.Info().Dialect)
 	document := lineageDocument{
-		Result:   schemalineage.Derive(database),
+		Result:   schemalineage.DeriveForDialect(database, dialect),
 		Routines: schemalineage.DeriveRoutines(database, dialect),
 	}
 	return writeLineage(cmd.OutOrStdout(), opts.format, document)
-}
-
-// undescribedView names the first view a read recorded and did not describe,
-// or "the views" when it declined the whole kind.
-func undescribedView(notDescribed coverage.Set) (string, bool) {
-	for _, object := range notDescribed.Objects {
-		if object.Kind != coverage.View {
-			continue
-		}
-		if object.WholeKind() {
-			return "the views", true
-		}
-		return strconv.Quote(object.Name), true
-	}
-	return "", false
 }
 
 func writeLineageJSON(w io.Writer, document lineageDocument) error {
