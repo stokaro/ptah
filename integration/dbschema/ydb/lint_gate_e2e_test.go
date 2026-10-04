@@ -43,33 +43,37 @@ func writeGateMigrations(c *qt.C, policy string) string {
 // gate section the first version runs and the server refuses the second, in
 // the words YD101 quotes.
 func TestYDBBinary_MigrationsUpGatesOnTheYDFamily(t *testing.T) {
-	url := dbtarget.URL(t, dbtarget.YDB)
-	c := qt.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancel()
-	conn := openYDB(c)
 	refusals := map[string]string{
 		"26.2": "Adding a unique index to an existing table is disabled",
 		"25.1": "Unknown index type: syncGlobalUnique",
 	}
-	refusal, measured := refusals[lineOf(conn.Info().Version)]
-	c.Assert(measured, qt.IsTrue)
-	dropDirectory(c, conn, gateMigrationsDir, "users")
-	c.Cleanup(func() { dropDirectory(c, conn, gateMigrationsDir, "users") })
-	binary := buildBinary(c, ctx)
-	target := []string{"--db-url", url, "--migrations-schema", gateMigrationsDir}
+	binary := buildBinary(qt.New(t), t.Context())
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			url := dbtarget.URL(t, line.engine)
+			c := qt.New(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+			conn := openYDB(c, line)
+			refusal, measured := refusals[line.name]
+			c.Assert(measured, qt.IsTrue)
+			dropDirectory(c, conn, gateMigrationsDir, "users")
+			c.Cleanup(func() { dropDirectory(c, conn, gateMigrationsDir, "users") })
+			target := []string{"--db-url", url, "--migrations-schema", gateMigrationsDir}
 
-	gated, gatedErr := runBinary(ctx, binary, append([]string{"migrations", "up", "--migrations-dir",
-		writeGateMigrations(c, "dialect: ydb\ngate:\n  families: [YD]\n")}, target...)...)
-	tablesAfterGate := tableNames(readScoped(c, conn, []string{gateMigrationsDir}))
-	ungated, ungatedErr := runBinary(ctx, binary, append([]string{"migrations", "up", "--migrations-dir",
-		writeGateMigrations(c, "dialect: ydb\n")}, target...)...)
+			gated, gatedErr := runBinary(ctx, binary, append([]string{"migrations", "up", "--migrations-dir",
+				writeGateMigrations(c, "dialect: ydb\ngate:\n  families: [YD]\n")}, target...)...)
+			tablesAfterGate := tableNames(readScoped(c, conn, []string{gateMigrationsDir}))
+			ungated, ungatedErr := runBinary(ctx, binary, append([]string{"migrations", "up", "--migrations-dir",
+				writeGateMigrations(c, "dialect: ydb\n")}, target...)...)
 
-	c.Assert(gatedErr, qt.IsNotNil)
-	c.Assert(gated, qt.Matches, `(?s).*pending migrations carry lint findings the policy's gate section blocks on.*`+
-		`0000000002_unique\.up\.sql:1 YD101 error: ADD INDEX users_email adds a unique index to `+gateMigrationsDir+`/users.*`)
-	c.Assert(tablesAfterGate, qt.HasLen, 0)
-	c.Assert(ungatedErr, qt.IsNotNil)
-	c.Assert(ungated, qt.Matches, `(?s).*`+regexp.QuoteMeta(refusal)+`.*`)
-	c.Assert(tableNames(readScoped(c, conn, []string{gateMigrationsDir})), qt.DeepEquals, []string{gateMigrationsDir + "|users"})
+			c.Assert(gatedErr, qt.IsNotNil)
+			c.Assert(gated, qt.Matches, `(?s).*pending migrations carry lint findings the policy's gate section blocks on.*`+
+				`0000000002_unique\.up\.sql:1 YD101 error: ADD INDEX users_email adds a unique index to `+gateMigrationsDir+`/users.*`)
+			c.Assert(tablesAfterGate, qt.HasLen, 0)
+			c.Assert(ungatedErr, qt.IsNotNil)
+			c.Assert(ungated, qt.Matches, `(?s).*`+regexp.QuoteMeta(refusal)+`.*`)
+			c.Assert(tableNames(readScoped(c, conn, []string{gateMigrationsDir})), qt.DeepEquals, []string{gateMigrationsDir + "|users"})
+		})
+	}
 }

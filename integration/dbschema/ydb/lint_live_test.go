@@ -24,13 +24,6 @@ import (
 // lintDir is the directory the lint tests create their tables in.
 const lintDir = "ptah_ydb_lint"
 
-// lineOf names the release line a server runs, from its version: 26.2.1.14
-// is the line 26.2.
-func lineOf(version string) string {
-	parts := strings.SplitN(version, ".", 3)
-	return strings.Join(parts[:min(len(parts), 2)], ".")
-}
-
 // dropLintDir removes what the lint tests created.
 func dropLintDir(c *qt.C, conn *dbschema.DatabaseConnection) {
 	c.Helper()
@@ -190,31 +183,34 @@ func TestYDBLint_RulesReportWhatTheServerRefuses(t *testing.T) {
 			refusals:  map[string]string{"26.2": "", "25.1": ""},
 		},
 	}
-	conn := openYDB(qt.New(t))
-	line := lineOf(conn.Info().Version)
-	for i, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			dir := fmt.Sprintf("%s/rule_%d", lintDir, i)
-			c.Cleanup(func() { dropLintDir(c, conn) })
-			setup := make([]string, 0, len(test.setup))
-			for _, statement := range test.setup {
-				setup = append(setup, strings.ReplaceAll(statement, "{dir}", dir))
-			}
-			statement := strings.ReplaceAll(test.statement, "{dir}", dir)
-			for _, step := range setup {
-				c.Assert(conn.Writer().ExecuteSQL(c.Context(), step), qt.IsNil, qt.Commentf("setup: %s", step))
-			}
-			refusal, measured := test.refusals[line]
-			c.Assert(measured, qt.IsTrue, qt.Commentf("no answer recorded for YDB %s", line))
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			conn := openYDB(qt.New(t), line)
+			for i, test := range tests {
+				t.Run(test.name, func(t *testing.T) {
+					c := qt.New(t)
+					dir := fmt.Sprintf("%s/rule_%d", lintDir, i)
+					c.Cleanup(func() { dropLintDir(c, conn) })
+					setup := make([]string, 0, len(test.setup))
+					for _, statement := range test.setup {
+						setup = append(setup, strings.ReplaceAll(statement, "{dir}", dir))
+					}
+					statement := strings.ReplaceAll(test.statement, "{dir}", dir)
+					for _, step := range setup {
+						c.Assert(conn.Writer().ExecuteSQL(c.Context(), step), qt.IsNil, qt.Commentf("setup: %s", step))
+					}
+					refusal, measured := test.refusals[line.name]
+					c.Assert(measured, qt.IsTrue, qt.Commentf("no answer recorded for YDB %s", line.name))
 
-			reported := lintAgainst(c, conn, setup, statement)
-			err := conn.Writer().ExecuteSQL(c.Context(), statement)
+					reported := lintAgainst(c, conn, setup, statement)
+					err := conn.Writer().ExecuteSQL(c.Context(), statement)
 
-			c.Assert(errorText(err) != "", qt.Equals, refusal != "", qt.Commentf("YDB %s answered %v", line, err))
-			c.Assert(errorText(err), qt.Matches, `(?s).*`+regexp.QuoteMeta(refusal)+`.*`)
-			c.Assert(slices.Contains(reported, test.rule), qt.Equals, refusal != "",
-				qt.Commentf("lint reported %v for a statement YDB %s answered with %v", reported, line, err))
+					c.Assert(errorText(err) != "", qt.Equals, refusal != "", qt.Commentf("YDB %s answered %v", line.name, err))
+					c.Assert(errorText(err), qt.Matches, `(?s).*`+regexp.QuoteMeta(refusal)+`.*`)
+					c.Assert(slices.Contains(reported, test.rule), qt.Equals, refusal != "",
+						qt.Commentf("lint reported %v for a statement YDB %s answered with %v", reported, line.name, err))
+				})
+			}
 		})
 	}
 }
@@ -227,27 +223,31 @@ const usedColumnsTable = "CREATE TABLE `{dir}/t` (id Uint64 NOT NULL, k Utf8, c 
 // YDB runs a DROP TABLE a view reads and keeps the view, which then fails on
 // every read. YD106 reports the drop, and the server shows what it reports.
 func TestYDBLint_DroppedTableLeavesItsViewFailing(t *testing.T) {
-	c := qt.New(t)
-	conn := openYDB(c)
-	c.Cleanup(func() { dropLintDir(c, conn) })
 	dir := lintDir + "/view"
 	setup := []string{
 		"CREATE TABLE `" + dir + "/base` (id Uint64 NOT NULL, PRIMARY KEY (id))",
 		"CREATE VIEW `" + dir + "/v` WITH (security_invoker = TRUE) AS SELECT id FROM `" + dir + "/base`",
 	}
-	for _, step := range setup {
-		c.Assert(conn.Writer().ExecuteSQL(c.Context(), step), qt.IsNil, qt.Commentf("setup: %s", step))
-	}
 	statement := "DROP TABLE `" + dir + "/base`"
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			c.Cleanup(func() { dropLintDir(c, conn) })
+			for _, step := range setup {
+				c.Assert(conn.Writer().ExecuteSQL(c.Context(), step), qt.IsNil, qt.Commentf("setup: %s", step))
+			}
 
-	reported := lintAgainst(c, conn, setup, statement)
-	dropErr := conn.Writer().ExecuteSQL(c.Context(), statement)
-	var count int64
-	readErr := conn.QueryRowContext(c.Context(), "SELECT COUNT(*) FROM `"+dir+"/v`").Scan(&count)
+			reported := lintAgainst(c, conn, setup, statement)
+			dropErr := conn.Writer().ExecuteSQL(c.Context(), statement)
+			var count int64
+			readErr := conn.QueryRowContext(c.Context(), "SELECT COUNT(*) FROM `"+dir+"/v`").Scan(&count)
 
-	c.Assert(reported, qt.Contains, "YD106")
-	c.Assert(dropErr, qt.IsNil)
-	c.Assert(readErr, qt.ErrorMatches, `(?s).*Cannot find table 'db\.\[/local/`+regexp.QuoteMeta(dir)+`/base\]'.*`)
+			c.Assert(reported, qt.Contains, "YD106")
+			c.Assert(dropErr, qt.IsNil)
+			c.Assert(readErr, qt.ErrorMatches, `(?s).*Cannot find table 'db\.\[/local/`+regexp.QuoteMeta(dir)+`/base\]'.*`)
+		})
+	}
 }
 
 // YD105 reports the ALTER TABLE that resets a table's minimum partition count,
@@ -266,32 +266,36 @@ func TestYDBLint_PartitioningChangeResetsTheMinimum(t *testing.T) {
 			set: "SET (AUTO_PARTITIONING_BY_LOAD = ENABLED), SET (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4)", minimum: 4},
 		{name: "a size setting", set: "SET (AUTO_PARTITIONING_PARTITION_SIZE_MB = 100)", minimum: 4},
 	}
-	conn := openYDB(qt.New(t))
-	for i, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			c.Cleanup(func() { dropLintDir(c, conn) })
-			name := fmt.Sprintf("%s/partitions_%d", lintDir, i)
-			create := "CREATE TABLE `" + name + "` (id Uint64 NOT NULL, PRIMARY KEY (id)) WITH (" +
-				"AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4, AUTO_PARTITIONING_BY_SIZE = DISABLED, AUTO_PARTITIONING_BY_LOAD = DISABLED)"
-			c.Assert(conn.Writer().ExecuteSQL(c.Context(), create), qt.IsNil)
-			statement := "ALTER TABLE `" + name + "` " + test.set
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			conn := openYDB(qt.New(t), line)
+			for i, test := range tests {
+				t.Run(test.name, func(t *testing.T) {
+					c := qt.New(t)
+					c.Cleanup(func() { dropLintDir(c, conn) })
+					name := fmt.Sprintf("%s/partitions_%d", lintDir, i)
+					create := "CREATE TABLE `" + name + "` (id Uint64 NOT NULL, PRIMARY KEY (id)) WITH (" +
+						"AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4, AUTO_PARTITIONING_BY_SIZE = DISABLED, AUTO_PARTITIONING_BY_LOAD = DISABLED)"
+					c.Assert(conn.Writer().ExecuteSQL(c.Context(), create), qt.IsNil)
+					statement := "ALTER TABLE `" + name + "` " + test.set
 
-			reported := lintAgainst(c, conn, []string{create}, statement)
-			c.Assert(conn.Writer().ExecuteSQL(c.Context(), statement), qt.IsNil)
+					reported := lintAgainst(c, conn, []string{create}, statement)
+					c.Assert(conn.Writer().ExecuteSQL(c.Context(), statement), qt.IsNil)
 
-			c.Assert(slices.Contains(reported, "YD105"), qt.Equals, test.reported)
-			c.Assert(minPartitions(c, name), qt.Equals, test.minimum)
+					c.Assert(slices.Contains(reported, "YD105"), qt.Equals, test.reported)
+					c.Assert(minPartitions(c, line, name), qt.Equals, test.minimum)
+				})
+			}
 		})
 	}
 }
 
 // minPartitions reads a table's minimum partition count from the scheme
 // service, which Ptah's reader does not read yet.
-func minPartitions(c *qt.C, name string) uint64 {
+func minPartitions(c *qt.C, line ydbLine, name string) uint64 {
 	c.Helper()
 	ctx := c.Context()
-	driver, err := ydbsdk.Open(ctx, dbtarget.DriverDSN(c, dbtarget.YDB))
+	driver, err := ydbsdk.Open(ctx, dbtarget.DriverDSN(c, line.engine))
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = driver.Close(context.Background()) }()
 	var minimum uint64
