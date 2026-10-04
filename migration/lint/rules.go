@@ -973,7 +973,7 @@ func databaseObjectDroppedRule() Rule {
 			if !scanDestructiveObjectDrop(stmt.Words) {
 				return false, ""
 			}
-			return true, "dropping a database object removes existing schema behavior or principals; verify all dependent code and data paths are retired first"
+			return true, "dropping a database object removes existing schema behavior, principals or data; verify all dependent code and data paths are retired first"
 		},
 	}
 }
@@ -2117,7 +2117,9 @@ func scanDestructiveObjectDrop(w []string) bool {
 	// PROCEDURE and TRIGGER are here for the reason FUNCTION is: dropping one
 	// removes behavior a caller depends on, and this is the family that decides
 	// whether an apply proceeds (stokaro/ptah#2358).
-	case "TYPE", "EXTENSION", "FUNCTION", "PROCEDURE", "TRIGGER", "ROLE", "POLICY", "SCHEMA":
+	// TOPIC is YDB's: dropping one drops every message it holds and every
+	// consumer's position in it.
+	case "TYPE", "EXTENSION", "FUNCTION", "PROCEDURE", "TRIGGER", "ROLE", "POLICY", "SCHEMA", "TOPIC":
 		return true
 	default:
 		return false

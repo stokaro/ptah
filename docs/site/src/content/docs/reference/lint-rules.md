@@ -190,7 +190,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## Migration lint rules
 
-102 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings unless the policy's `gate` section names more families, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
+104 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings unless the policy's `gate` section names more families, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
 
 ### Every dialect
 
@@ -211,7 +211,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `DS104` | DROP NOT NULL removes a column-level data protection | both | Ptah |
 | `DS105` | an untyped DROP CONSTRAINT removes a data protection the SQL does not name | both | Ptah |
 | `DS106` | removing an enum value can invalidate rows that still hold it | both | Ptah |
-| `DS107` | dropping a schema, type, extension, function, procedure, trigger, role, or policy removes behavior | both | Ptah |
+| `DS107` | dropping a schema, type, extension, function, procedure, trigger, role, policy, or topic removes behavior or data | both | Ptah |
 | `DS108` | TRUNCATE deletes every row in the table | both | Ptah |
 | `DS109` | DISABLE ROW LEVEL SECURITY removes an access-control protection | both | Ptah |
 | `DS110P` | a column a view or routine reads is dropped, and the finding names what breaks | both | Ptah |
@@ -338,6 +338,8 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `YD107` | an `ALTER SEQUENCE` on a 16-bit or 32-bit Serial's sequence, which raises its maximum to the Int64 maximum, so the column wraps to negative values without an error | both | Ptah |
 | `YD108` | an `ALTER SEQUENCE` without a `RESTART` on a sequence an earlier statement restarted, which YDB replays, so the next insert takes a key a row holds | both | Ptah |
 | `YD109` | a `RENAME TO` of a table that carries a changefeed, which YDB refuses until every changefeed is dropped | both | Ptah |
+| `YD113` | an `ALTER TOPIC` that resets a topic setting, or a consumer setting other than its availability period, which YDB 26.2 accepts and keeps as it was, and 25.1 refuses | both | Ptah |
+| `YD114` | a topic or consumer setting YDB accepts and keeps nothing of, such as a storage limit or a codec it does not know | both | Ptah |
 
 ### What the rules for every dialect do on YDB
 
@@ -360,7 +362,7 @@ A YDB run reads migrations as YQL. The `YD` family above is YDB's own, and every
 | `DS104` | applies | `ALTER TABLE ... ALTER COLUMN ... DROP NOT NULL` |
 | `DS105` | no such statement in YQL | YDB has no named constraint to drop |
 | `DS106` | no such statement in YQL | YDB has no enum type |
-| `DS107` | no such statement in YQL | YDB has none of the objects it reads; it does not read `DROP USER` or `DROP GROUP` |
+| `DS107` | applies | `DROP TOPIC`, which drops every message the topic holds and every consumer's position in it; it does not read `DROP USER` or `DROP GROUP` |
 | `DS108` | applies | `TRUNCATE TABLE`, on lines with `truncate_table` |
 | `DS109` | no such statement in YQL | YDB has no row-level security |
 | `DS110P` | needs a dev database | what reads a column comes from a dev database replay |
@@ -394,7 +396,7 @@ A YDB run reads migrations as YQL. The `YD` family above is YDB's own, and every
 
 ## Default severities
 
-29 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `DS111P`, `MY146`, `ON101`, `ON102`, `ON103`, `SQL001`, `SQL002`, `YD101`, `YD102`, `YD103`, `YD104`, `YD106`, `YD107`, `YD108`, `YD109`. The other 80 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
+31 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `DS111P`, `MY146`, `ON101`, `ON102`, `ON103`, `SQL001`, `SQL002`, `YD101`, `YD102`, `YD103`, `YD104`, `YD106`, `YD107`, `YD108`, `YD109`, `YD113`, `YD114`. The other 80 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
 
 ## What ptah-compat prints
 

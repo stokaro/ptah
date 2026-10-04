@@ -294,11 +294,11 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"DS107": {
 		// Broader than Atlas DS101, which is the schema drop alone: this rule
 		// also fires on DROP TYPE, EXTENSION, FUNCTION, PROCEDURE, TRIGGER,
-		// ROLE, and POLICY, so the rule is ours even though it covers the Atlas
-		// one.
-		Summary: "dropping a schema, type, extension, function, procedure, trigger, role, or policy removes behavior",
-		YDB:     YDBNoSuchStatement,
-		YDBNote: "YDB has none of the objects it reads; it does not read `DROP USER` or `DROP GROUP`",
+		// ROLE, POLICY and TOPIC, so the rule is ours even though it covers the
+		// Atlas one.
+		Summary: "dropping a schema, type, extension, function, procedure, trigger, role, policy, or topic removes behavior or data",
+		YDB:     YDBApplies,
+		YDBNote: "`DROP TOPIC`, which drops every message the topic holds and every consumer's position in it; it does not read `DROP USER` or `DROP GROUP`",
 	},
 	"AC101": {
 		Summary: "the migration defines a routine whose body is not analyzed, so a clean result says nothing about what the body does",
@@ -617,6 +617,12 @@ var migrationRuleMeta = map[string]ruleMeta{
 	},
 	"YD109": {
 		Summary: "a `RENAME TO` of a table that carries a changefeed, which YDB refuses until every changefeed is dropped",
+	},
+	"YD113": {
+		Summary: "an `ALTER TOPIC` that resets a topic setting, or a consumer setting other than its availability period, which YDB 26.2 accepts and keeps as it was, and 25.1 refuses",
+	},
+	"YD114": {
+		Summary: "a topic or consumer setting YDB accepts and keeps nothing of, such as a storage limit or a codec it does not know",
 	},
 }
 
