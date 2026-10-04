@@ -35,6 +35,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
@@ -111,6 +112,9 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 		result = append(result, ast.NewComment("CLICKHOUSE: enum changes are ignored; declare ClickHouse Enum8/Enum16 columns inline via platform.clickhouse.type"))
 	}
 
+	if err := refusePrimaryKeyChanges(diff); err != nil {
+		return nil, err
+	}
 	result = reportUnsupportedObjectsBeforeTables(result, diff)
 	result = p.addNewTables(result, diff)
 	result = p.modifyExistingTables(result, diff)
@@ -208,6 +212,40 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.Schema
 		}
 	}
 	return result
+}
+
+// refusePrimaryKeyChanges refuses a plan that moves a column into or out of an
+// existing table's primary key.
+//
+// A MergeTree table's primary key is fixed when the table is created. Measured
+// on 24.10 and 26.9: `ALTER TABLE t MODIFY PRIMARY KEY` is a syntax error, and
+// `MODIFY ORDER BY` must keep the primary key as a prefix of the sorting key,
+// so it can neither reorder the key nor take a column out of it. The column
+// change the comparison reports is planned as a MODIFY COLUMN, which the server
+// accepts and which changes no key, so the plan would apply and the next one
+// would report the same change (stokaro/ptah#4104). The table has to be
+// created again with the new key, which drops its rows, so that is the
+// author's step rather than the plan's.
+func refusePrimaryKeyChanges(diff *difftypes.SchemaDiff) error {
+	for _, table := range diff.TablesModified {
+		for _, column := range table.ColumnsModified {
+			change, moved := column.Changes["primary_key"]
+			if !moved {
+				continue
+			}
+			return &ptaherr.CapabilityError{
+				Dialect: platform.ClickHouse,
+				Feature: "changing a table's primary key",
+				Err:     ptaherr.ErrUnsupportedFeature,
+				Message: fmt.Sprintf(
+					"the primary key of %s changes (column %s: %s): ClickHouse fixes a MergeTree table's"+
+						" primary key when the table is created, and no ALTER changes it; create the table"+
+						" again with the new key and copy its rows",
+					table.TableName, column.ColumnName, change),
+			}
+		}
+	}
+	return nil
 }
 
 func (p *Planner) addNewIndexes(
