@@ -37,8 +37,8 @@ type Connection struct {
 	Realm string
 }
 
-// The parameters a YDB URL may carry besides database and monitoring, which
-// internal/ydburl takes out of the query. Each is read by Ptah or passed to
+// The parameters a YDB URL may carry besides database, monitoring and
+// dev_realm, which internal/ydburl takes out of the query. Each is read by Ptah or passed to
 // ydb-go-sdk, which documents it; any other parameter is refused, because the
 // SDK ignores a parameter it does not know without a word.
 const (
@@ -57,8 +57,9 @@ const (
 // acceptedParameters lists, in the order a refusal names them, the parameters
 // a YDB URL may carry.
 var acceptedParameters = []string{
-	ydburl.DatabaseParameter, ydburl.MonitoringParameter, paramToken, paramUseEnvCredentials, paramBalancer,
-	paramLegacyBalancer, paramQueryMode, paramLegacyQueryMode, paramDefaultIdempotent, paramPrefetchParts,
+	ydburl.DatabaseParameter, ydburl.MonitoringParameter, ydburl.RealmParameter, paramToken, paramUseEnvCredentials,
+	paramBalancer, paramLegacyBalancer, paramQueryMode, paramLegacyQueryMode, paramDefaultIdempotent,
+	paramPrefetchParts,
 }
 
 // Open connects to the YDB database a ydb:// or ydbs:// URL names.
