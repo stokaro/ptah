@@ -1130,22 +1130,28 @@ refuses it in the binary's words, from a flag, `atlas.hcl` or a data source the
 file connects to.
 
 Measured on 2026-10-04 against local-ydb 26.2.1.14, every exit status read from
-an unpiped invocation:
+an unpiped invocation. The binary answers `schema inspect`, `schema apply`,
+`schema diff`, `schema clean`, `migrate apply`, `migrate status` and `migrate
+set` on a YDB URL with `sql/sqlclient: unknown driver "ydb". See:
+https://atlasgo.io/url`, naming `"ydbs"` for a `ydbs://` URL:
 
-| Invocation | Pinned community binary v1.3.0 | `ptah-compat` | `ptah-compat` under `PTAH_ATLAS_STRICT_COMPAT=1` |
+| URL | Binary | `ptah-compat` | Strict |
 | --- | --- | --- | --- |
-| `schema inspect`, `schema apply`, `schema diff`, `schema clean`, `migrate apply`, `migrate status` or `migrate set` with `--url ydb://...` | exit `1`, `sql/sqlclient: unknown driver "ydb". See: https://atlasgo.io/url` | exit `0` | exit `1`, the same sentence |
-| `schema inspect --url ydbs://...` | exit `1`, the same sentence naming `"ydbs"` | dials the server over TLS: a plaintext port answers `tls: first record does not look like a TLS handshake` | exit `1`, the same sentence naming `"ydbs"` |
-| `migrate diff`, `migrate lint` or `migrate validate` with `--dev-url ydb://...` | exit `1`, the same sentence | exit `1`, a YDB database cannot be a dev database yet | exit `1`, the same sentence |
-| `atlas.hcl` with a `data "sql"` source on a `ydb://` URL | exit `1`, `data.sql.tenants: opening connection: sql/sqlclient: unknown driver "ydb". See: https://atlasgo.io/url` | exit `0` | exit `1`, `data.sql.tenants: opening database: sql/sqlclient: unknown driver "ydb". See: https://atlasgo.io/url` |
+| `--url ydb://...` | exit `1`, unknown driver | exit `0` | exit `1`, the same sentence |
+| `--url ydbs://...` | exit `1`, unknown driver | dials over TLS | exit `1`, the same sentence |
+| `--dev-url ydb://...` | exit `1`, unknown driver | exit `1`, not a dev database yet | exit `1`, the same sentence |
+| a `data "sql"` source | exit `1`, unknown driver | exit `0` | exit `1`, unknown driver |
+
+A `ydbs://` URL reaches the server over TLS: on a plaintext port it fails with
+`tls: first record does not look like a TLS handshake`. A data source is refused
+with `data.sql.tenants: opening database: ...` where the binary says `opening
+connection: ...`, a difference in the middle words that every engine shows.
 
 The never-looser rule is about an invocation the binary refuses because the
 user got something wrong. A YDB URL is a request for an engine the binary lacks,
 and refusing it in the default profile would remove a capability Ptah has.
 `docker://ydb/...` answers `unsupported docker image "ydb"` on both binaries and
-in both profiles, because Ptah does not start a YDB dev database yet. The data
-source row differs in its middle words, `opening database` where the binary
-says `opening connection`, on every engine.
+in both profiles, because Ptah does not start a YDB dev database yet.
 
 **Tracking.** [`stokaro/ptah#4015`](https://github.com/stokaro/ptah/issues/4015)
 

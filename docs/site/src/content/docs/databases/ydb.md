@@ -474,6 +474,10 @@ The YDB driver reports a row count it did not measure, so a `script exec` or
 refused rather than judged against the number. A script spells parameters the
 way YQL reads them, `$p1`, `$p2` and so on; `?` is not YQL.
 
+`ptah-compat` plans no table rebuild, so a primary key change, a column type
+change and `SET NOT NULL` are refused there; `--allow-table-rebuild` belongs to
+the native commands.
+
 Verbs that need a dev database are refused until YDB can be one: `migrate
 diff`, `migrate lint`, `migrate checkpoint`, `migrate validate --dev-url`,
 `schema plan validate` and `schema apply --plan`. Every local-ydb server serves
