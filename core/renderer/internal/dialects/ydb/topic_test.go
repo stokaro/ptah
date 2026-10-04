@@ -75,6 +75,18 @@ func TestRender_Topic_FailurePath(t *testing.T) {
 			want: "topic events, which requires target capability topics, unavailable on this ydb target",
 		},
 		{
+			name: "a change on a target without topics",
+			caps: capability.YDB262().With(capability.Topics, false),
+			node: ast.NewAlterTopic("events", ast.TopicSpec{RetentionPeriod: "PT2H"}, ast.TopicSpec{}),
+			want: "topic events, which requires target capability topics, unavailable on this ydb target",
+		},
+		{
+			name: "a drop on a target without topics",
+			caps: capability.YDB262().With(capability.Topics, false),
+			node: ast.NewDropTopic("events"),
+			want: "topic events, which requires target capability topics, unavailable on this ydb target",
+		},
+		{
 			name: "an availability period on 25.1",
 			caps: capability.YDB251(),
 			node: ast.NewCreateTopic("events", ast.TopicSpec{

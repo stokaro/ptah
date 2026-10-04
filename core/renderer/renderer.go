@@ -368,9 +368,9 @@ func prepareNodes(
 // renderer has; see [validatingRenderer.VisitNode].
 //
 // An absent node is refused here, for every target alike, whether it is a nil
-// interface or a nil pointer of a node type. No dialect renderer sees one:
-// several dereference the node in the handler its type selects, which a nil
-// pointer reaches.
+// interface or a nil pointer of a node type, and before the switch below: an
+// arm reads its node's fields, and so does the dialect handler the node's
+// type selects, so neither may be handed a nil pointer.
 func prepareNode(
 	dialect string,
 	caps capability.Capabilities,
@@ -378,6 +378,9 @@ func prepareNode(
 ) (ast.Node, error) {
 	if node == nil {
 		return nil, nilNodeError(dialect, "AST node")
+	}
+	if isNilInterface(node) {
+		return nil, nilNodeError(dialect, fmt.Sprintf("%T", node))
 	}
 	switch typed := node.(type) {
 	case *ast.StatementList:
@@ -403,14 +406,8 @@ func prepareNode(
 	case *ast.DropTopicNode:
 		return node, refuseTopic(dialect, caps, "DROP TOPIC "+typed.Name)
 	case *ast.CreateRoleNode, *ast.DropRoleNode, *ast.GrantPrivilegeNode, *ast.RevokePrivilegeNode:
-		if isNilInterface(node) {
-			return nil, nilNodeError(dialect, "AST node")
-		}
 		return node, refuseAccessNode(dialect, caps, node)
 	default:
-		if isNilInterface(node) {
-			return nil, nilNodeError(dialect, "AST node")
-		}
 		return prepareStandaloneFragment(dialect, caps, node)
 	}
 }
