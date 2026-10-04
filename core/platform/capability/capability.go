@@ -1186,12 +1186,11 @@ const (
 	CreateIndexStatement Capability = "create_index_statement"
 
 	// IndexCoveringColumns marks a target on which Ptah renders, reads and
-	// plans an index's payload columns: INCLUDE on the PostgreSQL family
-	// (STORING on CockroachDB, which takes INCLUDE as a synonym) and COVER on
-	// YDB.
+	// plans an index's payload columns: INCLUDE on the PostgreSQL family and
+	// SQL Server (STORING on CockroachDB, which takes INCLUDE as a synonym) and
+	// COVER on YDB.
 	//
-	// It describes Ptah rather than the engine: SQL Server takes INCLUDE, and
-	// the key is false there because its renderer does not emit it, so an
+	// It describes Ptah rather than the engine. On a target without it, an
 	// index that declares payload columns is refused instead of rendered
 	// without them.
 	IndexCoveringColumns Capability = "index_covering_columns"
@@ -1232,7 +1231,9 @@ const (
 	// asynchronously, YDB's `GLOBAL ASYNC`: a write commits without waiting
 	// for the index, and a read through the index may trail the table.
 	// Measured inline in CREATE TABLE and through ALTER TABLE ... ADD INDEX
-	// on every YDB line from 25.1.4.7 to 26.2.1.14.
+	// on every YDB line from 25.1.4.7 to 26.2.1.14. The EnableAsyncIndexes
+	// feature flag does not decide it: with the flag off, 26.2.1.14 and
+	// 25.1.4.7 still build both and answer reads through them.
 	AsyncIndexes Capability = "async_indexes"
 
 	// IndexRename marks a target on which Ptah plans an index whose
@@ -1659,7 +1660,7 @@ var registry = map[Capability]spec{
 		// Validate must not turn that composition into an error.
 	},
 	IndexCoveringColumns: {
-		doc: "Ptah renders an index's payload columns: INCLUDE on the PostgreSQL family, COVER on YDB",
+		doc: "Ptah renders an index's payload columns: INCLUDE on the PostgreSQL family and SQL Server, COVER on YDB",
 	},
 	UniqueIndexOnExistingTable: {
 		doc: "a unique index can be added to a table that already holds rows (not ClickHouse; behind a flag on YDB)",
@@ -3014,7 +3015,11 @@ func SQLServer2022() Capabilities {
 		ExpressionDefaults:         true,
 		CheckConstraints:           true,
 		CreateIndexStatement:       true,
-		IndexCoveringColumns:       false,
+		// INCLUDE on an index, rendered, read back from sys.index_columns and
+		// compared. Measured on 16.0.4295.3 and 17.0.5005.3: the payload keeps
+		// the order written, a unique and a filtered index take it, and a
+		// clustered index refuses it (Msg 10601).
+		IndexCoveringColumns:       true,
 		UniqueIndexOnExistingTable: true,
 		// DECIMAL(p,s) and SMALLINT defaults exist; SERIAL does not (an
 		// identity column is IDENTITY), and none of YDB's own types do.

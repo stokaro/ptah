@@ -35,9 +35,13 @@ type DiffPolicy struct {
 
 	// AllowTableRebuild plans a change the target cannot make in place as an
 	// explicit table rebuild. The native commands set it from
-	// --allow-table-rebuild; the compatibility surface never does, because no
-	// Atlas dialect needs one.
+	// --allow-table-rebuild, and the compatibility surface, which takes no new
+	// flag, from PTAH_ALLOW_TABLE_REBUILD.
 	AllowTableRebuild bool
+	// TableRebuildRequest is how the caller asks for AllowTableRebuild, and the
+	// refusal of a change only a rebuild can make names it. Empty names the
+	// native flag. See [ptah.run/migration/planner.Options.TableRebuildRequest].
+	TableRebuildRequest string
 }
 
 // declaredConcurrentIndexRefs is the index additions the desired description

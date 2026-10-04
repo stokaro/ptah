@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/internal/cli/internal/cmdflags"
+	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/embeddigest"
 	"ptah.run/internal/embedpg"
 	"ptah.run/internal/embedrelease"
@@ -138,11 +139,11 @@ func validateDatabaseURL(dbURL string) error {
 func connectDatabase(ctx context.Context, dbURL string) (*sql.DB, error) {
 	db, err := sql.Open("pgx", dbURL)
 	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", redact(dbURL), err)
+		return nil, fmt.Errorf("open %s: %w", dburldisplay.Format(dbURL), err)
 	}
 	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("connect to %s: %w", redact(dbURL), err)
+		return nil, fmt.Errorf("connect to %s: %w", dburldisplay.Format(dbURL), err)
 	}
 	return db, nil
 }
@@ -235,26 +236,6 @@ func (s *specSource) reportResolution(fetched embedrelease.Fetched) error {
 		"release %s resolved to %s, generation %s\n",
 		fetched.Reference, fetched.Digest, fetched.Release.Generation)
 	return err
-}
-
-// redact removes a password from a URL before it reaches a terminal or a log.
-//
-// A connection error is the most likely thing to be pasted into an issue, and
-// the URL is where the credential is.
-func redact(dbURL string) string {
-	scheme, rest, found := strings.Cut(dbURL, "://")
-	if !found {
-		return dbURL
-	}
-	credentials, host, found := strings.Cut(rest, "@")
-	if !found {
-		return dbURL
-	}
-	user, _, hasPassword := strings.Cut(credentials, ":")
-	if !hasPassword {
-		return dbURL
-	}
-	return scheme + "://" + user + ":***@" + host
 }
 
 // writeLines prints a block of text.

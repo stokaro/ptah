@@ -83,6 +83,12 @@ func TestRefine_HappyPath(t *testing.T) {
 			key:   capability.ParameterizedDecimal,
 			want:  true,
 		},
+		{
+			name:  "renaming an index follows its flag",
+			flags: ydbflags.Flags{"EnableMoveIndex": false},
+			key:   capability.IndexRename,
+			want:  false,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -111,6 +117,59 @@ func TestRefine_AnAbsentFlagKeepsThePreset(t *testing.T) {
 		"EnableSetDropDefaultValue": true, "EnableParameterizedDecimal": true,
 	}
 	c.Assert(graduated.Refine(capability.YDB262()).Has(capability.WideDateTimeTypes), qt.IsTrue)
+}
+
+// A cluster that turned EnableAsyncIndexes off still builds async indexes:
+// measured on both certified lines with the flag off in the startup
+// configuration, which is what these pages were recorded from. So the flag
+// leaves async_indexes, and every other key, as the line's preset has it.
+func TestRefine_AsyncIndexesFlagOffKeepsThePreset(t *testing.T) {
+	for _, test := range []struct {
+		page   string
+		preset func() capability.Capabilities
+	}{
+		{page: "local-ydb-26.2.1.14-async-indexes-off.json", preset: capability.YDB262},
+		{page: "local-ydb-25.1.4.7-async-indexes-off.json", preset: capability.YDB251},
+	} {
+		t.Run(test.page, func(t *testing.T) {
+			c := qt.New(t)
+			flags, err := ydbflags.Decode(page(c, test.page), "/local")
+			c.Assert(err, qt.IsNil)
+			c.Assert(flags["EnableAsyncIndexes"], qt.IsFalse)
+
+			refined := flags.Refine(test.preset())
+
+			c.Assert(refined.Has(capability.AsyncIndexes), qt.IsTrue)
+			c.Assert(refined, qt.DeepEquals, test.preset())
+		})
+	}
+}
+
+// A cluster that turned EnableMoveIndex off refuses ALTER TABLE ... RENAME
+// INDEX, measured on both certified lines with the flag off in the startup
+// configuration, which is what these pages were recorded from. The flag turns
+// index_rename off, so Ptah plans a drop and a create the server takes, and
+// leaves every other key as the line's preset has it.
+func TestRefine_MoveIndexFlagOffTurnsIndexRenameOff(t *testing.T) {
+	for _, test := range []struct {
+		page   string
+		preset func() capability.Capabilities
+	}{
+		{page: "local-ydb-26.2.1.14-move-index-off.json", preset: capability.YDB262},
+		{page: "local-ydb-25.1.4.7-move-index-off.json", preset: capability.YDB251},
+	} {
+		t.Run(test.page, func(t *testing.T) {
+			c := qt.New(t)
+			flags, err := ydbflags.Decode(page(c, test.page), "/local")
+			c.Assert(err, qt.IsNil)
+			c.Assert(test.preset().Has(capability.IndexRename), qt.IsTrue)
+
+			refined := flags.Refine(test.preset())
+
+			c.Assert(refined.Has(capability.IndexRename), qt.IsFalse)
+			c.Assert(refined, qt.DeepEquals, test.preset().With(capability.IndexRename, false))
+		})
+	}
 }
 
 // TestRefine_LeavesUngatedKeysAndItsInputAlone pins the rest of the set: a
@@ -189,24 +248,39 @@ func TestDecode_FailurePath(t *testing.T) {
 	}
 }
 
+// The page is read with the connection's credential, sent bare in the
+// Authorization header, which is the one spelling a YDB monitoring endpoint
+// that enforces authentication accepts; an anonymous connection sends none.
 func TestRead_HappyPath(t *testing.T) {
-	c := qt.New(t)
-	body := page(c, "local-ydb-26.2.1.14.json")
-	var asked *url.URL
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		asked = r.URL
-		_, _ = w.Write(body)
-	}))
-	c.Cleanup(server.Close)
-	endpoint, err := url.Parse(server.URL)
-	c.Assert(err, qt.IsNil)
+	for _, test := range []struct {
+		name              string
+		ticket            string
+		wantAuthorization []string
+	}{
+		{name: "an anonymous connection", ticket: "", wantAuthorization: nil},
+		{name: "a connection with a credential", ticket: "eyJhbGciOi.t0k3n", wantAuthorization: []string{"eyJhbGciOi.t0k3n"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			body := page(c, "local-ydb-26.2.1.14.json")
+			var asked *http.Request
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				asked = r
+				_, _ = w.Write(body)
+			}))
+			c.Cleanup(server.Close)
+			endpoint, err := url.Parse(server.URL)
+			c.Assert(err, qt.IsNil)
 
-	flags, err := ydbflags.Read(t.Context(), endpoint, "/local")
+			flags, err := ydbflags.Read(t.Context(), endpoint, "/local", test.ticket)
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(flags["EnableSetDropDefaultValue"], qt.IsTrue)
-	c.Assert(asked.Path, qt.Equals, "/viewer/json/feature_flags")
-	c.Assert(asked.Query().Get("database"), qt.Equals, "/local")
+			c.Assert(err, qt.IsNil)
+			c.Assert(flags["EnableSetDropDefaultValue"], qt.IsTrue)
+			c.Assert(asked.URL.Path, qt.Equals, "/viewer/json/feature_flags")
+			c.Assert(asked.URL.Query().Get("database"), qt.Equals, "/local")
+			c.Assert(asked.Header.Values("Authorization"), qt.DeepEquals, test.wantAuthorization)
+		})
+	}
 }
 
 func TestRead_FailurePath(t *testing.T) {
@@ -222,15 +296,43 @@ func TestRead_FailurePath(t *testing.T) {
 
 	t.Run("a refusing endpoint", func(t *testing.T) {
 		c := qt.New(t)
-		flags, err := ydbflags.Read(t.Context(), endpoint, "/nope")
+		flags, err := ydbflags.Read(t.Context(), endpoint, "/nope", "")
 		c.Assert(err, qt.ErrorMatches,
 			`read YDB feature flags from http://.*/viewer/json/feature_flags\?database=%2Fnope: `+
 				`400 Bad Request: Failed to resolve database`)
 		c.Assert(flags, qt.IsNil)
 	})
+	// 26.2.1.14 answers the same to a user without DESCRIBE SCHEMA on the
+	// database, and the error says so when the page was read as a user.
+	t.Run("a refusal of the connection's user", func(t *testing.T) {
+		c := qt.New(t)
+		flags, err := ydbflags.Read(t.Context(), endpoint, "/local", "t0k3n")
+		c.Assert(err, qt.ErrorMatches,
+			`read YDB feature flags from http://.*/viewer/json/feature_flags\?database=%2Flocal: `+
+				`400 Bad Request: Failed to resolve database; the page is read as the connection's user, `+
+				`who needs DESCRIBE SCHEMA on /local`)
+		c.Assert(flags, qt.IsNil)
+	})
+	// An endpoint that repeats the request's headers in its refusal repeats
+	// the credential, and the error must not.
+	t.Run("a refusal that repeats the credential", func(t *testing.T) {
+		c := qt.New(t)
+		mirror := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "Could not find correct token validator for "+r.Header.Get("Authorization"), http.StatusForbidden)
+		}))
+		c.Cleanup(mirror.Close)
+		mirroring, err := url.Parse(mirror.URL)
+		c.Assert(err, qt.IsNil)
+
+		flags, err := ydbflags.Read(t.Context(), mirroring, "/local", "eyJhbGciOi.t0k3n")
+
+		c.Assert(err, qt.ErrorMatches, `read YDB feature flags from http://.*: 403 Forbidden: `+
+			`Could not find correct token validator for <redacted>`)
+		c.Assert(flags, qt.IsNil)
+	})
 	t.Run("no endpoint", func(t *testing.T) {
 		c := qt.New(t)
-		flags, err := ydbflags.Read(t.Context(), nil, "/local")
+		flags, err := ydbflags.Read(t.Context(), nil, "/local", "")
 		c.Assert(err, qt.ErrorMatches, `no monitoring endpoint to read feature flags from`)
 		c.Assert(flags, qt.IsNil)
 	})
@@ -251,7 +353,7 @@ func TestRead_FailurePath(t *testing.T) {
 		redirecting, err := url.Parse(redirector.URL)
 		c.Assert(err, qt.IsNil)
 
-		flags, err := ydbflags.Read(t.Context(), redirecting, "/local")
+		flags, err := ydbflags.Read(t.Context(), redirecting, "/local", "t0k3n")
 
 		c.Assert(err, qt.ErrorMatches, `read YDB feature flags from http://.*: 302 Found: .*`)
 		c.Assert(flags, qt.IsNil)
@@ -268,7 +370,7 @@ func TestRead_FailurePath(t *testing.T) {
 		refusing, err := url.Parse(long.URL)
 		c.Assert(err, qt.IsNil)
 
-		flags, err := ydbflags.Read(t.Context(), refusing, "/local")
+		flags, err := ydbflags.Read(t.Context(), refusing, "/local", "")
 
 		c.Assert(err, qt.ErrorMatches, `read YDB feature flags from http://.*: 500 Internal Server Error: y{256}\.\.\.`)
 		c.Assert(flags, qt.IsNil)
@@ -323,6 +425,19 @@ func TestRefused_HappyPath(t *testing.T) {
 				"(EnableParameterizedDecimal feature flag is off), code: 2003",
 			wantKey:  capability.ParameterizedDecimal,
 			wantFlag: "EnableParameterizedDecimal",
+		},
+		{
+			name: "26.2.1.14 renaming an index",
+			refusal: "Status: PRECONDITION_FAILED Issues: <main>: Error: Executing ESchemeOpMoveIndex, code: 2029 " +
+				"<main>: Error: Move index is not supported yet, code: 2029",
+			wantKey:  capability.IndexRename,
+			wantFlag: "EnableMoveIndex",
+		},
+		{
+			name:     "25.1.4.7 renaming an index",
+			refusal:  "Status: PRECONDITION_FAILED Issues: <main>: Error: Move index is not supported yet, code: 2029",
+			wantKey:  capability.IndexRename,
+			wantFlag: "EnableMoveIndex",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

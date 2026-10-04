@@ -71,6 +71,9 @@ type Planner struct {
 	// rebuild plans a change YDB cannot make in place as a table rebuild;
 	// see [Planner.WithTableRebuild].
 	rebuild bool
+	// rebuildRequest is how the caller asks for a rebuild, as a refusal
+	// names it; see [Planner.WithTableRebuildRequest].
+	rebuildRequest string
 }
 
 // New returns a planner for the newest YDB line Ptah measured.
@@ -90,6 +93,16 @@ func NewWithCapabilities(caps capability.Capabilities) *Planner {
 func (p *Planner) WithTableRebuild(allow bool) *Planner {
 	copied := *p
 	copied.rebuild = allow
+	return &copied
+}
+
+// WithTableRebuildRequest returns a copy of the planner whose refusal of a
+// change only a rebuild can make names request as the way to ask for one. A
+// surface that reads the request from somewhere other than the native flag
+// passes its own spelling; an empty request names [TableRebuildFlag].
+func (p *Planner) WithTableRebuildRequest(request string) *Planner {
+	copied := *p
+	copied.rebuildRequest = request
 	return &copied
 }
 
@@ -624,7 +637,11 @@ func (p *Planner) rebuildable(key capability.Capability, feature, subject string
 	if !ok || p.caps.Has(key) {
 		return err
 	}
-	refusal.Message += "; YDB makes it by rebuilding the table, which Ptah plans when asked with " + TableRebuildFlag
+	request := p.rebuildRequest
+	if request == "" {
+		request = TableRebuildFlag
+	}
+	refusal.Message += "; YDB makes it by rebuilding the table, which Ptah plans when asked with " + request
 	return refusal
 }
 

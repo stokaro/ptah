@@ -302,8 +302,9 @@ jobs:
       # The health check is the image's own script, which runs a query, lists
       # the scheme and creates and drops a table; measured, a container
       # started this way reports healthy about six seconds after it starts.
-      # 8765 is the monitoring endpoint, where the feature-flag tests read the
-      # cluster's flags.
+      # 8765 is the monitoring endpoint. YDB_TEST_URL names it in its
+      # monitoring parameter, so every YDB live test reads the cluster's
+      # feature flags there when it connects.
       ydb:
         image: ydbplatform/local-ydb:26.2.1.14
         env:
@@ -323,6 +324,8 @@ jobs:
       # YDB251_TEST_URL. local-ydb advertises GRPC_PORT through discovery, so
       # the server listens on the port the runner reaches it on rather than
       # behind a remapped one, which would advertise the other server's port.
+      # MON_PORT moves the monitoring endpoint off the first server's 8765, and
+      # YDB251_TEST_URL names it in its monitoring parameter.
       # EnableVectorIndex is off by default on 25.1, and the reader's refusal
       # of a vector index needs a table that holds one; the flag decides no
       # capability, so every flag that does stays at the line's default.
@@ -629,8 +632,8 @@ jobs:
           # database.
           MYSQL_DEV_SERVER_URL: "mysql://root:root_password@127.0.0.1:3316/"
           MARIADB_DEV_SERVER_URL: "mariadb://root:root_password@127.0.0.1:3317/"
-          YDB_TEST_URL: "ydb://localhost:2136/local"
-          YDB251_TEST_URL: "ydb://localhost:2137/local"
+          YDB_TEST_URL: "ydb://localhost:2136/local?monitoring=http://localhost:8765"
+          YDB251_TEST_URL: "ydb://localhost:2137/local?monitoring=http://localhost:8766"
           CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
           PTAH_CLICKHOUSE_REALM_TEST_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
           PTAH_CLICKHOUSE_LEGACY_REALM_TEST_URL: "clickhouse://ptah_user:ptah_password@localhost:9001/ptah_test"

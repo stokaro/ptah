@@ -305,6 +305,15 @@ each verb does on YDB is on the [YDB page](./site/src/content/docs/databases/ydb
 and the divergence is recorded under
 [Compatibility differences](./site/src/content/docs/atlas/retained-divergences.md#a-ydb-database-url).
 
+A primary key change, a column type change or `SET NOT NULL` on YDB is refused
+on this surface unless `PTAH_ALLOW_TABLE_REBUILD=1` asks for a table rebuild,
+the variable twin of the native `--allow-table-rebuild` flag; the refusal names
+the variable. Measured on the same servers, `schema apply` of an `Int32` column
+widened to `Int64` without it exits 1 and leaves the column `Int32`, and with
+it rebuilds the table, keeps its rows and then reports the schema synced. The
+community binary plans no rebuild, so strict mode refuses the variable:
+`PTAH_ATLAS_STRICT_COMPAT does not allow PTAH_ALLOW_TABLE_REBUILD`.
+
 ## Never a Copied Defect
 
 Matching the pinned Atlas CE binary is the floor, not the ceiling. Where its
@@ -1472,14 +1481,15 @@ DROP INDEX IF EXISTS "i";
 CREATE INDEX IF NOT EXISTS "i" ON "t" USING BRIN ("ts");
 ```
 
-which drops the parameter. `include` is no longer part of this loss class: a
-model can declare `include="b"`, and PostgreSQL, YugabyteDB, and the Spanner
-PostgreSQL dialect preserve it as `INCLUDE ("b")`. Validation refuses
-CockroachDB and other dialects rather than dropping the payload. It also limits
-methods to default/`BTREE`/`GIST` on PostgreSQL 12–13, adds `SPGIST` on
-PostgreSQL 14 and newer, and accepts default/`LSM` on YugabyteDB. YugabyteDB's
-documented `BTREE` alias renders identically to its default LSM. Spanner accepts
-only the default. Closing the remaining class means adding a storage-parameter
+which drops the parameter. `include` is outside this loss class: a model can
+declare `include="b"`, and PostgreSQL, YugabyteDB, CockroachDB, the Spanner
+PostgreSQL dialect, and SQL Server preserve it as an `INCLUDE` clause, while YDB
+writes it as `COVER`. Validation refuses the other dialects rather than dropping
+the payload. It also limits methods to default/`BTREE`/`GIST` on PostgreSQL
+12–13, adds `SPGIST` on PostgreSQL 14 and newer, and accepts default/`LSM` on
+YugabyteDB. YugabyteDB's documented `BTREE` alias renders identically to its
+default LSM. Spanner accepts only the default, and CockroachDB and SQL Server
+accept the default and `BTREE`. Closing the remaining class means adding a storage-parameter
 attribute to the annotation surface, which is not attempted here.
 
 ### The access-method loss was not silent in general
