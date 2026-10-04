@@ -1,24 +1,18 @@
 package query
 
 // This file defines the DML query AST: a SELECT statement and the composable
-// boolean expression tree used by its WHERE and JOIN ON clauses. These are the
+// expression tree its WHERE, JOIN ON and HAVING clauses use. These are the
 // nodes the fluent builders in this package produce. They do not participate in
 // core/ast's DDL Visitor interface, because DML rendering must return bound
 // arguments in addition to a SQL string. Rendering is handled by RenderSelect.
 //
-// Phase 1 modeled SELECT / WHERE / ORDER BY / LIMIT / OFFSET over a single
-// table. Phase 2 adds JOINs: a table alias on the FROM clause, an optional
-// qualifier on ColumnRef / ResultColumn / OrderByClause so a column can render
-// as "alias"."col", and a JoinClause list on SelectStatement. Phase 3 adds
-// DISTINCT, GROUP BY, HAVING, and aggregate functions: a Distinct flag, a
-// GroupBy column list, and a Having expression on SelectStatement; a general
-// FuncCall expression node for COUNT / SUM / AVG / MIN / MAX; and an optional
-// Expr (and Alias) on ResultColumn so a projection entry can be an expression
-// rather than a plain column. Non-aggregate functions, arithmetic,
-// subqueries, and window functions remain follow-up phases. The types are shaped
-// so those extensions slot in without breaking callers (for example, Comparison
-// takes Expression operands on both sides rather than a bare column string, so a
-// HAVING can compare an aggregate against a bound value directly).
+// A SelectStatement carries a FROM table with an optional alias, a JoinClause
+// list, a Distinct flag, a GroupBy column list and a Having expression. A
+// column can be qualified by a table or an alias, so it renders as
+// "alias"."col", and a projection entry can be an expression with an alias
+// rather than a plain column. Comparison takes Expression operands on both
+// sides rather than a bare column string, so a HAVING can compare an aggregate
+// against a bound value directly.
 
 // Expression is a boolean or scalar expression used in DML statements such as
 // the WHERE clause of a SELECT.
@@ -63,8 +57,7 @@ type BoundValue struct {
 
 func (*BoundValue) expressionNode() {}
 
-// ComparisonOperator enumerates the binary comparison operators supported in
-// Phase 1.
+// ComparisonOperator enumerates the binary comparison operators.
 type ComparisonOperator int
 
 const (
@@ -120,9 +113,9 @@ func (op ComparisonOperator) String() string {
 
 // Comparison is a binary comparison of the form "Left <Operator> Right".
 //
-// In Phase 1 the query builder produces a ColumnRef on the left and a BoundValue
-// on the right, but the node accepts any Expression on either side so later
-// phases can compare columns or expressions directly.
+// The value-oriented helpers produce a ColumnRef on the left and a BoundValue
+// on the right, and the node accepts any Expression on either side, so a
+// column or an expression can be compared with another directly.
 type Comparison struct {
 	// Left is the left-hand operand.
 	Left Expression
@@ -387,8 +380,8 @@ type OrderByClause struct {
 // entry renders as "*" (select all columns) and Name and Qualifier are ignored;
 // otherwise Name renders as a dialect-quoted identifier, prefixed by
 // "Qualifier". when Qualifier is set. When Alias is set the entry is followed by
-// AS and the quoted alias. A zero ResultColumn leaves Expr nil and Alias empty,
-// so the Phase 1 and Phase 2 rendering is preserved unchanged.
+// AS and the quoted alias. A ResultColumn that sets neither Expr nor Alias
+// renders as a plain column.
 type ResultColumn struct {
 	// Expr is an optional projected expression, such as a FuncCall aggregate. When
 	// non-nil it is rendered instead of Qualifier, Name, and Star.
@@ -406,7 +399,7 @@ type ResultColumn struct {
 	Alias string
 }
 
-// JoinType enumerates the join kinds supported in Phase 2.
+// JoinType enumerates the join kinds.
 type JoinType int
 
 const (

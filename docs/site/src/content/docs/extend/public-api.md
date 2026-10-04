@@ -39,7 +39,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `core/platform/capability` | Capability flags for dialect/version behavior. |
 | `core/platform/identifier` | Catalog identifier comparison and namespace semantics. |
 | `core/ptaherr` | Typed public errors and sentinel errors. |
-| `core/query` | Fluent builder for parameterized, dialect-aware SELECT statements. |
+| `core/query` | Fluent builder for parameterized, dialect-aware SELECT, INSERT, UPDATE, DELETE and YDB UPSERT statements. |
 | `core/renderer` | Dialect-aware SQL rendering from AST/schema IR, including fail-closed two-phase foreign key ordering. |
 | `core/schemasource` | Runs an external desired-schema program and parses its output into schema IR. |
 | `core/sqlutil` | SQL utility helpers used by public paths. |

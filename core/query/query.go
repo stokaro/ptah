@@ -554,7 +554,7 @@ func Desc(column string) OrderByClause {
 // build one with Col, then turn it into a projection entry (via the builder's
 // Columns method), a comparison, a null test, or an ORDER BY term.
 //
-// The value-oriented Phase 1 helpers (Eq, In, Asc, and so on) that take a bare
+// The value-oriented helpers (Eq, In, Asc, and so on) that take a bare
 // column name still work unchanged for unqualified columns; Column adds
 // qualified-column support alongside them, it does not replace them. A qualifier
 // and name are always emitted as separately quoted identifiers, never inlined.
