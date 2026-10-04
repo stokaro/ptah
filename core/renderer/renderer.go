@@ -268,8 +268,6 @@ func (r *validatingRenderer) prepared(node ast.Node) (ast.Node, error) {
 		return prepareExtensionNode(r.dialect, n)
 	case *ast.CreateMaterializedViewNode:
 		return prepareCreateMaterializedViewNode(r.dialect, n)
-	case *ast.AlterSerialSequenceNode:
-		return prepareAlterSerialSequenceNode(r.dialect, r.capabilities, n)
 	default:
 		return node, nil
 	}
@@ -409,36 +407,11 @@ func prepareASTNodeForRendering(
 		return prepareExtensionNode(dialect, typed)
 	case *ast.CreateMaterializedViewNode:
 		return prepareCreateMaterializedViewNode(dialect, typed)
-	case *ast.AlterSerialSequenceNode:
-		return prepareAlterSerialSequenceNode(dialect, caps, typed)
 	default:
 		if isNilInterface(node) {
 			return nil, invalidASTForeignKeyError(dialect, "AST node is nil")
 		}
 		return node, nil
-	}
-}
-
-// prepareAlterSerialSequenceNode refuses a change to the sequence behind a
-// Serial column on a target without [capability.SerialSequenceOptions], before
-// the dialect renderer sees it. A nil node passes, for the dialect renderer to
-// name.
-func prepareAlterSerialSequenceNode(
-	dialect string,
-	caps capability.Capabilities,
-	node *ast.AlterSerialSequenceNode,
-) (ast.Node, error) {
-	if node == nil || caps.Has(capability.SerialSequenceOptions) {
-		return node, nil
-	}
-	normalized := platform.NormalizeDialect(dialect)
-	return nil, &ptaherr.CapabilityError{
-		Dialect: normalized,
-		Feature: string(capability.SerialSequenceOptions),
-		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf("changing the sequence of Serial column %q of table %q, which requires target "+
-			"capability %s, unavailable on this %s target", node.Column, node.Table,
-			capability.SerialSequenceOptions, normalized),
 	}
 }
 
