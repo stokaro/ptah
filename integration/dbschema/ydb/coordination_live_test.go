@@ -17,6 +17,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/ydbcoordination"
+	"ptah.run/internal/ydburl"
 )
 
 // coordinationSchema is the directory the coordination node tests write into.
@@ -236,8 +237,9 @@ func TestYDBCoordinationNodes_ReaderLeavesTheLockNodeOut(t *testing.T) {
 }
 
 // TestYDBCoordinationNodes_InADevRealm creates nodes through a dev realm's
-// connection, whose relative paths land under the realm, and resets the
-// realm, which drops them. Ptah's lock node is at the root of the database, so
+// connection, whose relative paths land under the realm and may not climb out
+// of it, and resets the realm, which drops them. Ptah's lock node is at the
+// root of the database, so
 // a node of its name at the realm's root is an ordinary node, read and reset
 // like the others.
 func TestYDBCoordinationNodes_InADevRealm(t *testing.T) {
@@ -248,11 +250,22 @@ func TestYDBCoordinationNodes_InADevRealm(t *testing.T) {
 			realm := connect(c, realmURL)
 			driver := coordinationDriver(c, line)
 			relative := path.Join(realmPath(c, realmURL), "app/locks")
+			// A run where the statement escapes the realm leaves its node beside
+			// the realms, where other tests count entries. The drop is cleanup
+			// only: the assertion below reads the node before it runs.
+			c.Cleanup(func() {
+				leaked := path.Join(driver.Name(), ydburl.RealmDirectory, "escaped")
+				_ = driver.Coordination().DropNode(context.Background(), leaked)
+			})
 
 			apply(c, realm, []string{
 				"CREATE COORDINATION NODE `app/locks` WITH (attach_consistency_mode = 'relaxed')",
 				"CREATE COORDINATION NODE ptah_locks",
 			})
+			escaped := realm.Writer().ExecuteSQL(c.Context(), "CREATE COORDINATION NODE `../escaped`")
+			c.Assert(escaped, qt.ErrorMatches, `(?s).*coordination node /\w+/ptah_dev/escaped is not in /\w+/ptah_dev/\w+.*`)
+			_, err := nodeConfig(c, driver, ydburl.RealmDirectory+"/escaped")
+			c.Assert(err, qt.ErrorMatches, noNode)
 			served, err := nodeConfig(c, driver, relative)
 			c.Assert(err, qt.IsNil)
 			c.Assert(served, qt.DeepEquals, coordination.NodeConfig{AttachConsistencyMode: coordination.ConsistencyModeRelaxed})
