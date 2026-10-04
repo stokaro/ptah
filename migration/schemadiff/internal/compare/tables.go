@@ -263,6 +263,10 @@ func TablesAndColumnsWithServerSpellings(
 			// different things about what the table is for -- on every run,
 			// with nothing able to fix it (stokaro/ptah#2168).
 			tableDiff.CommentChange = commentChange(genTable.Comment, dbTable.Comment)
+			// A YDB table's column families belong to the table as well, and a
+			// table whose only difference is which family a column sits in
+			// has to reach TablesModified for the same reason.
+			tableDiff.YDBColumnFamiliesChange = columnFamiliesChange(cov, genTable, dbTable)
 			// Changefeeds belong to the table too, and a table whose only
 			// difference is a changefeed has to reach TablesModified for the
 			// same reason.
@@ -270,7 +274,7 @@ func TablesAndColumnsWithServerSpellings(
 			if len(tableDiff.ColumnsAdded) > 0 || len(tableDiff.ColumnsRemoved) > 0 ||
 				len(tableDiff.ColumnsModified) > 0 || tableDiff.RowTTLChange != nil ||
 				tableDiff.RowDeletionPolicyChange != nil || tableDiff.CommentChange != nil ||
-				tableDiff.ChangefeedsChange != nil {
+				tableDiff.ChangefeedsChange != nil || tableDiff.YDBColumnFamiliesChange != nil {
 				diff.TablesModified = append(diff.TablesModified, tableDiff)
 			}
 		}

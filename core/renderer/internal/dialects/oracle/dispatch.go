@@ -205,6 +205,7 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.RenameIndexOperation,
 		*ast.AlterIndexVisibilityOperation,
 		*ast.SetIndexPartitioningOperation,
+		*ast.SetYDBColumnFamiliesOperation,
 		*ast.AddChangefeedOperation,
 		*ast.DropChangefeedOperation,
 		*ast.AlterChangefeedTopicOperation,
