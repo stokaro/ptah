@@ -543,7 +543,8 @@ func withMaterializedDevSchema(
 		}
 	}()
 
-	return devConn.WithSession(ctx, func(materializedConn *dbschema.DatabaseConnection) (resultErr error) {
+	ctx, settle := lock.Guard(ctx)
+	return settle(devConn.WithSession(ctx, func(materializedConn *dbschema.DatabaseConnection) (resultErr error) {
 		baseline, err := devclean.Claim(ctx, materializedConn)
 		if err != nil {
 			return err
@@ -565,7 +566,7 @@ func withMaterializedDevSchema(
 			return err
 		}
 		return consume(materializedConn, baseline)
-	})
+	}))
 }
 
 // materializeOnDev executes the desired schema's ordered CREATE statements on

@@ -836,6 +836,11 @@ Atlas:
   normalized database identity;
 - dialects without a safe dev-database lock fail before cleanup.
 
+A session advisory lock lives on a database session of its own while the
+replay runs on other connections. When the server ends that session, the
+replay stops and the command fails with the lost lock, because another run may
+hold the dev database by then.
+
 Cross-host ClickHouse and CockroachDB replay is unsupported.
 
 **`--qualifier`** prefixes every object in the generated statements with a

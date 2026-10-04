@@ -11,6 +11,7 @@ import (
 	"context"
 	"database/sql/driver"
 	"errors"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -174,4 +175,52 @@ func TestLock_ReportsTheEndOfItsSession(t *testing.T) {
 	c.Assert(IsLost(context.Cause(guarded)), qt.IsTrue)
 	c.Assert(lock.Release(context.Background()), qt.IsNil)
 	c.Assert(session.unlocks.Load(), qt.Equals, int64(0))
+}
+
+// Settle is the work's own error while the lock holds. Once the lock is lost
+// it is the loss, which names the work's error only when the loss did not
+// cause it.
+func TestLock_Settle(t *testing.T) {
+	tests := []struct {
+		name string
+		// failedChecks is how many checks of the session fail before Settle.
+		failedChecks int
+		wantLost     bool
+		workErr      error
+		want         string
+	}{
+		{name: "held, and the work succeeded", want: "<nil>"},
+		{name: "held, and the work failed", workErr: errors.New("syntax error"), want: "syntax error"},
+		{
+			name: "lost, and the work succeeded", failedChecks: 1, wantLost: true,
+			want: `apply lock: advisory lock "ptah_migrate" on postgres was lost while it was held: .*; ` +
+				`the apply stopped there`,
+		},
+		{
+			name: "lost, and the loss canceled the work", failedChecks: 1, wantLost: true, workErr: context.Canceled,
+			want: `apply lock: advisory lock "ptah_migrate" on postgres was lost while it was held: .*; ` +
+				`the apply stopped there`,
+		},
+		{
+			name: "lost, and the work failed on its own", failedChecks: 1, wantLost: true, workErr: errors.New("syntax error"),
+			want: `apply lock: advisory lock "ptah_migrate" on postgres was lost while it was held: .*; ` +
+				`the apply stopped there \(the apply reported: syntax error\)`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			hold, session, _ := newFakeSessionHold()
+			lock := &Lock{name: "ptah_migrate", dialect: "postgres", release: hold.release, holding: hold}
+			for range test.failedChecks {
+				session.fail(driver.ErrBadConn)
+				hold.check()
+			}
+
+			got := lock.Settle("apply lock", "the apply", test.workErr)
+
+			c.Assert(fmt.Sprint(got), qt.Matches, test.want)
+			c.Assert(IsLost(got), qt.Equals, test.wantLost)
+		})
+	}
 }

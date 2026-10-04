@@ -219,6 +219,24 @@ func (l *Lock) Guard(ctx context.Context) (context.Context, func()) {
 	}
 }
 
+// Settle returns the error of work that ran under a context [Lock.Guard]
+// returned. While the lock holds, it is workErr. Once the lock is lost, it is
+// the [LostError] as "<subject>: <loss>; <work> stopped there", followed by
+// what the work reported when that was something other than the loss or the
+// cancellation the loss sent. Settle before releasing the lock: a release is
+// not a loss, and a released lock reports none.
+func (l *Lock) Settle(subject, work string, workErr error) error {
+	lostErr := l.Err()
+	if lostErr == nil {
+		return workErr
+	}
+	lostErr = fmt.Errorf("%s: %w; %s stopped there", subject, lostErr, work)
+	if workErr != nil && !IsLost(workErr) && !errors.Is(workErr, context.Canceled) {
+		return fmt.Errorf("%w (%s reported: %v)", lostErr, work, workErr)
+	}
+	return lostErr
+}
+
 // Name returns the advisory lock name this lock was acquired under, after the
 // trimming [Acquire] applies. It is recorded on the no-op path too, so a
 // caller on a dialect without advisory locks can still report which lock it

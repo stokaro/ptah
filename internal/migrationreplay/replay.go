@@ -244,7 +244,8 @@ func replayOnConnection(
 	defer func() {
 		resultErr = errors.Join(resultErr, lock.Release())
 	}()
-	return replayOnLockedConnection(ctx, conn, fsys, dirFormat, atlasTemplateData, revisionVersions, hooks)
+	ctx, settle := lock.Guard(ctx)
+	return settle(replayOnLockedConnection(ctx, conn, fsys, dirFormat, atlasTemplateData, revisionVersions, hooks))
 }
 
 func replayOnLockedConnection(

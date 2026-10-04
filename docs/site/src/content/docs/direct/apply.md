@@ -151,6 +151,12 @@ then cancels the statement it is running, starts no other, and fails with the
 loss. [Locking](../../versioned/apply/#locking-and---migration-lock-timeout)
 says when the server takes it.
 
+`ptah-compat schema apply` keeps its lock on a database session of its own on
+every engine that locks, and plans and applies over other connections. When the server
+ends that session, as `pg_terminate_backend` or `KILL` does, the apply stops the
+same way and fails with the loss, also when the session ended while the apply
+waited for its confirmation.
+
 `PTAH_LOCK_TIMEOUT` fills the same flag, and a value that arrives that way
 writes a note to standard error and applies unlocked instead of refusing. The
 variable is shared: `ptah migrations up` and `ptah migrations down` read it as

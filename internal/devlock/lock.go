@@ -135,6 +135,28 @@ func Acquire(
 	}
 }
 
+// Guard returns a context derived from ctx that ends when the realm's lock is
+// lost, and settle, which stops watching and returns the error of the work
+// that ran under the context: err while the lock held, and the loss otherwise
+// (see [dblock.Lock.Settle]). Call settle once the work is done and before
+// [Lock.Release].
+//
+// A server lock lives on a session of its own while the work runs on other
+// connections, so the end of that session reaches the work through this
+// context alone; another replay may take the realm then. A file lock is never
+// lost, and its context ends only with ctx.
+func (l *Lock) Guard(ctx context.Context) (guarded context.Context, settle func(err error) error) {
+	var advisory *dblock.Lock
+	if l != nil {
+		advisory = l.advisory
+	}
+	guarded, stop := advisory.Guard(ctx)
+	return guarded, func(err error) error {
+		defer stop()
+		return advisory.Settle("dev database lock", "the work on the dev database", err)
+	}
+}
+
 // Release releases the realm lock. It uses a bounded background context so a
 // canceled replay does not leak a server advisory lock.
 func (l *Lock) Release() error {

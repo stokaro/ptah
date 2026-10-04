@@ -598,125 +598,125 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	defer releaseAtlasSchemaApplyLock(cmd, applyLock)
 	noteAtlasSchemaApplyLockUnsupported(cmd, opts.lock, applyLock, conn.Info().Dialect)
 
-	schemaVars, err := atlasVarFlagValues(cmd)
-	if err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
-	plan, err := atlasschema.PrepareApply(cmd.Context(), conn, withAtlasSchemaApplyPolicy(atlasschema.ApplyRuntimeOptions{
-		DevURL:      opts.devURL,
-		ToURLs:      opts.toURLs,
-		Exclude:     opts.exclude,
-		Schemas:     opts.schemas,
-		Include:     opts.include,
-		Policy:      policy,
-		TxMode:      txMode,
-		DryRun:      opts.dryRun,
-		ProjectEnv:  projectEnv,
-		PreparedTo:  preparedTo,
-		Diagnostics: cmd.ErrOrStderr(),
+	return runUnderAtlasSchemaApplyLock(cmd, applyLock, func() (string, error) {
+		schemaVars, err := atlasVarFlagValues(cmd)
+		if err != nil {
+			return "", err
+		}
+		plan, err := atlasschema.PrepareApply(cmd.Context(), conn, withAtlasSchemaApplyPolicy(atlasschema.ApplyRuntimeOptions{
+			DevURL:      opts.devURL,
+			ToURLs:      opts.toURLs,
+			Exclude:     opts.exclude,
+			Schemas:     opts.schemas,
+			Include:     opts.include,
+			Policy:      policy,
+			TxMode:      txMode,
+			DryRun:      opts.dryRun,
+			ProjectEnv:  projectEnv,
+			PreparedTo:  preparedTo,
+			Diagnostics: cmd.ErrOrStderr(),
 
-		ValidateMigrationSource: migrationSourceValidator,
-		Vars:                    schemaVars,
-		DevServerDisposable:     opts.devServerDisposable,
-	}, opts.policy))
-	if err != nil {
-		// The pinned community binary v1.3.0 reports the HCL diagnostic itself
-		// for this command. The loader's two context wrappers are useful on the
-		// native surface, but they are extra bytes on the compatibility boundary.
-		// Strip only that measured pair so every unrelated apply error retains
-		// its existing context (stokaro/ptah#1235 cell 9.13).
-		return cmdutil.Fail(cmd, displayAtlasSchemaApplyError(err, opts.toURLs))
-	}
-	if !plan.HasChanges() {
+			ValidateMigrationSource: migrationSourceValidator,
+			Vars:                    schemaVars,
+			DevServerDisposable:     opts.devServerDisposable,
+		}, opts.policy))
+		if err != nil {
+			// The pinned community binary v1.3.0 reports the HCL diagnostic itself
+			// for this command. The loader's two context wrappers are useful on the
+			// native surface, but they are extra bytes on the compatibility boundary.
+			// Strip only that measured pair so every unrelated apply error retains
+			// its existing context (stokaro/ptah#1235 cell 9.13).
+			return "", displayAtlasSchemaApplyError(err, opts.toURLs)
+		}
+		if !plan.HasChanges() {
+			if formatOutput {
+				return "", writeAtlasSchemaApplyFormat(cmd, opts, conn.Info().Dialect, plan.Statements())
+			}
+			// No trailing period, and only on this verb. The pinned community binary
+			// v1.3.0 writes `Schema is synced, no changes to be made\n` here -- 40
+			// bytes against Ptah's 41, read back with xxd and wc -c from an unpiped
+			// second `schema apply --auto-approve` over a synced SQLite database --
+			// while its `schema diff` answer, `Schemas are synced, no changes to be
+			// made.`, does carry one and already matches (stokaro/ptah#1235 9.4).
+			// The native `ptah schema apply` sentence is untouched: no parity is owed
+			// there and it is not this surface.
+			return "Schema is synced, no changes to be made", nil
+		}
+
+		sqlText := plan.SQL()
+		statements := plan.Statements()
+		if opts.edit {
+			edited, err := editAtlasSchemaApplySQL(cmd.Context(), sqlText)
+			if err != nil {
+				return "", err
+			}
+			sqlText = edited
+			statements = atlasschema.SplitApplyStatements(sqlText, conn.Info().Dialect)
+		}
+		formattedPlan := ""
 		if formatOutput {
-			return writeAtlasSchemaApplyFormat(cmd, opts, conn.Info().Dialect, plan.Statements())
+			var err error
+			formattedPlan, err = renderAtlasSchemaApplyFormat(opts, conn.Info().Dialect, statements)
+			if err != nil {
+				return "", err
+			}
+			fmt.Fprint(cmd.OutOrStdout(), formattedPlan)
+		} else {
+			printAtlasSchemaApplyPlan(cmd.OutOrStdout(), sqlText)
 		}
-		// No trailing period, and only on this verb. The pinned community binary
-		// v1.3.0 writes `Schema is synced, no changes to be made\n` here -- 40
-		// bytes against Ptah's 41, read back with xxd and wc -c from an unpiped
-		// second `schema apply --auto-approve` over a synced SQLite database --
-		// while its `schema diff` answer, `Schemas are synced, no changes to be
-		// made.`, does carry one and already matches (stokaro/ptah#1235 9.4).
-		// The native `ptah schema apply` sentence is untouched: no parity is owed
-		// there and it is not this surface.
-		fmt.Fprintln(cmd.OutOrStdout(), "Schema is synced, no changes to be made")
-		return nil
-	}
+		// The lint verdict covers the statements that would run, edits included,
+		// and lands before the --dry-run exit so a dry run reports the same refusal
+		// the real apply would.
+		if err := lintAtlasSchemaApplyPlan(opts, conn.Info().Dialect, statements); err != nil {
+			return "", err
+		}
+		// Both gates that can refuse this plan sit ABOVE the --dry-run exit, for
+		// the same reason the lint verdict does: a dry run exists so a plan can be
+		// checked before it is committed to, and a dry run that exits 0 on a plan
+		// the real apply refuses turns a CI gate into a false green. The cheap
+		// local policy check keeps running first, so the error a user sees when
+		// both would fail does not depend on whether --dry-run was passed.
+		if err := validateAtlasSchemaApplyDiffPolicy(txMode, conn.Info(), statements); err != nil {
+			return "", err
+		}
+		// The dev database rehearses the exact ordered statements that would be
+		// applied — including edited SQL — and a failed rehearsal refuses the
+		// apply before the target is touched.
+		if err := plan.SimulateOnDev(cmd.Context(), atlasschema.SimulateOptions{
+			DevURL:              opts.devURL,
+			TargetURL:           opts.url,
+			DesiredURLs:         opts.toURLs,
+			Statements:          statements,
+			DevServerDisposable: opts.devServerDisposable,
+		}); err != nil {
+			return "", err
+		}
+		if opts.dryRun {
+			return "", nil
+		}
 
-	sqlText := plan.SQL()
-	statements := plan.Statements()
-	if opts.edit {
-		edited, err := editAtlasSchemaApplySQL(cmd.Context(), sqlText)
+		ok, err := confirmAtlasSchemaApply(cmd, opts, formattedPlan)
 		if err != nil {
-			return cmdutil.Fail(cmd, err)
+			return "", err
 		}
-		sqlText = edited
-		statements = atlasschema.SplitApplyStatements(sqlText, conn.Info().Dialect)
-	}
-	formattedPlan := ""
-	if formatOutput {
-		var err error
-		formattedPlan, err = renderAtlasSchemaApplyFormat(opts, conn.Info().Dialect, statements)
-		if err != nil {
-			return cmdutil.Fail(cmd, err)
+		if !ok {
+			return "", nil
 		}
-		fmt.Fprint(cmd.OutOrStdout(), formattedPlan)
-	} else {
-		printAtlasSchemaApplyPlan(cmd.OutOrStdout(), sqlText)
-	}
-	// The lint verdict covers the statements that would run, edits included,
-	// and lands before the --dry-run exit so a dry run reports the same refusal
-	// the real apply would.
-	if err := lintAtlasSchemaApplyPlan(opts, conn.Info().Dialect, statements); err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
-	// Both gates that can refuse this plan sit ABOVE the --dry-run exit, for
-	// the same reason the lint verdict does: a dry run exists so a plan can be
-	// checked before it is committed to, and a dry run that exits 0 on a plan
-	// the real apply refuses turns a CI gate into a false green. The cheap
-	// local policy check keeps running first, so the error a user sees when
-	// both would fail does not depend on whether --dry-run was passed.
-	if err := validateAtlasSchemaApplyDiffPolicy(txMode, conn.Info(), statements); err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
-	// The dev database rehearses the exact ordered statements that would be
-	// applied — including edited SQL — and a failed rehearsal refuses the
-	// apply before the target is touched.
-	if err := plan.SimulateOnDev(cmd.Context(), atlasschema.SimulateOptions{
-		DevURL:              opts.devURL,
-		TargetURL:           opts.url,
-		DesiredURLs:         opts.toURLs,
-		Statements:          statements,
-		DevServerDisposable: opts.devServerDisposable,
-	}); err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
-	if opts.dryRun {
-		return nil
-	}
 
-	ok, err := confirmAtlasSchemaApply(cmd, opts, formattedPlan)
-	if err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
-	if !ok {
-		return nil
-	}
-
-	if opts.edit {
-		// The edited SQL replaces the prepared plan as the executable payload.
-		conn.SchemaWriter().SetDryRun(false)
-		if err := atlasschema.ApplySQL(cmd.Context(), conn, txMode, sqlText); err != nil {
-			return cmdutil.Fail(cmd, fmt.Errorf("apply schema changes: %w", err))
+		if opts.edit {
+			// The edited SQL replaces the prepared plan as the executable payload.
+			conn.SchemaWriter().SetDryRun(false)
+			if err := atlasschema.ApplySQL(cmd.Context(), conn, txMode, sqlText); err != nil {
+				return "", fmt.Errorf("apply schema changes: %w", err)
+			}
+		} else if err := plan.Execute(cmd.Context()); err != nil {
+			return "", fmt.Errorf("apply schema changes: %w", err)
 		}
-	} else if err := plan.Execute(cmd.Context()); err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("apply schema changes: %w", err))
-	}
-	if formatOutput {
-		return nil
-	}
-	fmt.Fprintln(cmd.OutOrStdout(), "Schema apply completed successfully.")
-	return nil
+		if formatOutput {
+			return "", nil
+		}
+		return "Schema apply completed successfully.", nil
+	})
 }
 
 func needsAtlasSchemaApplyConfig(cmd *cobra.Command) bool {
@@ -907,88 +907,89 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	defer releaseAtlasSchemaApplyLock(cmd, applyLock)
 	noteAtlasSchemaApplyLockUnsupported(cmd, opts.lock, applyLock, conn.Info().Dialect)
 
-	// A JSON plan always carries a fingerprint contract; a Ptah-written
-	// `.plan.hcl` carries one too (round-trip). Foreign Atlas hashes cannot be
-	// recomputed locally, so those plans rely on the rehearsal gate. The
-	// fingerprint shape is not a security boundary — the derivation is public
-	// — so it only ever adds a check, never removes one.
-	if planFormat == atlasschema.PlanFormatJSON || atlasschema.IsNativeFingerprint(plan.FromFingerprint) {
-		if err := atlasschema.VerifyPlanTarget(cmd.Context(), conn, plan); err != nil {
-			return cmdutil.Fail(cmd, err)
+	return runUnderAtlasSchemaApplyLock(cmd, applyLock, func() (string, error) {
+		// A JSON plan always carries a fingerprint contract; a Ptah-written
+		// `.plan.hcl` carries one too (round-trip). Foreign Atlas hashes cannot be
+		// recomputed locally, so those plans rely on the rehearsal gate. The
+		// fingerprint shape is not a security boundary — the derivation is public
+		// — so it only ever adds a check, never removes one.
+		if planFormat == atlasschema.PlanFormatJSON || atlasschema.IsNativeFingerprint(plan.FromFingerprint) {
+			if err := atlasschema.VerifyPlanTarget(cmd.Context(), conn, plan); err != nil {
+				return "", err
+			}
 		}
-	}
 
-	// One statement list is derived here and used for everything that follows
-	// — display, policy validation, rehearsal, and execution — so the list
-	// that gets verified is exactly the list that runs. Splitting with the
-	// connection dialect matters for the MySQL family, whose backslash escapes
-	// change where a string literal ends.
-	statements := atlasschema.SplitApplyStatements(plan.SQL(), conn.Info().Dialect)
-	formattedPlan := ""
-	if opts.formatOutput {
-		formattedPlan, err = renderAtlasSchemaApplyFormat(opts, conn.Info().Dialect, statements)
+		// One statement list is derived here and used for everything that follows
+		// — display, policy validation, rehearsal, and execution — so the list
+		// that gets verified is exactly the list that runs. Splitting with the
+		// connection dialect matters for the MySQL family, whose backslash escapes
+		// change where a string literal ends.
+		statements := atlasschema.SplitApplyStatements(plan.SQL(), conn.Info().Dialect)
+		formattedPlan := ""
+		if opts.formatOutput {
+			formattedPlan, err = renderAtlasSchemaApplyFormat(opts, conn.Info().Dialect, statements)
+			if err != nil {
+				return "", err
+			}
+			fmt.Fprint(cmd.OutOrStdout(), formattedPlan)
+		} else {
+			printAtlasSchemaApplyPlan(cmd.OutOrStdout(), plan.SQL())
+		}
+		// A pre-approved plan file is still SQL this command is about to run
+		// against the target, so the project's lint policy applies to it too.
+		// Exempting it would make --skip-lint inert on the one path an operator is
+		// most likely to be scripting.
+		if err := lintAtlasSchemaApplyPlan(opts, conn.Info().Dialect, statements); err != nil {
+			return "", err
+		}
+		if err := validateAtlasSchemaApplyDiffPolicy(txMode, conn.Info(), statements); err != nil {
+			return "", err
+		}
+		// The rehearsal runs on --dry-run too: a dry run is how an operator
+		// test-drives a plan, and it would be useless if verifying a foreign plan
+		// required committing to apply it.
+		if err := rehearseAtlasSchemaApplyPlan(cmd, conn, rehearsePlanParams{
+			policy:              rehearseWhenUnverified,
+			format:              planFormat,
+			statements:          statements,
+			desired:             desired,
+			exclude:             plan.Exclude,
+			txMode:              txMode,
+			devURL:              opts.devURL,
+			targetURL:           opts.url,
+			desiredURLs:         opts.toURLs,
+			devServerDisposable: opts.devServerDisposable,
+		}); err != nil {
+			return "", err
+		}
+		if opts.dryRun {
+			return "", nil
+		}
+
+		ok, err := confirmAtlasSchemaApply(cmd, opts, formattedPlan)
 		if err != nil {
-			return cmdutil.Fail(cmd, err)
+			return "", err
 		}
-		fmt.Fprint(cmd.OutOrStdout(), formattedPlan)
-	} else {
-		printAtlasSchemaApplyPlan(cmd.OutOrStdout(), plan.SQL())
-	}
-	// A pre-approved plan file is still SQL this command is about to run
-	// against the target, so the project's lint policy applies to it too.
-	// Exempting it would make --skip-lint inert on the one path an operator is
-	// most likely to be scripting.
-	if err := lintAtlasSchemaApplyPlan(opts, conn.Info().Dialect, statements); err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
-	if err := validateAtlasSchemaApplyDiffPolicy(txMode, conn.Info(), statements); err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
-	// The rehearsal runs on --dry-run too: a dry run is how an operator
-	// test-drives a plan, and it would be useless if verifying a foreign plan
-	// required committing to apply it.
-	if err := rehearseAtlasSchemaApplyPlan(cmd, conn, rehearsePlanParams{
-		policy:              rehearseWhenUnverified,
-		format:              planFormat,
-		statements:          statements,
-		desired:             desired,
-		exclude:             plan.Exclude,
-		txMode:              txMode,
-		devURL:              opts.devURL,
-		targetURL:           opts.url,
-		desiredURLs:         opts.toURLs,
-		devServerDisposable: opts.devServerDisposable,
-	}); err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
-	if opts.dryRun {
-		return nil
-	}
-
-	ok, err := confirmAtlasSchemaApply(cmd, opts, formattedPlan)
-	if err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
-	if !ok {
-		return nil
-	}
-
-	conn.SchemaWriter().SetDryRun(false)
-	if err := atlasschema.ApplyStatements(cmd.Context(), conn, txMode, statements); err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("apply schema changes: %w", err))
-	}
-	// The semantic end-state verification mirrors Atlas: always on whenever a
-	// desired state is available, with no flag to disable it.
-	if desired != nil {
-		if err := atlasschema.VerifyAppliedPlanState(cmd.Context(), conn, desired, plan.Exclude); err != nil {
-			return cmdutil.Fail(cmd, err)
+		if !ok {
+			return "", nil
 		}
-	}
-	if opts.formatOutput {
-		return nil
-	}
-	fmt.Fprintln(cmd.OutOrStdout(), "Schema apply completed successfully.")
-	return nil
+
+		conn.SchemaWriter().SetDryRun(false)
+		if err := atlasschema.ApplyStatements(cmd.Context(), conn, txMode, statements); err != nil {
+			return "", fmt.Errorf("apply schema changes: %w", err)
+		}
+		// The semantic end-state verification mirrors Atlas: always on whenever a
+		// desired state is available, with no flag to disable it.
+		if desired != nil {
+			if err := atlasschema.VerifyAppliedPlanState(cmd.Context(), conn, desired, plan.Exclude); err != nil {
+				return "", err
+			}
+		}
+		if opts.formatOutput {
+			return "", nil
+		}
+		return "Schema apply completed successfully.", nil
+	})
 }
 
 // rehearsePlanParams carries the plan-file rehearsal inputs derived from the
@@ -1536,6 +1537,39 @@ func acquireAtlasSchemaApplyLock(
 		return nil, nil
 	}
 	return atlasschema.AcquireApplyLock(cmd.Context(), conn, request.Name, timeout)
+}
+
+// runUnderAtlasSchemaApplyLock runs the part of an apply the lock serializes
+// through [atlasschema.ApplyLock.Run], so that part stops when the lock is lost
+// and the loss is the command's error. body returns what the command prints
+// once it succeeded, which waits for the lock's verdict: an apply that lost its
+// lock does not report success.
+//
+// While body runs, the command's context is the one that ends with the lock,
+// so every step that reads cmd.Context() stops with it. It is restored before
+// the error is printed, so a step the loss canceled reads as the loss rather
+// than as an interrupt the operator sent.
+func runUnderAtlasSchemaApplyLock(
+	cmd *cobra.Command,
+	lock *atlasschema.ApplyLock,
+	body func() (string, error),
+) error {
+	parent := cmd.Context()
+	var done string
+	err := lock.Run(parent, func(ctx context.Context) error {
+		cmd.SetContext(ctx)
+		defer cmd.SetContext(parent)
+		var bodyErr error
+		done, bodyErr = body()
+		return bodyErr
+	})
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if done != "" {
+		fmt.Fprintln(cmd.OutOrStdout(), done)
+	}
+	return nil
 }
 
 // releaseAtlasSchemaApplyLock releases the schema apply lock on every exit
