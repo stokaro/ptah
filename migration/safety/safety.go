@@ -120,6 +120,9 @@ func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 	forced, unforced := rlsForceDirections(diff.RLSForceChanged)
 	add(&findings, "rls_force_added", forced, Safe)
 	add(&findings, "rls_force_removed", unforced, Destructive)
+	add(&findings, "coordination_nodes_added", len(diff.CoordinationNodesAdded), Safe)
+	add(&findings, "coordination_nodes_removed", len(diff.CoordinationNodesRemoved), Destructive)
+	add(&findings, "coordination_nodes_modified", len(diff.CoordinationNodesModified), Warning)
 	add(&findings, "roles_added", len(diff.RolesAdded), Safe)
 	add(&findings, "roles_removed", len(diff.RolesRemoved), Destructive)
 	add(&findings, "roles_modified", len(diff.RolesModified), Warning)
@@ -546,6 +549,10 @@ func assessNode(node ast.Node) StatementAssessment {
 		assessment.Subject = n.Name
 		assessment.Severity = Destructive
 		assessment.Reason = "DROP POLICY removes an access-control protection"
+	case *ast.DropCoordinationNodeNode:
+		assessment.Subject = n.Name
+		assessment.Severity = Destructive
+		assessment.Reason = dropCoordinationNodeReason
 	case *ast.AlterTableDisableRLSNode:
 		assessment.Subject = n.Table
 		assessment.Severity = Destructive
@@ -974,8 +981,14 @@ var destructivePrefixes = []struct {
 	{words: []string{"DROP", "FUNCTION"}, reason: "DROP FUNCTION removes executable database behavior"},
 	{words: []string{"DROP", "ROLE"}, reason: "DROP ROLE removes an existing database principal"},
 	{words: []string{"DROP", "POLICY"}, reason: "DROP POLICY removes an access-control protection"},
+	{words: []string{"DROP", "COORDINATION", "NODE"}, reason: dropCoordinationNodeReason},
 	{words: []string{"TRUNCATE"}, reason: "TRUNCATE removes all rows from a table"},
 }
+
+// dropCoordinationNodeReason is why dropping a YDB coordination node is
+// destructive, in the words both the AST and the SQL-text classifiers report.
+const dropCoordinationNodeReason = "DROP COORDINATION NODE removes the node with its semaphores and rate limiter " +
+	"resources, even while a session holds a lock on it"
 
 // destructivePrefixReason returns the reason of the first [destructivePrefixes]
 // entry the statement's words start with.
