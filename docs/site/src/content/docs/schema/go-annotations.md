@@ -125,7 +125,9 @@ alias for the default LSM and renders identically to the default. CockroachDB
 accepts the default and `BTREE`, which is also its default, and refuses `GIN`
 and `GIST` because both name an inverted index there and an inverted index
 stores no payload. The Spanner PostgreSQL dialect accepts only the default.
-Every other dialect rejects `include` before emitting SQL. Omit `include` when
+SQL Server renders `INCLUDE ([display_name], [created_at])` on the nonclustered
+index Ptah builds, and accepts the default and `BTREE`. Every other dialect
+rejects `include` before emitting SQL. Omit `include` when
 there are no payload columns; a present list with an empty element is a parse
 error.
 

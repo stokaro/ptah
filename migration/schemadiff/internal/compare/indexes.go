@@ -1136,9 +1136,8 @@ func indexDefinitionsChanged(
 // On a target without the key, the renderer refuses an index that declares a
 // payload, and the reader reports none. A declared payload is therefore a
 // change, so the plan writes the index and refuses it with the renderer's own
-// message, as a render of the same schema does. Comparing the read side there
-// too would turn an INCLUDE the server holds but Ptah does not render, such as
-// on SQL Server, into a rebuild that drops it.
+// message, as a render of the same schema does. The read side is left out
+// there: a payload Ptah cannot render is never one a plan could restore.
 func indexPayloadChanged(desired, database []string, dialect string, semantics identifier.Semantics) bool {
 	if !capability.ForDialect(dialect).Has(capability.IndexCoveringColumns) {
 		return len(desired) > 0

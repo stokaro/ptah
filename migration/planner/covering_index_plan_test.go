@@ -18,16 +18,24 @@ import (
 
 // TestPlanIndexPayloadChange_HappyPath covers the targets that render and read
 // a payload. Each rebuilds the index with it. CockroachDB, YugabyteDB and
-// Spanner compared the index by name and planned nothing.
+// Spanner compared the index by name and planned nothing, and SQL Server
+// rendered no payload at all (stokaro/ptah#4114).
 func TestPlanIndexPayloadChange_HappyPath(t *testing.T) {
+	const quotedCreate = `CREATE INDEX IF NOT EXISTS "users_name_ix" ON "users" ("name") INCLUDE ("email");`
 	tests := []struct {
 		dialect string
 		drop    string
+		create  string
 	}{
-		{dialect: platform.Postgres, drop: `DROP INDEX IF EXISTS "users_name_ix";`},
-		{dialect: platform.CockroachDB, drop: `DROP INDEX IF EXISTS "users"@"users_name_ix";`},
-		{dialect: platform.YugabyteDB, drop: `DROP INDEX IF EXISTS "users_name_ix";`},
-		{dialect: platform.Spanner, drop: `DROP INDEX IF EXISTS "users_name_ix";`},
+		{dialect: platform.Postgres, drop: `DROP INDEX IF EXISTS "users_name_ix";`, create: quotedCreate},
+		{dialect: platform.CockroachDB, drop: `DROP INDEX IF EXISTS "users"@"users_name_ix";`, create: quotedCreate},
+		{dialect: platform.YugabyteDB, drop: `DROP INDEX IF EXISTS "users_name_ix";`, create: quotedCreate},
+		{dialect: platform.Spanner, drop: `DROP INDEX IF EXISTS "users_name_ix";`, create: quotedCreate},
+		{
+			dialect: platform.SQLServer,
+			drop:    `DROP INDEX IF EXISTS [users_name_ix] ON [users];`,
+			create:  `CREATE INDEX [users_name_ix] ON [users] ([name]) INCLUDE ([email]);`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.dialect, func(t *testing.T) {
@@ -38,7 +46,7 @@ func TestPlanIndexPayloadChange_HappyPath(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(planned, qt.Contains, test.drop)
-			c.Assert(planned, qt.Contains, `CREATE INDEX IF NOT EXISTS "users_name_ix" ON "users" ("name") INCLUDE ("email");`)
+			c.Assert(planned, qt.Contains, test.create)
 		})
 	}
 }
@@ -49,7 +57,7 @@ func TestPlanIndexPayloadChange_HappyPath(t *testing.T) {
 // the change, because its planner left the payload off the index it built.
 func TestPlanIndexPayloadChange_FailurePath(t *testing.T) {
 	for _, dialect := range []string{
-		platform.ClickHouse, platform.MySQL, platform.MariaDB, platform.Oracle, platform.SQLite, platform.SQLServer,
+		platform.ClickHouse, platform.MySQL, platform.MariaDB, platform.Oracle, platform.SQLite,
 	} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
@@ -63,20 +71,29 @@ func TestPlanIndexPayloadChange_FailurePath(t *testing.T) {
 	}
 }
 
-// TestCompareIndexPayloadOnlyTheServerHolds is the control for the targets
-// without a payload. SQL Server takes INCLUDE although Ptah renders none, so a
-// database index can hold a payload no declaration names; the comparison
-// leaves it alone rather than plan a rebuild that drops it.
-func TestCompareIndexPayloadOnlyTheServerHolds(t *testing.T) {
-	c := qt.New(t)
-	database := goschematodb.ToDBSchema(parsePinSchema(c, "current"), platform.SQLServer)
-	for i := range database.Indexes {
-		database.Indexes[i].IncludeColumns = []string{"email"}
+// TestPlanIndexPayloadOnlyTheServerHolds_HappyPath reads a payload the
+// declaration does not name. The declaration is the desired state, so the plan
+// rebuilds the index without it, on SQL Server as on PostgreSQL.
+func TestPlanIndexPayloadOnlyTheServerHolds_HappyPath(t *testing.T) {
+	tests := []struct {
+		dialect string
+		create  string
+	}{
+		{dialect: platform.Postgres, create: `CREATE INDEX IF NOT EXISTS "users_name_ix" ON "users" ("name");`},
+		{dialect: platform.SQLServer, create: `CREATE INDEX [users_name_ix] ON [users] ([name]);`},
 	}
+	for _, test := range tests {
+		t.Run(test.dialect, func(t *testing.T) {
+			c := qt.New(t)
+			database := goschematodb.ToDBSchema(withPayload(parsePinSchema(c, "current"), "email"), test.dialect)
+			diff := schemadiff.CompareWithDialect(parsePinSchema(c, "current"), database, test.dialect)
 
-	diff := schemadiff.CompareWithDialect(parsePinSchema(c, "current"), database, platform.SQLServer)
+			planned, err := planner.GenerateSchemaDiffSQL(diff, test.dialect)
 
-	c.Assert(diff.HasChanges(), qt.IsFalse)
+			c.Assert(err, qt.IsNil)
+			c.Assert(planned, qt.Contains, test.create)
+		})
+	}
 }
 
 // withPayload returns schema with the users_name_ix payload set to columns.

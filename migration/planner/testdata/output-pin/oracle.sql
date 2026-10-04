@@ -32,6 +32,6 @@ CREATE INDEX users_created_ix ON users (created_at);
 CREATE UNIQUE INDEX users_email_uq ON users (email);
 DROP INDEX IF EXISTS users_name_ix;
 -- render: a covering index
--- refused: oracle does not support INCLUDE columns on index "users_name_ix"; target cockroachdb, postgres, spanner, ydb, or yugabytedb
+-- refused: oracle does not support INCLUDE columns on index "users_name_ix"; target cockroachdb, postgres, spanner, sqlserver, ydb, or yugabytedb
 -- plan: the current schema to a covering index
--- refused: oracle does not support INCLUDE columns on index "users_name_ix"; target cockroachdb, postgres, spanner, ydb, or yugabytedb
+-- refused: oracle does not support INCLUDE columns on index "users_name_ix"; target cockroachdb, postgres, spanner, sqlserver, ydb, or yugabytedb

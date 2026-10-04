@@ -61,13 +61,32 @@ func TestIndexIncludeSupportedDialects(t *testing.T) {
 	}
 }
 
+// TestIndexIncludeSQLServer renders the payload in SQL Server's own quoting.
+// BTREE names what the server builds anyway, so it renders as the default.
+func TestIndexIncludeSQLServer(t *testing.T) {
+	for _, method := range []string{"", "BTREE"} {
+		t.Run("method "+method, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := renderer.GetOrderedCreateStatements(indexIncludeSchema(method), platform.SQLServer)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(strings.Join(statements, "\n"), qt.Contains, `([email]) INCLUDE ([display_name]);`)
+
+			sql, err := renderer.RenderSQL(platform.SQLServer, indexIncludeNode(method))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Contains, `([email]) INCLUDE ([display_name]);`)
+		})
+	}
+}
+
 func TestIndexIncludeUnsupportedDialectsFailClosed(t *testing.T) {
 	dialects := []string{
 		platform.MySQL,
 		platform.MariaDB,
 		platform.SQLite,
 		platform.ClickHouse,
-		platform.SQLServer,
 		platform.Oracle,
 	}
 
@@ -84,7 +103,7 @@ func TestIndexIncludeUnsupportedDialectsFailClosed(t *testing.T) {
 				qt.ErrorMatches,
 				fmt.Sprintf(
 					`%s does not support INCLUDE columns on index "idx_accounts_email"; `+
-						`target cockroachdb, postgres, spanner, ydb, or yugabytedb`,
+						`target cockroachdb, postgres, spanner, sqlserver, ydb, or yugabytedb`,
 					dialect,
 				),
 			)
@@ -185,6 +204,11 @@ func TestIndexIncludeUnsupportedAccessMethodsFailClosed(t *testing.T) {
 		{name: "spanner btree", dialect: platform.Spanner, method: "BTREE", supported: "the default access method"},
 		{name: "spanner lsm", dialect: platform.Spanner, method: "LSM", supported: "the default access method"},
 		{name: "spanner gist", dialect: platform.Spanner, method: "GIST", supported: "the default access method"},
+		// SQL Server has no clause for an access method; one that names
+		// anything but the nonclustered rowstore index Ptah builds is reported
+		// as lost, and the payload is not carried on it.
+		{name: "sqlserver gin", dialect: platform.SQLServer, method: "GIN", supported: "the default or BTREE access method"},
+		{name: "sqlserver hash", dialect: platform.SQLServer, method: "HASH", supported: "the default or BTREE access method"},
 		// YDB's COVER belongs to a global index; any other access method is
 		// not an index YDB has, covering or not.
 		{name: "ydb hash", dialect: platform.YDB, method: "HASH", supported: "a global index, synchronous or asynchronous"},

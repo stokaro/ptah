@@ -1472,14 +1472,15 @@ DROP INDEX IF EXISTS "i";
 CREATE INDEX IF NOT EXISTS "i" ON "t" USING BRIN ("ts");
 ```
 
-which drops the parameter. `include` is no longer part of this loss class: a
-model can declare `include="b"`, and PostgreSQL, YugabyteDB, and the Spanner
-PostgreSQL dialect preserve it as `INCLUDE ("b")`. Validation refuses
-CockroachDB and other dialects rather than dropping the payload. It also limits
-methods to default/`BTREE`/`GIST` on PostgreSQL 12–13, adds `SPGIST` on
-PostgreSQL 14 and newer, and accepts default/`LSM` on YugabyteDB. YugabyteDB's
-documented `BTREE` alias renders identically to its default LSM. Spanner accepts
-only the default. Closing the remaining class means adding a storage-parameter
+which drops the parameter. `include` is outside this loss class: a model can
+declare `include="b"`, and PostgreSQL, YugabyteDB, CockroachDB, the Spanner
+PostgreSQL dialect, and SQL Server preserve it as an `INCLUDE` clause, while YDB
+writes it as `COVER`. Validation refuses the other dialects rather than dropping
+the payload. It also limits methods to default/`BTREE`/`GIST` on PostgreSQL
+12–13, adds `SPGIST` on PostgreSQL 14 and newer, and accepts default/`LSM` on
+YugabyteDB. YugabyteDB's documented `BTREE` alias renders identically to its
+default LSM. Spanner accepts only the default, and CockroachDB and SQL Server
+accept the default and `BTREE`. Closing the remaining class means adding a storage-parameter
 attribute to the annotation surface, which is not attempted here.
 
 ### The access-method loss was not silent in general
