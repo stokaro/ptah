@@ -409,9 +409,6 @@ func prepareNode(
 	case *ast.CreateRoleNode, *ast.DropRoleNode, *ast.GrantPrivilegeNode, *ast.RevokePrivilegeNode:
 		return node, refuseAccessNode(dialect, caps, node)
 	case *ast.CreateCoordinationNodeNode, *ast.AlterCoordinationNodeNode, *ast.DropCoordinationNodeNode:
-		if isNilInterface(node) {
-			return nil, nilNodeError(dialect, "AST node")
-		}
 		return node, refuseCoordinationNode(dialect, caps, node)
 	default:
 		return prepareStandaloneFragment(dialect, caps, node)
