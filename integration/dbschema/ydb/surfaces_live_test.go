@@ -16,6 +16,9 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/dbschema"
+	"ptah.run/internal/agentapi"
+	"ptah.run/internal/agentpolicy"
+	"ptah.run/internal/agenttarget"
 	"ptah.run/internal/cli/introspect"
 	"ptah.run/internal/cli/schema"
 	"ptah.run/internal/dbtarget"
@@ -199,6 +202,43 @@ func TestYDBSchemaLineage_FailurePath_AView(t *testing.T) {
 
 			c.Assert(err, qt.ErrorMatches, `view "`+directory+`.v": `+regexp.QuoteMeta(ydbgap.Views.Message()))
 			c.Assert(stdout, qt.Equals, "")
+		})
+	}
+}
+
+// The agent surface's read_database takes a YDB target the operator
+// configured, and reads the row tables of the directories the caller names.
+func TestYDBAgentReadDatabase_ReadsTheNamedDirectory(t *testing.T) {
+	const directory = "ptah_ydb_agent"
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			dropTables(c, conn, []string{directory})
+			c.Cleanup(func() { dropTables(c, conn, []string{directory}) })
+			execute(c, conn, "CREATE TABLE `"+directory+"/notes` (id Int64 NOT NULL, body Utf8, PRIMARY KEY (id))")
+			policy, err := agentpolicy.Assemble()
+			c.Assert(err, qt.IsNil)
+			target, err := agenttarget.New(agenttarget.Config{
+				Name: "events", URL: dbtarget.URL(c, line.engine), Class: agentpolicy.ClassEphemeral,
+			})
+			c.Assert(err, qt.IsNil)
+			targets, err := agenttarget.NewSet(target)
+			c.Assert(err, qt.IsNil)
+			session, err := agentapi.NewSession(agentapi.SessionConfig{
+				Broker: agentpolicy.NewBroker(policy), Targets: targets,
+			})
+			c.Assert(err, qt.IsNil)
+
+			response, err := session.ReadDatabase(context.Background(),
+				agentapi.ReadDatabaseRequest{Schemas: []string{directory}})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(response.Dialect, qt.Equals, "ydb")
+			c.Assert(response.Version, qt.Equals, conn.Info().Version)
+			c.Assert(response.Objects, qt.DeepEquals, []agentapi.DatabaseObject{
+				{Kind: "table", Schema: directory, Name: "notes", Columns: 2},
+			})
 		})
 	}
 }
