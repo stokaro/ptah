@@ -46,10 +46,10 @@ func TestYDBSequenceRules_Report(t *testing.T) {
 			want: []string{"0002_t.up.sql:1:YD108"},
 		},
 		{
-			name: "a restart earlier in the same file, replayed by a down half",
+			name: "a restart an up half made, replayed by its down half",
 			files: map[string]string{
-				"0001_t.up.sql": serialTables,
-				"0002_t.up.sql": "ALTER SEQUENCE `/local/shop/orders/_serial_column_id` RESTART;\n",
+				"0001_t.up.sql":   serialTables,
+				"0002_t.up.sql":   "ALTER SEQUENCE `/local/shop/orders/_serial_column_id` RESTART;\n",
 				"0002_t.down.sql": "ALTER SEQUENCE `/local/shop/orders/_serial_column_id` START WITH 1;\n",
 			},
 			want: []string{"0002_t.down.sql:1:YD108"},
