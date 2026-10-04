@@ -272,12 +272,15 @@ func parseDuration(text string) (duration, error) {
 				return fmt.Errorf("designator %q is out of place or not one YDB takes (weeks, days, hours, minutes, seconds)",
 					string(letter))
 			}
-			whole, fraction, err := readNumber(number, designators[index].fractional)
+			whole, decimals, err := readNumber(number)
 			if err != nil {
 				return err
 			}
+			if decimals != "" && !designators[index].fractional {
+				return fmt.Errorf("%q is not a number YDB takes there", number)
+			}
 			parsed.seconds += whole * designators[index].seconds
-			parsed.fraction = parsed.fraction || fraction
+			parsed.fraction = parsed.fraction || strings.Trim(decimals, "0") != ""
 			parts++
 			next = index + 1
 			part = part[end+1:]
@@ -321,19 +324,19 @@ func designatorIndex(designators []designator, letter byte, from int) int {
 	return -1
 }
 
-// readNumber reads a duration part's number: digits, and on seconds a
-// fraction, which reports whether any of its digits is not zero.
-func readNumber(number string, fractional bool) (whole uint64, fraction bool, _ error) {
+// readNumber reads a duration part's number: its whole part, and the digits
+// after a decimal point, which only seconds may carry.
+func readNumber(number string) (whole uint64, decimals string, _ error) {
 	integer, decimals, hasDecimals := strings.Cut(number, ".")
-	if hasDecimals && (!fractional || decimals == "" || strings.Contains(decimals, ".")) {
-		return 0, false, fmt.Errorf("%q is not a number YDB takes there", number)
+	if hasDecimals && (decimals == "" || strings.Contains(decimals, ".")) {
+		return 0, "", fmt.Errorf("%q is not a number YDB takes there", number)
 	}
 	if integer == "" {
-		return 0, false, fmt.Errorf("%q has no whole part", number)
+		return 0, "", fmt.Errorf("%q has no whole part", number)
 	}
 	value, err := strconv.ParseUint(integer, 10, 64)
 	if err != nil || value > MaxSeconds {
-		return 0, false, fmt.Errorf("%q is too large", number)
+		return 0, "", fmt.Errorf("%q is too large", number)
 	}
-	return value, strings.Trim(decimals, "0") != "", nil
+	return value, decimals, nil
 }

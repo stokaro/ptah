@@ -566,6 +566,17 @@ func prepareCreateTableNode(
 	return &cloned, nil
 }
 
+// refuseDeclaredRowDeletionPolicies refuses the first declared table whose row
+// deletion policy the target cannot carry; see [refuseRowDeletionPolicy].
+func refuseDeclaredRowDeletionPolicies(dialect string, caps capability.Capabilities, tables []schemamodel.Table) error {
+	for _, table := range tables {
+		if err := refuseRowDeletionPolicy(dialect, caps, table.Name, table.RowDeletionPolicy); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // refuseRowDeletionPolicy refuses a table's row deletion policy on a target
 // without [capability.RowDeletionPolicy], and one that reads an integer column
 // on a target without [capability.RowDeletionPolicyEpochColumn]. A renderer
@@ -1676,10 +1687,8 @@ func validateDatabaseDeclarations(
 	// A row deletion policy is refused here for the same reason: a target
 	// without the clause must refuse before the first statement, not at the
 	// CREATE TABLE that carries it.
-	for _, table := range database.Tables {
-		if err := refuseRowDeletionPolicy(dialect, caps, table.Name, table.RowDeletionPolicy); err != nil {
-			return err
-		}
+	if err := refuseDeclaredRowDeletionPolicies(dialect, caps, database.Tables); err != nil {
+		return err
 	}
 	if err := validateRoutineIdentityCollisions(dialect, database.Functions); err != nil {
 		return err

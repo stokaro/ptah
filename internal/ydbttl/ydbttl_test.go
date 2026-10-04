@@ -1,7 +1,6 @@
 package ydbttl_test
 
 import (
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -218,7 +217,7 @@ func TestColumnRefusal(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			got := ydbttl.ColumnRefusal("c", test.ydbType, test.unit)
-			c.Assert(strings.Contains(got, test.want), qt.IsTrue, qt.Commentf("got %q", got))
+			c.Assert(got, qt.Contains, test.want)
 			c.Assert(got == "", qt.Equals, test.want == "")
 		})
 	}

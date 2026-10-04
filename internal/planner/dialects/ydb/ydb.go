@@ -45,6 +45,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
@@ -132,15 +133,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 		return nil, err
 	}
 	for _, tableDiff := range diff.TablesModified {
-		refuse := p.refuseTableChanges
-		_, rebuilt := rebuilds[semantics.TableIdentityKey(tableDiff.TableName)]
-		if rebuilt {
-			refuse = p.refuseRebuiltTableChanges
-		}
-		if err := refuse(tableDiff); err != nil {
-			return nil, err
-		}
-		if err := p.refuseTTLChange(tableDiff, diff.CurrentNotDescribed, rebuilt); err != nil {
+		if err := p.refuseModification(tableDiff, rebuilds, semantics, diff.CurrentNotDescribed); err != nil {
 			return nil, err
 		}
 	}
@@ -186,6 +179,27 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 		result = append(result, ast.NewDropTable(name))
 	}
 	return result, nil
+}
+
+// refuseModification refuses what one table's modification asks that the
+// plan cannot make: in place, or through the rebuild the plan makes of the
+// table, which writes the declared TTL into the new table.
+func (p *Planner) refuseModification(
+	tableDiff difftypes.TableDiff,
+	rebuilds map[string]*tableRebuild,
+	semantics identifier.Semantics,
+	notDescribed coverage.Set,
+) error {
+	if _, rebuilt := rebuilds[semantics.TableIdentityKey(tableDiff.TableName)]; rebuilt {
+		if err := p.refuseRebuiltTableChanges(tableDiff); err != nil {
+			return err
+		}
+		return p.refuseTTLKey(tableDiff)
+	}
+	if err := p.refuseTableChanges(tableDiff); err != nil {
+		return err
+	}
+	return p.refuseTTLChange(tableDiff, notDescribed)
 }
 
 // changeTables writes each modified table's changes, in place or as a

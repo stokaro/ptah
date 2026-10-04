@@ -43,31 +43,42 @@ func ttlOperation(change *difftypes.RowDeletionPolicyChange) ast.AlterOperation 
 	}
 }
 
-// refuseTTLChange refuses, before anything is emitted, a TTL change this
-// target cannot make or YDB would refuse when the plan reaches it: a policy
-// on a target without [capability.RowDeletionPolicy], an integer column's
-// unit without [capability.RowDeletionPolicyEpochColumn], an interval or unit
-// YDB refuses, and a column of a type YDB reads no TTL from. The renderer
-// writes SET (TTL = ...) without seeing the column's type, so this is where
-// the type is held to [ydbttl.ColumnRefusal].
+// refuseTTLKey refuses a TTL change on a target without
+// [capability.RowDeletionPolicy]. A table the plan rebuilds needs no more: it
+// writes its TTL into the new CREATE TABLE, which the renderer checks whole.
+func (p *Planner) refuseTTLKey(tableDiff difftypes.TableDiff) error {
+	if tableDiff.RowDeletionPolicyChange == nil || p.caps.Has(capability.RowDeletionPolicy) {
+		return nil
+	}
+	return refuseKey(capability.RowDeletionPolicy, ttlSubject(tableDiff))
+}
+
+// ttlSubject names a table's TTL in a refusal.
+func ttlSubject(tableDiff difftypes.TableDiff) string {
+	return fmt.Sprintf("the row deletion policy of table %q", tableDiff.TableName)
+}
+
+// refuseTTLChange refuses, before anything is emitted, a TTL change on a table
+// changed in place that this target cannot make or YDB would refuse when the
+// plan reaches it: a policy on a target without
+// [capability.RowDeletionPolicy], an integer column's unit without
+// [capability.RowDeletionPolicyEpochColumn], an interval or unit YDB refuses,
+// and a column of a type YDB reads no TTL from. The renderer writes SET (TTL =
+// ...) without seeing the column's type, so this is where the type is held
+// to [ydbttl.ColumnRefusal].
 //
-// A table the plan rebuilds writes its TTL into the new CREATE TABLE, which
-// the renderer checks whole. A table changed in place keeps what its TTL
-// carries beyond the policy, which SET (TTL = ...) would reset, so a change
-// there is refused while the read recorded such a setting.
-func (p *Planner) refuseTTLChange(tableDiff difftypes.TableDiff, notDescribed coverage.Set, rebuilt bool) error {
+// The table keeps what its TTL carries beyond the policy, which SET (TTL =
+// ...) would reset, so a change is refused while the read recorded such a
+// setting.
+func (p *Planner) refuseTTLChange(tableDiff difftypes.TableDiff, notDescribed coverage.Set) error {
+	if err := p.refuseTTLKey(tableDiff); err != nil {
+		return err
+	}
 	change := tableDiff.RowDeletionPolicyChange
-	if change == nil {
+	if change == nil || change.Desired.IsZero() {
 		return nil
 	}
-	subject := fmt.Sprintf("the row deletion policy of table %q", tableDiff.TableName)
-	if !p.caps.Has(capability.RowDeletionPolicy) {
-		return refuseKey(capability.RowDeletionPolicy, subject)
-	}
-	desired := change.Desired
-	if desired.IsZero() || rebuilt {
-		return nil
-	}
+	subject, desired := ttlSubject(tableDiff), change.Desired
 	if strings.TrimSpace(desired.Unit) != "" && !p.caps.Has(capability.RowDeletionPolicyEpochColumn) {
 		return refuseKey(capability.RowDeletionPolicyEpochColumn, subject+" reads an integer column counting "+desired.Unit)
 	}
