@@ -312,8 +312,8 @@ var yamlOnlyExtensions = []string{".yaml", ".yml"}
 // invented during parsing would appear as a `ptah:not-described` header nobody
 // wrote.
 //
-// Three rules, and each one is a measurement of the surface rather than a
-// reading of its documentation:
+// Each rule is a measurement of the surface rather than a reading of its
+// documentation:
 //
 //   - Only `.sql` has CREATE VIRTUAL TABLE, so silence about a live SQLite
 //     virtual table is intent there and is not intent in HCL or YAML
@@ -335,6 +335,10 @@ var yamlOnlyExtensions = []string{".yaml", ".yml"}
 //     through `ptah-compat schema inspect` and applied back from that HCL
 //     planned `ALTER TABLE ... RESET (TTL)`, and an HCL or a DBML document
 //     declaring a table that carries a changefeed planned `DROP CHANGEFEED`.
+//   - Only YAML and a Go schema express a YDB topic. HCL has no block for
+//     one, and neither the SQL parser nor DBML produces one, so an HCL
+//     document applied to a YDB database holding a topic would otherwise plan
+//     `DROP TOPIC`.
 func withFormatLimits(database *schemamodel.Database, resolved string) *schemamodel.Database {
 	if database == nil {
 		return nil
@@ -354,6 +358,9 @@ func withFormatLimits(database *schemamodel.Database, resolved string) *schemamo
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(
 			coverage.Synonym, coverage.ExtendedProperty, coverage.Hypertable,
 			coverage.ContinuousAggregate)...)
+	}
+	if !slices.Contains(yamlOnlyExtensions, extension) {
+		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(coverage.Topic)...)
 	}
 	if extension == dbmlExtension {
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(dbmlCannotExpress()...)...)
@@ -810,6 +817,7 @@ func appendDatabase(dst, src *schemamodel.Database) {
 	dst.Hypertables = append(dst.Hypertables, src.Hypertables...)
 	dst.ContinuousAggregates = append(dst.ContinuousAggregates, src.ContinuousAggregates...)
 	dst.Synonyms = append(dst.Synonyms, src.Synonyms...)
+	dst.Topics = append(dst.Topics, src.Topics...)
 	dst.CoordinationNodes = append(dst.CoordinationNodes, src.CoordinationNodes...)
 	dst.ExtendedProperties = append(dst.ExtendedProperties, src.ExtendedProperties...)
 	dst.ManagedData = append(dst.ManagedData, src.ManagedData...)

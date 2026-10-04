@@ -22,12 +22,12 @@ type objectChange struct {
 //
 // The named families come first so a refusal says what it refused. The last
 // check is a catch-all over [difftypes.SchemaDiff.HasChanges]: with the tables,
-// indexes, views, access changes and coordination nodes this planner does plan
-// taken out -- additions, removals, renames and changes of partitioning, the
-// users, groups, memberships and permissions [Planner.planAccess] plans or
-// refuses, and changes of a node's configuration -- a diff that still reports
-// a change carries a family nobody named here, and planning nothing for it
-// would report the database synced.
+// indexes, views, topics, access changes and coordination nodes this planner
+// does plan taken out -- additions, removals, renames and changes of
+// partitioning, the users, groups, memberships and permissions
+// [Planner.planAccess] plans or refuses, and changes of a node's configuration
+// -- a diff that still reports a change carries a family nobody named here,
+// and planning nothing for it would report the database synced.
 func (p *Planner) refuseObjects(diff *difftypes.SchemaDiff) error {
 	for _, change := range p.objectChanges(diff) {
 		if change.present {
@@ -39,6 +39,7 @@ func (p *Planner) refuseObjects(diff *difftypes.SchemaDiff) error {
 	rest.IndexesAdded, rest.IndexesRemoved = nil, nil
 	rest.IndexesRenamed, rest.IndexPartitioningChanged = nil, nil
 	rest.ViewsAdded, rest.ViewsRemoved, rest.ViewsModified = nil, nil, nil
+	rest.TopicsAdded, rest.TopicsRemoved, rest.TopicsModified = nil, nil, nil
 	rest.RolesAdded, rest.RolesRemoved, rest.RolesModified = nil, nil, nil
 	rest.RoleMembershipsAdded, rest.RoleMembershipsRemoved = nil, nil
 	rest.GrantsAdded, rest.GrantsRemoved, rest.GrantOptionsAdded, rest.GrantOptionsRevoked = nil, nil, nil, nil

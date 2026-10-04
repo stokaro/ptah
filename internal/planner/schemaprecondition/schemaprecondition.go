@@ -161,6 +161,35 @@ func RefuseChangefeedChanges(dialect string, diff *difftypes.SchemaDiff) error {
 	return nil
 }
 
+// RefuseTopics refuses a diff that creates, drops or changes a YDB topic, for
+// a planner of dialect that plans none. The comparison records a topic change
+// whenever a desired schema declares one, and only the YDB planner plans it,
+// so planning nothing here would report the topic applied while the database
+// has none.
+func RefuseTopics(dialect string, diff *difftypes.SchemaDiff) error {
+	if diff == nil {
+		return nil
+	}
+	var subject string
+	switch {
+	case len(diff.TopicsAdded) > 0:
+		subject = "creates topic " + diff.TopicsAdded[0].QualifiedName()
+	case len(diff.TopicsRemoved) > 0:
+		subject = "drops topic " + diff.TopicsRemoved[0].QualifiedName()
+	case len(diff.TopicsModified) > 0:
+		subject = "changes topic " + diff.TopicsModified[0].Name
+	default:
+		return nil
+	}
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: string(capability.Topics),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("the diff %s, which requires target capability %s, unavailable on this %s target; "+
+			"only a YDB plan creates, drops or changes a topic", subject, capability.Topics, dialect),
+	}
+}
+
 // RefuseRoleMemberships refuses a diff that adds or removes the membership of
 // a role in another, for a planner of dialect that plans none. The comparison
 // records memberships only on a target with capability.RoleMembership, which

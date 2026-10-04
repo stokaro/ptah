@@ -393,6 +393,7 @@ func compareReportingUndecidedAdditions(
 	// Compare views, materialized views, and triggers
 	compare.ViewsWithSemantics(desired, database, diff, opts.Dialect, identifierSemantics, opts.ViewBodies)
 	compare.Synonyms(desired, database, diff, cov)
+	compare.Topics(desired, database, diff, cov)
 
 	// Compare YDB coordination nodes
 	compare.CoordinationNodes(desired, database, diff, cov)

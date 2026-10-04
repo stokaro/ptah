@@ -580,6 +580,8 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderCreateSynonym(n)
 	case *ast.DropSynonymNode:
 		return r.renderDropSynonym(n)
+	case *ast.CreateTopicNode, *ast.AlterTopicNode, *ast.DropTopicNode:
+		return nodedispatch.RefuseTopic(r.dialect, n)
 	case *ast.CreateCoordinationNodeNode, *ast.AlterCoordinationNodeNode, *ast.DropCoordinationNodeNode:
 		// A coordination node is YDB's own object.
 		return coordinationrefusal.Node(r.Dialect(), n)
@@ -1382,7 +1384,7 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 				return err
 			}
 		default:
-			return fmt.Errorf("unknown alter operation type: %T", operation)
+			return unsupportedFeaturef("%s: this renderer has no ALTER TABLE spelling for %T", r.dialect, operation)
 		}
 	}
 

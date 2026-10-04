@@ -1601,20 +1601,21 @@ func TestParseDir_AllIntegrationFixturesRemainParsable(t *testing.T) {
 
 // TestParseDir_ReflectionGuard is the future-proof guard required by #279.
 // It uses reflection over Database to enumerate all slice fields, runs ParseSource
-// on the comprehensive fixture, then ParseDir on the same fixture, and asserts
-// that every Database slice is both covered by the fixture and survives the
+// on the comprehensive fixtures, then ParseDir on the same fixtures, and asserts
+// that every Database slice is both covered by a fixture and survives the
 // ParseFS append path used by ParseDir.
 // Merge uses general reflection over all slice fields from ParseSource results (no hard-coded list).
+//
+// Fixture 023 carries every object kind a PostgreSQL render takes, refused or
+// skipped. A YDB topic and a YDB coordination node are refused by every target
+// but YDB, so each has a fixture of its own, and the guard reads all three.
 func TestParseDir_ReflectionGuard(t *testing.T) {
 	c := qt.New(t)
 
-	// 023 declares every object family the dialects share. A family only
-	// one engine has, and that every other engine refuses, has a fixture of
-	// its own, so the shared one stays renderable on every target: 048 holds
-	// YDB's coordination nodes.
 	fixtureDirs := []string{
 		"../../integration/internal/fixtures/entities/023-go-annotations-objects",
-		"../../integration/internal/fixtures/entities/048-ydb-coordination-nodes",
+		"../../integration/internal/fixtures/entities/048-ydb-topics",
+		"../../integration/internal/fixtures/entities/049-ydb-coordination-nodes",
 	}
 
 	merged := schemamodel.Database{}
@@ -1649,7 +1650,8 @@ func TestParseDir_ReflectionGuard(t *testing.T) {
 		name := typ.Field(i).Name
 		mLen := fvMerged.Field(i).Len()
 		if mLen == 0 {
-			c.Fatalf("%s is not exercised by the fixtures; add it to 023-go-annotations-objects so the walker append stays covered", name)
+			c.Fatalf("%s is not exercised by the fixtures; add it to 023-go-annotations-objects, or to the "+
+				"YDB fixture of its family for a kind only YDB renders, so the walker append stays covered", name)
 		}
 		dLen := fvDir.Field(i).Len()
 		c.Assert(dLen > 0, qt.IsTrue, qt.Commentf("%s populated by per-file parse (%d) but ParseDir/ParseFS gave %d — missing append in walker.go?", name, mLen, dLen))

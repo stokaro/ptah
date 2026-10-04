@@ -90,6 +90,18 @@ var refusedDiffCategories = map[string]refusedFixture{
 		why:  "index partitioning is YDB's, and the comparison records a change of it only on a target with index_partitioning; planning nothing would report an index settled that is not",
 		diff: &difftypes.SchemaDiff{IndexPartitioningChanged: []difftypes.IndexPartitioningChange{{TableName: "users", Name: "a"}}},
 	},
+	"TopicsAdded": {
+		why:  "a topic is YDB's, and the comparison that feeds a PostgreSQL plan refuses a declared one before it diffs; a plan reaches one only through a diff built by hand, and planning nothing would report a topic applied that the database does not have",
+		diff: &difftypes.SchemaDiff{TopicsAdded: difftypes.TopicChanges{{Name: "events"}}},
+	},
+	"TopicsRemoved": {
+		why:  "no PostgreSQL read reports a topic, so a removal reaches the planner only through a diff built by hand, and planning nothing would report it dropped",
+		diff: &difftypes.SchemaDiff{TopicsRemoved: difftypes.TopicChanges{{Name: "events"}}},
+	},
+	"TopicsModified": {
+		why:  "a changed topic is YDB's for the same reason",
+		diff: &difftypes.SchemaDiff{TopicsModified: []difftypes.TopicDiff{{Name: "events", SettingsChanged: true}}},
+	},
 	"CoordinationNodesAdded": {
 		why:  "a coordination node is YDB's own object, and a schema that declares one reaches every planner; planning nothing would report the database synced while the node is missing",
 		diff: &difftypes.SchemaDiff{CoordinationNodesAdded: []schemamodel.CoordinationNode{{Name: "locks"}}},

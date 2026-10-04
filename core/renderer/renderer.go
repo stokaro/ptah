@@ -90,6 +90,12 @@ import (
 // for concurrent use. Render clears that state before it visits its node, so
 // each call returns only the SQL for the node it was handed and one renderer
 // may be reused across many nodes sequentially.
+//
+// The renderers this package returns answer a node the same way through every
+// entry point: Render returns what Reset, VisitNode and Output return together,
+// the same SQL or the same error, and RenderSQL agrees with both. A nil node,
+// or a nil pointer of a node type, is refused with
+// [ptaherr.ErrInvalidSchemaDiff] on every target.
 type RenderVisitor interface {
 	ast.Visitor
 
@@ -230,8 +236,14 @@ func (r *validatingRenderer) GetOutput() string  { return r.inner.GetOutput() }
 //
 // A failure clears the buffer, so an error never returns a partial statement
 // and the renderer is reusable afterwards.
+//
+// Every entry point prepares through [prepareNode] and nothing else: Render
+// is this method followed by Output, and RenderSQL prepares its whole node
+// list through the same function before it visits. A refusal written into the
+// preparation therefore reaches every caller, and a node kind cannot be
+// prepared for one entry point and passed through unchecked by another.
 func (r *validatingRenderer) VisitNode(node ast.Node) error {
-	prepared, err := r.prepared(node)
+	prepared, err := prepareNode(r.dialect, r.capabilities, node)
 	if err != nil {
 		r.Reset()
 		return err
@@ -244,37 +256,6 @@ func (r *validatingRenderer) VisitNode(node ast.Node) error {
 		return err
 	}
 	return nil
-}
-
-// prepared applies the preparation the node's kind asks for, and returns the
-// node unchanged for a kind that asks for none.
-//
-// A kind reaching the default arm is not an omission: most nodes carry nothing
-// a target can refuse before rendering. The kinds listed here are the ones that
-// do.
-func (r *validatingRenderer) prepared(node ast.Node) (ast.Node, error) {
-	switch n := node.(type) {
-	case *ast.StatementList:
-		return prepareStatementListNode(r.dialect, r.capabilities, n)
-	case *ast.CreateTableNode:
-		return prepareCreateTableNode(r.dialect, r.capabilities, n)
-	case *ast.AlterTableNode:
-		return prepareAlterTableNode(r.dialect, r.capabilities, n)
-	case *ast.ColumnNode:
-		return prepareColumnNode(r.dialect, r.capabilities, "", n)
-	case *ast.ConstraintNode:
-		return prepareConstraintNode(r.dialect, r.capabilities, n)
-	case *ast.IndexNode:
-		return prepareIndexNode(r.dialect, r.capabilities, n)
-	case *ast.ExtensionNode:
-		return prepareExtensionNode(r.dialect, n)
-	case *ast.CreateMaterializedViewNode:
-		return prepareCreateMaterializedViewNode(r.dialect, n)
-	case ast.AlterOperation:
-		return prepareStandaloneAlterOperation(r.dialect, r.capabilities, n)
-	default:
-		return node, nil
-	}
 }
 
 // renderPreparedList emits an already-prepared list, statement by statement.
@@ -294,18 +275,15 @@ func (r *validatingRenderer) renderPreparedList(list *ast.StatementList) error {
 	return nil
 }
 
+// Render clears the buffer, visits node and returns what the visit wrote. It
+// is VisitNode and Output and nothing else, so the two entry points cannot
+// answer one node two ways.
 func (r *validatingRenderer) Render(node ast.Node) (string, error) {
 	r.Reset()
-	prepared, err := prepareASTNodeForRendering(r.dialect, r.capabilities, node)
-	if err != nil {
+	if err := r.VisitNode(node); err != nil {
 		return "", err
 	}
-	output, err := r.inner.Render(prepared)
-	if err != nil {
-		r.Reset()
-		return "", err
-	}
-	return output, nil
+	return r.Output(), nil
 }
 
 // RenderSQL is a convenience function that creates a renderer and renders an AST node in one call.
@@ -343,7 +321,7 @@ func RenderSQLWithCapabilities(dialect string, caps capability.Capabilities, nod
 func visitorRenderSQL(r RenderVisitor, nodes ...ast.Node) (string, error) {
 	r.Reset()
 	if validating, ok := r.(*validatingRenderer); ok {
-		prepared, err := prepareASTNodesForRendering(
+		prepared, err := prepareNodes(
 			validating.dialect,
 			validating.capabilities,
 			nodes,
@@ -370,14 +348,14 @@ func visitorRenderSQL(r RenderVisitor, nodes ...ast.Node) (string, error) {
 	return r.Output(), nil
 }
 
-func prepareASTNodesForRendering(
+func prepareNodes(
 	dialect string,
 	caps capability.Capabilities,
 	nodes []ast.Node,
 ) ([]ast.Node, error) {
 	prepared := make([]ast.Node, len(nodes))
 	for i, node := range nodes {
-		cloned, err := prepareASTNodeForRendering(dialect, caps, node)
+		cloned, err := prepareNode(dialect, caps, node)
 		if err != nil {
 			return nil, err
 		}
@@ -386,13 +364,21 @@ func prepareASTNodesForRendering(
 	return prepared, nil
 }
 
-func prepareASTNodeForRendering(
+// prepareNode applies the preparation node's kind asks for, and returns the
+// node unchanged for a kind that asks for none. It is the one preparation the
+// renderer has; see [validatingRenderer.VisitNode].
+//
+// An absent node is refused here, for every target alike, whether it is a nil
+// interface or a nil pointer of a node type. No dialect renderer sees one:
+// several dereference the node in the handler its type selects, which a nil
+// pointer reaches.
+func prepareNode(
 	dialect string,
 	caps capability.Capabilities,
 	node ast.Node,
 ) (ast.Node, error) {
 	if node == nil {
-		return nil, invalidASTForeignKeyError(dialect, "AST node is nil")
+		return nil, nilNodeError(dialect, "AST node")
 	}
 	switch typed := node.(type) {
 	case *ast.StatementList:
@@ -411,66 +397,88 @@ func prepareASTNodeForRendering(
 		return prepareExtensionNode(dialect, typed)
 	case *ast.CreateMaterializedViewNode:
 		return prepareCreateMaterializedViewNode(dialect, typed)
+	case *ast.CreateTopicNode:
+		return node, refuseTopic(dialect, caps, "topic "+typed.Name)
+	case *ast.AlterTopicNode:
+		return node, refuseTopic(dialect, caps, "ALTER TOPIC "+typed.Name)
+	case *ast.DropTopicNode:
+		return node, refuseTopic(dialect, caps, "DROP TOPIC "+typed.Name)
 	case *ast.CreateRoleNode, *ast.DropRoleNode, *ast.GrantPrivilegeNode, *ast.RevokePrivilegeNode:
 		if isNilInterface(node) {
-			return nil, invalidASTForeignKeyError(dialect, "AST node is nil")
+			return nil, nilNodeError(dialect, "AST node")
 		}
 		return node, refuseAccessNode(dialect, caps, node)
 	case *ast.CreateCoordinationNodeNode, *ast.AlterCoordinationNodeNode, *ast.DropCoordinationNodeNode:
 		if isNilInterface(node) {
-			return nil, invalidASTForeignKeyError(dialect, "AST node is nil")
+			return nil, nilNodeError(dialect, "AST node")
 		}
-		if err := refuseCoordinationNode(dialect, caps, node); err != nil {
-			return nil, err
-		}
-		return node, nil
+		return node, refuseCoordinationNode(dialect, caps, node)
 	default:
 		if isNilInterface(node) {
-			return nil, invalidASTForeignKeyError(dialect, "AST node is nil")
+			return nil, nilNodeError(dialect, "AST node")
 		}
-		if operation, ok := node.(ast.AlterOperation); ok {
-			return prepareStandaloneAlterOperation(dialect, caps, operation)
-		}
-		return node, nil
+		return prepareStandaloneFragment(dialect, caps, node)
 	}
 }
 
-// prepareStandaloneAlterOperation answers an alter operation that arrived
-// without the ALTER TABLE that carries it.
+// prepareStandaloneFragment answers a fragment that arrived without the
+// statement that carries it: an alter operation without its ALTER TABLE, a
+// type definition without its CREATE TYPE, a type operation without its ALTER
+// TYPE. Any other node is returned unchanged.
 //
-// Every dialect renderer refuses such an operation by saying that the statement
+// Every dialect renderer refuses such a fragment by saying that the statement
 // carrying it renders it. That is true only where the statement would: a
 // changefeed on PostgreSQL is refused inside an ALTER TABLE as well, for a
-// capability the target lacks, and answering that it needs its parent sends
-// the caller to a wrapper that cannot help. So the operation is first rendered
-// inside an ALTER TABLE that names no table, by a renderer built for the same
-// target and then discarded. That ALTER TABLE goes through the whole path a
-// real one takes -- this wrapper's capability checks, then the dialect's own
+// capability the target lacks, and an enum value on YDB inside an ALTER TYPE,
+// which YDB does not have. Answering that the fragment needs its parent
+// sends the caller to a wrapper that cannot help. So the fragment is first
+// rendered inside its statement, naming nothing, by a renderer built for the
+// same target and then discarded. That statement goes through the whole path a
+// real one takes -- this package's preparation, then the dialect's own
 // handler -- so the refusal it returns carries the sentinel and the reason the
-// real one would. Only an operation that renders there continues to the
+// real one would. Only a fragment that renders there continues to the
 // dialect, which then says it needs its parent.
 //
 // The check is here, once, rather than in each dialect's needs-parent arm: the
 // capability checks a dialect relies on live in this package, and a check in
-// the dialect could not see them. A nil operation passes through unchanged, so
-// each caller answers it the way it answers any other absent node.
-func prepareStandaloneAlterOperation(
+// the dialect could not see them.
+func prepareStandaloneFragment(
 	dialect string,
 	caps capability.Capabilities,
-	operation ast.AlterOperation,
+	node ast.Node,
 ) (ast.Node, error) {
-	if isNilInterface(operation) {
-		return operation, nil
+	carrier, ok := fragmentCarrier(node)
+	if !ok {
+		return node, nil
 	}
 	probe, err := NewRendererWithCapabilities(dialect, caps)
 	if err != nil {
 		return nil, err
 	}
-	carrier := &ast.AlterTableNode{Operations: []ast.AlterOperation{operation}}
 	if err := probe.VisitNode(carrier); err != nil {
 		return nil, err
 	}
-	return operation, nil
+	return node, nil
+}
+
+// fragmentCarrier is the statement that carries fragment, naming no object,
+// and false for a node that is a statement of its own.
+//
+// The three cases are the three marker interfaces core/ast declares for a
+// statement's parts. A fourth kind of fragment needs a case here; the
+// entry-point test in this package fails for one a renderer refuses as a part
+// of a statement while this switch does not know it.
+func fragmentCarrier(fragment ast.Node) (ast.Node, bool) {
+	switch typed := fragment.(type) {
+	case ast.AlterOperation:
+		return &ast.AlterTableNode{Operations: []ast.AlterOperation{typed}}, true
+	case ast.TypeDefinition:
+		return &ast.CreateTypeNode{TypeDef: typed}, true
+	case ast.TypeOperation:
+		return &ast.AlterTypeNode{Operations: []ast.TypeOperation{typed}}, true
+	default:
+		return nil, false
+	}
 }
 
 // refuseAccessNode refuses a group, or a grant or revoke on the database
@@ -608,9 +616,9 @@ func prepareStatementListNode(
 	list *ast.StatementList,
 ) (*ast.StatementList, error) {
 	if list == nil {
-		return nil, invalidASTForeignKeyError(dialect, "statement list is nil")
+		return nil, nilNodeError(dialect, "statement list")
 	}
-	prepared, err := prepareASTNodesForRendering(dialect, caps, list.Statements)
+	prepared, err := prepareNodes(dialect, caps, list.Statements)
 	if err != nil {
 		return nil, err
 	}
@@ -623,7 +631,7 @@ func prepareCreateTableNode(
 	node *ast.CreateTableNode,
 ) (*ast.CreateTableNode, error) {
 	if node == nil {
-		return nil, invalidASTForeignKeyError(dialect, "create-table node is nil")
+		return nil, nilNodeError(dialect, "create-table node")
 	}
 	cloned := *node
 	cloned.Columns = slices.Clone(node.Columns)
@@ -816,7 +824,7 @@ func prepareAlterTableNode(
 	node *ast.AlterTableNode,
 ) (*ast.AlterTableNode, error) {
 	if node == nil {
-		return nil, invalidASTForeignKeyError(dialect, "alter-table node is nil")
+		return nil, nilNodeError(dialect, "alter-table node")
 	}
 	cloned := *node
 	cloned.Operations = slices.Clone(node.Operations)
@@ -837,12 +845,12 @@ func prepareAlterOperation(
 	operation ast.AlterOperation,
 ) (ast.AlterOperation, error) {
 	if operation == nil {
-		return nil, invalidASTForeignKeyError(dialect, "alter-table operation is nil")
+		return nil, nilNodeError(dialect, "alter-table operation")
 	}
 	switch typed := operation.(type) {
 	case *ast.AddConstraintOperation:
 		if typed == nil {
-			return nil, invalidASTForeignKeyError(dialect, "add-constraint operation is nil")
+			return nil, nilNodeError(dialect, "add-constraint operation")
 		}
 		cloned := *typed
 		constraint, err := prepareConstraintNode(dialect, caps, typed.Constraint)
@@ -853,7 +861,7 @@ func prepareAlterOperation(
 		return &cloned, nil
 	case *ast.AddColumnOperation:
 		if typed == nil {
-			return nil, invalidASTForeignKeyError(dialect, "add-column operation is nil")
+			return nil, nilNodeError(dialect, "add-column operation")
 		}
 		if typed.IfNotExists && !rendersAddColumnIfNotExists(dialect) {
 			return nil, columnExistenceGuardUnsupportedError(dialect, "ADD COLUMN IF NOT EXISTS")
@@ -867,7 +875,7 @@ func prepareAlterOperation(
 		return &cloned, nil
 	case *ast.ModifyColumnOperation:
 		if typed == nil {
-			return nil, invalidASTForeignKeyError(dialect, "modify-column operation is nil")
+			return nil, nilNodeError(dialect, "modify-column operation")
 		}
 		cloned := *typed
 		column, err := prepareColumnNode(dialect, caps, table, typed.Column)
@@ -900,7 +908,7 @@ func prepareAlterOperation(
 		return operation, nil
 	default:
 		if isNilInterface(operation) {
-			return nil, invalidASTForeignKeyError(dialect, "alter-table operation is nil")
+			return nil, nilNodeError(dialect, "alter-table operation")
 		}
 		return operation, nil
 	}
@@ -999,6 +1007,50 @@ func validateDeclaredChangefeeds(dialect string, caps capability.Capabilities, d
 	return nil
 }
 
+// refuseTopic refuses subject, a topic, on a target without
+// [capability.Topics]: a topic is YDB's, and a target that built nothing for
+// it would report the declaration applied.
+func refuseTopic(dialect string, caps capability.Capabilities, subject string) error {
+	if caps.Has(capability.Topics) {
+		return nil
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: string(capability.Topics),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
+			subject, capability.Topics, normalized),
+	}
+}
+
+// validateDeclaredTopics refuses a declared topic the target cannot create,
+// before any statement is emitted: on a target without [capability.Topics],
+// and on YDB a topic whose path a declared table holds, since a path names
+// one object (measured: `CREATE TOPIC` over a table's path answers
+// `unexpected path type ... EPathTypeTable`).
+func validateDeclaredTopics(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
+	tables := make(map[string]bool, len(database.Tables))
+	for _, table := range database.Tables {
+		tables[table.QualifiedName()] = true
+	}
+	for _, topic := range database.Topics {
+		name := topic.QualifiedName()
+		if err := refuseTopic(dialect, caps, "topic "+name); err != nil {
+			return err
+		}
+		if tables[name] {
+			return &ptaherr.RenderError{
+				Dialect: platform.NormalizeDialect(dialect),
+				Err:     ptaherr.ErrUnsupportedFeature,
+				Message: fmt.Sprintf("topic %s has the path of a declared table, and YDB keeps one object "+
+					"at a path (`unexpected path type`)", name),
+			}
+		}
+	}
+	return nil
+}
+
 // refuseCoordinationNode refuses node, a coordination node statement, on a
 // target without [capability.CoordinationNodes]: a coordination node is YDB's
 // own object, and another engine has nothing to create.
@@ -1082,7 +1134,7 @@ func validateDeclaredIndexOptions(
 // render and an ALTER COLUMN action that cannot be rendered at all.
 func validateColumnOperation(dialect string, operation ast.AlterOperation) error {
 	if isNilInterface(operation) {
-		return invalidASTForeignKeyError(dialect, "alter-table operation is nil")
+		return nilNodeError(dialect, "alter-table operation")
 	}
 	switch typed := operation.(type) {
 	case *ast.DropColumnOperation:
@@ -1139,7 +1191,7 @@ func prepareColumnNode(
 	node *ast.ColumnNode,
 ) (*ast.ColumnNode, error) {
 	if node == nil {
-		return nil, invalidASTForeignKeyError(dialect, "column node is nil")
+		return nil, nilNodeError(dialect, "column node")
 	}
 	if node.Name == "" {
 		return nil, unnamedColumnError(dialect, table)
@@ -1301,7 +1353,7 @@ func prepareConstraintNode(
 	node *ast.ConstraintNode,
 ) (*ast.ConstraintNode, error) {
 	if node == nil {
-		return nil, invalidASTForeignKeyError(dialect, "constraint node is nil")
+		return nil, nilNodeError(dialect, "constraint node")
 	}
 	// Before the foreign-key early return, not after it: a UNIQUE or PRIMARY KEY
 	// constraint takes that return, and its INCLUDE payload is exactly what was
@@ -1451,6 +1503,16 @@ func unnamedColumnError(dialect, table string) error {
 			"%s has no name; a column name is not optional, and an empty identifier is not a name this pipeline can address again",
 			subject,
 		),
+	}
+}
+
+// nilNodeError refuses an absent node, naming what is absent: "AST node" for a
+// statement, or the part a statement carries.
+func nilNodeError(dialect, subject string) error {
+	return &ptaherr.RenderError{
+		Dialect: dialect,
+		Err:     ptaherr.ErrInvalidSchemaDiff,
+		Message: subject + " is nil",
 	}
 }
 
@@ -1874,6 +1936,23 @@ func validateDatabaseDeclarations(
 	if err := validateRoutineOverloads(dialect, database.Functions); err != nil {
 		return err
 	}
+	if err := validateDeclaredKeysAndConstraints(dialect, caps, database); err != nil {
+		return err
+	}
+	if err := validateDeclaredTopics(dialect, caps, database); err != nil {
+		return err
+	}
+	return validateDeclaredIndexIncludes(dialect, caps, database.Indexes)
+}
+
+// validateDeclaredKeysAndConstraints refuses the index, key and constraint
+// options of a declaration the target cannot write, in the order
+// [validateDatabaseDeclarations] reports them.
+func validateDeclaredKeysAndConstraints(
+	dialect string,
+	caps capability.Capabilities,
+	database *schemamodel.Database,
+) error {
 	if err := validateDeclaredConstraintIncludes(dialect, database); err != nil {
 		return err
 	}
@@ -1892,10 +1971,7 @@ func validateDatabaseDeclarations(
 	if err := validateDeclaredConstraintMethods(dialect, database); err != nil {
 		return err
 	}
-	if err := validateDeclaredEnforcementAndMatch(dialect, caps, database); err != nil {
-		return err
-	}
-	return validateDeclaredIndexIncludes(dialect, caps, database.Indexes)
+	return validateDeclaredEnforcementAndMatch(dialect, caps, database)
 }
 
 // validateDeclaredRoleNames refuses a role whose name or attributes the

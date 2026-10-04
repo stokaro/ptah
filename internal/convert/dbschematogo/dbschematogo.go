@@ -68,6 +68,7 @@ func ConvertDBSchemaToGoSchema(dbSchema *catalog.Database, dialect string) *sche
 	convertHypertables(database, dbSchema.Hypertables)
 	convertContinuousAggregates(database, dbSchema.ContinuousAggregates)
 	convertSynonyms(database, dbSchema.Synonyms)
+	convertTopics(database, dbSchema.Topics)
 	convertCoordinationNodes(database, dbSchema.CoordinationNodes)
 	convertExtendedProperties(database, dbSchema.ExtendedProperties)
 	convertRoles(database, dbSchema.Roles, membershipsFor(dbSchema.RoleMemberships, dialect))
@@ -560,6 +561,18 @@ func convertSynonyms(database *schemamodel.Database, synonyms []catalog.Synonym)
 			Schema:  synonym.Schema,
 			Target:  synonym.DeclaredTarget(),
 			Comment: synonym.Comment,
+		})
+	}
+}
+
+// convertTopics carries the YDB topics a read found into the IR, each with
+// the settings and consumers the server holds.
+func convertTopics(database *schemamodel.Database, topics []catalog.Topic) {
+	for _, topic := range topics {
+		database.Topics = append(database.Topics, schemamodel.Topic{
+			Name:   topic.Name,
+			Schema: topic.Schema,
+			Spec:   topic.Spec.Clone(),
 		})
 	}
 }

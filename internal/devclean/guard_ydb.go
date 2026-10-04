@@ -34,9 +34,9 @@ import (
 // through a `$` expression or carries a cluster, a pragma that moves the
 // prefix, a statement that runs code it computes, and every object the whole
 // database shares -- users, groups, permissions, secrets, resource pools,
-// backups. A topic is refused too: it would be confined, and the reset has no
-// statement that drops one. A statement that reads outside the realm is left
-// alone, since a read leaves nothing behind.
+// backups. A topic is judged by its path like a table, since the realm's reset
+// drops it. A statement that reads outside the realm is left alone, since a
+// read leaves nothing behind.
 //
 // On a server the run owns, the realm is the server, so only what reaches past
 // it stays refused: an external data source or table, async replication, a
@@ -159,7 +159,7 @@ func validateYDBObjectStatement(tokens []lexer.Token) error {
 			return err
 		}
 		return ydbCheckRenameTarget(tokens)
-	case "VIEW", "SEQUENCE":
+	case "VIEW", "SEQUENCE", "TOPIC":
 		return ydbCheckTarget(tokens, ydbSkipExistenceGuard(tokens, kind+1))
 	case "COORDINATION":
 		// Ptah's own statement for a coordination node, which Ptah's
@@ -172,8 +172,6 @@ func validateYDBObjectStatement(tokens []lexer.Token) error {
 		return ydbCheckTarget(tokens, kind+2)
 	case "TEMP", "TEMPORARY":
 		return unsafeReplayStatement(platform.YDB, "temporary table")
-	case "TOPIC":
-		return unsafeReplayStatement(platform.YDB, "a topic, which the dev database reset cannot drop")
 	case "USER", "GROUP":
 		return unsafeReplayStatement(platform.YDB, "a "+strings.ToLower(ydbKeywordAt(tokens, kind))+
 			" of the whole database")

@@ -67,6 +67,11 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	out.Synonyms = keep(db.Synonyms, func(synonym catalog.Synonym) bool {
 		return s.selected(typeList("synonym"), synonym.Schema, synonym.Name)
 	})
+	// A YDB topic is selected on its own name, in the directory that holds
+	// it, and its consumers ride with it.
+	out.Topics = keep(db.Topics, func(topic catalog.Topic) bool {
+		return s.selected(typeList("topic"), topic.Schema, topic.Name)
+	})
 	out.CoordinationNodes = keep(db.CoordinationNodes, func(node catalog.CoordinationNode) bool {
 		return s.selected(typeList("coordination_node"), node.Schema, node.Name)
 	})

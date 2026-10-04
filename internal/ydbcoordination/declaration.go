@@ -87,7 +87,7 @@ func set(spec *ast.CoordinationNodeSpec, setting, value string) error {
 // millisecond, which the node would not keep, and one too long for the
 // node's field.
 func ParsePeriod(text string) (uint32, error) {
-	micros, ok := ydbtype.IntervalMicros(strings.TrimSpace(text))
+	micros, ok := ydbtype.ParseInterval(text)
 	switch {
 	case !ok:
 		return 0, fmt.Errorf("a period is an ISO 8601 duration such as PT1S or PT0.5S")

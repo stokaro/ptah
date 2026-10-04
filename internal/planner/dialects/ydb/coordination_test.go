@@ -14,42 +14,48 @@ import (
 )
 
 // TestGenerateMigrationAST_CoordinationNodes_HappyPath pins where coordination
-// node statements sit in a plan: the creations and the changes after the
-// tables are created and changed, and the drops after the tables are dropped
-// and before the views are created, which come last. A change names only the
-// settings that differ. A plan of this shape applied on 26.2.1.14 and 25.1.4.7
-// and read back as declared.
+// node statements sit in a plan. A path names one object, so the drops come
+// with the topic drops, before any table is created, and the creations and
+// changes come with the topic creations, after the tables are dropped: here a
+// table takes the path of a dropped node and a node the path of a dropped
+// table. Views come last. A change names only the settings that differ.
+// TestYDBCoordinationNodes_TradeAPathWithATable applies this order on
+// 26.2.1.14 and 25.1.4.7.
 func TestGenerateMigrationAST_CoordinationNodes_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
 		TablesAdded: difftypes.TableChanges{{
-			Name:   "items",
-			Table:  schemamodel.Table{StructName: "S", Name: "items"},
+			Name:   "app.gone",
+			Table:  schemamodel.Table{StructName: "S", Schema: "app", Name: "gone"},
 			Fields: []schemamodel.Field{keyField("id")},
 		}},
 		TablesRemoved: []string{"old"},
+		TopicsAdded:   difftypes.TopicChanges{{Name: "events"}},
+		TopicsRemoved: difftypes.TopicChanges{{Name: "queue"}},
 		CoordinationNodesAdded: []schemamodel.CoordinationNode{
-			{Schema: "app", Name: "fresh", Spec: ast.CoordinationNodeSpec{SelfCheckPeriodMillis: 2000}},
+			{Name: "old", Spec: ast.CoordinationNodeSpec{SelfCheckPeriodMillis: 2000}},
 		},
 		CoordinationNodesModified: []difftypes.CoordinationNodeChange{{
 			Name: "locks", Changes: ast.CoordinationNodeSpec{ReadConsistencyMode: "strict"},
 		}},
 		CoordinationNodesRemoved: []schemamodel.CoordinationNode{{Schema: "app", Name: "gone"}},
-		ViewsAdded:               difftypes.ViewChanges{{Name: "item_ids", Body: "SELECT id FROM items"}},
+		ViewsAdded:               difftypes.ViewChanges{{Name: "item_ids", Body: "SELECT id FROM `app/gone`"}},
 	}
 
 	got := render(c, capability.YDB262(), diff)
 
-	c.Assert(got, qt.Equals, "CREATE TABLE `items` (\n"+
+	c.Assert(got, qt.Equals, "DROP TOPIC `queue`;\n"+
+		"DROP COORDINATION NODE `app/gone`;\n"+
+		"CREATE TABLE `app/gone` (\n"+
 		"    `id` Int64 NOT NULL,\n"+
 		"    PRIMARY KEY (`id`)\n"+
 		");\n"+
-		"CREATE COORDINATION NODE `app/fresh` WITH (self_check_period = Interval('PT2S'));\n"+
-		"ALTER COORDINATION NODE `locks` SET (read_consistency_mode = 'strict');\n"+
 		"DROP TABLE `old`;\n"+
-		"DROP COORDINATION NODE `app/gone`;\n"+
+		"CREATE TOPIC `events`;\n"+
+		"CREATE COORDINATION NODE `old` WITH (self_check_period = Interval('PT2S'));\n"+
+		"ALTER COORDINATION NODE `locks` SET (read_consistency_mode = 'strict');\n"+
 		"CREATE VIEW `item_ids` WITH (security_invoker = TRUE) AS\n"+
-		"SELECT id FROM items\n"+
+		"SELECT id FROM `app/gone`\n"+
 		";\n")
 }
 

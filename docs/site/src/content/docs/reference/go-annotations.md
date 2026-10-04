@@ -107,6 +107,8 @@ type StatusEnumMarker struct{}
 | [`ptah:schema:trigger`](#ptahschematrigger) | A database trigger | struct |
 | [`ptah:schema:view`](#ptahschemaview) | A database view | struct |
 | [`ptah:schema:matview`](#ptahschemamatview) | A materialized view | struct |
+| [`ptah:schema:topic`](#ptahschematopic) | A YDB topic | struct or field |
+| [`ptah:schema:topic:consumer`](#ptahschematopicconsumer) | A consumer of a YDB topic | struct or field |
 | [`ptah:schema:coordinationnode`](#ptahschemacoordinationnode) | A YDB coordination node | struct |
 | [`ptah:schema:role`](#ptahschemarole) | A database role | struct |
 | [`ptah:schema:grant`](#ptahschemagrant) | Database grants | struct |
@@ -721,6 +723,43 @@ parsed, with that reason, on every dialect -- including the bare form with no
 value, and including a view scoped away from the current target by `dialects`.
 The name stays recognized so the refusal explains itself instead of reading as
 a misspelling.
+
+### `//ptah:schema:topic`
+
+Declares a YDB topic: a persistent message queue at a path of the database. A
+setting left out stands for the value YDB gives a new topic. Every target but
+YDB refuses a topic. See [Topics](../../databases/ydb/#topics) for what a plan
+does with one.
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `auto_partitioning_down_utilization_percent` | No | Share of a partition's write speed below which partitions merge, 1 to 100. |
+| `auto_partitioning_stabilization_window` | No | How long a load lasts before the partition count follows it, an ISO 8601 duration. |
+| `auto_partitioning_strategy` | No | `disabled`, `scale_up`, `scale_up_and_down` or `paused`. |
+| `auto_partitioning_up_utilization_percent` | No | Share of a partition's write speed above which it splits, 1 to 100. |
+| `max_active_partitions` | No | Most partitions auto-partitioning splits the topic into; needs a strategy other than `disabled`. |
+| `min_active_partitions` | No | Partitions writers write to. The count only grows. |
+| `name` | Yes | Topic name, the last segment of its path. |
+| `partition_write_burst_bytes` | No | Burst a partition takes above its quota, in bytes; the write speed when omitted. |
+| `partition_write_speed_bytes_per_second` | No | Write quota of one partition, in bytes per second. |
+| `retention_period` | No | How long the topic keeps a message, an ISO 8601 duration; 24 hours when omitted. |
+| `schema` | No | Directory that holds the topic, relative to the database root. |
+| `supported_codecs` | No | Codecs a writer may use: `raw`, `gzip`, `lzop`, `zstd`, `custom`. |
+
+### `//ptah:schema:topic:consumer`
+
+Declares a consumer of a topic declared in the same file: a named reader with a
+read position of its own.
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `availability_period` | No | How long the topic keeps a message this consumer has not read past the retention period, an ISO 8601 duration. YDB 25.4 and later. |
+| `important` | No | The topic keeps a message this consumer has not read past the retention period. `true`/`false`. |
+| `name` | Yes | Consumer name, unique within the topic. |
+| `read_from` | No | RFC 3339 time a partition this consumer has not read is read from. |
+| `schema` | No | Directory of the topic, when it has one. |
+| `supported_codecs` | No | Codecs the consumer reads: `raw`, `gzip`, `lzop`, `zstd`, `custom`. |
+| `topic` | Yes | Topic the consumer reads. |
 
 ### `//ptah:schema:coordinationnode`
 

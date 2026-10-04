@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer/internal/dialects/postgres"
 )
 
@@ -207,5 +208,6 @@ func TestPostgres_AlterTable_RenameIndexIsRefused(t *testing.T) {
 
 	err := alter.Accept(r)
 
-	c.Assert(err, qt.ErrorMatches, `unknown alter operation type: \*ast.RenameIndexOperation`)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `unsupported feature: postgres: this renderer has no ALTER TABLE spelling for \*ast.RenameIndexOperation`)
 }

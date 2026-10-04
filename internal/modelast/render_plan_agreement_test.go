@@ -126,13 +126,13 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	if assertBothSurfacesRefuseTheDomain(c, dialect, &desired) {
 		return
 	}
-	// A coordination node is YDB's own object. A target without one refuses
-	// it on both surfaces, through one validation, and the census below
-	// compares the rest of the fixture.
-	routed := len(routedKinds)
-	if assertBothSurfacesRefuseTheCoordinationNode(c, dialect, &desired) {
-		routed--
-	}
+	// A coordination node and a topic are YDB's own objects, refused the same
+	// way on every target without their keys. The validation both surfaces
+	// share meets the node first, so it is taken out first; once both
+	// surfaces are seen to refuse each, the census below runs over the rest of
+	// the fixture.
+	refused := assertBothSurfacesRefuseTheCoordinationNode(c, dialect, &desired)
+	refused += assertBothSurfacesRefuseTheTopic(c, dialect, &desired)
 
 	renderCensus := surfaceCensus(c, dialect,
 		modelast.CollectDatabase(desired, dialect).Statements)
@@ -150,12 +150,12 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	// object of every kind in routedKinds, and each of those kinds is one
 	// AST node kind, so a surface that carried them all reports exactly
 	// that many rows, plus the kinds below that the fixture causes without
-	// declaring.
+	// declaring, less the kinds both surfaces refused above.
 	//
 	// Check rather than Assert so a surface that lost a kind still reaches
 	// the comparison below, which is the assertion that names which kind
 	// went missing on which side.
-	c.Check(renderCensus, qt.HasLen, routed+len(derivedNodeKinds),
+	c.Check(renderCensus, qt.HasLen, len(routedKinds)+len(derivedNodeKinds)-refused,
 		qt.Commentf("render surface census:\n%s", strings.Join(renderCensus, "\n")))
 
 	c.Assert(planCensus, qt.DeepEquals, renderCensus,
@@ -229,13 +229,15 @@ func assertBothSurfacesRefuseTheDomain(c *qt.C, dialect string, desired *schemam
 	return true
 }
 
-// assertBothSurfacesRefuseTheCoordinationNode checks the shared refusal of the
-// fixture's coordination node on a target without one, and takes the node out
-// of desired when it applied, so the census compares what is left.
-func assertBothSurfacesRefuseTheCoordinationNode(c *qt.C, dialect string, desired *schemamodel.Database) bool {
+// assertBothSurfacesRefuseTheCoordinationNode checks that a target without
+// the coordination_nodes key refuses the fixture's coordination node on both
+// surfaces, through the one validation they share, and takes the node out of
+// desired so the census can run over the rest. It returns how many routed
+// kinds it took out.
+func assertBothSurfacesRefuseTheCoordinationNode(c *qt.C, dialect string, desired *schemamodel.Database) int {
 	c.Helper()
 	if capability.ForDialect(dialect).Has(capability.CoordinationNodes) {
-		return false
+		return 0
 	}
 	_, planErr := schemadiff.CompareWithDatabaseInfo(
 		desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil,
@@ -243,8 +245,29 @@ func assertBothSurfacesRefuseTheCoordinationNode(c *qt.C, dialect string, desire
 	renderErr := renderer.ValidateSchema(desired, dialect)
 	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(planErr.Error(), qt.Contains, "coordination_nodes")
-	c.Assert(renderErr.Error(), qt.Contains, "coordination_nodes")
+	c.Assert(planErr.Error(), qt.Contains, "requires target capability coordination_nodes")
+	c.Assert(renderErr.Error(), qt.Contains, "requires target capability coordination_nodes")
 	desired.CoordinationNodes = nil
-	return true
+	return 1
+}
+
+// assertBothSurfacesRefuseTheTopic checks that a target without the topics key
+// refuses the fixture's topic on both surfaces, through the one validation they
+// share, and takes the topic out of desired so the census can run over the
+// rest. It returns how many routed kinds it took out.
+func assertBothSurfacesRefuseTheTopic(c *qt.C, dialect string, desired *schemamodel.Database) int {
+	c.Helper()
+	if capability.ForDialect(dialect).Has(capability.Topics) {
+		return 0
+	}
+	_, planErr := schemadiff.CompareWithDatabaseInfo(
+		desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil,
+	)
+	renderErr := renderer.ValidateSchema(desired, dialect)
+	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(planErr.Error(), qt.Contains, "requires target capability topics")
+	c.Assert(renderErr.Error(), qt.Contains, "requires target capability topics")
+	desired.Topics = nil
+	return 1
 }

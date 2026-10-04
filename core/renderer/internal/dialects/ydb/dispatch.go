@@ -2,6 +2,7 @@ package ydb
 
 import (
 	"fmt"
+	"strings"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
@@ -76,9 +77,9 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.EnumNode:
 		return r.keyed(capability.EnumCustomType, "enum type", "enum "+n.Name)
 	case *ast.CreateTypeNode:
-		return refuseKey(typeKey(n), "type "+n.Name)
+		return refuseKey(typeKey(n), typeSubject(n.Name))
 	case *ast.AlterTypeNode:
-		return refuseKey(capability.EnumCustomType, "ALTER TYPE "+n.Name)
+		return refuseKey(capability.EnumCustomType, strings.TrimSpace("ALTER TYPE "+n.Name))
 	case *ast.DropTypeNode:
 		return refuseKey(capability.EnumCustomType, "DROP TYPE "+n.Name)
 
@@ -154,6 +155,13 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.AlterTableForceRLSNode:
 		return r.keyed(capability.RowLevelSecurity, "row-level security", "forced row-level security on "+n.Table)
 
+	// Topics and their consumers.
+	case *ast.CreateTopicNode:
+		return r.renderCreateTopic(n)
+	case *ast.AlterTopicNode:
+		return r.renderAlterTopic(n)
+	case *ast.DropTopicNode:
+		return r.renderDropTopic(n)
 	// Coordination nodes. YQL has no statement for one, so this renderer
 	// writes Ptah's own, which Ptah's YDB connection runs through the
 	// coordination service.
@@ -276,6 +284,16 @@ func typeKey(node *ast.CreateTypeNode) capability.Capability {
 	default:
 		return capability.EnumCustomType
 	}
+}
+
+// typeSubject names a type in a refusal: "type status", or "a type" where the
+// statement names none, as the CREATE TYPE that checks a type definition
+// arriving on its own does.
+func typeSubject(name string) string {
+	if name == "" {
+		return "a type"
+	}
+	return "type " + name
 }
 
 // renderComment writes a planner's annotation as a YQL line comment. It is a

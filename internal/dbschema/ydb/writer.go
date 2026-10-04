@@ -234,14 +234,14 @@ func (t *transaction) Commit() error { return nil }
 // request is not wrong; YDB has nothing it could undo.
 func (t *transaction) Rollback() error { return nil }
 
-// DropAllTables drops every view, row table and coordination node in the
-// database and then removes each directory that dropping them left empty,
+// DropAllTables drops every view, row table, topic and coordination node in
+// the database and then removes each directory that dropping them left empty,
 // deepest first.
 //
-// It drops what the schema reader describes and nothing else. A column table,
-// a topic and the other objects the reader records as not described stay, and
-// so does the directory that holds one, so a cleanup planned from a read
-// removes exactly what the plan listed. Ptah's own lock node at the root of a
+// It drops what the schema reader describes and nothing else. A column table
+// and the other objects the reader records as not described stay, and so does
+// the directory that holds one, so a cleanup planned from a read removes
+// exactly what the plan listed. Ptah's own lock node at the root of a
 // database ([LockNode]) stays too, as the reader leaves it out, and so does a
 // node whose name starts with a dot. Dot-directories are never entered, nor is
 // ydburl.RealmDirectory at the root, and a directory that was empty before is
@@ -256,9 +256,9 @@ func (w *Writer) DropAllTables(ctx context.Context) error {
 	return err
 }
 
-// dropDirectory drops the tables in the directory dir, relative to the
-// database root, and the directories under it, and reports whether it dropped
-// or removed anything there.
+// dropDirectory drops the views, tables and topics in the directory dir,
+// relative to the database root, and the directories under it, and reports
+// whether it dropped or removed anything there.
 func (w *Writer) dropDirectory(ctx context.Context, dir string) (bool, error) {
 	entries, err := w.scheme.ListDirectory(ctx, path.Join(w.root, dir))
 	if err != nil {
@@ -281,6 +281,11 @@ func (w *Writer) dropDirectory(ctx context.Context, dir string) (bool, error) {
 			changed = true
 		case entry.GetType() == Ydb_Scheme.Entry_TABLE:
 			if err := w.ExecuteSQL(ctx, "DROP TABLE "+sqlident.Quote(platform.YDB, path.Join(dir, name))); err != nil {
+				return changed, err
+			}
+			changed = true
+		case entry.GetType() == Ydb_Scheme.Entry_TOPIC:
+			if err := w.ExecuteSQL(ctx, "DROP TOPIC "+sqlident.Quote(platform.YDB, path.Join(dir, name))); err != nil {
 				return changed, err
 			}
 			changed = true
@@ -321,18 +326,19 @@ func dropRank(entry *Ydb_Scheme.Entry) int {
 }
 
 // DropDirectory drops dir, a directory relative to the database root, together
-// with everything in it: row and column tables, views, coordination nodes and
-// the directories below, deepest first. It is the teardown of a directory a
-// caller created for itself, such as the capability probe's namespace;
-// DropAllTables is the cleanup that keeps what the reader does not describe.
+// with everything in it: row and column tables, views, topics, coordination
+// nodes and the directories below, deepest first. It is the teardown of a
+// directory a caller created for itself, such as the capability probe's
+// namespace; DropAllTables is the cleanup that keeps what the reader does not
+// describe.
 //
 // dir names a directory below the root and nothing else: a segment that
 // starts with a dot -- `.`, `..`, or a server directory such as `.sys` -- is
 // refused, so no spelling of dir reaches the root or leaves it. The whole tree
 // is read and checked before anything is dropped. An entry of a kind there is
-// no measured statement for, such as a topic, and an entry whose name starts
-// with a dot, which belongs to the server, stop it with the entry named and
-// nothing dropped.
+// no measured statement for, such as an external table, and an entry whose
+// name starts with a dot, which belongs to the server, stop it with the entry
+// named and nothing dropped.
 func (w *Writer) DropDirectory(ctx context.Context, dir string) error {
 	relative, err := w.droppableDirectory(dir)
 	if err != nil {
@@ -376,6 +382,7 @@ var treeStatements = map[Ydb_Scheme.Entry_Type]string{
 	Ydb_Scheme.Entry_TABLE:        "DROP TABLE %s",
 	Ydb_Scheme.Entry_COLUMN_TABLE: "DROP TABLE %s",
 	Ydb_Scheme.Entry_VIEW:         "DROP VIEW %s",
+	Ydb_Scheme.Entry_TOPIC:        "DROP TOPIC %s",
 }
 
 // dropStatement is the statement that drops an entry of entryType at target,
