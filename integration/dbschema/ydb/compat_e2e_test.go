@@ -17,6 +17,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/dblock"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/exeext"
 )
@@ -244,4 +245,36 @@ func rootNote(c *qt.C, conn *dbschema.DatabaseConnection) string {
 	c.Assert(conn.QueryRowContext(c.Context(), "SELECT note FROM `"+compatRootTable+"` WHERE id = 1l").Scan(&note),
 		qt.IsNil)
 	return note
+}
+
+// ptah-compat schema apply takes the schema apply lock on YDB, a semaphore on
+// the coordination node, as it takes an advisory lock on the engines that have
+// one: while another session holds it, a run under --lock-timeout gives up
+// with the timeout and creates nothing.
+func TestYDBCompatBinary_SchemaApplyWaitsForTheLock(t *testing.T) {
+	c := qt.New(t)
+	binary := buildCompatBinary(c, c.Context())
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			url := dbtarget.URL(t, line.engine)
+			c := qt.New(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			conn := openYDB(c, line)
+			dropCompatTables(c, conn)
+			c.Cleanup(func() { dropCompatTables(c, conn) })
+			desired := writeCompatFile(c, c.TempDir(), "desired.hcl", compatDesired)
+
+			lock, err := dblock.Acquire(ctx, openYDB(c, line), "ptah_schema_apply", 0)
+			c.Assert(err, qt.IsNil)
+			c.Cleanup(func() { _ = lock.Release(context.Background()) })
+			_, stderr, applyErr := runCompat(ctx, binary, "schema", "apply", "--url", url,
+				"--to", "file://"+desired, "--auto-approve", "--lock-timeout", "1s")
+
+			c.Assert(applyErr, qt.IsNotNil)
+			c.Assert(stderr, qt.Equals,
+				"Error: acquire schema apply lock: timed out acquiring advisory lock \"ptah_schema_apply\" on ydb after 1s\n")
+			c.Assert(tableNames(readScoped(c, conn, []string{compatDir})), qt.HasLen, 0)
+		})
+	}
 }
