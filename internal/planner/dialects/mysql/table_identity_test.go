@@ -22,20 +22,6 @@ func ordersTable(tableSchema string) *schemamodel.Database {
 	}
 }
 
-// ordersTableOneColumn is the same table with a single column.
-//
-// SQL Server's offline identifier semantics compare every name as
-// ComparisonCatalogUnknown, so two unresolved column names in one table are
-// reported as a possible catalog collision and the diff is refused before any
-// planning happens. That guard belongs to stokaro/ptah#1290 and is not what
-// these rows measure, so the SQL Server row carries one column.
-func ordersTableOneColumn(tableSchema string) *schemamodel.Database {
-	return &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "Order", Name: "orders", Schema: tableSchema}},
-		Fields: []schemamodel.Field{{StructName: "Order", Name: "note", Type: "TEXT"}},
-	}
-}
-
 // TestColumnDDLResolvesTheTableAcrossSchemaSpellings pins mysql's
 // findGeneratedTable at both of its column-DDL call sites.
 //
@@ -93,7 +79,7 @@ func TestColumnDDLResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
 			// at the identity tier rather than the unqualified one.
 			name:     "SQL Server resolves a bare declaration against dbo",
 			dialect:  "sqlserver",
-			desired:  ordersTableOneColumn(""),
+			desired:  ordersTable(""),
 			diffName: "dbo.orders",
 			wantAdd:  "ADD [note]",
 		},
