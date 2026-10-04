@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"ptah.run/internal/ydbrealm"
 )
 
 // ContainerLabel marks every container this package starts. It exists so an
@@ -313,8 +315,16 @@ func Provision(ctx context.Context, rawURL string, opts Options) (*Instance, err
 	if err := runner.Available(ctx); err != nil {
 		return nil, err
 	}
+	if spec.Anonymous() {
+		if err := refuseRemoteRuntime(ctx, runner, spec); err != nil {
+			return nil, err
+		}
+	}
 	if spec.declaration.ReadyTimeout > 0 {
 		opts.ReadyTimeout = spec.declaration.ReadyTimeout
+	}
+	if opts.Ready == nil && spec.engine.ready != nil {
+		opts.Ready = spec.engine.ready
 	}
 	name, err := containerName()
 	if err != nil {
@@ -387,6 +397,56 @@ func Provision(ctx context.Context, rawURL string, opts Options) (*Instance, err
 	return instance, nil
 }
 
+// RemoteHoster is the part of a [Runner] that says where the container runtime
+// publishes a port. [DockerCLI] implements it.
+type RemoteHoster interface {
+	// RemoteHost names the machine the runtime runs on when that is another
+	// machine, where a published port is reachable from every machine that
+	// reaches the host, and answers "" for a runtime on this one.
+	RemoteHost(ctx context.Context) (string, error)
+}
+
+// refuseRemoteRuntime refuses to start a server that takes every connection
+// without a credential on a container runtime that is on another machine.
+//
+// On another machine the port is published on every interface of that host
+// (see endpoint.go), and the per-instance password that makes that safe for
+// the other engines cannot be set: local-ydb accepts anonymous connections
+// whatever its root password is. Any machine that reaches the host could then
+// read the replayed schema or change it under the run. A runner that cannot
+// say where it publishes is refused too, since the answer is the one thing
+// that makes the start safe.
+func refuseRemoteRuntime(ctx context.Context, runner Runner, spec Spec) error {
+	hoster, ok := runner.(RemoteHoster)
+	if !ok {
+		return fmt.Errorf("docker://%s starts a server that takes connections without a credential, "+
+			"and the container runtime cannot say whether it runs on this machine", spec.Engine)
+	}
+	host, err := hoster.RemoteHost(ctx)
+	if err != nil {
+		return err
+	}
+	if host == "" {
+		return nil
+	}
+	return fmt.Errorf("docker://%s starts %s, which takes every connection without a credential, and the "+
+		"container runtime runs on %s, where the database would be published on every interface for the life of "+
+		"the command; point DOCKER_HOST at a container runtime on this machine, or pass a directly connectable dev "+
+		"database URL", spec.Engine, spec.Image, host)
+}
+
+// ResolvedPerRun reports whether [Resolve] may hand back, for rawURL, a database
+// the URL does not name as written: a docker URL, whose server Resolve starts,
+// and a YDB URL, whose dev database is a dev realm Resolve creates. Such a URL
+// cannot be compared with another database by its text. The question is
+// asked of the connection Resolve's URL opens instead, as
+// [ptah.run/internal/devlock.EnsureDistinct] asks it, which also refuses a
+// YDB database declared disposable, where Resolve creates no realm, when it is
+// the database it must not be.
+func ResolvedPerRun(rawURL string) bool {
+	return IsURL(rawURL) || ydbrealm.Applies(rawURL)
+}
+
 // Resolve returns a directly connectable dev database URL for rawURL, together
 // with a release function the caller must always call.
 //
@@ -397,9 +457,19 @@ func Provision(ctx context.Context, rawURL string, opts Options) (*Instance, err
 // With [Options.DeclaredDisposable] set, such a URL is recorded for [RunOwned]
 // in the form a consumer connects with, trimmed of surrounding space, and the
 // release ends the record. Without it the release does nothing.
+//
+// A YDB URL is the exception. SQL cannot create a YDB database, so the dev
+// database is a dev realm Resolve creates in the database the URL names, and
+// the URL returned names the realm; the release removes it (see
+// ptah.run/internal/ydbrealm). A YDB server the operator declared disposable
+// is the run's whole, as a `docker://ydb` one is, and gets no realm: its
+// database is the dev database.
 func Resolve(ctx context.Context, rawURL string, opts Options) (string, func(), error) {
 	if !IsURL(rawURL) {
 		if !opts.DeclaredDisposable {
+			if ydbrealm.Applies(rawURL) {
+				return ydbrealm.Enter(ctx, rawURL)
+			}
 			return rawURL, func() {}, nil
 		}
 		declared := strings.TrimSpace(rawURL)
@@ -535,6 +605,19 @@ func containerName() (string, error) {
 // no module dependency and inherits the operator's existing DOCKER_HOST,
 // context and credential configuration without restating any of it.
 type DockerCLI struct{}
+
+// RemoteHost names the host of a container runtime on another machine, and
+// answers "" for one on this machine; see [RemoteHoster].
+func (d DockerCLI) RemoteHost(ctx context.Context) (string, error) {
+	endpoint, _, err := d.resolveEndpoint(ctx)
+	if err != nil {
+		return "", err
+	}
+	if !endpoint.remote {
+		return "", nil
+	}
+	return endpoint.host, nil
+}
 
 // Available reports an actionable error when no usable container runtime is
 // reachable, naming which of the two problems it is: no client installed, or a

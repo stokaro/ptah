@@ -33,7 +33,7 @@ func TestOpen_FailurePath(t *testing.T) {
 			name: "an unknown parameter",
 			url:  "ydb://localhost:2136/local?sslmode=disable",
 			wantErr: `invalid YDB URL: parameter "sslmode" is not one Ptah reads on a YDB URL; accepted: ` +
-				"database, monitoring, token, use_env_credentials, go_balancer, balancer, go_query_mode, query_mode, " +
+				"database, monitoring, dev_realm, token, use_env_credentials, go_balancer, balancer, go_query_mode, query_mode, " +
 				"go_default_idempotent, prefetch_query_result_parts",
 		},
 		{

@@ -6,12 +6,16 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 )
 
 const mutationTargetNotFound = -1
 
 func replayLexerOptions(dialect string) lexer.Options {
+	if dialect == platform.YDB {
+		return dialectlexer.Options(platform.YDB)
+	}
 	options := lexer.Options{StandardStrings: true}
 	switch dialect {
 	case platform.MySQL, platform.MariaDB, platform.ClickHouse:

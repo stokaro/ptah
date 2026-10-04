@@ -229,3 +229,33 @@ func TestCanonicalValue_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// CanonicalRows writes each value of a typed column in its canonical form and
+// leaves a column with no type as it is.
+func TestCanonicalRows_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	moment := time.Date(2026, 1, 2, 4, 4, 5, 0, time.FixedZone("CET", 3600))
+
+	got, err := ydbtype.CanonicalRows(map[string]string{"id": "Int32", "weight": "Decimal(22,9)", "created": "Timestamp"},
+		[]map[string]any{{"id": int32(1), "weight": "1.50", "created": moment, "note": "kept"}})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, []map[string]any{{
+		"id": int64(1), "weight": "1.5", "created": time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), "note": "kept",
+	}})
+}
+
+// A value its column cannot hold names the row and the column, and nil rows
+// stay nil.
+func TestCanonicalRows_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	got, err := ydbtype.CanonicalRows(map[string]string{"n": "Int32"},
+		[]map[string]any{{"n": int64(1)}, {"n": int64(5000000000)}})
+	none, noneErr := ydbtype.CanonicalRows(map[string]string{"n": "Int32"}, nil)
+
+	c.Assert(err, qt.ErrorMatches, `row 2, column "n": .*`)
+	c.Assert(got, qt.IsNil)
+	c.Assert(noneErr, qt.IsNil)
+	c.Assert(none, qt.IsNil)
+}

@@ -16,10 +16,13 @@ import (
 // connector hands database/sql the SDK's connections with Ptah's argument
 // binding in front of them, and runs onClose after the SDK connector closes.
 // sdk is the driver the connections belong to, which [DriverOf] hands back;
-// it is nil for a connector [NewBindingConnector] built.
+// it is nil for a connector [NewBindingConnector] built. prefix is written in
+// front of every query the connections run, and is empty unless the URL named
+// a dev realm.
 type connector struct {
 	inner   driver.Connector
 	sdk     *ydbsdk.Driver
+	prefix  string
 	onClose func() error
 }
 
@@ -59,7 +62,7 @@ func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
 		_ = opened.Close()
 		return nil, fmt.Errorf("the YDB driver's connection %T no longer offers what Ptah binds through", opened)
 	}
-	return conn{sdkConn: sdk, driver: c.sdk}, nil
+	return conn{sdkConn: sdk, driver: c.sdk, prefix: c.prefix}, nil
 }
 
 // Driver returns the SDK's driver.
@@ -81,23 +84,27 @@ func (c *connector) Close() error {
 }
 
 // conn is an SDK connection whose arguments are named and widened before the
-// SDK binds them, and whose errors reach database/sql without the SDK's stack
-// frames; see [WithoutStackFrames]. The transactions, statements and result
-// sets it returns are wrapped for the same reason.
+// SDK binds them, whose queries start with prefix, and whose errors reach
+// database/sql without the SDK's stack frames; see [WithoutStackFrames]. The
+// transactions, statements and result sets it returns are wrapped for the same
+// reason.
 type conn struct {
 	sdkConn
 	driver *ydbsdk.Driver
+	prefix string
 }
 
-// ExecContext runs a statement and returns its error without stack frames.
+// ExecContext runs a statement after the connection's prefix and returns its
+// error without stack frames.
 func (c conn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
-	result, err := c.sdkConn.ExecContext(ctx, query, args)
+	result, err := c.sdkConn.ExecContext(ctx, c.prefix+query, args)
 	return result, WithoutStackFrames(err)
 }
 
-// QueryContext runs a query and wraps the result set it returns.
+// QueryContext runs a query after the connection's prefix and wraps the result
+// set it returns.
 func (c conn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
-	return wrapRows(c.sdkConn.QueryContext(ctx, query, args))
+	return wrapRows(c.sdkConn.QueryContext(ctx, c.prefix+query, args))
 }
 
 // wrapRows wraps a result set the SDK returned, or returns its error without
@@ -114,14 +121,16 @@ func wrapRows(opened driver.Rows, err error) (driver.Rows, error) {
 	return rows{sdkRows: sdk}, nil
 }
 
-// PrepareContext prepares a statement and wraps it.
+// PrepareContext prepares a statement after the connection's prefix and wraps
+// it.
 func (c conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, error) {
-	return wrapStmt(c.sdkConn.PrepareContext(ctx, query))
+	return wrapStmt(c.sdkConn.PrepareContext(ctx, c.prefix+query))
 }
 
-// Prepare prepares a statement without a context and wraps it.
+// Prepare prepares a statement after the connection's prefix, without a
+// context, and wraps it.
 func (c conn) Prepare(query string) (driver.Stmt, error) {
-	return wrapStmt(c.sdkConn.Prepare(query))
+	return wrapStmt(c.sdkConn.Prepare(c.prefix + query))
 }
 
 // wrapStmt wraps a statement the SDK prepared, or returns its error without

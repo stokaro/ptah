@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/sqlident"
+	"ptah.run/internal/ydbready"
 )
 
 // Connectable is the default readiness probe: it opens the provisioned URL with
@@ -29,6 +30,36 @@ func Connectable(ctx context.Context, rawURL string) error {
 		return err
 	}
 	return conn.Close()
+}
+
+// ydbReadyTable is the table the readiness probe of a `docker://ydb` server
+// creates and drops.
+const ydbReadyTable = "ptah_ready"
+
+// ydbReady is the readiness probe of a `docker://ydb` server. A YDB server
+// answers a query before it takes DDL: measured on local-ydb 26.2.1.14
+// started twice with in-memory disks, SELECT Version() answered 1.1 seconds
+// after the start and CREATE TABLE answered `database doesn't have storage
+// pools at all` for another 0.8 and 1.3 seconds. So the probe connects, then
+// creates and drops a table through [ydbready.Until], which waits out that one
+// refusal, as the capability probe does before its first schema change.
+func ydbReady(ctx context.Context, rawURL string) (err error) {
+	conn, err := dbschema.ConnectToServer(ctx, rawURL)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, conn.Close()) }()
+	table := sqlident.Quote(platform.YDB, ydbReadyTable)
+	return ydbready.Until(ctx, func(ctx context.Context) error {
+		// #nosec G202 -- the table name is a constant quoted through sqlident.
+		if _, err := conn.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS "+table+
+			" (`id` Int64 NOT NULL, PRIMARY KEY (`id`))"); err != nil {
+			return err
+		}
+		// #nosec G202 -- the table name is a constant quoted through sqlident.
+		_, err := conn.ExecContext(ctx, "DROP TABLE IF EXISTS "+table)
+		return err
+	})
 }
 
 // CreateDatabase is the default [DatabaseCreator]. On the PostgreSQL family it

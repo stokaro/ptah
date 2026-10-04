@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/dbschema"
+	"ptah.run/internal/dbreset"
 	"ptah.run/internal/pgdefaultacl"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/sqlident"
@@ -200,11 +201,17 @@ func InspectWithOptions(ctx context.Context, conn *dbschema.DatabaseConnection, 
 	if err != nil {
 		return Plan{}, err
 	}
-	revisionObjects, err := inspectRevisionTables(conn)
+	revisionObjects, err := inspectRevisionTables(ctx, conn)
 	if err != nil {
 		return Plan{}, err
 	}
-	objects = append(objects, unlistedObjects(objects, revisionObjects)...)
+	if isYDB(dialect) {
+		// The YDB reader leaves these names out of every directory, so none
+		// is listed already, and two directories may each hold one.
+		objects = append(objects, revisionObjects...)
+	} else {
+		objects = append(objects, unlistedObjects(objects, revisionObjects)...)
+	}
 	return planFromObjects(objects, dialect, executionDepths), nil
 }
 
@@ -593,6 +600,11 @@ func coverageFor(dialect string) dialectCoverage {
 		return dialectCoverage{foreignKeys: true, revisionTables: true}
 	case "clickhouse":
 		return dialectCoverage{views: true, materializedViews: true}
+	case "ydb":
+		// The writer drops row tables and nothing else; a view, a column
+		// table and a topic stay, and the reader records them as not
+		// described.
+		return dialectCoverage{revisionTables: true}
 	default:
 		// Any dialect this package has not measured: report tables only, which
 		// every writer drops.
@@ -1216,10 +1228,13 @@ func inspectMySQLStoredObjects(conn *dbschema.DatabaseConnection, schema string)
 // second literal here would report nothing on any setup whose revision table is
 // not the one the literal was written against — the same silent under-report
 // this function exists to fix.
-func inspectRevisionTables(conn *dbschema.DatabaseConnection) ([]Object, error) {
+func inspectRevisionTables(ctx context.Context, conn *dbschema.DatabaseConnection) ([]Object, error) {
 	dialect := conn.Info().Dialect
 	if !coverageFor(dialect).revisionTables {
 		return nil, nil
+	}
+	if isYDB(dialect) {
+		return inspectYDBRevisionTables(ctx, conn)
 	}
 	names := revisiontable.DefaultNames()
 	query, args := revisionTableProbe(dialect, strings.TrimSpace(conn.Info().Schema), names)
@@ -1249,6 +1264,35 @@ func inspectRevisionTables(conn *dbschema.DatabaseConnection) ([]Object, error) 
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate cleanup revision tables: %w", err)
+	}
+	return objects, nil
+}
+
+// ydbTableFinder is what the YDB revision-table probe needs of the writer: YDB
+// has no catalog a query could ask, and the writer walks the scheme tree.
+type ydbTableFinder interface {
+	TablesNamed(ctx context.Context, names []string) ([]dbreset.Object, error)
+}
+
+// inspectYDBRevisionTables finds the migrator's tables in every directory the
+// YDB writer's DropAllTables enters. The YDB reader leaves the default
+// revision tables, their logs and the tag table out of every directory, and
+// DropAllTables drops each of them with the rest. Measured on 26.2.1.14 after
+// `migrations up`: `db drop-all --dry-run` reported 1 object for a database
+// whose writer then dropped users, schema_migrations and
+// schema_migrations_log.
+func inspectYDBRevisionTables(ctx context.Context, conn *dbschema.DatabaseConnection) ([]Object, error) {
+	finder, ok := conn.SchemaWriter().(ydbTableFinder)
+	if !ok {
+		return nil, fmt.Errorf("inspect cleanup revision tables: the %T writer cannot find tables by name", conn.SchemaWriter())
+	}
+	found, err := finder.TablesNamed(ctx, append(revisiontable.DefaultNames(), revisiontable.Tags))
+	if err != nil {
+		return nil, fmt.Errorf("inspect cleanup revision tables: %w", err)
+	}
+	objects := make([]Object, 0, len(found))
+	for _, table := range found {
+		objects = append(objects, Object{Type: ObjectTypeTable, Schema: table.Schema, Name: table.Name})
 	}
 	return objects, nil
 }
@@ -1628,6 +1672,10 @@ func isPostgresFamily(dialect string) bool {
 	default:
 		return false
 	}
+}
+
+func isYDB(dialect string) bool {
+	return normalizeDialect(dialect) == "ydb"
 }
 
 func isPostgres(dialect string) bool {

@@ -328,7 +328,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ### What the rules for every dialect do on YDB
 
-A YDB run reads migrations as YQL. The `YD` family above is YDB's own, and every rule with no dialect restriction runs there too. This table says what each of those does on YDB: it applies, the statement it reads does not exist in YQL, a `YD` rule replaces it, or it needs a dev database, which a YDB database cannot be yet, and the run names it as unmet.
+A YDB run reads migrations as YQL. The `YD` family above is YDB's own, and every rule with no dialect restriction runs there too. This table says what each of those does on YDB: it applies, the statement it reads does not exist in YQL, a `YD` rule replaces it, or it needs a dev database, and a run without `--dev-url` names it as unmet.
 
 | Rule | On YDB | What it rests on |
 | --- | --- | --- |

@@ -158,8 +158,8 @@ func TestYDBVerdicts_ReplacedRulesGiveWayToTheirYDRule(t *testing.T) {
 	c.Assert(codes, qt.Not(qt.Contains), "DD101")
 }
 
-// DS110P is the one rule marked as needing a dev database, and a YDB run names
-// it as unmet where it asked for the state.
+// DS110P is the one rule marked as needing a dev database, and a YDB run
+// without one names it as unmet where it asked for the state.
 func TestYDBVerdicts_RulesThatNeedADevDatabaseAreNamedUnmet(t *testing.T) {
 	c := qt.New(t)
 

@@ -582,6 +582,21 @@ func TestStrictCEDatabaseDialectPolicy(t *testing.T) {
 	}
 }
 
+// A docker engine Ptah starts and the pinned binary does not is refused in
+// that binary's words, and only in strict mode.
+func TestStrictCEDockerExtensionEnginePolicy(t *testing.T) {
+	for _, rawURL := range []string{"docker://ydb/26.2.1.14/local", "docker://ydb"} {
+		t.Run(rawURL, func(t *testing.T) {
+			c := qt.New(t)
+
+			err := atlascompatpolicy.StrictCE().ValidateURL(rawURL)
+
+			c.Assert(err, qt.ErrorMatches, `unsupported docker image "ydb"`)
+			c.Assert(atlascompatpolicy.Full().ValidateURL(rawURL), qt.IsNil)
+		})
+	}
+}
+
 // No Atlas edition has a YDB driver, so the strict profile answers a YDB URL
 // the way the pinned community binary answers it: `sql/sqlclient: unknown
 // driver`, with the scheme as the URL spells it. The default profile keeps it.

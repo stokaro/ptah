@@ -201,7 +201,7 @@ func TestScopeDevRefusal_FailurePath(t *testing.T) {
 func TestGovernsDev_HappyPath(t *testing.T) {
 	for _, dialect := range []string{
 		"postgres", "cockroachdb", "yugabytedb", "spanner",
-		"mysql", "mariadb", "sqlite", "sqlserver", "clickhouse", "oracle",
+		"mysql", "mariadb", "sqlite", "sqlserver", "clickhouse", "oracle", "ydb",
 	} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
