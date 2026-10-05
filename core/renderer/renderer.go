@@ -1485,25 +1485,12 @@ func refuseTopic(dialect string, caps capability.Capabilities, subject string) e
 	}
 }
 
-// validateDeclaredTopics refuses a declared topic the target cannot create,
-// before any statement is emitted: on a target without [capability.Topics],
-// and on YDB a topic whose path a declared table holds, since a path names
-// one object (measured: `CREATE TOPIC` over a table's path answers
-// `unexpected path type ... EPathTypeTable`).
+// validateDeclaredTopics refuses a topic on a target that cannot create one.
+// Shared scheme paths are checked by validateDeclaredSchemePaths.
 func validateDeclaredTopics(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
-	paths := declaredPaths(database)
 	for _, topic := range database.Topics {
-		name := topic.QualifiedName()
-		if err := refuseTopic(dialect, caps, "topic "+name); err != nil {
+		if err := refuseTopic(dialect, caps, "topic "+topic.QualifiedName()); err != nil {
 			return err
-		}
-		if slices.Contains(paths[name], pathTable) {
-			return &ptaherr.RenderError{
-				Dialect: platform.NormalizeDialect(dialect),
-				Err:     ptaherr.ErrUnsupportedFeature,
-				Message: fmt.Sprintf("topic %s has the path of a declared table, and YDB keeps one object "+
-					"at a path (`unexpected path type`)", name),
-			}
 		}
 	}
 	return nil
@@ -1521,65 +1508,65 @@ const (
 // declaredPaths maps the qualified name of every declared table, view, topic
 // and coordination node to the kinds declared under it, in that order. It is
 // the one answer to which declared objects share a path, for
-// [validateDeclaredTopics] and [validateDeclaredCoordinationNodePaths]: on YDB
+// [validateDeclaredSchemePaths]: on YDB
 // a path names one object, so a name that carries two kinds is a declaration
 // the server cannot hold. A view's name is parsed as the YDB renderer reads
 // it, so `app.v` is the view v in the directory app.
 func declaredPaths(database *schemamodel.Database) map[string][]string {
 	paths := make(map[string][]string)
+	add := func(name, kind string) {
+		name = declaredSchemePath(name)
+		paths[name] = append(paths[name], kind)
+	}
 	for _, table := range database.Tables {
-		paths[table.QualifiedName()] = append(paths[table.QualifiedName()], pathTable)
+		add(table.QualifiedName(), pathTable)
 	}
 	for _, view := range database.Views {
-		name := view.Name
-		if ref, ok := tableref.Parse(view.Name); ok {
-			name = tableref.Canonical(ref.Schema, ref.Name)
-		}
-		paths[name] = append(paths[name], pathView)
+		add(view.Name, pathView)
 	}
 	for _, topic := range database.Topics {
-		paths[topic.QualifiedName()] = append(paths[topic.QualifiedName()], pathTopic)
+		add(topic.QualifiedName(), pathTopic)
 	}
 	for _, node := range database.CoordinationNodes {
-		paths[node.QualifiedName()] = append(paths[node.QualifiedName()], pathCoordinationNode)
+		add(node.QualifiedName(), pathCoordinationNode)
 	}
 	return paths
 }
 
-// validateDeclaredCoordinationNodePaths refuses, on a target with
-// [capability.CoordinationNodes], a declared coordination node whose path a
-// declared table, view or topic holds, before any statement is emitted. A
-// plan creates the table and the topic before the node and the view after
-// it, and YDB refuses the later of the two. Measured on 26.2.1.14 and
-// 25.1.4.7:
-//
-//	CREATE COORDINATION NODE over a table  unexpected path type (... type: EPathTypeTable ...), expected types: EPathTypeKesus
-//	CREATE COORDINATION NODE over a topic  unexpected path type (... type: EPathTypePersQueueGroup ...), expected types: EPathTypeKesus
-//	CREATE COORDINATION NODE over a view   unexpected path type (... type: EPathTypeView ...), expected types: EPathTypeKesus
-//	CREATE VIEW over a node                unexpected path type (... type: EPathTypeKesus ...), expected types: EPathTypeView
-//	CREATE TOPIC over a node               unexpected path type (... type: EPathTypeKesus ...), expected types: EPathTypePersQueueGroup
-//	CREATE TABLE over a node               Path is not a table or topic (26.2), PathNotTable (25.1)
-func validateDeclaredCoordinationNodePaths(
-	dialect string,
-	caps capability.Capabilities,
-	database *schemamodel.Database,
-) error {
-	if len(database.CoordinationNodes) == 0 || !caps.Has(capability.CoordinationNodes) {
+// A slash inside the final name still names a directory in YDB. Use the path
+// the renderer writes, while keeping a literal dot distinct from a qualifier.
+func declaredSchemePath(name string) string {
+	ref, ok := tableref.Parse(name)
+	if !ok {
+		return name
+	}
+	full := ref.Name
+	if strings.TrimSpace(ref.Schema) != "" {
+		full = strings.TrimRight(ref.Schema, "/") + "/" + full
+	}
+	if slash := strings.LastIndex(full, "/"); slash >= 0 {
+		return tableref.Canonical(full[:slash], full[slash+1:])
+	}
+	return tableref.Canonical("", full)
+}
+
+// validateDeclaredSchemePaths refuses declarations that assign multiple kinds
+// to one scheme path. CoordinationNodes denotes YDB's scheme objects; other
+// dialects use their own namespace rules. Check every path even when no
+// coordination node is declared, since tables, views and topics also share it.
+func validateDeclaredSchemePaths(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
+	if !caps.Has(capability.CoordinationNodes) {
 		return nil
 	}
 	paths := declaredPaths(database)
-	for _, node := range database.CoordinationNodes {
-		name := node.QualifiedName()
-		for _, kind := range paths[name] {
-			if kind == pathCoordinationNode {
-				continue
-			}
-			return &ptaherr.RenderError{
-				Dialect: platform.NormalizeDialect(dialect),
-				Err:     ptaherr.ErrUnsupportedFeature,
-				Message: fmt.Sprintf("coordination node %s has the path of a declared %s, and YDB keeps one object "+
-					"at a path (`unexpected path type`)", name, kind),
-			}
+	for _, name := range slices.Sorted(maps.Keys(paths)) {
+		kinds := slices.Compact(paths[name])
+		if len(kinds) < 2 {
+			continue
+		}
+		return &ptaherr.RenderError{
+			Dialect: platform.NormalizeDialect(dialect), Err: ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf("%s %s has the path of a declared %s, and YDB keeps one object at a path (`unexpected path type`)", kinds[len(kinds)-1], name, kinds[0]),
 		}
 	}
 	return nil
@@ -2446,7 +2433,7 @@ func validateDatabaseDeclarations(
 	if err := ydbcoordination.ValidateDeclared(dialect, caps, database.CoordinationNodes); err != nil {
 		return err
 	}
-	if err := validateDeclaredCoordinationNodePaths(dialect, caps, database); err != nil {
+	if err := validateDeclaredSchemePaths(dialect, caps, database); err != nil {
 		return err
 	}
 	if err := validateDeclaredAccess(dialect, caps, database); err != nil {
