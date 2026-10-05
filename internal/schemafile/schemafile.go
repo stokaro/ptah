@@ -804,7 +804,9 @@ func loadSQLFileWithStatements(
 	if err != nil {
 		return nil, nil, fmt.Errorf("parse SQL schema file %s: %w", path, err)
 	}
-	db.NotDescribed = notDescribed
+	// A header supplements limits inferred by the dialect reader. Replacing
+	// them makes an unsupported YQL family look authoritatively absent.
+	db.NotDescribed = db.NotDescribed.Merge(notDescribed)
 	return &db, statements, nil
 }
 
