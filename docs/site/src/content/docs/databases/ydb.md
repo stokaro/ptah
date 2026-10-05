@@ -2025,7 +2025,7 @@ every dialect run too, and the
 [lint rules](../../reference/lint-rules/#what-the-rules-for-every-dialect-do-on-ydb)
 say what each does on YDB.
 
-`ptah sql lint` reads YQL without the SQL parser, which has no YQL grammar. It
+`ptah sql lint` analyzes YQL tokens independently of the desired-schema parser. It
 reports a `CREATE TABLE` without a primary key, which YDB refuses, as `DDL001`,
 and a capability a `CREATE TABLE` or an `ALTER TABLE` needs that the line lacks
 as `CAP001`.
@@ -2319,13 +2319,42 @@ The Ptah GitHub Action takes a YDB URL in `db-url` and `ydb` in `dialect`. The
 plan, the safety report, the generated migration files and the lint of them run
 as they do for any other database.
 
+## Desired YQL schema files
+
+Use a `.sql` file with `--schema-file` and `--dialect ydb` to declare row or
+column tables. Ptah reads the file without executing it or connecting to a dev
+database. The same reader serves native commands and `ptah-compat`.
+
+```sql
+CREATE TABLE `app/items` (
+    id Int64 NOT NULL,
+    body Utf8 DEFAULT 'active'u,
+    PRIMARY KEY (id),
+    INDEX by_body GLOBAL SYNC ON (body)
+) WITH (KEY_BLOOM_FILTER = ENABLED);
+```
+
+The reader accepts table-level primary keys, literal defaults, inline global,
+vector, full-text and local indexes, covering columns, index settings, row-table
+partitioning, and column-table `PARTITION BY HASH` and `STORE = COLUMN` settings.
+Paths are database-relative. Primary-key columns must declare `NOT NULL`, because
+Ptah cannot represent a nullable YDB key. Defaults must use the column's YQL
+literal type, such as `42l` for `Int64` and `'active'u` for `Utf8`.
+
+Other statements and clauses are refused, including queries, `ALTER`, TTL,
+column families and declarations of other object families. Use Go or YAML for
+those declarations. An unsupported statement rejects the whole document. An
+existing object's TTL, column families, changefeeds or other unrepresented
+families are preserved when planning from a YQL file; their absence in that file
+does not request their removal.
+
 ## What is not supported yet
 
 These are refused with a message that names what is missing:
 
 <!-- BEGIN GENERATED YDB GAPS -->
-- a YQL file as the desired schema (Go structs and YAML schemas work);
-- JSON and column-table indexes;
+- YQL desired-schema declarations beyond the supported `CREATE TABLE` clauses; use Go or YAML for other object families;
+- JSON indexes;
 - `ptah inference` and the inference tools of `ptah mcp`, which store their vectors through pgvector.
 <!-- END GENERATED YDB GAPS -->
 

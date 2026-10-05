@@ -268,6 +268,8 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Tabl
 		// output has to describe the same table it came from
 		// (stokaro/ptah#2236).
 		RowDeletionPolicy: table.RowDeletionPolicy.Clone(),
+		YDBPartitioning:   table.YDBPartitioning.Clone(),
+		YDBColumnTable:    table.YDBColumnTable.Clone(),
 		// Carried for the same reason: `db read` emits CREATE UNLOGGED TABLE,
 		// and a schema file holding that output has to describe the table it
 		// came from rather than a logged one.
@@ -450,11 +452,16 @@ func ToIndex(index *ast.IndexNode, sourcePlatform string) schemamodel.Index {
 		IncludeColumns: normalizeSQLIdentifiers(sourcePlatform, index.IncludeColumns),
 		NullsDistinct:  cloneBoolPtr(index.NullsDistinct),
 		StorageParams:  maps.Clone(index.StorageParams),
+		Partitioning:   index.Partitioning.Clone(),
+		Vector:         index.Vector.Clone(),
 		TableName:      schemamodel.QualifyTableName(tableSchema, tableName),
 	}
 }
 
 func indexParts(index *ast.IndexNode, sourcePlatform string) []schemamodel.IndexPart {
+	if sqlplatform.NormalizeDialect(sourcePlatform) == sqlplatform.YDB {
+		return nil
+	}
 	if len(index.Parts) > 0 {
 		return toSchemaIndexParts(index.Parts, sourcePlatform)
 	}
