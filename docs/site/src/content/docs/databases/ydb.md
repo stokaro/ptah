@@ -947,19 +947,25 @@ statement. `--server-version` names the release line a capability is read
 from, and the newest line is used without it.
 
 Migration lint reports the statements YDB refuses, or runs with an effect the
-statement does not state, under the `YD` family: a unique index added to an
-existing table, a block that mixes schema and data statements, an `ADD COLUMN`
-the line refuses, a dropped column an index or the TTL uses, a partitioning
-change that resets the minimum partition count, a table a view reads that is
-dropped or renamed, a renamed table that carries a changefeed,
-a `REVOKE GRANT OPTION FOR`, which takes the permission too, a dropped user
-or group, which leaves its permissions behind, a topic setting reset that
-changes nothing, a topic setting YDB keeps as nothing, a vector index the line
-does not build, and rows written into a table whose vector index does not take
-them in. `DS107` reports a dropped user or group as it reports a dropped role
-elsewhere, and a dropped topic.
-[Lint rules](../../reference/lint-rules/#ydb) lists each rule with its
-meaning.
+statement does not state, under the `YD` family:
+
+- a unique index added to an existing table, and a block that mixes schema and
+  data statements;
+- an `ADD COLUMN` the line refuses, and a dropped column an index or the TTL
+  uses;
+- a partitioning change that resets the minimum partition count;
+- a table a view reads that is dropped or renamed, and a renamed table that
+  carries a changefeed;
+- a `REVOKE GRANT OPTION FOR`, which takes the permission too, and a dropped
+  user or group, which leaves its permissions behind;
+- a topic setting reset that changes nothing, and a topic setting YDB keeps as
+  nothing;
+- a vector index the line does not build, and rows written into a table whose
+  vector index does not take them in.
+
+`DS107` reports a dropped user or group as it reports a dropped role
+elsewhere, and a dropped topic. [Lint rules](../../reference/lint-rules/#ydb)
+lists each rule with its meaning.
 
 `YD104`, `YD105`, `YD106`, `YD109` and `YD131` read the indexes, TTL, minimum
 partition count, views and changefeeds the directory's own earlier
