@@ -119,7 +119,7 @@ func TestGenerateMigrationAST_TableRebuild_HappyPath(t *testing.T) {
 // the declaration before the swap, and the swap takes them along: YDB moves a
 // table's attributes with ALTER TABLE ... RENAME TO (measured on 25.1.4.7 and
 // 26.2.1.14). A changed comment on a rebuilt table therefore needs no
-// statement of its own.
+// statement of its own, and neither does a changed index comment.
 func TestGenerateMigrationAST_TableRebuild_CarriesComments(t *testing.T) {
 	c := qt.New(t)
 	label := field("label", "TEXT", true)
@@ -132,6 +132,9 @@ func TestGenerateMigrationAST_TableRebuild_CarriesComments(t *testing.T) {
 		CommentChange:   &difftypes.CommentChange{Current: "old", Desired: "Items"},
 		ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}},
 	})
+	diff.IndexCommentsChanged = []difftypes.IndexCommentChange{
+		{TableName: "app.items", Name: "items_label", Current: "old", Desired: "By name"},
+	}
 
 	got := renderRebuild(c, capability.YDB262(), diff)
 
