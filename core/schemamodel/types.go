@@ -32,22 +32,24 @@ import (
 // fingerprint it already had. [Database.NotDescribed] and [Field.APIExpose]
 // spell out the reasoning.
 type Database struct {
-	Schemas        []Schema
-	Tables         []Table
-	Fields         []Field
-	Indexes        []Index
-	Constraints    []Constraint // Table-level constraints (EXCLUDE, CHECK, etc.)
-	Enums          []Enum
-	EmbeddedFields []EmbeddedField
-	Extensions     []Extension     // PostgreSQL extensions (pg_trgm, postgis, etc.)
-	Functions      []Function      // PostgreSQL custom functions
-	Sequences      []Sequence      // PostgreSQL standalone sequences (CREATE SEQUENCE)
-	Domains        []Domain        // PostgreSQL domain types (CREATE DOMAIN)
-	CompositeTypes []CompositeType // PostgreSQL composite types (CREATE TYPE ... AS (...))
-	Ranges         []Range         // PostgreSQL range types (CREATE TYPE ... AS RANGE (...))
-	Views          []View          // Database views
-	Synonyms       []Synonym       // SQL Server synonyms
-	Topics         []Topic         `json:",omitempty"` // YDB topics and their consumers
+	Schemas           []Schema
+	Tables            []Table
+	Fields            []Field
+	Indexes           []Index
+	Constraints       []Constraint // Table-level constraints (EXCLUDE, CHECK, etc.)
+	Enums             []Enum
+	EmbeddedFields    []EmbeddedField
+	Extensions        []Extension        // PostgreSQL extensions (pg_trgm, postgis, etc.)
+	Functions         []Function         // PostgreSQL custom functions
+	Sequences         []Sequence         // PostgreSQL standalone sequences (CREATE SEQUENCE)
+	Domains           []Domain           // PostgreSQL domain types (CREATE DOMAIN)
+	CompositeTypes    []CompositeType    // PostgreSQL composite types (CREATE TYPE ... AS (...))
+	Ranges            []Range            // PostgreSQL range types (CREATE TYPE ... AS RANGE (...))
+	Views             []View             // Database views
+	Synonyms          []Synonym          // SQL Server synonyms
+	Topics            []Topic            `json:",omitempty"` // YDB topics and their consumers
+	AsyncReplications []AsyncReplication `json:",omitempty"` // YDB async replications
+	Transfers         []Transfer         `json:",omitempty"` // YDB transfers
 	// CoordinationNodes are the YDB coordination nodes the schema declares.
 	// omitempty keeps the encoding, and so the fingerprint, of every schema
 	// that declares none as it is.
@@ -1359,6 +1361,46 @@ type Topic struct {
 // QualifiedName returns the topic's canonical reference: schema.name, or the
 // name alone at the database root.
 func (t Topic) QualifiedName() string {
+	return tableref.Canonical(t.Schema, t.Name)
+}
+
+// AsyncReplication is a YDB async replication: a copy of tables of another
+// database, kept current in read-only replica tables YDB creates itself.
+//
+// Schema is the directory that holds it, "" for the database root, as it is
+// for a YDB table. The replica tables are the replication's: a schema that
+// declares one does not declare the tables it creates. Dialects is
+// deliberately absent, for the reason [Synonym] gives: a replication belongs
+// to YDB, and every other target refuses one rather than building nothing.
+type AsyncReplication struct {
+	StructName string // Name of the Go struct this replication is associated with
+	Name       string // Replication name, the last segment of its path
+	Schema     string // Directory that holds the replication, relative to the database root
+	// Spec is the replication's connection, items and consistency. It
+	// carries the ast type for the reason Table.RowDeletionPolicy does.
+	Spec ast.AsyncReplicationSpec
+}
+
+// QualifiedName returns the replication's canonical reference: schema.name,
+// or the name alone at the database root.
+func (r AsyncReplication) QualifiedName() string {
+	return tableref.Canonical(r.Schema, r.Name)
+}
+
+// Transfer is a YDB transfer: messages of a topic turned into rows of a
+// table through a YQL lambda. Dialects is deliberately absent, for the reason
+// [AsyncReplication] gives.
+type Transfer struct {
+	StructName string // Name of the Go struct this transfer is associated with
+	Name       string // Transfer name, the last segment of its path
+	Schema     string // Directory that holds the transfer, relative to the database root
+	// Spec is the transfer's source, target, lambda and settings.
+	Spec ast.TransferSpec
+}
+
+// QualifiedName returns the transfer's canonical reference: schema.name, or
+// the name alone at the database root.
+func (t Transfer) QualifiedName() string {
 	return tableref.Canonical(t.Schema, t.Name)
 }
 

@@ -106,6 +106,24 @@ type schemaChange struct {
 	after []check
 }
 
+// statements is every statement the change runs that it carries as data:
+// its checks' and the change's own, in the order they run.
+func (sc schemaChange) statements() []string {
+	var statements []string
+	for _, control := range sc.before {
+		if control.statement != "" {
+			statements = append(statements, control.statement)
+		}
+	}
+	statements = append(statements, sc.change...)
+	for _, evidence := range sc.after {
+		if evidence.statement != "" {
+			statements = append(statements, evidence.statement)
+		}
+	}
+	return statements
+}
+
 // check is one statement whose outcome is evidence.
 type check struct {
 	statement string
@@ -198,6 +216,7 @@ func proven(key capability.Capability, sc schemaChange) experiment {
 	return experiment{
 		decides: []capability.Capability{key},
 		setup:   sc.setup,
+		runs:    sc.statements(),
 		decide: func(ctx context.Context, s *session) (verdicts, []Attempt) {
 			var attempts []Attempt
 			for _, control := range sc.before {

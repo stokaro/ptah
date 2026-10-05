@@ -83,6 +83,8 @@ Top-level objects are maps. Their keys are used as default object names when a
 | `default_privileges` | PostgreSQL default privileges: what a grantee receives on objects a role creates later. |
 | `topics` | YDB topics: the settings their annotation takes, and `consumers` keyed by name. See [Topics](../../databases/ydb/#topics). |
 | `coordination_nodes` | YDB coordination nodes: `schema` and the settings of [`//ptah:schema:coordinationnode`](../go-annotations/#ptahschemacoordinationnode). |
+| `async_replications` | YDB async replications: the connection and consistency settings their annotation takes, and `items`, a list of `source` and `target` pairs. See [Async replications and transfers](../../databases/ydb/#async-replications-and-transfers). |
+| `transfers` | YDB transfers: `source`, `target`, `using` and the settings their annotation takes. |
 
 Unknown keys fail. Ptah does not silently ignore fields that look meaningful but
 are outside the supported schema.

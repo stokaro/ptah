@@ -71,6 +71,111 @@
       ],
       "type": "object"
     },
+    "ptah.schema.async_replication": {
+      "additionalProperties": false,
+      "description": "Declares a YDB async replication: tables of another database copied into read-only replica tables YDB creates and keeps current. Its tables are declared with ptah:schema:async_replication:item in the same file, and the replica tables are not declared as tables.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "commit_interval": {
+              "description": "How often a global replication commits, an ISO 8601 duration; ten seconds when omitted.",
+              "type": "string"
+            },
+            "connection_string": {
+              "description": "The other database: grpc://host:port/?database=/path or grpcs://...",
+              "type": "string"
+            },
+            "consistency_level": {
+              "description": "Consistency of the replica: row or global; row when omitted.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Replication name, the last segment of its path.",
+              "type": "string"
+            },
+            "password_secret_name": {
+              "description": "Object secret holding the user's password.",
+              "type": "string"
+            },
+            "password_secret_path": {
+              "description": "Path of a secret holding the user's password, relative to the database root (YDB 25.4 and later).",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Directory that holds it, relative to the database root.",
+              "type": "string"
+            },
+            "token_secret_name": {
+              "description": "Object secret holding an access token.",
+              "type": "string"
+            },
+            "token_secret_path": {
+              "description": "Path of a secret holding an access token, relative to the database root (YDB 25.4 and later).",
+              "type": "string"
+            },
+            "user": {
+              "description": "User a password secret signs in as.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "connection_string",
+            "name"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:async_replication"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "ptah.schema.async_replication.item": {
+      "additionalProperties": false,
+      "description": "Declares one table, or directory of tables, an async replication copies, and where its replica is created. The replication is declared in the same file.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "replication": {
+              "description": "Replication the item belongs to.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Directory of the replication, when it has one.",
+              "type": "string"
+            },
+            "source": {
+              "description": "Path in the source database, relative to its root or absolute.",
+              "type": "string"
+            },
+            "target": {
+              "description": "Path of the replica in this database, relative to its root.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "replication",
+            "source",
+            "target"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:async_replication:item"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
     "ptah.schema.changefeed": {
       "additionalProperties": false,
       "description": "Declares a YDB changefeed: a stream of a table's changes, kept in a topic at <table>/<name>. It belongs to the struct's table, or to the table it names.",
@@ -2276,6 +2381,88 @@
       ],
       "type": "object"
     },
+    "ptah.schema.transfer": {
+      "additionalProperties": false,
+      "description": "Declares a YDB transfer: messages of a topic turned into rows of a table through a YQL lambda.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "batch_size_bytes": {
+              "description": "Bytes the transfer gathers before a write; 8 MiB when omitted.",
+              "type": "string"
+            },
+            "connection_string": {
+              "description": "The other database: grpc://host:port/?database=/path or grpcs://...",
+              "type": "string"
+            },
+            "consumer": {
+              "description": "Existing topic consumer the transfer reads through; YDB creates one when omitted.",
+              "type": "string"
+            },
+            "flush_interval": {
+              "description": "Longest wait before a write, an ISO 8601 duration of whole seconds; a minute when omitted.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Transfer name, the last segment of its path.",
+              "type": "string"
+            },
+            "password_secret_name": {
+              "description": "Object secret holding the user's password.",
+              "type": "string"
+            },
+            "password_secret_path": {
+              "description": "Path of a secret holding the user's password, relative to the database root (YDB 25.4 and later).",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Directory that holds it, relative to the database root.",
+              "type": "string"
+            },
+            "source": {
+              "description": "Topic the transfer reads, relative to the database root; for a topic of another database, relative to its root or absolute.",
+              "type": "string"
+            },
+            "target": {
+              "description": "Table the transfer writes, relative to the database root.",
+              "type": "string"
+            },
+            "token_secret_name": {
+              "description": "Object secret holding an access token.",
+              "type": "string"
+            },
+            "token_secret_path": {
+              "description": "Path of a secret holding an access token, relative to the database root (YDB 25.4 and later).",
+              "type": "string"
+            },
+            "user": {
+              "description": "User a password secret signs in as.",
+              "type": "string"
+            },
+            "using": {
+              "description": "The YQL lambda, written inline: ($msg) -> { ... }.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "source",
+            "target",
+            "using"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:transfer"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
     "ptah.schema.trigger": {
       "additionalProperties": false,
       "description": "Declares a database trigger.",
@@ -2422,6 +2609,15 @@
     },
     {
       "$ref": "#/$defs/ptah.schema.changefeed.consumer"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.async_replication"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.async_replication.item"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.transfer"
     },
     {
       "$ref": "#/$defs/ptah.schema.columnfamily"

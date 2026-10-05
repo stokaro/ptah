@@ -96,6 +96,18 @@ func TestRefine_HappyPath(t *testing.T) {
 			want:  true,
 		},
 		{
+			name:  "a transfer follows its flag",
+			flags: ydbflags.Flags{"EnableTopicTransfer": true},
+			key:   capability.Transfers,
+			want:  true,
+		},
+		{
+			name:  "an async replication follows its flag",
+			flags: ydbflags.Flags{"EnableReplication": false},
+			key:   capability.AsyncReplication,
+			want:  false,
+		},
+		{
 			name:  "a column family's cache mode follows its flag",
 			flags: ydbflags.Flags{"EnableTableCacheModes": true},
 			key:   capability.ColumnFamilyCacheMode,
@@ -457,6 +469,19 @@ func TestRefused_HappyPath(t *testing.T) {
 				"is disabled'}])",
 			wantKey:  capability.ChangefeedTopicAutoPartitioning,
 			wantFlag: "EnableTopicAutopartitioningForCDC",
+		},
+		{
+			name:     "25.1.4.7 a transfer",
+			refusal:  "Status: BAD_REQUEST Issues: <main>: Error: Topic transfer creation is disabled, code: 2017",
+			wantKey:  capability.Transfers,
+			wantFlag: "EnableTopicTransfer",
+		},
+		{
+			name: "26.2.1.14 an async replication with the flag off",
+			refusal: "Status: PRECONDITION_FAILED Issues: <main>: Error: Executing ESchemeOpCreateReplication, " +
+				"code: 2029 <main>: Error: Asynchronous replication is disabled, code: 2029",
+			wantKey:  capability.AsyncReplication,
+			wantFlag: "EnableReplication",
 		},
 		{
 			name: "25.3.1.25 a column family's cache mode",

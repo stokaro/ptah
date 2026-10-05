@@ -29,13 +29,15 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 		{
 			// HCL has the synonym and extended_property blocks
 			// (stokaro/ptah#1031), so it records neither -- and it still cannot
-			// name a virtual table, a table's row deletion policy, a
-			// changefeed, a YDB topic or a column family.
-			name:     "HCL cannot name a virtual table, a TTL, a changefeed, a topic or a column family",
+			// name a virtual table, a table's row deletion policy, a changefeed,
+			// a YDB topic, a column family, or a YDB async replication or
+			// transfer.
+			name: "HCL cannot name a virtual table, a TTL, a changefeed, a topic, a column family, a " +
+				"replication or a transfer",
 			file:     "schema.hcl",
 			contents: "schema \"main\" {\n}\n",
-			want: unsupportedRecords(coverage.Changefeed, coverage.ColumnFamily, coverage.Topic, coverage.TTL,
-				coverage.VirtualTable),
+			want: unsupportedRecords(coverage.Changefeed, coverage.ColumnFamily, coverage.Replication, coverage.Topic,
+				coverage.Transfer, coverage.TTL, coverage.VirtualTable),
 		},
 		{
 			// The control on the virtual table. A `.sql` document CAN name one,
@@ -49,7 +51,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			contents: "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
 			want: unsupportedRecords(
 				coverage.ContinuousAggregate, coverage.ExtendedProperty,
-				coverage.Hypertable, coverage.Synonym, coverage.Topic),
+				coverage.Hypertable, coverage.Replication, coverage.Synonym, coverage.Topic, coverage.Transfer),
 		},
 		{
 			// YAML expresses the fewest families of the three, and the row is
@@ -58,8 +60,9 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			// deletion policy, a changefeed and a column family, as `.sql` has
 			// Spanner's policy clause, so both rows are the control on the TTL,
 			// changefeed and column family records HCL and DBML carry. It is
-			// also the control on the topic: YAML has a topics key, so a loader
-			// that recorded the topic for every format fails here.
+			// also the control on the topic, the replication and the
+			// transfer: YAML has a key for each, so a loader that recorded
+			// them for every format fails here.
 			name:     "YAML cannot name nine families",
 			file:     "schema.yaml",
 			contents: "tables:\n  users:\n    fields:\n      id:\n        type: INTEGER\n",
@@ -76,14 +79,14 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			// what makes this one the exhaustive boundary #2065 asks for --
 			// and coverage.Schema is absent from it because DBML qualifies a
 			// name with a schema.
-			name:     "DBML cannot name sixteen families",
+			name:     "DBML cannot name eighteen families",
 			file:     "schema.dbml",
 			contents: "Table users {\n  id integer [pk]\n}\n",
 			want: unsupportedRecords(
 				coverage.Changefeed, coverage.ColumnFamily, coverage.Composite, coverage.ContinuousAggregate,
 				coverage.Domain, coverage.ExtendedProperty, coverage.Extension, coverage.Hypertable,
-				coverage.Policy, coverage.Range, coverage.Role, coverage.Sequence,
-				coverage.Synonym, coverage.Topic, coverage.TTL, coverage.VirtualTable),
+				coverage.Policy, coverage.Range, coverage.Replication, coverage.Role, coverage.Sequence,
+				coverage.Synonym, coverage.Topic, coverage.Transfer, coverage.TTL, coverage.VirtualTable),
 		},
 	}
 

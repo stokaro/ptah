@@ -58,6 +58,8 @@ func ydbRules() []Rule {
 		ydbPrincipalDropRule(),
 		ydbTopicResetRule(),
 		ydbTopicSettingIgnoredRule(),
+		ydbReplicationDroppedWithoutFailoverRule(),
+		ydbSecretInClearRule(),
 		ydbUndeclaredColumnFamilyRule(),
 	}
 }
@@ -702,6 +704,9 @@ type ydbSchema struct {
 	tables map[string]ydbTable
 	// views are the tables each view reads, by view name.
 	views map[string][]string
+	// failedOver are the async replications an ALTER ASYNC REPLICATION SET
+	// (STATE = 'DONE') failed over, by name.
+	failedOver map[string]bool
 }
 
 // ydbTable is what the rules read about one table.
@@ -740,10 +745,12 @@ type ydbTable struct {
 }
 
 func (s *ydbSchema) clone() *ydbSchema {
-	cloned := &ydbSchema{tables: make(map[string]ydbTable), views: make(map[string][]string)}
+	cloned := &ydbSchema{tables: make(map[string]ydbTable), views: make(map[string][]string),
+		failedOver: make(map[string]bool)}
 	if s == nil {
 		return cloned
 	}
+	maps.Copy(cloned.failedOver, s.failedOver)
 	for name, table := range s.tables {
 		cloned.tables[name] = ydbTable{
 			indexes: slices.Clone(table.indexes), ttl: table.ttl,
@@ -821,6 +828,12 @@ func (s *ydbSchema) apply(read yqlddl.Statement) {
 		s.views[read.Name] = slices.Clone(read.Reads)
 	case yqlddl.DropView:
 		delete(s.views, read.Name)
+	case yqlddl.AlterAsyncReplication:
+		if failsOver(read) {
+			s.failedOver[read.Name] = true
+		}
+	case yqlddl.DropAsyncReplication, yqlddl.CreateAsyncReplication:
+		delete(s.failedOver, read.Name)
 	case yqlddl.AlterSequence:
 		name, column, owned := s.sequenceOwner(read.Name)
 		if !owned || !read.Restart {
@@ -1343,4 +1356,111 @@ func unknownCodec(list string) string {
 		}
 	}
 	return ""
+}
+
+// ydbReplicationDroppedWithoutFailoverRule reports a DROP ASYNC REPLICATION
+// without CASCADE of a replication the directory has not failed over. YDB
+// keeps the replica tables of such a replication, and keeps them read-only for
+// good. Measured on 26.2.1.14 and 25.1.4.7 after a plain DROP of a running
+// replication:
+//
+//	UPSERT INTO the replica     Can't execute write tx at replicated table
+//	ALTER TABLE ... ADD COLUMN  path is an async replica table
+//	ALTER TABLE ... RENAME TO   path is an async replica table
+//
+// while DROP TABLE takes it. A replication failed over first with `ALTER ASYNC
+// REPLICATION ... SET (STATE = 'DONE', FAILOVER_MODE = 'FORCE')` leaves
+// ordinary writable tables behind a plain DROP, and CASCADE drops them, which
+// DS107 judges. The failover is read from the directory: the up migrations
+// before the analyzed version, then the file's statements before the drop.
+func ydbReplicationDroppedWithoutFailoverRule() Rule {
+	return Rule{
+		Code:          "YD115",
+		Title:         "async replication dropped without failover",
+		Severity:      SeverityWarning,
+		Dialects:      ydbOnly,
+		AppliesToDown: true,
+		CheckFile: func(file *File) []Finding {
+			if !ydbRun(file.Target) {
+				return nil
+			}
+			state := file.ydbBefore.clone()
+			var findings []Finding
+			for i := range file.Statements {
+				stmt := &file.Statements[i]
+				read := yqlddl.Read(stmt.SQL)
+				if read.Kind == yqlddl.DropAsyncReplication && read.Name != "" && !read.Cascade &&
+					!state.failedOver[read.Name] {
+					findings = append(findings, Finding{
+						Rule:     "YD115",
+						Title:    "async replication dropped without failover",
+						Severity: SeverityWarning,
+						File:     file.Path,
+						Line:     stmt.Line,
+						Message: fmt.Sprintf("DROP ASYNC REPLICATION %s keeps its replica tables, and YDB keeps a "+
+							"replica of a replication that was not failed over read-only for good (path is an async "+
+							"replica table); fail it over first with ALTER ASYNC REPLICATION %s SET (STATE = 'DONE', "+
+							"FAILOVER_MODE = 'FORCE') to keep writable tables, or drop it with CASCADE to drop them",
+							read.Name, read.Name),
+						Context: statementFindingContext(i, Subject{Kind: SubjectTable, Name: read.Name}),
+					})
+				}
+				state.apply(read)
+			}
+			return findings
+		},
+	}
+}
+
+// failsOver reports an ALTER ASYNC REPLICATION that sets STATE = 'DONE'.
+func failsOver(read yqlddl.Statement) bool {
+	for _, action := range read.Actions {
+		for _, setting := range action.Settings {
+			if setting.Name == "STATE" && strings.EqualFold(setting.Text, "DONE") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ydbSecretInClearRule reports an async replication or a transfer given a
+// password or a token as a value rather than as the secret that holds it.
+// Measured on 26.2.1.14 and 25.1.4.7: `PASSWORD = '...'` and `TOKEN = '...'`
+// are accepted in CREATE ASYNC REPLICATION and CREATE TRANSFER, and the
+// description reads back neither, the password as no password at all and the
+// token as no credential. The value stays in the migration file, and in every
+// copy of it, while the database holds a secret nobody can read back.
+func ydbSecretInClearRule() Rule {
+	return Rule{
+		Code:          "YD116",
+		Title:         "secret written in clear",
+		Severity:      SeverityError,
+		Dialects:      ydbOnly,
+		AppliesToDown: true,
+		CheckStatement: func(stmt *Statement) (bool, string) {
+			if !ydbRun(stmt.Target) {
+				return false, ""
+			}
+			read := yqlddl.Read(stmt.SQL)
+			switch read.Kind {
+			case yqlddl.CreateAsyncReplication, yqlddl.AlterAsyncReplication,
+				yqlddl.CreateTransfer, yqlddl.AlterTransfer:
+			default:
+				return false, ""
+			}
+			settings := slices.Clone(read.Settings)
+			for _, action := range read.Actions {
+				settings = append(settings, action.Settings...)
+			}
+			for _, setting := range settings {
+				if setting.Name == "PASSWORD" || setting.Name == "TOKEN" {
+					return true, fmt.Sprintf("%s of %s is written in clear: the migration file now holds the "+
+						"secret, and YDB keeps it without reading it back; put it in a secret and name it with %s_SECRET_NAME "+
+						"or %s_SECRET_PATH", setting.Name, read.Name, setting.Name, setting.Name)
+				}
+			}
+			return false, ""
+		},
+	}
 }

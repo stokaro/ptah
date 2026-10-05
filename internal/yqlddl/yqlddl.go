@@ -2,7 +2,8 @@
 // topic it names, the columns, key, indexes and TTL column a CREATE TABLE
 // declares, the actions an ALTER TABLE takes, the settings and consumers a
 // CREATE TOPIC declares and the actions an ALTER TOPIC takes, the restart an
-// ALTER SEQUENCE makes, and the tables a query reads.
+// ALTER SEQUENCE makes, the settings of an async replication or a transfer,
+// and the tables a query reads.
 //
 // It is the reading both linters share, so `ptah migrations lint` and
 // `ptah sql lint` cannot disagree about what a YQL statement does. It reads
@@ -55,6 +56,23 @@ const (
 	AlterTopic
 	// DropTopic is DROP TOPIC.
 	DropTopic
+	// CreateAsyncReplication is CREATE ASYNC REPLICATION. Its settings are
+	// the WITH clause's.
+	CreateAsyncReplication
+	// AlterAsyncReplication is ALTER ASYNC REPLICATION, whose SET is one
+	// [SetSettings] action.
+	AlterAsyncReplication
+	// DropAsyncReplication is DROP ASYNC REPLICATION, with
+	// [Statement.Cascade] for CASCADE.
+	DropAsyncReplication
+	// CreateTransfer is CREATE TRANSFER. Its settings are the WITH clause
+	// after the lambda.
+	CreateTransfer
+	// AlterTransfer is ALTER TRANSFER, whose SET (...) is one [SetSettings]
+	// action; a SET USING is no setting.
+	AlterTransfer
+	// DropTransfer is DROP TRANSFER.
+	DropTransfer
 )
 
 // Statement is what one YQL statement does.
@@ -66,6 +84,8 @@ type Statement struct {
 	Name string
 	// IfExists records IF EXISTS on a DROP and IF NOT EXISTS on a CREATE.
 	IfExists bool
+	// Cascade records CASCADE on a DROP ASYNC REPLICATION.
+	Cascade bool
 
 	// Columns are the columns a CREATE TABLE declares, in order.
 	Columns []Column
@@ -292,6 +312,22 @@ func Read(statement string) Statement {
 		return readAlterTopic(tokens[2:])
 	case startsWith(tokens, "DROP", "TOPIC"):
 		return readDrop(DropTopic, tokens[2:])
+	case startsWith(tokens, "CREATE", "ASYNC", "REPLICATION"):
+		return readReplicationOrTransfer(CreateAsyncReplication, tokens[3:])
+	case startsWith(tokens, "ALTER", "ASYNC", "REPLICATION"):
+		return readReplicationOrTransfer(AlterAsyncReplication, tokens[3:])
+	case startsWith(tokens, "DROP", "ASYNC", "REPLICATION"):
+		stmt := readDrop(DropAsyncReplication, tokens[3:])
+		stmt.Cascade = slices.ContainsFunc(tokens[3:], func(token lexer.Token) bool {
+			return token.MatchIdentifierValue("CASCADE")
+		})
+		return stmt
+	case startsWith(tokens, "CREATE", "TRANSFER"):
+		return readReplicationOrTransfer(CreateTransfer, tokens[2:])
+	case startsWith(tokens, "ALTER", "TRANSFER"):
+		return readReplicationOrTransfer(AlterTransfer, tokens[2:])
+	case startsWith(tokens, "DROP", "TRANSFER"):
+		return readDrop(DropTransfer, tokens[2:])
 	default:
 		return Statement{}
 	}
@@ -681,6 +717,41 @@ func stringContent(literal string) string {
 		b.WriteByte(inner[i])
 	}
 	return b.String()
+}
+
+// readReplicationOrTransfer reads the name of an async replication or a
+// transfer and the settings of its WITH (...) or SET (...) clauses: a CREATE
+// keeps them as [Statement.Settings], an ALTER as one [SetSettings] action.
+//
+// A transfer's lambda comes before its WITH and carries semicolons and
+// parentheses of its own, `($msg) -> { return [...]; }`, so a clause is read
+// only where its keyword stands outside every bracket.
+func readReplicationOrTransfer(kind Kind, tokens []lexer.Token) Statement {
+	stmt := Statement{Kind: kind}
+	stmt.Name, tokens = readName(tokens)
+	var settings []Setting
+	depth := 0
+	for i, token := range tokens {
+		switch {
+		case token.MatchOperatorValue("(") || token.MatchOperatorValue("[") || token.MatchOperatorValue("{"):
+			depth++
+		case token.MatchOperatorValue(")") || token.MatchOperatorValue("]") || token.MatchOperatorValue("}"):
+			depth--
+		case depth == 0 && (token.MatchIdentifierValue("WITH") || token.MatchIdentifierValue("SET")) &&
+			i+1 < len(tokens) && tokens[i+1].MatchOperatorValue("("):
+			inside, _ := parenthesized(tokens[i+1:])
+			settings = append(settings, readSettings(inside)...)
+		}
+	}
+	switch kind {
+	case AlterAsyncReplication, AlterTransfer:
+		if len(settings) > 0 {
+			stmt.Actions = []Action{{Kind: SetSettings, Settings: settings}}
+		}
+	default:
+		stmt.Settings = settings
+	}
+	return stmt
 }
 
 func readCreateView(tokens []lexer.Token) Statement {

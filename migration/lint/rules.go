@@ -2122,6 +2122,14 @@ func scanDestructiveObjectDrop(w []string) bool {
 	// consumer's position in it.
 	case "TYPE", "EXTENSION", "FUNCTION", "PROCEDURE", "TRIGGER", "ROLE", "POLICY", "SCHEMA", "TOPIC":
 		return true
+	// TRANSFER and ASYNC REPLICATION are YDB's. Dropping a transfer stops it
+	// and drops the topic consumer YDB created for it, with its position; an
+	// async replication dropped with CASCADE drops its replica tables, and one
+	// dropped without it is YD115's question.
+	case "TRANSFER":
+		return true
+	case "ASYNC":
+		return len(w) > 2 && w[2] == "REPLICATION" && w[len(w)-1] == "CASCADE"
 	// A coordination node is YDB's too, dropped through Ptah's own statement
 	// (see internal/ydbcoordination). Measured on 26.2.1.14 and 25.1.4.7:
 	// DropNode succeeds while a session holds a semaphore on the node, the

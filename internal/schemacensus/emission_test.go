@@ -159,6 +159,10 @@ func TestMeasureEmissions_TheGuardsBlindSpotsAreWrittenDown(t *testing.T) {
 		// TimescaleDB converts a table that CREATE TABLE already made.
 		"SELECT CREATE_HYPERTABLE('T', BY_RANGE('AT'),",
 		"SELECT CREATE_HYPERTABLE('T', BY_RANGE('AT',",
+		// A YDB transfer's lambda carries its own semicolons, so the split
+		// leaves the tail of its CREATE TRANSFER behind. The CREATE TRANSFER
+		// that owns it is the first fragment and is classified.
+		"} WITH (CONNECTION_STRING",
 	})
 }
 

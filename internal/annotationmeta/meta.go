@@ -13,6 +13,7 @@ import (
 	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbpartition"
+	"ptah.run/internal/ydbreplication"
 	"ptah.run/internal/ydbtopic"
 )
 
@@ -462,6 +463,54 @@ var directives = []Directive{
 			attr(ydbchangefeed.AttributeAvailabilityPeriod, "How long the topic keeps a record this consumer has "+
 				"not read past the retention period, an ISO 8601 duration.", valueString, false, false),
 		},
+	},
+	{
+		Name: "ptah:schema:async_replication",
+		Description: "Declares a YDB async replication: tables of another database copied into read-only replica " +
+			"tables YDB creates and keeps current. Its tables are declared with ptah:schema:async_replication:item " +
+			"in the same file, and the replica tables are not declared as tables.",
+		Scopes: []Scope{ScopeStruct, ScopeField},
+		Attributes: append(replicationNaming("Replication"), append(replicationConnection(true),
+			attr(ydbreplication.AttributeConsistencyLevel, "Consistency of the replica: row or global; row when "+
+				"omitted.", valueString, false, false),
+			attr(ydbreplication.AttributeCommitInterval, "How often a global replication commits, an ISO 8601 "+
+				"duration; ten seconds when omitted.", valueString, false, false),
+		)...),
+	},
+	{
+		Name: "ptah:schema:async_replication:item",
+		Description: "Declares one table, or directory of tables, an async replication copies, and where its " +
+			"replica is created. The replication is declared in the same file.",
+		Scopes: []Scope{ScopeStruct, ScopeField},
+		Attributes: []Attribute{
+			attr(ydbreplication.AttributeReplication, "Replication the item belongs to.", valueString, true, false),
+			attr(ydbreplication.AttributeSchema, "Directory of the replication, when it has one.",
+				valueString, false, false),
+			attr(ydbreplication.AttributeSource, "Path in the source database, relative to its root or absolute.",
+				valueString, true, false),
+			attr(ydbreplication.AttributeTarget, "Path of the replica in this database, relative to its root.",
+				valueString, true, false),
+		},
+	},
+	{
+		Name: "ptah:schema:transfer",
+		Description: "Declares a YDB transfer: messages of a topic turned into rows of a table through a YQL " +
+			"lambda.",
+		Scopes: []Scope{ScopeStruct, ScopeField},
+		Attributes: append(replicationNaming("Transfer"), append(replicationConnection(false),
+			attr(ydbreplication.AttributeSource, "Topic the transfer reads, relative to the database root; for a "+
+				"topic of another database, relative to its root or absolute.", valueString, true, false),
+			attr(ydbreplication.AttributeTarget, "Table the transfer writes, relative to the database root.",
+				valueString, true, false),
+			attr(ydbreplication.AttributeUsing, "The YQL lambda, written inline: ($msg) -> { ... }.",
+				valueString, true, false),
+			attr(ydbreplication.AttributeConsumer, "Existing topic consumer the transfer reads through; YDB "+
+				"creates one when omitted.", valueString, false, false),
+			attr(ydbreplication.AttributeBatchSizeBytes, "Bytes the transfer gathers before a write; 8 MiB "+
+				"when omitted.", valueString, false, false),
+			attr(ydbreplication.AttributeFlushInterval, "Longest wait before a write, an ISO 8601 duration of "+
+				"whole seconds; a minute when omitted.", valueString, false, false),
+		)...),
 	},
 	{
 		Name: "ptah:schema:columnfamily",
@@ -1097,4 +1146,34 @@ func alias(name, aliasFor, description, value string, boolean bool) Attribute {
 	a := attr(name, description, value, false, boolean)
 	a.AliasFor = aliasFor
 	return a
+}
+
+// replicationNaming is the name and the directory of an async replication or
+// a transfer.
+func replicationNaming(kind string) []Attribute {
+	return []Attribute{
+		attr(ydbreplication.AttributeName, kind+" name, the last segment of its path.", valueString, true, false),
+		attr(ydbreplication.AttributeSchema, "Directory that holds it, relative to the database root.",
+			valueString, false, false),
+	}
+}
+
+// replicationConnection is how an async replication or a transfer reaches
+// another database: the connection string and a credential, named by the
+// secret that holds it. A replication always reads another database, so its
+// connection string is required; a transfer reads its own without one.
+func replicationConnection(required bool) []Attribute {
+	return []Attribute{
+		attr(ydbreplication.AttributeConnectionString, "The other database: grpc://host:port/?database=/path or "+
+			"grpcs://...", valueString, required, false),
+		attr(ydbreplication.AttributeTokenSecretName, "Object secret holding an access token.",
+			valueString, false, false),
+		attr(ydbreplication.AttributeTokenSecretPath, "Path of a secret holding an access token, relative to "+
+			"the database root (YDB 25.4 and later).", valueString, false, false),
+		attr(ydbreplication.AttributeUser, "User a password secret signs in as.", valueString, false, false),
+		attr(ydbreplication.AttributePasswordSecretName, "Object secret holding the user's password.",
+			valueString, false, false),
+		attr(ydbreplication.AttributePasswordSecretPath, "Path of a secret holding the user's password, "+
+			"relative to the database root (YDB 25.4 and later).", valueString, false, false),
+	}
 }

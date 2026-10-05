@@ -61,9 +61,9 @@ import (
 // exists to prevent: a directive nothing understands reads as no directive at
 // all, and the absence it was protecting becomes a removal.
 //
-// Two declared kinds sit outside that serialized grammar: [Hypertable] and
-// [ContinuousAggregate] are built and consulted in process only, and their
-// comments carry the consequence for a [Set] that holds one.
+// Three declared kinds sit outside that serialized grammar: [Hypertable],
+// [ContinuousAggregate] and [ReplicaTable] are built and consulted in process
+// only, and their comments carry the consequence for a [Set] that holds one.
 type Kind string
 
 // The kinds a description can decline to describe. Each one names a comparator
@@ -185,8 +185,8 @@ const (
 // records each one it meets, by the path of the object or of the table that
 // carries it, so a description's silence about them is never read as their
 // absence and nothing plans their removal. Like [ChangeStream], none of them
-// but [Topic] is consulted by a comparator that plans the family, because no
-// planner writes one.
+// but [Topic], [Replication], [Transfer] and [ReplicaTable] is consulted by a
+// comparator or a planner, because no planner writes the others.
 const (
 	// View is a YDB view (CREATE VIEW ... WITH (security_invoker = TRUE)) on
 	// a server without the views capability. Every YDB line Ptah measured has
@@ -204,11 +204,26 @@ const (
 	// CoordinationNode is a YDB coordination node, which holds semaphores for
 	// distributed locks.
 	CoordinationNode Kind = "coordination_node"
-	// Replication is a YDB asynchronous replication.
+	// Replication is a YDB asynchronous replication. The reader describes
+	// one on a server with the async replication capability whose
+	// replication service answers, and records it otherwise.
 	Replication Kind = "replication"
 	// Transfer is a YDB transfer, which moves messages from a topic into a
-	// table.
+	// table. The reader describes one on a server with the transfers
+	// capability whose replication service answers, and records it
+	// otherwise.
 	Transfer Kind = "transfer"
+	// ReplicaTable is a table a YDB async replication writes, named by its
+	// path: read-only while the replication runs, and read-only for good
+	// once the replication is dropped without being failed over first. YDB
+	// marks one with the `__async_replica` attribute. A read records it
+	// rather than describing it as a table, so no plan drops, changes or
+	// creates a table at its path; the replication owns it.
+	//
+	// ReplicaTable is consulted in process rather than serialized, exactly
+	// as [Hypertable] is; see that constant for what this means for a [Set]
+	// carrying it.
+	ReplicaTable Kind = "replica_table"
 	// ExternalDataSource is a YDB external data source.
 	ExternalDataSource Kind = "external_data_source"
 	// ExternalTable is a YDB external table over an external data source.
@@ -250,9 +265,9 @@ const (
 )
 
 // kinds is every [Kind] the serialized directive grammar accepts, in the order
-// [ParseKind]'s refusal message lists them. [Hypertable] and
-// [ContinuousAggregate] are not in it; both constants say what that costs a
-// serialized [Set].
+// [ParseKind]'s refusal message lists them. [Hypertable],
+// [ContinuousAggregate] and [ReplicaTable] are not in it; each constant says
+// what that costs a serialized [Set].
 var kinds = []Kind{
 	Changefeed, ChangeStream, ColumnFamily, ColumnTable, Composite, CoordinationNode, DefaultPrivilege, Domain,
 	Extension, ExtendedProperty, ExternalDataSource, ExternalTable, Grant, Policy, Range, Replication,

@@ -497,6 +497,11 @@ var launchers = map[string]launcher{
 			"--env", "GRPC_PORT=2136",
 			"--env", "MON_PORT=8765",
 			"--env", "YDB_USE_IN_MEMORY_PDISKS=true",
+			// local-ydb leaves the replication API out of the services it
+			// starts, and the reader describes an async replication and a
+			// transfer through it; a cluster whose configuration names no
+			// services starts it with the rest.
+			"--env", "YDB_GRPC_SERVICES=replication",
 		},
 		// local-ydb serves the one database /local. The monitoring parameter
 		// makes the connection read the cluster's feature flags, which the

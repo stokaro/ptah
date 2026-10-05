@@ -1263,6 +1263,34 @@ type SchemaDiff struct {
 	// consumers differ, each changed in place by ALTER TOPIC.
 	TopicsModified []TopicDiff `json:"topics_modified,omitempty"`
 
+	// AsyncReplicationsAdded are the YDB async replications the target schema
+	// declares and the database does not have, each with its connection and
+	// items.
+	AsyncReplicationsAdded AsyncReplicationChanges `json:"async_replications_added,omitempty"`
+
+	// AsyncReplicationsRemoved are the YDB async replications the database
+	// has and the target schema does not declare. How one is dropped depends
+	// on its state and on whether the schema declares its replica tables;
+	// see the YDB planner.
+	AsyncReplicationsRemoved AsyncReplicationChanges `json:"async_replications_removed,omitempty"`
+
+	// AsyncReplicationsModified are the YDB async replications both sides hold
+	// whose declaration and database differ.
+	AsyncReplicationsModified []AsyncReplicationDiff `json:"async_replications_modified,omitempty"`
+
+	// TransfersAdded are the YDB transfers the target schema declares and the
+	// database does not have.
+	TransfersAdded TransferChanges `json:"transfers_added,omitempty"`
+
+	// TransfersRemoved are the YDB transfers the database has and the target
+	// schema does not declare. Dropping one drops the consumer YDB created for
+	// it, with its position in the topic.
+	TransfersRemoved TransferChanges `json:"transfers_removed,omitempty"`
+
+	// TransfersModified are the YDB transfers both sides hold whose
+	// declaration and database differ.
+	TransfersModified []TransferDiff `json:"transfers_modified,omitempty"`
+
 	// CoordinationNodesAdded are the YDB coordination nodes the target schema
 	// declares and the database does not hold, each carrying its
 	// configuration.
@@ -1509,6 +1537,13 @@ type SchemaDiff struct {
 	//
 	// A reversal runs against the same database and carries the same grants.
 	CurrentGrants []GrantRef `json:"-"`
+
+	// Replications is every YDB async replication and transfer on each side,
+	// changed or not, carried once for the whole diff and off the wire: the
+	// replica tables a replication owns and the tables and topics a transfer
+	// depends on decide what a YDB plan may drop, change or create around
+	// them.
+	Replications ReplicationContext `json:"-"`
 
 	// CurrentYDBSettings is YDB's: the partitioning, read replicas and key
 	// bloom filter of each row table of the database this plan runs against,
@@ -1987,6 +2022,15 @@ func (d *SchemaDiff) hasViewChanges() bool {
 		len(d.ViewsModified) > 0
 }
 
+func (d *SchemaDiff) hasReplicationChanges() bool {
+	return len(d.AsyncReplicationsAdded) > 0 ||
+		len(d.AsyncReplicationsRemoved) > 0 ||
+		len(d.AsyncReplicationsModified) > 0 ||
+		len(d.TransfersAdded) > 0 ||
+		len(d.TransfersRemoved) > 0 ||
+		len(d.TransfersModified) > 0
+}
+
 func (d *SchemaDiff) hasSynonymChanges() bool {
 	return len(d.SynonymsAdded) > 0 ||
 		len(d.SynonymsRemoved) > 0 ||
@@ -1994,9 +2038,10 @@ func (d *SchemaDiff) hasSynonymChanges() bool {
 }
 
 // hasYDBObjectChanges reports a change to the objects only YDB has outside a
-// table: topics and coordination nodes.
+// table: topics, async replications and transfers, which carry data between
+// tables, topics and databases, and coordination nodes.
 func (d *SchemaDiff) hasYDBObjectChanges() bool {
-	return d.hasTopicChanges() || d.hasCoordinationNodeChanges()
+	return d.hasTopicChanges() || d.hasReplicationChanges() || d.hasCoordinationNodeChanges()
 }
 
 func (d *SchemaDiff) hasTopicChanges() bool {

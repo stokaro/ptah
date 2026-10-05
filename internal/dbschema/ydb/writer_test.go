@@ -85,8 +85,9 @@ func (f *fakeDatabase) ExecContext(_ context.Context, query string, _ ...any) (s
 	if position < len(f.failures) && f.failures[position] != nil {
 		return nil, f.failures[position]
 	}
-	for _, prefix := range []string{"DROP TABLE `", "DROP VIEW `", "DROP TOPIC `", "DROP COORDINATION NODE `"} {
-		if object, dropped := strings.CutPrefix(query, prefix); dropped {
+	for _, verb := range []string{"DROP TABLE `", "DROP VIEW `", "DROP TOPIC `", "DROP TRANSFER `",
+		"DROP ASYNC REPLICATION `", "DROP COORDINATION NODE `"} {
+		if object, dropped := strings.CutPrefix(strings.TrimSuffix(query, " CASCADE"), verb); dropped {
 			full := path.Join("/local", strings.ReplaceAll(strings.TrimSuffix(object, "`"), "\\`", "`"))
 			parent, name := path.Split(full)
 			f.tree[strings.TrimSuffix(parent, "/")] = without(f.tree[strings.TrimSuffix(parent, "/")], name)
@@ -345,6 +346,37 @@ func TestWriter_DropAllTables(t *testing.T) {
 	c.Assert(fake.tree["/local/queues"], qt.HasLen, 1)
 }
 
+// Every transfer and then every async replication goes first, before the
+// tables and topics they read and write, and a replication goes with CASCADE,
+// which drops the replica tables it writes: the reader describes those as the
+// replication's rather than as tables.
+func TestWriter_DropAllTables_DropsReplicationsFirst(t *testing.T) {
+	c := qt.New(t)
+	fake := &fakeDatabase{tree: map[string][]*Ydb_Scheme.Entry{
+		"/local": {
+			entry("a_table", Ydb_Scheme.Entry_TABLE),
+			entry("dr", Ydb_Scheme.Entry_DIRECTORY),
+			entry("ingest", Ydb_Scheme.Entry_TRANSFER),
+			entry("mirror", Ydb_Scheme.Entry_REPLICATION),
+			entry("ptah_dev", Ydb_Scheme.Entry_DIRECTORY),
+		},
+		"/local/dr": {entry("archive", Ydb_Scheme.Entry_TRANSFER), entry("failover", Ydb_Scheme.Entry_REPLICATION)},
+	}}
+	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
+
+	err := writer.DropAllTables(context.Background())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(fake.executed, qt.DeepEquals, []string{
+		"DROP TRANSFER `dr/archive`",
+		"DROP TRANSFER `ingest`",
+		"DROP ASYNC REPLICATION `dr/failover` CASCADE",
+		"DROP ASYNC REPLICATION `mirror` CASCADE",
+		"DROP TABLE `a_table`",
+	})
+	c.Assert(fake.removed, qt.DeepEquals, []string{"/local/dr"})
+}
+
 // A drop the server refuses stops the cleanup with the statement named.
 func TestWriter_DropAllTables_FailurePath(t *testing.T) {
 	c := qt.New(t)
@@ -393,6 +425,70 @@ func TestWriter_DropDirectory(t *testing.T) {
 	})
 	c.Assert(fake.removed, qt.DeepEquals, []string{"/local/probe/rb", "/local/probe"})
 	c.Assert(fake.tree["/local/app"], qt.HasLen, 1)
+}
+
+// A teardown drops every transfer and then every async replication in the
+// directory before anything else, the replication without CASCADE: its
+// replica tables are in the tree, and the teardown's own DROP TABLE of each
+// would fail on a table CASCADE dropped first.
+func TestWriter_DropDirectory_DropsReplicationsFirst(t *testing.T) {
+	c := qt.New(t)
+	fake := &fakeDatabase{tree: map[string][]*Ydb_Scheme.Entry{
+		"/local": {entry("probe", Ydb_Scheme.Entry_DIRECTORY)},
+		"/local/probe": {
+			entry("a_replica", Ydb_Scheme.Entry_TABLE),
+			entry("mirror", Ydb_Scheme.Entry_REPLICATION),
+			entry("sub", Ydb_Scheme.Entry_DIRECTORY),
+		},
+		"/local/probe/sub": {entry("ingest", Ydb_Scheme.Entry_TRANSFER), entry("log", Ydb_Scheme.Entry_TABLE)},
+	}}
+	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
+
+	err := writer.DropDirectory(context.Background(), "probe")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(fake.executed, qt.DeepEquals, []string{
+		"DROP TRANSFER `probe/sub/ingest`",
+		"DROP ASYNC REPLICATION `probe/mirror`",
+		"DROP TABLE `probe/a_replica`",
+		"DROP TABLE `probe/sub/log`",
+	})
+	c.Assert(fake.removed, qt.DeepEquals, []string{"/local/probe/sub", "/local/probe"})
+}
+
+// A reset lists a transfer and an async replication as objects it drops, and
+// drops them before the tables they read and write.
+func TestWriter_DropDatabaseRealm_DropsReplicationsFirst(t *testing.T) {
+	c := qt.New(t)
+	tree := func() map[string][]*Ydb_Scheme.Entry {
+		return map[string][]*Ydb_Scheme.Entry{
+			"/local": {
+				entry("app", Ydb_Scheme.Entry_DIRECTORY),
+				entry("mirror", Ydb_Scheme.Entry_REPLICATION),
+			},
+			"/local/app": {entry("ingest", Ydb_Scheme.Entry_TRANSFER), entry("log", Ydb_Scheme.Entry_TABLE)},
+		}
+	}
+
+	objects, err := ydbschema.NewWriterFromScheme(&fakeDatabase{tree: tree()}, &fakeDatabase{tree: tree()},
+		"/local", "").ResetObjects(context.Background(), dbreset.Scope{})
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.DeepEquals, []dbreset.Object{
+		{Kind: "transfer", Schema: "app", Name: "ingest"},
+		{Kind: "table", Schema: "app", Name: "log"},
+		{Kind: "directory", Name: "app"},
+		{Kind: "replication", Name: "mirror"},
+	})
+
+	fake := &fakeDatabase{tree: tree()}
+	err = ydbschema.NewWriterFromScheme(fake, fake, "/local", "").DropDatabaseRealm(context.Background())
+	c.Assert(err, qt.IsNil)
+	c.Assert(fake.executed, qt.DeepEquals, []string{
+		"DROP TRANSFER `app/ingest`",
+		"DROP ASYNC REPLICATION `mirror`",
+		"DROP TABLE `app/log`",
+	})
+	c.Assert(fake.removed, qt.DeepEquals, []string{"/local/app"})
 }
 
 // A teardown that cannot finish drops nothing: a dir that names the root or

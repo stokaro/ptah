@@ -22,12 +22,12 @@ type objectChange struct {
 //
 // The named families come first so a refusal says what it refused. The last
 // check is a catch-all over [difftypes.SchemaDiff.HasChanges]: with the tables,
-// indexes, views, topics, access changes and coordination nodes this planner
-// does plan taken out -- additions, removals, renames and changes of
-// partitioning, the users, groups, memberships and permissions
-// [Planner.planAccess] plans or refuses, and changes of a node's configuration
-// -- a diff that still reports a change carries a family nobody named here,
-// and planning nothing for it would report the database synced.
+// indexes, views, topics, async replications, transfers, coordination nodes
+// and access changes this planner does plan taken out -- additions, removals,
+// renames and changes of partitioning, the users, groups, memberships and
+// permissions [Planner.planAccess] plans or refuses, and changes of a node's
+// configuration -- a diff that still reports a change carries a family nobody
+// named here, and planning nothing for it would report the database synced.
 func (p *Planner) refuseObjects(diff *difftypes.SchemaDiff) error {
 	for _, change := range p.objectChanges(diff) {
 		if change.present {
@@ -45,6 +45,8 @@ func (p *Planner) refuseObjects(diff *difftypes.SchemaDiff) error {
 	rest.GrantsAdded, rest.GrantsRemoved, rest.GrantOptionsAdded, rest.GrantOptionsRevoked = nil, nil, nil, nil
 	rest.DefaultPrivilegesAdded, rest.DefaultPrivilegesRemoved = nil, nil
 	rest.DefaultPrivilegeOptionsAdded, rest.DefaultPrivilegeOptionsRevoked = nil, nil
+	rest.AsyncReplicationsAdded, rest.AsyncReplicationsRemoved, rest.AsyncReplicationsModified = nil, nil, nil
+	rest.TransfersAdded, rest.TransfersRemoved, rest.TransfersModified = nil, nil, nil
 	rest.CoordinationNodesAdded, rest.CoordinationNodesRemoved, rest.CoordinationNodesModified = nil, nil, nil
 	if rest.HasChanges() {
 		return refuseFact("the plan", "it changes objects the YDB planner does not plan")

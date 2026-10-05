@@ -393,34 +393,47 @@ func TestRoundTrip_EveryObjectFamilySurvives(t *testing.T) {
 
 // hclUnwritableFields are the object families the HCL document has no block
 // for, and the coverage kind its header records each one under instead. A YDB
-// topic is the one: Atlas HCL has no topic, and Ptah does not invent a block
-// the pinned binary would refuse.
+// topic, async replication and transfer are such families: Atlas HCL has none
+// of them, and Ptah does not invent a block the pinned binary would refuse.
 var hclUnwritableFields = map[string]coverage.Kind{
-	"Topics": coverage.Topic,
+	"Topics":            coverage.Topic,
+	"AsyncReplications": coverage.Replication,
+	"Transfers":         coverage.Transfer,
 }
 
-// TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped is the round trip of a
-// family the HCL document cannot carry: the document leaves the object out
-// and its header says so, so applying it back plans no removal. The control is
-// the same document's silence about a sequence, which it could have named and
-// so still removes.
+// TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped is the round trip of
+// a family the HCL document cannot carry: the document leaves the object out
+// and its header says so, so applying it back plans no removal -- for a
+// replication, no `DROP ASYNC REPLICATION ... CASCADE` of its replica tables.
+// The control is the same document's silence about a sequence, which it could
+// have named and so still removes.
 func TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped(t *testing.T) {
 	c := qt.New(t)
 	db := roundTripFixture()
 	db.Topics = append(db.Topics, schemamodel.Topic{Name: "events", Schema: "public"})
+	db.AsyncReplications = append(db.AsyncReplications, schemamodel.AsyncReplication{Name: "mirror", Schema: "public"})
+	db.Transfers = append(db.Transfers, schemamodel.Transfer{Name: "ingest", Schema: "public"})
 	live := &catalog.Database{
-		Schemas:   []catalog.Schema{{Name: "public"}},
-		Tables:    []catalog.Table{{Schema: "public", Name: "users"}},
-		Topics:    []catalog.Topic{{Schema: "public", Name: "events"}},
-		Sequences: []catalog.Sequence{{Schema: "public", Name: "s1"}},
+		Schemas:           []catalog.Schema{{Name: "public"}},
+		Tables:            []catalog.Table{{Schema: "public", Name: "users"}},
+		Topics:            []catalog.Topic{{Schema: "public", Name: "events"}},
+		AsyncReplications: []catalog.AsyncReplication{{Schema: "public", Name: "mirror"}},
+		Transfers:         []catalog.Transfer{{Schema: "public", Name: "ingest"}},
+		Sequences:         []catalog.Sequence{{Schema: "public", Name: "s1"}},
 	}
 
 	parsed := loadPostgresDocument(c, renderPostgresDocument(c, db))
 	diff := schemadiff.Compare(parsed, live)
 
 	c.Assert(parsed.Topics, qt.HasLen, 0)
+	c.Assert(parsed.AsyncReplications, qt.HasLen, 0)
+	c.Assert(parsed.Transfers, qt.HasLen, 0)
 	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["Topics"]), qt.IsFalse)
+	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["AsyncReplications"]), qt.IsFalse)
+	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["Transfers"]), qt.IsFalse)
 	c.Assert(diff.TopicsRemoved, qt.HasLen, 0)
+	c.Assert(diff.AsyncReplicationsRemoved, qt.HasLen, 0)
+	c.Assert(diff.TransfersRemoved, qt.HasLen, 0)
 	c.Assert(diff.SequencesRemoved.Names(), qt.HasLen, 1)
 }
 

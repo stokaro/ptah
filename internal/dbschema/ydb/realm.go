@@ -1,6 +1,7 @@
 package ydb
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -30,12 +31,13 @@ type rootEntry struct {
 
 // ResetObjects lists every object under the writer's root that
 // [Writer.DropDatabaseRealm] would drop or refuse to: tables, views, topics,
-// coordination nodes and the directories that hold them, contents before the
-// directory, and any other object under its own kind, in the order a
-// depth-first walk with each directory's entries sorted by name meets them. It leaves out what the reset
-// leaves alone: the server's dot-directories, and at the root of a database
-// the coordination node Ptah's locks live on and the directory that holds the
-// dev realms. The scope is ignored: a YDB reset empties the root.
+// transfers, async replications, coordination nodes and the directories that
+// hold them, contents before the directory, and any other object under its
+// own kind, in the order a depth-first walk with each directory's entries
+// sorted by name meets them. It leaves out what the reset leaves alone: the
+// server's dot-directories, and at the root of a database the coordination
+// node Ptah's locks live on and the directory that holds the dev realms. The
+// scope is ignored: a YDB reset empties the root.
 //
 // A dev database is claimed only when the list is empty, so the check that
 // refuses one and the reset that would empty it read the same list.
@@ -51,10 +53,11 @@ func (w *Writer) ResetObjects(ctx context.Context, _ dbreset.Scope) ([]dbreset.O
 	return objects, nil
 }
 
-// DropDatabaseRealm empties the writer's root: it drops every table, column
-// table, view, topic and coordination node under it and removes every
-// directory below it, deepest first. The root itself stays. What
-// [Writer.ResetObjects] leaves out is left alone.
+// DropDatabaseRealm empties the writer's root: it drops every transfer and
+// async replication under it, then every table, column table, view, topic
+// and coordination node, and removes every directory below it, deepest
+// first. The root itself stays. What [Writer.ResetObjects] leaves out is
+// left alone.
 //
 // An object Ptah has no statement to drop, such as an external table, stops it
 // before anything is dropped, with the object named: a reset that dropped the
@@ -70,8 +73,13 @@ func (w *Writer) DropDatabaseRealm(ctx context.Context) error {
 				w.root, describeObject(entry.object))
 		}
 	}
+	steps := make([]treeStep, 0, len(entries))
 	for _, entry := range entries {
-		if err := w.runTreeStep(ctx, entry.step); err != nil {
+		steps = append(steps, entry.step)
+	}
+	slices.SortStableFunc(steps, func(a, b treeStep) int { return cmp.Compare(a.rank, b.rank) })
+	for _, step := range steps {
+		if err := w.runTreeStep(ctx, step); err != nil {
 			return err
 		}
 	}
@@ -135,12 +143,13 @@ func (w *Writer) walkTree(ctx context.Context, t tree, dir string, entries *[]ro
 			if err := w.walkTree(ctx, t, child, entries); err != nil {
 				return err
 			}
-			*entries = append(*entries, rootEntry{object: object, step: treeStep{directory: path.Join(t.root, child)}})
+			*entries = append(*entries, rootEntry{object: object, step: treeStep{directory: path.Join(t.root, child),
+				rank: teardownRank(Ydb_Scheme.Entry_DIRECTORY)}})
 			continue
 		}
 		var step treeStep
 		if statement, droppable := dropStatement(entry.GetType(), path.Join(t.base, child)); droppable {
-			step = treeStep{statement: statement}
+			step = treeStep{statement: statement, rank: teardownRank(entry.GetType())}
 		}
 		*entries = append(*entries, rootEntry{object: object, step: step})
 	}

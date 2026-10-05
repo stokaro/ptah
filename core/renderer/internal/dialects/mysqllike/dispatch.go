@@ -108,6 +108,9 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderDropSequence(n)
 	case *ast.AlterSerialSequenceNode:
 		return nodedispatch.RefuseSerialSequence(r.dialect, n)
+	case *ast.CreateAsyncReplicationNode, *ast.AlterAsyncReplicationNode, *ast.DropAsyncReplicationNode,
+		*ast.CreateTransferNode, *ast.AlterTransferNode, *ast.DropTransferNode:
+		return nodedispatch.RefuseReplication(r.dialect, n)
 
 	// Roles and privileges.
 	case *ast.CreateRoleNode:
