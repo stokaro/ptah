@@ -62,6 +62,34 @@ func experimentPaths(e experiment) []string {
 	return append(paths, e.creates...)
 }
 
+// pathOwners maps every path an experiment of p creates to the experiments
+// that create it, each named by the keys it decides.
+func pathOwners(p plan) map[string][]string {
+	owners := make(map[string][]string)
+	for _, e := range p.experiments {
+		keys := make([]string, 0, len(e.decides))
+		for _, key := range e.decides {
+			keys = append(keys, string(key))
+		}
+		owner := strings.Join(keys, ",")
+		for _, created := range slices.Compact(slices.Sorted(slices.Values(experimentPaths(e)))) {
+			owners[created] = append(owners[created], owner)
+		}
+	}
+	return owners
+}
+
+// sharedPaths keeps the paths more than one experiment creates.
+func sharedPaths(owners map[string][]string) map[string][]string {
+	shared := make(map[string][]string)
+	for created, experiments := range owners {
+		if len(experiments) > 1 {
+			shared[created] = experiments
+		}
+	}
+	return shared
+}
+
 // TestYDBPlan_ExperimentsCreateDistinctPaths holds every experiment of the YDB
 // plan to paths no other experiment creates. The run shares one namespace
 // directory between them and drops nothing until it ends, so a second
@@ -77,23 +105,8 @@ func TestYDBPlan_ExperimentsCreateDistinctPaths(t *testing.T) {
 	p, ok := planFor(platform.YDB)
 	c.Assert(ok, qt.IsTrue)
 
-	owners := make(map[string][]string)
-	for _, e := range p.experiments {
-		keys := make([]string, 0, len(e.decides))
-		for _, key := range e.decides {
-			keys = append(keys, string(key))
-		}
-		owner := strings.Join(keys, ",")
-		for _, created := range slices.Compact(slices.Sorted(slices.Values(experimentPaths(e)))) {
-			owners[created] = append(owners[created], owner)
-		}
-	}
-	shared := make(map[string][]string)
-	for created, experiments := range owners {
-		if len(experiments) > 1 {
-			shared[created] = experiments
-		}
-	}
+	owners := pathOwners(p)
+	shared := sharedPaths(owners)
 
 	c.Assert(len(owners) > 40, qt.IsTrue, qt.Commentf("the YDB plan created only %d paths: %v", len(owners),
 		slices.Sorted(maps.Keys(owners))))
@@ -102,7 +115,7 @@ func TestYDBPlan_ExperimentsCreateDistinctPaths(t *testing.T) {
 	for _, created := range []string{"cfk/feed", "tpk", "xfer_key", "repl_replica"} {
 		c.Assert(owners[created], qt.HasLen, 1, qt.Commentf("path %s", created))
 	}
-	c.Assert(shared, qt.DeepEquals, map[string][]string{})
+	c.Assert(shared, qt.DeepEquals, make(map[string][]string))
 }
 
 // The paths a statement creates are read as the probe's statements spell

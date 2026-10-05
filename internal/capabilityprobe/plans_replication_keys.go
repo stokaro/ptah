@@ -141,8 +141,7 @@ func ydbReplicationExperiments() []experiment {
 func ydbReplicationExperiment(
 	key capability.Capability,
 	requires []capability.Capability,
-	setup []string,
-	creates []string,
+	setup, creates []string,
 	create func(namespace, connection string) string,
 	after check,
 ) experiment {
