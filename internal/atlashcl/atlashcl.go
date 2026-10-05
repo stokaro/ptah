@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/pgindexstorage"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbindex"
+	"ptah.run/internal/ydbpartition"
 )
 
 // Options configures HCL schema parsing.
@@ -925,11 +926,7 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 	if err != nil {
 		return schemamodel.Index{}, err
 	}
-	vector, err := p.indexVector(block)
-	if err != nil {
-		return schemamodel.Index{}, err
-	}
-	return schemamodel.Index{
+	return p.indexYDBSettings(block, schemamodel.Index{
 		StructName:     structName,
 		Name:           block.Labels[0],
 		Fields:         columns,
@@ -944,9 +941,8 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 		IncludeColumns: include,
 		StorageParams:  storageParams,
 		Granularity:    granularity,
-		Vector:         vector,
 		TableName:      tableName,
-	}, nil
+	})
 }
 
 // indexVector reads a YDB vector index's settings: attributes of the index
@@ -1922,7 +1918,7 @@ func (p *parser) rejectUnsupportedIdentityColumnAttrs(block *hclsyntax.Block) er
 }
 
 func (p *parser) rejectUnsupportedIndexAttrs(block *hclsyntax.Block) error {
-	return p.rejectUnsupportedAttrs(block, map[string]bool{
+	attributes := map[string]bool{
 		"columns":         true,
 		"include":         true,
 		"parser":          true,
@@ -1943,7 +1939,11 @@ func (p *parser) rejectUnsupportedIndexAttrs(block *hclsyntax.Block) error {
 		ydbindex.AttributeVectorDimension: true,
 		ydbindex.AttributeLevels:          true,
 		ydbindex.AttributeClusters:        true,
-	}, "index")
+	}
+	for _, name := range ydbpartition.Attributes() {
+		attributes[name] = true
+	}
+	return p.rejectUnsupportedAttrs(block, attributes, "index")
 }
 
 func (p *parser) rejectUnsupportedConstraintAttrs(block *hclsyntax.Block) error {

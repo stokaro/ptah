@@ -213,7 +213,11 @@ in lower case:
 | `auto_partitioning_max_partitions_count` | at least 1 |
 | `read_replicas_settings` | `PER_AZ:<n>` or `ANY_AZ:<n>` |
 
-The same keys work on an index in a YAML schema. A setting an index leaves out
+The same keys work on an index in YAML and HCL schemas. HCL export preserves
+them as Ptah attributes: switches and read-replica settings are strings, and
+partition counts and size are numbers. Atlas has no YDB driver.
+
+A setting an index leaves out
 keeps what the index holds, as a table's does (see
 [Table partitioning](#table-partitioning-read-replicas-and-key-bloom-filter)):
 a new index takes it from YDB, which gives every new index the same settings,

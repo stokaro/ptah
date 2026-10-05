@@ -127,6 +127,13 @@ for the message and the flag it names.
 | `coordination_node` | Ptah block: a YDB coordination node, with `schema` and the settings of the [`//ptah:schema:coordinationnode`](../go-annotations/#ptahschemacoordinationnode) annotation as strings. |
 | `data` | Ptah managed-data declaration with a table reference, key columns, and a file path relative to the HCL file. |
 
+For YDB, an `index` block also accepts the
+[index partitioning attributes](../../databases/ydb/#index-partitioning).
+Use quoted `ENABLED` or `DISABLED` for the splitting switches, numbers for
+partition counts and size, and a quoted value such as `ANY_AZ:2` for
+`read_replicas_settings`. These are Ptah extensions; Atlas has no YDB driver.
+An omitted setting leaves the existing index's value unchanged.
+
 ## API export metadata attributes
 
 API export metadata is a Ptah HCL extension. All values are quoted strings:
