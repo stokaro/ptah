@@ -236,23 +236,11 @@ func TestYDBAccessControl_Rollback(t *testing.T) {
 	}
 }
 
-// applyScript runs a rendered script one statement per query, skipping the
-// comments the renderer writes above a statement.
+// applyScript runs a rendered script through the writer's YQL splitter, which
+// keeps compound streaming-query bodies and their internal semicolons intact.
 func applyScript(c *qt.C, conn *dbschema.DatabaseConnection, script string) {
 	c.Helper()
-	var statements []string
-	for statement := range strings.SplitSeq(script, ";\n") {
-		var kept []string
-		for line := range strings.SplitSeq(statement, "\n") {
-			if trimmed := strings.TrimSpace(line); trimmed != "" && !strings.HasPrefix(trimmed, "--") {
-				kept = append(kept, line)
-			}
-		}
-		if len(kept) > 0 {
-			statements = append(statements, strings.Join(kept, "\n"))
-		}
-	}
-	apply(c, conn, statements)
+	c.Assert(conn.SchemaWriter().ExecuteSQL(c.Context(), script), qt.IsNil, qt.Commentf("%s", script))
 }
 
 // TestYDBReader_LeavesTheDatabaseOwnerOutOfTheDescription reads a database
