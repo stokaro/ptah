@@ -2390,7 +2390,8 @@ These are refused with a message that names what is missing:
 - `ptah inference` and the inference tools of `ptah mcp`, which store their vectors through pgvector.
 <!-- END GENERATED YDB GAPS -->
 
-The work is planned in [#4015](https://github.com/stokaro/ptah/issues/4015).
+Schema and migration work is planned in [#4015](https://github.com/stokaro/ptah/issues/4015).
+Inference is a separate follow-up in [#4181](https://github.com/stokaro/ptah/issues/4181).
 
 ## Next steps
 

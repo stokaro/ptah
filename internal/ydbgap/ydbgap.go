@@ -3,7 +3,8 @@
 // to the plan that adds it.
 //
 // YDB is a dialect name before every layer behind it exists: stokaro/ptah#4015
-// adds them in phases. A layer reached with the name and nothing behind it
+// adds schema and migration support in phases. Inference is deferred to
+// stokaro/ptah#4181. A layer reached with the name and nothing behind it
 // would otherwise answer with its default arm, which is another dialect's
 // behavior or an error about an empty driver name. Each such layer refuses
 // through [Layer.Message] instead, and the phase that implements a layer
@@ -27,14 +28,14 @@ import (
 	"io"
 )
 
-// Plan is the issue that plans YDB support and owns every gap named here.
+// Plan is the issue that plans YDB schema and migration support.
 const Plan = "stokaro/ptah#4015"
 
 // Layer is one part of Ptah that YDB does not reach yet.
 type Layer int
 
-// The layers YDB does not reach yet. Each answers [Layer.Phase] with the phase
-// of [Plan] that implements it.
+// The layers YDB does not reach yet. Schema and migration layers name a phase
+// of [Plan]; inference has a separate follow-up issue.
 const (
 	// SchemaFiles is the YQL declarations outside the supported object families.
 	// The table frontend refuses other object families and preserves those
@@ -78,14 +79,12 @@ func (l Layer) work() string {
 	}
 }
 
-// Phase is the phase of [Plan] that implements the layer, or 0 for a value
-// that names no layer.
+// Phase is the phase of [Plan] that implements the layer, or 0 for inference
+// and values that name no layer. Inference is outside that plan.
 func (l Layer) Phase() int {
 	switch l {
 	case SchemaFiles, IndexFamilies:
 		return 10
-	case Inference:
-		return 12
 	default:
 		return 0
 	}
@@ -94,6 +93,9 @@ func (l Layer) Phase() int {
 // Message is the refusal a layer reports: what is not implemented, and where
 // the work is planned. It names YDB, so a caller does not repeat the dialect.
 func (l Layer) Message() string {
+	if l == Inference {
+		return fmt.Sprintf("%s is not implemented yet (stokaro/ptah#4181)", l.work())
+	}
 	return fmt.Sprintf("%s is not implemented yet (%s, phase %d)", l.work(), Plan, l.Phase())
 }
 
