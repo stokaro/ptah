@@ -52,8 +52,6 @@ func TestStatement_Text_FailurePath(t *testing.T) {
 	}{
 		{name: "no object", statement: ydbcomment.Statement{Path: "t"},
 			wantErr: `invalid comment statement: unknown object 0`},
-		{name: "no path", statement: ydbcomment.Statement{Object: ydbcomment.Table, Comment: "x"},
-			wantErr: `invalid comment statement: COMMENT ON TABLE names no path`},
 		{name: "no column", statement: ydbcomment.Statement{Object: ydbcomment.Column, Path: "t", Comment: "x"},
 			wantErr: `invalid comment statement: a column comment names no column`},
 		{name: "too long", statement: ydbcomment.Statement{Object: ydbcomment.View, Path: "v", Comment: strings.Repeat("x", 4097)},

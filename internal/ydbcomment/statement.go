@@ -54,9 +54,6 @@ func (s Statement) Text() (string, error) {
 	if keyword == "" {
 		return "", fmt.Errorf("%w: unknown object %d", ErrStatement, s.Object)
 	}
-	if strings.TrimSpace(s.Path) == "" {
-		return "", fmt.Errorf("%w: COMMENT ON %s names no path", ErrStatement, keyword)
-	}
 	if reason := Refusal(s.Object, s.Name, s.Comment); reason != "" {
 		return "", fmt.Errorf("%w: %s", ErrStatement, reason)
 	}

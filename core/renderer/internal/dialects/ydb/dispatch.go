@@ -8,7 +8,6 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer/internal/dialects/internal/nodedispatch"
-	"ptah.run/internal/ydbgap"
 )
 
 // defaultPrivilegeReason is why YDB refuses a default privilege.
@@ -55,14 +54,14 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.CommentNode:
 		return r.renderComment(n)
 	case *ast.ObjectCommentNode:
-		return refuseGap(ydbgap.Comments, "COMMENT ON "+string(n.Object)+" "+n.Name)
+		return r.renderObjectComment(n)
 
 	// A Ptah schema is a directory on YDB, and no SQL creates one: a table
 	// path names its directories and YDB creates them with the table
 	// (measured: `CREATE DIRECTORY` is a parse error, and `CREATE TABLE
 	// `dir/sub/t`` creates dir and sub). So a schema renders no statement.
 	case *ast.CreateSchemaNode:
-		return nil
+		return r.recordSchemaComment(n)
 	// No SQL creates a YDB database either: measured on 26.2.1.14 and
 	// 25.1.4.7, `CREATE DATABASE` is a parse error. A cluster's databases
 	// are its administrators', and a run that needs a database of its own

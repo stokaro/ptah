@@ -5,7 +5,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
-	"ptah.run/internal/ydbgap"
+	"ptah.run/internal/ydbcomment"
 	"ptah.run/internal/ydbview"
 )
 
@@ -30,6 +30,15 @@ func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 	if err := r.refuseViewDeclarations(subject, node); err != nil {
 		return err
 	}
+	var comment string
+	if node.Comment != "" {
+		statement := ydbcomment.Statement{Object: ydbcomment.View, Path: objectPath(node.Name), Comment: node.Comment}
+		text, err := r.commentStatement(statement, subject)
+		if err != nil {
+			return err
+		}
+		comment = text
+	}
 	body := strings.TrimSpace(node.Body)
 	for strings.HasSuffix(body, ";") {
 		body = strings.TrimSpace(strings.TrimSuffix(body, ";"))
@@ -37,6 +46,9 @@ func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 	r.w.WriteLinef("CREATE VIEW %s %s AS", tablePath(node.Name), ydbview.SecurityClause)
 	r.w.WriteLine(body)
 	r.w.WriteLine(";")
+	if comment != "" {
+		r.w.WriteLine(comment)
+	}
 	return nil
 }
 
@@ -60,8 +72,6 @@ func (r *Renderer) refuseViewDeclarations(subject string, node *ast.CreateViewNo
 	case len(node.Attributes) > 0:
 		return refuseFact("WITH "+strings.Join(node.Attributes, ", ")+" on "+subject,
 			"a YDB view takes the security_invoker option alone, which Ptah writes on every view")
-	case node.Comment != "":
-		return refuseGap(ydbgap.Comments, "the comment on "+subject)
 	}
 	return nil
 }

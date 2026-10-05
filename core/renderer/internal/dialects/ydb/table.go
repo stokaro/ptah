@@ -83,8 +83,9 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 		return err
 	}
 	var partitioning []string
-	named := make(map[string]bool, len(node.Indexes)+len(uniques))
-	for _, index := range append(slices.Clone(node.Indexes), uniques...) {
+	indexes := append(slices.Clone(node.Indexes), uniques...)
+	named := make(map[string]bool, len(indexes))
+	for _, index := range indexes {
 		clause, err := r.inlineIndex(node.Name, index, keyColumns, columnTypes)
 		if err != nil {
 			return err
@@ -101,6 +102,10 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	}
 
 	changefeeds, err := r.changefeedStatements(node, slices.Collect(maps.Keys(named)), columnTypes[keyColumns[0]])
+	if err != nil {
+		return err
+	}
+	comments, err := r.tableComments(node, indexes)
 	if err != nil {
 		return err
 	}
@@ -122,6 +127,9 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 		r.w.WriteLine(statement)
 	}
 	for _, statement := range changefeeds {
+		r.w.WriteLine(statement)
+	}
+	for _, statement := range comments {
 		r.w.WriteLine(statement)
 	}
 	return nil
@@ -190,8 +198,6 @@ func (r *Renderer) refuseTableDeclarations(node *ast.CreateTableNode) error {
 		return refuseFact(subject, "a YDB table needs at least its key column")
 	case strings.TrimSpace(node.SelectBody) != "":
 		return refuseFact(subject, "the YDB renderer writes no CREATE TABLE ... AS SELECT")
-	case node.Comment != "":
-		return refuseGap(ydbgap.Comments, "the comment on "+subject)
 	case node.Unlogged:
 		return refuseFact(subject, "UNLOGGED is PostgreSQL's; YDB has no unlogged table")
 	case node.Partition != nil:
@@ -311,7 +317,8 @@ func (r *Renderer) refuseKeyAttributes(table string, constraint *ast.ConstraintN
 	}
 	subject := "the primary key of " + tableref.Phrase(table)
 	if constraint.Comment != "" {
-		return refuseGap(ydbgap.Comments, "the comment on "+subject)
+		// YDB names no key, so no comment can be kept against it.
+		return r.keyed(capability.ConstraintComments, "constraint comment", "the comment on "+subject)
 	}
 	for _, part := range constraint.ColumnParts {
 		if part.Expr != "" || part.Desc || part.Prefix != "" {
@@ -385,6 +392,10 @@ func (r *Renderer) renderColumnNode(column *ast.ColumnNode) error {
 	if column.Unique && !r.caps.Has(capability.UniqueConstraints) {
 		return refuseFact(fmt.Sprintf("column %q", column.Name),
 			"its UNIQUE is a unique index of its table on YDB, which a column definition alone cannot carry")
+	}
+	if column.Comment != "" {
+		return refuseFact(fmt.Sprintf("the comment on column %q", column.Name),
+			"a YDB column's comment is an attribute of its table, which a column definition alone cannot carry")
 	}
 	definition, _, err := r.columnDefinition("", column, column.Primary)
 	if err != nil {
@@ -496,8 +507,6 @@ func (r *Renderer) refuseColumnDeclarations(subject string, column *ast.ColumnNo
 		return refuseFact(subject, "YDB has no column collation (`COLLATE` is a parse error); Utf8 compares bytes")
 	case column.Charset != "" && !isUTF8Charset(column.Charset):
 		return refuseFact(subject, "YDB stores text as UTF-8 only, and the column declares character set "+column.Charset)
-	case column.Comment != "":
-		return refuseGap(ydbgap.Comments, "the comment on "+subject)
 	}
 	return nil
 }

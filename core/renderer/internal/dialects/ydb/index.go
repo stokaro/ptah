@@ -8,7 +8,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/tableref"
-	"ptah.run/internal/ydbgap"
+	"ptah.run/internal/ydbcomment"
 	"ptah.run/internal/ydbindex"
 )
 
@@ -150,8 +150,6 @@ func (r *Renderer) refuseIndexDeclarations(subject string, index *ast.IndexNode)
 	case len(index.StorageParams) > 0:
 		return refuseFact(subject, "a YDB global index takes no storage parameters; its settings are its "+
 			"partitioning and read replicas, declared with the auto_partitioning_* and read_replicas_settings attributes")
-	case index.Comment != "":
-		return refuseGap(ydbgap.Comments, "the comment on "+subject)
 	}
 	return nil
 }
@@ -245,6 +243,14 @@ func (r *Renderer) addIndexStatements(index *ast.IndexNode) ([]string, error) {
 	statements := []string{fmt.Sprintf("ALTER TABLE %s ADD %s;", tablePath(index.Table), clause)}
 	if partitioning := clause.partitioningStatement(index.Table); partitioning != "" {
 		statements = append(statements, partitioning)
+	}
+	if index.Comment != "" {
+		statement := ydbcomment.Statement{Object: ydbcomment.Index, Path: objectPath(index.Table), Name: index.Name, Comment: index.Comment}
+		comment, err := r.commentStatement(statement, fmt.Sprintf("%s of %s", subject, tableref.Phrase(index.Table)))
+		if err != nil {
+			return nil, err
+		}
+		statements = append(statements, comment)
 	}
 	return statements, nil
 }

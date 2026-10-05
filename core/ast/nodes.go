@@ -1853,11 +1853,15 @@ const (
 	CommentedMaterializedView CommentedObject = "MATERIALIZED VIEW"
 	CommentedTrigger          CommentedObject = "TRIGGER"
 	CommentedPolicy           CommentedObject = "POLICY"
+	// CommentedIndex is an index, which Table names the table of: on YDB an
+	// index name is unique only within its table, and its comment is kept on
+	// the table.
+	CommentedIndex CommentedObject = "INDEX"
 )
 
 // ObjectCommentNode sets or removes the comment of an existing view,
 // sequence, domain, type, extension, function, procedure, materialized view,
-// trigger or policy.
+// trigger, policy or index.
 //
 // It is a statement rather than a field of the node that creates the object:
 // a create node carries the comment the object is created with, and this node
@@ -1877,8 +1881,8 @@ type ObjectCommentNode struct {
 	// dot. A trigger's and a policy's name is scoped to Table and is never
 	// qualified.
 	Name string
-	// Table is the table a trigger or a policy belongs to, which the
-	// statement names after ON. It is empty for every other kind.
+	// Table is the table a trigger, a policy or an index belongs to, which
+	// the statement names after ON. It is empty for every other kind.
 	Table string
 	// Arguments is the argument list that addresses a function or a
 	// procedure, and nil for every other kind. Nil and an empty list are
@@ -1896,7 +1900,7 @@ func NewObjectComment(object CommentedObject, name, comment string) *ObjectComme
 	return &ObjectCommentNode{Object: object, Name: name, Comment: comment}
 }
 
-// SetTable sets the table a trigger or a policy belongs to and returns the
+// SetTable sets the table a trigger, a policy or an index belongs to and returns the
 // node for chaining.
 func (n *ObjectCommentNode) SetTable(table string) *ObjectCommentNode {
 	n.Table = table
