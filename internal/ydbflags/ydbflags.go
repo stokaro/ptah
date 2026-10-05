@@ -126,7 +126,8 @@ var gates = []Gate{
 		},
 	},
 	{
-		// Measured on 26.2 with this flag enabled: both full-text methods
+		// Off on 25.3 through 26.1 and on from 26.2, as the captured
+		// monitoring pages record. Measured on 26.2: both full-text methods
 		// create indexes whose analyzer settings DescribeTable reports.
 		Key:      capability.FullTextIndexes,
 		Flag:     "EnableFulltextIndex",

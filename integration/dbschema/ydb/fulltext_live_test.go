@@ -21,11 +21,10 @@ func fullTextDeclaration(tokenizer string) *schemamodel.Database {
 }
 
 // The newest certified line creates, reads, compares and rebuilds a full-text
-// index with its flag enabled. Reapplying the same declaration plans nothing.
+// index with its default flags. Reapplying the same declaration plans nothing.
 func TestYDBFullText_RoundTrip(t *testing.T) {
 	c := qt.New(t)
 	line := lineNamed(c, "26.2")
-	setClusterFlags(c, line, clusterFlag{yaml: "enable_fulltext_index", page: "EnableFulltextIndex", on: true})
 	conn := openYDB(c, line)
 	schemas := []string{"ptah_ydb_fulltext"}
 	dropTables(c, conn, schemas)
@@ -59,4 +58,15 @@ func TestYDBFullText_OlderLineRefuses(t *testing.T) {
 	c.Assert(conn.Info().Capabilities.Has(capability.FullTextIndexes), qt.IsFalse)
 	err := conn.Writer().ExecuteSQL(c.Context(), "CREATE TABLE ptah_ydb_fulltext_absent (id Uint64 NOT NULL, body Utf8, PRIMARY KEY (id), INDEX ft GLOBAL USING fulltext_relevance ON (body) WITH (tokenizer=standard))")
 	c.Assert(err, qt.ErrorMatches, `(?s).*FULLTEXT_RELEVANCE index subtype is not supported.*`)
+}
+
+// Disabling the server flag refines the default capability before planning.
+func TestYDBFullText_DisabledFlag(t *testing.T) {
+	c := qt.New(t)
+	line := lineNamed(c, "26.2")
+	setClusterFlags(c, line, clusterFlag{yaml: "enable_fulltext_index", page: "EnableFulltextIndex", on: false})
+	conn := openYDB(c, line)
+	c.Assert(conn.Info().Capabilities.Has(capability.FullTextIndexes), qt.IsFalse)
+	err := conn.Writer().ExecuteSQL(c.Context(), "CREATE TABLE ptah_ydb_fulltext_disabled (id Uint64 NOT NULL, body Utf8, PRIMARY KEY (id), INDEX ft GLOBAL USING fulltext_plain ON (body) WITH (tokenizer=standard))")
+	c.Assert(err, qt.ErrorMatches, `(?s).*Fulltext index support is disabled.*`)
 }

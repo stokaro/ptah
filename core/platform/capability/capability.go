@@ -4833,7 +4833,7 @@ func YDB262() Capabilities {
 		// in place (`Unknown table setting: levels`); its partitioning does
 		// not change either (`Only index with one impl table is supported`).
 		VectorIndexes:                true,
-		FullTextIndexes:              false,
+		FullTextIndexes:              true,
 		VectorIndexMaintainedOnWrite: true,
 		VectorBitType:                true,
 
@@ -5002,12 +5002,13 @@ func YDB262() Capabilities {
 	}
 }
 
-// YDB261 is the preset for YDB 26.1. It differs from [YDB262] in one key:
+// YDB261 is the preset for YDB 26.1. Its full-text flag is off by default.
+// It also differs from [YDB262] in altering defaults:
 // measured on 26.1.1.22, `ALTER TABLE ... ALTER COLUMN b SET DEFAULT 2` and
 // `DROP DEFAULT` are both refused at type annotation, where 26.2.1.14 accepts
 // them.
 func YDB261() Capabilities {
-	return YDB262().With(AlterColumnDefault, false)
+	return YDB262().With(AlterColumnDefault, false).With(FullTextIndexes, false)
 }
 
 // YDB254 is the preset for YDB 25.4. It differs from [YDB261] in four keys,
@@ -5015,11 +5016,14 @@ func YDB261() Capabilities {
 //
 //   - ADD COLUMN with a default is refused on an empty table and on one
 //     holding rows, as `Adding columns with defaults is disabled`;
+//
 //   - a changefeed's USER_SIDS answers `Unknown changefeed setting:
 //     USER_SIDS`;
+//
 //   - a GRANT naming a table at the database root by its relative name
 //     answers `wrong path format 't'`, where 26.1.1.22 resolves it. 25.1,
 //     25.2 and 25.3 answer the same;
+//
 //   - a vector index over bit vectors fails its build with `Unsupported
 //     vector_type: VECTOR_TYPE_BIT`, where 26.1.1.22 builds it. 25.1, 25.2
 //     and 25.3 refuse it too.

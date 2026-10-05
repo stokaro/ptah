@@ -412,9 +412,10 @@ a migration written by hand.
 ## Full-text indexes
 
 YDB 26.2 builds `fulltext_plain` indexes for text matching and
-`fulltext_relevance` indexes for ranked matching. Enable `EnableFulltextIndex`
-on the cluster and include `monitoring=http://host:8765` in the connection URL
-so Ptah reads the `full_text_indexes` capability. YDB 25.1 has neither the
+`fulltext_relevance` indexes for ranked matching. The `full_text_indexes`
+capability is on by default in the 26.2 preset. Include
+`monitoring=http://host:8765` in the connection URL so Ptah reads changes to the
+cluster's `EnableFulltextIndex` flag before planning. YDB 25.1 has neither the
 index family nor its flag.
 
 The table must have one primary key column of type `Uint64`. The index must
@@ -1685,7 +1686,7 @@ or `stable-25-4-1`:
 | Preset | Lines | Compared with the line above, lacks |
 | --- | --- | --- |
 | `YDB262` | 26.2 | — |
-| `YDB261` | 26.1 | `SET DEFAULT` and `DROP DEFAULT` on an existing column |
+| `YDB261` | 26.1 | `SET DEFAULT` and `DROP DEFAULT` on an existing column, full-text indexes by default |
 | `YDB254` | 25.4 | a column added with a default, a changefeed's `USER_SIDS`, a `GRANT` on a root object by its relative name, bit vectors in a vector index |
 | `YDB253` | 25.3 | a consumer's `availability_period`, a replication or transfer secret named by its path, a family's `CACHE_MODE`, secrets (behind a flag), a data source naming a secret by its path |
 | `YDB252` | 25.2 | a `JsonDocument` or `DyNumber` default, `UPDATE ... RETURNING` on a table with a unique index, a changefeed's `SCHEMA_CHANGES`, a vector index that takes in the rows written after its build |

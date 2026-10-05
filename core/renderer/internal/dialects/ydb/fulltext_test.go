@@ -33,7 +33,7 @@ func TestRender_FullText(t *testing.T) {
 
 func TestRender_FullTextWithoutCapability(t *testing.T) {
 	c := qt.New(t)
-	_, err := ydb.NewWithCapabilities(capability.YDB262()).Render(&ast.IndexNode{Name: "ft", Table: "docs", Type: "fulltext_plain", Columns: []string{"body"}, StorageParams: map[string]string{"tokenizer": "standard"}})
+	_, err := ydb.NewWithCapabilities(capability.YDB262().With(capability.FullTextIndexes, false)).Render(&ast.IndexNode{Name: "ft", Table: "docs", Type: "fulltext_plain", Columns: []string{"body"}, StorageParams: map[string]string{"tokenizer": "standard"}})
 	c.Assert(err, qt.ErrorMatches, `(?s).*full_text_indexes.*`)
 }
 
