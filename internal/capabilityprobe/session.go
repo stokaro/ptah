@@ -656,17 +656,11 @@ func (s *session) leave(ctx context.Context, statement string) []Attempt {
 // teardown, and returns the reads it made and what each found left. removal
 // is what leave returned.
 //
-// Only YDB is asked. Its namespace is a directory the scheme service removes,
-// rather than a statement whose acceptance says the namespace is gone, and
-// the group the role experiment creates and the resource pool and classifier
-// another one creates are outside the directory. A refused
-// removal is a leftover by itself: DropDirectory refuses a tree holding an
-// object it has no statement for, such as an external table, before it drops
-// anything, and the partition statistics list row tables only, so they
-// would count no table under a directory still standing. The tables are read
-// from the partition statistics, which list a row table under its path the
-// moment it exists; a read the server refuses is itself a leftover, because
-// the run cannot say the server is clean.
+// Only YDB is asked. The namespace is checked through the scheme service;
+// partition statistics retain dropped column tables on 25.1.4.7 and cannot
+// establish whether an object still exists. A refused removal or directory
+// listing is a leftover too. Principals and resource pools outlive directories,
+// so their system views are checked separately.
 func (s *session) leftovers(ctx context.Context, removal []Attempt) ([]Attempt, []string) {
 	if platform.NormalizeDialect(s.dialect) != platform.YDB {
 		return nil, nil
@@ -680,15 +674,9 @@ func (s *session) leftovers(ctx context.Context, removal []Attempt) ([]Attempt, 
 				attempt.ServerErr)
 		}
 	}
-	tables, read := s.query(ctx, fmt.Sprintf("SELECT COUNT(DISTINCT Path) FROM %s WHERE StartsWith(Path, %s)",
-		ydbSystemView(s.database, "partition_stats"), ydbString(directory+"/")))
+	read, remainingDirectory := s.directoryLeftover(ctx)
 	reads = append(reads, read)
-	switch {
-	case !read.Accepted:
-		remaining = append(remaining, "the tables under "+directory+", which the server would not count")
-	case tables > 0:
-		remaining = append(remaining, fmt.Sprintf("%d table(s) under %s", tables, directory))
-	}
+	remaining = append(remaining, remainingDirectory...)
 	for _, object := range slices.Concat(
 		workloadObjects(s.resourcePools, "resource_pools", "resource pool "),
 		workloadObjects(s.resourcePoolClassifiers, "resource_pool_classifiers", "resource pool classifier "),
