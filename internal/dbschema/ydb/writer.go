@@ -314,7 +314,13 @@ func (w *Writer) DropAllTables(ctx context.Context) error {
 		}
 		defer end()
 		drop.replica = func(ctx context.Context, table string) (bool, error) {
-			described, err := source.DescribeTable(ctx, path.Join(w.root, table))
+			directory, name := path.Split(path.Join(w.root, table))
+			described, err := describeListedTable(ctx, source, path.Clean(directory), name)
+			if errors.Is(err, errTableGone) {
+				// CASCADE dropped it with its replication a moment ago, or
+				// another operation did: there is nothing left to drop.
+				return true, nil
+			}
 			if err != nil {
 				return false, err
 			}
@@ -329,7 +335,8 @@ func (w *Writer) DropAllTables(ctx context.Context) error {
 // the tree: which row tables are replicas it leaves where they are, and which
 // directories the pass before it dropped something in.
 type allTablesDrop struct {
-	// replica reports a replica table, given its path relative to the root.
+	// replica reports a table the pass leaves where it is, given its path
+	// relative to the root: a replica table, or one already gone.
 	replica func(context.Context, string) (bool, error)
 	// emptied holds each directory, relative to the root, that a transfer or
 	// a replication was dropped from: a directory left empty by them is

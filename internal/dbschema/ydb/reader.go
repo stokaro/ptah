@@ -2,6 +2,7 @@ package ydb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
 	"slices"
@@ -195,7 +196,9 @@ func (r *Reader) entry(
 
 // tableEntry describes the row table name in the directory schema, or records
 // it: a table an async replication writes is the replication's, and YDB
-// keeps it read-only, so it is recorded rather than described.
+// keeps it read-only, so it is recorded rather than described. A table
+// another operation drops while the read runs is left out, as one dropped
+// before it would be; see [describeListedTable].
 func (r *Reader) tableEntry(ctx context.Context, source Source, schema, name string, db *catalog.Database) error {
 	if !r.inScope(schema) || revisiontable.IsDefault(name) {
 		// The migrator's own tables are its bookkeeping, not the
@@ -205,7 +208,10 @@ func (r *Reader) tableEntry(ctx context.Context, source Source, schema, name str
 		// would drop it.
 		return nil
 	}
-	described, err := source.DescribeTable(ctx, r.absolute(schema, name))
+	described, err := describeListedTable(ctx, source, r.absolute(schema, ""), name)
+	if errors.Is(err, errTableGone) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}

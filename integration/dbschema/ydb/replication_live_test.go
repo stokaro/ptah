@@ -97,7 +97,10 @@ func dropReplications(c *qt.C, conn *dbschema.DatabaseConnection) {
 
 // settledRead reads the replication directory until ready holds of the read,
 // for up to a minute: YDB creates a replication's replica tables, moves its
-// state and runs a transfer after the statement returns.
+// state, runs a transfer and drops replicas after the statement returns.
+// Every read has to succeed: the reader waits out a table YDB lists and does
+// not describe yet, which is the state such a change passes through, so a
+// read that fails here is a reader defect rather than something to wait for.
 func settledRead(c *qt.C, conn *dbschema.DatabaseConnection, what string,
 	ready func(*catalog.Database) bool,
 ) *catalog.Database {
@@ -181,10 +184,11 @@ func TestYDBReplication_RoundTrip(t *testing.T) {
 			removed := planAgainst(c, conn, replicationDeclaration(""), replicationSchemas)
 			c.Assert(removed, qt.DeepEquals, []string{"DROP ASYNC REPLICATION `ptah_ydb_repl/mirror` CASCADE"})
 			apply(c, conn, removed)
-			after := readScoped(c, conn, replicationSchemas)
-			c.Assert(after.AsyncReplications, qt.HasLen, 0)
-			c.Assert(after.NotDescribed.Describes(coverage.ReplicaTable, replicationSchema+".rep"), qt.IsTrue)
-			c.Assert(directoryNames(c, c.Context(), line, replicationSchema), qt.DeepEquals, []string{"src"})
+			settledRead(c, conn, "the replication and its replica gone", func(live *catalog.Database) bool {
+				return len(live.AsyncReplications) == 0 &&
+					live.NotDescribed.Describes(coverage.ReplicaTable, replicationSchema+".rep")
+			})
+			waitForDirectory(c, line, []string{"src"}, replicationSchema)
 			c.Assert(planAgainst(c, conn, replicationDeclaration(""), replicationSchemas), qt.HasLen, 0)
 		})
 	}
@@ -293,9 +297,10 @@ func TestYDBReplication_ConnectionChangesWhilePaused(t *testing.T) {
 				"(CONNECTION_STRING = '" + moved + "')"})
 			apply(c, conn, paused)
 
-			live := readScoped(c, conn, replicationSchemas)
-			c.Assert(live.AsyncReplications[0].Spec.Connection.ConnectionString, qt.Equals, moved)
-			c.Assert(live.AsyncReplications[0].State, qt.Equals, catalog.ReplicationPaused)
+			settledRead(c, conn, "the paused replication on its new connection", func(live *catalog.Database) bool {
+				return replicationState(catalog.ReplicationPaused)(live) &&
+					live.AsyncReplications[0].Spec.Connection.ConnectionString == moved
+			})
 			c.Assert(planAgainst(c, conn, replicationDeclaration(moved), replicationSchemas), qt.HasLen, 0)
 		})
 	}
@@ -394,7 +399,7 @@ func runTransfer(c *qt.C, conn *dbschema.DatabaseConnection, declared *schemamod
 	removed := planAgainst(c, conn, transferDeclaration(""), replicationSchemas)
 	c.Assert(removed, qt.DeepEquals, []string{"DROP TRANSFER `ptah_ydb_repl/ingest`"})
 	apply(c, conn, removed)
-	c.Assert(readScoped(c, conn, replicationSchemas).Transfers, qt.HasLen, 0)
+	settledRead(c, conn, "the transfer gone", func(live *catalog.Database) bool { return len(live.Transfers) == 0 })
 	c.Assert(planAgainst(c, conn, transferDeclaration(""), replicationSchemas), qt.HasLen, 0)
 }
 
@@ -464,11 +469,12 @@ func TestYDBWriter_DropAllTablesDropsReplicationsFirst(t *testing.T) {
 
 			c.Assert(conn.SchemaWriter().DropAllTables(c.Context()), qt.IsNil)
 
-			live := readScoped(c, conn, replicationSchemas)
-			c.Assert(live.AsyncReplications, qt.HasLen, 0)
-			c.Assert(live.Tables, qt.HasLen, 0)
-			c.Assert(directoryNames(c, c.Context(), line, replicationSchema), qt.DeepEquals, []string{"orphan"})
-			c.Assert(live.NotDescribed.Describes(coverage.ReplicaTable, replicationSchema+".orphan"), qt.IsFalse)
+			settledRead(c, conn, "only the orphaned replica left", func(live *catalog.Database) bool {
+				return len(live.AsyncReplications) == 0 && len(live.Tables) == 0 &&
+					!live.NotDescribed.Describes(coverage.ReplicaTable, replicationSchema+".orphan") &&
+					live.NotDescribed.Describes(coverage.ReplicaTable, replicationSchema+".rep")
+			})
+			waitForDirectory(c, line, []string{"orphan"}, replicationSchema)
 		})
 	}
 }
@@ -529,5 +535,54 @@ func dropProbeDirectory(c *qt.C, line ydbLine, dropper interface {
 	c.Helper()
 	if slices.Contains(directoryNames(c, context.Background(), line, replicationSchema), "probe") {
 		c.Check(dropper.DropDirectory(context.Background(), replicationSchema+"/probe"), qt.IsNil)
+	}
+}
+
+// waitForDirectory lists the directory named by segments until it holds want,
+// for up to a minute: a listing follows a drop a moment after the drop
+// returns.
+func waitForDirectory(c *qt.C, line ydbLine, want []string, segments ...string) {
+	c.Helper()
+	deadline := time.Now().Add(time.Minute)
+	for !slices.Equal(directoryNames(c, c.Context(), line, segments...), want) {
+		if time.Now().After(deadline) {
+			c.Fatalf("%v did not come to hold %v within a minute: it holds %v", segments, want,
+				directoryNames(c, c.Context(), line, segments...))
+		}
+		time.Sleep(time.Second)
+	}
+}
+
+// TestYDBReplication_ReadsWhileReplicasComeAndGo reads the directory straight
+// after a replication is created and straight after it is dropped with
+// CASCADE, five times on each line. The replica is then being created or
+// dropped, and YDB may list it while it does not describe it: GitHub's runners
+// met that state on 25.1.4.7. Every read succeeds, and records the replica
+// only once YDB describes it.
+func TestYDBReplication_ReadsWhileReplicasComeAndGo(t *testing.T) {
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			dropReplications(c, conn)
+			c.Cleanup(func() { dropReplications(c, conn) })
+			connection := selfConnection(c, conn)
+			apply(c, conn, []string{"CREATE TABLE `ptah_ydb_repl/src` (`id` Int64 NOT NULL, PRIMARY KEY (`id`))"})
+
+			for range 5 {
+				apply(c, conn, []string{"CREATE ASYNC REPLICATION `ptah_ydb_repl/cycle` FOR " +
+					"`/local/ptah_ydb_repl/src` AS `ptah_ydb_repl/cycle_rep` WITH (CONNECTION_STRING = '" +
+					connection + "')"})
+				created := readScoped(c, conn, replicationSchemas)
+				apply(c, conn, []string{"DROP ASYNC REPLICATION `ptah_ydb_repl/cycle` CASCADE"})
+				dropped := readScoped(c, conn, replicationSchemas)
+
+				c.Assert(created.AsyncReplications, qt.HasLen, 1)
+				c.Assert(tableNames(created), qt.DeepEquals, []string{"ptah_ydb_repl|src"})
+				c.Assert(dropped.AsyncReplications, qt.HasLen, 0)
+				c.Assert(dropped.NotDescribed.Describes(coverage.ReplicaTable, replicationSchema+".cycle_rep"),
+					qt.IsTrue)
+			}
+		})
 	}
 }
