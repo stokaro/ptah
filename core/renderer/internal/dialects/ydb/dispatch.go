@@ -186,6 +186,12 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.DropTransferNode:
 		return r.renderDropTransfer(n)
 
+	// Resource pools and their classifiers.
+	case *ast.CreateResourcePoolNode, *ast.AlterResourcePoolNode, *ast.DropResourcePoolNode,
+		*ast.CreateResourcePoolClassifierNode, *ast.AlterResourcePoolClassifierNode,
+		*ast.DropResourcePoolClassifierNode:
+		return r.renderResourcePoolNode(node)
+
 	// Objects of other engines.
 	case *ast.CreateSynonymNode:
 		return refuseFact("synonym "+n.Name, "YDB has no synonyms")
@@ -327,4 +333,25 @@ func (r *Renderer) renderComment(node *ast.CommentNode) error {
 func (r *Renderer) renderRawSQL(node *ast.RawSQLNode) error {
 	r.w.WriteLine(terminated(node.SQL))
 	return nil
+}
+
+// renderResourcePoolNode dispatches resource pools and classifiers to their statement renderers.
+func (r *Renderer) renderResourcePoolNode(node ast.Node) error {
+	switch n := node.(type) {
+	case *ast.CreateResourcePoolNode:
+		return r.renderCreateResourcePool(n)
+	case *ast.AlterResourcePoolNode:
+		return r.renderAlterResourcePool(n)
+	case *ast.DropResourcePoolNode:
+		return r.renderDropResourcePool(n)
+	case *ast.CreateResourcePoolClassifierNode:
+		return r.renderCreateResourcePoolClassifier(n)
+	case *ast.AlterResourcePoolClassifierNode:
+		return r.renderAlterResourcePoolClassifier(n)
+	case *ast.DropResourcePoolClassifierNode:
+		return r.renderDropResourcePoolClassifier(n)
+	default:
+		return fmt.Errorf("%w: %s: %T is not a resource pool or classifier node",
+			ptaherr.ErrInvalidSchemaDiff, DialectName, node)
+	}
 }

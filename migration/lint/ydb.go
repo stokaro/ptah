@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/ydbfamily"
+	"ptah.run/internal/ydbpool"
 	"ptah.run/internal/ydbsequence"
 	"ptah.run/internal/ydbtopic"
 	"ptah.run/internal/yqlddl"
@@ -58,6 +59,9 @@ func ydbRules() []Rule {
 		ydbPrincipalDropRule(),
 		ydbTopicResetRule(),
 		ydbTopicSettingIgnoredRule(),
+		ydbDefaultPoolDropRule(),
+		ydbBackupCollectionDropRule(),
+		ydbAnalyzeRule(),
 		ydbVectorIndexUnbuiltRule(),
 		ydbVectorIndexStaleRule(),
 		ydbReplicationDroppedWithoutFailoverRule(),
@@ -1582,6 +1586,91 @@ func ydbSecretInClearRule() Rule {
 				}
 			}
 			return false, ""
+		},
+	}
+}
+
+// ydbDefaultPoolDropRule reports DROP RESOURCE POOL default. Measured on
+// 25.1.4.7 and 26.2.1.14 with EnableResourcePools on: YDB takes the statement,
+// and every later query of the database -- a SELECT, and CREATE RESOURCE POOL
+// default itself -- answers `Resource pool default not found or you don't have
+// access permissions`. Only a restart of a local-ydb server brought the
+// database back, by creating a new one. A pool's name is case-sensitive, so
+// only `default` itself is reported.
+func ydbDefaultPoolDropRule() Rule {
+	return Rule{
+		Code:          "YD120",
+		Title:         "the resource pool default dropped",
+		Severity:      SeverityError,
+		Dialects:      ydbOnly,
+		AppliesToDown: true,
+		CheckStatement: func(stmt *Statement) (bool, string) {
+			if !ydbRun(stmt.Target) {
+				return false, ""
+			}
+			read := yqlddl.Read(stmt.SQL)
+			if read.Kind != yqlddl.DropResourcePool || read.Name != ydbpool.DefaultPool {
+				return false, ""
+			}
+			return true, "DROP RESOURCE POOL default drops the pool YDB runs every query in that no classifier " +
+				"sends elsewhere; YDB takes it, and every later query of the database, CREATE RESOURCE POOL " +
+				"default included, fails with `Resource pool default not found`. Change its settings with " +
+				"ALTER RESOURCE POOL default instead"
+		},
+	}
+}
+
+// ydbBackupCollectionDropRule reports DROP BACKUP COLLECTION, which deletes
+// every backup the collection holds: a backup is a set of tables under the
+// collection's path, and they go with it. Measured on 25.1.4.7 with
+// EnableBackupService on, the statement stops the server: the ydbd process
+// exits, and its last log line is the schemeshard's TDropBackupCollection
+// propose, on a collection that held no backup as well as one that did.
+// 26.2.1.14 drops the collection and serves on.
+func ydbBackupCollectionDropRule() Rule {
+	return Rule{
+		Code:          "YD121",
+		Title:         "backup collection dropped",
+		Severity:      SeverityError,
+		Dialects:      ydbOnly,
+		AppliesToDown: true,
+		CheckStatement: func(stmt *Statement) (bool, string) {
+			if !ydbRun(stmt.Target) || yqlddl.Read(stmt.SQL).Kind != yqlddl.DropBackupCollection {
+				return false, ""
+			}
+			return true, "DROP BACKUP COLLECTION deletes every backup the collection holds, and a YDB 25.1 " +
+				"server stops on it: measured on 25.1.4.7, the server process exits; copy or restore the " +
+				"backups first, and run it only on a later line"
+		},
+	}
+}
+
+// ydbAnalyzeRule reports ANALYZE in a migration. Statistics are data the
+// server collects rather than schema a migration declares, and YDB runs the
+// statement only where a flag that is off by default is on. Measured with
+// default flags, 26.2.1.14 answers `ANALYZE command is not supported because
+// EnableColumnStatistics feature flag is off`. 25.1.4.7 answers `analyze is
+// not supported for oltp tables` for a row table with the flag on or off.
+// With the flag on, both lines still need a statistics service the database
+// may not run (local-ydb answers `Can't get statistics aggregator ID` for a
+// column table), and refuse more than one table in a statement (`ANALYZE
+// with multitables hasn't been implemented yet`). The migrator runs each scheme statement as a query of its own, so a
+// refused ANALYZE stops the migration after the statements before it applied.
+func ydbAnalyzeRule() Rule {
+	return Rule{
+		Code:          "YD122",
+		Title:         "ANALYZE in a migration",
+		Severity:      SeverityWarning,
+		Dialects:      ydbOnly,
+		AppliesToDown: true,
+		CheckStatement: func(stmt *Statement) (bool, string) {
+			if !ydbRun(stmt.Target) || yqlddl.Read(stmt.SQL).Kind != yqlddl.Analyze {
+				return false, ""
+			}
+			return true, "ANALYZE collects column statistics and changes no schema; YDB runs it only with the " +
+				"EnableColumnStatistics flag on, which is off by default, and refuses it on a row table on 25.1, " +
+				"so on such a cluster the migration stops here after the statements before it applied. Collect " +
+				"statistics outside the migration"
 		},
 	}
 }

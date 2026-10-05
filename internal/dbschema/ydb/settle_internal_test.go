@@ -51,6 +51,10 @@ func (s settlingSource) DescribeTable(context.Context, string) (*Ydb_Table.Descr
 
 func (s settlingSource) Principals(context.Context) (Principals, error) { return Principals{}, nil }
 
+func (s settlingSource) ResourcePools(context.Context) (ResourcePools, error) {
+	return ResourcePools{}, nil
+}
+
 // notFound is how 25.1.4.7 answers DescribeTable for a path that does not
 // exist: SCHEME_ERROR with no issue.
 var notFound = describeAnswer{err: &statusError{status: Ydb.StatusIds_SCHEME_ERROR, issues: "no issue text"}}

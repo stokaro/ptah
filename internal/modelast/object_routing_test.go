@@ -42,6 +42,8 @@ var routedKinds = []routedKind{
 	{name: "policy", want: 1, count: countNodes[*ast.CreatePolicyNode]},
 	{name: "synonym", want: 1, count: countNodes[*ast.CreateSynonymNode]},
 	{name: "topic", want: 1, count: countNodes[*ast.CreateTopicNode]},
+	{name: "resource pool", want: 1, count: countNodes[*ast.CreateResourcePoolNode]},
+	{name: "resource pool classifier", want: 1, count: countNodes[*ast.CreateResourcePoolClassifierNode]},
 	{name: "async replication", want: 1, count: countNodes[*ast.CreateAsyncReplicationNode]},
 	{name: "transfer", want: 1, count: countNodes[*ast.CreateTransferNode]},
 	{name: "coordination node", want: 1, count: countNodes[*ast.CreateCoordinationNodeNode]},
@@ -90,6 +92,11 @@ func routingFixture() schemamodel.Database {
 		MaterializedViews: []schemamodel.MaterializedView{{StructName: "MV", Name: "matview_probe", Body: "SELECT id FROM table_probe"}},
 		Synonyms:          []schemamodel.Synonym{{StructName: "SY", Name: "synonym_probe", Target: "dbo.table_probe"}},
 		Topics:            []schemamodel.Topic{{StructName: "TO", Name: "topic_probe"}},
+		ResourcePools:     []schemamodel.ResourcePool{{StructName: "RP", Name: "pool_probe"}},
+		ResourcePoolClassifiers: []schemamodel.ResourcePoolClassifier{{
+			StructName: "RC", Name: "classifier_probe",
+			Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "pool_probe", Rank: 1},
+		}},
 		AsyncReplications: []schemamodel.AsyncReplication{{StructName: "AR", Name: "replication_probe",
 			Spec: ast.AsyncReplicationSpec{
 				Connection: ast.ReplicationConnectionSpec{ConnectionString: "grpc://primary:2136/?database=/prod"},

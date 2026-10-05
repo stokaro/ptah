@@ -557,6 +557,7 @@ func (r *renderer) renderBody() {
 	r.reportChangefeeds()
 	r.reportRowDeletionPolicies()
 	r.reportTopics()
+	r.reportResourcePools()
 	r.reportReplications()
 	r.reportTablePartitioning()
 	r.renderExtensions()
@@ -826,7 +827,7 @@ func (r *renderer) renderColumn(field schemamodel.Field) {
 		r.line("    as {")
 		r.stringAttr(3, "expr", field.GeneratedExpression)
 		r.stringAttr(3, "type", field.GeneratedKind)
-		r.line("    }")
+		r.line("  }")
 	}
 	if field.IdentityGeneration != "" || field.IdentityStart != "" || field.IdentityIncrement != "" || field.IdentityOptions != "" {
 		r.line("    identity {")
@@ -834,7 +835,7 @@ func (r *renderer) renderColumn(field schemamodel.Field) {
 		r.stringAttr(3, "start", field.IdentityStart)
 		r.stringAttr(3, "increment", field.IdentityIncrement)
 		r.stringAttr(3, "options", field.IdentityOptions)
-		r.line("    }")
+		r.line("  }")
 	}
 	if field.UniqueExpr != "" {
 		r.stringAttr(2, "unique_expr", field.UniqueExpr)
@@ -972,7 +973,7 @@ func (r *renderer) renderPartition(partition *schemamodel.PartitionSpec) {
 			r.rawAttr(3, "column", columnRef(part.Name))
 		}
 		r.stringAttr(3, "expr", part.Expr)
-		r.line("    }")
+		r.line("  }")
 	}
 	r.line("  }")
 }

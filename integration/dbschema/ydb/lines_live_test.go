@@ -48,9 +48,9 @@ func (l ydbLine) capabilities() capability.Capabilities {
 // looked line-independent until 25.1 answered the abort at the write rather
 // than at the commit.
 var ydbLines = []ydbLine{
-	{name: "26.2", engine: dbtarget.YDB, preset: capability.YDB262},
+	{name: "26.2", engine: dbtarget.YDB, preset: capability.YDB262, flagged: []capability.Capability{capability.ResourcePools}},
 	// Started with EnableVectorIndex, which 25.1 keeps off by default.
-	{name: "25.1", engine: dbtarget.YDB251, preset: capability.YDB251, flagged: []capability.Capability{capability.VectorIndexes}},
+	{name: "25.1", engine: dbtarget.YDB251, preset: capability.YDB251, flagged: []capability.Capability{capability.VectorIndexes, capability.ResourcePools}},
 }
 
 // openYDB connects to the line's database.

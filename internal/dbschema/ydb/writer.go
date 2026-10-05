@@ -298,6 +298,10 @@ func (t *transaction) Rollback() error { return nil }
 // replica tables it writes, since the reader describes those as the
 // replication's. A table a replication left read-only and no replication
 // writes is one the reader records rather than describes, and it stays.
+//
+// Users, groups, resource pools and their classifiers stay too: they belong
+// to the whole database rather than to a directory, and a plan never drops
+// one the schema stops declaring.
 func (w *Writer) DropAllTables(ctx context.Context) error {
 	if w.scheme == nil {
 		return fmt.Errorf("no YDB scheme connection")

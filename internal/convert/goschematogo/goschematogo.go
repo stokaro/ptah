@@ -26,6 +26,7 @@ import (
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
+	"ptah.run/internal/ydbpool"
 	"ptah.run/internal/ydbreplication"
 	"ptah.run/internal/ydbtopic"
 	"ptah.run/internal/ydbtype"
@@ -366,6 +367,8 @@ func (ctx *renderContext) hasGlobalObjects() bool {
 		len(ctx.db.Ranges) > 0 ||
 		len(ctx.db.Sequences) > 0 ||
 		len(ctx.db.Topics) > 0 ||
+		len(ctx.db.ResourcePools) > 0 ||
+		len(ctx.db.ResourcePoolClassifiers) > 0 ||
 		len(ctx.db.AsyncReplications) > 0 ||
 		len(ctx.db.Transfers) > 0 ||
 		len(ctx.db.CoordinationNodes) > 0
@@ -474,6 +477,7 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 	for _, privilege := range sortedDefaultPrivileges(ctx.db.DefaultPrivileges) {
 		w.writeComment(defaultPrivilegeAnnotation(privilege))
 	}
+	ctx.writeResourcePools(w)
 	ctx.writeCoordinationNodes(w)
 	if ctx.hasGlobalObjects() {
 		w.writeLine("type PtahSchemaObjects struct{}")
@@ -1156,6 +1160,56 @@ func defaultPrivilegeAnnotation(privilege schemamodel.DefaultPrivilege) string {
 	)
 }
 
+// resourcePoolAnnotations writes each YDB resource pool, then each
+// classifier, as its annotation, in name order. A pool names only the
+// settings it holds, since a setting left out has no limit.
+func resourcePoolAnnotations(
+	pools []schemamodel.ResourcePool,
+	classifiers []schemamodel.ResourcePoolClassifier,
+) []string {
+	integer := func(name string, value *int32) attr {
+		if value == nil {
+			return attr{name: name}
+		}
+		return attr{name: name, value: strconv.FormatInt(int64(*value), 10), set: true}
+	}
+	fraction := func(name string, value *float64) attr {
+		if value == nil {
+			return attr{name: name}
+		}
+		return attr{name: name, value: strconv.FormatFloat(*value, 'f', -1, 64), set: true}
+	}
+	sortedPools := slices.SortedFunc(slices.Values(pools), func(a, b schemamodel.ResourcePool) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	comments := make([]string, 0, len(pools)+len(classifiers))
+	for _, pool := range sortedPools {
+		spec := pool.Spec
+		comments = append(comments, annotation("ptah:schema:resourcepool",
+			attr{name: ydbpool.AttributeName, value: pool.Name, set: true},
+			integer(ydbpool.AttributeConcurrentQueryLimit, spec.ConcurrentQueryLimit),
+			integer(ydbpool.AttributeQueueSize, spec.QueueSize),
+			fraction(ydbpool.AttributeDatabaseLoadCPUThreshold, spec.DatabaseLoadCPUThreshold),
+			fraction(ydbpool.AttributeQueryMemoryLimitPercentPerNode, spec.QueryMemoryLimitPercentPerNode),
+			fraction(ydbpool.AttributeQueryCPULimitPercentPerNode, spec.QueryCPULimitPercentPerNode),
+			fraction(ydbpool.AttributeTotalCPULimitPercentPerNode, spec.TotalCPULimitPercentPerNode),
+			fraction(ydbpool.AttributeResourceWeight, spec.ResourceWeight),
+		))
+	}
+	sortedClassifiers := slices.SortedFunc(slices.Values(classifiers),
+		func(a, b schemamodel.ResourcePoolClassifier) int { return strings.Compare(a.Name, b.Name) })
+	for _, classifier := range sortedClassifiers {
+		comments = append(comments, annotation("ptah:schema:resourcepool:classifier",
+			attr{name: ydbpool.AttributeName, value: classifier.Name, set: true},
+			attr{name: ydbpool.AttributeResourcePool, value: classifier.Spec.ResourcePool, set: true},
+			attr{name: ydbpool.AttributeMemberName, value: classifier.Spec.MemberName,
+				set: classifier.Spec.MemberName != ""},
+			attr{name: ydbpool.AttributeRank, value: strconv.FormatInt(classifier.Spec.Rank, 10), set: true},
+		))
+	}
+	return comments
+}
+
 // coordinationNodeAnnotation declares a YDB coordination node with the
 // settings it was given; a setting left unset takes YDB's default.
 func coordinationNodeAnnotation(node schemamodel.CoordinationNode) string {
@@ -1543,4 +1597,11 @@ func sortedImportPaths(values map[string]struct{}) []string {
 	}
 	sort.Strings(result)
 	return result
+}
+
+// writeResourcePools writes the database resource pools and their classifiers in name order.
+func (ctx *renderContext) writeResourcePools(w *sourceWriter) {
+	for _, comment := range resourcePoolAnnotations(ctx.db.ResourcePools, ctx.db.ResourcePoolClassifiers) {
+		w.writeComment(comment)
+	}
 }

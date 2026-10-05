@@ -31,12 +31,12 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			// (stokaro/ptah#1031), so it records neither -- and it still cannot
 			// name a virtual table, a table's row deletion policy, a changefeed,
 			// a YDB topic, a column family, or a YDB async replication or
-			// transfer.
+			// transfer, resource pool or classifier.
 			name: "HCL cannot name a virtual table, a TTL, a changefeed, a topic, a column family, a " +
-				"replication or a transfer",
+				"replication, transfer, resource pool or classifier",
 			file:     "schema.hcl",
 			contents: "schema \"main\" {\n}\n",
-			want: unsupportedRecords(coverage.Changefeed, coverage.ColumnFamily, coverage.Replication, coverage.Topic,
+			want: unsupportedRecords(coverage.Changefeed, coverage.ColumnFamily, coverage.Replication, coverage.ResourcePool, coverage.ResourcePoolClassifier, coverage.Topic,
 				coverage.Transfer, coverage.TTL, coverage.VirtualTable),
 		},
 		{
@@ -51,7 +51,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			contents: "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
 			want: unsupportedRecords(
 				coverage.ContinuousAggregate, coverage.ExtendedProperty,
-				coverage.Hypertable, coverage.Replication, coverage.Synonym, coverage.Topic, coverage.Transfer),
+				coverage.Hypertable, coverage.Replication, coverage.ResourcePool, coverage.ResourcePoolClassifier, coverage.Synonym, coverage.Topic, coverage.Transfer),
 		},
 		{
 			// YAML expresses the fewest families of the three, and the row is
@@ -79,13 +79,13 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			// what makes this one the exhaustive boundary #2065 asks for --
 			// and coverage.Schema is absent from it because DBML qualifies a
 			// name with a schema.
-			name:     "DBML cannot name eighteen families",
+			name:     "DBML cannot name twenty families",
 			file:     "schema.dbml",
 			contents: "Table users {\n  id integer [pk]\n}\n",
 			want: unsupportedRecords(
 				coverage.Changefeed, coverage.ColumnFamily, coverage.Composite, coverage.ContinuousAggregate,
 				coverage.Domain, coverage.ExtendedProperty, coverage.Extension, coverage.Hypertable,
-				coverage.Policy, coverage.Range, coverage.Replication, coverage.Role, coverage.Sequence,
+				coverage.Policy, coverage.Range, coverage.Replication, coverage.ResourcePool, coverage.ResourcePoolClassifier, coverage.Role, coverage.Sequence,
 				coverage.Synonym, coverage.Topic, coverage.Transfer, coverage.TTL, coverage.VirtualTable),
 		},
 	}

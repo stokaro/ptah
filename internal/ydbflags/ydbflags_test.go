@@ -96,6 +96,12 @@ func TestRefine_HappyPath(t *testing.T) {
 			want:  true,
 		},
 		{
+			name:  "resource pools and their classifiers follow their flag",
+			flags: ydbflags.Flags{"EnableResourcePools": true},
+			key:   capability.ResourcePools,
+			want:  true,
+		},
+		{
 			name:  "a vector index follows its flag on",
 			flags: ydbflags.Flags{"EnableVectorIndex": true},
 			key:   capability.VectorIndexes,
@@ -500,6 +506,21 @@ func TestRefused_HappyPath(t *testing.T) {
 			wantFlag: "EnableTopicAutopartitioningForCDC",
 		},
 		{
+			name: "26.2.1.14 creating a resource pool",
+			refusal: "Status: UNSUPPORTED Issues: <main>: Error: Executing operation with object \"RESOURCE_POOL\", " +
+				"code: 2030 <main>: Error: <main>: Error: Resource pools are disabled. Please contact your system " +
+				"administrator to enable it, code: 2030",
+			wantKey:  capability.ResourcePools,
+			wantFlag: "EnableResourcePools",
+		},
+		{
+			name: "25.1.4.7 creating a resource pool classifier",
+			refusal: "Status: GENERIC_ERROR Issues: <main>: Error: preparation problem: Resource pool classifiers " +
+				"are disabled. Please contact your system administrator to enable it",
+			wantKey:  capability.ResourcePools,
+			wantFlag: "EnableResourcePools",
+		},
+		{
 			name: "25.1.4.7 a vector index in CREATE TABLE",
 			refusal: "Status: PRECONDITION_FAILED Issues: <main>: Error: Execution, code: 1060 <main>:1:113: Error: " +
 				"Executing CREATE TABLE <main>: Error: Vector index support is disabled, code: 2029",
@@ -551,7 +572,7 @@ func TestRefused_HappyPath(t *testing.T) {
 func TestRefused_FailurePath(t *testing.T) {
 	for _, refusal := range []string{
 		"Status: GENERIC_ERROR Issues: <main>:1:70: Error: SET NOT NULL is currently not supported.",
-		"Error: Resource pools are disabled. Please contact your system administrator to enable it",
+		"Error: Backup collections are disabled. Please contact your system administrator to enable it, code: 2029",
 		"Error: Conflict with existing key., code: 2012",
 	} {
 		t.Run(refusal, func(t *testing.T) {

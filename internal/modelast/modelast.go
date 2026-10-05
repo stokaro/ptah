@@ -30,6 +30,7 @@ import (
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/unloggedtable"
 	"ptah.run/internal/ydbacl"
+	"ptah.run/internal/ydbpool"
 )
 
 // escapeSQLStringLiteral properly escapes a string value for use in SQL string literals.
@@ -222,8 +223,8 @@ func applyInlineEnumModel(field schemamodel.Field, enum schemamodel.Enum, target
 //	field := schemamodel.Field{
 //		Name:     "email",
 //		Type:     "VARCHAR(255)",
-//		Nullable: false,
-//		Unique:   true,
+//		Nullable:    false,
+//		Unique:     true,
 //		Comment:  "User email address",
 //	}
 //	column := FromField(field, nil)
@@ -234,7 +235,7 @@ func applyInlineEnumModel(field schemamodel.Field, enum schemamodel.Enum, target
 //	field := schemamodel.Field{
 //		Name:           "user_id",
 //		Type:           "INTEGER",
-//		Nullable:       false,
+//		Nullable:    false,
 //		Foreign:        "users(id)",
 //		ForeignKeyName: "fk_posts_user",
 //	}
@@ -594,7 +595,7 @@ type fieldConverter func(schemamodel.Field, []schemamodel.Enum, string) *ast.Col
 //		Comment:    "Application users",
 //	}
 //	fields := []schemamodel.Field{
-//		{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
+//			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 //		{StructName: "User", Name: "email", Type: "VARCHAR(255)", Nullable: false, Unique: true},
 //	}
 //	createTable := FromTable(table, fields, nil)
@@ -616,7 +617,7 @@ type fieldConverter func(schemamodel.Field, []schemamodel.Enum, string) *ast.Col
 //
 //	table := schemamodel.Table{
 //		StructName: "Product",
-//		Name:       "products",
+//		Name: "products",
 //		Engine:     "InnoDB",
 //		Comment:    "Product catalog",
 //	}
@@ -1579,6 +1580,41 @@ func appendTopicStatements(visit func(ast.Node) error, topics []schemamodel.Topi
 	return nil
 }
 
+// FromResourcePool converts a schemamodel.ResourcePool to an
+// ast.CreateResourcePoolNode carrying the pool's settings.
+func FromResourcePool(pool schemamodel.ResourcePool) *ast.CreateResourcePoolNode {
+	return ast.NewCreateResourcePool(pool.Name, pool.Spec)
+}
+
+// FromResourcePoolClassifier converts a schemamodel.ResourcePoolClassifier to
+// an ast.CreateResourcePoolClassifierNode.
+func FromResourcePoolClassifier(classifier schemamodel.ResourcePoolClassifier) *ast.CreateResourcePoolClassifierNode {
+	return ast.NewCreateResourcePoolClassifier(classifier.Name, classifier.Spec)
+}
+
+// appendResourcePoolStatements adds a node for each declared resource pool,
+// then one for each classifier, which names a pool. The pool `default` is
+// the database's own, so a declaration of it is a change of its settings
+// rather than a creation: against nothing, its settings are what YDB gives
+// it, and the declaration is written as an ALTER from them.
+func appendResourcePoolStatements(visit func(ast.Node) error, database schemamodel.Database) error {
+	for _, pool := range database.ResourcePools {
+		node := ast.Node(FromResourcePool(pool))
+		if pool.Name == ydbpool.DefaultPool {
+			node = ast.NewAlterResourcePool(pool.Name, pool.Spec, ast.ResourcePoolSpec{})
+		}
+		if err := visit(node); err != nil {
+			return err
+		}
+	}
+	for _, classifier := range database.ResourcePoolClassifiers {
+		if err := visit(FromResourcePoolClassifier(classifier)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // FromAsyncReplication converts a schemamodel.AsyncReplication to an
 // ast.CreateAsyncReplicationNode carrying its connection and items.
 func FromAsyncReplication(replication schemamodel.AsyncReplication) *ast.CreateAsyncReplicationNode {
@@ -2304,6 +2340,13 @@ func appendTableIndependentObjectStatements(visit func(ast.Node) error, database
 	// 9b4. A YDB topic depends on no other object, and comes after the
 	// tables so a reader of the script finds the tables first.
 	if err := appendTopicStatements(visit, database.Topics); err != nil {
+		return err
+	}
+
+	// 9b5. YDB resource pools and their classifiers depend on no table. A
+	// classifier names a pool and a user or group, which YDB does not check,
+	// and comes after both: the roles were written before the tables.
+	if err := appendResourcePoolStatements(visit, database); err != nil {
 		return err
 	}
 

@@ -104,6 +104,36 @@ var refusedDiffCategories = map[string]refusedFixture{
 		why:  "a changed topic is YDB's for the same reason",
 		diff: &difftypes.SchemaDiff{TopicsModified: []difftypes.TopicDiff{{Name: "events", SettingsChanged: true}}},
 	},
+	"ResourcePoolsAdded": {
+		why:  "a resource pool is YDB's, and the comparison that feeds a PostgreSQL plan refuses a declared one before it diffs; a plan reaches one only through a diff built by hand, and planning nothing would report a pool applied that the database does not have",
+		diff: &difftypes.SchemaDiff{ResourcePoolsAdded: difftypes.ResourcePoolChanges{{Name: "batch"}}},
+	},
+	"ResourcePoolsRemoved": {
+		why:  "no PostgreSQL read reports a resource pool, so a removal reaches the planner only through a diff built by hand, and planning nothing would report it dropped",
+		diff: &difftypes.SchemaDiff{ResourcePoolsRemoved: difftypes.ResourcePoolChanges{{Name: "batch"}}},
+	},
+	"ResourcePoolsModified": {
+		why:  "a changed resource pool is YDB's for the same reason",
+		diff: &difftypes.SchemaDiff{ResourcePoolsModified: []difftypes.ResourcePoolDiff{{Name: "batch"}}},
+	},
+	"ResourcePoolClassifiersAdded": {
+		why: "a resource pool classifier is YDB's, as a pool is",
+		diff: &difftypes.SchemaDiff{ResourcePoolClassifiersAdded: difftypes.ResourcePoolClassifierChanges{{
+			Name: "batch_users",
+		}}},
+	},
+	"ResourcePoolClassifiersRemoved": {
+		why: "no PostgreSQL read reports a classifier, so a removal reaches the planner only through a diff built by hand",
+		diff: &difftypes.SchemaDiff{ResourcePoolClassifiersRemoved: difftypes.ResourcePoolClassifierChanges{{
+			Name: "batch_users",
+		}}},
+	},
+	"ResourcePoolClassifiersModified": {
+		why: "a changed classifier is YDB's for the same reason",
+		diff: &difftypes.SchemaDiff{ResourcePoolClassifiersModified: []difftypes.ResourcePoolClassifierDiff{{
+			Name: "batch_users",
+		}}},
+	},
 	"AsyncReplicationsAdded": {
 		why:  "an async replication is YDB's, and the comparison that feeds a PostgreSQL plan refuses a declared one before it diffs; a plan reaches one only through a diff built by hand, and planning nothing would report a replication applied that the database does not have",
 		diff: &difftypes.SchemaDiff{AsyncReplicationsAdded: difftypes.AsyncReplicationChanges{{Name: "mirror"}}},

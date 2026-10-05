@@ -2,7 +2,8 @@
 // topic it names, the columns, key, indexes and TTL column a CREATE TABLE
 // declares, the actions an ALTER TABLE takes, the settings and consumers a
 // CREATE TOPIC declares and the actions an ALTER TOPIC takes, the restart an
-// ALTER SEQUENCE makes, the settings of an async replication or a transfer,
+// ALTER SEQUENCE makes, the resource pool or backup collection a DROP names,
+// the table an ANALYZE names, the settings of an async replication or transfer,
 // the tables a query reads, and the table a data statement writes.
 //
 // It is the reading both linters share, so `ptah migrations lint` and
@@ -56,6 +57,15 @@ const (
 	AlterTopic
 	// DropTopic is DROP TOPIC.
 	DropTopic
+	// DropResourcePool is DROP RESOURCE POOL. Its name is the pool's, which
+	// is not a path: a pool belongs to the database.
+	DropResourcePool
+	// DropBackupCollection is DROP BACKUP COLLECTION. Its name is the
+	// collection's.
+	DropBackupCollection
+	// Analyze is ANALYZE, which collects column statistics. Its name is the
+	// first table it names.
+	Analyze
 	// CreateAsyncReplication is CREATE ASYNC REPLICATION. Its settings are
 	// the WITH clause's.
 	CreateAsyncReplication
@@ -359,6 +369,16 @@ func Read(statement string) Statement {
 		return readAlterTopic(tokens[2:])
 	case startsWith(tokens, "DROP", "TOPIC"):
 		return readDrop(DropTopic, tokens[2:])
+	case startsWith(tokens, "DROP", "RESOURCE", "POOL", "CLASSIFIER"):
+		// A classifier, which is no pool, whatever its name.
+		return Statement{}
+	case startsWith(tokens, "DROP", "RESOURCE", "POOL"):
+		return readDrop(DropResourcePool, tokens[3:])
+	case startsWith(tokens, "DROP", "BACKUP", "COLLECTION"):
+		return readDrop(DropBackupCollection, tokens[3:])
+	case startsWith(tokens, "ANALYZE"):
+		name, _ := readName(tokens[1:])
+		return Statement{Kind: Analyze, Name: name}
 	case startsWith(tokens, "CREATE", "ASYNC", "REPLICATION"):
 		return readReplicationOrTransfer(CreateAsyncReplication, tokens[3:])
 	case startsWith(tokens, "ALTER", "ASYNC", "REPLICATION"):

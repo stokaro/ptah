@@ -28,11 +28,11 @@ import (
 )
 
 // Source is what the reader asks a YDB database: a directory's own entry and
-// the entries under it, the description of a row table, of a view or of a
-// coordination node, the description of a topic, which is how a standalone
-// topic and a changefeed's retention and consumers are read, the description
-// of an async replication or a transfer, and the database's users, groups and
-// memberships. A path is absolute.
+// the entries under it, the description of a row table, view or coordination
+// node, the description of a topic, which is how a standalone topic and a
+// changefeed's retention and consumers are read, the description of an async
+// replication or transfer, and the database's users, groups, memberships,
+// resource pools and classifiers. A path is absolute.
 //
 // A directory's own entry and a table's description each carry the object's
 // owner and its permission entries, which is where the reader reads them from:
@@ -43,6 +43,7 @@ type Source interface {
 	DescribeView(ctx context.Context, path string) (*Ydb_View.DescribeViewResult, error)
 	DescribeTopic(ctx context.Context, path string) (*Ydb_Topic.DescribeTopicResult, error)
 	Principals(ctx context.Context) (Principals, error)
+	ResourcePools(ctx context.Context) (ResourcePools, error)
 	DescribeReplication(ctx context.Context, path string) (*Ydb_Replication.DescribeReplicationResult, error)
 	DescribeTransfer(ctx context.Context, path string) (*Ydb_Replication.DescribeTransferResult, error)
 	DescribeCoordinationNode(ctx context.Context, path string) (*Ydb_Coordination.DescribeNodeResult, error)

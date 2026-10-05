@@ -125,6 +125,19 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database)
 		func(privilege schemamodel.DefaultPrivilege) bool {
 			return s.defaultPrivilegeSelected(privilege.Schema)
 		})
+	// A YDB classifier is selected on its own name, and a pool on its own or
+	// because a kept classifier sends queries to it: a description keeping
+	// the classifier and dropping its pool would name a pool it says is
+	// absent.
+	out.ResourcePoolClassifiers = keep(db.ResourcePoolClassifiers, func(classifier schemamodel.ResourcePoolClassifier) bool {
+		return s.selectedNames(typeList("resource_pool_classifier"), classifier.Name)
+	})
+	out.ResourcePools = keep(db.ResourcePools, func(pool schemamodel.ResourcePool) bool {
+		return s.selectedNames(typeList("resource_pool"), pool.Name) ||
+			slices.ContainsFunc(out.ResourcePoolClassifiers, func(classifier schemamodel.ResourcePoolClassifier) bool {
+				return classifier.Spec.ResourcePool == pool.Name
+			})
+	})
 	out.Roles = keep(db.Roles, func(role schemamodel.Role) bool {
 		if s.selectedNames(typeList("role"), role.Name) {
 			return true

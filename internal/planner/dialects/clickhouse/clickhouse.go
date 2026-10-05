@@ -113,6 +113,9 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := schemaprecondition.RefuseRoleMemberships(platform.ClickHouse, diff); err != nil {
 		return nil, err
 	}
+	if err := schemaprecondition.RefuseResourcePools(platform.ClickHouse, diff); err != nil {
+		return nil, err
+	}
 	if err := schemaprecondition.RefuseReplications(platform.ClickHouse, diff); err != nil {
 		return nil, err
 	}

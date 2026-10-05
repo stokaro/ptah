@@ -458,6 +458,12 @@ rendered for MySQL/MariaDB with dialect-specific trigger bodies.
   `partition_write_speed_bytes_per_second`, `partition_write_burst_bytes`,
   `supported_codecs`, and `consumers`, a map of consumer names to `important`,
   `read_from`, `supported_codecs` and `availability_period`
+- `resource_pools` (YDB): keyed by name, `concurrent_query_limit`,
+  `queue_size`, `database_load_cpu_threshold`,
+  `query_memory_limit_percent_per_node`, `query_cpu_limit_percent_per_node`,
+  `total_cpu_limit_percent_per_node`, `resource_weight`
+- `resource_pool_classifiers` (YDB): keyed by name, `resource_pool`,
+  `member_name`, `rank`
 - `coordination_nodes` (YDB only): `name`, `schema`, `self_check_period`,
   `session_grace_period`, `read_consistency_mode`, `attach_consistency_mode`,
   `rate_limiter_counters_mode`

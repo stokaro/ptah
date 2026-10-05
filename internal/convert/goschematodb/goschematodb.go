@@ -84,6 +84,10 @@ func ToDBSchema(db *schemamodel.Database, dialect string) *catalog.Database {
 		// A topic declared in a document stands for the topic its database
 		// would hold, so a file-to-file comparison finds it on both sides.
 		Topics: toDBTopics(db.Topics),
+		// A pool declared in a document stands for the pool its database
+		// would hold, so a file-to-file comparison finds it on both sides.
+		ResourcePools:           toDBResourcePools(db.ResourcePools),
+		ResourcePoolClassifiers: toDBResourcePoolClassifiers(db.ResourcePoolClassifiers),
 		// A replication and a transfer declared in a document stand for the
 		// ones its database would hold, so a file-to-file comparison finds
 		// each on both sides.
@@ -696,6 +700,17 @@ func toDBTopics(topics []schemamodel.Topic) []catalog.Topic {
 	return out
 }
 
+func toDBResourcePools(pools []schemamodel.ResourcePool) []catalog.ResourcePool {
+	if len(pools) == 0 {
+		return nil
+	}
+	out := make([]catalog.ResourcePool, 0, len(pools))
+	for _, pool := range pools {
+		out = append(out, catalog.ResourcePool{Name: pool.Name, Spec: pool.Spec.Clone()})
+	}
+	return out
+}
+
 func toDBAsyncReplications(replications []schemamodel.AsyncReplication) []catalog.AsyncReplication {
 	if len(replications) == 0 {
 		return nil
@@ -705,6 +720,17 @@ func toDBAsyncReplications(replications []schemamodel.AsyncReplication) []catalo
 		out = append(out, catalog.AsyncReplication{
 			Name: replication.Name, Schema: replication.Schema, Spec: replication.Spec.Clone(),
 		})
+	}
+	return out
+}
+
+func toDBResourcePoolClassifiers(classifiers []schemamodel.ResourcePoolClassifier) []catalog.ResourcePoolClassifier {
+	if len(classifiers) == 0 {
+		return nil
+	}
+	out := make([]catalog.ResourcePoolClassifier, 0, len(classifiers))
+	for _, classifier := range classifiers {
+		out = append(out, catalog.ResourcePoolClassifier{Name: classifier.Name, Spec: classifier.Spec})
 	}
 	return out
 }

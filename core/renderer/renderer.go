@@ -411,6 +411,10 @@ func prepareNode(
 		return node, refuseTopic(dialect, caps, "DROP TOPIC "+typed.Name)
 	case *ast.CreateRoleNode, *ast.DropRoleNode, *ast.GrantPrivilegeNode, *ast.RevokePrivilegeNode:
 		return node, refuseAccessNode(dialect, caps, node)
+	case *ast.CreateResourcePoolNode, *ast.AlterResourcePoolNode, *ast.DropResourcePoolNode,
+		*ast.CreateResourcePoolClassifierNode, *ast.AlterResourcePoolClassifierNode,
+		*ast.DropResourcePoolClassifierNode:
+		return node, refuseResourcePoolNode(dialect, caps, node)
 	case *ast.CreateAsyncReplicationNode, *ast.AlterAsyncReplicationNode, *ast.DropAsyncReplicationNode,
 		*ast.CreateTransferNode, *ast.AlterTransferNode, *ast.DropTransferNode:
 		key, subject := replicationNodeSubject(typed)
@@ -2268,6 +2272,9 @@ func validateDatabaseDeclarations(
 		return err
 	}
 	if err := validateDeclaredAccess(dialect, caps, database); err != nil {
+		return err
+	}
+	if err := validateDeclaredResourcePools(dialect, caps, database); err != nil {
 		return err
 	}
 	// Row-level TTL is refused here as well as at the table it belongs to,

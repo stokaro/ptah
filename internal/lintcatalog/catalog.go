@@ -635,6 +635,15 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"YD114": {
 		Summary: "a topic or consumer setting YDB accepts and keeps nothing of, such as a storage limit or a codec it does not know",
 	},
+	"YD120": {
+		Summary: "`DROP RESOURCE POOL default` on YDB, after which every query of the database fails with `Resource pool default not found`",
+	},
+	"YD121": {
+		Summary: "`DROP BACKUP COLLECTION` deletes every backup the collection holds, and stops a YDB 25.1 server",
+	},
+	"YD122": {
+		Summary: "`ANALYZE` in a migration, which YDB refuses unless `EnableColumnStatistics` is on, and on 25.1 refuses on a row table",
+	},
 	"YD115": {
 		Summary: "a `DROP ASYNC REPLICATION` without `CASCADE` of a replication not failed over, whose replica tables YDB keeps read-only for good",
 	},

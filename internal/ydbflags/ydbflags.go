@@ -113,6 +113,19 @@ var gates = []Gate{
 		refusals: []string{"Topic autopartitioning for CDC is disabled"},
 	},
 	{
+		// Off on every line from 25.1 to 26.2. Measured with the flag on
+		// at startup on each of them: a pool and a classifier are created,
+		// altered with SET and RESET, read back from .sys and dropped.
+		// EnableBackupService, which gates a backup collection, is not a
+		// gate: Ptah models no collection, so no key follows it.
+		Key:  capability.ResourcePools,
+		Flag: "EnableResourcePools",
+		refusals: []string{
+			"Resource pools are disabled",
+			"Resource pool classifiers are disabled",
+		},
+	},
+	{
 		// Off on 25.1 and on from 25.2. 25.1 answers a vector index in
 		// CREATE TABLE and in ADD INDEX with this text, and with the flag on
 		// builds it over a table holding rows and answers a search through

@@ -1474,6 +1474,51 @@ const (
 	// for consumer` on 25.1.4.7 to 25.3.1.25.
 	TopicConsumerAvailabilityPeriod Capability = "topic_consumer_availability_period"
 
+	// ResourcePools marks a target on which Ptah declares, reads and plans
+	// YDB's workload management objects: resource pools (`CREATE RESOURCE
+	// POOL`), which limit the queries that run in them, and the classifiers
+	// (`CREATE RESOURCE POOL CLASSIFIER`) that send a user's or a group's
+	// queries to a pool. Both belong to the whole database rather than to a
+	// directory, and the read takes them from `.sys/resource_pools` and
+	// `.sys/resource_pool_classifiers`, which report every setting either
+	// statement takes.
+	//
+	// It is behind YDB's EnableResourcePools flag, off by default on every
+	// line measured, 25.1.4.7 to 26.2.1.14: both statements answer `Resource
+	// pools are disabled` (`Resource pool classifiers are disabled` for a
+	// classifier). With the flag on, every one of those lines creates, alters,
+	// resets, reads back and drops both alike, so the key follows the flag
+	// wherever the cluster's flags are read.
+	ResourcePools Capability = "resource_pools"
+
+	// BackupCollections marks a target on which Ptah declares, reads and
+	// plans a YDB backup collection (`CREATE BACKUP COLLECTION`), the set of
+	// tables `BACKUP` and `RESTORE` work on. It is false on every target:
+	// Ptah does not model one.
+	//
+	// Measured on YDB 25.1.4.7 and 26.2.1.14 with the EnableBackupService
+	// flag on, which is off by default on every line from 25.1.4.7 to
+	// 26.2.1.14 (`Backup collections are disabled`): the public scheme API
+	// answers a collection with its entry alone, and no system view and no
+	// `SHOW CREATE` reports the tables or the settings it holds, so a
+	// declaration could not be compared with what the database holds; every
+	// form of `ALTER BACKUP COLLECTION` answers `Unsupported settings`, so a
+	// change would drop the collection and every backup in it; and `DROP
+	// BACKUP COLLECTION` stops a 25.1.4.7 server.
+	BackupCollections Capability = "backup_collections"
+
+	// StreamingQueries marks a target on which Ptah declares, reads and plans
+	// a YDB streaming query (`CREATE STREAMING QUERY`), a query that runs
+	// continuously over the messages of a topic. It is false on every
+	// target: no line Ptah certifies creates one with its default flags, and
+	// Ptah does not model one.
+	//
+	// Measured: 25.1.4.7 and 25.2.1.24 do not parse the statement; 25.3.1.25,
+	// 25.4.1.15 and 26.1.1.22 parse it with EnableStreamingQueries off; and
+	// 26.2.1.14, where that flag is on, refuses every topic read the query
+	// needs (`data source pq doesn't exist`) until EnableExternalDataSources
+	// is on too, and then runs the query.
+	StreamingQueries Capability = "streaming_queries"
 	// AsyncReplication marks a target on which Ptah declares, reads and plans
 	// an asynchronous replication: YDB's `CREATE ASYNC REPLICATION <name> FOR
 	// <source> AS <replica> WITH (CONNECTION_STRING = ...)`, which copies
@@ -2054,6 +2099,15 @@ var registry = map[Capability]spec{
 	TopicConsumerAvailabilityPeriod: {
 		doc: "a topic consumer keeps unread records past the retention, availability_period (YDB 25.4 and later)",
 	},
+	ResourcePools: {
+		doc: "Ptah declares, reads and plans resource pools and their classifiers (YDB's CREATE RESOURCE POOL, behind a flag)",
+	},
+	BackupCollections: {
+		doc: "Ptah declares, reads and plans a backup collection (YDB's CREATE BACKUP COLLECTION; not modeled)",
+	},
+	StreamingQueries: {
+		doc: "Ptah declares, reads and plans a streaming query (YDB's CREATE STREAMING QUERY; not modeled)",
+	},
 	AsyncReplication: {
 		doc: "Ptah declares, reads and plans an async replication of another database's tables (YDB's CREATE ASYNC REPLICATION)",
 	},
@@ -2391,9 +2445,14 @@ func MySQL84() Capabilities {
 		ChangefeedTopicAutoPartitioning: false,
 		Topics:                          false,
 		TopicConsumerAvailabilityPeriod: false,
-		SerialColumns:                   true,
-		SmallIntegerDefaults:            true,
-		DocumentTypeDefaults:            false,
+		// Resource pools, backup collections and streaming queries are
+		// YDB's, so the three keys are false here.
+		ResourcePools:        false,
+		BackupCollections:    false,
+		StreamingQueries:     false,
+		SerialColumns:        true,
+		SmallIntegerDefaults: true,
+		DocumentTypeDefaults: false,
 		// An async replication and a transfer are YDB's, so the three
 		// replication keys are false here.
 		AsyncReplication:       false,
@@ -2641,9 +2700,14 @@ func MariaDB1011() Capabilities {
 		ChangefeedTopicAutoPartitioning: false,
 		Topics:                          false,
 		TopicConsumerAvailabilityPeriod: false,
-		SerialColumns:                   true,
-		SmallIntegerDefaults:            true,
-		DocumentTypeDefaults:            false,
+		// Resource pools, backup collections and streaming queries are
+		// YDB's, so the three keys are false here.
+		ResourcePools:        false,
+		BackupCollections:    false,
+		StreamingQueries:     false,
+		SerialColumns:        true,
+		SmallIntegerDefaults: true,
+		DocumentTypeDefaults: false,
 		// An async replication and a transfer are YDB's, so the three
 		// replication keys are false here.
 		AsyncReplication:       false,
@@ -2833,9 +2897,14 @@ func Postgres16() Capabilities {
 		ChangefeedTopicAutoPartitioning: false,
 		Topics:                          false,
 		TopicConsumerAvailabilityPeriod: false,
-		SerialColumns:                   true,
-		SmallIntegerDefaults:            true,
-		DocumentTypeDefaults:            false,
+		// Resource pools, backup collections and streaming queries are
+		// YDB's, so the three keys are false here.
+		ResourcePools:        false,
+		BackupCollections:    false,
+		StreamingQueries:     false,
+		SerialColumns:        true,
+		SmallIntegerDefaults: true,
+		DocumentTypeDefaults: false,
 		// An async replication and a transfer are YDB's, so the three
 		// replication keys are false here.
 		AsyncReplication:       false,
@@ -3148,9 +3217,14 @@ func ClickHouse24() Capabilities {
 		ChangefeedTopicAutoPartitioning: false,
 		Topics:                          false,
 		TopicConsumerAvailabilityPeriod: false,
-		SerialColumns:                   false,
-		SmallIntegerDefaults:            true,
-		DocumentTypeDefaults:            false,
+		// Resource pools, backup collections and streaming queries are
+		// YDB's, so the three keys are false here.
+		ResourcePools:        false,
+		BackupCollections:    false,
+		StreamingQueries:     false,
+		SerialColumns:        false,
+		SmallIntegerDefaults: true,
+		DocumentTypeDefaults: false,
 		// An async replication and a transfer are YDB's, so the three
 		// replication keys are false here.
 		AsyncReplication:       false,
@@ -3358,9 +3432,14 @@ func SQLite3() Capabilities {
 		ChangefeedTopicAutoPartitioning: false,
 		Topics:                          false,
 		TopicConsumerAvailabilityPeriod: false,
-		SerialColumns:                   false,
-		SmallIntegerDefaults:            true,
-		DocumentTypeDefaults:            false,
+		// Resource pools, backup collections and streaming queries are
+		// YDB's, so the three keys are false here.
+		ResourcePools:        false,
+		BackupCollections:    false,
+		StreamingQueries:     false,
+		SerialColumns:        false,
+		SmallIntegerDefaults: true,
+		DocumentTypeDefaults: false,
 		// An async replication and a transfer are YDB's, so the three
 		// replication keys are false here.
 		AsyncReplication:       false,
@@ -3647,9 +3726,14 @@ func SQLServer2022() Capabilities {
 		ChangefeedTopicAutoPartitioning: false,
 		Topics:                          false,
 		TopicConsumerAvailabilityPeriod: false,
-		SerialColumns:                   false,
-		SmallIntegerDefaults:            true,
-		DocumentTypeDefaults:            false,
+		// Resource pools, backup collections and streaming queries are
+		// YDB's, so the three keys are false here.
+		ResourcePools:        false,
+		BackupCollections:    false,
+		StreamingQueries:     false,
+		SerialColumns:        false,
+		SmallIntegerDefaults: true,
+		DocumentTypeDefaults: false,
 		// An async replication and a transfer are YDB's, so the three
 		// replication keys are false here.
 		AsyncReplication:       false,
@@ -4374,9 +4458,14 @@ func Oracle23() Capabilities {
 		ChangefeedTopicAutoPartitioning: false,
 		Topics:                          false,
 		TopicConsumerAvailabilityPeriod: false,
-		SerialColumns:                   false,
-		SmallIntegerDefaults:            true,
-		DocumentTypeDefaults:            false,
+		// Resource pools, backup collections and streaming queries are
+		// YDB's, so the three keys are false here.
+		ResourcePools:        false,
+		BackupCollections:    false,
+		StreamingQueries:     false,
+		SerialColumns:        false,
+		SmallIntegerDefaults: true,
+		DocumentTypeDefaults: false,
 		// An async replication and a transfer are YDB's, so the three
 		// replication keys are false here.
 		AsyncReplication:       false,
@@ -4614,6 +4703,16 @@ func YDB262() Capabilities {
 		// consumer takes availability_period from 25.4 on.
 		Topics:                          true,
 		TopicConsumerAvailabilityPeriod: true,
+		// Workload management and backups. Resource pools and their
+		// classifiers are behind EnableResourcePools, off by default on every
+		// line from 25.1.4.7 to 26.2.1.14 (`Resource pools are disabled`), so
+		// every YDB preset says false and the cluster's flags turn the key on.
+		// Ptah models no backup collection, whose definition no public API
+		// reads back, and no streaming query, which no line creates with its
+		// default flags; see each key.
+		ResourcePools:     false,
+		BackupCollections: false,
+		StreamingQueries:  false,
 
 		// Async replication and transfers, measured on 26.2.1.14 with a
 		// replication of the server's own database: CREATE ASYNC

@@ -82,6 +82,8 @@ Top-level objects are maps. Their keys are used as default object names when a
 | `revokes` | Privileges a role must not hold, named like a grant: `role`, `privileges`, one target, and `comment`. |
 | `default_privileges` | PostgreSQL default privileges: what a grantee receives on objects a role creates later. |
 | `topics` | YDB topics: the settings their annotation takes, and `consumers` keyed by name. See [Topics](../../databases/ydb/#topics). |
+| `resource_pools` | YDB resource pools, keyed by name, with the settings of `//ptah:schema:resourcepool`. See [resource pools](../../databases/ydb/#resource-pools-and-classifiers). |
+| `resource_pool_classifiers` | YDB resource pool classifiers, keyed by name, with `resource_pool`, `member_name` and `rank`. |
 | `coordination_nodes` | YDB coordination nodes: `schema` and the settings of [`//ptah:schema:coordinationnode`](../go-annotations/#ptahschemacoordinationnode). |
 | `async_replications` | YDB async replications: the connection and consistency settings their annotation takes, and `items`, a list of `source` and `target` pairs. See [Async replications and transfers](../../databases/ydb/#async-replications-and-transfers). |
 | `transfers` | YDB transfers: `source`, `target`, `using` and the settings their annotation takes. |

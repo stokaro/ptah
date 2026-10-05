@@ -32,24 +32,26 @@ import (
 // fingerprint it already had. [Database.NotDescribed] and [Field.APIExpose]
 // spell out the reasoning.
 type Database struct {
-	Schemas           []Schema
-	Tables            []Table
-	Fields            []Field
-	Indexes           []Index
-	Constraints       []Constraint // Table-level constraints (EXCLUDE, CHECK, etc.)
-	Enums             []Enum
-	EmbeddedFields    []EmbeddedField
-	Extensions        []Extension        // PostgreSQL extensions (pg_trgm, postgis, etc.)
-	Functions         []Function         // PostgreSQL custom functions
-	Sequences         []Sequence         // PostgreSQL standalone sequences (CREATE SEQUENCE)
-	Domains           []Domain           // PostgreSQL domain types (CREATE DOMAIN)
-	CompositeTypes    []CompositeType    // PostgreSQL composite types (CREATE TYPE ... AS (...))
-	Ranges            []Range            // PostgreSQL range types (CREATE TYPE ... AS RANGE (...))
-	Views             []View             // Database views
-	Synonyms          []Synonym          // SQL Server synonyms
-	Topics            []Topic            `json:",omitempty"` // YDB topics and their consumers
-	AsyncReplications []AsyncReplication `json:",omitempty"` // YDB async replications
-	Transfers         []Transfer         `json:",omitempty"` // YDB transfers
+	Schemas                 []Schema
+	Tables                  []Table
+	Fields                  []Field
+	Indexes                 []Index
+	Constraints             []Constraint // Table-level constraints (EXCLUDE, CHECK, etc.)
+	Enums                   []Enum
+	EmbeddedFields          []EmbeddedField
+	Extensions              []Extension              // PostgreSQL extensions (pg_trgm, postgis, etc.)
+	Functions               []Function               // PostgreSQL custom functions
+	Sequences               []Sequence               // PostgreSQL standalone sequences (CREATE SEQUENCE)
+	Domains                 []Domain                 // PostgreSQL domain types (CREATE DOMAIN)
+	CompositeTypes          []CompositeType          // PostgreSQL composite types (CREATE TYPE ... AS (...))
+	Ranges                  []Range                  // PostgreSQL range types (CREATE TYPE ... AS RANGE (...))
+	Views                   []View                   // Database views
+	Synonyms                []Synonym                // SQL Server synonyms
+	Topics                  []Topic                  `json:",omitempty"` // YDB topics and their consumers
+	ResourcePools           []ResourcePool           `json:",omitempty"` // YDB resource pools
+	ResourcePoolClassifiers []ResourcePoolClassifier `json:",omitempty"` // YDB resource pool classifiers
+	AsyncReplications       []AsyncReplication       `json:",omitempty"` // YDB async replications
+	Transfers               []Transfer               `json:",omitempty"` // YDB transfers
 	// CoordinationNodes are the YDB coordination nodes the schema declares.
 	// omitempty keeps the encoding, and so the fingerprint, of every schema
 	// that declares none as it is.
@@ -210,7 +212,7 @@ type TargetNames struct {
 // The Field supports platform-specific overrides through the Overrides field:
 //
 //	//ptah:schema:field name="id" type="SERIAL" platform.mysql.type="INT AUTO_INCREMENT"
-//	ID int64
+//	    ID int64
 type Field struct {
 	StructName string // Name of the Go struct this field belongs to
 	FieldName  string // Name of the Go struct field
@@ -539,7 +541,7 @@ type Index struct {
 //	    During string // TSRANGE type
 //
 //	    //ptah:schema:constraint name="one_active_session_per_user" type="EXCLUDE" using="gist" elements="user_id WITH =" condition="is_active = true"
-//	    UserID   int64
+//	    UserID int64
 //	    IsActive bool
 //	}
 //
@@ -1369,6 +1371,36 @@ type Topic struct {
 // name alone at the database root.
 func (t Topic) QualifiedName() string {
 	return tableref.Canonical(t.Schema, t.Name)
+}
+
+// ResourcePool is a YDB resource pool: a named set of limits on the queries
+// that run in it, such as how many run at once and how much of a node's memory
+// each may take.
+//
+// A pool belongs to the whole database rather than to a directory, so it has
+// no Schema, and two pools never share a name. The database creates the pool
+// `default` itself, and every query a classifier does not send elsewhere runs
+// there; a declaration of `default` changes its settings and never creates or
+// drops it. Dialects is deliberately absent, for the reason [Synonym] gives: a
+// pool belongs to YDB and to nothing else, and every other target refuses one.
+type ResourcePool struct {
+	StructName string // Name of the Go struct this pool is associated with
+	Name       string // Pool name
+	// Spec is the pool's settings. It carries the ast type for the reason
+	// Table.RowDeletionPolicy does: the renderer, the reader and the
+	// comparison read one value rather than three copies of it.
+	Spec ast.ResourcePoolSpec
+}
+
+// ResourcePoolClassifier is a YDB resource pool classifier: a rule that sends
+// the queries of a user or a group to a resource pool. Like a pool, it belongs
+// to the whole database and is named without a directory.
+type ResourcePoolClassifier struct {
+	StructName string // Name of the Go struct this classifier is associated with
+	Name       string // Classifier name
+	// Spec is the pool the classifier sends queries to, the member whose
+	// queries it matches and its rank.
+	Spec ast.ResourcePoolClassifierSpec
 }
 
 // AsyncReplication is a YDB async replication: a copy of tables of another

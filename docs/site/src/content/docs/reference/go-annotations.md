@@ -110,6 +110,8 @@ type StatusEnumMarker struct{}
 | [`ptah:schema:matview`](#ptahschemamatview) | A materialized view | struct |
 | [`ptah:schema:topic`](#ptahschematopic) | A YDB topic | struct or field |
 | [`ptah:schema:topic:consumer`](#ptahschematopicconsumer) | A consumer of a YDB topic | struct or field |
+| [`ptah:schema:resourcepool`](#ptahschemaresourcepool) | A YDB resource pool | struct or field |
+| [`ptah:schema:resourcepool:classifier`](#ptahschemaresourcepoolclassifier) | A YDB resource pool classifier | struct or field |
 | [`ptah:schema:coordinationnode`](#ptahschemacoordinationnode) | A YDB coordination node | struct |
 | [`ptah:schema:async_replication`](#ptahschemaasync_replication) | A YDB async replication | struct or field |
 | [`ptah:schema:async_replication:item`](#ptahschemaasync_replicationitem) | A table an async replication copies | struct or field |
@@ -814,6 +816,37 @@ read position of its own.
 | `schema` | No | Directory of the topic, when it has one. |
 | `supported_codecs` | No | Codecs the consumer reads: `raw`, `gzip`, `lzop`, `zstd`, `custom`. |
 | `topic` | Yes | Topic the consumer reads. |
+
+### `//ptah:schema:resourcepool`
+
+Declares a YDB resource pool, which limits the queries that run in it. A pool
+belongs to the whole database, and a setting left out has no limit. YDB keeps
+pools behind the `EnableResourcePools` flag; see
+[resource pools](../../databases/ydb/#resource-pools-and-classifiers).
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `name` | Yes | Pool name; `default` changes the pool YDB creates. |
+| `concurrent_query_limit` | No | Most queries that run at once, a whole number. |
+| `queue_size` | No | Most queries that wait; needs `concurrent_query_limit` or `database_load_cpu_threshold`. |
+| `database_load_cpu_threshold` | No | Database CPU load in percent above which new queries wait. |
+| `query_memory_limit_percent_per_node` | No | Share of a node's memory one query may take, in percent. |
+| `query_cpu_limit_percent_per_node` | No | Share of a node's CPU one query may take, in percent. |
+| `total_cpu_limit_percent_per_node` | No | Share of a node's CPU the pool's queries take together. |
+| `resource_weight` | No | The pool's share of the CPU when pools compete, in percent. |
+
+### `//ptah:schema:resourcepool:classifier`
+
+Declares a YDB resource pool classifier, which sends a user's or a group's
+queries to a pool. Of the classifiers that match a query, the lowest rank
+decides.
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `name` | Yes | Classifier name. |
+| `resource_pool` | Yes | Pool the queries go to: a declared pool or `default`. |
+| `member_name` | No | User or group whose queries it matches; every query when omitted. |
+| `rank` | Yes | Order among the classifiers, from 0; unique. |
 
 ### `//ptah:schema:coordinationnode`
 

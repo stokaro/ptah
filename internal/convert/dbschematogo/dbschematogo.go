@@ -20,6 +20,7 @@ import (
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/pgname"
 	"ptah.run/internal/uniquename"
+	"ptah.run/internal/ydbpool"
 )
 
 // ConvertDBSchemaToGoSchema converts a database schema to goschema format
@@ -69,6 +70,7 @@ func ConvertDBSchemaToGoSchema(dbSchema *catalog.Database, dialect string) *sche
 	convertContinuousAggregates(database, dbSchema.ContinuousAggregates)
 	convertSynonyms(database, dbSchema.Synonyms)
 	convertTopics(database, dbSchema.Topics)
+	convertResourcePools(database, dbSchema.ResourcePools, dbSchema.ResourcePoolClassifiers)
 	convertReplications(database, dbSchema.AsyncReplications, dbSchema.Transfers)
 	convertCoordinationNodes(database, dbSchema.CoordinationNodes)
 	convertExtendedProperties(database, dbSchema.ExtendedProperties)
@@ -577,6 +579,33 @@ func convertTopics(database *schemamodel.Database, topics []catalog.Topic) {
 			Name:   topic.Name,
 			Schema: topic.Schema,
 			Spec:   topic.Spec.Clone(),
+		})
+	}
+}
+
+// convertResourcePools carries the YDB resource pools and classifiers a read
+// found into the IR. The pool `default` is left out while it holds no
+// setting: YDB creates it with every setting unset, so a declaration of it
+// would change nothing, and every model introspected from a database would
+// carry it.
+func convertResourcePools(
+	database *schemamodel.Database,
+	pools []catalog.ResourcePool,
+	classifiers []catalog.ResourcePoolClassifier,
+) {
+	for _, pool := range pools {
+		if pool.Name == ydbpool.DefaultPool && ydbpool.PoolsEqual(pool.Spec, ast.ResourcePoolSpec{}) {
+			continue
+		}
+		database.ResourcePools = append(database.ResourcePools, schemamodel.ResourcePool{
+			Name: pool.Name,
+			Spec: pool.Spec.Clone(),
+		})
+	}
+	for _, classifier := range classifiers {
+		database.ResourcePoolClassifiers = append(database.ResourcePoolClassifiers, schemamodel.ResourcePoolClassifier{
+			Name: classifier.Name,
+			Spec: classifier.Spec,
 		})
 	}
 }

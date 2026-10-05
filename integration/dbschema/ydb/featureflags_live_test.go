@@ -46,10 +46,9 @@ func withMonitoring(c *qt.C, raw, endpoint string) string {
 
 // The connection reads the cluster's feature flags from the monitoring
 // endpoint. The servers the contour starts leave every flag that decides a
-// capability at its line's default but one: the 25.1 server turns
-// EnableVectorIndex on, so the set the flags refine the preset into is the
-// preset with vector_indexes on there, and the preset itself on 26.2. The
-// unit tests pin what each flag does when it is set.
+// capability at its line's default except EnableResourcePools on both lines
+// and EnableVectorIndex on 25.1. The expected set includes resource_pools and
+// vector_indexes. The unit tests pin what each flag does when it is set.
 func TestYDBConnection_ReadsTheClusterFeatureFlags_HappyPath(t *testing.T) {
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {

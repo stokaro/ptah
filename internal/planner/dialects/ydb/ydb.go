@@ -62,7 +62,10 @@
 //
 // Users, groups, memberships and permissions are planned around these phases:
 // revokes, removed memberships and new or changed principals before them, new
-// memberships and grants after them, and dropped principals last.
+// memberships and grants after them, and dropped principals last. Resource
+// pools and their classifiers come between the grants and the dropped
+// principals, since a classifier names a user or a group; see
+// [Planner.planResourcePools] for their own order.
 //
 // Each node renders as statements of its own, and the executor runs one per
 // query: YDB compiles a query against the schema as it stood before the query,
@@ -199,6 +202,10 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err != nil {
 		return nil, err
 	}
+	pools, err := p.planResourcePools(diff)
+	if err != nil {
+		return nil, err
+	}
 
 	var result []ast.Node
 	result = append(result, dropReplications(diff)...)
@@ -227,6 +234,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	result = append(result, changeReplications(diff)...)
 	result = append(result, p.createViews(diff)...)
 	result = append(result, access.after...)
+	result = append(result, pools.nodes...)
 	result = append(result, access.last...)
 	return result, nil
 }

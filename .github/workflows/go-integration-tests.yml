@@ -312,10 +312,14 @@ jobs:
       # describes an async replication and a transfer through it, so
       # YDB_GRPC_SERVICES adds it; a cluster whose configuration names no
       # services starts it with the rest.
+      # EnableResourcePools is off by default on every line. The live tests
+      # enable it through YDB_FEATURE_FLAGS, and the connection reads it
+      # through the monitoring endpoint to turn resource_pools on.
       ydb:
         image: ydbplatform/local-ydb:26.2.1.14
         env:
           YDB_USE_IN_MEMORY_PDISKS: "true"
+          YDB_FEATURE_FLAGS: enable_resource_pools
           YDB_GRPC_SERVICES: replication
         options: >-
           --hostname localhost
@@ -337,8 +341,8 @@ jobs:
       # EnableVectorIndex is off by default on 25.1. The flag turns
       # vector_indexes on, which the connection reads through the monitoring
       # endpoint, so the vector index tests build their indexes on this line
-      # too; every other flag that decides a capability stays at the line's
-      # default.
+      # too. EnableResourcePools is on as above; every other flag that decides
+      # a capability stays at the line's default.
       #
       # The tag names a patch: local-ydb's short tags are branch builds, and
       # `25.1.4` is a build of stable-25-1-4 rather than a release.
@@ -348,7 +352,7 @@ jobs:
           YDB_USE_IN_MEMORY_PDISKS: "true"
           GRPC_PORT: "2137"
           MON_PORT: "8766"
-          YDB_FEATURE_FLAGS: enable_vector_index
+          YDB_FEATURE_FLAGS: enable_vector_index,enable_resource_pools
           YDB_GRPC_SERVICES: replication
         options: >-
           --hostname localhost

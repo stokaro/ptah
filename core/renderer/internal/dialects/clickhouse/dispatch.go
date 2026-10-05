@@ -159,6 +159,10 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderDropSynonym(n)
 	case *ast.CreateTopicNode, *ast.AlterTopicNode, *ast.DropTopicNode:
 		return nodedispatch.RefuseTopic(DialectName, n)
+	case *ast.CreateResourcePoolNode, *ast.AlterResourcePoolNode, *ast.DropResourcePoolNode,
+		*ast.CreateResourcePoolClassifierNode, *ast.AlterResourcePoolClassifierNode,
+		*ast.DropResourcePoolClassifierNode:
+		return nodedispatch.RefuseResourcePool(DialectName, n)
 	case *ast.CreateCoordinationNodeNode, *ast.AlterCoordinationNodeNode, *ast.DropCoordinationNodeNode:
 		// A coordination node is YDB's own object.
 		return coordinationrefusal.Node(r.Dialect(), n)

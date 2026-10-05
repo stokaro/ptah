@@ -299,6 +299,8 @@ func validateDuplicateSchemaObjectDefinitions(r *Database) error {
 		validator.compositeTypes,
 		validator.ranges,
 		validator.views,
+		validator.resourcePools,
+		validator.resourcePoolClassifiers,
 		validator.materializedViews,
 		validator.topics,
 		validator.asyncReplications,
@@ -506,6 +508,38 @@ func (v compositeDefinitionValidator) topics() error {
 		},
 		func(_ Topic, key string) error {
 			return fmt.Errorf("conflicting topic %q definitions", key)
+		},
+	)
+}
+
+// resourcePools refuses two declarations of one resource pool that differ. A
+// pool belongs to the database, so its name alone identifies it.
+func (v compositeDefinitionValidator) resourcePools() error {
+	return validateNamedDefinitions(
+		v.database.ResourcePools,
+		func(pool ResourcePool) string { return pool.Name },
+		func(pool ResourcePool) ResourcePool {
+			pool.StructName = ""
+			return pool
+		},
+		func(_ ResourcePool, key string) error {
+			return fmt.Errorf("conflicting resource pool %q definitions", key)
+		},
+	)
+}
+
+// resourcePoolClassifiers refuses two declarations of one classifier that
+// differ.
+func (v compositeDefinitionValidator) resourcePoolClassifiers() error {
+	return validateNamedDefinitions(
+		v.database.ResourcePoolClassifiers,
+		func(classifier ResourcePoolClassifier) string { return classifier.Name },
+		func(classifier ResourcePoolClassifier) ResourcePoolClassifier {
+			classifier.StructName = ""
+			return classifier
+		},
+		func(_ ResourcePoolClassifier, key string) error {
+			return fmt.Errorf("conflicting resource pool classifier %q definitions", key)
 		},
 	)
 }

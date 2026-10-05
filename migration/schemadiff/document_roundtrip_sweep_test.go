@@ -396,9 +396,11 @@ func TestRoundTrip_EveryObjectFamilySurvives(t *testing.T) {
 // topic, async replication and transfer are such families: Atlas HCL has none
 // of them, and Ptah does not invent a block the pinned binary would refuse.
 var hclUnwritableFields = map[string]coverage.Kind{
-	"Topics":            coverage.Topic,
-	"AsyncReplications": coverage.Replication,
-	"Transfers":         coverage.Transfer,
+	"Topics":                  coverage.Topic,
+	"AsyncReplications":       coverage.Replication,
+	"Transfers":               coverage.Transfer,
+	"ResourcePools":           coverage.ResourcePool,
+	"ResourcePoolClassifiers": coverage.ResourcePoolClassifier,
 }
 
 // TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped is the round trip of
@@ -411,6 +413,10 @@ func TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped(t *testing.T) {
 	c := qt.New(t)
 	db := roundTripFixture()
 	db.Topics = append(db.Topics, schemamodel.Topic{Name: "events", Schema: "public"})
+	db.ResourcePools = append(db.ResourcePools, schemamodel.ResourcePool{Name: "batch"})
+	db.ResourcePoolClassifiers = append(db.ResourcePoolClassifiers, schemamodel.ResourcePoolClassifier{
+		Name: "batch_users", Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "batch", Rank: 1},
+	})
 	db.AsyncReplications = append(db.AsyncReplications, schemamodel.AsyncReplication{Name: "mirror", Schema: "public"})
 	db.Transfers = append(db.Transfers, schemamodel.Transfer{Name: "ingest", Schema: "public"})
 	live := &catalog.Database{
@@ -426,9 +432,13 @@ func TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped(t *testing.T) {
 	diff := schemadiff.Compare(parsed, live)
 
 	c.Assert(parsed.Topics, qt.HasLen, 0)
+	c.Assert(parsed.ResourcePools, qt.HasLen, 0)
+	c.Assert(parsed.ResourcePoolClassifiers, qt.HasLen, 0)
+	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["Topics"]), qt.IsFalse)
+	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["ResourcePools"]), qt.IsFalse)
+	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["ResourcePoolClassifiers"]), qt.IsFalse)
 	c.Assert(parsed.AsyncReplications, qt.HasLen, 0)
 	c.Assert(parsed.Transfers, qt.HasLen, 0)
-	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["Topics"]), qt.IsFalse)
 	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["AsyncReplications"]), qt.IsFalse)
 	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["Transfers"]), qt.IsFalse)
 	c.Assert(diff.TopicsRemoved, qt.HasLen, 0)

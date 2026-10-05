@@ -52,6 +52,12 @@ func cloneSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 	clone.TopicsAdded = cloneTopics(diff.TopicsAdded)
 	clone.TopicsRemoved = cloneTopics(diff.TopicsRemoved)
 	clone.TopicsModified = cloneTopicDiffs(diff.TopicsModified)
+	clone.ResourcePoolsAdded = cloneResourcePools(diff.ResourcePoolsAdded)
+	clone.ResourcePoolsRemoved = cloneResourcePools(diff.ResourcePoolsRemoved)
+	clone.ResourcePoolsModified = cloneResourcePoolDiffs(diff.ResourcePoolsModified)
+	clone.ResourcePoolClassifiersAdded = slices.Clone(diff.ResourcePoolClassifiersAdded)
+	clone.ResourcePoolClassifiersRemoved = slices.Clone(diff.ResourcePoolClassifiersRemoved)
+	clone.ResourcePoolClassifiersModified = slices.Clone(diff.ResourcePoolClassifiersModified)
 	clone.AsyncReplicationsAdded = cloneAsyncReplications(diff.AsyncReplicationsAdded)
 	clone.AsyncReplicationsRemoved = cloneAsyncReplications(diff.AsyncReplicationsRemoved)
 	clone.AsyncReplicationsModified = cloneAsyncReplicationDiffs(diff.AsyncReplicationsModified)
@@ -245,6 +251,34 @@ func cloneYDBHeldSettings(settings []difftypes.YDBHeldSettings) []difftypes.YDBH
 			table.Indexes = indexes
 		}
 		clone[i] = table
+	}
+	return clone
+}
+
+// cloneResourcePools copies the pools and the settings each carries, so a
+// reversal swapping them leaves the caller's diff alone.
+func cloneResourcePools(pools difftypes.ResourcePoolChanges) difftypes.ResourcePoolChanges {
+	if pools == nil {
+		return nil
+	}
+	clone := make(difftypes.ResourcePoolChanges, len(pools))
+	for i, pool := range pools {
+		pool.Spec = pool.Spec.Clone()
+		clone[i] = pool
+	}
+	return clone
+}
+
+// cloneResourcePoolDiffs copies the changes and both specs.
+func cloneResourcePoolDiffs(changes []difftypes.ResourcePoolDiff) []difftypes.ResourcePoolDiff {
+	if changes == nil {
+		return nil
+	}
+	clone := make([]difftypes.ResourcePoolDiff, len(changes))
+	for i, change := range changes {
+		change.Desired = change.Desired.Clone()
+		change.Current = change.Current.Clone()
+		clone[i] = change
 	}
 	return clone
 }

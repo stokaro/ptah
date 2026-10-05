@@ -80,6 +80,37 @@ func RefuseTopic(dialect string, node ast.Node) error {
 	}
 }
 
+// RefuseResourcePool refuses a resource pool or classifier node on a renderer
+// whose engine has no resource pool Ptah models: every renderer but YDB's. The
+// central renderer refuses one on a target without [capability.ResourcePools]
+// before a dialect sees the node, so this answers a caller that visits the
+// node with a dialect renderer directly, whatever capability set it claims,
+// and names the renderer that refused.
+func RefuseResourcePool(dialect string, node ast.Node) error {
+	subject := "a resource pool"
+	switch typed := node.(type) {
+	case *ast.CreateResourcePoolNode:
+		subject = "resource pool " + typed.Name
+	case *ast.AlterResourcePoolNode:
+		subject = "ALTER RESOURCE POOL " + typed.Name
+	case *ast.DropResourcePoolNode:
+		subject = "DROP RESOURCE POOL " + typed.Name
+	case *ast.CreateResourcePoolClassifierNode:
+		subject = "resource pool classifier " + typed.Name
+	case *ast.AlterResourcePoolClassifierNode:
+		subject = "ALTER RESOURCE POOL CLASSIFIER " + typed.Name
+	case *ast.DropResourcePoolClassifierNode:
+		subject = "DROP RESOURCE POOL CLASSIFIER " + typed.Name
+	}
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: string(capability.ResourcePools),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s: the %s renderer writes no resource pool; a resource pool needs target "+
+			"capability %s, which only YDB has", subject, dialect, capability.ResourcePools),
+	}
+}
+
 // RefuseReplication refuses an async replication or transfer node on a
 // renderer whose engine has neither: every renderer but YDB's. The central
 // renderer refuses one on a target without the capability before a dialect

@@ -253,6 +253,9 @@ func measuredLines() map[string]measuredLine {
 				capability.SerialSequenceOptions:           serialKeyCarried,
 				capability.SerialSequenceKeepsRange:        serialKeyCarried,
 				capability.Topics:                          topicKeyCarried,
+				capability.ResourcePools:                   workloadKeyCarried,
+				capability.BackupCollections:               workloadKeyCarried,
+				capability.StreamingQueries:                workloadKeyCarried,
 				capability.SmallIntegerDefaults:            typeKeyCarried,
 				capability.DocumentTypeDefaults:            typeKeyCarried,
 				capability.ReturningClause:                 queryKeyCarried,
@@ -424,6 +427,9 @@ func measuredLines() map[string]measuredLine {
 				capability.SerialSequenceOptions:           serialKeyCarried,
 				capability.SerialSequenceKeepsRange:        serialKeyCarried,
 				capability.Topics:                          topicKeyCarried,
+				capability.ResourcePools:                   workloadKeyCarried,
+				capability.BackupCollections:               workloadKeyCarried,
+				capability.StreamingQueries:                workloadKeyCarried,
 				capability.SmallIntegerDefaults:            typeKeyCarried,
 				capability.DocumentTypeDefaults:            typeKeyCarried,
 				capability.ReturningClause:                 queryKeyCarried,
@@ -596,6 +602,9 @@ func measuredLines() map[string]measuredLine {
 				capability.SerialSequenceOptions:           serialKeyCarried,
 				capability.SerialSequenceKeepsRange:        serialKeyCarried,
 				capability.Topics:                          topicKeyCarried,
+				capability.ResourcePools:                   workloadKeyCarried,
+				capability.BackupCollections:               workloadKeyCarried,
+				capability.StreamingQueries:                workloadKeyCarried,
 				capability.SmallIntegerDefaults:            typeKeyCarried,
 				capability.DocumentTypeDefaults:            typeKeyCarried,
 				capability.ReturningClause:                 queryKeyCarried,
@@ -778,6 +787,13 @@ const topicKeyCarried = "this run predates the key and sent no topic experiment;
 // here is the preset's.
 const serialKeyCarried = "this run predates the key and sent no serial sequence experiment; the probe asks it " +
 	"on every run through those experiments, and the value here is the preset's"
+
+// workloadKeyCarried is why the keys about YDB's resource pools, backup
+// collections and streaming queries are carried on every measured line: the
+// run named there predates them. Each names an object family only YDB has, the
+// probe asks each on every run, and the value here is the preset's.
+const workloadKeyCarried = "this run predates the key and sent no experiment for its object family; the " +
+	"probe asks it on every run, and the value here is the preset's"
 
 // columnFamilyKeyCarried is why the keys about a YDB row table's column
 // families are carried on these lines: the run predates them. The probe asks

@@ -44,16 +44,16 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-511 fields are reachable from the desired schema, and each one carries
+529 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 445 | reaches rendered SQL on at least one target |
+| `ddl` | 461 | reaches rendered SQL on at least one target |
 | `comparison` | 8 | read when two schemas are compared, and written into no statement |
 | `planning` | 7 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
-| `source` | 20 | identifies the source text the declaration was read from |
+| `source` | 22 | identifies the source text the declaration was read from |
 | `export` | 10 | what a generated document carries, or reports that it cannot |
 | `data` | 11 | reference or seed rows, which are not DDL |
 
@@ -107,6 +107,16 @@ None.
 | `ast.ReplicationConnectionSpec.TokenSecretName` | `ddl` | — |
 | `ast.ReplicationConnectionSpec.TokenSecretPath` | `ddl` | — |
 | `ast.ReplicationConnectionSpec.User` | `ddl` | — |
+| `ast.ResourcePoolClassifierSpec.MemberName` | `ddl` | — |
+| `ast.ResourcePoolClassifierSpec.Rank` | `ddl` | — |
+| `ast.ResourcePoolClassifierSpec.ResourcePool` | `ddl` | — |
+| `ast.ResourcePoolSpec.ConcurrentQueryLimit` | `ddl` | — |
+| `ast.ResourcePoolSpec.DatabaseLoadCPUThreshold` | `ddl` | — |
+| `ast.ResourcePoolSpec.QueryCPULimitPercentPerNode` | `ddl` | — |
+| `ast.ResourcePoolSpec.QueryMemoryLimitPercentPerNode` | `ddl` | — |
+| `ast.ResourcePoolSpec.QueueSize` | `ddl` | — |
+| `ast.ResourcePoolSpec.ResourceWeight` | `ddl` | — |
+| `ast.ResourcePoolSpec.TotalCPULimitPercentPerNode` | `ddl` | — |
 | `ast.RowDeletionPolicySpec.Column` | `ddl` | — |
 | `ast.RowDeletionPolicySpec.Interval` | `ddl` | — |
 | `ast.RowDeletionPolicySpec.Unit` | `ddl` | — |
@@ -248,6 +258,8 @@ None.
 | `schemamodel.Database.RLSEnabledTables` | `ddl` | — |
 | `schemamodel.Database.RLSPolicies` | `ddl` | — |
 | `schemamodel.Database.Ranges` | `ddl` | — |
+| `schemamodel.Database.ResourcePoolClassifiers` | `ddl` | — |
+| `schemamodel.Database.ResourcePools` | `ddl` | — |
 | `schemamodel.Database.RevokedGrants` | `ddl` | — |
 | `schemamodel.Database.Roles` | `ddl` | — |
 | `schemamodel.Database.Schemas` | `ddl` | — |
@@ -469,6 +481,12 @@ None.
 | `schemamodel.Range.Subtype` | `ddl` | — |
 | `schemamodel.Range.SubtypeDiff` | `ddl` | — |
 | `schemamodel.Range.SubtypeOpClass` | `ddl` | — |
+| `schemamodel.ResourcePool.Name` | `ddl` | — |
+| `schemamodel.ResourcePool.Spec` | `ddl` | — |
+| `schemamodel.ResourcePool.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
+| `schemamodel.ResourcePoolClassifier.Name` | `ddl` | — |
+| `schemamodel.ResourcePoolClassifier.Spec` | `ddl` | — |
+| `schemamodel.ResourcePoolClassifier.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.Role.Comment` | `ddl` | — |
 | `schemamodel.Role.CreateDB` | `ddl` | — |
 | `schemamodel.Role.CreateRole` | `ddl` | — |

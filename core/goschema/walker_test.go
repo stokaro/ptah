@@ -1612,9 +1612,14 @@ func TestParseDir_AllIntegrationFixturesRemainParsable(t *testing.T) {
 func TestParseDir_ReflectionGuard(t *testing.T) {
 	c := qt.New(t)
 
+	// Fixture 023 carries every object kind a PostgreSQL render takes,
+	// refused or skipped. A YDB topic, and a YDB resource pool with its
+	// classifier, are refused by every target but YDB, so each has a fixture
+	// of its own, and the guard reads all three.
 	fixtureDirs := []string{
 		"../../integration/internal/fixtures/entities/023-go-annotations-objects",
 		"../../integration/internal/fixtures/entities/048-ydb-topics",
+		"../../integration/internal/fixtures/entities/054-ydb-resource-pools",
 		"../../integration/internal/fixtures/entities/049-ydb-coordination-nodes",
 		"../../integration/internal/fixtures/entities/050-ydb-replication",
 	}

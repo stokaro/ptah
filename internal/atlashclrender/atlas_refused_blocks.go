@@ -167,7 +167,7 @@ var blockCoverageKinds = map[string]coverage.Kind{
 // document describes everything Ptah models and claims so by carrying no
 // record.
 func (r *renderer) notDescribed() coverage.Set {
-	set := r.topicsNotDescribed().With(r.replicationsNotDescribed().Objects...)
+	set := r.topicsNotDescribed().Merge(r.resourcePoolsNotDescribed()).Merge(r.replicationsNotDescribed())
 	if !r.omitAtlasRefusedBlocks {
 		return set
 	}
