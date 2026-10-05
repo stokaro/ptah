@@ -680,7 +680,9 @@ The local index capabilities follow the cluster flags
 `monitoring=http://host:8765`, or an HTTPS monitoring endpoint for a connection
 using TLS credentials. `DescribeTable` omits local indexes; Ptah supplements
 it with the monitoring schema description. Unmodeled column settings are
-refused to prevent an export from losing them.
+refused to prevent an export from losing them. Bloom indexes created inside
+`CREATE TABLE` or added with `ALTER TABLE` both round-trip with their default
+storage settings.
 
 HCL and DBML cannot declare column storage. HCL export warns about the missing
 storage settings, and applying either format to an existing column table keeps
