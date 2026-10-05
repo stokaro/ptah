@@ -668,6 +668,9 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"YD141": {
 		Summary: "an external data source that names its credential by a deprecated secret object (`..._SECRET_NAME`), whose value the database administrator reads in clear",
 	},
+	"YD150": {
+		Summary: "a dropped or renamed column or index whose comment stays on the YDB table as an attribute under its old name",
+	},
 }
 
 // sqlRuleMeta declares the same facts for the standalone SQL linter, which

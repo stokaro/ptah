@@ -9,7 +9,6 @@ import (
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbfamily"
-	"ptah.run/internal/ydbgap"
 	"ptah.run/internal/ydbtype"
 )
 
@@ -57,6 +56,13 @@ func (r *Renderer) alterStatement(table string, operation ast.AlterOperation) ([
 			return nil, err
 		}
 		statements := []string{prefix + clause + ";"}
+		if op.Column.Comment != "" {
+			comment, err := r.setComment(table, &ast.SetCommentOperation{Column: op.Column.Name, Comment: op.Column.Comment})
+			if err != nil {
+				return nil, err
+			}
+			statements = append(statements, comment...)
+		}
 		if !op.Column.Unique || r.caps.Has(capability.UniqueConstraints) {
 			return statements, nil
 		}
@@ -119,9 +125,13 @@ func (r *Renderer) alterStatement(table string, operation ast.AlterOperation) ([
 	case *ast.RenameTableOperation:
 		return []string{prefix + "RENAME TO " + tablePath(op.NewName) + ";"}, nil
 	case *ast.SetCommentOperation:
-		return nil, refuseGap(ydbgap.Comments, "the comment on "+subject)
+		return r.setComment(table, op)
 	case *ast.SetConstraintCommentOperation:
-		return nil, refuseGap(ydbgap.Comments, "the comment on a constraint of "+subject)
+		// YDB names no constraint: the key has no name, and a UNIQUE
+		// constraint is the unique index it renders as, whose comment is the
+		// index's.
+		return nil, r.keyed(capability.ConstraintComments, "constraint comment",
+			fmt.Sprintf("the comment on constraint %q of %s", op.Constraint, subject))
 	case *ast.ModifyTTLOperation:
 		return nil, refuseFact(subject, "MODIFY TTL is ClickHouse's")
 	case *ast.SetRowTTLOperation, *ast.ResetRowTTLOperation:

@@ -269,9 +269,12 @@ func joinSource(existing, next string) string {
 // statements after it in the same query.
 const definition Kind = 0
 
-// schemeVerbs are the first keywords of a YQL scheme statement.
+// schemeVerbs are the first keywords of a YQL scheme statement. COMMENT is
+// Ptah's own statement rather than YQL's: Ptah's YDB connection runs it
+// through the table service as a change of a table's user attributes, which
+// is a scheme operation and takes the statement alone (internal/ydbcomment).
 var schemeVerbs = []string{
-	"CREATE", "ALTER", "DROP", "GRANT", "REVOKE", "TRUNCATE", "ANALYZE", "BACKUP", "RESTORE",
+	"CREATE", "ALTER", "DROP", "GRANT", "REVOKE", "TRUNCATE", "ANALYZE", "BACKUP", "RESTORE", "COMMENT",
 }
 
 // definitionVerbs are the first keywords of a statement that defines a name or

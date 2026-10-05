@@ -12,8 +12,11 @@ import (
 	"strconv"
 
 	"github.com/ydb-platform/ydb-go-genproto/Ydb_Coordination_V1"
+	"github.com/ydb-platform/ydb-go-genproto/Ydb_Scheme_V1"
+	"github.com/ydb-platform/ydb-go-genproto/Ydb_Table_V1"
 	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
 
+	"ptah.run/internal/ydbcomment"
 	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbsecret"
 )
@@ -126,7 +129,22 @@ type connState struct {
 // read with it, so a relative path names a node inside a dev realm as it names
 // a table there. It is refused inside a transaction, where it could not be
 // rolled back, and with arguments, which it takes none of.
+// A query that runs one of Ptah's comment statements (see
+// [ydbcomment.Recognize]) is not sent to YDB, which has no COMMENT statement:
+// it is run through the table service as a change of the object's user
+// attributes, outside any transaction, as YDB runs every scheme statement
+// (see [RunCommentStatement]). The connection's prefix is read with it, so a
+// relative path names an object inside a dev realm as it names a table
+// there. It is refused inside a transaction, where it could not be rolled
+// back, and with arguments, which it takes none of.
 func (c conn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	comment, recognized, err := ydbcomment.Recognize(c.prefix + query)
+	switch {
+	case err != nil:
+		return nil, err
+	case recognized:
+		return c.runComment(ctx, comment, args)
+	}
 	coordination, recognized, err := ydbcoordination.Recognize(c.prefix + query)
 	switch {
 	case err != nil:
@@ -166,10 +184,39 @@ func (c conn) runCoordination(ctx context.Context, query ydbcoordination.Query, 
 	return driver.ResultNoRows, nil
 }
 
+// runComment runs one of Ptah's comment statements through the scheme and
+// table services of the driver the connection belongs to.
+func (c conn) runComment(ctx context.Context, query ydbcomment.Query, args []driver.NamedValue) (driver.Result, error) {
+	switch {
+	case len(args) > 0:
+		return nil, fmt.Errorf("%w: a comment statement takes no arguments, and %d were given",
+			ydbcomment.ErrStatement, len(args))
+	case c.state != nil && c.state.inTransaction:
+		return nil, fmt.Errorf("%w: a comment statement runs outside a transaction, as YDB runs every "+
+			"scheme statement, and this connection has one open", ydbcomment.ErrStatement)
+	case c.driver == nil:
+		return nil, errNoTableService
+	}
+	root := c.root
+	if root == "" {
+		root = c.driver.Name()
+	}
+	connection := ydbsdk.GRPCConn(c.driver)
+	service := newGRPCAttributes(Ydb_Scheme_V1.NewSchemeServiceClient(connection), Ydb_Table_V1.NewTableServiceClient(connection))
+	if err := RunCommentStatement(ctx, service, c.driver.Name(), root, query); err != nil {
+		return nil, err
+	}
+	return driver.ResultNoRows, nil
+}
+
 // QueryContext runs a query after the connection's prefix and wraps the result
 // set it returns, expanding secret references as ExecContext does. A
-// coordination node statement returns no rows and is refused here.
+// coordination node or comment statement returns no rows and is refused here.
 func (c conn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+	if _, recognized, err := ydbcomment.Recognize(query); err != nil || recognized {
+		return nil, errors.Join(err, fmt.Errorf("%w: a comment statement returns no rows; execute it",
+			ydbcomment.ErrStatement))
+	}
 	if _, recognized, err := ydbcoordination.Recognize(query); err != nil || recognized {
 		return nil, errors.Join(err, fmt.Errorf("%w: a coordination node statement returns no rows; execute it",
 			ydbcoordination.ErrStatement))

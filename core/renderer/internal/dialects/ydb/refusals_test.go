@@ -1,7 +1,6 @@
 package ydb_test
 
 import (
-	"regexp"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -10,7 +9,6 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer/internal/dialects/ydb"
-	"ptah.run/internal/ydbgap"
 )
 
 // keyed builds a one-column table whose single column is col, keyed on id.
@@ -277,13 +275,7 @@ func TestRender_RefusesWhatYDBCannotHold_FailurePath(t *testing.T) {
 		{name: "a character set that is not UTF-8",
 			node:    keyed(&ast.ColumnNode{Name: "n", Type: "TEXT", Nullable: true, Charset: "latin1"}),
 			wantErr: `column "n" of table "t": YDB stores text as UTF-8 only, .*`},
-		{name: "a table comment",
-			node:    &ast.CreateTableNode{Name: "t", Comment: "x", Columns: []*ast.ColumnNode{ast.NewColumn("id", "BIGINT").SetPrimary()}},
-			wantErr: `the comment on table "t": ` + regexp.QuoteMeta(ydbgap.Comments.Message())},
-		{name: "a column comment",
-			node:    keyed(&ast.ColumnNode{Name: "n", Type: "TEXT", Nullable: true, Comment: "x"}),
-			wantErr: `the comment on column "n" of table "t": storing a comment on a YDB object is not implemented yet .*`},
-		{name: "two table options name the first in order",
+		{name: "two YDB table settings name the first in order",
 			node:    &ast.CreateTableNode{Name: "t", Options: map[string]string{"TTL": "x", "AUTO_PARTITIONING_BY_SIZE": "ENABLED"}, Columns: []*ast.ColumnNode{ast.NewColumn("id", "BIGINT").SetPrimary()}},
 			wantErr: `table "t": the YDB renderer writes no table option AUTO_PARTITIONING_BY_SIZE=ENABLED; a table's YDB settings .*`},
 		{name: "a YDB table setting as a table option",
@@ -299,8 +291,6 @@ func TestRender_RefusesWhatYDBCannotHold_FailurePath(t *testing.T) {
 		{name: "a view with SQL Server's attributes",
 			node:    &ast.CreateViewNode{Name: "v", Body: "SELECT 1 AS a", Attributes: []string{"SCHEMABINDING"}},
 			wantErr: `WITH SCHEMABINDING on view v: a YDB view takes the security_invoker option alone, .*`},
-		{name: "a view comment", node: &ast.CreateViewNode{Name: "v", Body: "SELECT 1 AS a", Comment: "x"},
-			wantErr: `the comment on view v: ` + regexp.QuoteMeta(ydbgap.Comments.Message())},
 		{name: "a dropped view with CASCADE", node: &ast.DropViewNode{Name: "v", Cascade: true},
 			wantErr: `DROP VIEW v CASCADE: YDB's DROP VIEW has no CASCADE`},
 		{name: "a default privilege", node: ast.NewDefaultPrivilege("owner", "app", "TABLES", "reader", nil),

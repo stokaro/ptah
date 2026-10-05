@@ -20,7 +20,7 @@ func planFor(dialect string) (plan, bool) {
 	if !ok {
 		return plan{}, false
 	}
-	withComments := withConstraintComments(withObjectComments(family, normalized), normalized)
+	withComments := withCommentAttributes(withConstraintComments(withObjectComments(family, normalized), normalized), normalized)
 	withKeys := withInvisibleIndexes(withEnforcementAndMatch(withDeferrableKeys(withComments, normalized), normalized), normalized)
 	withTypes := withTypeKeys(withSchemaChanges(withKeys, normalized), normalized)
 	withFamilies := withViewKeys(withSerialKeys(withIndexKeys(withQueryKeys(withTypes, normalized), normalized), normalized), normalized)

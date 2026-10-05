@@ -2,6 +2,7 @@ package ydb_test
 
 import (
 	"regexp"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -132,6 +133,36 @@ func TestGenerateMigrationAST_TableRebuild_HappyPath(t *testing.T) {
 				"DROP TABLE `app/__ptah_replaced_items`;\n")
 		})
 	}
+}
+
+// A rebuilt table is a new table, so its comments are written onto it from
+// the declaration before the swap, and the swap takes them along: YDB moves a
+// table's attributes with ALTER TABLE ... RENAME TO (measured on 25.1.4.7 and
+// 26.2.1.14). A changed comment on a rebuilt table therefore needs no
+// statement of its own, and neither does a changed index comment.
+func TestGenerateMigrationAST_TableRebuild_CarriesComments(t *testing.T) {
+	c := qt.New(t)
+	label := field("label", "TEXT", true)
+	label.Comment = "Shown name"
+	desired := appItems(label, field("n", "BIGINT", true))
+	desired.Table.Comment = "Items"
+	desired.Indexes[0].Comment = "By name"
+	diff := modified(difftypes.TableDiff{
+		TableName: "app.items", Desired: desired,
+		CommentChange:   &difftypes.CommentChange{Current: "old", Desired: "Items"},
+		ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}},
+	})
+	diff.IndexCommentsChanged = []difftypes.IndexCommentChange{
+		{TableName: "app.items", Name: "items_label", Current: "old", Desired: "By name"},
+	}
+
+	got := renderRebuild(c, capability.YDB262(), diff)
+
+	c.Assert(got, qt.Contains, "COMMENT ON TABLE `app/__ptah_rebuild_items` IS 'Items';\n"+
+		"COMMENT ON COLUMN `app/__ptah_rebuild_items`.`label` IS 'Shown name';\n"+
+		"COMMENT ON INDEX `items_label` ON `app/__ptah_rebuild_items` IS 'By name';\n"+
+		"INSERT INTO `app/__ptah_rebuild_items`")
+	c.Assert(strings.Count(got, "COMMENT ON"), qt.Equals, 3)
 }
 
 // A key change arrives as a change to the key constraint and no modification
@@ -338,14 +369,6 @@ func TestGenerateMigrationAST_TableRebuild_FailurePath(t *testing.T) {
 			diff: &difftypes.SchemaDiff{ConstraintsRemoved: difftypes.ConstraintRemovals{
 				{Name: "pk", TableName: "app.items", Type: "PRIMARY KEY"}}},
 			wantErr: `rebuilding table "app.items": the plan carries no declaration of the table to write the new one from`,
-		},
-		{
-			name: "a comment on the rebuilt table",
-			caps: capability.YDB262(),
-			diff: modified(difftypes.TableDiff{TableName: "app.items",
-				Desired:       appItems(field("label", "TEXT", true), field("n", "BIGINT", true)),
-				CommentChange: &difftypes.CommentChange{Desired: "items"}, ColumnsModified: typeChange}),
-			wantErr: `the comment on table "app.items": .*`,
 		},
 	}
 	for _, test := range tests {

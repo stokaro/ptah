@@ -11,8 +11,9 @@ import (
 	"ptah.run/internal/schemaprep"
 )
 
-// uniqueAccounts is a table with a named UNIQUE, an unnamed one, a column's
-// own UNIQUE, a UNIQUE over the key and one the renderer refuses.
+// uniqueAccounts is a table with a named and commented UNIQUE, an unnamed
+// one, a column's own UNIQUE, a UNIQUE over the key and one the renderer
+// refuses.
 func uniqueAccounts() *schemamodel.Database {
 	return &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "Account", Name: "accounts", Schema: "app"}},
@@ -24,7 +25,7 @@ func uniqueAccounts() *schemamodel.Database {
 		},
 		Constraints: []schemamodel.Constraint{
 			{StructName: "Account", Name: "uq_tenant_login", Type: "UNIQUE", Columns: []string{"tenant", "login"},
-				IncludeColumns: []string{"email"}},
+				IncludeColumns: []string{"email"}, Comment: "One login per tenant"},
 			{StructName: "Account", Type: "unique", Columns: []string{"login"}},
 			{StructName: "Account", Name: "uq_id", Type: "UNIQUE", Columns: []string{"id"}},
 			{StructName: "Account", Name: "uq_later", Type: "UNIQUE", Columns: []string{"tenant"}, Deferrable: true},
@@ -34,9 +35,10 @@ func uniqueAccounts() *schemamodel.Database {
 }
 
 // TestUniqueConstraintsAsIndexesFor_HappyPath writes each UNIQUE a YDB target
-// holds as a unique index under the name the renderer gives it, folds the one
-// over the key, and leaves a constraint the renderer refuses, and every other
-// kind, as it was. The input is not changed.
+// holds as a unique index under the name the renderer gives it, with the
+// constraint's comment, folds the one over the key, and leaves a constraint
+// the renderer refuses, and every other kind, as it was. The input is not
+// changed.
 func TestUniqueConstraintsAsIndexesFor_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	database := uniqueAccounts()
@@ -45,7 +47,7 @@ func TestUniqueConstraintsAsIndexesFor_HappyPath(t *testing.T) {
 
 	c.Assert(lowered.Indexes, qt.DeepEquals, []schemamodel.Index{
 		{StructName: "Account", Name: "uq_tenant_login", Fields: []string{"tenant", "login"}, Unique: true,
-			IncludeColumns: []string{"email"}},
+			IncludeColumns: []string{"email"}, Comment: "One login per tenant"},
 		{StructName: "Account", Name: "accounts_login_key", Fields: []string{"login"}, Unique: true},
 		{StructName: "Account", Name: "accounts_email_key", Fields: []string{"email"}, Unique: true},
 	})

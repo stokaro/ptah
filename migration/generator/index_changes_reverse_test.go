@@ -66,3 +66,39 @@ func TestPlanBidirectionalSchemaDiff_IndexChangesInPlaceRollBack(t *testing.T) {
 		qt.Commentf("the reversal must not write through to the forward diff"))
 	c.Assert(diff.IndexPartitioningChanged[0].Partitioning.MinPartitions, qt.Equals, uint64(4))
 }
+
+// A rollback writes each index comment back to the one the database held, and
+// a renamed index's comment back under its old name, removing it from the new
+// one, after the index is renamed back. The forward diff is left as it was.
+func TestPlanBidirectionalSchemaDiff_IndexCommentsRollBack(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{
+		IndexesRenamed: []difftypes.IndexRename{{TableName: "items", From: "items_a", To: "items_by_a"}},
+		IndexCommentsChanged: []difftypes.IndexCommentChange{
+			{TableName: "items", Name: "items_by_a", From: "items_a", Current: "Old", Desired: "New"},
+			{TableName: "items", Name: "items_b", Current: "Kept", Desired: ""},
+		},
+	}
+
+	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
+		Diff:          diff,
+		DesiredSchema: &schemamodel.Database{},
+		CurrentSchema: &catalog.Database{},
+		Dialect:       platform.YDB,
+		Capabilities:  capability.YDB262(),
+	})
+	c.Assert(err, qt.IsNil)
+	sql, err := renderer.RenderSQLWithCapabilities(platform.YDB, capability.YDB262(), plan.Reverse.Nodes...)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.Reverse.Diff.IndexCommentsChanged, qt.DeepEquals, []difftypes.IndexCommentChange{
+		{TableName: "items", Name: "items_a", From: "items_by_a", Current: "New", Desired: "Old"},
+		{TableName: "items", Name: "items_b", Current: "", Desired: "Kept"},
+	})
+	c.Assert(sql, qt.Equals, "ALTER TABLE `items` RENAME INDEX `items_by_a` TO `items_a`;\n"+
+		"COMMENT ON INDEX `items_a` ON `items` IS 'Old';\n"+
+		"COMMENT ON INDEX `items_by_a` ON `items` IS NULL;\n"+
+		"COMMENT ON INDEX `items_b` ON `items` IS 'Kept';\n")
+	c.Assert(diff.IndexCommentsChanged[0].Name, qt.Equals, "items_by_a",
+		qt.Commentf("the reversal must not write through to the forward diff"))
+}

@@ -7,7 +7,6 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/tableref"
-	"ptah.run/internal/ydbgap"
 	"ptah.run/internal/ydbindex"
 )
 
@@ -67,8 +66,6 @@ func uniqueConstraintIndex(table string, constraint *ast.ConstraintNode) (*ast.I
 		return nil, refuseFact(subject, fmt.Sprintf("it names the index method %q, and a YDB unique index is a global one", constraint.UsingMethod))
 	case constraint.KeyBlockSize != 0:
 		return nil, refuseFact(subject, "KEY_BLOCK_SIZE is the MySQL family's")
-	case constraint.Comment != "":
-		return nil, refuseGap(ydbgap.Comments, "the comment on "+subject)
 	}
 	for _, part := range constraint.ColumnParts {
 		if part.Expr != "" || part.Desc || part.Prefix != "" {
@@ -83,6 +80,9 @@ func uniqueConstraintIndex(table string, constraint *ast.ConstraintNode) (*ast.I
 		Unique:         true,
 		IncludeColumns: constraint.IncludeColumns,
 		NullsDistinct:  constraint.NullsDistinct,
+		// The constraint is the index on YDB, so its comment is the
+		// index's.
+		Comment: constraint.Comment,
 	}, nil
 }
 

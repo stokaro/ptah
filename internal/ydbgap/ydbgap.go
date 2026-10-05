@@ -12,9 +12,9 @@
 // The renderer, the planner, the connection, the schema reader, the schema
 // writer, the versioned migrator, both linters, the query builder, the data
 // layer -- the data diff, declared rows and seeds -- the dev databases, views,
-// a table's TTL, changefeeds, column families and partitioning settings, and
+// a table's TTL, changefeeds, column families, partitioning settings and comments, and
 // the access model -- users, groups, memberships and permissions -- exist. The
-// object families they do not carry yet -- comments, the index kinds beyond
+// object families they do not carry yet -- the index kinds beyond
 // global ones -- are layers here too, because a declaration of one reaches the
 // renderer by name, and a database holding one reaches the reader, and each
 // has to be refused there rather than handled as something else. So are the
@@ -41,10 +41,6 @@ const (
 	// dialect has. It lands with the object families, because each family
 	// brings the clauses the parser has to read.
 	SchemaFiles Layer = iota + 1
-	// Comments is storing a comment on a table, a column or an index. YQL has
-	// no COMMENT statement; the comments family stores them as table
-	// attributes through the scheme API.
-	Comments
 	// IndexFamilies is the index kinds beyond a row table's global and
 	// vector indexes: full-text and JSON indexes, and a column table's local
 	// ones.
@@ -75,8 +71,6 @@ func (l Layer) work() string {
 	switch l {
 	case SchemaFiles:
 		return "reading a YDB schema file"
-	case Comments:
-		return "storing a comment on a YDB object"
 	case IndexFamilies:
 		return "reading or creating a YDB full-text, JSON or column-table index"
 	case Inference:
@@ -90,7 +84,7 @@ func (l Layer) work() string {
 // that names no layer.
 func (l Layer) Phase() int {
 	switch l {
-	case SchemaFiles, Comments, IndexFamilies:
+	case SchemaFiles, IndexFamilies:
 		return 10
 	case Inference:
 		return 12
@@ -112,8 +106,6 @@ func (l Layer) Unsupported() string {
 	switch l {
 	case SchemaFiles:
 		return "a YQL file as the desired schema (Go structs and YAML schemas work)"
-	case Comments:
-		return "comments on tables, columns and indexes"
 	case IndexFamilies:
 		return "full-text, JSON and column-table indexes"
 	case Inference:
