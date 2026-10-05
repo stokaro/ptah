@@ -17,9 +17,8 @@ import (
 // withWorkloadKeys answers the keys about YDB's resource pools, backup
 // collections and streaming queries.
 //
-// On YDB, resource_pools is asked in YDB's spelling and read back through
-// Ptah's reader. The other two name families Ptah does not model, and each
-// is declared with the reason a probe does not create one; see
+// On YDB, pools and stopped streaming queries are created and read back
+// through Ptah's reader. Backup collections remain unmodeled; see
 // [ydbWorkloadUndecided]. On every other engine all three are declared: each
 // names an object only YDB has, and SQL Server's Resource Governor has a
 // `CREATE RESOURCE POOL` of its own, which creates a server-wide object a
@@ -29,7 +28,7 @@ func withWorkloadKeys(p plan, dialect string) plan {
 		p.undecided = make(map[capability.Capability]string)
 	}
 	if platform.NormalizeDialect(dialect) == platform.YDB {
-		p.experiments = append(p.experiments, ydbResourcePools())
+		p.experiments = append(p.experiments, ydbResourcePools(), ydbStreamingQueries())
 		maps.Copy(p.undecided, ydbWorkloadUndecided())
 		return p
 	}
@@ -38,8 +37,7 @@ func withWorkloadKeys(p plan, dialect string) plan {
 		"Server's Resource Governor pools, are another thing and outlive any namespace a probe makes"
 	p.undecided[capability.BackupCollections] = "the key names a YDB backup collection, which Ptah models on " +
 		"no engine"
-	p.undecided[capability.StreamingQueries] = "the key names a YDB streaming query, which Ptah models on no " +
-		"engine"
+	p.undecided[capability.StreamingQueries] = "the key names a YDB streaming query; only the YDB planner renders and reads this object family"
 	return p
 }
 
@@ -51,11 +49,6 @@ func ydbWorkloadUndecided() map[capability.Capability]string {
 			"collection, which it does not: no public API reads one back. A probe does not create one to " +
 			"measure the server either, because its teardown would be DROP BACKUP COLLECTION, which stops a " +
 			"25.1.4.7 server, measured",
-		capability.StreamingQueries: "the key names whether Ptah declares, reads and plans a streaming query, " +
-			"which it does not. No certified line creates one with its default flags: 25.1.4.7 does not parse " +
-			"CREATE STREAMING QUERY, and 26.2.1.14 refuses the topic read every one needs (`data source pq " +
-			"doesn't exist`). A probe does not send one either: measured on 26.2.1.14, a CREATE that answers " +
-			"SCHEME_ERROR because the query fails to start still leaves the query behind, FAILED",
 	}
 }
 

@@ -371,14 +371,18 @@ func (ctx *renderContext) hasGlobalObjects() bool {
 		len(ctx.db.Domains) > 0 ||
 		len(ctx.db.Ranges) > 0 ||
 		len(ctx.db.Sequences) > 0 ||
-		len(ctx.db.Topics) > 0 ||
+		ctx.hasYDBObjects() || ctx.hasExternalObjects()
+}
+
+// hasYDBObjects reports declarations of the YDB-specific global families.
+func (ctx *renderContext) hasYDBObjects() bool {
+	return len(ctx.db.Topics) > 0 ||
 		len(ctx.db.ResourcePools) > 0 ||
 		len(ctx.db.ResourcePoolClassifiers) > 0 ||
 		len(ctx.db.AsyncReplications) > 0 ||
 		len(ctx.db.Transfers) > 0 ||
 		len(ctx.db.CoordinationNodes) > 0 ||
-		len(ctx.db.StreamingQueries) > 0 ||
-		ctx.hasExternalObjects()
+		len(ctx.db.StreamingQueries) > 0
 }
 
 // hasExternalObjects reports declarations for external access and its credentials.

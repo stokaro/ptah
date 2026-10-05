@@ -131,3 +131,13 @@ func (p *Planner) constraintRefusal(constraintType, name, verb string) error {
 		return refuseFact(subject, "YDB has no "+constraintType+" constraint")
 	}
 }
+
+func (p *Planner) refuseDeclaredObjectChanges(diff *difftypes.SchemaDiff) error {
+	if err := p.refuseComments(diff); err != nil {
+		return err
+	}
+	if err := p.refuseObjects(diff); err != nil {
+		return err
+	}
+	return p.refuseCoordinationNodes(diff)
+}

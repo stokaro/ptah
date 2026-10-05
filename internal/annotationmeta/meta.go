@@ -991,7 +991,7 @@ var directives = []Directive{
 	{
 		Name:        "ptah:schema:streamingquery",
 		Description: "Declares a YDB query that continuously processes topic messages.",
-		Scopes:      []Scope{ScopeFile, ScopeStruct},
+		Scopes:      []Scope{ScopeStruct, ScopeField},
 		Attributes: []Attribute{
 			attr("name", "Query name, the final path segment.", valueString, true, false),
 			attr("schema", "Database-relative directory.", valueString, false, false),
@@ -1078,7 +1078,7 @@ var directives = []Directive{
 	{
 		Name:        "ptah:schema:rls:policy",
 		Description: "Declares a row-level security policy.",
-		Scopes:      []Scope{ScopeFile, ScopeStruct},
+		Scopes:      []Scope{ScopeStruct, ScopeField},
 		Attributes: []Attribute{
 			attr("name", "Policy name.", valueString, false, false),
 			attr("table", "Target table.", valueString, false, false),
@@ -1094,7 +1094,7 @@ var directives = []Directive{
 	{
 		Name:        "ptah:schema:rls:enable",
 		Description: "Enables row-level security on a table.",
-		Scopes:      []Scope{ScopeFile, ScopeStruct},
+		Scopes:      []Scope{ScopeStruct, ScopeField},
 		Attributes: []Attribute{
 			attr("table", "Target table.", valueString, false, false),
 			attr("force", "Apply the table's policies to its owner too.", valueBoolean, false, false),

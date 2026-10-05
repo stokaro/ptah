@@ -59,6 +59,9 @@ func TestRefine_HappyPath(t *testing.T) {
 		key   capability.Capability
 		want  bool
 	}{
+		{name: "streaming requires external sources", flags: ydbflags.Flags{"EnableStreamingQueries": true, "EnableExternalDataSources": false}, key: capability.StreamingQueries, want: false},
+		{name: "external sources alone do not enable streaming", flags: ydbflags.Flags{"EnableStreamingQueries": false, "EnableExternalDataSources": true}, key: capability.StreamingQueries, want: false},
+		{name: "streaming requires both flags", flags: ydbflags.Flags{"EnableStreamingQueries": true, "EnableExternalDataSources": true}, key: capability.StreamingQueries, want: true},
 		{
 			name:  "a flag the cluster turned on turns the capability on",
 			flags: ydbflags.Flags{"EnableAddUniqueIndex": true},

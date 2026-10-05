@@ -51,7 +51,7 @@ func (n *Node) Statement(caps capability.Capabilities) (string, error) {
 	case CreateOperation:
 		return Create(n.Name, n.Spec), nil
 	case AlterOperation:
-		return Alter(n.Name, n.Spec, n.Previous, n.AllowStateReset)
+		return Alter(n.Name, n.Spec, n.Previous, AlterOptions{AllowStateReset: n.AllowStateReset})
 	case DropOperation:
 		return Drop(n.Name), nil
 	default:

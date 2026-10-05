@@ -6,6 +6,8 @@ import (
 	"ptah.run/internal/ydbstream"
 )
 
+const streamingExecutionChange = "ALTER STREAMING QUERY changes continuous query execution"
+
 const streamingCheckpointLoss = "the operation removes or resets streaming-query checkpoint state; a rollback restores the declaration, not the discarded state"
 
 func assessStreamingQuery(node *ydbstream.Node, assessment StatementAssessment) StatementAssessment {
@@ -13,7 +15,11 @@ func assessStreamingQuery(node *ydbstream.Node, assessment StatementAssessment) 
 	if node.Operation == ydbstream.DropOperation || (node.Operation == ydbstream.AlterOperation && strings.TrimSpace(node.Spec.Text) != strings.TrimSpace(node.Previous.Text)) {
 		assessment.Severity, assessment.Reason = Destructive, streamingCheckpointLoss
 	} else if node.Operation == ydbstream.AlterOperation {
-		assessment.Severity, assessment.Reason = Warning, "ALTER STREAMING QUERY changes continuous query execution"
+		assessment.Severity, assessment.Reason = Warning, streamingExecutionChange
 	}
 	return assessment
+}
+
+func resetsStreamingCheckpoint(words []string) bool {
+	return hasWordPrefix(words, "DROP", "STREAMING", "QUERY") || hasWordPrefix(words, "CREATE", "OR", "REPLACE", "STREAMING", "QUERY") || (hasWordPrefix(words, "ALTER", "STREAMING", "QUERY") && hasWordSequence(words, "AS", "DO", "BEGIN"))
 }

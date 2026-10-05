@@ -158,6 +158,9 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	slices.SortFunc(db.ExternalTables, func(a, b catalog.ExternalTable) int {
 		return cmp.Or(strings.Compare(a.Schema, b.Schema), strings.Compare(a.Name, b.Name))
 	})
+	slices.SortFunc(db.StreamingQueries, func(a, b catalog.StreamingQuery) int {
+		return cmp.Or(strings.Compare(a.Schema, b.Schema), strings.Compare(a.Name, b.Name))
+	})
 	return db, nil
 }
 
@@ -384,6 +387,9 @@ func (r *Reader) coordinationNode(ctx context.Context, source Source, schema, na
 // entryTypeName names a scheme entry type, including one the pinned protocol
 // buffers do not know.
 func entryTypeName(entryType Ydb_Scheme.Entry_Type) string {
+	if entryType == EntryStreamingQuery {
+		return "STREAMING_QUERY"
+	}
 	if name, known := Ydb_Scheme.Entry_Type_name[int32(entryType)]; known {
 		return name
 	}

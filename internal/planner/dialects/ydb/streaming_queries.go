@@ -9,10 +9,18 @@ import (
 
 func (p *Planner) streamingQueries(diff *difftypes.SchemaDiff) (before, after []ast.Node, err error) {
 	for _, query := range diff.StreamingQueriesRemoved {
-		before = append(before, &ydbstream.Node{Operation: ydbstream.DropOperation, Name: query.QualifiedName()})
+		node := &ydbstream.Node{Operation: ydbstream.DropOperation, Name: query.QualifiedName()}
+		if _, err := node.Statement(p.caps); err != nil {
+			return nil, nil, err
+		}
+		before = append(before, node)
 	}
 	for _, query := range diff.StreamingQueriesAdded {
-		after = append(after, modelast.FromStreamingQuery(query))
+		node := modelast.FromStreamingQuery(query)
+		if _, err := node.Statement(p.caps); err != nil {
+			return nil, nil, err
+		}
+		after = append(after, node)
 	}
 	for _, change := range diff.StreamingQueriesChanged {
 		node := &ydbstream.Node{Operation: ydbstream.AlterOperation, Name: change.Desired.QualifiedName(),
@@ -21,6 +29,14 @@ func (p *Planner) streamingQueries(diff *difftypes.SchemaDiff) (before, after []
 		// follow the mutations of other objects in a partly executed migration.
 		if _, err := node.Statement(p.caps); err != nil {
 			return nil, nil, err
+		}
+		if ydbstream.Running(change.Current.Spec) {
+			stopped := change.Current.Spec.Clone()
+			stopped.Run = new(false)
+			before = append(before, &ydbstream.Node{Operation: ydbstream.AlterOperation, Name: node.Name, Spec: stopped, Previous: change.Current.Spec.Clone()})
+			if ydbstream.Equal(stopped, change.Desired.Spec) {
+				continue
+			}
 		}
 		after = append(after, node)
 	}

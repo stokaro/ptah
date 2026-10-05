@@ -146,6 +146,7 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database)
 	})
 	out.ResourcePools = keep(db.ResourcePools, func(pool schemamodel.ResourcePool) bool {
 		return s.selectedNames(typeList("resource_pool"), pool.Name) ||
+			slices.ContainsFunc(out.StreamingQueries, func(query schemamodel.StreamingQuery) bool { return query.Spec.ResourcePool == pool.Name }) ||
 			slices.ContainsFunc(out.ResourcePoolClassifiers, func(classifier schemamodel.ResourcePoolClassifier) bool {
 				return classifier.Spec.ResourcePool == pool.Name
 			})

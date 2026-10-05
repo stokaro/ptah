@@ -171,15 +171,10 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 		return nil, err
 	}
 	scoped := withoutKeysOfRebuiltTables(withoutKeysOfDroppedTables(diff, removedTables, semantics), rebuilds, semantics)
-	if err := p.refuseComments(scoped); err != nil {
+	if err := p.refuseDeclaredObjectChanges(scoped); err != nil {
 		return nil, err
 	}
-	if err := p.refuseObjects(scoped); err != nil {
-		return nil, err
-	}
-	if err := p.refuseCoordinationNodes(diff); err != nil {
-		return nil, err
-	}
+
 	for _, tableDiff := range diff.TablesModified {
 		if err := p.refuseModification(tableDiff, rebuilds, semantics, diff.CurrentNotDescribed); err != nil {
 			return nil, err

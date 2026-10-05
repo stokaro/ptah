@@ -72,19 +72,25 @@ func Create(name string, spec ast.StreamingQuerySpec) string {
 	return "CREATE STREAMING QUERY " + ydbexternal.Path(name) + " WITH (" + settings(spec) + ") AS DO BEGIN\n" + strings.TrimSpace(spec.Text) + "\nEND DO;"
 }
 
+// AlterOptions carries the explicit permission for a destructive body change.
+type AlterOptions struct {
+	// AllowStateReset permits resetting aggregation state while retaining topic offsets.
+	AllowStateReset bool
+}
+
 // Alter changes persistent settings in place. A changed body requires an
 // explicit permission because YDB discards aggregation state. Topic offsets
 // remain in the checkpoint; no DROP/CREATE fallback is used.
-func Alter(name string, desired, current ast.StreamingQuerySpec, allowReset bool) (string, error) {
+func Alter(name string, desired, current ast.StreamingQuerySpec, options AlterOptions) (string, error) {
 	textChanged := strings.TrimSpace(desired.Text) != strings.TrimSpace(current.Text)
-	if textChanged && !allowReset {
+	if textChanged && !options.AllowStateReset {
 		return "", fmt.Errorf("streaming query %q: changing text resets aggregation state; declare allow_state_reset=true to permit it", name)
 	}
-	options := settings(desired)
+	settingsSQL := settings(desired)
 	if textChanged {
-		options += ", FORCE = TRUE"
+		settingsSQL += ", FORCE = TRUE"
 	}
-	statement := "ALTER STREAMING QUERY " + ydbexternal.Path(name) + " SET (" + options + ")"
+	statement := "ALTER STREAMING QUERY " + ydbexternal.Path(name) + " SET (" + settingsSQL + ")"
 	if textChanged {
 		statement += " AS DO BEGIN\n" + strings.TrimSpace(desired.Text) + "\nEND DO"
 	}

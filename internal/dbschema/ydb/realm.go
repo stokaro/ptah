@@ -177,10 +177,7 @@ func (w *Writer) leftAlone(dir string, entry *Ydb_Scheme.Entry) bool {
 // objectKind names a scheme entry type in lower case words, as a refusal
 // names the object: "table", "column table", "coordination node".
 func objectKind(entryType Ydb_Scheme.Entry_Type) string {
-	if name, known := Ydb_Scheme.Entry_Type_name[int32(entryType)]; known {
-		return strings.ToLower(strings.ReplaceAll(name, "_", " "))
-	}
-	return fmt.Sprintf("scheme entry of type %d", int32(entryType))
+	return strings.ToLower(strings.ReplaceAll(entryTypeName(entryType), "_", " "))
 }
 
 // describeObject names object with its directory, as an error reads it.

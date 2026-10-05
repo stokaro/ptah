@@ -156,6 +156,7 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	})
 	out.ResourcePools = keep(db.ResourcePools, func(pool catalog.ResourcePool) bool {
 		return s.selectedNames(typeList("resource_pool"), pool.Name) ||
+			slices.ContainsFunc(out.StreamingQueries, func(query catalog.StreamingQuery) bool { return query.Spec.ResourcePool == pool.Name }) ||
 			slices.ContainsFunc(out.ResourcePoolClassifiers, func(classifier catalog.ResourcePoolClassifier) bool {
 				return classifier.Spec.ResourcePool == pool.Name
 			})

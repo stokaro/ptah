@@ -228,6 +228,7 @@ func excludeGenerated(
 	filtered.Views = state.filterGeneratedViews(filtered.Views)
 	filtered.MaterializedViews = state.filterGeneratedMaterializedViews(filtered.MaterializedViews)
 	filtered.CoordinationNodes = state.filterGeneratedCoordinationNodes(filtered.CoordinationNodes)
+	filtered.StreamingQueries = state.filterGeneratedStreamingQueries(filtered.StreamingQueries)
 	filtered.Triggers = state.filterGeneratedTriggers(tableByStruct, filtered.Triggers)
 	filtered.RLSPolicies = state.filterGeneratedRLSPolicies(tableByStruct, filtered.RLSPolicies)
 	filtered.RLSEnabledTables = state.filterGeneratedRLSEnabledTables(tableByStruct, filtered.RLSEnabledTables)
@@ -2330,6 +2331,12 @@ func generatedConstraintResourceTypes(constraint schemamodel.Constraint) []strin
 
 func (s *exclusionState) filterStreamingQueries(queries []catalog.StreamingQuery) []catalog.StreamingQuery {
 	return keep(queries, func(query catalog.StreamingQuery) bool {
+		return !s.matches("streaming_query", s.nameCandidates(query.Schema, query.Name)...) && !s.schemaExcluded(query.Schema)
+	})
+}
+
+func (s *exclusionState) filterGeneratedStreamingQueries(queries []schemamodel.StreamingQuery) []schemamodel.StreamingQuery {
+	return keep(queries, func(query schemamodel.StreamingQuery) bool {
 		return !s.matches("streaming_query", s.nameCandidates(query.Schema, query.Name)...) && !s.schemaExcluded(query.Schema)
 	})
 }

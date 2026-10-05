@@ -793,10 +793,6 @@ func classifyTypeOperation(op ast.TypeOperation) (Severity, string) {
 // existing constraint and not a new one.
 func assessRawSQL(sql string, assessment StatementAssessment, keepsNullability bool) StatementAssessment {
 	words, dropsDefault := withoutDefaultConstraintDrop(rawWords(sql))
-	if hasWordPrefix(words, "DROP", "STREAMING", "QUERY") || hasWordPrefix(words, "CREATE", "OR", "REPLACE", "STREAMING", "QUERY") || (hasWordPrefix(words, "ALTER", "STREAMING", "QUERY") && hasWordSequence(words, "AS", "DO", "BEGIN")) {
-		assessment.Severity, assessment.Reason = Destructive, streamingCheckpointLoss
-		return assessment
-	}
 
 	if hasWordPrefix(words, "DROP", "ASYNC", "REPLICATION") && !slices.Contains(words, "CASCADE") {
 		assessment.Severity = Warning
@@ -808,16 +804,11 @@ func assessRawSQL(sql string, assessment StatementAssessment, keepsNullability b
 		assessment.Reason = reason
 		return assessment
 	}
+	if reason, found := runtimeObjectChangeReason(words); found {
+		assessment.Severity, assessment.Reason = Warning, reason
+		return assessment
+	}
 	switch {
-	case hasWordPrefix(words, "DROP", "EXTERNAL", "DATA", "SOURCE"):
-		assessment.Severity = Warning
-		assessment.Reason = dropExternalDataSourceReason
-	case hasWordPrefix(words, "DROP", "EXTERNAL", "TABLE"):
-		assessment.Severity = Warning
-		assessment.Reason = dropExternalTableReason
-	case hasWordPrefix(words, "CREATE", "OR", "REPLACE", "EXTERNAL"):
-		assessment.Severity = Warning
-		assessment.Reason = replaceExternalReason
 	case hasWordSequence(words, "DISABLE", "ROW", "LEVEL", "SECURITY"):
 		assessment.Severity = Destructive
 		assessment.Reason = "DISABLE ROW LEVEL SECURITY removes an access-control protection"
@@ -1174,6 +1165,9 @@ const (
 // destructivePrefixReason returns the reason of the first [destructivePrefixes]
 // entry the statement's words start with.
 func destructivePrefixReason(words []string) (string, bool) {
+	if resetsStreamingCheckpoint(words) {
+		return streamingCheckpointLoss, true
+	}
 	for _, prefix := range destructivePrefixes {
 		if hasWordPrefix(words, prefix.words...) {
 			return prefix.reason, true
@@ -1252,4 +1246,21 @@ func assessResourcePoolNode(node ast.Node, assessment StatementAssessment) State
 			"or to the pool default"
 	}
 	return assessment
+}
+
+// runtimeObjectChangeReason covers schema operations that change ongoing
+// execution or external reads without deleting stored table data.
+func runtimeObjectChangeReason(words []string) (string, bool) {
+	switch {
+	case hasWordPrefix(words, "ALTER", "STREAMING", "QUERY"):
+		return streamingExecutionChange, true
+	case hasWordPrefix(words, "DROP", "EXTERNAL", "DATA", "SOURCE"):
+		return dropExternalDataSourceReason, true
+	case hasWordPrefix(words, "DROP", "EXTERNAL", "TABLE"):
+		return dropExternalTableReason, true
+	case hasWordPrefix(words, "CREATE", "OR", "REPLACE", "EXTERNAL"):
+		return replaceExternalReason, true
+	default:
+		return "", false
+	}
 }
