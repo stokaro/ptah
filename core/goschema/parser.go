@@ -746,6 +746,8 @@ type schemaParseState struct {
 	notDescribed          []coverage.Object
 	changefeeds           []pendingChangefeed
 	consumers             []pendingConsumer
+	topics                []schemamodel.Topic
+	topicConsumers        []pendingTopicConsumer
 }
 
 type structDeclaration struct {
@@ -870,6 +872,8 @@ var sharedDirectiveParsers = map[string]sharedDirectiveParser{
 	"ptah:schema:notdescribed":        ignoringStruct((*schemaParseState).parseNotDescribedComment),
 	"ptah:schema:changefeed":          (*schemaParseState).parseChangefeedComment,
 	"ptah:schema:changefeed:consumer": (*schemaParseState).parseChangefeedConsumerComment,
+	"ptah:schema:topic":               (*schemaParseState).parseTopicComment,
+	"ptah:schema:topic:consumer":      (*schemaParseState).parseTopicConsumerComment,
 }
 
 // ignoringStruct adapts a parser that does not need the owning struct's name.
@@ -1010,6 +1014,9 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 	if err := state.attachChangefeeds(); err != nil {
 		return schemamodel.Database{}, err
 	}
+	if err := state.attachTopicConsumers(); err != nil {
+		return schemamodel.Database{}, err
+	}
 
 	enums := make([]schemamodel.Enum, 0, len(state.globalEnumsMap))
 	keys := make([]string, 0, len(state.globalEnumsMap))
@@ -1042,6 +1049,7 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 		Ranges:               state.ranges,
 		Views:                state.views,
 		Synonyms:             state.synonyms,
+		Topics:               state.topics,
 		ExtendedProperties:   state.extendedProperties,
 		MaterializedViews:    state.materializedViews,
 		Triggers:             state.triggers,

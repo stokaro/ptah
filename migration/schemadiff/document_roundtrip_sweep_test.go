@@ -275,6 +275,16 @@ var yamlUnwritableFields = map[string]coverage.Kind{
 	"ExtendedProperties":   coverage.ExtendedProperty,
 }
 
+// The YAML surface has a topics key, so a YAML document that leaves a topic
+// out is asking for it to go: unlike the HCL one, it records nothing.
+func TestYAMLDocument_DescribesTopics(t *testing.T) {
+	c := qt.New(t)
+
+	parsed := loadYAMLDocument(c)
+
+	c.Assert(parsed.NotDescribed.Describes(coverage.Topic), qt.IsTrue)
+}
+
 // TestYAMLDocument_RecordsExactlyWhatTheSurfaceCannotName is the same rule as
 // the round-trip sweep, for the format that has no renderer.
 //
@@ -371,6 +381,39 @@ func TestRoundTrip_EveryObjectFamilySurvives(t *testing.T) {
 	}
 }
 
+// hclUnwritableFields are the object families the HCL document has no block
+// for, and the coverage kind its header records each one under instead. A YDB
+// topic is the one: Atlas HCL has no topic, and Ptah does not invent a block
+// the pinned binary would refuse.
+var hclUnwritableFields = map[string]coverage.Kind{
+	"Topics": coverage.Topic,
+}
+
+// TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped is the round trip of a
+// family the HCL document cannot carry: the document leaves the object out
+// and its header says so, so applying it back plans no removal. The control is
+// the same document's silence about a sequence, which it could have named and
+// so still removes.
+func TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped(t *testing.T) {
+	c := qt.New(t)
+	db := roundTripFixture()
+	db.Topics = append(db.Topics, schemamodel.Topic{Name: "events", Schema: "public"})
+	live := &catalog.Database{
+		Schemas:   []catalog.Schema{{Name: "public"}},
+		Tables:    []catalog.Table{{Schema: "public", Name: "users"}},
+		Topics:    []catalog.Topic{{Schema: "public", Name: "events"}},
+		Sequences: []catalog.Sequence{{Schema: "public", Name: "s1"}},
+	}
+
+	parsed := loadPostgresDocument(c, renderPostgresDocument(c, db))
+	diff := schemadiff.Compare(parsed, live)
+
+	c.Assert(parsed.Topics, qt.HasLen, 0)
+	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["Topics"]), qt.IsFalse)
+	c.Assert(diff.TopicsRemoved, qt.HasLen, 0)
+	c.Assert(diff.SequencesRemoved.Names(), qt.HasLen, 1)
+}
+
 // TestRoundTrip_SweepCoversEveryObjectFamily is the guard that makes the test
 // above a sweep rather than a list someone remembered to extend.
 //
@@ -385,6 +428,9 @@ func TestRoundTrip_SweepCoversEveryObjectFamily(t *testing.T) {
 		covered = append(covered, row.field)
 	}
 	covered = append(covered, nonObjectDatabaseFields...)
+	for field := range hclUnwritableFields {
+		covered = append(covered, field)
+	}
 	slices.Sort(covered)
 
 	c.Assert(covered, qt.DeepEquals, databaseSliceFields())

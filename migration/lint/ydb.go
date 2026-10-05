@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/ydbsequence"
+	"ptah.run/internal/ydbtopic"
 	"ptah.run/internal/yqlddl"
 	"ptah.run/internal/yqlquery"
 )
@@ -52,6 +53,8 @@ func ydbRules() []Rule {
 		ydbMovedTableWithChangefeedRule(),
 		ydbGrantOptionRevokeRule(),
 		ydbPrincipalDropRule(),
+		ydbTopicResetRule(),
+		ydbTopicSettingIgnoredRule(),
 		ydbVectorIndexUnbuiltRule(),
 		ydbVectorIndexStaleRule(),
 	}
@@ -1026,6 +1029,191 @@ func ydbPrincipalDropRule() Rule {
 				kind, strings.ToLower(kind))
 		},
 	}
+}
+
+// ydbTopicResetRule reports an ALTER TOPIC that resets a topic setting, or a
+// consumer setting other than availability_period. Measured with every
+// setting a topic and a consumer take:
+//
+//	26.2.1.14  accepted, and every value reads back as it was
+//	25.1.4.7   Empty list, did you forget quote?   (topic RESET)
+//	           INTERNAL_ERROR ... TCallable(): requirement Match(node.Get()) failed   (consumer RESET)
+//
+// so a migration that relies on RESET changes nothing on one line and fails
+// on the other. A consumer's availability_period is the exception: 26.2.1.14
+// resets it, and 25.1.4.7 has no availability period to reset. Ptah writes
+// SET with the value instead.
+func ydbTopicResetRule() Rule {
+	return Rule{
+		Code:          "YD113",
+		Title:         "topic setting reset",
+		Severity:      SeverityError,
+		Dialects:      ydbOnly,
+		AppliesToDown: true,
+		CheckStatement: func(stmt *Statement) (bool, string) {
+			if !ydbRun(stmt.Target) {
+				return false, ""
+			}
+			read := yqlddl.Read(stmt.SQL)
+			if read.Kind != yqlddl.AlterTopic {
+				return false, ""
+			}
+			for _, action := range read.Actions {
+				names := resetNames(action)
+				if len(names) == 0 {
+					continue
+				}
+				owner := "topic " + read.Name
+				if action.Kind == yqlddl.ResetConsumerSettings {
+					owner = "consumer " + action.Consumer + " of topic " + read.Name
+				}
+				return true, fmt.Sprintf("RESET (%s) of %s changes nothing on YDB 26.2, which keeps every value as it "+
+					"was, and is refused on 25.1; SET each setting to the value it is to hold instead",
+					strings.ToLower(strings.Join(names, ", ")), owner)
+			}
+			return false, ""
+		},
+	}
+}
+
+// resetNames returns the settings an ALTER TOPIC action resets that YDB keeps
+// as they were.
+func resetNames(action yqlddl.Action) []string {
+	var names []string
+	switch action.Kind {
+	case yqlddl.ResetSettings:
+		for _, setting := range action.Settings {
+			names = append(names, setting.Name)
+		}
+	case yqlddl.ResetConsumerSettings:
+		for _, setting := range action.Settings {
+			if setting.Name != "AVAILABILITY_PERIOD" {
+				names = append(names, setting.Name)
+			}
+		}
+	}
+	return names
+}
+
+// ydbTopicSettingIgnoredRule reports a topic setting YDB accepts and keeps as
+// nothing, so the statement runs and the topic does not hold what it says.
+// Measured on 26.2.1.14 and 25.1.4.7 by reading the topic back through
+// DescribeTopic:
+//
+//   - retention_storage_mb and partition_count_limit, in CREATE TOPIC and in
+//     ALTER TOPIC SET, keep no value;
+//   - metering_mode in CREATE TOPIC keeps none outside a serverless database
+//     (ALTER TOPIC refuses it: `Metering mode can only be specified in a
+//     serverless database`);
+//   - supported_codecs naming a codec other than raw, gzip, lzop, zstd and
+//     custom keeps no codec list at all, `raw,foo` included;
+//   - max_active_partitions in a CREATE TOPIC without a strategy other than
+//     disabled keeps the default: max_active_partitions = 5 reads back as 1;
+//   - a consumer of type shared in CREATE TOPIC is created as an ordinary
+//     consumer on 26.2.1.14 (ADD CONSUMER refuses it: `shared consumers is
+//     disabled`), and 25.1.4.7 refuses the option.
+func ydbTopicSettingIgnoredRule() Rule {
+	return Rule{
+		Code:          "YD114",
+		Title:         "topic setting YDB keeps as nothing",
+		Severity:      SeverityError,
+		Dialects:      ydbOnly,
+		AppliesToDown: true,
+		CheckStatement: func(stmt *Statement) (bool, string) {
+			if !ydbRun(stmt.Target) {
+				return false, ""
+			}
+			read := yqlddl.Read(stmt.SQL)
+			if read.Kind != yqlddl.CreateTopic && read.Kind != yqlddl.AlterTopic {
+				return false, ""
+			}
+			reason := ignoredTopicSetting(read)
+			if reason == "" {
+				return false, ""
+			}
+			return true, fmt.Sprintf("%s of topic %s: YDB accepts the statement and keeps nothing of it, so the topic "+
+				"does not hold what the statement says", reason, read.Name)
+		},
+	}
+}
+
+// ignoredTopicSetting names the first setting of read YDB keeps as nothing,
+// or is empty.
+func ignoredTopicSetting(read yqlddl.Statement) string {
+	if reason := ignoredTopicOwnSetting(read); reason != "" {
+		return reason
+	}
+	return ignoredConsumerSetting(read)
+}
+
+// ignoredTopicOwnSetting names the first setting of the topic itself that
+// YDB keeps as nothing, or is empty.
+func ignoredTopicOwnSetting(read yqlddl.Statement) string {
+	settings := read.Settings
+	for _, action := range read.Actions {
+		if action.Kind == yqlddl.SetSettings {
+			settings = append(settings, action.Settings...)
+		}
+	}
+	strategy := ""
+	for _, setting := range settings {
+		switch setting.Name {
+		case "RETENTION_STORAGE_MB", "PARTITION_COUNT_LIMIT":
+			return strings.ToLower(setting.Name)
+		case "METERING_MODE":
+			if read.Kind == yqlddl.CreateTopic {
+				return "metering_mode outside a serverless database"
+			}
+		case "SUPPORTED_CODECS":
+			if codec := unknownCodec(setting.Text); codec != "" {
+				return fmt.Sprintf("supported_codecs naming codec %q", codec)
+			}
+		case "AUTO_PARTITIONING_STRATEGY":
+			strategy = strings.ToLower(setting.Text)
+		}
+	}
+	if read.Kind == yqlddl.CreateTopic && (strategy == "" || strategy == "disabled") &&
+		slices.ContainsFunc(settings, func(setting yqlddl.Setting) bool { return setting.Name == "MAX_ACTIVE_PARTITIONS" }) {
+		return "max_active_partitions without an auto_partitioning_strategy that enables auto-partitioning"
+	}
+	return ""
+}
+
+// ignoredConsumerSetting names the first setting of a consumer the statement
+// creates that YDB keeps as nothing, or is empty.
+func ignoredConsumerSetting(read yqlddl.Statement) string {
+	consumers := slices.Clone(read.Consumers)
+	for _, action := range read.Actions {
+		if action.Kind == yqlddl.AddConsumer {
+			consumers = append(consumers, yqlddl.Consumer{Name: action.Consumer, Settings: action.Settings})
+		}
+	}
+	for _, consumer := range consumers {
+		for _, setting := range consumer.Settings {
+			switch {
+			case setting.Name == "TYPE" && strings.EqualFold(setting.Text, "shared") && read.Kind == yqlddl.CreateTopic:
+				return fmt.Sprintf("consumer %s of type shared", consumer.Name)
+			case setting.Name == "SUPPORTED_CODECS" && unknownCodec(setting.Text) != "":
+				return fmt.Sprintf("supported_codecs of consumer %s naming codec %q", consumer.Name, unknownCodec(setting.Text))
+			}
+		}
+	}
+	return ""
+}
+
+// unknownCodec returns the first codec of a codec list YDB keeps no list for,
+// or is empty.
+func unknownCodec(list string) string {
+	if strings.TrimSpace(list) == "" {
+		return ""
+	}
+	for part := range strings.SplitSeq(list, ",") {
+		codec := strings.ToLower(strings.TrimSpace(part))
+		if !slices.Contains(ydbtopic.Codecs(), codec) {
+			return codec
+		}
+	}
+	return ""
 }
 
 // ydbVectorIndexUnbuiltRule reports a vector index, inline in CREATE TABLE or

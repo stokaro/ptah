@@ -23,6 +23,7 @@ import (
 	"ptah.run/internal/uniquename"
 	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbindex"
+	"ptah.run/internal/ydbtopic"
 	"ptah.run/internal/ydbtype"
 )
 
@@ -359,7 +360,8 @@ func (ctx *renderContext) hasGlobalObjects() bool {
 		len(ctx.db.CompositeTypes) > 0 ||
 		len(ctx.db.Domains) > 0 ||
 		len(ctx.db.Ranges) > 0 ||
-		len(ctx.db.Sequences) > 0
+		len(ctx.db.Sequences) > 0 ||
+		len(ctx.db.Topics) > 0
 }
 
 func (ctx *renderContext) writeEnums(w *sourceWriter) {
@@ -439,6 +441,11 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 			attr{name: "comment", value: view.Comment, set: view.Comment != ""},
 			dialectsAttr(view.Dialects),
 		))
+	}
+	for _, topic := range sortedTopics(ctx.db.Topics) {
+		for _, comment := range topicAnnotations(topic) {
+			w.writeComment(comment)
+		}
 	}
 	for _, role := range sortedRoles(ctx.db.Roles) {
 		w.writeComment(roleAnnotation(role))
@@ -890,6 +897,45 @@ func triggerAnnotation(trigger schemamodel.Trigger) string {
 	)
 }
 
+// topicAnnotations writes a YDB topic as its annotation and one annotation
+// per consumer, each naming only what differs from the zero value: a read
+// fills every setting the server holds, and an attribute naming a setting at
+// the value YDB gives a new topic declares the same topic as one leaving it
+// out.
+func topicAnnotations(topic schemamodel.Topic) []string {
+	spec := topic.Spec
+	count := func(name string, value uint64) attr {
+		return attr{name: name, value: strconv.FormatUint(value, 10), set: value != 0}
+	}
+	text := func(name, value string) attr { return attr{name: name, value: value, set: value != ""} }
+	comments := []string{annotation("ptah:schema:topic",
+		attr{name: ydbtopic.AttributeName, value: topic.Name, set: true},
+		text(ydbtopic.AttributeSchema, topic.Schema),
+		count(ydbtopic.AttributeMinActivePartitions, spec.MinActivePartitions),
+		count(ydbtopic.AttributeMaxActivePartitions, spec.MaxActivePartitions),
+		text(ydbtopic.AttributeStrategy, spec.AutoPartitioningStrategy),
+		count(ydbtopic.AttributeUpUtilizationPercent, uint64(spec.AutoPartitioningUpUtilizationPercent)),
+		count(ydbtopic.AttributeDownUtilizationPercent, uint64(spec.AutoPartitioningDownUtilizationPercent)),
+		text(ydbtopic.AttributeStabilizationWindow, spec.AutoPartitioningStabilizationWindow),
+		text(ydbtopic.AttributeRetentionPeriod, spec.RetentionPeriod),
+		count(ydbtopic.AttributeWriteSpeed, spec.PartitionWriteSpeedBytesPerSecond),
+		count(ydbtopic.AttributeWriteBurst, spec.PartitionWriteBurstBytes),
+		text(ydbtopic.AttributeSupportedCodecs, strings.Join(spec.SupportedCodecs, ",")),
+	)}
+	for _, consumer := range spec.Consumers {
+		comments = append(comments, annotation("ptah:schema:topic:consumer",
+			attr{name: ydbtopic.AttributeName, value: consumer.Name, set: true},
+			attr{name: ydbtopic.AttributeTopic, value: topic.Name, set: true},
+			text(ydbtopic.AttributeSchema, topic.Schema),
+			attr{name: ydbtopic.AttributeImportant, value: "true", set: consumer.Important},
+			text(ydbtopic.AttributeReadFrom, consumer.ReadFrom),
+			text(ydbtopic.AttributeSupportedCodecs, strings.Join(consumer.SupportedCodecs, ",")),
+			text(ydbtopic.AttributeAvailabilityPeriod, consumer.AvailabilityPeriod),
+		))
+	}
+	return comments
+}
+
 func roleAnnotation(role schemamodel.Role) string {
 	return annotation("ptah:schema:role",
 		attr{name: "name", value: role.Name, set: true},
@@ -1248,6 +1294,12 @@ func sortedFunctions(values []schemamodel.Function) []schemamodel.Function {
 	result := append([]schemamodel.Function(nil), values...)
 	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
 	return result
+}
+
+func sortedTopics(values []schemamodel.Topic) []schemamodel.Topic {
+	sorted := slices.Clone(values)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].QualifiedName() < sorted[j].QualifiedName() })
+	return sorted
 }
 
 func sortedViews(values []schemamodel.View) []schemamodel.View {

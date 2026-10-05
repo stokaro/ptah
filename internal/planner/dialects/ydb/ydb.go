@@ -12,28 +12,33 @@
 //
 //  1. DROP VIEW for every view the plan removes or replaces, dependents first,
 //     so no table goes while a view the plan touches still reads it;
-//  2. CREATE TABLE for every added table, with the indexes it gains written
+//  2. DROP TOPIC for every removed topic, so a table created under its path
+//     finds the path free;
+//  3. CREATE TABLE for every added table, with the indexes it gains written
 //     inside the statement, because YDB has no CREATE INDEX
 //     ([capability.CreateIndexStatement]);
-//  3. DROP INDEX for every index the plan removes, before any column it names
+//  4. DROP INDEX for every index the plan removes, before any column it names
 //     is dropped (measured: `Impossible drop column because table has an index
 //     with that column`, and the same for a covered column);
-//  4. RENAME INDEX for every index the plan renames, one per statement
+//  5. RENAME INDEX for every index the plan renames, one per statement
 //     (`RENAME INDEX TO can not be used together with another table action`),
 //     then ALTER INDEX ... SET for every index whose partitioning changes in
 //     place, under the name it has once renamed;
-//  5. per table, ADD COLUMN, then the in-place column changes, then SET
+//  6. per table, ADD COLUMN, then the in-place column changes, then SET
 //     (TTL = ...) or RESET (TTL), then DROP COLUMN: a TTL may read a column
 //     the plan adds, and YDB refuses to drop the column a TTL reads;
-//  6. ADD INDEX for every index added to a table that already exists, one per
+//  7. ADD INDEX for every index added to a table that already exists, one per
 //     statement (`Only one index can be added by one operation`), after the
 //     columns it names exist;
-//  7. per table, DROP CHANGEFEED, then ADD CHANGEFEED with the consumers of
+//  8. per table, DROP CHANGEFEED, then ADD CHANGEFEED with the consumers of
 //     its topic, then ALTER TOPIC for a retention or a consumer changed in
 //     place; a new table's changefeeds follow its CREATE TABLE instead, since
 //     YDB adds one only to a table that exists;
-//  8. DROP TABLE for every removed table, which drops its changefeeds;
-//  9. CREATE VIEW for every view the plan adds or replaces, last, a view after
+//  9. DROP TABLE for every removed table, which drops its changefeeds;
+//  10. CREATE TOPIC for every added topic and ALTER TOPIC for every changed
+//     one, after the tables are dropped, so a topic created under a dropped
+//     table's path finds the path free;
+//  11. CREATE VIEW for every view the plan adds or replaces, last, a view after
 //     the views it reads: YDB checks a view's query against the schema when
 //     the view is created, so the tables and columns it reads exist by then.
 //
@@ -174,6 +179,9 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := p.refuseChangefeedChanges(diff); err != nil {
 		return nil, err
 	}
+	if err := p.refuseTopics(diff); err != nil {
+		return nil, err
+	}
 	sequences, err := p.planSerialSequences(diff, rebuilds, semantics)
 	if err != nil {
 		return nil, err
@@ -187,6 +195,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	var result []ast.Node
 	result = append(result, p.dropViews(diff)...)
 	result = append(result, access.before...)
+	result = append(result, dropTopics(diff)...)
 	result = append(result, p.createTables(diff, inlineIndexes, sequences.created, semantics)...)
 	result = append(result, dropIndexes(diff.IndexRemovals(), removedTables, rebuilds, semantics)...)
 	result = append(result, renameIndexes(diff.IndexesRenamed, rebuilds, semantics)...)
@@ -202,6 +211,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	for _, name := range diff.TablesRemoved {
 		result = append(result, ast.NewDropTable(name))
 	}
+	result = append(result, changeTopics(diff)...)
 	result = append(result, p.createViews(diff)...)
 	result = append(result, access.after...)
 	result = append(result, access.last...)

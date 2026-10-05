@@ -23,9 +23,9 @@ func planFor(dialect string) (plan, bool) {
 	withComments := withConstraintComments(withObjectComments(family, normalized), normalized)
 	withKeys := withInvisibleIndexes(withEnforcementAndMatch(withDeferrableKeys(withComments, normalized), normalized), normalized)
 	withTypes := withTypeKeys(withSchemaChanges(withKeys, normalized), normalized)
-	withFamilies := withSerialKeys(withIndexKeys(withQueryKeys(withTypes, normalized), normalized), normalized)
-	withObjects := withChangefeedKeys(withViewKeys(withFamilies, normalized), normalized)
-	return withVectorKeys(withAccessKeys(withObjects, normalized), normalized), true
+	withFamilies := withViewKeys(withSerialKeys(withIndexKeys(withQueryKeys(withTypes, normalized), normalized), normalized), normalized)
+	withObjects := withTopicKeys(withAccessKeys(withChangefeedKeys(withFamilies, normalized), normalized), normalized)
+	return withVectorKeys(withObjects, normalized), true
 }
 
 // familyPlan returns the experiments a dialect's family answers, before the

@@ -11,6 +11,7 @@ import (
 	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbindex"
+	"ptah.run/internal/ydbtopic"
 )
 
 // Scope describes where a directive is valid in Go source.
@@ -753,6 +754,56 @@ var directives = []Directive{
 			attr("schema", "Schema the alias lives in.", valueString, false, false),
 			attr("target", "Object the alias stands for, as one to four dot-separated parts.", valueString, true, false),
 			attr("comment", "Synonym comment.", valueString, false, false),
+		},
+	},
+	{
+		Name: "ptah:schema:topic",
+		Description: "Declares a YDB topic: a persistent message queue at a path of the scheme tree. " +
+			"Its consumers are declared with ptah:schema:topic:consumer in the same file.",
+		Scopes: []Scope{ScopeStruct, ScopeField},
+		Attributes: []Attribute{
+			attr(ydbtopic.AttributeName, "Topic name, the last segment of its path.", valueString, true, false),
+			attr(ydbtopic.AttributeSchema, "Directory that holds the topic, relative to the database root.",
+				valueString, false, false),
+			attr(ydbtopic.AttributeMinActivePartitions, "Partitions writers write to; the count only grows.",
+				valueString, false, false),
+			attr(ydbtopic.AttributeMaxActivePartitions, "Most partitions auto-partitioning splits the topic into; "+
+				"needs a strategy other than disabled.", valueString, false, false),
+			attr(ydbtopic.AttributeStrategy, "Auto-partitioning: disabled, scale_up, scale_up_and_down or paused.",
+				valueString, false, false),
+			attr(ydbtopic.AttributeUpUtilizationPercent, "Share of a partition's write speed above which it "+
+				"splits, 1 to 100.", valueString, false, false),
+			attr(ydbtopic.AttributeDownUtilizationPercent, "Share of a partition's write speed below which "+
+				"partitions merge, 1 to 100.", valueString, false, false),
+			attr(ydbtopic.AttributeStabilizationWindow, "How long a load lasts before the partition count follows "+
+				"it, an ISO 8601 duration.", valueString, false, false),
+			attr(ydbtopic.AttributeRetentionPeriod, "How long the topic keeps a message, an ISO 8601 duration; "+
+				"24 hours when omitted.", valueString, false, false),
+			attr(ydbtopic.AttributeWriteSpeed, "Write quota of one partition in bytes per second.",
+				valueString, false, false),
+			attr(ydbtopic.AttributeWriteBurst, "Burst a partition takes above its quota, in bytes; the write "+
+				"speed when omitted.", valueString, false, false),
+			attr(ydbtopic.AttributeSupportedCodecs, "Codecs a writer may use: raw, gzip, lzop, zstd, custom.",
+				valueList, false, false),
+		},
+	},
+	{
+		Name: "ptah:schema:topic:consumer",
+		Description: "Declares a consumer of a YDB topic: a named reader that keeps its own position in " +
+			"the topic. The topic is declared in the same file.",
+		Scopes: []Scope{ScopeStruct, ScopeField},
+		Attributes: []Attribute{
+			attr(ydbtopic.AttributeName, "Consumer name, unique within the topic.", valueString, true, false),
+			attr(ydbtopic.AttributeTopic, "Topic the consumer reads.", valueString, true, false),
+			attr(ydbtopic.AttributeSchema, "Directory of the topic, when it has one.", valueString, false, false),
+			attr(ydbtopic.AttributeImportant, "The topic keeps a message this consumer has not read past "+
+				"the retention period.", valueBoolean, false, true),
+			attr(ydbtopic.AttributeReadFrom, "RFC 3339 time a partition this consumer has not read is read from.",
+				valueString, false, false),
+			attr(ydbtopic.AttributeSupportedCodecs, "Codecs the consumer reads: raw, gzip, lzop, zstd, custom.",
+				valueList, false, false),
+			attr(ydbtopic.AttributeAvailabilityPeriod, "How long the topic keeps a message this consumer has "+
+				"not read past the retention period, an ISO 8601 duration.", valueString, false, false),
 		},
 	},
 	{

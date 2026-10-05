@@ -93,6 +93,8 @@ func (r *Renderer) VisitNode(node ast.Node) error { //nolint:gocyclo // one case
 		return r.renderDropContinuousAggregate(n)
 	case *ast.DropSynonymNode:
 		return r.renderDropSynonym(n)
+	case *ast.CreateTopicNode, *ast.AlterTopicNode, *ast.DropTopicNode:
+		return nodedispatch.RefuseTopic(DialectName, n)
 	case *ast.ExtendedPropertyNode:
 		return r.renderExtendedProperty(n)
 	case *ast.CreateMaterializedViewNode:
@@ -225,7 +227,8 @@ func (r *Renderer) renderStatementList(list *ast.StatementList) error {
 // is what a deliberate skip looks like: the caller would read a successful
 // render of an empty string and never learn the declaration went nowhere.
 func (r *Renderer) nodeNeedsParent(node ast.Node) error {
-	return unsupportedFeaturef("%T is rendered by the statement that carries it, not on its own", node)
+	return fmt.Errorf("%w: %s: %T is rendered by the statement that carries it, not on its own",
+		ptaherr.ErrInvalidSchemaDiff, DialectName, node)
 }
 
 // unknownNode refuses a node kind this renderer routes nowhere.

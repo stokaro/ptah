@@ -1,7 +1,9 @@
-// Package yqlddl reads what one YQL schema statement does: the table or view
-// it names, the columns, key, indexes and TTL column a CREATE TABLE declares,
-// the actions an ALTER TABLE takes, the restart an ALTER SEQUENCE makes, the
-// tables a query reads, and the table a data statement writes.
+// Package yqlddl reads what one YQL schema statement does: the table, view or
+// topic it names, the columns, key, indexes and TTL column a CREATE TABLE
+// declares, the actions an ALTER TABLE takes, the settings and consumers a
+// CREATE TOPIC declares and the actions an ALTER TOPIC takes, the restart an
+// ALTER SEQUENCE makes, the tables a query reads, and the table a data
+// statement writes.
 //
 // It is the reading both linters share, so `ptah migrations lint` and
 // `ptah sql lint` cannot disagree about what a YQL statement does. It reads
@@ -48,6 +50,12 @@ const (
 	// sequence behind a Serial column. Its name is the sequence's path as
 	// written.
 	AlterSequence
+	// CreateTopic is CREATE TOPIC.
+	CreateTopic
+	// AlterTopic is ALTER TOPIC.
+	AlterTopic
+	// DropTopic is DROP TOPIC.
+	DropTopic
 )
 
 // Statement is what one YQL statement does.
@@ -69,12 +77,16 @@ type Statement struct {
 	// TTLColumn is the column a CREATE TABLE's TTL setting reads, and empty
 	// when it sets none.
 	TTLColumn string
-	// Settings are the settings the WITH clause of a CREATE TABLE sets, in
-	// order.
+	// Settings are the settings the WITH clause of a CREATE TABLE or a
+	// CREATE TOPIC sets, in order.
 	Settings []Setting
 
-	// Actions are the actions an ALTER TABLE takes, in order.
+	// Actions are the actions an ALTER TABLE or an ALTER TOPIC takes, in
+	// order.
 	Actions []Action
+
+	// Consumers are the consumers a CREATE TOPIC declares, in order.
+	Consumers []Consumer
 
 	// Reads are the tables the query of a CREATE VIEW reads; see
 	// [TablesRead].
@@ -85,6 +97,14 @@ type Statement struct {
 	// the start.
 	Restart     bool
 	RestartWith string
+}
+
+// Consumer is one consumer a CREATE TOPIC declares or an ALTER TOPIC adds.
+type Consumer struct {
+	// Name is the consumer's name.
+	Name string
+	// Settings are what its WITH clause sets.
+	Settings []Setting
 }
 
 // Column is one column a statement declares or adds.
@@ -152,6 +172,14 @@ const (
 	AddChangefeed
 	// DropChangefeed is DROP CHANGEFEED.
 	DropChangefeed
+	// AddConsumer is an ALTER TOPIC's ADD CONSUMER.
+	AddConsumer
+	// DropConsumer is an ALTER TOPIC's DROP CONSUMER.
+	DropConsumer
+	// SetConsumerSettings is an ALTER TOPIC's ALTER CONSUMER ... SET (...).
+	SetConsumerSettings
+	// ResetConsumerSettings is an ALTER TOPIC's ALTER CONSUMER ... RESET (...).
+	ResetConsumerSettings
 )
 
 // Action is one action of an ALTER TABLE.
@@ -169,18 +197,25 @@ type Action struct {
 	// Changefeed is the changefeed ADD CHANGEFEED adds or DROP CHANGEFEED
 	// drops.
 	Changefeed string
-	// Settings are what SET sets or RESET resets.
+	// Settings are what SET sets or RESET resets, of the table, the topic or
+	// the consumer.
 	Settings []Setting
+	// Consumer is the consumer an ALTER TOPIC action adds, drops or changes.
+	Consumer string
 }
 
-// Setting is one table setting a SET or RESET names.
+// Setting is one setting a SET, a RESET or a WITH clause names: of a table,
+// a topic or a consumer.
 type Setting struct {
 	// Name is the setting's name in upper case, such as
 	// AUTO_PARTITIONING_BY_SIZE or TTL.
 	Name string
-	// Value is the first word of the value in upper case, such as ENABLED,
-	// and empty for RESET and for a value that is not a word.
+	// Value is the first word or number of the value in upper case, such as
+	// ENABLED or 2, and empty for RESET and for a value that is neither.
 	Value string
+	// Text is the content of a value written as one string literal, such as
+	// raw,gzip for supported_codecs = 'raw,gzip', and empty for any other.
+	Text string
 	// Column is the column a TTL setting reads, and empty for any other.
 	Column string
 	// Items is the number of items in a value written as a parenthesized
@@ -284,6 +319,12 @@ func Read(statement string) Statement {
 		return readDrop(DropView, tokens[2:])
 	case startsWith(tokens, "ALTER", "SEQUENCE"):
 		return readAlterSequence(tokens[2:])
+	case startsWith(tokens, "CREATE", "TOPIC"):
+		return readCreateTopic(tokens[2:])
+	case startsWith(tokens, "ALTER", "TOPIC"):
+		return readAlterTopic(tokens[2:])
+	case startsWith(tokens, "DROP", "TOPIC"):
+		return readDrop(DropTopic, tokens[2:])
 	default:
 		return Statement{}
 	}
@@ -441,14 +482,7 @@ func readAction(tokens []lexer.Token) Action {
 	case startsWith(tokens, "SET"):
 		return Action{Kind: SetSettings, Settings: readSetAction(tokens[1:])}
 	case startsWith(tokens, "RESET"):
-		names, _ := parenthesized(tokens[1:])
-		var settings []Setting
-		for _, item := range splitTopLevel(names) {
-			if len(item) > 0 {
-				settings = append(settings, Setting{Name: strings.ToUpper(item[0].Value)})
-			}
-		}
-		return Action{Kind: ResetSettings, Settings: settings}
+		return Action{Kind: ResetSettings, Settings: readResetNames(tokens[1:])}
 	default:
 		return Action{}
 	}
@@ -498,6 +532,9 @@ func readSetting(name lexer.Token, value []lexer.Token) Setting {
 	}
 	if list, _ := parenthesized(value); len(list) > 0 {
 		setting.Items = len(splitTopLevel(list))
+	}
+	if len(value) == 1 && value[0].Type == lexer.TokenString {
+		setting.Text = stringContent(value[0].Value)
 	}
 	if setting.Name == "TTL" {
 		for i := range value {
@@ -596,6 +633,113 @@ func readAlterSequence(tokens []lexer.Token) Statement {
 		}
 	}
 	return stmt
+}
+
+// readCreateTopic reads CREATE TOPIC [IF NOT EXISTS] path [(CONSUMER name
+// [WITH (...)], ...)] [WITH (...)].
+func readCreateTopic(tokens []lexer.Token) Statement {
+	stmt := Statement{Kind: CreateTopic}
+	tokens, stmt.IfExists = skipWords(tokens, "IF", "NOT", "EXISTS")
+	stmt.Name, tokens = readName(tokens)
+	consumers, rest := parenthesized(tokens)
+	for _, item := range splitTopLevel(consumers) {
+		if startsWith(item, "CONSUMER") {
+			stmt.Consumers = append(stmt.Consumers, readConsumer(item[1:]))
+		}
+	}
+	if startsWith(rest, "WITH") {
+		settings, _ := parenthesized(rest[1:])
+		stmt.Settings = readSettings(settings)
+	}
+	return stmt
+}
+
+// readConsumer reads a consumer from its name on: name [WITH (...)].
+func readConsumer(tokens []lexer.Token) Consumer {
+	var consumer Consumer
+	consumer.Name, tokens = readName(tokens)
+	if startsWith(tokens, "WITH") {
+		settings, _ := parenthesized(tokens[1:])
+		consumer.Settings = readSettings(settings)
+	}
+	return consumer
+}
+
+// readAlterTopic reads ALTER TOPIC [IF EXISTS] path and its actions: SET (...),
+// RESET (...), ADD CONSUMER name [WITH (...)], DROP CONSUMER name and ALTER
+// CONSUMER name SET (...) or RESET (...).
+func readAlterTopic(tokens []lexer.Token) Statement {
+	stmt := Statement{Kind: AlterTopic}
+	tokens, stmt.IfExists = skipWords(tokens, "IF", "EXISTS")
+	stmt.Name, tokens = readName(tokens)
+	for _, action := range splitTopLevel(tokens) {
+		stmt.Actions = append(stmt.Actions, readTopicAction(action))
+	}
+	return stmt
+}
+
+// readTopicAction reads one action of an ALTER TOPIC.
+func readTopicAction(tokens []lexer.Token) Action {
+	switch {
+	case startsWith(tokens, "ADD", "CONSUMER"):
+		consumer := readConsumer(tokens[2:])
+		return Action{Kind: AddConsumer, Consumer: consumer.Name, Settings: consumer.Settings}
+	case startsWith(tokens, "DROP", "CONSUMER"):
+		name, _ := readName(tokens[2:])
+		return Action{Kind: DropConsumer, Consumer: name}
+	case startsWith(tokens, "ALTER", "CONSUMER"):
+		name, rest := readName(tokens[2:])
+		switch {
+		case startsWith(rest, "SET"):
+			settings, _ := parenthesized(rest[1:])
+			return Action{Kind: SetConsumerSettings, Consumer: name, Settings: readSettings(settings)}
+		case startsWith(rest, "RESET"):
+			return Action{Kind: ResetConsumerSettings, Consumer: name, Settings: readResetNames(rest[1:])}
+		default:
+			return Action{Consumer: name}
+		}
+	case startsWith(tokens, "SET"):
+		settings, _ := parenthesized(tokens[1:])
+		return Action{Kind: SetSettings, Settings: readSettings(settings)}
+	case startsWith(tokens, "RESET"):
+		return Action{Kind: ResetSettings, Settings: readResetNames(tokens[1:])}
+	default:
+		return Action{}
+	}
+}
+
+// readResetNames reads the names a RESET lists.
+func readResetNames(tokens []lexer.Token) []Setting {
+	names, _ := parenthesized(tokens)
+	var settings []Setting
+	for _, item := range splitTopLevel(names) {
+		if len(item) > 0 {
+			settings = append(settings, Setting{Name: strings.ToUpper(item[0].Value)})
+		}
+	}
+	return settings
+}
+
+// stringContent is the text inside a string literal token: between its
+// quotes, with a literal suffix such as the u of 'raw'u left out and a
+// backslash escape read as the character it escapes.
+func stringContent(literal string) string {
+	if literal == "" || (literal[0] != '\'' && literal[0] != '"') {
+		return ""
+	}
+	end := strings.LastIndexByte(literal, literal[0])
+	if end <= 0 {
+		return ""
+	}
+	var b strings.Builder
+	inner := literal[1:end]
+	for i := 0; i < len(inner); i++ {
+		if inner[i] == '\\' && i+1 < len(inner) {
+			i++
+		}
+		b.WriteByte(inner[i])
+	}
+	return b.String()
 }
 
 func readCreateView(tokens []lexer.Token) Statement {

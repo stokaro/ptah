@@ -151,6 +151,8 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderCreateSynonym(n)
 	case *ast.DropSynonymNode:
 		return r.renderDropSynonym(n)
+	case *ast.CreateTopicNode, *ast.AlterTopicNode, *ast.DropTopicNode:
+		return nodedispatch.RefuseTopic(DialectName, n)
 	case *ast.ExtensionNode:
 		return r.renderExtension(n)
 	case *ast.DropExtensionNode:

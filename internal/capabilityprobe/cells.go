@@ -737,7 +737,7 @@ var Cells = []Cell{
 		Preset: capability.YDB262, PresetName: "YDB262",
 		Refinement: RefinedByVersion, Support: capability.Certified,
 		Image: "ydbplatform/local-ydb:26.2", ResolveNewestPatch: true,
-		Note: ydbProbedNote("26.2.1.14", 105, 15) + " The current YDB release, and the first line that sets and drops " +
+		Note: ydbProbedNote("26.2.1.14", 106, 15) + " The current YDB release, and the first line that sets and drops " +
 			"a column default in place.",
 	},
 	{
@@ -779,7 +779,7 @@ var Cells = []Cell{
 		Preset: capability.YDB251, PresetName: "YDB251",
 		Refinement: RefinedByVersion, Support: capability.Certified,
 		Image: "ydbplatform/local-ydb:25.1", ResolveNewestPatch: true,
-		Note: ydbProbedNote("25.1.4.7", 103, 17) + " The line Yandex Enterprise Database 25.1 is certified on, and the " +
+		Note: ydbProbedNote("25.1.4.7", 104, 17) + " The line Yandex Enterprise Database 25.1 is certified on, and the " +
 			"oldest measured: no 64-bit date types, Decimal(22,9) only, no default on a 16-bit integer, and vector " +
 			"indexes behind a flag, so the two keys about a vector index's writes and bit vectors are undecidable there.",
 	},
