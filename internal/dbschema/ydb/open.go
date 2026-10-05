@@ -20,8 +20,8 @@ import (
 	"github.com/ydb-platform/ydb-go-sdk/v3/config"
 	"google.golang.org/grpc"
 
-	"ptah.run/internal/ydbtype"
 	"ptah.run/internal/ydburl"
+	"ptah.run/internal/ydbview"
 )
 
 // Connection is an open YDB database: the database/sql pool that queries and
@@ -151,7 +151,7 @@ func pathPrefix(parsed ydburl.URL) string {
 	if parsed.Realm == "" {
 		return ""
 	}
-	return "PRAGMA TablePathPrefix(" + ydbtype.StringLiteral(parsed.Root()) + ");\n"
+	return ydbview.RealmPrefix(parsed.Root())
 }
 
 // dataSourceName writes the SDK's form of the URL: grpc:// or grpcs://, the
