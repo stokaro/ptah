@@ -1781,6 +1781,10 @@ without a server. The capability probe measures 26.2, the current release, and
 each run of the capability matrix. The other lines keep the presets measured on
 them and are best-effort.
 
+After a probe, Ptah checks the scheme directory tree to confirm that its
+temporary namespace is gone. Partition statistics can still list dropped column
+tables on YDB 25.1, so those statistics do not establish whether cleanup finished.
+
 ### Feature flags
 
 A preset describes a release line running with its default feature flags. A
