@@ -48,7 +48,9 @@ func withReplicationKeys(p plan, dialect string) plan {
 
 // ydbReplicationExperiments creates a replication of a namespace table, a
 // replication naming a token secret by its path, and a transfer from a
-// changefeed's topic into a table, and reads each back. Every object they
+// changefeed's topic into a table, and reads each back. The transfer is
+// created without the namespace's TablePathPrefix, which YDB would compile its
+// lambda under; see [session.execAtRoot]. Every object they
 // create carries a repl_ or xfer_ prefix, since the namespace is shared with
 // the other experiments: a transfer named like the topic experiment's topic
 // was refused on 26.2.1.14 with `unexpected path type ... EPathTypePersQueueGroup`.
@@ -104,9 +106,9 @@ func ydbReplicationExperiments() []experiment {
 			decide: func(ctx context.Context, s *session) (verdicts, []Attempt) {
 				lambda := "($msg) -> { return [<| partition: $msg._partition, offset: $msg._offset, " +
 					"message: CAST($msg._data AS Utf8) |>]; }"
-				created := s.exec(ctx, fmt.Sprintf("CREATE TRANSFER xfer_key FROM `%s` TO `%s` USING %s "+
-					"WITH (BATCH_SIZE_BYTES = 1048576)", path.Join(s.namespace, "xfer_src/feed"),
-					path.Join(s.namespace, "xfer_dst"), lambda))
+				created := s.execAtRoot(ctx, fmt.Sprintf("CREATE TRANSFER `%s` FROM `%s` TO `%s` USING %s "+
+					"WITH (BATCH_SIZE_BYTES = 1048576)", path.Join(s.namespace, "xfer_key"),
+					path.Join(s.namespace, "xfer_src/feed"), path.Join(s.namespace, "xfer_dst"), lambda))
 				attempts := []Attempt{created}
 				if !created.Accepted {
 					return verdicts{capability.Transfers: decided(false)}, attempts
@@ -114,13 +116,14 @@ func ydbReplicationExperiments() []experiment {
 				read, transfer, found := readTransfer(ctx, s, "xfer_key")
 				attempts = append(attempts, read)
 				spec := transfer.Spec
-				held := found && spec.Source == path.Join(s.namespace, "xfer_src/feed") &&
+				held := found && transfer.State == catalog.ReplicationRunning &&
+					spec.Source == path.Join(s.namespace, "xfer_src/feed") &&
 					spec.Target == path.Join(s.namespace, "xfer_dst") && spec.Lambda == lambda &&
 					spec.BatchSizeBytes == 1048576
 				if !held {
 					return verdicts{capability.Transfers: annotated(false, fmt.Sprintf("the CREATE TRANSFER was "+
-						"accepted, and then expected the transfer from xfer_src/feed into xfer_dst through its lambda "+
-						"in batches of 1 MiB, and it read %+v", transfer))}, attempts
+						"accepted, and then expected the running transfer from xfer_src/feed into xfer_dst through "+
+						"its lambda in batches of 1 MiB, and it read %+v", transfer))}, attempts
 				}
 				return verdicts{capability.Transfers: decided(true)}, attempts
 			},

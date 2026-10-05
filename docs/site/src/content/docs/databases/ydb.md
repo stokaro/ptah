@@ -790,7 +790,10 @@ rest.
 A dev database does not replay either; see
 [Dev, shadow and scratch databases](#dev-shadow-and-scratch-databases). In a
 dev realm a transfer's `FROM` and `TO` resolve at the database root rather
-than in the realm (`Path does not exist`).
+than in the realm (`Path does not exist`). YDB also compiles a transfer's
+lambda under the pragmas `CREATE TRANSFER` ran under, and a transfer created
+after the realm's `PRAGMA TablePathPrefix` stops at once (`Invalid table name
+"/local/app/Input": prefix must be "Input"`).
 
 ## Planning changes
 

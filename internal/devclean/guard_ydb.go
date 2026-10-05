@@ -40,7 +40,9 @@ import (
 // measured on 26.2.1.14, it prefixes a replication's own path and its
 // replica's, and a transfer's own path, while a replication's FOR and a
 // transfer's FROM and TO resolve at the database root (`Path does not exist`
-// for a table of the realm).
+// for a table of the realm), and a transfer created under the prefix stops at
+// once, since YDB compiles its lambda under it (`Invalid table name
+// "/local/<realm>/Input": prefix must be "Input"`).
 //
 // A statement the guard does not recognize is refused, as an unknown
 // ClickHouse engine is.
