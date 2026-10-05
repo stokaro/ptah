@@ -29,6 +29,13 @@ func Parse(text string) (*ast.StatementList, error) {
 		if p.accept(";") {
 			continue
 		}
+		if p.word("ALTER") {
+			result.Statements = append(result.Statements, p.defaultPool())
+			if !p.done() && !p.accept(";") {
+				p.failf("expected ';' after the declaration")
+			}
+			continue
+		}
 		if !p.word("CREATE") {
 			p.failf("expected a supported CREATE declaration")
 			break
@@ -44,6 +51,12 @@ func Parse(text string) (*ast.StatementList, error) {
 		case p.word("TOPIC"):
 			p.pos++
 			result.Statements = append(result.Statements, p.topic())
+		case p.word("COORDINATION"):
+			p.pos++
+			result.Statements = append(result.Statements, p.coordination())
+		case p.word("RESOURCE"):
+			p.pos++
+			result.Statements = append(result.Statements, p.resourcePool())
 		default:
 			p.failf("this CREATE object kind is not supported in a desired YQL schema")
 		}

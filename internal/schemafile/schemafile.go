@@ -339,9 +339,9 @@ var yamlOnlyExtensions = []string{".yaml", ".yml"}
 //   - YAML, Go, and YQL schemas express a YDB topic. HCL and DBML cannot,
 //     and SQL without the YDB dialect cannot either. Those sources must not
 //     request DROP TOPIC by omission.
-//   - Only YAML and a Go schema express a YDB resource pool or classifier.
-//     HCL has no block for either, and neither the SQL parser nor DBML
-//     produces one, so the document cannot say that a database holds none.
+//   - YAML, Go, and YQL express a YDB resource pool or classifier. HCL
+//     and DBML have no block for either. SQL outside the YDB dialect
+//     does not produce them.
 //   - Only YAML and a Go schema express a YDB async replication or transfer.
 //     HCL has no block for either, and neither the SQL parser nor DBML
 //     produces one, so a document in those formats applied to a YDB database
@@ -364,6 +364,7 @@ func withFormatLimits(database *schemamodel.Database, resolved, dialect string) 
 		return nil
 	}
 	extension := strings.ToLower(filepath.Ext(resolved))
+	yql := extension == dirSQLExtension && platform.NormalizeDialect(dialect) == platform.YDB
 	if extension == dirHCLExtension || extension == dbmlExtension {
 		database.NotDescribed = database.NotDescribed.With(
 			unsupportedByFormat(coverage.Changefeed, coverage.ColumnFamily, coverage.ColumnTable, coverage.TTL)...)
@@ -380,22 +381,17 @@ func withFormatLimits(database *schemamodel.Database, resolved, dialect string) 
 			coverage.Synonym, coverage.ExtendedProperty, coverage.Hypertable,
 			coverage.ContinuousAggregate)...)
 	}
-	if !slices.Contains(yamlOnlyExtensions, extension) && (extension != dirSQLExtension || platform.NormalizeDialect(dialect) != platform.YDB) {
-		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(coverage.Topic)...)
-	}
-	if !slices.Contains(yamlOnlyExtensions, extension) {
+	// The YQL reader records unsupported families itself, including empty
+	// documents. Do not replace its evolving coverage with a format-wide
+	// refusal every time the parser gains another object family.
+	if !slices.Contains(yamlOnlyExtensions, extension) && !yql {
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(
-			coverage.ResourcePool, coverage.ResourcePoolClassifier)...)
+			coverage.Topic, coverage.ResourcePool, coverage.ResourcePoolClassifier,
+			coverage.Replication, coverage.Transfer, coverage.Secret,
+			coverage.ExternalDataSource, coverage.ExternalTable, coverage.StreamingQuery)...)
 	}
 	if extension == dbmlExtension {
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(dbmlCannotExpress()...)...)
-	}
-	if !slices.Contains(yamlOnlyExtensions, extension) {
-		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(
-			coverage.Replication, coverage.Transfer)...)
-	}
-	if !slices.Contains(yamlOnlyExtensions, extension) {
-		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(coverage.Secret, coverage.ExternalDataSource, coverage.ExternalTable, coverage.StreamingQuery)...)
 	}
 	return database
 }
