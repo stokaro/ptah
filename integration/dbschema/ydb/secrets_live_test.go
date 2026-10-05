@@ -187,20 +187,21 @@ func planRotating(c *qt.C, conn *dbschema.DatabaseConnection, declared *schemamo
 
 // TestYDBSecrets_DropAllTablesDropsThem holds the cleanup to what the reader
 // describes: a secret is described, so DropAllTables drops it and removes
-// the directory it leaves empty, and the topic beside it, which the reader
-// records rather than describes, stays.
+// the directory it leaves empty, and the column table beside it, which the
+// reader records rather than describes, stays.
 func TestYDBSecrets_DropAllTablesDropsThem(t *testing.T) {
 	c := qt.New(t)
 	line := lineNamed(c, "26.2")
 	conn := openYDB(c, line)
 	c.Cleanup(func() {
-		c.Assert(conn.Writer().ExecuteSQL(context.Background(), "DROP TOPIC IF EXISTS `ptah_ydb_dropall_secrets/keep/events`"),
+		c.Assert(conn.Writer().ExecuteSQL(context.Background(), "DROP TABLE IF EXISTS `ptah_ydb_dropall_secrets/keep/olap`"),
 			qt.IsNil)
 	})
 	for _, statement := range []string{
 		"CREATE SECRET `ptah_ydb_dropall_secrets/gone/pw` WITH (value = 'dropped')",
 		"CREATE SECRET `ptah_ydb_dropall_secrets/keep/pw` WITH (value = 'dropped')",
-		"CREATE TOPIC `ptah_ydb_dropall_secrets/keep/events`",
+		"CREATE TABLE `ptah_ydb_dropall_secrets/keep/olap` (`id` Int64 NOT NULL, PRIMARY KEY (`id`)) " +
+			"PARTITION BY HASH(`id`) WITH (STORE = COLUMN)",
 	} {
 		c.Assert(conn.Writer().ExecuteSQL(c.Context(), statement), qt.IsNil, qt.Commentf("execute: %s", statement))
 	}
@@ -211,7 +212,7 @@ func TestYDBSecrets_DropAllTablesDropsThem(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(live.Secrets, qt.HasLen, 0)
 	c.Assert(directoryNames(c, c.Context(), line, "ptah_ydb_dropall_secrets"), qt.DeepEquals, []string{"keep"})
-	c.Assert(directoryNames(c, c.Context(), line, "ptah_ydb_dropall_secrets", "keep"), qt.DeepEquals, []string{"events"})
+	c.Assert(directoryNames(c, c.Context(), line, "ptah_ydb_dropall_secrets", "keep"), qt.DeepEquals, []string{"olap"})
 }
 
 // TestYDBSecrets_DropDirectoryDropsThem tears down a directory that holds a
