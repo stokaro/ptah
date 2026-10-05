@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-504 fields are reachable from the desired schema, and each one carries
+511 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 438 | reaches rendered SQL on at least one target |
+| `ddl` | 445 | reaches rendered SQL on at least one target |
 | `comparison` | 8 | read when two schemas are compared, and written into no statement |
 | `planning` | 7 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
