@@ -84,3 +84,29 @@ func TestDecode_UnknownStorageField(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `.*unknown field "FutureStorage"`)
 	c.Assert(got, qt.IsNil)
 }
+
+func TestDecode_InlineLocalIndexes(t *testing.T) {
+	c := qt.New(t)
+	body, err := os.ReadFile("testdata/26-2-inline-indexes.json")
+	c.Assert(err, qt.IsNil)
+	got, err := ydbcolumn.Decode(body, "/local/ptah_inline_probe")
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.Indexes, qt.DeepEquals, []ydbcolumn.LocalIndex{
+		{Name: "bf", Method: "bloom_filter", Columns: []string{"body"}, Options: map[string]string{"false_positive_probability": "0.01"}},
+		{Name: "ng", Method: "bloom_ngram_filter", Columns: []string{"body"}, Options: map[string]string{"false_positive_probability": "0.1", "ngram_size": "3", "case_sensitive": "true"}},
+	})
+}
+
+func TestDecode_LocalIndexStorageRefusals(t *testing.T) {
+	for _, storage := range []string{"custom", "", "__LOCAL_METADATA"} {
+		t.Run(storage, func(t *testing.T) {
+			c := qt.New(t)
+			body, err := os.ReadFile("testdata/26-2-inline-indexes.json")
+			c.Assert(err, qt.IsNil)
+			changed := strings.Replace(string(body), `"StorageId": "__DEFAULT"`, `"StorageId": "`+storage+`"`, 1)
+			got, err := ydbcolumn.Decode([]byte(changed), "/local/ptah_inline_probe")
+			c.Assert(err, qt.ErrorMatches, `.*local index "bf" has unsupported storage settings`)
+			c.Assert(got, qt.IsNil)
+		})
+	}
+}

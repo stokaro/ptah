@@ -1,0 +1,93 @@
+{
+  "Status": "StatusSuccess",
+  "Path": "/local/ptah_inline_probe",
+  "PathDescription": {
+    "ColumnTableDescription": {
+      "IsRestore": false,
+      "ColumnShardCount": 1,
+      "Schema": {
+        "Options": {
+          "SchemeNeedActualization": false
+        },
+        "NextColumnId": 5,
+        "KeyColumnNames": [
+          "id"
+        ],
+        "Version": "1",
+        "Columns": [
+          {
+            "NotNull": true,
+            "Id": 1,
+            "StorageId": "",
+            "DefaultValue": {},
+            "TypeId": 4,
+            "Type": "Uint64",
+            "Name": "id"
+          },
+          {
+            "NotNull": false,
+            "Id": 2,
+            "StorageId": "",
+            "DefaultValue": {},
+            "TypeId": 4608,
+            "Type": "Utf8",
+            "Name": "body"
+          }
+        ],
+        "Indexes": [
+          {
+            "BloomFilter": {
+              "DataExtractor": {
+                "ClassName": "DEFAULT"
+              },
+              "FalsePositiveProbability": 0.01,
+              "BitsStorage": {
+                "ClassName": "SIMPLE_STRING"
+              },
+              "ColumnIds": [
+                2
+              ]
+            },
+            "Id": 3,
+            "StorageId": "__DEFAULT",
+            "ClassName": "BLOOM_FILTER",
+            "InheritPortionStorage": false,
+            "Name": "bf"
+          },
+          {
+            "Id": 4,
+            "StorageId": "__DEFAULT",
+            "BloomNGrammFilter": {
+              "DataExtractor": {
+                "ClassName": "DEFAULT"
+              },
+              "ColumnId": 2,
+              "BitsStorage": {
+                "ClassName": "SIMPLE_STRING"
+              },
+              "CaseSensitive": true
+            },
+            "ClassName": "BLOOM_NGRAMM_FILTER",
+            "InheritPortionStorage": false,
+            "Name": "ng"
+          }
+        ]
+      },
+      "Sharding": {
+        "ColumnShards": [
+          "72075186224038524"
+        ],
+        "HashSharding": {
+          "Function": 2,
+          "Columns": [
+            "id"
+          ]
+        }
+      },
+      "StorageConfig": {
+        "DataChannelCount": 64
+      },
+      "Name": "ptah_inline_probe"
+    }
+  }
+}

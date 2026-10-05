@@ -330,12 +330,15 @@ func decodeColumnTTL(raw []byte) (*ast.YDBTieredTTLSpec, error) {
 	return policy, nil
 }
 
+// CREATE TABLE stores bloom indexes in __DEFAULT without inheritance; ALTER
+// TABLE uses the same storage with inheritance. Both are representable because
+// the reader rejects non-default table and column storage.
 func localIndexStorage(index localIndexDescription) error {
 	if index.ClassName == "MIN_MAX" {
 		if index.StorageID != "__LOCAL_METADATA" || index.InheritPortionStorage {
 			return fmt.Errorf("local index %q has unsupported storage settings", index.Name)
 		}
-	} else if (index.StorageID != "" && index.StorageID != "__DEFAULT") || !index.InheritPortionStorage {
+	} else if index.StorageID != "__DEFAULT" && (index.StorageID != "" || !index.InheritPortionStorage) {
 		return fmt.Errorf("local index %q has unsupported storage settings", index.Name)
 	}
 	return nil
