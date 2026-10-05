@@ -240,6 +240,7 @@ var convertedFamilies = map[string]string{
 	"AsyncReplications":       "AsyncReplications",
 	"Transfers":               "Transfers",
 	"CoordinationNodes":       "CoordinationNodes",
+	"Secrets":                 "Secrets",
 	"ExtendedProperties":      "ExtendedProperties",
 	"Triggers":                "Triggers",
 	"RLSPolicies":             "RLSPolicies",

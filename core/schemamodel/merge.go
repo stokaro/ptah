@@ -25,6 +25,7 @@ func NewDatabase() *Database {
 		AsyncReplications:       make([]AsyncReplication, 0),
 		Transfers:               make([]Transfer, 0),
 		CoordinationNodes:       make([]CoordinationNode, 0),
+		Secrets:                 make([]Secret, 0),
 		ExtendedProperties:      make([]ExtendedProperty, 0),
 		MaterializedViews:       make([]MaterializedView, 0),
 		Triggers:                make([]Trigger, 0),
@@ -81,6 +82,7 @@ func AppendDatabase(dst, src *Database) {
 	dst.AsyncReplications = append(dst.AsyncReplications, src.AsyncReplications...)
 	dst.Transfers = append(dst.Transfers, src.Transfers...)
 	dst.CoordinationNodes = append(dst.CoordinationNodes, src.CoordinationNodes...)
+	dst.Secrets = append(dst.Secrets, src.Secrets...)
 	dst.ExtendedProperties = append(dst.ExtendedProperties, src.ExtendedProperties...)
 	dst.MaterializedViews = append(dst.MaterializedViews, src.MaterializedViews...)
 	dst.Triggers = append(dst.Triggers, src.Triggers...)

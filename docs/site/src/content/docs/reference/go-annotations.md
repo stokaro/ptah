@@ -122,6 +122,7 @@ type StatusEnumMarker struct{}
 | [`ptah:schema:defaultprivilege`](#ptahschemadefaultprivilege) | A PostgreSQL default privilege | struct |
 | [`ptah:schema:rls:enable`](#ptahschemarlsenable) | Row-level security enablement | file or struct |
 | [`ptah:schema:rls:policy`](#ptahschemarlspolicy) | A row-level security policy | file or struct |
+| [`ptah:schema:secret`](#ptahschemasecret) | A YDB secret, by the variable its value comes from | struct or field |
 | [`ptah:schema:data`](#ptahschemadata) | Reference/seed row data for a table | struct |
 | [`ptah:schema:notdescribed`](#ptahschemanotdescribed) | What this schema does not describe | struct |
 
@@ -1139,6 +1140,23 @@ statement. Any value other than the two is refused at parse time rather than
 read as the default: permissive is the weaker of the two, so a misspelled
 `RESTRICTIVE` folded into it would grant the access the policy was written to
 withhold.
+
+### `//ptah:schema:secret`
+
+Declares a YDB secret: a scheme object whose value the server keeps and never
+returns, which an external data source reads a password or a key from. The
+declaration names the environment variable that holds the value, and never the
+value itself. Every other dialect refuses a secret. See
+[secrets](../../databases/ydb/#secrets).
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `name` | Yes | Secret name, the last segment of its path. |
+| `schema` | No | Directory that holds the secret, relative to the database root. |
+| `value_env` | Yes | Environment variable that holds the value. Its name starts with `PTAH_SECRET_`. |
+
+A `value` attribute is refused, and the error names the attribute and not what
+it held.
 
 ## Reference data
 

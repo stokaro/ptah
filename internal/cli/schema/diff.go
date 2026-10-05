@@ -14,6 +14,7 @@ import (
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/secretrotation"
 	"ptah.run/internal/cli/internal/serverversion"
 	"ptah.run/internal/cli/internal/tablerebuild"
 	"ptah.run/internal/devdocker"
@@ -90,6 +91,7 @@ of reporting a synced schema to a CI check.`,
 	dbcli.RegisterConfigFlag(flags, &opts.configPath)
 	dbcli.RegisterEnvFlag(flags, &opts.envName)
 	tablerebuild.Register(cmd)
+	secretrotation.Register(cmd)
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }

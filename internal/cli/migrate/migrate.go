@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/secretrotation"
 	"ptah.run/internal/cli/internal/tablerebuild"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/planartifact"
@@ -101,6 +102,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterMigrationsTableFlag(flags, new(string))
 	dbcli.RegisterRevisionTableFormatFlag(flags, new(string))
 	tablerebuild.Register(cmd)
+	secretrotation.Register(cmd)
 }
 
 func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
@@ -231,6 +233,13 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	// 4. Display differences summary
 	rebuild, err := tablerebuild.Requested(cmd)
 	if err != nil {
+		return err
+	}
+	rotateSecrets, err := secretrotation.Requested(cmd)
+	if err != nil {
+		return err
+	}
+	if err := diff.RotateSecrets(rotateSecrets); err != nil {
 		return err
 	}
 	astNodes, err := planner.GenerateSchemaDiffASTWithOptions(diff, info.Dialect, planner.Options{

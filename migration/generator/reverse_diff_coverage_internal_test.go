@@ -91,6 +91,15 @@ func assertReverseCoverageField(
 		// that, since this gate structurally cannot.
 		return
 	}
+	if field.Name == "SecretsRotated" || field.Name == "DeclaredSecrets" {
+		// A rotation has no reverse statement: the value the secret held
+		// before was never read, so a rollback has nothing to give it back,
+		// and DeclaredSecrets is only the input a rotation request is looked
+		// up in. Zeroing either cannot change the plan.
+		// TestReverseSchemaDiff_ARotationHasNoReverse is what holds that,
+		// since this gate structurally cannot.
+		return
+	}
 	if field.Name == "DeclaredTables" {
 		// An OUTPUT of the reverse, for the reason DeclaredUserTypes below is.
 		// A rollback restores the tables the pre-change database held, and a
@@ -1011,6 +1020,42 @@ func TestReverseSchemaDiff_AValidationHasNoReverse(t *testing.T) {
 	reversed := reverseSchemaDiffWithSchema(diff, schema, dbSchema)
 
 	c.Assert(reversed.HasChanges(), qt.IsFalse, qt.Commentf("%+v", reversed))
+}
+
+// TestReverseSchemaDiff_ARotationHasNoReverse holds the rollback of a secret
+// rotation to nothing: Ptah never read the value the secret held before the
+// rotation, so no statement could give it back, and a rotation reversed into
+// another rotation would only set the new value again.
+func TestReverseSchemaDiff_ARotationHasNoReverse(t *testing.T) {
+	c := qt.New(t)
+	schema, dbSchema := reverseCoverageContext()
+	rotated := difftypes.SecretChanges{{Name: "pg_password", ValueEnv: "PTAH_SECRET_PG"}}
+	diff := &difftypes.SchemaDiff{SecretsRotated: rotated, DeclaredSecrets: rotated}
+
+	reversed := reverseSchemaDiffWithSchema(diff, schema, dbSchema)
+
+	c.Assert(reversed.HasChanges(), qt.IsFalse, qt.Commentf("%+v", reversed))
+}
+
+// TestReverseSchemaDiff_ADroppedSecretComesBackFromItsDefaultVariable holds the
+// rollback of a dropped secret to a CREATE SECRET whose value comes from the
+// variable its path names, since a read of the database never says which
+// variable a secret's value came from; and the rollback of a created secret to
+// its drop.
+func TestReverseSchemaDiff_ADroppedSecretComesBackFromItsDefaultVariable(t *testing.T) {
+	c := qt.New(t)
+	schema, dbSchema := reverseCoverageContext()
+	diff := &difftypes.SchemaDiff{
+		SecretsAdded:   difftypes.SecretChanges{{Name: "s3_key", Schema: "ext", ValueEnv: "PTAH_SECRET_S3"}},
+		SecretsRemoved: difftypes.SecretChanges{{Name: "pg.password", Schema: "app"}},
+	}
+
+	reversed := reverseSchemaDiffWithSchema(diff, schema, dbSchema)
+
+	c.Assert(reversed.SecretsAdded, qt.DeepEquals, difftypes.SecretChanges{
+		{Name: "pg.password", Schema: "app", ValueEnv: "PTAH_SECRET_APP_PG_PASSWORD"},
+	})
+	c.Assert(reversed.SecretsRemoved, qt.DeepEquals, diff.SecretsAdded)
 }
 
 // TestReverseSchemaDiff_ARolledBackSequenceChangeKeepsTheRestart holds the

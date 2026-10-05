@@ -130,6 +130,7 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	// then run the census over the rest of the fixture.
 	refused := assertBothSurfacesRefuseTheCoordinationNode(c, dialect, &desired)
 	refused += assertBothSurfacesRefuseTheResourcePools(c, dialect, &desired)
+	refused += assertBothSurfacesRefuseTheSecret(c, dialect, &desired)
 	refused += assertBothSurfacesRefuseTheTopic(c, dialect, &desired)
 	refused += assertBothSurfacesRefuseTheReplications(c, dialect, &desired)
 
@@ -324,4 +325,31 @@ func assertBothSurfacesRefuseTheResourcePools(c *qt.C, dialect string, desired *
 	c.Assert(renderErr.Error(), qt.Contains, "requires target capability resource_pools")
 	desired.ResourcePools, desired.ResourcePoolClassifiers = nil, nil
 	return 2
+}
+
+// assertBothSurfacesRefuseTheSecret checks that a target without the secrets
+// key refuses the fixture's secret on both surfaces, through the one
+// validation they share, and takes the secret out of desired so the census can
+// run over the rest. It returns how many routed kinds it took out.
+//
+// The fixture holds a topic too, which the same targets refuse, so the probe
+// leaves the topic out: the refusal measured here is the secret's whichever
+// family the validation reaches first.
+func assertBothSurfacesRefuseTheSecret(c *qt.C, dialect string, desired *schemamodel.Database) int {
+	c.Helper()
+	if capability.ForDialect(dialect).Has(capability.Secrets) {
+		return 0
+	}
+	probe := *desired
+	probe.Topics = nil
+	_, planErr := schemadiff.CompareWithDatabaseInfo(
+		&probe, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil,
+	)
+	renderErr := renderer.ValidateSchema(&probe, dialect)
+	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(planErr.Error(), qt.Contains, "requires target capability secrets")
+	c.Assert(renderErr.Error(), qt.Contains, "requires target capability secrets")
+	desired.Secrets = nil
+	return 1
 }

@@ -555,6 +555,7 @@ func (r *renderer) renderBody() {
 	r.reportExportMetadata()
 	r.reportColumnFamilies()
 	r.reportChangefeeds()
+	r.reportSecrets()
 	r.reportRowDeletionPolicies()
 	r.reportTopics()
 	r.reportResourcePools()

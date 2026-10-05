@@ -279,7 +279,7 @@ func (t *transaction) Commit() error { return nil }
 func (t *transaction) Rollback() error { return nil }
 
 // DropAllTables drops every transfer, async replication, view, row table,
-// topic and coordination node in the database and then removes each
+// topic, secret and coordination node in the database and then removes each
 // directory that dropping them left empty, deepest first.
 //
 // It drops what the schema reader describes and nothing else. A column table
@@ -408,7 +408,7 @@ func parentDirectory(relative string) string {
 	return ""
 }
 
-// dropDirectory drops the views, tables, topics and coordination nodes in the
+// dropDirectory drops the views, tables, topics, secrets and coordination nodes in the
 // directory dir, relative to the database root, and the directories under it,
 // and reports whether it or the pass before it dropped or removed anything
 // there. A table drop reports as a replica stays where it is.
@@ -475,14 +475,14 @@ func (w *Writer) dropTableUnlessReplica(ctx context.Context, table string, drop 
 }
 
 // describedDropStatement is the statement DropAllTables drops entry, in the
-// directory dir, with: a view, a topic, or a coordination node other than one
+// directory dir, with: a view, topic, secret, or coordination node other than one
 // [Writer.leftAlone] keeps. A row table goes through
 // [Writer.dropTableUnlessReplica] instead, since dropping one depends on
 // whether a replication keeps it read-only. It reports false for any other
 // entry, which the reader does not describe and the cleanup keeps.
 func (w *Writer) describedDropStatement(dir string, entry *Ydb_Scheme.Entry) (string, bool) {
 	switch entry.GetType() {
-	case Ydb_Scheme.Entry_VIEW, Ydb_Scheme.Entry_TOPIC:
+	case Ydb_Scheme.Entry_VIEW, Ydb_Scheme.Entry_TOPIC, Ydb_Scheme.Entry_SECRET:
 		return dropStatement(entry.GetType(), path.Join(dir, entry.GetName()))
 	case Ydb_Scheme.Entry_COORDINATION_NODE:
 		if w.leftAlone(dir, entry) {
@@ -504,7 +504,7 @@ func dropRank(entry *Ydb_Scheme.Entry) int {
 }
 
 // DropDirectory drops dir, a directory relative to the database root, together
-// with everything in it: row and column tables, views, topics, coordination
+// with everything in it: row and column tables, views, topics, secrets, coordination
 // nodes and the directories below, deepest first. It is the teardown of a
 // directory a caller created for itself, such as the capability probe's
 // namespace; DropAllTables is the cleanup that keeps what the reader does not
@@ -567,6 +567,7 @@ var treeStatements = map[Ydb_Scheme.Entry_Type]string{
 	Ydb_Scheme.Entry_COLUMN_TABLE: "DROP TABLE %s",
 	Ydb_Scheme.Entry_VIEW:         "DROP VIEW %s",
 	Ydb_Scheme.Entry_TOPIC:        "DROP TOPIC %s",
+	Ydb_Scheme.Entry_SECRET:       "DROP SECRET %s",
 	Ydb_Scheme.Entry_TRANSFER:     "DROP TRANSFER %s",
 	Ydb_Scheme.Entry_REPLICATION:  "DROP ASYNC REPLICATION %s",
 }

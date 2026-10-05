@@ -87,6 +87,11 @@ type Database struct {
 	// CoordinationNodes are the YDB coordination nodes this read described.
 	// omitempty keeps the serialization of every other dialect as it is.
 	CoordinationNodes []CoordinationNode `json:"coordination_nodes,omitempty"`
+	// Secrets are the YDB secrets this description covers, by path alone:
+	// the server never returns a secret's value, and the reader asks for
+	// nothing else. omitempty keeps the serialization of every dialect that
+	// has no secrets byte-identical.
+	Secrets []Secret `json:"secrets,omitempty"`
 	// ExtendedProperties are the SQL Server extended properties this
 	// description covers: schema-, table- and column-scoped ones. See
 	// [ExtendedProperty] for what is deliberately not in it.
@@ -1583,6 +1588,24 @@ type Transfer struct {
 // the name alone at the database root.
 func (t Transfer) QualifiedName() string {
 	return tableref.Canonical(t.Schema, t.Name)
+}
+
+// Secret is a YDB secret read from the database: a scheme object at a path,
+// whose value the server keeps and never returns. The description holds where
+// the secret is and nothing else, so a comparison can tell only whether one
+// exists.
+//
+// Schema is the directory that holds the secret, "" for the database root, as
+// it is for a table.
+type Secret struct {
+	Name   string `json:"name"`
+	Schema string `json:"schema,omitempty"`
+}
+
+// QualifiedName returns the secret's canonical reference: schema.name, or the
+// name alone at the database root.
+func (s Secret) QualifiedName() string {
+	return tableref.Canonical(s.Schema, s.Name)
 }
 
 // ContinuousAggregate is one TimescaleDB continuous aggregate.

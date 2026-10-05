@@ -353,6 +353,11 @@ var yamlOnlyExtensions = []string{".yaml", ".yml"}
 //     through `ptah-compat schema inspect` and applied back from that HCL,
 //     planned `ALTER COLUMN body SET FAMILY default`, and a rebuild the same
 //     document asked for kept the family but moved the column out of it.
+//   - Of the formats here, only YAML declares a YDB secret, as a Go schema
+//     does; HCL, DBML and SQL have no spelling for one. A document in any of
+//     them describes no secret, and applying it to a database that holds one
+//     would otherwise plan `DROP SECRET`, which loses a value nothing can read
+//     back.
 func withFormatLimits(database *schemamodel.Database, resolved string) *schemamodel.Database {
 	if database == nil {
 		return nil
@@ -387,6 +392,9 @@ func withFormatLimits(database *schemamodel.Database, resolved string) *schemamo
 	if !slices.Contains(yamlOnlyExtensions, extension) {
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(
 			coverage.Replication, coverage.Transfer)...)
+	}
+	if !slices.Contains(yamlOnlyExtensions, extension) {
+		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(coverage.Secret)...)
 	}
 	return database
 }
@@ -846,6 +854,7 @@ func appendDatabase(dst, src *schemamodel.Database) {
 	dst.AsyncReplications = append(dst.AsyncReplications, src.AsyncReplications...)
 	dst.Transfers = append(dst.Transfers, src.Transfers...)
 	dst.CoordinationNodes = append(dst.CoordinationNodes, src.CoordinationNodes...)
+	dst.Secrets = append(dst.Secrets, src.Secrets...)
 	dst.ExtendedProperties = append(dst.ExtendedProperties, src.ExtendedProperties...)
 	dst.ManagedData = append(dst.ManagedData, src.ManagedData...)
 	// Several files loaded together are one description, and it describes only

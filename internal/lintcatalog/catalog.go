@@ -662,6 +662,9 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"YD131": {
 		Summary: "rows written into a table holding a vector index on a YDB line where `vector_index_maintained_on_write` is false, which the index does not find",
 	},
+	"YD140": {
+		Summary: "a secret's value written into the migration: a `CREATE SECRET` or `ALTER SECRET` whose value is not a `$PTAH_SECRET_...` reference, or a statement on the deprecated `OBJECT ... (TYPE SECRET)`",
+	},
 }
 
 // sqlRuleMeta declares the same facts for the standalone SQL linter, which

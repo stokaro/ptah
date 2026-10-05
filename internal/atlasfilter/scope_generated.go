@@ -92,6 +92,9 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database)
 	out.CoordinationNodes = keep(db.CoordinationNodes, func(node schemamodel.CoordinationNode) bool {
 		return s.selectedQualifiedName(typeList("coordination_node"), node.QualifiedName())
 	})
+	out.Secrets = keep(db.Secrets, func(secret schemamodel.Secret) bool {
+		return s.selected(typeList("secret"), secret.Schema, secret.Name)
+	})
 	out.ExtendedProperties = keep(db.ExtendedProperties,
 		func(property schemamodel.ExtendedProperty) bool {
 			if property.Schema == "" {

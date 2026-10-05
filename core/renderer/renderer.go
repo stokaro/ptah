@@ -421,8 +421,22 @@ func prepareNode(
 		return node, refuseReplicationFamily(dialect, caps, key, subject)
 	case *ast.CreateCoordinationNodeNode, *ast.AlterCoordinationNodeNode, *ast.DropCoordinationNodeNode:
 		return node, refuseCoordinationNode(dialect, caps, node)
+	case *ast.CreateSecretNode, *ast.AlterSecretNode, *ast.DropSecretNode:
+		return node, refuseSecretNode(dialect, caps, node)
 	default:
 		return prepareStandaloneFragment(dialect, caps, node)
+	}
+}
+
+// refuseSecretNode checks every secret statement against the same target key.
+func refuseSecretNode(dialect string, caps capability.Capabilities, node ast.Node) error {
+	switch typed := node.(type) {
+	case *ast.CreateSecretNode:
+		return refuseSecret(dialect, caps, "secret "+typed.Name)
+	case *ast.AlterSecretNode:
+		return refuseSecret(dialect, caps, "ALTER SECRET "+typed.Name)
+	default:
+		return refuseSecret(dialect, caps, "DROP SECRET "+node.(*ast.DropSecretNode).Name)
 	}
 }
 
@@ -1161,6 +1175,61 @@ func refuseChangefeeds(dialect string, caps capability.Capabilities, subject str
 		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
 			subject, capability.Changefeeds, normalized),
 	}
+}
+
+// validateDeclaredYDBObjects refuses the YDB table settings and objects a
+// declaration holds that the target cannot write: a table's row deletion
+// policy and changefeeds, and the secrets.
+func validateDeclaredYDBObjects(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
+	if err := validateDeclaredTableSettings(dialect, caps, database); err != nil {
+		return err
+	}
+	return validateDeclaredSecrets(dialect, caps, database)
+}
+
+// refuseSecret refuses subject, a YDB secret, on a target without
+// [capability.Secrets]: a target that built nothing for it would report the
+// declaration applied, and an external data source that names the secret
+// would then fail at its first read.
+func refuseSecret(dialect string, caps capability.Capabilities, subject string) error {
+	if caps.Has(capability.Secrets) {
+		return nil
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: string(capability.Secrets),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
+			subject, capability.Secrets, normalized),
+	}
+}
+
+// validateDeclaredSecrets refuses a declared secret the target cannot create,
+// before any statement is emitted: on a target without [capability.Secrets],
+// and on YDB a secret whose path a declared table holds, since a path names
+// one object (measured on 26.2.1.14: CREATE SECRET over a table's path answers
+// `unexpected path type ... EPathTypeTable`).
+func validateDeclaredSecrets(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
+	tables := make(map[string]bool, len(database.Tables))
+	for _, table := range database.Tables {
+		tables[table.QualifiedName()] = true
+	}
+	for _, secret := range database.Secrets {
+		name := secret.QualifiedName()
+		if err := refuseSecret(dialect, caps, "secret "+name); err != nil {
+			return err
+		}
+		if tables[name] {
+			return &ptaherr.RenderError{
+				Dialect: platform.NormalizeDialect(dialect),
+				Err:     ptaherr.ErrUnsupportedFeature,
+				Message: fmt.Sprintf("secret %s has the path of a declared table, and YDB keeps one object "+
+					"at a path (`unexpected path type`)", name),
+			}
+		}
+	}
+	return nil
 }
 
 // refuseReplicationFamily refuses subject, an async replication or a
@@ -2294,7 +2363,7 @@ func validateDatabaseDeclarations(
 	// A row deletion policy, a changefeed and a YDB table's other settings are
 	// refused here for the same reason: a target without them must refuse
 	// before the first statement, not at the CREATE TABLE that carries one.
-	if err := validateDeclaredTableSettings(dialect, caps, database); err != nil {
+	if err := validateDeclaredYDBObjects(dialect, caps, database); err != nil {
 		return err
 	}
 	if err := validateRoutineIdentityCollisions(dialect, database.Functions); err != nil {

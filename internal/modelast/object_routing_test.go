@@ -47,6 +47,7 @@ var routedKinds = []routedKind{
 	{name: "async replication", want: 1, count: countNodes[*ast.CreateAsyncReplicationNode]},
 	{name: "transfer", want: 1, count: countNodes[*ast.CreateTransferNode]},
 	{name: "coordination node", want: 1, count: countNodes[*ast.CreateCoordinationNodeNode]},
+	{name: "secret", want: 1, count: countNodes[*ast.CreateSecretNode]},
 	{name: "hypertable", want: 1, count: countNodes[*ast.CreateHypertableNode]},
 	{name: "continuous aggregate", want: 1, count: countNodes[*ast.CreateContinuousAggregateNode]},
 	{name: "extended property", want: 1, count: countNodes[*ast.ExtendedPropertyNode]},
@@ -106,6 +107,7 @@ func routingFixture() schemamodel.Database {
 			Source: "table_probe/feed", Target: "table_probe", Lambda: "($msg) -> { return []; }",
 		}}},
 		CoordinationNodes: []schemamodel.CoordinationNode{{StructName: "CN", Name: "node_probe"}},
+		Secrets:           []schemamodel.Secret{{StructName: "SE", Name: "secret_probe", ValueEnv: "PTAH_SECRET_PROBE"}},
 		Hypertables: []schemamodel.Hypertable{{
 			StructName: "HY", Table: "table_probe", Column: "n",
 		}},

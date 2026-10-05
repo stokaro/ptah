@@ -16,6 +16,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/schemaroot"
+	"ptah.run/internal/cli/internal/secretrotation"
 	"ptah.run/internal/cli/internal/tablerebuild"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/sqlitevirtual"
@@ -115,6 +116,7 @@ environment variable.`,
 	cmd.MarkFlagsMutuallyExclusive(planSaveFlag, planDryRunFlag)
 	cmd.MarkFlagsMutuallyExclusive(planOutputFlag, planDryRunFlag)
 	tablerebuild.Register(cmd)
+	secretrotation.Register(cmd)
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }

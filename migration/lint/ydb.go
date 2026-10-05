@@ -67,6 +67,7 @@ func ydbRules() []Rule {
 		ydbReplicationDroppedWithoutFailoverRule(),
 		ydbSecretInClearRule(),
 		ydbUndeclaredColumnFamilyRule(),
+		ydbSchemaSecretInClearRule(),
 	}
 }
 

@@ -1590,6 +1590,24 @@ const (
 	// other setting, and RESET is refused.
 	KeyBloomFilter Capability = "key_bloom_filter"
 
+	// Secrets marks a target on which Ptah declares, reads and plans a YDB
+	// secret: a scheme object created with `CREATE SECRET <path> WITH (value =
+	// ...)`, given a new value with `ALTER SECRET` and dropped with `DROP
+	// SECRET`, whose value the server never returns. Ptah compares a secret by
+	// its presence alone and writes its value as a reference to an environment
+	// variable, which the YDB connection defines when the statement runs.
+	//
+	// Measured on YDB 26.2.1.14, where the scheme service lists a secret as an
+	// entry of type SECRET and nothing reads its value back. The statements
+	// are behind YDB's EnableSchemaSecrets flag, on by default from 25.4.1.15
+	// and off on 25.3.1.25 (`Secrets are disabled. Please contact your system
+	// administrator to enable it`). 25.1.4.7 and 25.2.1.24 answer `no viable
+	// alternative at input 'CREATE SECRET'`: they have only the deprecated
+	// `CREATE OBJECT ... (TYPE SECRET)`, whose existence a user cannot list
+	// and whose value the database administrator reads in clear from
+	// .metadata, and Ptah models it on no line.
+	Secrets Capability = "secrets"
+
 	// SerialColumns marks a target whose SERIAL column types fill the column
 	// on insert without the application naming a value: PostgreSQL's serial
 	// pseudo-types and YDB's Serial, BigSerial and SmallSerial, each backed by
@@ -2126,6 +2144,9 @@ var registry = map[Capability]spec{
 	KeyBloomFilter: {
 		doc: "Ptah declares, reads and changes whether a row table keeps a bloom filter of its keys (YDB's KEY_BLOOM_FILTER)",
 	},
+	Secrets: {
+		doc: "Ptah declares, reads and plans a YDB secret, whose value comes from an environment variable and is never read back (YDB's CREATE SECRET)",
+	},
 	SerialColumns: {
 		doc: "SERIAL column types fill the column from an implicit sequence (PostgreSQL serial, YDB Serial)",
 	},
@@ -2463,6 +2484,8 @@ func MySQL84() Capabilities {
 		PartitioningOptions: false,
 		ReadReplicas:        false,
 		KeyBloomFilter:      false,
+		// A secret Ptah models is a YDB scheme object; no other engine has one.
+		Secrets: false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -2718,6 +2741,8 @@ func MariaDB1011() Capabilities {
 		PartitioningOptions: false,
 		ReadReplicas:        false,
 		KeyBloomFilter:      false,
+		// A secret Ptah models is a YDB scheme object; no other engine has one.
+		Secrets: false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -2915,6 +2940,8 @@ func Postgres16() Capabilities {
 		PartitioningOptions: false,
 		ReadReplicas:        false,
 		KeyBloomFilter:      false,
+		// A secret Ptah models is a YDB scheme object; no other engine has one.
+		Secrets: false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -3235,6 +3262,8 @@ func ClickHouse24() Capabilities {
 		PartitioningOptions: false,
 		ReadReplicas:        false,
 		KeyBloomFilter:      false,
+		// A secret Ptah models is a YDB scheme object; no other engine has one.
+		Secrets: false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -3450,6 +3479,8 @@ func SQLite3() Capabilities {
 		PartitioningOptions: false,
 		ReadReplicas:        false,
 		KeyBloomFilter:      false,
+		// A secret Ptah models is a YDB scheme object; no other engine has one.
+		Secrets: false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -3744,6 +3775,8 @@ func SQLServer2022() Capabilities {
 		PartitioningOptions: false,
 		ReadReplicas:        false,
 		KeyBloomFilter:      false,
+		// A secret Ptah models is a YDB scheme object; no other engine has one.
+		Secrets: false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -4476,6 +4509,8 @@ func Oracle23() Capabilities {
 		PartitioningOptions: false,
 		ReadReplicas:        false,
 		KeyBloomFilter:      false,
+		// A secret Ptah models is a YDB scheme object; no other engine has one.
+		Secrets: false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -4732,6 +4767,11 @@ func YDB262() Capabilities {
 		ReadReplicas:        true,
 		KeyBloomFilter:      true,
 
+		// CREATE SECRET, ALTER SECRET and DROP SECRET, measured on 26.2.1.14 with
+		// EnableSchemaSecrets on by default: the secret lists as a SECRET entry
+		// and no statement or service returns its value.
+		Secrets: true,
+
 		// Tables and their in-place changes. A table needs a key (`Primary
 		// key is required for ydb tables.`), and no ALTER changes it. A
 		// column's type never changes and a column is never renamed: `ALTER
@@ -4856,7 +4896,7 @@ func YDB254() Capabilities {
 		With(VectorBitType, false)
 }
 
-// YDB253 is the preset for YDB 25.3. It differs from [YDB254] in three keys,
+// YDB253 is the preset for YDB 25.3. It differs from [YDB254] in the keys below,
 // each measured on 25.3.1.25, where 25.4.1.15 takes the statement and reads
 // it back:
 //
@@ -4867,12 +4907,16 @@ func YDB254() Capabilities {
 //   - a column family's CACHE_MODE answers `Setting cache_mode is not
 //     allowed`, because the EnableTableCacheModes flag is off by default.
 //
+// CREATE SECRET also requires EnableSchemaSecrets, which is off by default
+// on 25.3 and on by default on 25.4.
+//
 // Every other statement measured on the two lines answered alike.
 func YDB253() Capabilities {
 	return YDB254().
 		With(TopicConsumerAvailabilityPeriod, false).
 		With(ReplicationSecretPaths, false).
-		With(ColumnFamilyCacheMode, false)
+		With(ColumnFamilyCacheMode, false).
+		With(Secrets, false)
 }
 
 // YDB252 is the preset for YDB 25.2. It differs from [YDB253] in four keys,

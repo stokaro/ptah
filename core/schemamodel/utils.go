@@ -1304,6 +1304,9 @@ func deduplicateComposite(r *Database) {
 	r.Transfers = deduplicateNamedDefinitions(r.Transfers, func(transfer Transfer) string {
 		return transfer.QualifiedName()
 	})
+	r.Secrets = deduplicateNamedDefinitions(r.Secrets, func(secret Secret) string {
+		return secret.QualifiedName()
+	})
 }
 
 type deduplicationScope func(tableScopeResolver, string, string) string

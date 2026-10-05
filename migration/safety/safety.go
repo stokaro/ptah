@@ -153,6 +153,12 @@ func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 	add(&findings, "transfers_added", len(diff.TransfersAdded), Safe)
 	add(&findings, "transfers_removed", len(diff.TransfersRemoved), Destructive)
 	add(&findings, "transfers_modified", len(diff.TransfersModified), Warning)
+	// A dropped YDB secret takes a value nothing can read back, and an
+	// external data source that names it fails at its next read; a rotated
+	// one replaces the value every such source uses.
+	add(&findings, "secrets_added", len(diff.SecretsAdded), Safe)
+	add(&findings, "secrets_removed", len(diff.SecretsRemoved), Destructive)
+	add(&findings, "secrets_rotated", len(diff.SecretsRotated), Warning)
 
 	for _, table := range diff.TablesModified {
 		add(&findings, "columns_added", len(table.ColumnsAdded), Warning)
@@ -591,6 +597,8 @@ func assessNode(node ast.Node) StatementAssessment {
 	case *ast.DropTopicNode, *ast.AlterTopicNode, *ast.DropAsyncReplicationNode, *ast.DropTransferNode,
 		*ast.AlterAsyncReplicationNode, *ast.AlterTransferNode:
 		return assessYDBObjectNode(n, assessment)
+	case *ast.DropSecretNode, *ast.AlterSecretNode:
+		return assessYDBObject(n, assessment)
 	case *ast.RawSQLNode:
 		assessment.Statement = n.SQL
 		return assessRawSQL(n.SQL, assessment, false)
@@ -1027,6 +1035,7 @@ var destructivePrefixes = []struct {
 	{words: []string{"DROP", "ASYNC", "REPLICATION"}, reason: dropReplicationReason},
 	{words: []string{"DROP", "TRANSFER"}, reason: dropTransferReason},
 	{words: []string{"DROP", "COORDINATION", "NODE"}, reason: dropCoordinationNodeReason},
+	{words: []string{"DROP", "SECRET"}, reason: dropSecretReason},
 	{words: []string{"TRUNCATE"}, reason: "TRUNCATE removes all rows from a table"},
 }
 
@@ -1086,6 +1095,30 @@ const (
 // destructive, in the words both the AST and the SQL-text classifiers report.
 const dropCoordinationNodeReason = "DROP COORDINATION NODE removes the node with its semaphores and rate limiter " +
 	"resources, even while a session holds a lock on it"
+
+// dropSecretReason is why DROP SECRET is destructive, in the words both the
+// AST and the SQL-text classifiers report.
+const dropSecretReason = "DROP SECRET removes a YDB secret whose value nothing can read back"
+
+// assessYDBObject judges a YDB topic or secret statement. A dropped topic
+// loses the messages it holds, and a dropped secret a value nothing can read
+// back; a rotated secret replaces the value every external data source naming
+// it uses.
+func assessYDBObject(node ast.Node, assessment StatementAssessment) StatementAssessment {
+	switch n := node.(type) {
+	case *ast.DropTopicNode:
+		assessment.Subject, assessment.Severity, assessment.Reason = n.Name, Destructive, dropTopicReason
+	case *ast.AlterTopicNode:
+		assessment.Subject = n.Name
+		return assessAlterTopic(n, assessment)
+	case *ast.DropSecretNode:
+		assessment.Subject, assessment.Severity, assessment.Reason = n.Name, Destructive, dropSecretReason
+	case *ast.AlterSecretNode:
+		assessment.Subject, assessment.Severity = n.Name, Warning
+		assessment.Reason = "ALTER SECRET replaces the value every external data source naming the secret uses"
+	}
+	return assessment
+}
 
 // destructivePrefixReason returns the reason of the first [destructivePrefixes]
 // entry the statement's words start with.

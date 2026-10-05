@@ -2540,7 +2540,7 @@ func TestAtlasDiffPolicy_CarriesConcurrentIndexDrop(t *testing.T) {
 			got, err := atlasDiffPolicy(tt.config())
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(got, qt.Equals, tt.want)
+			c.Assert(got, qt.DeepEquals, tt.want)
 		})
 	}
 }

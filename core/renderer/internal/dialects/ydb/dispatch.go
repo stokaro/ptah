@@ -191,6 +191,10 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.CreateResourcePoolClassifierNode, *ast.AlterResourcePoolClassifierNode,
 		*ast.DropResourcePoolClassifierNode:
 		return r.renderResourcePoolNode(node)
+	// Secrets, whose value is a reference the connection defines when the
+	// statement runs.
+	case *ast.CreateSecretNode, *ast.AlterSecretNode, *ast.DropSecretNode:
+		return r.renderSecretNode(node)
 
 	// Objects of other engines.
 	case *ast.CreateSynonymNode:

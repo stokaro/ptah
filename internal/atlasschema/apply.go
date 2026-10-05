@@ -435,6 +435,9 @@ func computeApplyPlan(
 	undecidednote.Report(opts.Diagnostics, undecided, "the database", "the desired schema")
 	computation.undecided = undecided
 	diff = applyDiffPolicy(diff, opts.Policy)
+	if err := applySecretRotation(diff, opts.Policy); err != nil {
+		return applyComputation{}, err
+	}
 	if diff.HasChanges() {
 		computation.statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, info.Dialect, planner.Options{
 			Capabilities:         info.Capabilities,
