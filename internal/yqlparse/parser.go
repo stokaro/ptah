@@ -42,6 +42,14 @@ func Parse(text string) (*ast.StatementList, error) {
 		}
 		p.pos++
 		switch {
+		case p.word("STREAMING"):
+			p.pos++
+			result.Statements = append(result.Statements, p.streamingQuery(false))
+		case p.word("OR"):
+			p.pos++
+			p.wantWord("REPLACE")
+			p.wantWord("STREAMING")
+			result.Statements = append(result.Statements, p.streamingQuery(true))
 		case p.word("TABLE"):
 			p.pos++
 			result.Statements = append(result.Statements, p.table())
