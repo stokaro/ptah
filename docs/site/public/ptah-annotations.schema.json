@@ -2342,6 +2342,62 @@
       ],
       "type": "object"
     },
+    "ptah.schema.streamingquery": {
+      "additionalProperties": false,
+      "description": "Declares a YDB query that continuously processes topic messages.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "allow_state_reset": {
+              "description": "Permit a changed body to reset aggregation state while retaining topic offsets.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "description": "Query name, the final path segment.",
+              "type": "string"
+            },
+            "resource_pool": {
+              "description": "Execution pool; omitted means default.",
+              "type": "string"
+            },
+            "run": {
+              "description": "Start the query; omitted means true.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            },
+            "schema": {
+              "description": "Database-relative directory.",
+              "type": "string"
+            },
+            "text": {
+              "description": "YQL body inside DO BEGIN ... END DO.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "text"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:streamingquery"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
     "ptah.schema.synonym": {
       "additionalProperties": false,
       "description": "Declares a SQL Server synonym, an alias for another object.",
@@ -3021,6 +3077,9 @@
     },
     {
       "$ref": "#/$defs/ptah.schema.secret"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.streamingquery"
     },
     {
       "$ref": "#/$defs/ptah.schema.externaldatasource"

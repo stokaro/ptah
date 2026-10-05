@@ -1620,6 +1620,7 @@ func TestParseDir_ReflectionGuard(t *testing.T) {
 		"../../integration/internal/fixtures/entities/023-go-annotations-objects",
 		"../../integration/internal/fixtures/entities/048-ydb-topics",
 		"../../integration/internal/fixtures/entities/054-ydb-resource-pools",
+		"../../integration/internal/fixtures/entities/055-ydb-streaming-queries",
 		"../../integration/internal/fixtures/entities/049-ydb-coordination-nodes",
 		"../../integration/internal/fixtures/entities/050-ydb-replication",
 		"../../integration/internal/fixtures/entities/052-ydb-secrets",

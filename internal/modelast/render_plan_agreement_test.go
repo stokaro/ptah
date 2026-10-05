@@ -131,6 +131,7 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	refused := assertBothSurfacesRefuseTheCoordinationNode(c, dialect, &desired)
 	refused += assertBothSurfacesRefuseTheResourcePools(c, dialect, &desired)
 	refused += assertBothSurfacesRefuseTheSecret(c, dialect, &desired)
+	refused += assertBothSurfacesRefuseTheStreamingQueries(c, dialect, &desired)
 	refused += assertBothSurfacesRefuseTheExternalObjects(c, dialect, &desired)
 	refused += assertBothSurfacesRefuseTheTopic(c, dialect, &desired)
 	refused += assertBothSurfacesRefuseTheReplications(c, dialect, &desired)
@@ -377,4 +378,18 @@ func assertBothSurfacesRefuseTheExternalObjects(c *qt.C, dialect string, desired
 	c.Assert(renderErr.Error(), qt.Contains, "requires target capability external_data_sources")
 	desired.ExternalDataSources, desired.ExternalTables = nil, nil
 	return 2
+}
+
+// assertBothSurfacesRefuseTheStreamingQueries measures the refusal before
+// removing this family from the shared routing census.
+func assertBothSurfacesRefuseTheStreamingQueries(c *qt.C, dialect string, desired *schemamodel.Database) int {
+	c.Helper()
+	_, planErr := schemadiff.CompareWithDatabaseInfo(desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil)
+	renderErr := renderer.ValidateSchema(desired, dialect)
+	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(planErr.Error(), qt.Contains, "requires target capability streaming_queries")
+	c.Assert(renderErr.Error(), qt.Contains, "requires target capability streaming_queries")
+	desired.StreamingQueries = nil
+	return 1
 }

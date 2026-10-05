@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/modelast"
+	"ptah.run/internal/ydbstream"
 )
 
 // routedKind is one declared object kind, the AST node the converter must
@@ -29,6 +30,7 @@ type routedKind struct {
 }
 
 var routedKinds = []routedKind{
+	{name: "streaming query", want: 1, count: countNodes[*ydbstream.Node]},
 	{name: "sequence", want: 1, count: countNodes[*ast.CreateSequenceNode]},
 	{name: "user type", want: 3, count: countNodes[*ast.CreateTypeNode]},
 	{name: "role", want: 1, count: countNodes[*ast.CreateRoleNode]},
@@ -94,6 +96,7 @@ func routingFixture() schemamodel.Database {
 		Views:             []schemamodel.View{{StructName: "V", Name: "view_probe", Body: "SELECT id FROM table_probe"}},
 		MaterializedViews: []schemamodel.MaterializedView{{StructName: "MV", Name: "matview_probe", Body: "SELECT id FROM table_probe"}},
 		Synonyms:          []schemamodel.Synonym{{StructName: "SY", Name: "synonym_probe", Target: "dbo.table_probe"}},
+		StreamingQueries:  []schemamodel.StreamingQuery{{Name: "stream_probe", Spec: ast.StreamingQuerySpec{Text: "INSERT INTO output SELECT * FROM input;", Run: new(false)}}},
 		Topics:            []schemamodel.Topic{{StructName: "TO", Name: "topic_probe"}},
 		ResourcePools:     []schemamodel.ResourcePool{{StructName: "RP", Name: "pool_probe"}},
 		ResourcePoolClassifiers: []schemamodel.ResourcePoolClassifier{{

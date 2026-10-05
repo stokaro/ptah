@@ -1549,9 +1549,9 @@ const (
 
 	// StreamingQueries marks a target on which Ptah declares, reads and plans
 	// a YDB streaming query (`CREATE STREAMING QUERY`), a query that runs
-	// continuously over the messages of a topic. It is false on every
-	// target: no line Ptah certifies creates one with its default flags, and
-	// Ptah does not model one.
+	// continuously over the messages of a topic. Default presets keep it false;
+	// a live YDB target enables it when both EnableStreamingQueries and
+	// EnableExternalDataSources are on.
 	//
 	// Measured: 25.1.4.7 and 25.2.1.24 do not parse the statement; 25.3.1.25,
 	// 25.4.1.15 and 26.1.1.22 parse it with EnableStreamingQueries off; and
@@ -2207,7 +2207,7 @@ var registry = map[Capability]spec{
 		doc: "Ptah declares, reads and plans a backup collection (YDB's CREATE BACKUP COLLECTION; not modeled)",
 	},
 	StreamingQueries: {
-		doc: "Ptah declares, reads and plans a streaming query (YDB's CREATE STREAMING QUERY; not modeled)",
+		doc: "Ptah declares, reads and plans a streaming query (YDB's CREATE STREAMING QUERY)",
 	},
 	AsyncReplication: {
 		doc: "Ptah declares, reads and plans an async replication of another database's tables (YDB's CREATE ASYNC REPLICATION)",
@@ -4930,7 +4930,7 @@ func YDB262() Capabilities {
 		// line from 25.1.4.7 to 26.2.1.14 (`Resource pools are disabled`), so
 		// every YDB preset says false and the cluster's flags turn the key on.
 		// Ptah models no backup collection, whose definition no public API
-		// reads back, and no streaming query, which no line creates with its
+		// reads back. No streaming query is enabled with the
 		// default flags; see each key.
 		ResourcePools:     false,
 		BackupCollections: false,

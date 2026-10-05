@@ -34,6 +34,8 @@ type Gate struct {
 	Key capability.Capability
 	// Flag is the flag's name as the monitoring endpoint spells it.
 	Flag string
+	// Requires is an additional capability needed even when this flag is on.
+	Requires capability.Capability
 	// refusals are texts the server's refusal contains when the flag is off,
 	// each measured; a gate whose refusal was never seen has none.
 	refusals []string
@@ -42,9 +44,9 @@ type Gate struct {
 // gates are the measured flags. Each one's default on every YDB line agrees
 // with the line's preset, measured on local-ydb 25.1.4.7, 25.2.1.24,
 // 25.3.1.25, 25.4.1.15, 26.1.1.22 and 26.2.1.14. Each one was then turned
-// on with YDB_FEATURE_FLAGS on every line where it is off by default, and the
-// statement it gates was accepted and did what it says on each of them, so
-// Refine claims no capability a line refuses with the flag on.
+// on where its entry records a live measurement. Additional prerequisites
+// are checked after all flags are applied, so mapping order cannot enable a
+// capability before its required feature.
 //
 // EnableAsyncIndexes is not a gate, because turning it off refuses nothing.
 // YDB_FEATURE_FLAGS can only turn a flag on, so it was turned off in the
@@ -54,6 +56,9 @@ type Gate struct {
 // described each as GlobalAsync, and answered a read through it. Mapping the
 // flag would turn async_indexes off on a cluster that builds async indexes.
 var gates = []Gate{
+	// Measured on 26.2: creation, start/stop, forced body changes, and
+	// system-view readback require streaming and external sources together.
+	{Key: capability.StreamingQueries, Flag: "EnableStreamingQueries", Requires: capability.ExternalDataSources, refusals: []string{"Streaming queries are disabled"}},
 	{
 		// Off on every line that lists it (25.3 and later); 25.1 and 25.2 do
 		// not list it, and refuse a unique index on an existing table outright.
@@ -233,6 +238,11 @@ func (f Flags) Refine(caps capability.Capabilities) capability.Capabilities {
 	for _, gate := range gates {
 		if value, listed := f[gate.Flag]; listed {
 			refined = refined.With(gate.Key, value)
+		}
+	}
+	for _, gate := range gates {
+		if gate.Requires != "" && !refined.Has(gate.Requires) {
+			refined = refined.With(gate.Key, false)
 		}
 	}
 	return refined

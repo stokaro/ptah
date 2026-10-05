@@ -346,7 +346,6 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.MigrationLockTimeout,
 			capability.MigrationStatementTimeout,
 			capability.ShowRoutinePrivilege,
-			capability.StreamingQueries,
 			capability.TieredTTL,
 			capability.TransactionalDDL,
 		},
@@ -503,7 +502,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps: capability.CockroachDB25(),
 		want: registered - 23,
 	}, {
-		name: "ydb 26.2 owes every row but the twelve it declares and the seven whose prerequisite the preset lacks: " +
+		name: "ydb 26.2 owes every row but the eleven it declares and the seven whose prerequisite the preset lacks: " +
 			"guarded DROP CONSTRAINT, CREATE OR REPLACE TRIGGER, SET EXPRESSION, the three reference policies " +
 			"and the sequence grammar restriction",
 		cell: Cell{
@@ -512,7 +511,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.YDB262(),
-		want: registered - 19,
+		want: registered - 18,
 	}, {
 		name: "ydb 25.1 owes two rows fewer than 26.2: the vector index's writes and its bit vectors, whose " +
 			"prerequisite the line keeps behind a flag that is off by default",
@@ -522,7 +521,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.YDB251(),
-		want: registered - 21,
+		want: registered - 20,
 	}, {
 		name: "a banner-refined line owes nothing because no observation can be credited to it",
 		cell: Cell{

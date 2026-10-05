@@ -281,9 +281,9 @@ func TestYDBWriter_StatementsSucceedByStatus(t *testing.T) {
 	}
 }
 
-// An object Ptah does not model is recorded by the read, not dropped from it
-// in silence, and so is a table setting it does not model: a TTL run
-// interval, which only the SDK and the CLI write. A view is described, with
+// A table setting Ptah does not model is recorded by the read: a TTL run
+// interval, which only the SDK and the CLI write. Column tables are modeled
+// alongside row tables. A view is described, with
 // the query the server stores, and the table's TTL, column family and
 // partitioning are read as its row deletion policy and its YDB settings.
 func TestYDBReader_RecordsWhatItDoesNotModel(t *testing.T) {
@@ -310,10 +310,10 @@ func TestYDBReader_RecordsWhatItDoesNotModel(t *testing.T) {
 
 			live := readScoped(c, conn, connectionSchemas)
 
-			c.Assert(tableNames(live), qt.DeepEquals, []string{"ptah_ydb_connection|base"})
+			c.Assert(tableNames(live), qt.DeepEquals, []string{"ptah_ydb_connection|base", "ptah_ydb_connection|olap"})
 			c.Assert(live.Views, qt.DeepEquals, []catalog.View{{Name: "v", Schema: "ptah_ydb_connection", Body: "SELECT 1 AS a"}})
 			c.Assert(live.NotDescribed.Describes(coverage.View, "ptah_ydb_connection.v"), qt.IsTrue)
-			c.Assert(live.NotDescribed.Describes(coverage.ColumnTable, "ptah_ydb_connection.olap"), qt.IsFalse)
+			c.Assert(live.NotDescribed.Describes(coverage.ColumnTable, "ptah_ydb_connection.olap"), qt.IsTrue)
 			c.Assert(live.NotDescribed.Describes(coverage.TTL, "ptah_ydb_connection.base"), qt.IsFalse)
 			c.Assert(live.NotDescribed.Describes(coverage.ColumnFamily, "ptah_ydb_connection.base"), qt.IsTrue)
 			c.Assert(live.NotDescribed.Describes(coverage.TableOption, "ptah_ydb_connection.base"), qt.IsTrue)

@@ -110,6 +110,18 @@ var refusedDiffCategories = map[string]refusedFixture{
 		why:  "a changed topic is YDB's for the same reason",
 		diff: &difftypes.SchemaDiff{TopicsModified: []difftypes.TopicDiff{{Name: "events", SettingsChanged: true}}},
 	},
+	"StreamingQueriesAdded": {
+		why:  "streaming queries require YDB; another planner must refuse a hand-built diff rather than report a query created",
+		diff: &difftypes.SchemaDiff{StreamingQueriesAdded: []schemamodel.StreamingQuery{{Name: "q"}}},
+	},
+	"StreamingQueriesRemoved": {
+		why:  "a streaming-query removal must not disappear on a target that cannot perform it",
+		diff: &difftypes.SchemaDiff{StreamingQueriesRemoved: []schemamodel.StreamingQuery{{Name: "q"}}},
+	},
+	"StreamingQueriesChanged": {
+		why:  "a streaming-query change must not disappear on a target that cannot perform it",
+		diff: &difftypes.SchemaDiff{StreamingQueriesChanged: []difftypes.StreamingQueryChange{{Desired: schemamodel.StreamingQuery{Name: "q"}}}},
+	},
 	"ResourcePoolsAdded": {
 		why:  "a resource pool is YDB's, and the comparison that feeds a PostgreSQL plan refuses a declared one before it diffs; a plan reaches one only through a diff built by hand, and planning nothing would report a pool applied that the database does not have",
 		diff: &difftypes.SchemaDiff{ResourcePoolsAdded: difftypes.ResourcePoolChanges{{Name: "batch"}}},

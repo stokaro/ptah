@@ -98,6 +98,9 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database)
 	out.ExternalDataSources = keep(db.ExternalDataSources, func(source schemamodel.ExternalDataSource) bool {
 		return s.selected(typeList("external_data_source"), source.Schema, source.Name)
 	})
+	out.StreamingQueries = keep(db.StreamingQueries, func(query schemamodel.StreamingQuery) bool {
+		return s.selected(typeList("streaming_query"), query.Schema, query.Name)
+	})
 	out.ExternalTables = keep(db.ExternalTables, func(table schemamodel.ExternalTable) bool {
 		return s.selected(typeList("external_table"), table.Schema, table.Name)
 	})
@@ -143,6 +146,7 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database)
 	})
 	out.ResourcePools = keep(db.ResourcePools, func(pool schemamodel.ResourcePool) bool {
 		return s.selectedNames(typeList("resource_pool"), pool.Name) ||
+			slices.ContainsFunc(out.StreamingQueries, func(query schemamodel.StreamingQuery) bool { return query.Spec.ResourcePool == pool.Name }) ||
 			slices.ContainsFunc(out.ResourcePoolClassifiers, func(classifier schemamodel.ResourcePoolClassifier) bool {
 				return classifier.Spec.ResourcePool == pool.Name
 			})

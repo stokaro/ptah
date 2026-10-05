@@ -91,7 +91,7 @@ func (f *fakeDatabase) ExecContext(_ context.Context, query string, _ ...any) (s
 		return nil, f.failures[position]
 	}
 	for _, verb := range []string{"DROP TABLE `", "DROP VIEW `", "DROP TOPIC `", "DROP SECRET `",
-		"DROP TRANSFER `", "DROP ASYNC REPLICATION `", "DROP COORDINATION NODE `",
+		"DROP TRANSFER `", "DROP ASYNC REPLICATION `", "DROP COORDINATION NODE `", "DROP STREAMING QUERY `",
 		"DROP EXTERNAL TABLE `", "DROP EXTERNAL DATA SOURCE `"} {
 		object, dropped := strings.CutPrefix(strings.TrimSuffix(query, " CASCADE"), verb)
 		if !dropped {
@@ -966,4 +966,25 @@ func TestWriter_ExternalDependencyOrderAcrossDirectories(t *testing.T) {
 			})
 		})
 	}
+}
+
+// A query in a later directory must stop before an earlier source is dropped.
+func TestWriter_StreamingQueriesDropBeforeSourcesAcrossDirectories(t *testing.T) {
+	c := qt.New(t)
+	fake := &fakeDatabase{tree: map[string][]*Ydb_Scheme.Entry{
+		"/local":               {entry("app", Ydb_Scheme.Entry_DIRECTORY)},
+		"/local/app":           {entry("a_sources", Ydb_Scheme.Entry_DIRECTORY), entry("z_queries", Ydb_Scheme.Entry_DIRECTORY)},
+		"/local/app/a_sources": {entry("events", Ydb_Scheme.Entry_TOPIC)},
+		"/local/app/z_queries": {entry("copy", ydbschema.EntryStreamingQuery)},
+	}}
+	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
+	objects, err := writer.ResetObjects(context.Background(), dbreset.Scope{})
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.Contains, dbreset.Object{Kind: "streaming query", Schema: "app/z_queries", Name: "copy"})
+	c.Assert(writer.DropDirectory(context.Background(), "app"), qt.IsNil)
+	c.Assert(fake.executed, qt.DeepEquals, []string{
+		"DROP STREAMING QUERY `app/z_queries/copy`",
+		"DROP TOPIC `app/a_sources/events`",
+	})
+	c.Assert(fake.removed, qt.DeepEquals, []string{"/local/app/a_sources", "/local/app/z_queries", "/local/app"})
 }

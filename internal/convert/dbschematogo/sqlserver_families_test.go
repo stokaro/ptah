@@ -243,6 +243,7 @@ var convertedFamilies = map[string]string{
 	"Secrets":                 "Secrets",
 	"ExternalDataSources":     "ExternalDataSources",
 	"ExternalTables":          "ExternalTables",
+	"StreamingQueries":        "StreamingQueries",
 	"ExtendedProperties":      "ExtendedProperties",
 	"Triggers":                "Triggers",
 	"RLSPolicies":             "RLSPolicies",

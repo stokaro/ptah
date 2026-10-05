@@ -171,15 +171,10 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 		return nil, err
 	}
 	scoped := withoutKeysOfRebuiltTables(withoutKeysOfDroppedTables(diff, removedTables, semantics), rebuilds, semantics)
-	if err := p.refuseComments(scoped); err != nil {
+	if err := p.refuseDeclaredObjectChanges(scoped); err != nil {
 		return nil, err
 	}
-	if err := p.refuseObjects(scoped); err != nil {
-		return nil, err
-	}
-	if err := p.refuseCoordinationNodes(diff); err != nil {
-		return nil, err
-	}
+
 	for _, tableDiff := range diff.TablesModified {
 		if err := p.refuseModification(tableDiff, rebuilds, semantics, diff.CurrentNotDescribed); err != nil {
 			return nil, err
@@ -201,6 +196,10 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 		ownIndexes[key] = true
 	}
 	if err := p.refuseUnplannableObjectChanges(diff, ownIndexes, semantics); err != nil {
+		return nil, err
+	}
+	streamBefore, streamAfter, err := p.streamingQueries(diff)
+	if err != nil {
 		return nil, err
 	}
 	external, err := p.planExternal(diff)
@@ -226,6 +225,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	}
 
 	var result []ast.Node
+	result = append(result, streamBefore...)
 	result = append(result, dropReplications(diff)...)
 	result = append(result, p.dropViews(diff)...)
 	result = append(result, access.before...)
@@ -262,6 +262,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	result = append(result, viewComments(diff)...)
 	result = append(result, access.after...)
 	result = append(result, pools.nodes...)
+	result = append(result, streamAfter...)
 	result = append(result, access.last...)
 	return result, nil
 }

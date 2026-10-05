@@ -989,6 +989,19 @@ var directives = []Directive{
 		},
 	},
 	{
+		Name:        "ptah:schema:streamingquery",
+		Description: "Declares a YDB query that continuously processes topic messages.",
+		Scopes:      []Scope{ScopeStruct, ScopeField},
+		Attributes: []Attribute{
+			attr("name", "Query name, the final path segment.", valueString, true, false),
+			attr("schema", "Database-relative directory.", valueString, false, false),
+			attr("text", "YQL body inside DO BEGIN ... END DO.", valueSQL, true, false),
+			attr("run", "Start the query; omitted means true.", valueBoolean, false, false),
+			attr("resource_pool", "Execution pool; omitted means default.", valueString, false, false),
+			attr("allow_state_reset", "Permit a changed body to reset aggregation state while retaining topic offsets.", valueBoolean, false, false),
+		},
+	},
+	{
 		Name: "ptah:schema:externaldatasource",
 		Description: "Declares a YDB external data source: another system YDB reads from, such as an object " +
 			"storage bucket or a PostgreSQL database, and how YDB authenticates to it. A credential is named " +

@@ -58,6 +58,7 @@ type Database struct {
 	CoordinationNodes          []CoordinationNode             `json:",omitempty"`
 	Secrets                    []Secret                       `json:",omitempty"` // YDB secrets, by name; never their values
 	ExternalDataSources        []ExternalDataSource           `json:",omitempty"` // YDB external data sources
+	StreamingQueries           []StreamingQuery               `json:",omitempty"` // YDB streaming queries
 	ExternalTables             []ExternalTable                `json:",omitempty"` // YDB external tables
 	ExtendedProperties         []ExtendedProperty             // SQL Server extended properties
 	MaterializedViews          []MaterializedView             // Database materialized views

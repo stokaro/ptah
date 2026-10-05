@@ -120,6 +120,7 @@ func excludeDatabase(
 	filtered.Secrets = state.filterSecrets(filtered.Secrets)
 	filtered.ExternalDataSources = state.filterExternalDataSources(filtered.ExternalDataSources)
 	filtered.ExternalTables = state.filterExternalTables(filtered.ExternalTables)
+	filtered.StreamingQueries = state.filterStreamingQueries(filtered.StreamingQueries)
 	filtered.ExtendedProperties = state.filterExtendedProperties(filtered.ExtendedProperties)
 	filtered.ContinuousAggregates = state.filterContinuousAggregates(filtered.ContinuousAggregates)
 	filtered.Hypertables = state.filterHypertables(filtered.Hypertables)
@@ -227,6 +228,7 @@ func excludeGenerated(
 	filtered.Views = state.filterGeneratedViews(filtered.Views)
 	filtered.MaterializedViews = state.filterGeneratedMaterializedViews(filtered.MaterializedViews)
 	filtered.CoordinationNodes = state.filterGeneratedCoordinationNodes(filtered.CoordinationNodes)
+	filtered.StreamingQueries = state.filterGeneratedStreamingQueries(filtered.StreamingQueries)
 	filtered.Triggers = state.filterGeneratedTriggers(tableByStruct, filtered.Triggers)
 	filtered.RLSPolicies = state.filterGeneratedRLSPolicies(tableByStruct, filtered.RLSPolicies)
 	filtered.RLSEnabledTables = state.filterGeneratedRLSEnabledTables(tableByStruct, filtered.RLSEnabledTables)
@@ -2003,6 +2005,7 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		Secrets:                 slices.Clone(schema.Secrets),
 		ExternalDataSources:     slices.Clone(schema.ExternalDataSources),
 		ExternalTables:          slices.Clone(schema.ExternalTables),
+		StreamingQueries:        slices.Clone(schema.StreamingQueries),
 		ExtendedProperties:      slices.Clone(schema.ExtendedProperties),
 		ContinuousAggregates:    slices.Clone(schema.ContinuousAggregates),
 		Hypertables:             slices.Clone(schema.Hypertables),
@@ -2068,6 +2071,7 @@ func cloneGenerated(schema *schemamodel.Database) *schemamodel.Database {
 	filtered.Secrets = slices.Clone(schema.Secrets)
 	filtered.ExternalDataSources = slices.Clone(schema.ExternalDataSources)
 	filtered.ExternalTables = slices.Clone(schema.ExternalTables)
+	filtered.StreamingQueries = slices.Clone(schema.StreamingQueries)
 	filtered.ExtendedProperties = slices.Clone(schema.ExtendedProperties)
 	filtered.MaterializedViews = slices.Clone(schema.MaterializedViews)
 	filtered.Triggers = slices.Clone(schema.Triggers)
@@ -2323,4 +2327,16 @@ func generatedConstraintResourceTypes(constraint schemamodel.Constraint) []strin
 		types = append(types, "foreign_key", "foreign-key")
 	}
 	return types
+}
+
+func (s *exclusionState) filterStreamingQueries(queries []catalog.StreamingQuery) []catalog.StreamingQuery {
+	return keep(queries, func(query catalog.StreamingQuery) bool {
+		return !s.matches("streaming_query", s.nameCandidates(query.Schema, query.Name)...) && !s.schemaExcluded(query.Schema)
+	})
+}
+
+func (s *exclusionState) filterGeneratedStreamingQueries(queries []schemamodel.StreamingQuery) []schemamodel.StreamingQuery {
+	return keep(queries, func(query schemamodel.StreamingQuery) bool {
+		return !s.matches("streaming_query", s.nameCandidates(query.Schema, query.Name)...) && !s.schemaExcluded(query.Schema)
+	})
 }

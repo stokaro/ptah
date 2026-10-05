@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer/internal/dialects/internal/nodedispatch"
 	"ptah.run/internal/ydbcoordination"
+	"ptah.run/internal/ydbstream"
 )
 
 // defaultPrivilegeReason is why YDB refuses a default privilege.
@@ -33,12 +34,8 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 
 	switch n := node.(type) {
 	// Tables, columns and indexes: what this renderer writes.
-	case *ast.CreateTableNode:
-		return r.renderCreateTable(n)
-	case *ast.AlterTableNode:
-		return r.renderAlterTable(n)
-	case *ast.DropTableNode:
-		return r.renderDropTable(n)
+	case *ast.CreateTableNode, *ast.AlterTableNode, *ast.DropTableNode:
+		return r.renderTableStatement(node)
 	case *ast.ColumnNode:
 		return r.renderColumnNode(n)
 	case *ast.ConstraintNode:
@@ -194,6 +191,9 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	// statement runs.
 	case *ast.CreateSecretNode, *ast.AlterSecretNode, *ast.DropSecretNode:
 		return r.renderSecretNode(node)
+
+	case *ydbstream.Node:
+		return r.renderStreamingQuery(n)
 
 	// External data sources and external tables, which hold no data in YDB.
 	case *ast.CreateExternalDataSourceNode, *ast.CreateExternalTableNode,
@@ -361,5 +361,27 @@ func (r *Renderer) renderResourcePoolNode(node ast.Node) error {
 	default:
 		return fmt.Errorf("%w: %s: %T is not a resource pool or classifier node",
 			ptaherr.ErrInvalidSchemaDiff, DialectName, node)
+	}
+}
+
+func (r *Renderer) renderStreamingQuery(node *ydbstream.Node) error {
+	statement, err := node.Statement(r.caps)
+	if err != nil {
+		return err
+	}
+	r.w.WriteLine(statement)
+	return nil
+}
+
+func (r *Renderer) renderTableStatement(node ast.Node) error {
+	switch n := node.(type) {
+	case *ast.CreateTableNode:
+		return r.renderCreateTable(n)
+	case *ast.AlterTableNode:
+		return r.renderAlterTable(n)
+	case *ast.DropTableNode:
+		return r.renderDropTable(n)
+	default:
+		return fmt.Errorf("unexpected YDB table statement %T", node)
 	}
 }
