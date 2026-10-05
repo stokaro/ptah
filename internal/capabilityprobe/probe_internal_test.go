@@ -129,6 +129,9 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 		// (stokaro/ptah#916).
 		want: []capability.Capability{
 			capability.CatalogVectorInfo,
+			// CommentAttributes names YDB table attributes, which no engine
+			// but YDB has; the engines here keep comments in their own catalog.
+			capability.CommentAttributes,
 			capability.ContinuousAggregates,
 			// DatabaseGrants, GroupPrincipals, RelativeGrantPaths and
 			// RoleMembership name what Ptah's planner plans, which only the
@@ -174,6 +177,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.CatalogRowStatistics,
 			capability.CatalogTriggerDefinitions,
 			capability.CatalogVectorInfo,
+			capability.CommentAttributes,
 			capability.CompositeTypes,
 			capability.ContinuousAggregates,
 			capability.DatabaseGrants,
@@ -220,6 +224,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.CatalogRowStatistics,
 			capability.CatalogTriggerDefinitions,
 			capability.CatalogVectorInfo,
+			capability.CommentAttributes,
 			capability.CompositeTypes,
 			capability.ContinuousAggregates,
 			capability.DatabaseGrants,
@@ -269,6 +274,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.CatalogPartitions,
 			capability.CatalogRecursiveCTE,
 			capability.CatalogVectorInfo,
+			capability.CommentAttributes,
 			capability.CompositeTypes,
 			capability.ContinuousAggregates,
 			capability.DatabaseGrants,
@@ -431,37 +437,37 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps capability.Capabilities
 		want int
 	}{{
-		name: "postgres owes sixteen fewer: the probe cannot ask whether a privilege exists, none of the three runtime policies nor the transaction wrapper is a statement it can send, TimescaleDB — hypertables and continuous aggregates both — is an extension none of these images has, the Oracle vector catalog column is not a relation it carries, index_rename, the two serial sequence keys and the four access keys only YDB plans name what Ptah's planner plans rather than what the server does, and no engine of the family has a spelling of a TTL unit",
+		name: "postgres owes seventeen fewer: the probe cannot ask whether a privilege exists, none of the three runtime policies nor the transaction wrapper is a statement it can send, TimescaleDB — hypertables and continuous aggregates both — is an extension none of these images has, the Oracle vector catalog column is not a relation it carries, index_rename, the two serial sequence keys and the four access keys only YDB plans name what Ptah's planner plans rather than what the server does, no engine of the family has a spelling of a TTL unit, and comment_attributes names YDB table attributes",
 		cell: measuredCell,
 		caps: capability.Postgres17(),
-		want: registered - 16,
+		want: registered - 17,
 	}, {
-		name: "mysql owes forty-two fewer: role_management, row_level_ttl, row_deletion_policy and its epoch column, named_not_null_constraints, schema_comments, index_rename, the two serial sequence keys, the four access keys only YDB plans, the ten object-comment keys, the two TimescaleDB keys, the seven catalog keys, the three user-type kinds, the four runtime properties and the sequence grammar restriction name surfaces no MySQL path reads or no statement decides",
+		name: "mysql owes forty-three fewer: role_management, row_level_ttl, row_deletion_policy and its epoch column, named_not_null_constraints, schema_comments, index_rename, the two serial sequence keys, the four access keys only YDB plans, the ten object-comment keys, comment_attributes, the two TimescaleDB keys, the seven catalog keys, the three user-type kinds, the four runtime properties and the sequence grammar restriction name surfaces no MySQL path reads or no statement decides",
 		cell: Cell{
 			Dialect: platform.MySQL, Line: "9.7",
 			Preset: capability.MySQL84, PresetName: "MySQL84",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MySQL84(),
-		want: registered - 42,
+		want: registered - 43,
 	}, {
-		name: "mariadb owes forty-two fewer: COMMENT ON SCHEMA and the ten object-comment forms are not statements it has, the three user-type kinds have no MariaDB spelling, the four runtime properties are not statements, neither pg_class nor pg_default_acl nor pg_get_triggerdef nor the Oracle vector catalog column is something it has, the sequence grammar restriction has no control statement here, row_deletion_policy and its epoch column are Spanner and YDB clauses it has no spelling of, named_not_null_constraints is a PostgreSQL 18 catalog behavior, index_rename, the two serial sequence keys and the four access keys only YDB plans name what Ptah's planner plans, and sequences is asked now that Ptah renders, reads and plans one",
+		name: "mariadb owes forty-three fewer: COMMENT ON SCHEMA and the ten object-comment forms are not statements it has, comment_attributes names YDB table attributes, the three user-type kinds have no MariaDB spelling, the four runtime properties are not statements, neither pg_class nor pg_default_acl nor pg_get_triggerdef nor the Oracle vector catalog column is something it has, the sequence grammar restriction has no control statement here, row_deletion_policy and its epoch column are Spanner and YDB clauses it has no spelling of, named_not_null_constraints is a PostgreSQL 18 catalog behavior, index_rename, the two serial sequence keys and the four access keys only YDB plans name what Ptah's planner plans, and sequences is asked now that Ptah renders, reads and plans one",
 		cell: Cell{
 			Dialect: platform.MariaDB, Line: "10.11",
 			Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MariaDB1011(),
-		want: registered - 42,
+		want: registered - 43,
 	}, {
-		name: "cockroachdb 26.2 owes every row its preset enables a prerequisite for, less the sixteen its plan declares undecidable and the domain comment row, whose domain prerequisite is absent",
+		name: "cockroachdb 26.2 owes every row its preset enables a prerequisite for, less the seventeen its plan declares undecidable and the domain comment row, whose domain prerequisite is absent",
 		cell: Cell{
 			Dialect: platform.CockroachDB, Line: "26.2",
 			Preset: capability.CockroachDB26, PresetName: "CockroachDB26",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.CockroachDB26(),
-		want: registered - 17,
+		want: registered - 18,
 	}, {
 		name: "cockroachdb 25.4 excludes the guarded drop row and the domain comment row, whose prerequisites are absent",
 		cell: Cell{
@@ -470,7 +476,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.CockroachDB25(),
-		want: registered - 18,
+		want: registered - 19,
 	}, {
 		name: "ydb 26.2 owes every row but the eight it declares and the seven whose prerequisite the preset lacks: " +
 			"guarded DROP CONSTRAINT, CREATE OR REPLACE TRIGGER, SET EXPRESSION, the three reference policies " +

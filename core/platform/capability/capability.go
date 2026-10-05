@@ -511,7 +511,10 @@ const (
 
 	// ViewComments marks a target that stores a comment against a view
 	// through `COMMENT ON VIEW` and reports it back through
-	// obj_description(oid, 'pg_class'), which is where Ptah reads it.
+	// obj_description(oid, 'pg_class'), which is where Ptah reads it. On YDB
+	// the statement is Ptah's own, which its connection runs as a change of
+	// the view's user attributes, and the reader reads the attribute back
+	// (see [CommentAttributes]).
 	//
 	// The five object-comment keys are separate because the statements are,
 	// and the engines take different subsets of them. Measured 2026-09-25:
@@ -606,6 +609,23 @@ const (
 	// back. The Spanner PostgreSQL interface answers `Unknown statement`
 	// (stokaro/ptah#3678).
 	ConstraintComments Capability = "constraint_comments"
+
+	// CommentAttributes marks a target on which Ptah keeps the comments of a
+	// table, its columns and its indexes as user attributes of the table:
+	// written by Ptah's own COMMENT ON statement, which its connection runs
+	// through the table service, and read back from the table's description.
+	// YDB has no COMMENT statement and no comment clause, and an index path
+	// holds no attribute, so a column's and an index's comment is an
+	// attribute of its table under a key that names it (internal/ydbcomment).
+	//
+	// Measured on YDB 25.1.4.7 and 26.2.1.14 alike: AlterTable sets and
+	// removes an attribute of a row table, and DescribeTable reports it; a
+	// key takes 1 to 100 bytes and may not start with `__`, a value at most
+	// 4096 bytes, and an object's attributes 10240 bytes together. A column
+	// table accepts an attribute and reports none, so the key does not cover
+	// one. The other engines keep a table's and a column's comment in a
+	// catalog of their own, which this key does not name, and answer false.
+	CommentAttributes Capability = "comment_attributes"
 
 	// XMLType marks support for the PostgreSQL XML column type. CockroachDB
 	// and Spanner PostgreSQL disable it; callers should use platform-specific
@@ -1664,7 +1684,7 @@ var registry = map[Capability]spec{
 		doc: "COMMENT ON SCHEMA, which stores a comment against a schema rather than a table or column",
 	},
 	ViewComments: {
-		doc:      "COMMENT ON VIEW, stored where obj_description reads it back",
+		doc:      "COMMENT ON VIEW, stored where Ptah's reader reads it back: obj_description, or a YDB view's attribute",
 		requires: []Capability{Views},
 	},
 	SequenceComments: {
@@ -1703,6 +1723,9 @@ var registry = map[Capability]spec{
 	},
 	ConstraintComments: {
 		doc: "COMMENT ON CONSTRAINT ... ON a table, stored where obj_description reads it back",
+	},
+	CommentAttributes: {
+		doc: "the comments of a table, its columns and its indexes kept as user attributes of the table, written by Ptah's COMMENT ON (YDB)",
 	},
 	XMLType: {
 		doc: "PostgreSQL XML column type",
@@ -2128,6 +2151,7 @@ func MySQL84() Capabilities {
 		TriggerComments:                 false,
 		PolicyComments:                  false,
 		ConstraintComments:              false,
+		CommentAttributes:               false,
 		XMLType:                         false,
 		AdvisoryLocks:                   false,
 		RowLevelTTL:                     false,
@@ -2361,6 +2385,7 @@ func MariaDB1011() Capabilities {
 		TriggerComments:                 false,
 		PolicyComments:                  false,
 		ConstraintComments:              false,
+		CommentAttributes:               false,
 		XMLType:                         false,
 		AdvisoryLocks:                   false,
 		RowLevelTTL:                     false,
@@ -2530,6 +2555,7 @@ func Postgres16() Capabilities {
 		// Measured on PostgreSQL 14 and 18 on a CHECK, a UNIQUE, a PRIMARY KEY
 		// and a FOREIGN KEY constraint (stokaro/ptah#3678).
 		ConstraintComments:              true,
+		CommentAttributes:               false,
 		XMLType:                         true,
 		AdvisoryLocks:                   true,
 		RowLevelTTL:                     false,
@@ -2823,6 +2849,7 @@ func ClickHouse24() Capabilities {
 		TriggerComments:          false,
 		PolicyComments:           false,
 		ConstraintComments:       false,
+		CommentAttributes:        false,
 		XMLType:                  false,
 		AdvisoryLocks:            false,
 		// NOT the MergeTree `TTL <expr>` clause, which ClickHouse accepts. This
@@ -3000,6 +3027,7 @@ func SQLite3() Capabilities {
 		TriggerComments:              false,
 		PolicyComments:               false,
 		ConstraintComments:           false,
+		CommentAttributes:            false,
 		XMLType:                      false,
 		AdvisoryLocks:                false,
 		RowLevelTTL:                  false,
@@ -3251,6 +3279,7 @@ func SQLServer2022() Capabilities {
 		TriggerComments:              false,
 		PolicyComments:               false,
 		ConstraintComments:           false,
+		CommentAttributes:            false,
 		XMLType:                      true,
 		AdvisoryLocks:                false,
 		RowLevelTTL:                  false,
@@ -3985,6 +4014,7 @@ func Oracle23() Capabilities {
 		TriggerComments:          false,
 		PolicyComments:           false,
 		ConstraintComments:       false,
+		CommentAttributes:        false,
 		XMLType:                  true,
 		// pg_advisory_lock is ORA-00904: invalid identifier. Oracle's lock
 		// package is not these functions.
@@ -4183,10 +4213,19 @@ func YDB262() Capabilities {
 		CreateOrReplaceView: false,
 		MaterializedViews:   false,
 
-		// No COMMENT statement exists for any object. Comments are stored as
-		// table attributes by a later phase, through the scheme API.
+		// No COMMENT statement exists for any object: `COMMENT ON TABLE` is a
+		// parse error and `WITH (COMMENT = ...)` answers `Unknown table
+		// setting`. A row table and a view hold user attributes, which the
+		// table service's AlterTable sets and DescribeTable reports, so Ptah
+		// keeps a table's, a column's, an index's and a view's comment there,
+		// written by its own COMMENT ON statement. A directory holds none
+		// (`PathNotTable`), so a schema has nowhere to keep a comment, and
+		// neither does a constraint, which YDB does not name. Measured on
+		// 25.1.4.7 and 26.2.1.14 alike, so every line between them carries
+		// the same answers.
+		CommentAttributes:        true,
 		SchemaComments:           false,
-		ViewComments:             false,
+		ViewComments:             true,
 		SequenceComments:         false,
 		TypeComments:             false,
 		DomainComments:           false,
