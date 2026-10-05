@@ -3,10 +3,12 @@
 package ydb_test
 
 import (
+	"testing"
+
 	qt "github.com/frankban/quicktest"
+
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
-	"testing"
 )
 
 // fullTextDeclaration uses the shared WITH option map for analyzer settings.
