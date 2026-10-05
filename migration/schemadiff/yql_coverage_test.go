@@ -18,7 +18,7 @@ func TestCompare_YQLPreservesUnrepresentedFamilies(t *testing.T) {
 	desired, _, err := sqlschema.Read(nil, "ydb")
 	c.Assert(err, qt.IsNil)
 	held := &catalog.Database{
-		CoordinationNodes: []catalog.CoordinationNode{{Name: "locks"}},
+		Secrets: []catalog.Secret{{Name: "credential"}},
 	}
 	diff := schemadiff.CompareWithDialect(&desired, held, "ydb")
 	c.Assert(diff.HasChanges(), qt.IsFalse)

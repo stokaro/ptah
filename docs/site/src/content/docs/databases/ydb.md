@@ -2356,8 +2356,18 @@ Their intervals use `Interval('P1D')`; a consumer's `read_from` uses
 `Timestamp('2026-01-01T00:00:00Z')`. Topic settings and consumers use the same
 validation as Go and YAML declarations.
 
-Omitting a view or topic requests its removal. Other statements are refused,
-including standalone queries, `ALTER` and declarations of other object families.
+Coordination nodes use Ptah's `CREATE COORDINATION NODE` statement with the
+same configuration as Go and YAML. Periods use `Interval('PT1S')`. Resource
+pools and classifiers use `CREATE RESOURCE POOL` and `CREATE RESOURCE POOL
+CLASSIFIER`; a classifier must declare its rank. A pool limit of `'-1'` means
+unset. A bare negative number is refused, as it is in YQL. The server-owned
+`default` pool also accepts the renderer's `ALTER RESOURCE POOL default SET (...)`
+declaration.
+
+Omitting a view, topic or coordination node requests its removal. Resource
+pools and classifiers remain when omitted, as they do for other schema sources,
+because they belong to the whole database. Other statements are refused,
+including standalone queries, other `ALTER` statements and declarations of other object families.
 Use Go or YAML for those declarations. An unsupported statement rejects the
 whole document. Existing changefeeds and other unrepresented families are
 preserved when planning from a YQL file; their absence does not request removal.
@@ -2367,7 +2377,7 @@ preserved when planning from a YQL file; their absence does not request removal.
 These are refused with a message that names what is missing:
 
 <!-- BEGIN GENERATED YDB GAPS -->
-- YQL desired-schema declarations beyond the supported table, view and topic declarations; use Go or YAML for other object families;
+- YQL desired-schema declarations beyond the supported object families; use Go or YAML for other object families;
 - JSON indexes;
 - `ptah inference` and the inference tools of `ptah mcp`, which store their vectors through pgvector.
 <!-- END GENERATED YDB GAPS -->

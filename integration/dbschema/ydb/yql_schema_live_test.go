@@ -65,14 +65,13 @@ func TestYDBDesiredYQL_TTLAndColumnFamilies(t *testing.T) {
 }
 
 // File loading must carry declared objects through create, update, and removal,
-// while a family the parser cannot express remains outside the desired state.
+// while a coordination node declared beside them stays unchanged.
 func TestYDBDesiredYQL_ViewsAndTopics(t *testing.T) {
-	const table = "CREATE TABLE items (id Int64 NOT NULL, PRIMARY KEY (id));"
+	const table = "CREATE TABLE items (id Int64 NOT NULL, PRIMARY KEY (id)); CREATE COORDINATION NODE locks;"
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
 			c := qt.New(t)
 			conn := connect(c, enterRealm(c, line))
-			execute(c, conn, "CREATE COORDINATION NODE locks")
 			path := filepath.Join(c.TempDir(), "schema.sql")
 			for _, source := range []string{
 				table + "CREATE VIEW summary WITH (security_invoker = TRUE) AS SELECT id FROM items; CREATE TOPIC events (CONSUMER worker WITH (important = TRUE)) WITH (retention_period = Interval('P1D'));",

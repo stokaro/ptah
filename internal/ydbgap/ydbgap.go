@@ -68,7 +68,7 @@ func Layers() []Layer {
 func (l Layer) work() string {
 	switch l {
 	case SchemaFiles:
-		return "reading YDB schema declarations beyond the supported table, view and topic declarations"
+		return "reading YDB schema declarations beyond the supported object families"
 	case IndexFamilies:
 		return "reading or creating a YDB JSON index"
 	case Inference:
@@ -103,7 +103,7 @@ func (l Layer) Message() string {
 func (l Layer) Unsupported() string {
 	switch l {
 	case SchemaFiles:
-		return "YQL desired-schema declarations beyond the supported table, view and topic declarations; use Go or YAML for other object families"
+		return "YQL desired-schema declarations beyond the supported object families; use Go or YAML for other object families"
 	case IndexFamilies:
 		return "JSON indexes"
 	case Inference:

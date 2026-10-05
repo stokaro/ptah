@@ -27,7 +27,7 @@ func (p *parser) topic() *ast.CreateTopicNode {
 		}
 		p.want(")")
 	}
-	spec, err := ydbtopic.ParseTopic(p.topicSettings(topicSetting))
+	spec, err := ydbtopic.ParseTopic(p.declarationSettings(topicSetting))
 	if err != nil {
 		p.failf("%v", err)
 	}
@@ -37,7 +37,7 @@ func (p *parser) topic() *ast.CreateTopicNode {
 
 func (p *parser) consumer() ast.TopicConsumerSpec {
 	name := decodedName(p.identifier())
-	values := p.topicSettings(consumerSetting)
+	values := p.declarationSettings(consumerSetting)
 	values[ydbtopic.AttributeName] = name
 	spec, err := ydbtopic.ParseConsumer(values)
 	if err != nil {
@@ -49,7 +49,7 @@ func (p *parser) consumer() ast.TopicConsumerSpec {
 	return spec
 }
 
-func (p *parser) topicSettings(setting func(string) string) map[string]string {
+func (p *parser) declarationSettings(setting func(string) string) map[string]string {
 	values := make(map[string]string)
 	if !p.word("WITH") {
 		return values
@@ -61,7 +61,7 @@ func (p *parser) topicSettings(setting func(string) string) map[string]string {
 		constructor := setting(key)
 		switch constructor {
 		case "unsupported":
-			p.failf("unsupported topic or consumer setting %q", key)
+			p.failf("unsupported declaration setting %q", key)
 		case "":
 			values[key] = scalar(value)
 		default:
