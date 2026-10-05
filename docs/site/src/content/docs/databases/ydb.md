@@ -2114,6 +2114,11 @@ and resets only what is under it, so it works in an empty database of its own:
 ptah migrations validate --dir migrations --dev-url "ydb://localhost:2136/local"
 ```
 
+When reading a view inside a realm, Ptah removes the leading prefix it added
+for that realm. Relative paths in the schema description already resolve
+inside the realm, so repeated planning does not recreate the view. Other
+pragmas and prefixes remain part of the view body.
+
 A run that reads or changes a database leaves `ptah_dev` out, as it leaves out
 `ptah_locks`. So a `--dev-url` or `--shadow-db` may name the target database
 itself: a realm is never part of the target's schema, of a plan against it or

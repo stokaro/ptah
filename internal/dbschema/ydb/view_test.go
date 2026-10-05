@@ -135,3 +135,17 @@ func TestReader_DescribesViews_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// A database read retains user pragmas even when their path resembles a dev
+// realm. Only a connection that explicitly reads a realm removes its prefix.
+func TestReader_PreservesUserViewPragmas(t *testing.T) {
+	c := qt.New(t)
+	source := viewSource()
+	const body = "PRAGMA TablePathPrefix('/local/ptah_dev/run');\nSELECT id FROM users"
+	source.views["/local/active_users"].QueryText = body
+
+	db, err := ydbschema.NewReaderFromSource(source, "/local", capability.YDB262()).ReadSchemaContext(c.Context())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Views[0].Body, qt.Equals, body)
+}
