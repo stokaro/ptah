@@ -2336,17 +2336,24 @@ CREATE TABLE `app/items` (
 
 The reader accepts table-level primary keys, literal defaults, inline global,
 vector, full-text and local indexes, covering columns, index settings, row-table
-partitioning, and column-table `PARTITION BY HASH` and `STORE = COLUMN` settings.
-Paths are database-relative. Primary-key columns must declare `NOT NULL`, because
-Ptah cannot represent a nullable YDB key. Defaults must use the column's YQL
+partitioning, row-table column families, TTL, and column-table `PARTITION BY HASH`
+and `STORE = COLUMN` settings.
+Table paths are database-relative. Primary-key columns must declare `NOT NULL`,
+because Ptah cannot represent a nullable YDB key. Defaults must use the column's YQL
 literal type, such as `42l` for `Int64` and `'active'u` for `Utf8`.
 
-Other statements and clauses are refused, including queries, `ALTER`, TTL,
-column families and declarations of other object families. Use Go or YAML for
-those declarations. An unsupported statement rejects the whole document. An
-existing object's TTL, column families, changefeeds or other unrepresented
-families are preserved when planning from a YQL file; their absence in that file
-does not request their removal.
+TTL accepts a deletion interval and its column, with an epoch unit for integer
+columns. Column tables also accept ordered eviction and deletion tiers. An
+eviction tier names its external source by an absolute database path, such as
+`/local/archive/cold`. A `FAMILY` clause attaches a column to a declared family;
+family settings use the same validation as Go and YAML declarations. Omitting
+TTL requests removal of an existing deletion policy.
+
+Other statements are refused, including queries, `ALTER` and declarations of
+other object families. Use Go or YAML for those declarations. An unsupported
+statement rejects the whole document. Existing changefeeds and other
+unrepresented families are preserved when planning from a YQL file; their
+absence in that file does not request their removal.
 
 ## What is not supported yet
 

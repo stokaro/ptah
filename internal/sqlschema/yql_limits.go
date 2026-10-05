@@ -14,7 +14,7 @@ func markYQLLimits(database *schemamodel.Database) {
 		schemacoverage.ResourcePool, schemacoverage.ResourcePoolClassifier,
 		schemacoverage.Replication, schemacoverage.Transfer, schemacoverage.Secret,
 		schemacoverage.ExternalDataSource, schemacoverage.ExternalTable, schemacoverage.StreamingQuery,
-		schemacoverage.Changefeed, schemacoverage.TTL, schemacoverage.ColumnFamily, schemacoverage.Role, schemacoverage.Grant,
+		schemacoverage.Changefeed, schemacoverage.Role, schemacoverage.Grant,
 	} {
 		database.NotDescribed = database.NotDescribed.With(schemacoverage.Object{
 			Kind: kind, Reason: schemacoverage.Unsupported, Provenance: schemacoverage.DerivedFromFact,

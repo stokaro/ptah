@@ -12,6 +12,9 @@ import (
 
 func TestParseRender(t *testing.T) {
 	for _, text := range []string{
+		`CREATE TABLE t (id Uint64 NOT NULL, ts Timestamp, body Utf8 FAMILY payload, PRIMARY KEY (id), FAMILY payload (COMPRESSION = "lz4"), FAMILY empty ()) WITH (TTL = Interval("PT1H") ON ts);`,
+		`CREATE TABLE t (id Uint64 NOT NULL, ts Uint64, PRIMARY KEY (id)) WITH (TTL = Interval("PT1H") ON ts AS SECONDS);`,
+		`CREATE TABLE t (ts Timestamp NOT NULL, id Uint64, PRIMARY KEY (ts)) PARTITION BY HASH (ts) WITH (STORE = COLUMN, TTL = Interval("PT1H") DELETE ON ts);`,
 		`CREATE TABLE t (id Utf8 NOT NULL, PRIMARY KEY (id)) WITH (PARTITION_AT_KEYS = ('a b'u));`,
 		`CREATE TABLE t (id Uint64 NOT NULL, part Utf8 NOT NULL, PRIMARY KEY (id, part)) WITH (PARTITION_AT_KEYS = ((10, 'a\n\'b'u), (20)));`,
 		"--!syntax_v1\nCREATE TABLE t (id Int64 NOT NULL, value Utf8 DEFAULT 'active'u, PRIMARY KEY (id), INDEX i GLOBAL SYNC ON (value));",

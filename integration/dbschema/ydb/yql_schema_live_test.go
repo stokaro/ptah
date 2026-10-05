@@ -39,3 +39,29 @@ func TestYDBDesiredYQL_AppliesAndSettles(t *testing.T) {
 		})
 	}
 }
+
+// A file describes both the TTL and the family assignment. Removing only TTL
+// must reset it while leaving the table and its family settings unchanged.
+func TestYDBDesiredYQL_TTLAndColumnFamilies(t *testing.T) {
+	const directory = "ptah_ydb_yql_clauses"
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			schemas := []string{directory}
+			dropTables(c, conn, schemas)
+			c.Cleanup(func() { dropTables(c, conn, schemas) })
+			path := filepath.Join(c.TempDir(), "schema.sql")
+			table := "CREATE TABLE `" + directory + "/events` (id Int64 NOT NULL, ts Timestamp, body Utf8 FAMILY payload, PRIMARY KEY (id), FAMILY payload (COMPRESSION = 'lz4'))"
+			for _, suffix := range []string{" WITH (TTL = Interval('PT1H') ON ts);", ";"} {
+				c.Assert(os.WriteFile(path, []byte(table+suffix), 0o600), qt.IsNil)
+				desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{Dialect: "ydb"})
+				c.Assert(err, qt.IsNil)
+				statements := planAgainst(c, conn, desired, schemas)
+				c.Assert(statements, qt.Not(qt.HasLen), 0)
+				apply(c, conn, statements)
+				c.Assert(planAgainst(c, conn, desired, schemas), qt.HasLen, 0)
+			}
+		})
+	}
+}
