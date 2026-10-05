@@ -2356,6 +2356,19 @@ Their intervals use `Interval('P1D')`; a consumer's `read_from` uses
 `Timestamp('2026-01-01T00:00:00Z')`. Topic settings and consumers use the same
 validation as Go and YAML declarations.
 
+Secrets use `CREATE SECRET` with an environment reference:
+
+```sql
+CREATE SECRET `app/password` WITH (value = $PTAH_SECRET_APP_PASSWORD);
+```
+
+Reading the file does not read the environment or reveal the value. The
+connection reads the variable when applying the statement. Literal values,
+expressions and extra secret options are refused without printing their
+contents. Omitting a secret requests its removal; changing an environment
+value alone does not request rotation. Lines without schema secrets refuse
+the declaration through the `secrets` capability.
+
 Coordination nodes use Ptah's `CREATE COORDINATION NODE` statement with the
 same configuration as Go and YAML. Periods use `Interval('PT1S')`. Resource
 pools and classifiers use `CREATE RESOURCE POOL` and `CREATE RESOURCE POOL
