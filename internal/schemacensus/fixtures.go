@@ -98,6 +98,10 @@ func Fixtures() []Fixture {
 		{Name: "index-key-block-size", Schema: indexKeyBlockSizeFixture()},
 		{Name: "index-partitioning", Schema: indexPartitioningFixture()},
 		{Name: "index-partitioning-unsplit", Schema: indexPartitioningUnsplitFixture()},
+		{Name: "table-partitioning", Schema: tablePartitioningFixture()},
+		{Name: "table-partitioning-unsplit", Schema: tablePartitioningUnsplitFixture()},
+		{Name: "table-uniform-partitions", Schema: tableUniformPartitionsFixture()},
+		{Name: "table-partition-at-keys", Schema: tablePartitionAtKeysFixture()},
 		{Name: "enum", Schema: enumFixture()},
 		{Name: "domain", Schema: domainFixture()},
 		{Name: "composite", Schema: compositeFixture()},
@@ -1114,6 +1118,39 @@ func indexPartitioningUnsplitFixture() schemamodel.Database {
 		Partitioning: &ast.IndexPartitioningSpec{BySize: new(false)},
 	}}
 	return db
+}
+
+// tablePartitioningFixture sets every setting of a YDB row table but the
+// switch that turns splitting by size off, which a partition size cannot share
+// a table with, and the two starting layouts, which cannot share a table with
+// each other; the three fixtures after it set those.
+func tablePartitioningFixture() schemamodel.Database {
+	return oneTable("T", schemamodel.Table{
+		Name: "t",
+		YDBPartitioning: &ast.YDBTablePartitioningSpec{
+			PartitionSizeMB: 512, ByLoad: new(true), MinPartitions: 3, MaxPartitions: 9, ReadReplicas: "PER_AZ:1",
+			KeyBloomFilter: new(true),
+		},
+	})
+}
+
+func tablePartitioningUnsplitFixture() schemamodel.Database {
+	return oneTable("T", schemamodel.Table{Name: "t", YDBPartitioning: &ast.YDBTablePartitioningSpec{BySize: new(false)}})
+}
+
+// tableUniformPartitionsFixture keys the table on an unsigned column, the
+// only kind whose range YDB splits evenly.
+func tableUniformPartitionsFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t", YDBPartitioning: &ast.YDBTablePartitioningSpec{UniformPartitions: 4}})
+	db.Fields[0].Type = "BIGINT UNSIGNED"
+	return db
+}
+
+func tablePartitionAtKeysFixture() schemamodel.Database {
+	return oneTable("T", schemamodel.Table{
+		Name:            "t",
+		YDBPartitioning: &ast.YDBTablePartitioningSpec{PartitionAtKeys: [][]string{{"10"}, {"20"}}},
+	})
 }
 
 func indexConcurrentFixture() schemamodel.Database {

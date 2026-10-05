@@ -51,8 +51,10 @@ func globalIndexDeclaration(partitioning map[string]*ast.IndexPartitioningSpec, 
 
 // TestYDBGlobalIndexes_PartitioningRoundTrip applies indexes that declare their
 // partitioning, reads the settings back from the server, and plans nothing
-// after; then it changes the settings in place, and then removes a maximum,
-// which only a rebuild reaches. Each step ends with nothing left to plan, and
+// after; then it changes the settings in place, one index back to YDB's
+// defaults by declaring them. A setting a declaration leaves out keeps what
+// the index holds, so dropping a maximum, or every declaration, from the
+// declaration plans nothing. Each step ends with nothing left to plan, and
 // applying the same declaration again plans nothing too.
 func TestYDBGlobalIndexes_PartitioningRoundTrip(t *testing.T) {
 	for _, line := range ydbLines {
@@ -86,7 +88,7 @@ func TestYDBGlobalIndexes_PartitioningRoundTrip(t *testing.T) {
 			// the minimum the index holds.
 			retuned := map[string]*ast.IndexPartitioningSpec{
 				"idx_items_kind":  {ByLoad: new(true), MinPartitions: 4, MaxPartitions: 9},
-				"idx_items_price": nil,
+				"idx_items_price": {BySize: new(true), ReadReplicas: "PER_AZ:0"},
 				"uq_items_sku":    {PartitionSizeMB: 512, MinPartitions: 2},
 			}
 			declared = globalIndexDeclaration(retuned, nil)
@@ -104,25 +106,17 @@ func TestYDBGlobalIndexes_PartitioningRoundTrip(t *testing.T) {
 			live = readScoped(c, conn, globalIndexSchemas)
 			c.Assert(indexNamed(c, live, "idx_items_price").Partitioning, qt.IsNil)
 
-			// A maximum YDB cannot remove in place: the index is rebuilt, which gives
-			// it the defaults, and the rest of the declaration is set on the new one.
+			// A maximum the declaration leaves out stays, as YDB has no way to
+			// remove one, and so does every setting once no index declares any.
 			declared = globalIndexDeclaration(map[string]*ast.IndexPartitioningSpec{
 				"idx_items_kind": {ByLoad: new(true), MinPartitions: 4},
 				"uq_items_sku":   {PartitionSizeMB: 512, MinPartitions: 2},
 			}, nil)
-			rebuild := planAgainst(c, conn, declared, globalIndexSchemas)
-			c.Assert(rebuild, qt.DeepEquals, []string{
-				"ALTER TABLE `ptah_ydb_global_indexes/items` DROP INDEX `idx_items_kind`",
-				"ALTER TABLE `ptah_ydb_global_indexes/items` ADD INDEX `idx_items_kind` GLOBAL SYNC ON (`kind`)",
-				"ALTER TABLE `ptah_ydb_global_indexes/items` ALTER INDEX `idx_items_kind` SET (AUTO_PARTITIONING_BY_SIZE = ENABLED, " +
-					"AUTO_PARTITIONING_PARTITION_SIZE_MB = 2048, AUTO_PARTITIONING_BY_LOAD = ENABLED, " +
-					"AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4)",
-			})
-			apply(c, conn, rebuild)
 			c.Assert(planAgainst(c, conn, declared, globalIndexSchemas), qt.HasLen, 0)
+			c.Assert(planAgainst(c, conn, globalIndexDeclaration(nil, nil), globalIndexSchemas), qt.HasLen, 0)
 			live = readScoped(c, conn, globalIndexSchemas)
 			c.Assert(indexNamed(c, live, "idx_items_kind").Partitioning, qt.DeepEquals,
-				&ast.IndexPartitioningSpec{ByLoad: new(true), MinPartitions: 4})
+				&ast.IndexPartitioningSpec{ByLoad: new(true), MinPartitions: 4, MaxPartitions: 9})
 		})
 	}
 }
@@ -211,8 +205,7 @@ func TestYDBGlobalIndexes_AddedToATableThatExists(t *testing.T) {
 			added := planAgainst(c, conn, after, globalIndexSchemas)
 			c.Assert(added, qt.DeepEquals, []string{
 				"ALTER TABLE `ptah_ydb_global_indexes/items` ADD INDEX `idx_items_price` GLOBAL ASYNC ON (`price`) COVER (`kind`, `sku`)",
-				"ALTER TABLE `ptah_ydb_global_indexes/items` ALTER INDEX `idx_items_price` SET (AUTO_PARTITIONING_BY_SIZE = ENABLED, " +
-					"AUTO_PARTITIONING_PARTITION_SIZE_MB = 2048, AUTO_PARTITIONING_BY_LOAD = ENABLED, " +
+				"ALTER TABLE `ptah_ydb_global_indexes/items` ALTER INDEX `idx_items_price` SET (AUTO_PARTITIONING_BY_LOAD = ENABLED, " +
 					"AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 2)",
 			})
 			apply(c, conn, added)
@@ -227,22 +220,32 @@ func TestYDBGlobalIndexes_AddedToATableThatExists(t *testing.T) {
 // where writing only the ones that differ would leave others reset: setting
 // AUTO_PARTITIONING_BY_LOAD resets the minimum partition count, and setting
 // AUTO_PARTITIONING_BY_SIZE resets it and the size. Each change converges in
-// one apply, which it does only because the statement names every setting.
+// one apply, which it does only because the statement names every setting,
+// the held value of one the declaration leaves out included.
 func TestYDBGlobalIndexes_SettingOneResetsAnother(t *testing.T) {
 	steps := []struct {
 		name   string
 		before map[string]*ast.IndexPartitioningSpec
 		after  map[string]*ast.IndexPartitioningSpec
+		want   *ast.IndexPartitioningSpec
 	}{
 		{
 			name:   "splitting by load turned on beside a minimum",
 			before: map[string]*ast.IndexPartitioningSpec{"idx_items_kind": {MinPartitions: 5}},
 			after:  map[string]*ast.IndexPartitioningSpec{"idx_items_kind": {ByLoad: new(true), MinPartitions: 5}},
+			want:   &ast.IndexPartitioningSpec{ByLoad: new(true), MinPartitions: 5},
 		},
 		{
 			name:   "splitting by size turned back on beside a minimum",
 			before: map[string]*ast.IndexPartitioningSpec{"idx_items_kind": {BySize: new(false), MinPartitions: 6}},
 			after:  map[string]*ast.IndexPartitioningSpec{"idx_items_kind": {PartitionSizeMB: 100, MinPartitions: 6}},
+			want:   &ast.IndexPartitioningSpec{PartitionSizeMB: 100, MinPartitions: 6},
+		},
+		{
+			name:   "splitting by load turned on beside a held minimum",
+			before: map[string]*ast.IndexPartitioningSpec{"idx_items_kind": {MinPartitions: 5}},
+			after:  map[string]*ast.IndexPartitioningSpec{"idx_items_kind": {ByLoad: new(true)}},
+			want:   &ast.IndexPartitioningSpec{ByLoad: new(true), MinPartitions: 5},
 		},
 	}
 
@@ -261,7 +264,7 @@ func TestYDBGlobalIndexes_SettingOneResetsAnother(t *testing.T) {
 
 					c.Assert(planAgainst(c, conn, declared, globalIndexSchemas), qt.HasLen, 0)
 					c.Assert(indexNamed(c, readScoped(c, conn, globalIndexSchemas), "idx_items_kind").Partitioning, qt.DeepEquals,
-						step.after["idx_items_kind"])
+						step.want)
 				})
 			}
 		})

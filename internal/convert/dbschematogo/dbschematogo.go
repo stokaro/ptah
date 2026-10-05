@@ -187,6 +187,7 @@ func convertTablesAndFields(
 			RowDeletionPolicy: dbTable.RowDeletionPolicy.Clone(),
 			YDBColumnFamilies: ast.CloneYDBColumnFamilies(dbTable.YDBColumnFamilies),
 			Changefeeds:       ast.CloneChangefeeds(dbTable.Changefeeds),
+			YDBPartitioning:   dbTable.YDBPartitioning.Clone(),
 			Overrides:         tableStorageOverrides(dbTable),
 		}
 		database.Tables = append(database.Tables, table)

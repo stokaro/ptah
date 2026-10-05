@@ -145,6 +145,7 @@ var nodeCensus = []censusRow{
 	{node: &ast.AddChangefeedOperation{}},
 	{node: &ast.DropChangefeedOperation{}},
 	{node: &ast.AlterChangefeedTopicOperation{}},
+	{node: &ast.SetYDBTablePartitioningOperation{}},
 	{node: &ast.ReplaceIndexOperation{}},
 	{node: &ast.RenameTableOperation{}},
 	{node: &ast.ResetRowTTLOperation{}},

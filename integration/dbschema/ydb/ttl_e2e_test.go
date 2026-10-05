@@ -93,7 +93,7 @@ func TestYDBCompatBinary_RebuildKeepsATTLHCLCannotWrite(t *testing.T) {
 				"schema", "apply", "--url", url, "--schema", ttlSchema, "--to", desired, "--auto-approve")
 
 			c.Assert(rebuildErr, qt.IsNil, qt.Commentf("schema apply:\n%s\n%s", rebuilt, notes))
-			c.Assert(rebuilt, qt.Contains, ") WITH (TTL = Interval(\"P1D\") ON `ts`);")
+			c.Assert(rebuilt, qt.Contains, ") WITH (TTL = Interval(\"P1D\") ON `ts`, AUTO_PARTITIONING_BY_SIZE = ENABLED, ")
 			c.Assert(policyOf(c, conn, "events"), qt.DeepEquals, &ast.RowDeletionPolicySpec{Column: "ts", Interval: "P1D"})
 			synced, _, syncedErr := runCompat(ctx, binary,
 				"schema", "apply", "--url", url, "--schema", ttlSchema, "--to", desired, "--dry-run")

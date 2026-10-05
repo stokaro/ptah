@@ -243,6 +243,9 @@ func measuredLines() map[string]measuredLine {
 				capability.AsyncReplication:                replicationKeyCarried,
 				capability.Transfers:                       replicationKeyCarried,
 				capability.ReplicationSecretPaths:          replicationKeyCarried,
+				capability.PartitioningOptions:             tableSettingKeyCarried,
+				capability.ReadReplicas:                    tableSettingKeyCarried,
+				capability.KeyBloomFilter:                  tableSettingKeyCarried,
 				capability.SerialColumns:                   typeKeyCarried,
 				capability.SerialSequenceOptions:           serialKeyCarried,
 				capability.SerialSequenceKeepsRange:        serialKeyCarried,
@@ -408,6 +411,9 @@ func measuredLines() map[string]measuredLine {
 				capability.AsyncReplication:                replicationKeyCarried,
 				capability.Transfers:                       replicationKeyCarried,
 				capability.ReplicationSecretPaths:          replicationKeyCarried,
+				capability.PartitioningOptions:             tableSettingKeyCarried,
+				capability.ReadReplicas:                    tableSettingKeyCarried,
+				capability.KeyBloomFilter:                  tableSettingKeyCarried,
 				capability.SerialColumns:                   typeKeyCarried,
 				capability.SerialSequenceOptions:           serialKeyCarried,
 				capability.SerialSequenceKeepsRange:        serialKeyCarried,
@@ -574,6 +580,9 @@ func measuredLines() map[string]measuredLine {
 				capability.AsyncReplication:                replicationKeyCarried,
 				capability.Transfers:                       replicationKeyCarried,
 				capability.ReplicationSecretPaths:          replicationKeyCarried,
+				capability.PartitioningOptions:             tableSettingKeyCarried,
+				capability.ReadReplicas:                    tableSettingKeyCarried,
+				capability.KeyBloomFilter:                  tableSettingKeyCarried,
 				capability.SerialColumns:                   typeKeyCarried,
 				capability.SerialSequenceOptions:           serialKeyCarried,
 				capability.SerialSequenceKeepsRange:        serialKeyCarried,
@@ -785,3 +794,10 @@ const replicationKeyCarried = "this run predates the key and sent no replication
 // statement can ask an engine other than YDB about an object only YDB has.
 const coordinationKeyCarried = "this run predates the key; it names whether Ptah manages YDB coordination " +
 	"nodes, which only YDB has, and the value here is the preset's"
+
+// tableSettingKeyCarried is why the keys about a row table's partitioning, read
+// replicas and key bloom filter are carried on every measured line: the run
+// named there predates them. The probe asks them on every run through its
+// table-setting experiments, and the value here is the preset's.
+const tableSettingKeyCarried = "this run predates the key and sent no table-setting experiment; the probe asks it " +
+	"on every run through those experiments, and the value here is the preset's"

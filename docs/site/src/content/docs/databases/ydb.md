@@ -209,9 +209,11 @@ in lower case:
 | `read_replicas_settings` | `PER_AZ:<n>` or `ANY_AZ:<n>` |
 
 The same keys work on an index in a YAML schema. A setting an index leaves out
-is the value YDB gives a new index: split by size at 2048 MB, not by load, at
-least one partition, no maximum and no read replicas. An index does not take
-its table's settings.
+keeps what the index holds, as a table's does (see
+[Table partitioning](#table-partitioning-read-replicas-and-key-bloom-filter)):
+a new index takes it from YDB, which gives every new index the same settings,
+split by size at 2048 MB, not by load, at least one partition, no maximum and
+no read replicas. An index does not take its table's settings.
 
 This index:
 
@@ -228,21 +230,21 @@ INDEX `orders_customer_ix` GLOBAL ASYNC ON (`customer`) COVER (`status`, `total`
 inside its table's `CREATE TABLE`, followed by:
 
 ```sql
-ALTER TABLE `orders` ALTER INDEX `orders_customer_ix` SET (AUTO_PARTITIONING_BY_SIZE = ENABLED, AUTO_PARTITIONING_PARTITION_SIZE_MB = 2048, AUTO_PARTITIONING_BY_LOAD = ENABLED, AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4, AUTO_PARTITIONING_MAX_PARTITIONS_COUNT = 16);
+ALTER TABLE `orders` ALTER INDEX `orders_customer_ix` SET (AUTO_PARTITIONING_BY_LOAD = ENABLED, AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4, AUTO_PARTITIONING_MAX_PARTITIONS_COUNT = 16);
 ```
 
 No statement that creates an index takes the settings, so they are an
-`ALTER INDEX` of their own, which runs as its own query. That statement names
-every setting, because setting one can reset another: setting
-`AUTO_PARTITIONING_BY_LOAD` resets the minimum partition count to 1, and
-setting `AUTO_PARTITIONING_BY_SIZE` resets the size and the minimum.
+`ALTER INDEX` of their own, which runs as its own query and names the settings
+the index declares.
 
 A change of the settings is made in place with the same statement, and read
-back from the index's implementation table. YDB cannot remove a maximum
-partition count, so an index that drops its maximum is rebuilt: dropped,
-added again and given the rest of its settings. A partition size on an index
-that does not split by size is refused, as YDB refuses it. Other dialects
-refuse an index that declares its partitioning.
+back from the index's implementation table. Setting one setting can reset
+another: setting `AUTO_PARTITIONING_BY_LOAD` resets the minimum partition
+count to 1, and setting `AUTO_PARTITIONING_BY_SIZE` resets the size and the
+minimum. So a change names every splitting setting, the ones the index
+declares and the held value of the rest. A partition size on an index that
+does not split by size is refused, as YDB refuses it. Other dialects refuse an
+index that declares its partitioning.
 
 ### Renaming an index
 
@@ -997,6 +999,86 @@ to the application declares
 The node `ptah_locks` at the database root is Ptah's own lock. A declaration
 that names it is refused, and so is a statement that does.
 
+## Table partitioning, read replicas and key bloom filter
+
+A row table declares how YDB splits it into partitions, its read replicas and
+its key bloom filter, with table attributes named after the YDB settings, in
+lower case. The same keys work on a table in a YAML schema.
+
+| Attribute | Value |
+| --- | --- |
+| `auto_partitioning_by_size` | `ENABLED` or `DISABLED` |
+| `auto_partitioning_partition_size_mb` | megabytes, at least 1 |
+| `auto_partitioning_by_load` | `ENABLED` or `DISABLED` |
+| `auto_partitioning_min_partitions_count` | at least 1 |
+| `auto_partitioning_max_partitions_count` | at least 1 |
+| `read_replicas_settings` | `PER_AZ:<n>` or `ANY_AZ:<n>` |
+| `key_bloom_filter` | `ENABLED` or `DISABLED` |
+| `uniform_partitions` | at least 1 |
+| `partition_at_keys` | `10, 20` or `(10, 'a'), (20)` |
+
+A setting a table leaves out keeps what the table holds. Ptah never changes
+it, and removing a setting from the declaration changes nothing on the
+server. A new table takes it from the cluster's table profile, which need not
+match YDB's documentation: a cluster whose dynamic configuration replaces the
+default one creates tables that do not split by size, where a default cluster
+splits them at 2048 MB. To return a setting to a value, declare the value, for
+example `auto_partitioning_by_size="ENABLED"` or
+`auto_partitioning_min_partitions_count="1"`. To remove read replicas,
+declare `read_replicas_settings="PER_AZ:0"`, and to remove the key bloom
+filter, `key_bloom_filter="DISABLED"`. YDB cannot remove a maximum partition
+count (`Can't set max partition count to 0`, and no `RESET`), so no
+declaration does either.
+
+This table:
+
+```go
+//ptah:schema:table name="events" auto_partitioning_by_load="ENABLED" auto_partitioning_max_partitions_count="64" key_bloom_filter="ENABLED" uniform_partitions="8"
+type Event struct {
+	//ptah:schema:field name="id" type="BIGINT UNSIGNED" primary="true"
+	ID uint64
+}
+```
+
+renders as:
+
+```sql
+CREATE TABLE `events` (
+    `id` Uint64 NOT NULL,
+    PRIMARY KEY (`id`)
+) WITH (AUTO_PARTITIONING_BY_LOAD = ENABLED, AUTO_PARTITIONING_MAX_PARTITIONS_COUNT = 64, KEY_BLOOM_FILTER = ENABLED, UNIFORM_PARTITIONS = 8);
+```
+
+A change of the settings is one `ALTER TABLE ... SET (...)`. Setting one
+setting can reset another: setting `AUTO_PARTITIONING_BY_LOAD` resets the
+minimum partition count to 1, and setting `AUTO_PARTITIONING_BY_SIZE` resets
+the partition size to 2048 MB and the minimum to 1. So the statement names
+every splitting setting whenever it changes one: the declared ones, and the
+held value of the rest. Read replicas and the key bloom filter reset nothing,
+and are named alone. YDB refuses `RESET` for every setting.
+
+`uniform_partitions` and `partition_at_keys` give a new table the partitions
+it starts with. `uniform_partitions` splits a `Uint32` or `Uint64` first key
+column evenly. `partition_at_keys` names the split points: a value of the first
+key column, or a parenthesized list of values of the leading key columns. A
+value is a number for an integer column or a string for a text column, because
+YDB takes no other literal there. YDB takes both settings only in
+`CREATE TABLE` and keeps no record of them, only the minimum partition count
+they set: the number of partitions they create, unless the table declares its
+own minimum. A comparison sees a starting layout through that minimum.
+
+A starting layout on a table that does not hold the minimum it gives is a
+change YDB cannot make in place. It is refused, and planned as a
+[table rebuild](#table-rebuilds) with `--allow-table-rebuild`. To change the
+minimum in place, declare `auto_partitioning_min_partitions_count`. A starting
+layout beside a declared minimum leaves a comparison nothing to see, so it
+takes effect only when the table is created.
+
+HCL and DBML cannot spell these settings, so a desired state in either format
+leaves each one out and the table keeps what it holds. `ptah-compat schema
+inspect` warns about each table it leaves them out of. Other dialects refuse a
+table that declares them.
+
 ## Planning changes
 
 YDB changes a table in place less than the SQL engines do, and runs a schema
@@ -1021,8 +1103,9 @@ statement needs one that has not run yet:
 7. Rename the indexes the declaration renames, then change the partitioning of
    the indexes that keep their definition.
 8. Per table: add columns, then change columns in place, then set or reset
-   the TTL, then change the column families, then drop columns. YDB refuses to
-   drop the column a TTL reads.
+   the TTL, then change the column families, then change the table's
+   partitioning, read replicas and key bloom filter, then drop columns. YDB
+   refuses to drop the column a TTL reads.
 9. Change the start and the increment of the Serial columns of existing tables.
 10. Add the new indexes of existing tables.
 11. Per table: drop changefeeds, then add changefeeds with their consumers,
@@ -1056,7 +1139,9 @@ another change in place, the refusal names the capability that line lacks.
 
 With `--allow-table-rebuild`, `ptah schema apply`, `schema plan`, `schema diff`,
 `schema compare`, `migrations plan` and `migrations generate` plan those three
-changes as a rebuild of the table. `ptah-compat` takes no flag the Atlas
+changes as a rebuild of the table, and a
+[starting layout](#table-partitioning-read-replicas-and-key-bloom-filter) YDB
+gives only a new table. `ptah-compat` takes no flag the Atlas
 community CLI lacks, so its `schema apply`, `schema diff` and `schema plan new`
 ask with the variable `PTAH_ALLOW_TABLE_REBUILD=1` instead (see
 [ptah-compat](#ptah-compat)). The rebuild is the same:
@@ -1064,7 +1149,13 @@ ask with the variable `PTAH_ALLOW_TABLE_REBUILD=1` instead (see
 1. `CREATE TABLE` a scratch table, `__ptah_rebuild_<table>`, from the
    declaration, with its indexes, its column families and its TTL inside it.
    Each family the old table holds is written, with each setting the
-   declaration leaves out at the value the old table holds.
+   declaration leaves out at the value the old table holds. Every
+   partitioning, read replica and key bloom filter setting is named in `WITH`,
+   and an `ALTER INDEX ... SET` follows for each index: a setting the
+   declaration names takes the declared value and every other one the value
+   the old table or index holds, so the rebuild changes no setting nobody
+   declared, since a new table would otherwise take the cluster's table
+   profile.
 2. `INSERT INTO` the scratch table `SELECT` the old rows, converting each
    changed column.
 3. `ALTER TABLE` the old table `DROP CHANGEFEED`, for each changefeed it
@@ -1112,9 +1203,9 @@ Even with the flag, a rebuild is refused when it would damage the table:
 - a table whose column family keeps its columns in memory with
   `keep_in_memory`, which no `CREATE TABLE` can say;
 - a table carrying a setting Ptah does not model yet: a TTL run interval, a
-  column family holding a setting Ptah does not read, partitioning, read
-  replica and key bloom filter options, or a changefeed holding a setting Ptah
-  does not read. Recreating the table would drop them.
+  column family holding a setting Ptah does not read, storage settings such as
+  external blobs, or a changefeed holding a setting Ptah does not read.
+  Recreating the table would drop them.
 
 ## What each release line does
 
@@ -1197,15 +1288,16 @@ database read every row table under the database root, its columns, defaults,
 `Serial` columns with their sequence's start, increment and last restart,
 primary key, TTL, column families with the columns each holds, and global
 indexes, with each index's partitioning and read replicas, its changefeeds,
-each with the retention and the consumers of its topic, every view with the
-query the server stores, every topic with its settings and consumers, every
-async replication and transfer with its state, every coordination node with
-its configuration, and the users, groups and permissions; see
+each with the retention and the consumers of its topic, the table's own
+partitioning, read replicas and key bloom filter, every view with the query
+the server stores, every topic with its settings and consumers, every async
+replication and transfer with its state, every coordination node with its
+configuration, and the users, groups and permissions; see
 [Users, groups and permissions](#users-groups-and-permissions).
 
 What Ptah does not model yet is recorded rather than dropped:
 column-oriented tables, sequences other than a `Serial` column's, the settings
-of a table such as a TTL run interval and partitioning options, a column family
+of a table such as a TTL run interval and storage settings, a column family
 kept in memory with `keep_in_memory`, a changefeed holding a setting Ptah does
 not read, such as attributes, an AWS region, trace identifiers or a shared
 consumer, and the replica tables an async replication writes. A command
@@ -1253,7 +1345,8 @@ runs with an effect the statement does not state:
 - a block that mixes schema and data statements;
 - an `ADD COLUMN` the line refuses;
 - a dropped column an index or the TTL uses;
-- a partitioning change that resets the minimum partition count;
+- a partitioning change that resets the minimum partition count or the
+  partition size;
 - a table a view reads that is dropped or renamed;
 - a renamed table that carries a changefeed;
 - a `REVOKE GRANT OPTION FOR`, which takes the permission too;
@@ -1273,11 +1366,13 @@ async replication dropped with `CASCADE`.
 [Lint rules](../../reference/lint-rules/#ydb) lists each rule with its
 meaning.
 
-`YD104`, `YD105`, `YD106`, `YD109` and `YD119` read the indexes, TTL, minimum
-partition count, views, changefeeds and column families the directory's own
-earlier migrations declare; a table the directory never created is unknown to them.
-`YD105` stays silent where that history left the minimum at 1, and warns
-where it does not know it. With `--dev-url`, lint first replays the directory
+`YD104`, `YD105`, `YD106`, `YD109`, `YD118` and `YD119` read the indexes, TTL,
+minimum partition count and partition size, views, changefeeds and column
+families the directory's own earlier migrations declare; a table the directory
+never created is unknown to them. `YD105` stays silent where that history left
+the minimum at 1, and `YD118` where it left the size at 2048 MB or splitting by
+size off; each warns where it does not know. With `--dev-url`, lint first
+replays the directory
 in a [dev realm](#dev-shadow-and-scratch-databases), so a statement YDB
 refuses fails the run, and the rules that read a baseline schema read it
 there. The rules for
@@ -1573,7 +1668,6 @@ These are refused with a message that names what is missing:
 <!-- BEGIN GENERATED YDB GAPS -->
 - a YQL file as the desired schema (Go structs and YAML schemas work);
 - comments on tables, columns and indexes;
-- a table's own settings: partitioning, read replicas and the key bloom filter;
 - vector, full-text, JSON and column-table indexes;
 - `ptah inference` and the inference tools of `ptah mcp`, which wait for the vector index family.
 <!-- END GENERATED YDB GAPS -->

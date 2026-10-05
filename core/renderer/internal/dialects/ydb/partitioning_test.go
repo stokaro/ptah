@@ -13,9 +13,12 @@ import (
 
 // TestRender_IndexPartitioning_HappyPath pins how an index's partitioning is
 // written: never inside the clause that creates the index, which takes no
-// settings on any line, but by an ALTER INDEX after it that names every
-// setting. Each rendering was applied to local-ydb 26.2.1.14 and 25.1.4.7 one
-// statement per query and read back from the index's implementation table.
+// settings on any line, but by an ALTER INDEX after it that names each setting
+// the declaration names. A change in place names what the declaration names
+// and the held value of every other setting of its group, and a setting the
+// declaration leaves out is never changed. Each rendering was applied to
+// local-ydb 26.2.1.14 and 25.1.4.7 one statement per query and read back from
+// the index's implementation table.
 func TestRender_IndexPartitioning_HappyPath(t *testing.T) {
 	tuned := &ast.IndexPartitioningSpec{ByLoad: new(true), MinPartitions: 3, MaxPartitions: 9, ReadReplicas: "PER_AZ:1"}
 
@@ -35,13 +38,12 @@ func TestRender_IndexPartitioning_HappyPath(t *testing.T) {
 				"    PRIMARY KEY (`id`),\n" +
 				"    INDEX `i` GLOBAL SYNC ON (`a`)\n" +
 				");\n" +
-				"ALTER TABLE `t` ALTER INDEX `i` SET (AUTO_PARTITIONING_BY_SIZE = ENABLED, " +
-				"AUTO_PARTITIONING_PARTITION_SIZE_MB = 2048, AUTO_PARTITIONING_BY_LOAD = ENABLED, " +
+				"ALTER TABLE `t` ALTER INDEX `i` SET (AUTO_PARTITIONING_BY_LOAD = ENABLED, " +
 				"AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 3, AUTO_PARTITIONING_MAX_PARTITIONS_COUNT = 9, " +
 				"READ_REPLICAS_SETTINGS = \"PER_AZ:1\");\n",
 		},
 		{
-			name: "a declaration of the defaults writes nothing more",
+			name: "a declaration of the defaults is written as declared",
 			caps: capability.YDB262(),
 			node: withIndex(&ast.IndexNode{Name: "i", Columns: []string{"a"},
 				Partitioning: &ast.IndexPartitioningSpec{BySize: new(true), MinPartitions: 1}}, ast.NewColumn("a", "TEXT")),
@@ -50,7 +52,9 @@ func TestRender_IndexPartitioning_HappyPath(t *testing.T) {
 				"    `a` Utf8,\n" +
 				"    PRIMARY KEY (`id`),\n" +
 				"    INDEX `i` GLOBAL SYNC ON (`a`)\n" +
-				");\n",
+				");\n" +
+				"ALTER TABLE `t` ALTER INDEX `i` SET (AUTO_PARTITIONING_BY_SIZE = ENABLED, " +
+				"AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 1);\n",
 		},
 		{
 			name: "an index added to a table that exists",
@@ -58,18 +62,39 @@ func TestRender_IndexPartitioning_HappyPath(t *testing.T) {
 			node: &ast.IndexNode{Name: "i", Table: "dir.t", Columns: []string{"a"}, Type: "async",
 				Partitioning: &ast.IndexPartitioningSpec{BySize: new(false)}},
 			want: "ALTER TABLE `dir/t` ADD INDEX `i` GLOBAL ASYNC ON (`a`);\n" +
-				"ALTER TABLE `dir/t` ALTER INDEX `i` SET (AUTO_PARTITIONING_BY_SIZE = DISABLED, " +
-				"AUTO_PARTITIONING_BY_LOAD = DISABLED, AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 1);\n",
+				"ALTER TABLE `dir/t` ALTER INDEX `i` SET (AUTO_PARTITIONING_BY_SIZE = DISABLED);\n",
 		},
 		{
-			name: "an index tuned back to the defaults",
+			name: "an index declared back to the defaults",
 			caps: capability.YDB251(),
 			node: alter(&ast.SetIndexPartitioningOperation{IndexName: "i",
-				Partitioning: &ast.IndexPartitioningSpec{MaxPartitions: 9}, Previous: tuned}),
+				Partitioning: &ast.IndexPartitioningSpec{BySize: new(true), ByLoad: new(false), MinPartitions: 1,
+					ReadReplicas: "PER_AZ:0"},
+				Previous: tuned}),
 			want: "ALTER TABLE `t` ALTER INDEX `i` SET (AUTO_PARTITIONING_BY_SIZE = ENABLED, " +
 				"AUTO_PARTITIONING_PARTITION_SIZE_MB = 2048, AUTO_PARTITIONING_BY_LOAD = DISABLED, " +
 				"AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 1, AUTO_PARTITIONING_MAX_PARTITIONS_COUNT = 9, " +
 				"READ_REPLICAS_SETTINGS = \"PER_AZ:0\");\n",
+		},
+		{
+			// The minimum, the maximum and the replicas are named with the
+			// values the index holds: setting AUTO_PARTITIONING_BY_LOAD alone
+			// would reset the minimum to 1.
+			name: "one setting names the held rest of its group",
+			caps: capability.YDB262(),
+			node: alter(&ast.SetIndexPartitioningOperation{IndexName: "i",
+				Partitioning: &ast.IndexPartitioningSpec{ByLoad: new(false)}, Previous: tuned}),
+			want: "ALTER TABLE `t` ALTER INDEX `i` SET (AUTO_PARTITIONING_BY_SIZE = ENABLED, " +
+				"AUTO_PARTITIONING_PARTITION_SIZE_MB = 2048, AUTO_PARTITIONING_BY_LOAD = DISABLED, " +
+				"AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 3, AUTO_PARTITIONING_MAX_PARTITIONS_COUNT = 9, " +
+				"READ_REPLICAS_SETTINGS = \"PER_AZ:1\");\n",
+		},
+		{
+			name: "a setting left out keeps what the index holds",
+			caps: capability.YDB262(),
+			node: alter(&ast.SetIndexPartitioningOperation{IndexName: "i",
+				Partitioning: &ast.IndexPartitioningSpec{MaxPartitions: 9}, Previous: tuned}),
+			want: "",
 		},
 		{
 			name: "a change to settings the index already holds writes nothing",
@@ -118,13 +143,6 @@ func TestRender_IndexPartitioning_FailurePath(t *testing.T) {
 			node: &ast.IndexNode{Name: "i", Table: "t", Columns: []string{"a"},
 				Partitioning: &ast.IndexPartitioningSpec{BySize: new(false), PartitionSizeMB: 100}},
 			wantErr: `index "i": auto_partitioning_partition_size_mb is set while auto_partitioning_by_size is disabled, .*`,
-		},
-		{
-			name: "a maximum removed in place",
-			caps: capability.YDB262(),
-			node: alter(&ast.SetIndexPartitioningOperation{IndexName: "i",
-				Previous: &ast.IndexPartitioningSpec{MaxPartitions: 9}}),
-			wantErr: `index "i" of table "t": its maximum of 9 partitions cannot be removed in place .*`,
 		},
 		{
 			name:    "a change naming no index",

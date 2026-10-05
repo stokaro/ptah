@@ -32,8 +32,9 @@
 //     place, under the name it has once renamed;
 //  7. per table, ADD COLUMN, then the in-place column changes, then SET
 //     (TTL = ...) or RESET (TTL), then one ALTER TABLE for its column
-//     families, then DROP COLUMN: a TTL may read a column the plan adds, a
-//     column the plan adds may move into a family, and YDB refuses to drop
+//     families, then SET (...) for its partitioning, read replicas and key
+//     bloom filter, then DROP COLUMN: a TTL may read a column the plan adds,
+//     a column the plan adds may move into a family, and YDB refuses to drop
 //     the column a TTL reads;
 //  8. ADD INDEX for every index added to a table that already exists, one per
 //     statement (`Only one index can be added by one operation`), after the
@@ -385,9 +386,9 @@ func renameIndexes(renames []difftypes.IndexRename, rebuilds map[string]*tableRe
 }
 
 // changeIndexPartitioning changes each index's partitioning in place, carrying
-// the settings it holds so the renderer can write a statement whose outcome
-// does not depend on them. An index of a table the plan rebuilds takes its
-// declared settings in the new table, so it is not changed on its own.
+// the settings it holds so the renderer can keep each one the declaration
+// leaves out. An index of a table the plan rebuilds takes its settings in the
+// new table, so it is not changed on its own.
 func changeIndexPartitioning(
 	changes []difftypes.IndexPartitioningChange,
 	rebuilds map[string]*tableRebuild,
@@ -412,8 +413,8 @@ func changeIndexPartitioning(
 
 // refuseIndexChangesInPlace refuses, before anything is emitted, a rename or a
 // change of partitioning this target cannot make: by
-// [capability.IndexRename] and [capability.IndexPartitioning], and a change of
-// partitioning YDB refuses whatever the target, which the renderer would
+// [capability.IndexRename] and [capability.IndexPartitioning], and a
+// declaration YDB refuses whatever the target, which the renderer would
 // otherwise refuse after the statements before it were planned.
 func (p *Planner) refuseIndexChangesInPlace(diff *difftypes.SchemaDiff) error {
 	if len(diff.IndexesRenamed) > 0 && !p.caps.Has(capability.IndexRename) {
@@ -426,16 +427,12 @@ func (p *Planner) refuseIndexChangesInPlace(diff *difftypes.SchemaDiff) error {
 		if !p.caps.Has(capability.IndexPartitioning) {
 			return refuseKey(capability.IndexPartitioning, "changing the partitioning of "+subject)
 		}
-		desired, err := ydbindex.Resolve(change.Partitioning)
-		if err != nil {
-			return refuseFact(subject, err.Error())
-		}
-		previous, err := ydbindex.Resolve(change.Previous)
+		previous, err := ydbindex.Held(change.Previous)
 		if err != nil {
 			return refuseFact(subject, "the settings it holds: "+err.Error())
 		}
-		if reason := ydbindex.ChangeRefusal(desired, previous); reason != "" {
-			return refuseFact(subject, reason)
+		if _, err := ydbindex.Resolve(change.Partitioning, previous); err != nil {
+			return refuseFact(subject, err.Error())
 		}
 	}
 	return nil
@@ -461,7 +458,8 @@ func addIndexes(changes difftypes.IndexChanges, inlineIndexes map[string]bool, s
 }
 
 // changeTable writes one table's changes: added columns, then in-place
-// changes, then the TTL, then the column families, then dropped columns. The
+// changes, then the TTL, then the column families, then the partitioning,
+// read replicas and key bloom filter, then dropped columns. The
 // drops come after the index drops the plan emitted before it, so an indexed
 // or covered column is free by then, and after the TTL, so the column the TTL
 // read is free too; the TTL and the families come after the additions, so a
@@ -489,6 +487,9 @@ func (p *Planner) changeTable(tableDiff difftypes.TableDiff, enums []schemamodel
 		alter(operation)
 	}
 	if operation := familyOperation(tableDiff); operation != nil {
+		alter(operation)
+	}
+	if operation := partitioningOperation(tableDiff.YDBPartitioningChange); operation != nil {
 		alter(operation)
 	}
 	for _, column := range tableDiff.ColumnsRemoved {
@@ -617,6 +618,9 @@ func (p *Planner) refuseTableChanges(tableDiff difftypes.TableDiff) error {
 		return err
 	}
 	if err := p.refuseFamilyChange(tableDiff); err != nil {
+		return err
+	}
+	if err := p.refusePartitioningChange(tableDiff); err != nil {
 		return err
 	}
 	if tableDiff.Desired.HasTable() && !declaresKey(tableDiff.Desired) {
@@ -752,6 +756,16 @@ func (p *Planner) rebuildable(key capability.Capability, feature, subject string
 	}
 	refusal.Message += "; YDB makes it by rebuilding the table, which Ptah plans when asked with " + request
 	return refusal
+}
+
+// rebuildableFact refuses a change YDB makes only by rebuilding the table and
+// no capability key decides, saying reason and how to ask for the rebuild.
+func (p *Planner) rebuildableFact(subject, reason string) error {
+	request := p.rebuildRequest
+	if request == "" {
+		request = TableRebuildFlag
+	}
+	return refuseFact(subject, reason+"; YDB makes it by rebuilding the table, which Ptah plans when asked with "+request)
 }
 
 // sortedKeys returns the keys of changes in order, so a refusal names the same

@@ -641,6 +641,9 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"YD116": {
 		Summary: "a password or a token written in clear in an async replication or a transfer, which YDB keeps without reading it back while the migration file holds it",
 	},
+	"YD118": {
+		Summary: "turning auto partitioning by size on resets the partition size to 2048 MB unless the same statement sets it",
+	},
 	"YD119": {
 		Summary: "an `ALTER TABLE` that names a column family the table does not have, which YDB creates with its own settings rather than refusing, and YQL cannot drop",
 	},

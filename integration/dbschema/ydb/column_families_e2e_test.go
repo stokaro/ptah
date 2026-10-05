@@ -100,7 +100,8 @@ func TestYDBCompatBinary_RebuildKeepsColumnFamiliesHCLCannotWrite(t *testing.T) 
 
 			c.Assert(rebuildErr, qt.IsNil, qt.Commentf("schema apply:\n%s\n%s", rebuilt, notes))
 			c.Assert(rebuilt, qt.Contains, "    `body` Utf8 FAMILY `cold`,\n")
-			c.Assert(rebuilt, qt.Contains, "    FAMILY `cold` (COMPRESSION = 'lz4'),\n    FAMILY `default` (COMPRESSION = 'off')\n);")
+			c.Assert(rebuilt, qt.Contains, "    FAMILY `cold` (COMPRESSION = 'lz4'),\n    FAMILY `default` (COMPRESSION = 'off')\n"+
+				") WITH (AUTO_PARTITIONING_BY_SIZE = ENABLED, ")
 			c.Assert(familiesOf(c, conn), qt.DeepEquals,
 				[]ast.YDBColumnFamilySpec{{Name: "cold", Compression: "lz4", Columns: []string{"body"}}, {Name: "default", Compression: "off"}})
 			synced, _, syncedErr := runCompat(ctx, binary,

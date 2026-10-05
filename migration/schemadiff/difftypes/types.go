@@ -1545,6 +1545,21 @@ type SchemaDiff struct {
 	// them.
 	Replications ReplicationContext `json:"-"`
 
+	// CurrentYDBSettings is YDB's: the partitioning, read replicas and key
+	// bloom filter of each row table of the database this plan runs against,
+	// and the partitioning of each of its global indexes, for every table that
+	// holds a setting other than YDB's documented defaults. Only a YDB read
+	// fills it, and only the YDB planner reads it.
+	//
+	// A setting a declaration leaves out keeps what the table holds, so a
+	// comparison plans nothing for it and no entry above carries it. A plan
+	// that recreates a table needs it, though: the new table would take the
+	// cluster's settings, which need not be the ones the old table holds. The
+	// rebuild writes these for each setting the declaration leaves out.
+	//
+	// A reversal runs against the same database and carries the same settings.
+	CurrentYDBSettings []YDBHeldSettings `json:"-"`
+
 	// RLSEnabledTablesAdded is the tables that need RLS enabled, each carried
 	// as its declaration; see [RLSEnabledTableChanges].
 	RLSEnabledTablesAdded RLSEnabledTableChanges `json:"rls_enabled_tables_added"`
@@ -1841,12 +1856,13 @@ type IndexPartitioningChange struct {
 	TableName string `json:"table_name"`
 	// Name is the index's name once the plan's renames have run.
 	Name string `json:"name"`
-	// Partitioning is the settings the declaration asks for. Nil asks for the
-	// settings YDB gives a new index.
+	// Partitioning is the settings the declaration names. A setting it leaves
+	// out keeps what the index holds.
 	Partitioning *ast.IndexPartitioningSpec `json:"partitioning,omitempty"`
 	// Previous is the settings the database holds, which a plan reads because
 	// a statement that sets one setting can reset another, and which a
-	// rollback restores. Nil is the settings YDB gives a new index.
+	// rollback restores. It is written as YDB's reader reports it: what
+	// differs from YDB's documented defaults, nil for none.
 	Previous *ast.IndexPartitioningSpec `json:"previous,omitempty"`
 }
 
@@ -2223,6 +2239,12 @@ type TableDiff struct {
 	// they agree. See [ChangefeedsChange].
 	ChangefeedsChange *ChangefeedsChange `json:"changefeeds_change,omitzero"`
 
+	// YDBPartitioningChange is YDB's, and only the YDB planner plans it: a YDB
+	// row table's settings transition -- how it splits into partitions, its
+	// read replicas and its key bloom filter -- nil when the declaration and
+	// the database hold the same settings.
+	YDBPartitioningChange *YDBTablePartitioningChange `json:"ydb_partitioning_change,omitzero"`
+
 	// ColumnKeyNames holds the name each column that gains its own UNIQUE
 	// takes on the target, keyed by column name: a column added with UNIQUE,
 	// and a column whose uniqueness changes to UNIQUE.
@@ -2288,6 +2310,24 @@ type RowDeletionPolicyChange struct {
 	Desired *ast.RowDeletionPolicySpec `json:"desired,omitzero"`
 	// Current is the policy the database carries, nil for none.
 	Current *ast.RowDeletionPolicySpec `json:"current,omitzero"`
+}
+
+// YDBTablePartitioningChange is YDB's: one YDB row table's settings
+// transition.
+//
+// Both sides travel: a setting Desired leaves out keeps what Current holds,
+// a statement that sets one setting can reset another, so the planner names
+// the held value of every other setting of the group it changes, and a
+// rollback restores Current. Desired keeps the starting
+// layout the declaration names, which the planner reads to tell a change it
+// can make in place from one YDB takes only when it creates a table.
+type YDBTablePartitioningChange struct {
+	// Desired is the settings the declaration names. A setting it leaves out
+	// keeps what the table holds.
+	Desired *ast.YDBTablePartitioningSpec `json:"desired,omitzero"`
+	// Current is the settings the database holds, as YDB's reader reports
+	// them: what differs from YDB's documented defaults, nil for none.
+	Current *ast.YDBTablePartitioningSpec `json:"current,omitzero"`
 }
 
 // RowTTLChange is one table's row-level TTL transition.
@@ -4168,6 +4208,20 @@ type RoleMembershipRef struct {
 	Role string `json:"role"`
 	// Member is the role that holds Role's privileges.
 	Member string `json:"member"`
+}
+
+// YDBHeldSettings is YDB's: the settings one row table of a database holds,
+// and the partitioning of its global indexes, as YDB's reader reports them:
+// what differs from YDB's documented defaults.
+type YDBHeldSettings struct {
+	// TableName is the table, qualified as [TableDiff.TableName] is.
+	TableName string
+	// Partitioning is the table's partitioning, read replicas and key bloom
+	// filter, nil for YDB's documented defaults.
+	Partitioning *ast.YDBTablePartitioningSpec
+	// Indexes is each global index's partitioning by index name. An index it
+	// does not name holds YDB's documented defaults.
+	Indexes map[string]*ast.IndexPartitioningSpec
 }
 
 // GrantRef identifies one PostgreSQL privilege grant.

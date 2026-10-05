@@ -13,12 +13,10 @@ import (
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
-	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
-	"github.com/ydb-platform/ydb-go-sdk/v3/table"
 
 	"ptah.run/core/ast"
 	"ptah.run/dbschema"
-	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/ydbpartition"
 	"ptah.run/migration/lint"
 )
 
@@ -326,29 +324,65 @@ func TestYDBLint_PartitioningChangeResetsTheMinimum(t *testing.T) {
 					c.Assert(conn.Writer().ExecuteSQL(c.Context(), statement), qt.IsNil)
 
 					c.Assert(slices.Contains(reported, "YD105"), qt.Equals, test.reported)
-					c.Assert(minPartitions(c, line, name), qt.Equals, test.minimum)
+					c.Assert(partitionSettings(c, conn, name).MinPartitions, qt.Equals, test.minimum)
 				})
 			}
 		})
 	}
 }
 
-// minPartitions reads a table's minimum partition count from the scheme
-// service, which Ptah's reader does not read yet.
-func minPartitions(c *qt.C, line ydbLine, name string) uint64 {
+// YD118 reports the ALTER TABLE that resets a table's partition size, and the
+// size the server keeps afterwards, read back through Ptah's reader, is what the
+// rule says it is.
+func TestYDBLint_PartitioningChangeResetsTheSize(t *testing.T) {
+	tests := []struct {
+		name     string
+		set      string
+		reported bool
+		size     uint64
+	}{
+		{name: "auto partitioning by size turned on again", set: "SET (AUTO_PARTITIONING_BY_SIZE = ENABLED)", reported: true, size: 2048},
+		{name: "turned on beside the minimum",
+			set: "SET (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 6, AUTO_PARTITIONING_BY_SIZE = ENABLED)", reported: true, size: 2048},
+		{name: "turned on with the size in the same statement",
+			set: "SET (AUTO_PARTITIONING_BY_SIZE = ENABLED, AUTO_PARTITIONING_PARTITION_SIZE_MB = 100)", size: 100},
+		{name: "auto partitioning by load turned on", set: "SET (AUTO_PARTITIONING_BY_LOAD = ENABLED)", size: 100},
+	}
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			conn := openYDB(qt.New(t), line)
+			for i, test := range tests {
+				t.Run(test.name, func(t *testing.T) {
+					c := qt.New(t)
+					c.Cleanup(func() { dropLintDir(c, conn) })
+					name := fmt.Sprintf("%s/sizes_%d", lintDir, i)
+					create := "CREATE TABLE `" + name + "` (id Uint64 NOT NULL, PRIMARY KEY (id)) WITH (" +
+						"AUTO_PARTITIONING_PARTITION_SIZE_MB = 100)"
+					c.Assert(conn.Writer().ExecuteSQL(c.Context(), create), qt.IsNil)
+					statement := "ALTER TABLE `" + name + "` " + test.set
+
+					reported := lintAgainst(c, conn, []string{create}, statement)
+					c.Assert(conn.Writer().ExecuteSQL(c.Context(), statement), qt.IsNil)
+
+					c.Assert(slices.Contains(reported, "YD118"), qt.Equals, test.reported)
+					c.Assert(partitionSettings(c, conn, name).PartitionSizeMB, qt.Equals, test.size)
+				})
+			}
+		})
+	}
+}
+
+// partitionSettings reads the settings a table in the lint directory holds
+// through Ptah's reader, resolved: a setting at its default reads as the
+// default, not as absent.
+func partitionSettings(c *qt.C, conn *dbschema.DatabaseConnection, name string) ydbpartition.TableSettings {
 	c.Helper()
-	ctx := c.Context()
-	driver, err := ydbsdk.Open(ctx, dbtarget.DriverDSN(c, line.engine))
+	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, []string{lintDir})
 	c.Assert(err, qt.IsNil)
-	defer func() { _ = driver.Close(context.Background()) }()
-	var minimum uint64
-	err = driver.Table().Do(ctx, func(ctx context.Context, session table.Session) error {
-		description, describeErr := session.DescribeTable(ctx, path.Join(driver.Name(), name))
-		minimum = description.PartitioningSettings.MinPartitionsCount
-		return describeErr
-	})
+	described := tableNamed(c, live, lintDir, path.Base(name))
+	settings, err := ydbpartition.HeldTable(described.YDBPartitioning)
 	c.Assert(err, qt.IsNil)
-	return minimum
+	return settings
 }
 
 // YDB does not refuse an ALTER TABLE that names a column family the table does

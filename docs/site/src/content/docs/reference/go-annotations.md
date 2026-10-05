@@ -224,6 +224,25 @@ YDB have and every other target refuses. A policy needs its column and its
 interval, and each engine reads the interval in its own spelling. See
 [YDB TTL](../../databases/ydb/#ttl).
 
+A YDB row table also takes its partitioning, its read replicas and its key bloom
+filter, in attributes spelled as YDB names the settings, in lower case. A
+setting the table leaves out keeps what the table holds. Every other dialect
+refuses a table that declares one, rather than build it with the server's
+defaults. See
+[table partitioning](../../databases/ydb/#table-partitioning-read-replicas-and-key-bloom-filter).
+
+| Attribute | Value |
+| --- | --- |
+| `auto_partitioning_by_size` | `ENABLED` or `DISABLED` |
+| `auto_partitioning_partition_size_mb` | megabytes, at least 1 |
+| `auto_partitioning_by_load` | `ENABLED` or `DISABLED` |
+| `auto_partitioning_min_partitions_count` | at least 1 |
+| `auto_partitioning_max_partitions_count` | at least 1 |
+| `read_replicas_settings` | `PER_AZ:<n>` or `ANY_AZ:<n>` |
+| `key_bloom_filter` | `ENABLED` or `DISABLED` |
+| `uniform_partitions` | partitions a new table starts with, at least 1 |
+| `partition_at_keys` | split points a new table starts with: `10, 20` or `(10, 'a'), (20)` |
+
 Platform overrides: yes.
 
 ### `//ptah:schema:field`

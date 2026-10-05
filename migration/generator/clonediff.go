@@ -6,6 +6,7 @@ package generator
 import (
 	"slices"
 
+	"ptah.run/core/ast"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -87,6 +88,7 @@ func cloneSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 	clone.RoleMembershipsAdded = slices.Clone(diff.RoleMembershipsAdded)
 	clone.RoleMembershipsRemoved = slices.Clone(diff.RoleMembershipsRemoved)
 	clone.CurrentGrants = slices.Clone(diff.CurrentGrants)
+	clone.CurrentYDBSettings = cloneYDBHeldSettings(diff.CurrentYDBSettings)
 	clone.GrantsAdded = slices.Clone(diff.GrantsAdded)
 	clone.GrantsRemoved = slices.Clone(diff.GrantsRemoved)
 	clone.GrantOptionsAdded = slices.Clone(diff.GrantOptionsAdded)
@@ -222,6 +224,27 @@ func cloneTransferDiffs(changes []difftypes.TransferDiff) []difftypes.TransferDi
 	for i, change := range changes {
 		change.CreateOnlyChanged = slices.Clone(change.CreateOnlyChanged)
 		clone[i] = change
+	}
+	return clone
+}
+
+// cloneYDBHeldSettings copies each table's held settings and its index map,
+// so a planner that reads them cannot change the caller's diff.
+func cloneYDBHeldSettings(settings []difftypes.YDBHeldSettings) []difftypes.YDBHeldSettings {
+	if settings == nil {
+		return nil
+	}
+	clone := make([]difftypes.YDBHeldSettings, len(settings))
+	for i, table := range settings {
+		table.Partitioning = table.Partitioning.Clone()
+		if table.Indexes != nil {
+			indexes := make(map[string]*ast.IndexPartitioningSpec, len(table.Indexes))
+			for name, spec := range table.Indexes {
+				indexes[name] = spec.Clone()
+			}
+			table.Indexes = indexes
+		}
+		clone[i] = table
 	}
 	return clone
 }

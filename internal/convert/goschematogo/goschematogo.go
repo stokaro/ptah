@@ -24,7 +24,7 @@ import (
 	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbfamily"
-	"ptah.run/internal/ydbindex"
+	"ptah.run/internal/ydbpartition"
 	"ptah.run/internal/ydbreplication"
 	"ptah.run/internal/ydbtopic"
 	"ptah.run/internal/ydbtype"
@@ -604,7 +604,8 @@ func tableAnnotation(table schemamodel.Table) string {
 		{name: "primary_key", value: strings.Join(table.PrimaryKey, ","), set: len(table.PrimaryKey) > 0},
 		{name: "comment", value: table.Comment, set: table.Comment != ""},
 	}
-	return annotation("ptah:schema:table", append(attrs, rowDeletionAttrs(table.RowDeletionPolicy)...)...)
+	attrs = append(attrs, rowDeletionAttrs(table.RowDeletionPolicy)...)
+	return annotation("ptah:schema:table", append(attrs, tablePartitioningAttrs(table.YDBPartitioning)...)...)
 }
 
 // rowDeletionAttrs writes a table's row deletion policy as the attributes the
@@ -672,6 +673,33 @@ func consumerAttrs(changefeed string, consumer ast.TopicConsumerSpec) []attr {
 	}
 }
 
+// tablePartitioningAttrs writes a YDB row table's settings as the attributes
+// the annotation parser reads them from.
+func tablePartitioningAttrs(spec *ast.YDBTablePartitioningSpec) []attr {
+	if spec.IsZero() {
+		return nil
+	}
+	shared := partitioningAttrs(&ast.IndexPartitioningSpec{
+		BySize: spec.BySize, PartitionSizeMB: spec.PartitionSizeMB, ByLoad: spec.ByLoad,
+		MinPartitions: spec.MinPartitions, MaxPartitions: spec.MaxPartitions, ReadReplicas: spec.ReadReplicas,
+	})
+	return append(shared,
+		attr{name: ydbpartition.AttributeKeyBloomFilter, value: switchValue(spec.KeyBloomFilter), set: spec.KeyBloomFilter != nil},
+		attr{name: ydbpartition.AttributeUniformPartitions, value: strconv.FormatUint(spec.UniformPartitions, 10),
+			set: spec.UniformPartitions != 0},
+		attr{name: ydbpartition.AttributePartitionAtKeys, value: ydbpartition.FormatSplitPoints(spec.PartitionAtKeys),
+			set: len(spec.PartitionAtKeys) != 0},
+	)
+}
+
+// switchValue writes a YDB setting that is switched on or off.
+func switchValue(on *bool) string {
+	if on != nil && *on {
+		return "ENABLED"
+	}
+	return "DISABLED"
+}
+
 func fieldAttrs(field schemamodel.Field) []attr {
 	return []attr{
 		{name: "name", value: field.Name, set: true},
@@ -709,20 +737,14 @@ func partitioningAttrs(spec *ast.IndexPartitioningSpec) []attr {
 	if spec.IsZero() {
 		return nil
 	}
-	enabled := func(on *bool) string {
-		if on != nil && *on {
-			return "ENABLED"
-		}
-		return "DISABLED"
-	}
 	count := func(n uint64) string { return strconv.FormatUint(n, 10) }
 	return []attr{
-		{name: ydbindex.AttributeBySize, value: enabled(spec.BySize), set: spec.BySize != nil},
-		{name: ydbindex.AttributePartitionSizeMB, value: count(spec.PartitionSizeMB), set: spec.PartitionSizeMB != 0},
-		{name: ydbindex.AttributeByLoad, value: enabled(spec.ByLoad), set: spec.ByLoad != nil},
-		{name: ydbindex.AttributeMinPartitions, value: count(spec.MinPartitions), set: spec.MinPartitions != 0},
-		{name: ydbindex.AttributeMaxPartitions, value: count(spec.MaxPartitions), set: spec.MaxPartitions != 0},
-		{name: ydbindex.AttributeReadReplicas, value: spec.ReadReplicas, set: spec.ReadReplicas != ""},
+		{name: ydbpartition.AttributeBySize, value: switchValue(spec.BySize), set: spec.BySize != nil},
+		{name: ydbpartition.AttributePartitionSizeMB, value: count(spec.PartitionSizeMB), set: spec.PartitionSizeMB != 0},
+		{name: ydbpartition.AttributeByLoad, value: switchValue(spec.ByLoad), set: spec.ByLoad != nil},
+		{name: ydbpartition.AttributeMinPartitions, value: count(spec.MinPartitions), set: spec.MinPartitions != 0},
+		{name: ydbpartition.AttributeMaxPartitions, value: count(spec.MaxPartitions), set: spec.MaxPartitions != 0},
+		{name: ydbpartition.AttributeReadReplicas, value: spec.ReadReplicas, set: spec.ReadReplicas != ""},
 	}
 }
 

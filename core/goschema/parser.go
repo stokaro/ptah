@@ -29,6 +29,7 @@ import (
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbindex"
+	"ptah.run/internal/ydbpartition"
 )
 
 // annotationErrorContext locates one annotation in the source being parsed, so
@@ -402,7 +403,7 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 // which YDB's global indexes carry; see [ydbindex.ParseDeclaration].
 func (s *schemaParseState) indexPartitioning(kv map[string]string, comment *ast.Comment, structName string) (*ptahast.IndexPartitioningSpec, error) {
 	partitioning, err := ydbindex.ParseDeclaration(kv)
-	if declaration, ok := errors.AsType[*ydbindex.DeclarationError](err); ok {
+	if declaration, ok := errors.AsType[*ydbpartition.DeclarationError](err); ok {
 		return nil, &ptaherr.ParseError{
 			File: s.filename, Line: s.annotationContext(comment, "//ptah:schema:index", structName).line,
 			Directive: "ptah:schema:index", Attribute: declaration.Attribute, Err: ptaherr.ErrInvalidAttributeValue,
@@ -640,6 +641,10 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 			Message:   err.Error(),
 		}
 	}
+	partitioning, err := s.tablePartitioning(kv, comment, structName)
+	if err != nil {
+		return err
+	}
 	s.tableDirectives = append(s.tableDirectives, schemamodel.Table{
 		StructName:          structName,
 		Name:                tableName,
@@ -656,9 +661,24 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 		CustomSQL:           kv["custom"],
 		RowTTL:              rowTTL,
 		RowDeletionPolicy:   rowDeletionPolicy,
+		YDBPartitioning:     partitioning,
 		Overrides:           parseutils.ParsePlatformSpecific(kv),
 	})
 	return nil
+}
+
+// tablePartitioning reads the settings of a table directive that a YDB row
+// table carries; see [ydbpartition.ParseTableDeclaration].
+func (s *schemaParseState) tablePartitioning(kv map[string]string, comment *ast.Comment, structName string) (*ptahast.YDBTablePartitioningSpec, error) {
+	partitioning, err := ydbpartition.ParseTableDeclaration(kv)
+	if declaration, ok := errors.AsType[*ydbpartition.DeclarationError](err); ok {
+		return nil, &ptaherr.ParseError{
+			File: s.filename, Line: s.annotationContext(comment, "//ptah:schema:table", structName).line,
+			Directive: "ptah:schema:table", Attribute: declaration.Attribute, Err: ptaherr.ErrInvalidAttributeValue,
+			Message: fmt.Sprintf("%s on //ptah:schema:table at %s", declaration.Error(), structName),
+		}
+	}
+	return partitioning, err
 }
 
 func tableDirectiveName(rawSchema, rawName string) (schemaName, tableName string) {

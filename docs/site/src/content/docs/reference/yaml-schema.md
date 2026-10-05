@@ -214,6 +214,7 @@ Each entry under `tables` declares one table.
 | `rls_enabled` | Enables row-level security for the table. |
 | `row_deletion_column`, `row_deletion_interval`, `row_deletion_unit` | The table's [row deletion policy](../../databases/ydb/#ttl), with the values the annotation attributes of the same names take. Spanner and YDB have one; every other dialect refuses it. |
 | `platform` / `overrides` | Dialect-specific override map. |
+| `auto_partitioning_by_size`, `auto_partitioning_partition_size_mb`, `auto_partitioning_by_load`, `auto_partitioning_min_partitions_count`, `auto_partitioning_max_partitions_count`, `read_replicas_settings`, `key_bloom_filter`, `uniform_partitions`, `partition_at_keys` | A YDB row table's [partitioning, read replicas and key bloom filter](../../databases/ydb/#table-partitioning-read-replicas-and-key-bloom-filter), with the values the annotation attributes of the same names take. Every other dialect refuses them. |
 
 Table-local `columns`, `fields`, `indexes`, and `constraints` preserve YAML
 author order. Top-level maps render deterministically by sorted key.

@@ -84,6 +84,7 @@ import (
 	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
+	"ptah.run/internal/ydbpartition"
 )
 
 // ParseFile reads a YAML schema file and parses it with Parse, returning the
@@ -186,6 +187,18 @@ type tableSpec struct {
 	RowDeletionUnit     *stringScalar `yaml:"row_deletion_unit"`
 	Platform            platformSpec  `yaml:"platform"`
 	Overrides           platformSpec  `yaml:"overrides"`
+
+	// The settings of a YDB row table, keyed as the annotation keys them;
+	// see [ydbpartition.ParseTableDeclaration].
+	AutoPartitioningBySize          *stringScalar `yaml:"auto_partitioning_by_size"`
+	AutoPartitioningPartitionSizeMB *stringScalar `yaml:"auto_partitioning_partition_size_mb"`
+	AutoPartitioningByLoad          *stringScalar `yaml:"auto_partitioning_by_load"`
+	AutoPartitioningMinPartitions   *stringScalar `yaml:"auto_partitioning_min_partitions_count"`
+	AutoPartitioningMaxPartitions   *stringScalar `yaml:"auto_partitioning_max_partitions_count"`
+	ReadReplicasSettings            *stringScalar `yaml:"read_replicas_settings"`
+	KeyBloomFilter                  *stringScalar `yaml:"key_bloom_filter"`
+	UniformPartitions               *stringScalar `yaml:"uniform_partitions"`
+	PartitionAtKeys                 *stringScalar `yaml:"partition_at_keys"`
 }
 
 // rowDeletionValues are the row deletion attributes the table sets, keyed by
@@ -197,6 +210,30 @@ func (spec tableSpec) rowDeletionValues() map[string]string {
 		rowdeletion.AttributeColumn:   spec.RowDeletionColumn,
 		rowdeletion.AttributeInterval: spec.RowDeletionInterval,
 		rowdeletion.AttributeUnit:     spec.RowDeletionUnit,
+	} {
+		if value != nil {
+			values[attribute] = string(*value)
+		}
+	}
+	return values
+}
+
+// partitioningValues are the settings the table sets, keyed by attribute
+// name. An attribute the document leaves out is absent, and one it sets to an
+// empty value is present, so an empty value is refused rather than read as no
+// declaration.
+func (spec tableSpec) partitioningValues() map[string]string {
+	values := make(map[string]string)
+	for attribute, value := range map[string]*stringScalar{
+		ydbpartition.AttributeBySize:            spec.AutoPartitioningBySize,
+		ydbpartition.AttributePartitionSizeMB:   spec.AutoPartitioningPartitionSizeMB,
+		ydbpartition.AttributeByLoad:            spec.AutoPartitioningByLoad,
+		ydbpartition.AttributeMinPartitions:     spec.AutoPartitioningMinPartitions,
+		ydbpartition.AttributeMaxPartitions:     spec.AutoPartitioningMaxPartitions,
+		ydbpartition.AttributeReadReplicas:      spec.ReadReplicasSettings,
+		ydbpartition.AttributeKeyBloomFilter:    spec.KeyBloomFilter,
+		ydbpartition.AttributeUniformPartitions: spec.UniformPartitions,
+		ydbpartition.AttributePartitionAtKeys:   spec.PartitionAtKeys,
 	} {
 		if value != nil {
 			values[attribute] = string(*value)
@@ -277,12 +314,12 @@ type indexSpec struct {
 func (spec indexSpec) partitioningValues() map[string]string {
 	values := make(map[string]string)
 	for attribute, value := range map[string]*stringScalar{
-		ydbindex.AttributeBySize:          spec.AutoPartitioningBySize,
-		ydbindex.AttributePartitionSizeMB: spec.AutoPartitioningPartitionSizeMB,
-		ydbindex.AttributeByLoad:          spec.AutoPartitioningByLoad,
-		ydbindex.AttributeMinPartitions:   spec.AutoPartitioningMinPartitions,
-		ydbindex.AttributeMaxPartitions:   spec.AutoPartitioningMaxPartitions,
-		ydbindex.AttributeReadReplicas:    spec.ReadReplicasSettings,
+		ydbpartition.AttributeBySize:          spec.AutoPartitioningBySize,
+		ydbpartition.AttributePartitionSizeMB: spec.AutoPartitioningPartitionSizeMB,
+		ydbpartition.AttributeByLoad:          spec.AutoPartitioningByLoad,
+		ydbpartition.AttributeMinPartitions:   spec.AutoPartitioningMinPartitions,
+		ydbpartition.AttributeMaxPartitions:   spec.AutoPartitioningMaxPartitions,
+		ydbpartition.AttributeReadReplicas:    spec.ReadReplicasSettings,
 	} {
 		if value != nil {
 			values[attribute] = string(*value)
@@ -756,6 +793,10 @@ func (d document) addTables(db *schemamodel.Database) error {
 		if err != nil {
 			return err
 		}
+		partitioning, err := ydbpartition.ParseTableDeclaration(table.partitioningValues())
+		if err != nil {
+			return fmt.Errorf("table %q: %w", tableKey, err)
+		}
 
 		changefeeds, err := buildChangefeeds(tableName, table.Changefeeds)
 		if err != nil {
@@ -784,6 +825,7 @@ func (d document) addTables(db *schemamodel.Database) error {
 
 			RowDeletionPolicy: rowDeletionPolicy,
 			YDBColumnFamilies: families,
+			YDBPartitioning:   partitioning,
 		})
 
 		if err := addFields(db, structName, table.Columns, table.Fields); err != nil {

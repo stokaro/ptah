@@ -12,7 +12,7 @@ import (
 	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbfamily"
-	"ptah.run/internal/ydbindex"
+	"ptah.run/internal/ydbpartition"
 	"ptah.run/internal/ydbreplication"
 	"ptah.run/internal/ydbtopic"
 )
@@ -402,15 +402,15 @@ var directives = []Directive{
 			attr("nulls_distinct", "Controls NULLS DISTINCT behavior where supported.", valueBoolean, false, false),
 			attr("invisible", "Hides the index from the optimizer: INVISIBLE on MySQL, IGNORED on MariaDB, NOT VISIBLE on CockroachDB.",
 				valueBoolean, false, true),
-			attr(ydbindex.AttributeBySize, "YDB: whether the index's table splits a partition that grows past its size, ENABLED or DISABLED.",
+			attr(ydbpartition.AttributeBySize, "YDB: whether the index's table splits a partition that grows past its size, ENABLED or DISABLED.",
 				valueString, false, false),
-			attr(ydbindex.AttributePartitionSizeMB, "YDB: the size in MB at which the index's table splits a partition.",
+			attr(ydbpartition.AttributePartitionSizeMB, "YDB: the size in MB at which the index's table splits a partition.",
 				valueString, false, false),
-			attr(ydbindex.AttributeByLoad, "YDB: whether the index's table splits a busy partition, ENABLED or DISABLED.",
+			attr(ydbpartition.AttributeByLoad, "YDB: whether the index's table splits a busy partition, ENABLED or DISABLED.",
 				valueString, false, false),
-			attr(ydbindex.AttributeMinPartitions, "YDB: the fewest partitions the index's table keeps.", valueString, false, false),
-			attr(ydbindex.AttributeMaxPartitions, "YDB: the most partitions the index's table splits into.", valueString, false, false),
-			attr(ydbindex.AttributeReadReplicas, "YDB: the index's read replicas, PER_AZ:<n> or ANY_AZ:<n>.", valueString, false, false),
+			attr(ydbpartition.AttributeMinPartitions, "YDB: the fewest partitions the index's table keeps.", valueString, false, false),
+			attr(ydbpartition.AttributeMaxPartitions, "YDB: the most partitions the index's table splits into.", valueString, false, false),
+			attr(ydbpartition.AttributeReadReplicas, "YDB: the index's read replicas, PER_AZ:<n> or ANY_AZ:<n>.", valueString, false, false),
 		},
 	},
 	{
@@ -571,6 +571,23 @@ var directives = []Directive{
 			attr(rowdeletion.AttributeColumn, "Row deletion policy (Spanner and YDB TTL): the column a row's age is measured from. Needs row_deletion_interval.", valueString, false, false),
 			attr(rowdeletion.AttributeInterval, "Row deletion policy: how long after the column's time a row is deleted, such as `P30D` on YDB or `30 days` on Spanner.", valueString, false, false),
 			attr(rowdeletion.AttributeUnit, "YDB TTL on an integer column: what the column counts since the Unix epoch, SECONDS, MILLISECONDS, MICROSECONDS or NANOSECONDS.", valueString, false, false),
+			// A YDB row table's settings, named for the settings they become,
+			// as an index's partitioning is.
+			attr(ydbpartition.AttributeBySize, "YDB: whether the table splits a partition that grows past its size, ENABLED or DISABLED.",
+				valueString, false, false),
+			attr(ydbpartition.AttributePartitionSizeMB, "YDB: the size in MB at which the table splits a partition.",
+				valueString, false, false),
+			attr(ydbpartition.AttributeByLoad, "YDB: whether the table splits a busy partition, ENABLED or DISABLED.",
+				valueString, false, false),
+			attr(ydbpartition.AttributeMinPartitions, "YDB: the fewest partitions the table keeps.", valueString, false, false),
+			attr(ydbpartition.AttributeMaxPartitions, "YDB: the most partitions the table splits into.", valueString, false, false),
+			attr(ydbpartition.AttributeReadReplicas, "YDB: the table's read replicas, PER_AZ:<n> or ANY_AZ:<n>.", valueString, false, false),
+			attr(ydbpartition.AttributeKeyBloomFilter, "YDB: whether the table keeps a bloom filter of its keys, ENABLED or DISABLED.",
+				valueString, false, false),
+			attr(ydbpartition.AttributeUniformPartitions, "YDB: the partitions a new table starts with, splitting a Uint32 or Uint64 first key evenly.",
+				valueString, false, false),
+			attr(ydbpartition.AttributePartitionAtKeys, "YDB: the keys a new table starts split before, such as `10, 20` or `(10, 'a'), (20)`.",
+				valueString, false, false),
 		},
 	},
 	{

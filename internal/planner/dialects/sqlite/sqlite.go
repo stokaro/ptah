@@ -62,7 +62,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := schemaprecondition.RefuseSerialSequenceChanges(DialectName, diff); err != nil {
 		return nil, err
 	}
-	if err := schemaprecondition.RefuseYDBColumnFamilyChanges(DialectName, diff); err != nil {
+	if err := schemaprecondition.RefuseYDBTableSettingChanges(DialectName, diff); err != nil {
 		return nil, err
 	}
 	if err := schemaprecondition.RefuseChangefeedChanges(DialectName, diff); err != nil {

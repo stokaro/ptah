@@ -448,10 +448,12 @@ func compareReportingUndecidedAdditions(
 	// rebuilds a table and must not drop a setting nobody compared.
 	diff.CurrentNotDescribed = database.NotDescribed
 	// Where the read happened, for the statements YDB takes only with an
-	// absolute path, and every grant it reported, for a plan that recreates a
-	// table and must give the table its grants back.
+	// absolute path, every grant it reported, for a plan that recreates a
+	// table and must give the table its grants back, and every YDB table's
+	// settings, for the same plan to keep the ones nobody declared.
 	diff.CurrentDatabasePath = database.DatabasePath
 	diff.CurrentGrants = compare.CurrentGrants(database)
+	diff.CurrentYDBSettings = compare.CurrentYDBSettings(database)
 
 	// Comments on the objects that take theirs through a statement of its
 	// own, compared only where the target stores and reports them.

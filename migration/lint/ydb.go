@@ -26,13 +26,14 @@ import (
 // it runs, which the server decides the same way in either direction, so each
 // one reads the down half of a migration as well.
 //
-// YD104, YD105 and YD106 need to know what the table looks like before the
-// statement: whether an index uses a column, which column the TTL reads,
-// what its minimum partition count is, which views read a table. They read
-// that state from the directory itself, whether or not the run has a dev
-// database: the up migrations before the analyzed version, in version order,
-// then the statements of the file before the one analyzed. A table created
-// outside the directory is unknown to it, and an unknown table reports nothing.
+// YD104, YD105, YD106 and YD118 need to know what the table looks like before
+// the statement: whether an index uses a column, which column the TTL reads,
+// what its minimum partition count and its partition size are, which views
+// read a table. They read that state from the directory itself, whether or not
+// the run has a dev database: the up migrations before the analyzed version, in
+// version order, then the statements of the file before the one analyzed. A
+// table created outside the directory is unknown to it, and an unknown table
+// reports nothing.
 //
 // A run that names no dialect runs every rule, YD included, and reads the
 // text with the hybrid lexer, which does not read YQL, against a target that
@@ -48,6 +49,7 @@ func ydbRules() []Rule {
 		ydbAddColumnRefusedRule(),
 		ydbDropUsedColumnRule(),
 		ydbPartitionMinimumResetRule(),
+		ydbPartitionSizeResetRule(),
 		ydbViewOrphanedRule(),
 		ydbNarrowSerialSequenceRule(),
 		ydbReplayedRestartRule(),
@@ -277,9 +279,18 @@ func ydbDropUsedColumnRule() Rule {
 // where the directory's own history says so (see [ydbTable.minPartitions]),
 // and warns where it does not know.
 func ydbPartitionMinimumResetRule() Rule {
+	return ydbTableResetRule("YD105", "partitioning change resets the minimum partition count", partitionMinimumReset)
+}
+
+// ydbTableResetRule is a warning about an ALTER TABLE that resets a setting of
+// its table. reset reads each statement against the table as the directory's
+// history leaves it before that statement, and says why the statement resets
+// the setting; the history then takes the statement whether it was reported or
+// not.
+func ydbTableResetRule(code, title string, reset func(yqlddl.Statement, ydbTable) (string, bool)) Rule {
 	return Rule{
-		Code:     "YD105",
-		Title:    "partitioning change resets the minimum partition count",
+		Code:     code,
+		Title:    title,
 		Severity: SeverityWarning,
 		Dialects: ydbOnly,
 		CheckFile: func(file *File) []Finding {
@@ -291,10 +302,10 @@ func ydbPartitionMinimumResetRule() Rule {
 			for i := range file.Statements {
 				stmt := &file.Statements[i]
 				read := yqlddl.Read(stmt.SQL)
-				if message, resets := partitionMinimumReset(read, state.table(read.Name)); resets {
+				if message, resets := reset(read, state.table(read.Name)); resets {
 					findings = append(findings, Finding{
-						Rule:     "YD105",
-						Title:    "partitioning change resets the minimum partition count",
+						Rule:     code,
+						Title:    title,
 						Severity: SeverityWarning,
 						File:     file.Path,
 						Line:     stmt.Line,
@@ -407,6 +418,106 @@ func alteredMinPartitions(read yqlddl.Statement, table ydbTable) (int, bool) {
 	}
 	return table.minPartitions, table.minKnown
 }
+
+// ydbPartitionSizeResetRule reports an ALTER TABLE that turns
+// AUTO_PARTITIONING_BY_SIZE on without setting
+// AUTO_PARTITIONING_PARTITION_SIZE_MB in the same statement. Measured on
+// 26.2.1.14 and 25.1.4.7 against a table whose partition size was 100 MB:
+//
+//	SET (AUTO_PARTITIONING_BY_SIZE = ENABLED)                         2048 MB, also when it was enabled already
+//	SET (..._MIN_PARTITIONS_COUNT = 6, ..._BY_SIZE = ENABLED)         2048 MB
+//	SET (..._BY_SIZE = ENABLED, ..._PARTITION_SIZE_MB = 100, ...)     100 MB
+//	SET (..._BY_LOAD = ENABLED), or a minimum or maximum setting      100 MB
+//
+// A table that splits at 2048 MB already, or does not split by size at all,
+// loses nothing, so the rule stays silent where the directory's own history
+// says so (see [ydbTable.sizeMB]), and warns where it does not know. YD105
+// reports the minimum the same statement resets.
+func ydbPartitionSizeResetRule() Rule {
+	return ydbTableResetRule("YD118", "partitioning change resets the partition size", partitionSizeReset)
+}
+
+// partitionSizeReset says why an ALTER TABLE of table resets its partition
+// size to 2048 MB, and reports whether it does. A table already at 2048 MB, or
+// one that does not split by size and so holds no size, has nothing to lose.
+func partitionSizeReset(read yqlddl.Statement, table ydbTable) (string, bool) {
+	if read.Kind != yqlddl.AlterTable ||
+		(table.sizeKnown && (table.sizeMB == ydbDefaultPartitionSize || table.sizeMB == 0)) {
+		return "", false
+	}
+	enabled := false
+	for _, setting := range settingsSet(read) {
+		switch {
+		case setting.Name == ydbPartitionSize:
+			return "", false
+		case setting.Name == ydbBySize && setting.Value == "ENABLED":
+			enabled = true
+		}
+	}
+	if !enabled {
+		return "", false
+	}
+	return fmt.Sprintf(
+		"setting %s = ENABLED resets %s of %s to %d, whatever size it held; set %s in the same ALTER TABLE to keep it",
+		ydbBySize, ydbPartitionSize, read.Name, ydbDefaultPartitionSize, ydbPartitionSize), true
+}
+
+// createdPartitionSize is the partition size a CREATE TABLE leaves, 0 for a
+// table that does not split by size, and whether it is known: the size the
+// statement names, else 0 where it turns splitting by size off, else YDB's
+// 2048 MB. A size the reader cannot read leaves it unknown.
+func createdPartitionSize(settings []yqlddl.Setting) (int, bool) {
+	size, splitting := ydbDefaultPartitionSize, true
+	for _, setting := range settings {
+		switch setting.Name {
+		case ydbPartitionSize:
+			value, ok := partitionCount(setting)
+			if !ok {
+				return 0, false
+			}
+			size = value
+		case ydbBySize:
+			splitting = setting.Value != "DISABLED"
+		}
+	}
+	if !splitting {
+		return 0, true
+	}
+	return size, true
+}
+
+// alteredPartitionSize is the partition size an ALTER TABLE leaves on table:
+// the size it sets, wherever in the statement -- a size set on a table that
+// does not split by size turns splitting on, measured on both lines -- else
+// 0 where it turns splitting by size off, 2048 MB where it turns it on, and
+// the table's own otherwise.
+func alteredPartitionSize(read yqlddl.Statement, table ydbTable) (int, bool) {
+	settings := settingsSet(read)
+	for _, setting := range settings {
+		if setting.Name == ydbPartitionSize {
+			return partitionCount(setting)
+		}
+	}
+	for _, setting := range settings {
+		if setting.Name == ydbBySize {
+			if setting.Value == "DISABLED" {
+				return 0, true
+			}
+			return ydbDefaultPartitionSize, true
+		}
+	}
+	return table.sizeMB, table.sizeKnown
+}
+
+// ydbBySize is the setting that turns splitting by size on and off.
+const ydbBySize = "AUTO_PARTITIONING_BY_SIZE"
+
+// ydbDefaultPartitionSize is the partition size YDB gives a table that names
+// none, and the one turning splitting by size on resets it to.
+const ydbDefaultPartitionSize = 2048
+
+// ydbPartitionSize is the setting turning splitting by size on resets.
+const ydbPartitionSize = "AUTO_PARTITIONING_PARTITION_SIZE_MB"
 
 // missingRequirement returns the first action of a statement that needs key,
 // and reports whether the target lacks it; see [yqlddl.Statement.Requirements],
@@ -612,6 +723,11 @@ type ydbTable struct {
 	// ALTER TABLE that sets the count or resets it.
 	minPartitions int
 	minKnown      bool
+	// sizeMB is the table's AUTO_PARTITIONING_PARTITION_SIZE_MB when
+	// sizeKnown, and 0 for a table that does not split by size: set by the
+	// CREATE TABLE the directory ran, or by an ALTER TABLE that changes it.
+	sizeMB    int
+	sizeKnown bool
 	// serials are the YDB types of the table's Serial columns, by column:
 	// Serial, BigSerial or SmallSerial, whichever alias the CREATE TABLE
 	// wrote.
@@ -640,6 +756,7 @@ func (s *ydbSchema) clone() *ydbSchema {
 			indexes: slices.Clone(table.indexes), ttl: table.ttl,
 			columns: slices.Clone(table.columns), columnsKnown: table.columnsKnown,
 			minPartitions: table.minPartitions, minKnown: table.minKnown,
+			sizeMB: table.sizeMB, sizeKnown: table.sizeKnown,
 			serials: maps.Clone(table.serials), restarts: maps.Clone(table.restarts),
 			changefeeds: slices.Clone(table.changefeeds),
 			families:    slices.Clone(table.families), familiesKnown: table.familiesKnown,
@@ -688,9 +805,10 @@ func (s *ydbSchema) apply(read yqlddl.Statement) {
 			columns = append(columns, column.Name)
 		}
 		minimum, minKnown := createdMinPartitions(read.Settings)
+		size, sizeKnown := createdPartitionSize(read.Settings)
 		s.tables[read.Name] = ydbTable{
 			indexes: slices.Clone(read.Indexes), ttl: read.TTLColumn, columns: columns, columnsKnown: true,
-			minPartitions: minimum, minKnown: minKnown, serials: serialColumns(read),
+			minPartitions: minimum, minKnown: minKnown, sizeMB: size, sizeKnown: sizeKnown, serials: serialColumns(read),
 			families: append([]string{ydbfamily.Default}, read.Families...), familiesKnown: true,
 		}
 	case yqlddl.AlterTable:
@@ -699,6 +817,7 @@ func (s *ydbSchema) apply(read yqlddl.Statement) {
 			table = table.applyAction(action)
 		}
 		table.minPartitions, table.minKnown = alteredMinPartitions(read, table)
+		table.sizeMB, table.sizeKnown = alteredPartitionSize(read, table)
 		s.store(read, table)
 	case yqlddl.DropTable:
 		delete(s.tables, read.Name)

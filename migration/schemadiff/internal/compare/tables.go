@@ -16,6 +16,7 @@ import (
 	"ptah.run/internal/objectidentity"
 	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/ydbpartition"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -271,10 +272,12 @@ func TablesAndColumnsWithServerSpellings(
 			// difference is a changefeed has to reach TablesModified for the
 			// same reason.
 			tableDiff.ChangefeedsChange = changefeedsChange(cov, genTable, dbTable)
-			if len(tableDiff.ColumnsAdded) > 0 || len(tableDiff.ColumnsRemoved) > 0 ||
-				len(tableDiff.ColumnsModified) > 0 || tableDiff.RowTTLChange != nil ||
-				tableDiff.RowDeletionPolicyChange != nil || tableDiff.CommentChange != nil ||
-				tableDiff.ChangefeedsChange != nil || tableDiff.YDBColumnFamiliesChange != nil {
+			// A YDB table's settings are compared here for the same reason
+			// again: they belong to the table, and a table whose only
+			// difference is how it splits into partitions has to reach
+			// TablesModified or nothing ever sets them.
+			tableDiff.YDBPartitioningChange = partitioningChange(genTable.YDBPartitioning, dbTable.YDBPartitioning)
+			if tableChanged(tableDiff) {
 				diff.TablesModified = append(diff.TablesModified, tableDiff)
 			}
 		}
@@ -368,6 +371,40 @@ func rowDeletionPolicyChange(
 		return nil
 	}
 	return &difftypes.RowDeletionPolicyChange{Desired: desired.Clone(), Current: current.Clone()}
+}
+
+// tableChanged reports whether a table's modification carries any change: a
+// column added, dropped or changed, or a change of one of the table's own
+// settings.
+func tableChanged(tableDiff difftypes.TableDiff) bool {
+	return len(tableDiff.ColumnsAdded) > 0 || len(tableDiff.ColumnsRemoved) > 0 ||
+		len(tableDiff.ColumnsModified) > 0 || tableDiff.RowTTLChange != nil ||
+		tableDiff.RowDeletionPolicyChange != nil || tableDiff.CommentChange != nil ||
+		tableDiff.ChangefeedsChange != nil || tableDiff.YDBColumnFamiliesChange != nil ||
+		tableDiff.YDBPartitioningChange != nil
+}
+
+// partitioningChange is the transition a YDB table's settings make, and nil
+// when there is none.
+//
+// The declaration is read over what the table holds
+// ([ydbpartition.ResolveTable]), so a setting it leaves out keeps the held
+// value and is never a difference, and a starting layout counts only through
+// the minimum partition count it gives a new table: YDB
+// keeps no other record of it. A side that does not resolve differs, so the
+// plan reaches the planner, which refuses it with the reason. On a target
+// whose catalog reports no settings, a declaration that names some differs
+// too, and that target's planner refuses it.
+func partitioningChange(desired, current *ast.YDBTablePartitioningSpec) *difftypes.YDBTablePartitioningChange {
+	if desired.IsZero() && current.IsZero() {
+		return nil
+	}
+	currentSettings, currentErr := ydbpartition.HeldTable(current)
+	desiredSettings, desiredErr := ydbpartition.ResolveTable(desired, currentSettings)
+	if desiredErr == nil && currentErr == nil && desiredSettings.Equal(currentSettings) {
+		return nil
+	}
+	return &difftypes.YDBTablePartitioningChange{Desired: desired.Clone(), Current: current.Clone()}
 }
 
 // tableCreationSchemaOnly and tableCreationName are the coverage filter's two

@@ -1470,6 +1470,37 @@ const (
 	// TOKEN_SECRET_PATH` on 25.1.4.7 to 25.3.1.25.
 	ReplicationSecretPaths Capability = "replication_secret_paths" // #nosec G101 -- a capability key, not a credential
 
+	// PartitioningOptions marks a target on which Ptah declares, reads and
+	// changes how a row table splits into partitions -- YDB's
+	// AUTO_PARTITIONING_BY_SIZE, AUTO_PARTITIONING_PARTITION_SIZE_MB,
+	// AUTO_PARTITIONING_BY_LOAD and the minimum and maximum partition counts --
+	// and the partitions a new table starts with, UNIFORM_PARTITIONS or
+	// PARTITION_AT_KEYS.
+	//
+	// Measured on YDB 25.1.4.7 and 26.2.1.14 alike: CREATE TABLE ... WITH
+	// takes every setting, and `ALTER TABLE ... SET (...)` takes all but the
+	// starting layout (`UNIFORM_PARTITIONS alter is not supported`). No
+	// setting can be reset (`... reset is not supported`), setting one resets
+	// others -- AUTO_PARTITIONING_BY_LOAD = ENABLED resets the minimum to 1,
+	// AUTO_PARTITIONING_BY_SIZE = ENABLED resets the size to 2048 MB and the
+	// minimum to 1 -- and a maximum cannot be removed (`Can't set max
+	// partition count to 0`).
+	PartitioningOptions Capability = "partitioning_options"
+
+	// ReadReplicas marks a target on which Ptah declares, reads and changes a
+	// row table's read replicas: YDB's READ_REPLICAS_SETTINGS, `PER_AZ:<n>` or
+	// `ANY_AZ:<n>`. Measured on YDB 25.1.4.7 and 26.2.1.14, CREATE TABLE and
+	// ALTER TABLE ... SET take it, setting it resets no other setting, and
+	// `PER_AZ:0` removes the replicas where RESET is refused.
+	ReadReplicas Capability = "read_replicas"
+
+	// KeyBloomFilter marks a target on which Ptah declares, reads and changes
+	// whether a row table keeps a bloom filter of its keys: YDB's
+	// KEY_BLOOM_FILTER. Measured on YDB 25.1.4.7 and 26.2.1.14, CREATE TABLE
+	// and ALTER TABLE ... SET take ENABLED and DISABLED, setting it resets no
+	// other setting, and RESET is refused.
+	KeyBloomFilter Capability = "key_bloom_filter"
+
 	// SerialColumns marks a target whose SERIAL column types fill the column
 	// on insert without the application naming a value: PostgreSQL's serial
 	// pseudo-types and YDB's Serial, BigSerial and SmallSerial, each backed by
@@ -1979,6 +2010,15 @@ var registry = map[Capability]spec{
 	ReplicationSecretPaths: {
 		doc: "a replication or a transfer names a secret by its path, TOKEN_SECRET_PATH (YDB 25.4 and later)",
 	},
+	PartitioningOptions: {
+		doc: "Ptah declares, reads and changes how a row table splits into partitions, and the partitions it starts with (YDB's AUTO_PARTITIONING_*, UNIFORM_PARTITIONS, PARTITION_AT_KEYS)",
+	},
+	ReadReplicas: {
+		doc: "Ptah declares, reads and changes a row table's read replicas (YDB's READ_REPLICAS_SETTINGS)",
+	},
+	KeyBloomFilter: {
+		doc: "Ptah declares, reads and changes whether a row table keeps a bloom filter of its keys (YDB's KEY_BLOOM_FILTER)",
+	},
 	SerialColumns: {
 		doc: "SERIAL column types fill the column from an implicit sequence (PostgreSQL serial, YDB Serial)",
 	},
@@ -2301,6 +2341,11 @@ func MySQL84() Capabilities {
 		AsyncReplication:       false,
 		Transfers:              false,
 		ReplicationSecretPaths: false,
+		// A row table's partitioning, read replicas and key bloom filter are
+		// YDB's table settings, so the three keys about them are false here.
+		PartitioningOptions: false,
+		ReadReplicas:        false,
+		KeyBloomFilter:      false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -2541,6 +2586,11 @@ func MariaDB1011() Capabilities {
 		AsyncReplication:       false,
 		Transfers:              false,
 		ReplicationSecretPaths: false,
+		// A row table's partitioning, read replicas and key bloom filter are
+		// YDB's table settings, so the three keys about them are false here.
+		PartitioningOptions: false,
+		ReadReplicas:        false,
+		KeyBloomFilter:      false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -2723,6 +2773,11 @@ func Postgres16() Capabilities {
 		AsyncReplication:       false,
 		Transfers:              false,
 		ReplicationSecretPaths: false,
+		// A row table's partitioning, read replicas and key bloom filter are
+		// YDB's table settings, so the three keys about them are false here.
+		PartitioningOptions: false,
+		ReadReplicas:        false,
+		KeyBloomFilter:      false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -3028,6 +3083,11 @@ func ClickHouse24() Capabilities {
 		AsyncReplication:       false,
 		Transfers:              false,
 		ReplicationSecretPaths: false,
+		// A row table's partitioning, read replicas and key bloom filter are
+		// YDB's table settings, so the three keys about them are false here.
+		PartitioningOptions: false,
+		ReadReplicas:        false,
+		KeyBloomFilter:      false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -3228,6 +3288,11 @@ func SQLite3() Capabilities {
 		AsyncReplication:       false,
 		Transfers:              false,
 		ReplicationSecretPaths: false,
+		// A row table's partitioning, read replicas and key bloom filter are
+		// YDB's table settings, so the three keys about them are false here.
+		PartitioningOptions: false,
+		ReadReplicas:        false,
+		KeyBloomFilter:      false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -3507,6 +3572,11 @@ func SQLServer2022() Capabilities {
 		AsyncReplication:       false,
 		Transfers:              false,
 		ReplicationSecretPaths: false,
+		// A row table's partitioning, read replicas and key bloom filter are
+		// YDB's table settings, so the three keys about them are false here.
+		PartitioningOptions: false,
+		ReadReplicas:        false,
+		KeyBloomFilter:      false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -4224,6 +4294,11 @@ func Oracle23() Capabilities {
 		AsyncReplication:       false,
 		Transfers:              false,
 		ReplicationSecretPaths: false,
+		// A row table's partitioning, read replicas and key bloom filter are
+		// YDB's table settings, so the three keys about them are false here.
+		PartitioningOptions: false,
+		ReadReplicas:        false,
+		KeyBloomFilter:      false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -4451,6 +4526,14 @@ func YDB262() Capabilities {
 		AsyncReplication:       true,
 		Transfers:              true,
 		ReplicationSecretPaths: true,
+		// A row table's settings: how it splits into partitions and the
+		// partitions it starts with, its read replicas and its key bloom
+		// filter. CREATE TABLE ... WITH takes each, and ALTER TABLE ... SET
+		// each but the starting layout, measured on 25.1.4.7 and 26.2.1.14
+		// alike, so every line between them carries them too.
+		PartitioningOptions: true,
+		ReadReplicas:        true,
+		KeyBloomFilter:      true,
 
 		// Tables and their in-place changes. A table needs a key (`Primary
 		// key is required for ydb tables.`), and no ALTER changes it. A
