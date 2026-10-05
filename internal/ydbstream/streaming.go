@@ -27,9 +27,9 @@ func Pool(spec ast.StreamingQuerySpec) string {
 	return spec.ResourcePool
 }
 
-// Equal compares persistent settings, normalizing defaults and outer whitespace.
+// Equal compares persistent settings, normalizing defaults, whitespace, and comments.
 func Equal(a, b ast.StreamingQuerySpec) bool {
-	return strings.TrimSpace(a.Text) == strings.TrimSpace(b.Text) && Running(a) == Running(b) && Pool(a) == Pool(b)
+	return SameBody(a.Text, b.Text) && Running(a) == Running(b) && Pool(a) == Pool(b)
 }
 
 // Validate checks the body remains one streaming-query statement when wrapped.
@@ -82,7 +82,7 @@ type AlterOptions struct {
 // explicit permission because YDB discards aggregation state. Topic offsets
 // remain in the checkpoint; no DROP/CREATE fallback is used.
 func Alter(name string, desired, current ast.StreamingQuerySpec, options AlterOptions) (string, error) {
-	textChanged := strings.TrimSpace(desired.Text) != strings.TrimSpace(current.Text)
+	textChanged := !SameBody(desired.Text, current.Text)
 	if textChanged && !options.AllowStateReset {
 		return "", fmt.Errorf("streaming query %q: changing text resets aggregation state; declare allow_state_reset=true to permit it", name)
 	}

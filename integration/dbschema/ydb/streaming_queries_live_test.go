@@ -59,7 +59,7 @@ func TestYDBStreamingQueries_RoundTripAndRollback(t *testing.T) {
 	c.Assert(planAgainst(c, conn, declared, schemas), qt.HasLen, 0)
 
 	current := readScoped(c, conn, schemas)
-	declared.StreamingQueries[0].Spec.Text += " /* changed */"
+	declared.StreamingQueries[0].Spec.Text = "INSERT INTO `ptah_ydb_streaming/output` SELECT * FROM `ptah_ydb_streaming/input` WHERE TRUE; /* changed */"
 	diff, err := schemadiff.CompareWithDatabaseInfo(declared, current, conn.Info(), nil)
 	c.Assert(err, qt.IsNil)
 	_, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, "ydb", planner.Options{Capabilities: conn.Info().Capabilities})

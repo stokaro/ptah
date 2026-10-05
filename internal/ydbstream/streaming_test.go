@@ -35,14 +35,14 @@ func TestAlter_SettingsKeepCheckpoints(t *testing.T) {
 
 func TestAlter_RequiresResetPermission(t *testing.T) {
 	c := qt.New(t)
-	got, err := ydbstream.Alter("q", ast.StreamingQuerySpec{Text: body + " /* changed */"}, ast.StreamingQuerySpec{Text: body}, ydbstream.AlterOptions{})
+	got, err := ydbstream.Alter("q", ast.StreamingQuerySpec{Text: body + " SELECT 2;"}, ast.StreamingQuerySpec{Text: body}, ydbstream.AlterOptions{})
 	c.Assert(err, qt.ErrorMatches, `.*allow_state_reset=true.*`)
 	c.Assert(got, qt.Equals, "")
 }
 
 func TestAlter_ExplicitReset(t *testing.T) {
 	c := qt.New(t)
-	got, err := ydbstream.Alter("q", ast.StreamingQuerySpec{Text: body + " /* changed */"}, ast.StreamingQuerySpec{Text: body}, ydbstream.AlterOptions{AllowStateReset: true})
+	got, err := ydbstream.Alter("q", ast.StreamingQuerySpec{Text: body + " SELECT 2;"}, ast.StreamingQuerySpec{Text: body}, ydbstream.AlterOptions{AllowStateReset: true})
 	c.Assert(err, qt.IsNil)
-	c.Assert(got, qt.Equals, "ALTER STREAMING QUERY `q` SET (RUN = TRUE, RESOURCE_POOL = `default`, FORCE = TRUE) AS DO BEGIN\n"+body+" /* changed */\nEND DO;")
+	c.Assert(got, qt.Equals, "ALTER STREAMING QUERY `q` SET (RUN = TRUE, RESOURCE_POOL = `default`, FORCE = TRUE) AS DO BEGIN\n"+body+" SELECT 2;\nEND DO;")
 }

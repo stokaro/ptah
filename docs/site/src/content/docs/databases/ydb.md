@@ -1017,7 +1017,9 @@ Names in the body resolve from the database root, independently of the query's
 Ptah reads the persistent `Text`, `Run` and `ResourcePool` fields from
 `.sys/streaming_queries`. Runtime status, retry counters and checkpoint contents
 are not schema. Reading, exporting to Go and applying the same declaration
-leaves the query unchanged. HCL and DBML cannot declare this family, so applying
+leaves the query unchanged. Comparison ignores comments and whitespace between
+YQL tokens because YDB removes comments from the stored body. Literal contents
+and operators remain significant. HCL and DBML cannot declare this family, so applying
 those formats preserves queries already in the database.
 
 Changing `run` or `resource_pool` uses `ALTER STREAMING QUERY`. A body change
