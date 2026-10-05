@@ -70,6 +70,9 @@ type Database struct {
 	// belongs to its table. omitempty keeps the serialization of every
 	// dialect that has no topics byte-identical.
 	Topics []Topic `json:"topics,omitempty"`
+	// CoordinationNodes are the YDB coordination nodes this read described.
+	// omitempty keeps the serialization of every other dialect as it is.
+	CoordinationNodes []CoordinationNode `json:"coordination_nodes,omitempty"`
 	// ExtendedProperties are the SQL Server extended properties this
 	// description covers: schema-, table- and column-scoped ones. See
 	// [ExtendedProperty] for what is deliberately not in it.
@@ -320,11 +323,25 @@ type Table struct {
 	// RowDeletionPolicy is the row deletion policy this table carries, nil for
 	// a table with none (stokaro/ptah#2236).
 	RowDeletionPolicy *ast.RowDeletionPolicySpec `json:"row_deletion_policy,omitzero"`
+	// YDBColumnFamilies is YDB's, and no other target fills it: the column
+	// families of a YDB row table, each with its settings and the columns it
+	// holds, the default family only where its settings are not YDB's own.
+	// A table whose families hold a setting Ptah does not read lists none
+	// here; the reader records them as not described instead, so a plan
+	// neither changes nor drops them.
+	YDBColumnFamilies []ast.YDBColumnFamilySpec `json:"ydb_column_families,omitempty"`
 	// Changefeeds are the YDB changefeeds this table carries, each with the
 	// retention and the consumers of its topic. A changefeed holding a
 	// setting Ptah does not model is not listed here; the reader records it
 	// as not described instead, so a plan neither drops nor changes it.
 	Changefeeds []ast.ChangefeedSpec `json:"changefeeds,omitempty"`
+	// YDBPartitioning is YDB's, and no other target fills it: the settings of
+	// a YDB row table that differ from what a new table is given -- how it
+	// splits into partitions, its read replicas and its key bloom filter. It
+	// is nil for a table holding the defaults. A read never fills the starting
+	// layout, which YDB keeps no record of; a description converted from a
+	// declaration does.
+	YDBPartitioning *ast.YDBTablePartitioningSpec `json:"ydb_partitioning,omitzero"`
 	// VirtualModule is the SQLite module that owns this table, from the USING
 	// clause of the CREATE VIRTUAL TABLE statement that created it -- `fts5`,
 	// `rtree`, `geopoly`, or any other module a build registers. It is empty
@@ -1628,6 +1645,22 @@ func (p ExtendedProperty) QualifiedOwner() string {
 // QualifiedName returns schema.synonym when Schema is set, or Name otherwise.
 func (s Synonym) QualifiedName() string {
 	return QualifyTableName(s.Schema, s.Name)
+}
+
+// CoordinationNode is one YDB coordination node a read described.
+//
+// Spec is the configuration as YDB stores it, which is what was sent when the
+// node was created or last changed: a setting nobody set reads back unset,
+// and the node runs with the server's default for it.
+type CoordinationNode struct {
+	Schema string                   `json:"schema"` // Directory holding the node, relative to the database root
+	Name   string                   `json:"name"`   // Node name
+	Spec   ast.CoordinationNodeSpec `json:"spec"`
+}
+
+// QualifiedName returns the node's name qualified by its directory.
+func (n CoordinationNode) QualifiedName() string {
+	return QualifyTableName(n.Schema, n.Name)
 }
 
 // DeclaredTarget is the synonym's target in the spelling a declaration uses:

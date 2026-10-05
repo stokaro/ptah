@@ -72,6 +72,9 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	out.Topics = keep(db.Topics, func(topic catalog.Topic) bool {
 		return s.selected(typeList("topic"), topic.Schema, topic.Name)
 	})
+	out.CoordinationNodes = keep(db.CoordinationNodes, func(node catalog.CoordinationNode) bool {
+		return s.selected(typeList("coordination_node"), node.Schema, node.Name)
+	})
 	// An extended property rides with the object it hangs off, and is also
 	// selectable on its own name. SQL Server drops the property with the
 	// table, so a selection that kept the property and dropped its owner would

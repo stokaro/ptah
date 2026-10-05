@@ -226,6 +226,53 @@
       ],
       "type": "object"
     },
+    "ptah.schema.columnfamily": {
+      "additionalProperties": false,
+      "description": "Declares a YDB column family: columns stored together, with a storage pool, compression and cache mode of their own. It belongs to the struct's table, or to the table it names.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "cache_mode": {
+              "description": "Cache mode: regular or in_memory.",
+              "type": "string"
+            },
+            "compression": {
+              "description": "Compression: off or lz4.",
+              "type": "string"
+            },
+            "data": {
+              "description": "Kind of storage pool the family's columns are kept in, such as ssd.",
+              "type": "string"
+            },
+            "fields": {
+              "description": "Columns the family holds. The default family lists none.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Family name; default is the family holding the key and every column no other family names.",
+              "type": "string"
+            },
+            "table": {
+              "description": "Table the family belongs to, when not the struct's own.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:columnfamily"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
     "ptah.schema.composite": {
       "additionalProperties": false,
       "description": "Declares a PostgreSQL composite type.",
@@ -402,6 +449,57 @@
         },
         "directive": {
           "const": "ptah:schema:continuousaggregate"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "ptah.schema.coordinationnode": {
+      "additionalProperties": false,
+      "description": "Declares a YDB coordination node, which holds an application's semaphores and rate limiter resources. A setting left out takes YDB's default.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "attach_consistency_mode": {
+              "description": "`strict` or `relaxed`. YDB's default is `strict`.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Node name.",
+              "type": "string"
+            },
+            "rate_limiter_counters_mode": {
+              "description": "`aggregated` or `detailed`. YDB's default is `aggregated`.",
+              "type": "string"
+            },
+            "read_consistency_mode": {
+              "description": "`strict` or `relaxed`. YDB's default is `relaxed`.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Directory holding the node, relative to the database root.",
+              "type": "string"
+            },
+            "self_check_period": {
+              "description": "How often the node checks it is alive, as an ISO 8601 duration from `PT0.5S` to `PT10S`. YDB's default is `PT1S`.",
+              "type": "string"
+            },
+            "session_grace_period": {
+              "description": "How long a session keeps its semaphores while the node changes its leader, as an ISO 8601 duration from the self-check period plus one second to `PT30S`. YDB's default is `PT10S`.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:coordinationnode"
         }
       },
       "required": [
@@ -1905,6 +2003,26 @@
               "description": "Name this table carries in an exported API schema, when that differs from the table name.",
               "type": "string"
             },
+            "auto_partitioning_by_load": {
+              "description": "YDB: whether the table splits a busy partition, ENABLED or DISABLED.",
+              "type": "string"
+            },
+            "auto_partitioning_by_size": {
+              "description": "YDB: whether the table splits a partition that grows past its size, ENABLED or DISABLED.",
+              "type": "string"
+            },
+            "auto_partitioning_max_partitions_count": {
+              "description": "YDB: the most partitions the table splits into.",
+              "type": "string"
+            },
+            "auto_partitioning_min_partitions_count": {
+              "description": "YDB: the fewest partitions the table keeps.",
+              "type": "string"
+            },
+            "auto_partitioning_partition_size_mb": {
+              "description": "YDB: the size in MB at which the table splits a partition.",
+              "type": "string"
+            },
             "checks": {
               "description": "Comma-separated table-level check expressions.",
               "type": "string"
@@ -1929,12 +2047,20 @@
               "description": "Name this table carries in the GraphQL export only, overriding api_name there.",
               "type": "string"
             },
+            "key_bloom_filter": {
+              "description": "YDB: whether the table keeps a bloom filter of its keys, ENABLED or DISABLED.",
+              "type": "string"
+            },
             "name": {
               "description": "Table name.",
               "type": "string"
             },
             "openapi_name": {
               "description": "Name this table carries in the OpenAPI export only, overriding api_name there.",
+              "type": "string"
+            },
+            "partition_at_keys": {
+              "description": "YDB: the keys a new table starts split before, such as `10, 20` or `(10, 'a'), (20)`.",
               "type": "string"
             },
             "primary_key": {
@@ -1951,6 +2077,10 @@
             },
             "proto_name": {
               "description": "Name this table carries in the Protobuf export only, overriding api_name there. It is the message identity, so changing it retires the old message.",
+              "type": "string"
+            },
+            "read_replicas_settings": {
+              "description": "YDB: the table's read replicas, PER_AZ:<n> or ANY_AZ:<n>.",
               "type": "string"
             },
             "row_deletion_column": {
@@ -2023,6 +2153,10 @@
             },
             "ttl_select_rate_limit": {
               "description": "CockroachDB row-level TTL: rows selected per second; at least 1.",
+              "type": "string"
+            },
+            "uniform_partitions": {
+              "description": "YDB: the partitions a new table starts with, splitting a Uint32 or Uint64 first key evenly.",
               "type": "string"
             }
           },
@@ -2314,6 +2448,9 @@
       "$ref": "#/$defs/ptah.schema.changefeed.consumer"
     },
     {
+      "$ref": "#/$defs/ptah.schema.columnfamily"
+    },
+    {
       "$ref": "#/$defs/ptah.schema.table"
     },
     {
@@ -2363,6 +2500,9 @@
     },
     {
       "$ref": "#/$defs/ptah.schema.synonym"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.coordinationnode"
     },
     {
       "$ref": "#/$defs/ptah.schema.topic"

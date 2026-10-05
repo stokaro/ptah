@@ -16,6 +16,7 @@ import (
 	"fmt"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
@@ -140,6 +141,25 @@ func RefuseSerialSequenceChanges(dialect string, diff *difftypes.SchemaDiff) err
 	return nil
 }
 
+// RefuseYDBColumnFamilyChanges refuses a diff that changes a table's YDB column
+// families, for a planner of dialect that plans none. Only a YDB catalog
+// reports column families, so another planner reaches such a change through a
+// declaration that names them, or a diff built by hand, and planning nothing
+// would leave every column where the server put it while the comparison kept
+// reporting the difference.
+func RefuseYDBColumnFamilyChanges(dialect string, diff *difftypes.SchemaDiff) error {
+	if diff == nil {
+		return nil
+	}
+	for _, tableDiff := range diff.TablesModified {
+		if tableDiff.YDBColumnFamiliesChange != nil {
+			return fmt.Errorf("%w: the diff changes the column families of table %q, which only a YDB plan does; "+
+				"the %s planner plans none", ptaherr.ErrUnsupportedFeature, tableDiff.TableName, dialect)
+		}
+	}
+	return nil
+}
+
 // RefuseChangefeedChanges refuses a diff that changes a table's changefeeds,
 // for a planner of dialect that plans none. The comparison records such a
 // change only where the two sides hold changefeeds, which only a YDB
@@ -210,4 +230,66 @@ func RefuseRoleMemberships(dialect string, diff *difftypes.SchemaDiff) error {
 	default:
 		return nil
 	}
+}
+
+// RefuseCoordinationNodes refuses a diff that creates, changes or drops a YDB
+// coordination node, for a planner of dialect, which has none, with a
+// [ptaherr.CapabilityError] naming [capability.CoordinationNodes]. The
+// comparison records a declared node on any target, so a schema that declares
+// one reaches every planner, and planning nothing would report the database
+// synced while the node is missing.
+func RefuseCoordinationNodes(dialect string, diff *difftypes.SchemaDiff) error {
+	var subject string
+	switch {
+	case diff == nil:
+		return nil
+	case len(diff.CoordinationNodesAdded) > 0:
+		subject = "the diff creates coordination node " + diff.CoordinationNodesAdded[0].QualifiedName()
+	case len(diff.CoordinationNodesModified) > 0:
+		subject = "the diff changes coordination node " + diff.CoordinationNodesModified[0].QualifiedName()
+	case len(diff.CoordinationNodesRemoved) > 0:
+		subject = "the diff drops coordination node " + diff.CoordinationNodesRemoved[0].QualifiedName()
+	default:
+		return nil
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: string(capability.CoordinationNodes),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target: "+
+			"a coordination node is a YDB object", subject, capability.CoordinationNodes, normalized),
+	}
+}
+
+// RefuseYDBTableSettingChanges refuses a diff that changes a YDB row table's
+// own settings -- its column families, or its partitioning, read replicas or
+// key bloom filter -- for a planner of dialect that plans none; see
+// [RefuseYDBColumnFamilyChanges] and [RefuseYDBTablePartitioningChanges].
+// Every planner but YDB's asks it, once.
+func RefuseYDBTableSettingChanges(dialect string, diff *difftypes.SchemaDiff) error {
+	if err := RefuseYDBColumnFamilyChanges(dialect, diff); err != nil {
+		return err
+	}
+	return RefuseYDBTablePartitioningChanges(dialect, diff)
+}
+
+// RefuseYDBTablePartitioningChanges refuses a diff that changes a table's YDB
+// settings -- how it splits into partitions, its read replicas or its key
+// bloom filter -- for a planner of dialect that plans no such change. Only a
+// YDB catalog reports the settings, so another planner reaches such a change
+// through a declaration that names them, or a diff built by hand, and
+// planning nothing would leave the table at the server's defaults while the
+// comparison kept reporting the difference.
+func RefuseYDBTablePartitioningChanges(dialect string, diff *difftypes.SchemaDiff) error {
+	if diff == nil {
+		return nil
+	}
+	for _, table := range diff.TablesModified {
+		if table.YDBPartitioningChange != nil {
+			return fmt.Errorf("%w: the diff changes the partitioning, read replicas or key bloom filter of table %q, "+
+				"which only a YDB plan does; the %s planner plans none", ptaherr.ErrUnsupportedFeature, table.TableName, dialect)
+		}
+	}
+	return nil
 }

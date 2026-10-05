@@ -14,6 +14,9 @@ import (
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/indexscope"
+	"ptah.run/internal/ydbfamily"
+	"ptah.run/internal/ydbindex"
+	"ptah.run/internal/ydbpartition"
 	"ptah.run/internal/ydbtopic"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -220,6 +223,13 @@ func reverseSchemaDiffWithSchemaForDialect(
 		TopicsAdded:    cloneTopics(diff.TopicsRemoved),
 		TopicsRemoved:  cloneTopics(diff.TopicsAdded),
 		TopicsModified: reverseTopicDiffs(diff.TopicsModified),
+		// A coordination node carries its whole configuration in the diff:
+		// the down direction drops what the up direction created, creates what
+		// it dropped with the configuration the removal carried, and puts a
+		// changed node's settings back.
+		CoordinationNodesAdded:    slices.Clone(diff.CoordinationNodesRemoved),
+		CoordinationNodesRemoved:  slices.Clone(diff.CoordinationNodesAdded),
+		CoordinationNodesModified: reverseCoordinationNodeChanges(diff.CoordinationNodesModified),
 
 		// A hypertable reverses like a synonym in the diff and unlike one in
 		// the plan. The swap is the same -- what the up direction partitioned,
@@ -371,10 +381,12 @@ func reverseSchemaDiffWithSchemaForDialect(
 	// A rollback runs against the same database, whose read declined the same
 	// settings.
 	reversed.CurrentNotDescribed = diff.CurrentNotDescribed
-	// The same database's path and grants: a rollback names an object by the
-	// same absolute path, and a table it rebuilds held the same grants.
+	// The same database's path, grants and YDB table settings: a rollback
+	// names an object by the same absolute path, and a table it rebuilds held
+	// the same grants and settings.
 	reversed.CurrentDatabasePath = diff.CurrentDatabasePath
 	reversed.CurrentGrants = diff.CurrentGrants
+	reversed.CurrentYDBSettings = diff.CurrentYDBSettings
 	return reversed
 }
 
@@ -526,6 +538,25 @@ func reverseRowDeletionPolicyChange(
 	return &difftypes.RowDeletionPolicyChange{Desired: change.Current, Current: change.Desired}
 }
 
+// reverseColumnFamiliesChange swaps the two sides of a table's YDB column
+// families, so a rollback moves each column back to the family it left and
+// gives back each setting the forward change wrote. Its current side is what
+// the table holds once the forward change has run (see [ydbfamily.Applied]).
+//
+// A family the forward change added, and a storage pool it named where the
+// table had none, are settings the earlier state does not state, so the
+// rollback keeps them, emptied of columns: YQL drops no family and removes no
+// pool, and a rollback refused for that would refuse the whole migration.
+func reverseColumnFamiliesChange(change *difftypes.YDBColumnFamiliesChange) *difftypes.YDBColumnFamiliesChange {
+	if change == nil {
+		return nil
+	}
+	return &difftypes.YDBColumnFamiliesChange{
+		Desired: ast.CloneYDBColumnFamilies(change.Current),
+		Current: ydbfamily.Applied(change.Desired, change.Current),
+	}
+}
+
 // reverseChangefeedsChange swaps the two sides of a table's changefeeds, so a
 // rollback drops what the forward change added and adds back what it
 // dropped, under the settings each side held.
@@ -537,6 +568,41 @@ func reverseChangefeedsChange(change *difftypes.ChangefeedsChange) *difftypes.Ch
 		Desired: ast.CloneChangefeeds(change.Current),
 		Current: ast.CloneChangefeeds(change.Desired),
 	}
+}
+
+// reversePartitioningChange is the rollback of a YDB table's settings
+// transition: back to every setting the table held, from every setting the
+// change left it with.
+//
+// Both sides are written to name every setting ([ydbpartition.TableSettings.Explicit]).
+// Swapping the two sides would not do: Current is a reader's report, which
+// leaves out each setting at YDB's documented default, and as a declaration a
+// setting left out keeps what the table holds, so a rollback of a minimum
+// raised from 1 would plan nothing. A side that does not resolve is swapped
+// as it is, and the renderer refuses it with the reason.
+func reversePartitioningChange(change *difftypes.YDBTablePartitioningChange) *difftypes.YDBTablePartitioningChange {
+	if change == nil {
+		return nil
+	}
+	held, heldErr := ydbpartition.HeldTable(change.Current)
+	after, afterErr := ydbpartition.ResolveTable(change.Desired, held)
+	if heldErr != nil || afterErr != nil {
+		return &difftypes.YDBTablePartitioningChange{Desired: change.Current.Clone(), Current: change.Desired.Clone()}
+	}
+	return &difftypes.YDBTablePartitioningChange{Desired: held.Explicit(), Current: after.Explicit()}
+}
+
+// reverseIndexPartitioning is the rollback of an index's partitioning change,
+// written to name every setting for the reason [reversePartitioningChange]
+// gives: back to the settings the index held, from the ones the change left it
+// with.
+func reverseIndexPartitioning(change difftypes.IndexPartitioningChange) (partitioning, previous *ast.IndexPartitioningSpec) {
+	held, heldErr := ydbindex.Held(change.Previous)
+	after, afterErr := ydbindex.Resolve(change.Partitioning, held)
+	if heldErr != nil || afterErr != nil {
+		return change.Previous.Clone(), change.Partitioning.Clone()
+	}
+	return ydbindex.Explicit(held), ydbindex.Explicit(after)
 }
 
 // reverseRefreshChange swaps the two sides of a materialized view's refresh
@@ -640,11 +706,12 @@ func reverseIndexChangesInPlace(diff *difftypes.SchemaDiff) ([]difftypes.IndexRe
 		if former, renamed := formerName[difftypes.IndexRef{TableName: change.TableName, Name: change.Name}]; renamed {
 			name = former
 		}
+		partitioning, previous := reverseIndexPartitioning(change)
 		changes = append(changes, difftypes.IndexPartitioningChange{
 			TableName:    change.TableName,
 			Name:         name,
-			Partitioning: change.Previous.Clone(),
-			Previous:     change.Partitioning.Clone(),
+			Partitioning: partitioning,
+			Previous:     previous,
 		})
 	}
 	return renames, changes

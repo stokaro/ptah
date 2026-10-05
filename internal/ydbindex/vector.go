@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/internal/ydbpartition"
 	"ptah.run/internal/ydbtype"
 )
 
@@ -111,10 +112,22 @@ func setVectorAttribute(spec *ast.VectorIndexSpec, attribute, value string) erro
 func parseName(attribute, value string, names []string, target *string) error {
 	lower := strings.ToLower(value)
 	if !slices.Contains(names, lower) {
-		return &DeclarationError{Attribute: attribute, Value: value,
+		return &ydbpartition.DeclarationError{Attribute: attribute, Value: value,
 			Reason: "write one of " + strings.Join(names, ", ")}
 	}
 	*target = lower
+	return nil
+}
+
+// parseCount reads a count of at least 1 into target, the counting shape YDB
+// requires at a vector index's vector_dimension, levels and clusters alike.
+func parseCount(attribute, value string, target *uint64) error {
+	count, err := strconv.ParseUint(value, 10, 64)
+	if err != nil || count == 0 {
+		return &ydbpartition.DeclarationError{Attribute: attribute, Value: value,
+			Reason: "write a whole number of at least 1; YDB refuses a count of zero"}
+	}
+	*target = count
 	return nil
 }
 

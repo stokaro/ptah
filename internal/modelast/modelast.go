@@ -727,7 +727,9 @@ func fromTableWithFieldConverter(
 	// this was built from (stokaro/ptah#1027).
 	createTable.RowTTL = newTable.RowTTL.Clone()
 	createTable.RowDeletionPolicy = newTable.RowDeletionPolicy.Clone()
+	createTable.YDBColumnFamilies = ast.CloneYDBColumnFamilies(newTable.YDBColumnFamilies)
 	createTable.Changefeeds = ast.CloneChangefeeds(newTable.Changefeeds)
+	createTable.YDBPartitioning = newTable.YDBPartitioning.Clone()
 	// Raw SQL the author asked to be appended to CREATE TABLE. It is carried
 	// verbatim; see [ptah.run/core/ast.CreateTableNode.CustomSQL] for why
 	// it is not an Options entry (stokaro/ptah#2590).
@@ -1587,6 +1589,23 @@ func appendSynonymStatements(visit func(ast.Node) error, synonyms []schemamodel.
 	return nil
 }
 
+// FromCoordinationNode converts a schemamodel.CoordinationNode into the node
+// that creates it, named the way a table is: by its directory and its name.
+func FromCoordinationNode(node schemamodel.CoordinationNode) *ast.CreateCoordinationNodeNode {
+	return &ast.CreateCoordinationNodeNode{Name: node.QualifiedName(), Spec: node.Spec}
+}
+
+// appendCoordinationNodeStatements adds one coordination node creation per
+// declaration.
+func appendCoordinationNodeStatements(visit func(ast.Node) error, nodes []schemamodel.CoordinationNode) error {
+	for _, node := range nodes {
+		if err := visit(FromCoordinationNode(node)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // FromHypertable converts a schemamodel.Hypertable into the call that makes one.
 func FromHypertable(hypertable schemamodel.Hypertable) *ast.CreateHypertableNode {
 	return ast.NewCreateHypertable(hypertable.Table, hypertable.Column).
@@ -2198,6 +2217,12 @@ func WalkDatabase(
 	// that creates the alias first and the table second reads as though the
 	// order did not matter, and the next person reorders it.
 	if err := appendSynonymStatements(visit, database.Synonyms); err != nil {
+		return err
+	}
+
+	// 9b2. A coordination node depends on nothing in the schema and nothing
+	// depends on it, so it takes its place after the objects that do.
+	if err := appendCoordinationNodeStatements(visit, database.CoordinationNodes); err != nil {
 		return err
 	}
 

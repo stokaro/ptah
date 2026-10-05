@@ -62,6 +62,9 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := schemaprecondition.RefuseSerialSequenceChanges(DialectName, diff); err != nil {
 		return nil, err
 	}
+	if err := schemaprecondition.RefuseYDBTableSettingChanges(DialectName, diff); err != nil {
+		return nil, err
+	}
 	if err := schemaprecondition.RefuseChangefeedChanges(DialectName, diff); err != nil {
 		return nil, err
 	}
@@ -69,6 +72,9 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 		return nil, err
 	}
 	if err := schemaprecondition.RefuseRoleMemberships(DialectName, diff); err != nil {
+		return nil, err
+	}
+	if err := schemaprecondition.RefuseCoordinationNodes(DialectName, diff); err != nil {
 		return nil, err
 	}
 	// The identity check alone. Nothing is resolved: an addition carries its

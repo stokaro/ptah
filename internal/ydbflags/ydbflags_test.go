@@ -107,6 +107,12 @@ func TestRefine_HappyPath(t *testing.T) {
 			key:   capability.VectorIndexes,
 			want:  false,
 		},
+		{
+			name:  "a column family's cache mode follows its flag",
+			flags: ydbflags.Flags{"EnableTableCacheModes": true},
+			key:   capability.ColumnFamilyCacheMode,
+			want:  true,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -494,6 +500,13 @@ func TestRefused_HappyPath(t *testing.T) {
 				"Vector index support is disabled",
 			wantKey:  capability.VectorIndexes,
 			wantFlag: "EnableVectorIndex",
+		},
+		{
+			name: "25.3.1.25 a column family's cache mode",
+			refusal: "operation/GENERIC_ERROR (code = 400080, address = localhost:2136, issues = [{#1060 'Execution' " +
+				"[{1:101 => 'Executing CREATE TABLE' [{'Setting cache_mode is not allowed'}]}]}])",
+			wantKey:  capability.ColumnFamilyCacheMode,
+			wantFlag: "EnableTableCacheModes",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

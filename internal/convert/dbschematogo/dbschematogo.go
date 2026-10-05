@@ -69,6 +69,7 @@ func ConvertDBSchemaToGoSchema(dbSchema *catalog.Database, dialect string) *sche
 	convertContinuousAggregates(database, dbSchema.ContinuousAggregates)
 	convertSynonyms(database, dbSchema.Synonyms)
 	convertTopics(database, dbSchema.Topics)
+	convertCoordinationNodes(database, dbSchema.CoordinationNodes)
 	convertExtendedProperties(database, dbSchema.ExtendedProperties)
 	convertRoles(database, dbSchema.Roles, membershipsFor(dbSchema.RoleMemberships, dialect))
 	database.DatabasePath = dbSchema.DatabasePath
@@ -183,7 +184,9 @@ func convertTablesAndFields(
 			// other (stokaro/ptah#1027).
 			RowTTL:            dbTable.RowTTL.Clone(),
 			RowDeletionPolicy: dbTable.RowDeletionPolicy.Clone(),
+			YDBColumnFamilies: ast.CloneYDBColumnFamilies(dbTable.YDBColumnFamilies),
 			Changefeeds:       ast.CloneChangefeeds(dbTable.Changefeeds),
+			YDBPartitioning:   dbTable.YDBPartitioning.Clone(),
 			Overrides:         tableStorageOverrides(dbTable),
 		}
 		database.Tables = append(database.Tables, table)
@@ -573,6 +576,19 @@ func convertTopics(database *schemamodel.Database, topics []catalog.Topic) {
 			Name:   topic.Name,
 			Schema: topic.Schema,
 			Spec:   topic.Spec.Clone(),
+		})
+	}
+}
+
+// convertCoordinationNodes carries the YDB coordination nodes a read found
+// into the IR, with the configuration as YDB stores it: a setting nobody set
+// stays unset, so the description declares only what the node was given.
+func convertCoordinationNodes(database *schemamodel.Database, nodes []catalog.CoordinationNode) {
+	for _, node := range nodes {
+		database.CoordinationNodes = append(database.CoordinationNodes, schemamodel.CoordinationNode{
+			Schema: node.Schema,
+			Name:   node.Name,
+			Spec:   node.Spec,
 		})
 	}
 }

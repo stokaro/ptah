@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/internal/ydbindex"
+	"ptah.run/internal/ydbpartition"
 )
 
 // The pinned ydb-go-genproto models no vector index: a description of one
@@ -207,11 +208,13 @@ func implementationTable(name string, data []byte) error {
 			return fmt.Errorf("the settings of its vector index's %s table do not parse: %w", name, err)
 		}
 	}
-	held, err := partitionSettings(partitioning, replicas)
+	held, err := partitionSettings(&Ydb_Table.DescribeTableResult{
+		PartitioningSettings: partitioning, ReadReplicasSettings: replicas,
+	})
 	if err != nil {
 		return fmt.Errorf("its vector index's %s table: %w", name, err)
 	}
-	if !held.Equal(ydbindex.DefaultSettings()) {
+	if !held.Equal(ydbpartition.DefaultSettings()) {
 		return fmt.Errorf("its vector index's %s table is partitioned other than YDB gives a new index, which "+
 			"Ptah does not read for a vector index", name)
 	}

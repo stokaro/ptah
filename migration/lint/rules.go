@@ -2122,6 +2122,14 @@ func scanDestructiveObjectDrop(w []string) bool {
 	// consumer's position in it.
 	case "TYPE", "EXTENSION", "FUNCTION", "PROCEDURE", "TRIGGER", "ROLE", "POLICY", "SCHEMA", "TOPIC":
 		return true
+	// A coordination node is YDB's too, dropped through Ptah's own statement
+	// (see internal/ydbcoordination). Measured on 26.2.1.14 and 25.1.4.7:
+	// DropNode succeeds while a session holds a semaphore on the node, the
+	// holder's session and lease end about five seconds later, and a node
+	// created again under the same path holds none of the persistent
+	// semaphores the dropped one held. Its rate limiter resources go with it.
+	case "COORDINATION":
+		return len(w) > 2 && w[2] == "NODE"
 	default:
 		return false
 	}

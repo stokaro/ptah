@@ -235,6 +235,7 @@ var convertedFamilies = map[string]string{
 	"ContinuousAggregates": "ContinuousAggregates",
 	"Synonyms":             "Synonyms",
 	"Topics":               "Topics",
+	"CoordinationNodes":    "CoordinationNodes",
 	"ExtendedProperties":   "ExtendedProperties",
 	"Triggers":             "Triggers",
 	"RLSPolicies":          "RLSPolicies",

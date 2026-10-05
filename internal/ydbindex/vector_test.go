@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/internal/ydbindex"
+	"ptah.run/internal/ydbpartition"
 )
 
 // complete is a vector index declaration YDB builds on every line that has
@@ -74,7 +75,7 @@ func TestParseVectorDeclaration_FailurePath(t *testing.T) {
 			c := qt.New(t)
 			got, err := ydbindex.ParseVectorDeclaration(test.values)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			var declaration *ydbindex.DeclarationError
+			var declaration *ydbpartition.DeclarationError
 			c.Assert(err, qt.ErrorAs, &declaration)
 			c.Assert(declaration.Attribute, qt.Equals, test.wantAttr)
 			c.Assert(got, qt.IsNil)

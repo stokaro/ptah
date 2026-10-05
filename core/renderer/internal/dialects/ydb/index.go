@@ -11,6 +11,7 @@ import (
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbgap"
 	"ptah.run/internal/ydbindex"
+	"ptah.run/internal/ydbpartition"
 )
 
 // indexClause is an index as YQL writes it after the table, in CREATE TABLE
@@ -24,11 +25,11 @@ type indexClause struct {
 	unique  bool
 	columns []string
 	cover   []string
-	// settings is the partitioning the index takes. An index starts with
-	// [ydbindex.DefaultSettings], and YDB takes no partitioning in the
-	// clause that creates it, so any other settings are written by an ALTER
-	// INDEX of their own after it; see [indexClause.partitioningStatement].
-	settings ydbindex.Settings
+	// settings is what the ALTER INDEX after the index names: each setting
+	// the declaration names. YDB takes no partitioning in the clause that
+	// creates an index, so the settings are written by an ALTER INDEX of
+	// their own after it; see [indexClause.partitioningStatement].
+	settings []string
 	// vector is a vector index's settings, resolved; it is written as the
 	// clause's WITH (...), the one place YDB takes them.
 	vector ast.VectorIndexSpec
@@ -58,7 +59,8 @@ func (c indexClause) shape() ydbindex.Shape {
 }
 
 // partitioningStatement is the ALTER INDEX that gives a new index on table the
-// partitioning it declares, or "" for an index that takes YDB's defaults.
+// partitioning it declares, or "" for an index that declares none. A setting
+// the declaration leaves out is the one YDB gives the new index.
 //
 // It is a statement of its own because no clause that creates an index takes
 // the settings. Measured on 25.1.4.7 and 26.2.1.14, `INDEX i GLOBAL ON (v)
@@ -67,11 +69,10 @@ func (c indexClause) shape() ydbindex.Shape {
 // alternative is not implemented yet` on 25.1, inline in CREATE TABLE and in
 // ADD INDEX alike, while ALTER INDEX ... SET takes it once the index exists.
 func (c indexClause) partitioningStatement(table string) string {
-	clause := ydbindex.Clause(c.settings, ydbindex.DefaultSettings())
-	if len(clause) == 0 {
+	if len(c.settings) == 0 {
 		return ""
 	}
-	return alterIndexSet(table, c.name, clause)
+	return alterIndexSet(table, c.name, c.settings)
 }
 
 // alterIndexSet writes `ALTER TABLE t ALTER INDEX i SET (...)` with settings.
@@ -79,21 +80,20 @@ func alterIndexSet(table, index string, settings []string) string {
 	return fmt.Sprintf("ALTER TABLE %s ALTER INDEX %s SET (%s);", tablePath(table), quote(index), strings.Join(settings, ", "))
 }
 
-// indexSettings resolves an index's declared partitioning, refusing it on a
-// target without [capability.IndexPartitioning] and refusing what YDB would
-// refuse.
-func (r *Renderer) indexSettings(subject string, spec *ast.IndexPartitioningSpec) (ydbindex.Settings, error) {
+// indexSettings writes the settings a new index's declared partitioning
+// names, refusing it on a target without [capability.IndexPartitioning] and
+// refusing what YDB would refuse whatever the index holds.
+func (r *Renderer) indexSettings(subject string, spec *ast.IndexPartitioningSpec) ([]string, error) {
 	if spec.IsZero() {
-		return ydbindex.DefaultSettings(), nil
+		return nil, nil
 	}
 	if !r.caps.Has(capability.IndexPartitioning) {
-		return ydbindex.Settings{}, refuseKey(capability.IndexPartitioning, subject+" declares its partitioning")
+		return nil, refuseKey(capability.IndexPartitioning, subject+" declares its partitioning")
 	}
-	settings, err := ydbindex.Resolve(spec)
-	if err != nil {
-		return ydbindex.Settings{}, refuseFact(subject, err.Error())
+	if _, err := ydbindex.Resolve(spec, ydbpartition.DefaultSettings()); err != nil {
+		return nil, refuseFact(subject, err.Error())
 	}
-	return settings, nil
+	return ydbindex.CreateClause(spec), nil
 }
 
 // indexClauseOf reads an index node into the clause YDB takes, refusing what
@@ -135,7 +135,7 @@ func (r *Renderer) indexClauseOf(index *ast.IndexNode) (indexClause, error) {
 	}
 	clause := indexClause{
 		name: index.Name, kind: kind, unique: index.Unique,
-		columns: columns, cover: slices.Clone(index.IncludeColumns), settings: ydbindex.DefaultSettings(),
+		columns: columns, cover: slices.Clone(index.IncludeColumns),
 	}
 	if kind == ydbindex.Vector {
 		clause.vector, err = r.vectorSettings(subject, index)
@@ -300,7 +300,8 @@ func (r *Renderer) addIndexStatements(index *ast.IndexNode) ([]string, error) {
 }
 
 // setIndexPartitioning writes the ALTER INDEX that changes an existing index's
-// partitioning in place, refusing the change YDB cannot make that way.
+// partitioning in place: the settings op.Partitioning names, over the ones
+// op.Previous says the index holds.
 func (r *Renderer) setIndexPartitioning(table string, op *ast.SetIndexPartitioningOperation) ([]string, error) {
 	subject := fmt.Sprintf("index %q of %s", op.IndexName, tableref.Phrase(table))
 	if strings.TrimSpace(op.IndexName) == "" {
@@ -309,18 +310,15 @@ func (r *Renderer) setIndexPartitioning(table string, op *ast.SetIndexPartitioni
 	if !r.caps.Has(capability.IndexPartitioning) {
 		return nil, refuseKey(capability.IndexPartitioning, "changing the partitioning of "+subject)
 	}
-	desired, err := ydbindex.Resolve(op.Partitioning)
-	if err != nil {
-		return nil, refuseFact(subject, err.Error())
-	}
-	previous, err := ydbindex.Resolve(op.Previous)
+	previous, err := ydbindex.Held(op.Previous)
 	if err != nil {
 		return nil, refuseFact(subject, "the settings it holds: "+err.Error())
 	}
-	if reason := ydbindex.ChangeRefusal(desired, previous); reason != "" {
-		return nil, refuseFact(subject, reason)
+	desired, err := ydbindex.Resolve(op.Partitioning, previous)
+	if err != nil {
+		return nil, refuseFact(subject, err.Error())
 	}
-	clause := ydbindex.Clause(desired, previous)
+	clause := ydbpartition.Clause(desired, previous)
 	if len(clause) == 0 {
 		return nil, nil
 	}

@@ -72,6 +72,7 @@ func Fixtures() []Fixture {
 		{Name: "table-override", Schema: tableOverrideFixture()},
 		{Name: "table-rowttl", Schema: tableRowTTLFixture()},
 		{Name: "table-row-deletion", Schema: tableRowDeletionFixture()},
+		{Name: "table-column-families", Schema: tableColumnFamiliesFixture()},
 		{Name: "table-changefeed", Schema: tableChangefeedFixture()},
 		{Name: "table-changefeed-disabled", Schema: tableChangefeedDisabledFixture()},
 		{Name: "table-row-deletion-epoch", Schema: tableRowDeletionEpochFixture()},
@@ -103,6 +104,10 @@ func Fixtures() []Fixture {
 		{Name: "index-vector-similarity", Schema: indexVectorFixture(&ast.VectorIndexSpec{
 			Similarity: "inner_product", VectorType: "int8", Dimension: 3, Levels: 1, Clusters: 2,
 		})},
+		{Name: "table-partitioning", Schema: tablePartitioningFixture()},
+		{Name: "table-partitioning-unsplit", Schema: tablePartitioningUnsplitFixture()},
+		{Name: "table-uniform-partitions", Schema: tableUniformPartitionsFixture()},
+		{Name: "table-partition-at-keys", Schema: tablePartitionAtKeysFixture()},
 		{Name: "enum", Schema: enumFixture()},
 		{Name: "domain", Schema: domainFixture()},
 		{Name: "composite", Schema: compositeFixture()},
@@ -119,6 +124,7 @@ func Fixtures() []Fixture {
 		{Name: "continuous-aggregate", Schema: continuousAggregateFixture()},
 		{Name: "synonym", Schema: synonymFixture()},
 		{Name: "topic", Schema: topicFixture()},
+		{Name: "coordination-node", Schema: coordinationNodeFixture()},
 		{Name: "extended-property", Schema: extendedPropertyFixture()},
 		{Name: "role", Schema: roleFixture()},
 		{Name: "ydb-group-membership", Schema: ydbGroupMembershipFixture()},
@@ -800,6 +806,18 @@ func tableRowDeletionFixture() schemamodel.Database {
 	}, schemamodel.Field{StructName: "T", FieldName: "CreatedAt", Name: "created_at", Type: "TIMESTAMP", Nullable: true})
 }
 
+// tableColumnFamiliesFixture sets every setting of a YDB column family, on a
+// family holding a column, beside a default family with a setting of its own.
+func tableColumnFamiliesFixture() schemamodel.Database {
+	return oneTable("T", schemamodel.Table{
+		Name: "t",
+		YDBColumnFamilies: []ast.YDBColumnFamilySpec{
+			{Name: "default", Compression: "lz4"},
+			{Name: "cold", Data: "hdd", Compression: "lz4", CacheMode: "in_memory", Columns: []string{"payload"}},
+		},
+	}, schemamodel.Field{StructName: "T", FieldName: "Payload", Name: "payload", Type: "TEXT", Nullable: true})
+}
+
 // tableChangefeedFixture sets every option of a YDB changefeed and every
 // setting of a consumer, on two consumers since YDB refuses one that is both
 // important and limited by an availability period. Its starting partition
@@ -1118,6 +1136,39 @@ func indexVectorFixture(settings *ast.VectorIndexSpec) schemamodel.Database {
 	return db
 }
 
+// tablePartitioningFixture sets every setting of a YDB row table but the
+// switch that turns splitting by size off, which a partition size cannot share
+// a table with, and the two starting layouts, which cannot share a table with
+// each other; the three fixtures after it set those.
+func tablePartitioningFixture() schemamodel.Database {
+	return oneTable("T", schemamodel.Table{
+		Name: "t",
+		YDBPartitioning: &ast.YDBTablePartitioningSpec{
+			PartitionSizeMB: 512, ByLoad: new(true), MinPartitions: 3, MaxPartitions: 9, ReadReplicas: "PER_AZ:1",
+			KeyBloomFilter: new(true),
+		},
+	})
+}
+
+func tablePartitioningUnsplitFixture() schemamodel.Database {
+	return oneTable("T", schemamodel.Table{Name: "t", YDBPartitioning: &ast.YDBTablePartitioningSpec{BySize: new(false)}})
+}
+
+// tableUniformPartitionsFixture keys the table on an unsigned column, the
+// only kind whose range YDB splits evenly.
+func tableUniformPartitionsFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t", YDBPartitioning: &ast.YDBTablePartitioningSpec{UniformPartitions: 4}})
+	db.Fields[0].Type = "BIGINT UNSIGNED"
+	return db
+}
+
+func tablePartitionAtKeysFixture() schemamodel.Database {
+	return oneTable("T", schemamodel.Table{
+		Name:            "t",
+		YDBPartitioning: &ast.YDBTablePartitioningSpec{PartitionAtKeys: [][]string{{"10"}, {"20"}}},
+	})
+}
+
 func indexConcurrentFixture() schemamodel.Database {
 	db := indexedTable()
 	db.Indexes = []schemamodel.Index{{
@@ -1355,6 +1406,17 @@ func topicFixture() schemamodel.Database {
 				{Name: "audit", ReadFrom: "2026-01-01T00:00:00Z", SupportedCodecs: []string{"raw", "gzip"},
 					AvailabilityPeriod: "PT2H"},
 			},
+		},
+	}}
+	return db
+}
+
+func coordinationNodeFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.CoordinationNodes = []schemamodel.CoordinationNode{{
+		StructName: "CN", Schema: "app", Name: "locks", Spec: ast.CoordinationNodeSpec{
+			SelfCheckPeriodMillis: 2000, SessionGracePeriodMillis: 15000,
+			ReadConsistencyMode: "strict", AttachConsistencyMode: "relaxed", RateLimiterCountersMode: "detailed",
 		},
 	}}
 	return db

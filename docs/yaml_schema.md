@@ -189,10 +189,12 @@ Each entry under `tables` declares one table.
 | `columns` / `fields` | Ordered column map. Use one or the other; duplicate names across both are rejected. |
 | `indexes` | Ordered table-local index map. |
 | `constraints` | Ordered table-local constraint map. |
+| `column_families` | Ordered map of a YDB table's column families; see [Column families](#column-families). |
 | `changefeeds` | Ordered map of a YDB table's changefeeds; see [Changefeeds](#changefeeds). |
 | `rls_enabled` | Adds row-level security enablement for this table. |
 | `row_deletion_column`, `row_deletion_interval`, `row_deletion_unit` | The table's row deletion policy: the column a row's age is measured from, the interval after which a row is deleted, and for a YDB integer column the unit it counts. The values are the `//ptah:schema:table` attributes of the same names. Spanner and YDB have one; every other dialect refuses it. |
 | `platform` / `overrides` | Dialect-specific override map, for example `platform.mysql.type`. |
+| `auto_partitioning_by_size`, `auto_partitioning_partition_size_mb`, `auto_partitioning_by_load`, `auto_partitioning_min_partitions_count`, `auto_partitioning_max_partitions_count`, `read_replicas_settings`, `key_bloom_filter`, `uniform_partitions`, `partition_at_keys` | A YDB row table's partitioning, read replicas, key bloom filter and starting partitions, with the values the `//ptah:schema:table` attributes of the same names take. Every other dialect refuses them. |
 
 Table-local `columns`, `fields`, `indexes`, and `constraints` preserve YAML
 author order. Top-level maps render deterministically by sorted key.
@@ -299,6 +301,26 @@ indexes:
 | `granularity` | ClickHouse data-skipping index granularity. |
 | `auto_partitioning_by_size`, `auto_partitioning_partition_size_mb`, `auto_partitioning_by_load`, `auto_partitioning_min_partitions_count`, `auto_partitioning_max_partitions_count`, `read_replicas_settings` | A YDB global index's partitioning and read replicas, with the values the `//ptah:schema:index` attributes of the same names take. Every other dialect refuses them. |
 | `distance`, `similarity`, `vector_type`, `vector_dimension`, `levels`, `clusters` | A YDB vector index's settings, with `type: vector_kmeans_tree` and the values the `//ptah:schema:index` attributes of the same names take. Every other dialect refuses them. |
+
+## Column families
+
+A YDB table's column families sit under `tables.<table>.column_families`, keyed
+by name. The keys are the attributes of `//ptah:schema:columnfamily`, with the
+same values; `fields` is a list of the columns the family holds. Every other
+dialect refuses a table that declares a column family. See
+[column families](site/src/content/docs/databases/ydb.md#column-families).
+
+```yaml
+tables:
+  documents:
+    column_families:
+      default:
+        compression: lz4
+      cold:
+        data: hdd
+        compression: lz4
+        fields: [body, attachment]
+```
 
 ## Changefeeds
 
@@ -436,6 +458,9 @@ rendered for MySQL/MariaDB with dialect-specific trigger bodies.
   `partition_write_speed_bytes_per_second`, `partition_write_burst_bytes`,
   `supported_codecs`, and `consumers`, a map of consumer names to `important`,
   `read_from`, `supported_codecs` and `availability_period`
+- `coordination_nodes` (YDB only): `name`, `schema`, `self_check_period`,
+  `session_grace_period`, `read_consistency_mode`, `attach_consistency_mode`,
+  `rate_limiter_counters_mode`
 
 `matviews` accepts no refresh strategy. Ptah does not refresh materialized
 views: one is populated when it is created, a changed body is reconciled as a

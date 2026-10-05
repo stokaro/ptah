@@ -33,6 +33,25 @@ const rebuildNote = "-- Rebuild of table app/items: YDB cannot make this change 
 	"-- The copy is one query. YDB refuses one that carries more than about 48 MiB on 25.1 or 64 MiB on 26.2; " +
 	"nothing is then copied, and the old table keeps serving.\n"
 
+// heldDefaultSettings is what the CREATE TABLE of a rebuild names when its
+// declaration names no setting of a table holding YDB's documented defaults:
+// every setting anyway, with the held value, so the new table takes none from
+// the cluster's table profile. heldDefaults closes the statement with them.
+const (
+	heldDefaultSettings = "AUTO_PARTITIONING_BY_SIZE = ENABLED, AUTO_PARTITIONING_PARTITION_SIZE_MB = 2048, " +
+		"AUTO_PARTITIONING_BY_LOAD = DISABLED, AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 1, KEY_BLOOM_FILTER = DISABLED"
+	heldDefaults = ") WITH (" + heldDefaultSettings + ");\n"
+)
+
+// heldIndexDefaults is the ALTER INDEX a rebuild writes for an index of the new
+// table whose declaration names no setting and whose old index held YDB's
+// documented defaults, for the reason heldDefaults gives.
+func heldIndexDefaults(table, index string) string {
+	return "ALTER TABLE `" + table + "` ALTER INDEX `" + index + "` SET (AUTO_PARTITIONING_BY_SIZE = ENABLED, " +
+		"AUTO_PARTITIONING_PARTITION_SIZE_MB = 2048, AUTO_PARTITIONING_BY_LOAD = DISABLED, " +
+		"AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 1);\n"
+}
+
 // appItems is the desired table app/items: a key, a column and an index.
 func appItems(fields ...schemamodel.Field) difftypes.TableDeclaration {
 	return difftypes.TableDeclaration{
@@ -105,7 +124,8 @@ func TestGenerateMigrationAST_TableRebuild_HappyPath(t *testing.T) {
 
 			c.Assert(got, qt.Contains, rebuildNote)
 			c.Assert(got, qt.Contains, "CREATE TABLE `app/__ptah_rebuild_items` (")
-			c.Assert(got, qt.Contains, "    INDEX `items_label` GLOBAL SYNC ON (`label`)\n);\n")
+			c.Assert(got, qt.Contains, "    INDEX `items_label` GLOBAL SYNC ON (`label`)\n"+heldDefaults+
+				heldIndexDefaults("app/__ptah_rebuild_items", "items_label"))
 			c.Assert(got, qt.Contains, test.want+
 				"ALTER TABLE `app/items` RENAME TO `app/__ptah_replaced_items`;\n"+
 				"ALTER TABLE `app/__ptah_rebuild_items` RENAME TO `app/items`;\n"+
@@ -140,7 +160,7 @@ func TestGenerateMigrationAST_TableRebuild_KeyChange(t *testing.T) {
 		"    `id` Int64 NOT NULL,\n"+
 		"    `k` Int64 NOT NULL,\n"+
 		"    PRIMARY KEY (`id`, `k`)\n"+
-		");\n"+
+		heldDefaults+
 		"INSERT INTO `app/__ptah_rebuild_items` (`id`, `k`) SELECT "+
 		"Unwrap(`id`, 'rebuilding table app.items: column id holds NULL, and the new table declares it NOT NULL'u) AS `id`, "+
 		"Unwrap(`k`, 'rebuilding table app.items: column k holds NULL, and the new table declares it NOT NULL'u) AS `k` "+
@@ -286,14 +306,14 @@ func TestGenerateMigrationAST_TableRebuild_FailurePath(t *testing.T) {
 				`so cannot write on the new table: recreating it would drop them\. .*`,
 		},
 		{
-			name: "column families and table options the read did not describe",
+			name: "column families and storage settings the read did not describe",
 			caps: capability.YDB262(),
 			diff: notDescribing(modified(difftypes.TableDiff{TableName: "app.items",
 				Desired: appItems(field("label", "TEXT", true), field("n", "BIGINT", true)), ColumnsModified: typeChange}),
 				coverage.Object{Kind: coverage.ColumnFamily, Name: "app.items"},
 				coverage.Object{Kind: coverage.TableOption}),
-			wantErr: `rebuilding table "app.items": the table carries column families, partitioning, read replica or ` +
-				`key bloom filter options, which Ptah does not model .*`,
+			wantErr: `rebuilding table "app.items": the table carries column families with settings Ptah does not ` +
+				`read, storage settings \(commit log pools, an external pool or external blobs\), which Ptah does not model .*`,
 		},
 		{
 			name: "a target that cannot rename a table",
@@ -395,5 +415,5 @@ func TestGenerateMigrationAST_TableRebuild_CarriesTheIndexChanges(t *testing.T) 
 
 	c.Assert(got, qt.Not(qt.Contains), "DROP INDEX")
 	c.Assert(got, qt.Not(qt.Contains), "ADD INDEX")
-	c.Assert(got, qt.Contains, "    INDEX `items_label` GLOBAL SYNC ON (`label`)\n);\n")
+	c.Assert(got, qt.Contains, "    INDEX `items_label` GLOBAL SYNC ON (`label`)\n"+heldDefaults)
 }

@@ -126,10 +126,13 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	if assertBothSurfacesRefuseTheDomain(c, dialect, &desired) {
 		return
 	}
-	// A topic is refused the same way on every target without the topics key,
-	// which is every PostgreSQL-family one. Once both surfaces are seen to
-	// refuse it, the census below runs over the rest of the fixture.
-	refused := assertBothSurfacesRefuseTheTopic(c, dialect, &desired)
+	// A coordination node and a topic are YDB's own objects, refused the same
+	// way on every target without their keys. The validation both surfaces
+	// share meets the node first, so it is taken out first; once both
+	// surfaces are seen to refuse each, the census below runs over the rest of
+	// the fixture.
+	refused := assertBothSurfacesRefuseTheCoordinationNode(c, dialect, &desired)
+	refused += assertBothSurfacesRefuseTheTopic(c, dialect, &desired)
 
 	renderCensus := surfaceCensus(c, dialect,
 		modelast.CollectDatabase(desired, dialect).Statements)
@@ -224,6 +227,28 @@ func assertBothSurfacesRefuseTheDomain(c *qt.C, dialect string, desired *schemam
 	c.Assert(planErr.Error(), qt.Contains, "CREATE DOMAIN")
 	c.Assert(renderErr.Error(), qt.Contains, "CREATE DOMAIN")
 	return true
+}
+
+// assertBothSurfacesRefuseTheCoordinationNode checks that a target without
+// the coordination_nodes key refuses the fixture's coordination node on both
+// surfaces, through the one validation they share, and takes the node out of
+// desired so the census can run over the rest. It returns how many routed
+// kinds it took out.
+func assertBothSurfacesRefuseTheCoordinationNode(c *qt.C, dialect string, desired *schemamodel.Database) int {
+	c.Helper()
+	if capability.ForDialect(dialect).Has(capability.CoordinationNodes) {
+		return 0
+	}
+	_, planErr := schemadiff.CompareWithDatabaseInfo(
+		desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil,
+	)
+	renderErr := renderer.ValidateSchema(desired, dialect)
+	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(planErr.Error(), qt.Contains, "requires target capability coordination_nodes")
+	c.Assert(renderErr.Error(), qt.Contains, "requires target capability coordination_nodes")
+	desired.CoordinationNodes = nil
+	return 1
 }
 
 // assertBothSurfacesRefuseTheTopic checks that a target without the topics key

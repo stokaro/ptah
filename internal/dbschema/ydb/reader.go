@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydburl"
 )
 
@@ -43,17 +44,26 @@ import (
 // plan never meets one the renderer would refuse. A table's TTL is read as its
 // row deletion policy.
 //
-// An object it meets and Ptah does not model -- a column table, a
-// coordination node, a topic of the older persistent queue kind, and the rest
-// of [coverage]'s YDB kinds -- is recorded in [catalog.Database.NotDescribed]
-// by its path, as is a table setting such as a changefeed or a TTL run
-// interval. An object or an index kind the reader does not know is refused by
-// name rather than read as the nearest known one.
+// It describes each coordination node with the coordination service, except
+// Ptah's own lock node at the root ([LockNode]), which it leaves out of every
+// read as it leaves out the migrator's tables. A node whose name starts with a
+// dot is the server's, like a dot-directory, and is recorded as not described.
+//
+// An object it meets and Ptah does not model -- a column table, a topic of the
+// older persistent queue kind, and the rest of [coverage]'s YDB kinds -- is
+// recorded in [catalog.Database.NotDescribed] by its path, as is a table
+// setting such as a changefeed or a TTL run interval. An object or an index
+// kind the reader does not know is refused by name rather than read as the
+// nearest known one.
 type Reader struct {
 	open     func(context.Context) (Source, func(), error)
 	database string
-	caps     capability.Capabilities
-	schemas  []string
+	// realm is set when the root the reader reads is a dev realm's
+	// directory rather than a database: Ptah's lock node and the dev realms
+	// live at the root of a database, so a realm's root holds neither.
+	realm   bool
+	caps    capability.Capabilities
+	schemas []string
 }
 
 // NewReader returns a reader that reads root, an absolute path in the database
@@ -65,6 +75,7 @@ func NewReader(driver *ydbsdk.Driver, root string, caps capability.Capabilities)
 			return newGRPCSource(ctx, driver)
 		},
 		database: "/" + strings.Trim(root, "/"),
+		realm:    strings.Trim(root, "/") != strings.Trim(driver.Name(), "/"),
 		caps:     caps.Clone(),
 	}
 }
@@ -142,7 +153,7 @@ func (r *Reader) walk(ctx context.Context, source Source, schema string, db *cat
 // schema, as it leaves out the migrator's tables: it is Ptah's bookkeeping,
 // and a plan that dropped it would only have the next run create it again.
 // It leaves out ydburl.RealmDirectory at the root for the same reason.
-const LockNode = "ptah_locks"
+const LockNode = ydbcoordination.LockNode
 
 // entry reads one directory entry.
 func (r *Reader) entry(
@@ -192,9 +203,7 @@ func (r *Reader) entry(
 		// A system view outside a dot-directory belongs to the server too.
 		return nil
 	case Ydb_Scheme.Entry_COORDINATION_NODE:
-		if schema == "" && name == LockNode {
-			return nil
-		}
+		return r.coordinationNode(ctx, source, schema, name, db)
 	}
 	if !r.inScope(schema) {
 		return nil
@@ -235,7 +244,6 @@ var unmodeledEntries = map[Ydb_Scheme.Entry_Type]coverage.Kind{
 	Ydb_Scheme.Entry_PERS_QUEUE_GROUP:     coverage.Topic,
 	Ydb_Scheme.Entry_COLUMN_TABLE:         coverage.ColumnTable,
 	Ydb_Scheme.Entry_COLUMN_STORE:         coverage.ColumnTable,
-	Ydb_Scheme.Entry_COORDINATION_NODE:    coverage.CoordinationNode,
 	Ydb_Scheme.Entry_SEQUENCE:             coverage.Sequence,
 	Ydb_Scheme.Entry_REPLICATION:          coverage.Replication,
 	Ydb_Scheme.Entry_TRANSFER:             coverage.Transfer,
@@ -243,6 +251,33 @@ var unmodeledEntries = map[Ydb_Scheme.Entry_Type]coverage.Kind{
 	Ydb_Scheme.Entry_EXTERNAL_TABLE:       coverage.ExternalTable,
 	Ydb_Scheme.Entry_SECRET:               coverage.Secret,
 	Ydb_Scheme.Entry_RESOURCE_POOL:        coverage.ResourcePool,
+}
+
+// coordinationNode describes the coordination node name in the directory
+// schema. Ptah's lock node at the root of a database is left out, and a node
+// whose name starts with a dot is the server's and recorded as not described.
+func (r *Reader) coordinationNode(ctx context.Context, source Source, schema, name string, db *catalog.Database) error {
+	if schema == "" && name == LockNode && !r.realm {
+		return nil
+	}
+	if !r.inScope(schema) {
+		return nil
+	}
+	if strings.HasPrefix(name, ".") {
+		db.NotDescribed = db.NotDescribed.With(unmodeled(coverage.CoordinationNode, schema, name))
+		return nil
+	}
+	absolute := r.absolute(schema, name)
+	described, err := source.DescribeCoordinationNode(ctx, absolute)
+	if err != nil {
+		return err
+	}
+	node, err := decodeCoordinationNode(schema, name, described)
+	if err != nil {
+		return fmt.Errorf("YDB coordination node %s: %w", absolute, err)
+	}
+	db.CoordinationNodes = append(db.CoordinationNodes, node)
+	return nil
 }
 
 // entryTypeName names a scheme entry type, including one the pinned protocol

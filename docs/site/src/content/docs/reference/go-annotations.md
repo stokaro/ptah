@@ -93,6 +93,7 @@ type StatusEnumMarker struct{}
 | [`ptah:embedded`](#ptahembedded) | Columns or relations from an embedded Go field | field |
 | [`ptah:schema:index`](#ptahschemaindex) | An index | struct or field |
 | [`ptah:schema:constraint`](#ptahschemaconstraint) | A table constraint | struct or field |
+| [`ptah:schema:columnfamily`](#ptahschemacolumnfamily) | A YDB column family of a table | struct or field |
 | [`ptah:schema:changefeed`](#ptahschemachangefeed) | A YDB changefeed of a table | struct or field |
 | [`ptah:schema:changefeed:consumer`](#ptahschemachangefeedconsumer) | A consumer of a YDB changefeed's topic | struct or field |
 | [`ptah:schema:enum`](#ptahschemaenum) | A reusable enum type | struct |
@@ -109,6 +110,7 @@ type StatusEnumMarker struct{}
 | [`ptah:schema:matview`](#ptahschemamatview) | A materialized view | struct |
 | [`ptah:schema:topic`](#ptahschematopic) | A YDB topic | struct or field |
 | [`ptah:schema:topic:consumer`](#ptahschematopicconsumer) | A consumer of a YDB topic | struct or field |
+| [`ptah:schema:coordinationnode`](#ptahschemacoordinationnode) | A YDB coordination node | struct |
 | [`ptah:schema:role`](#ptahschemarole) | A database role | struct |
 | [`ptah:schema:grant`](#ptahschemagrant) | Database grants | struct |
 | [`ptah:schema:revoke`](#ptahschemarevoke) | Privileges a role must not hold | struct |
@@ -220,6 +222,25 @@ The `row_deletion_` attributes declare a row deletion policy, which Spanner and
 YDB have and every other target refuses. A policy needs its column and its
 interval, and each engine reads the interval in its own spelling. See
 [YDB TTL](../../databases/ydb/#ttl).
+
+A YDB row table also takes its partitioning, its read replicas and its key bloom
+filter, in attributes spelled as YDB names the settings, in lower case. A
+setting the table leaves out keeps what the table holds. Every other dialect
+refuses a table that declares one, rather than build it with the server's
+defaults. See
+[table partitioning](../../databases/ydb/#table-partitioning-read-replicas-and-key-bloom-filter).
+
+| Attribute | Value |
+| --- | --- |
+| `auto_partitioning_by_size` | `ENABLED` or `DISABLED` |
+| `auto_partitioning_partition_size_mb` | megabytes, at least 1 |
+| `auto_partitioning_by_load` | `ENABLED` or `DISABLED` |
+| `auto_partitioning_min_partitions_count` | at least 1 |
+| `auto_partitioning_max_partitions_count` | at least 1 |
+| `read_replicas_settings` | `PER_AZ:<n>` or `ANY_AZ:<n>` |
+| `key_bloom_filter` | `ENABLED` or `DISABLED` |
+| `uniform_partitions` | partitions a new table starts with, at least 1 |
+| `partition_at_keys` | split points a new table starts with: `10, 20` or `(10, 'a'), (20)` |
 
 Platform overrides: yes.
 
@@ -400,6 +421,23 @@ A PRIMARY KEY constraint's `name` is the name the key is built with on
 PostgreSQL; without one the server names it `<table>_pkey`. MySQL and MariaDB
 call every primary key `PRIMARY` whatever it is declared as, so there the
 comparison matches the key without its name.
+
+### `//ptah:schema:columnfamily`
+
+Declares a YDB column family: columns a row table stores together, with a
+storage pool, a compression and a cache mode of their own. It belongs to the
+table of the struct it is on, or to the one `table` names, which the same file
+declares. Every other dialect refuses a table that declares one. See
+[column families](../../databases/ydb/#column-families).
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `name` | Yes | Family name. `default` sets the family that holds the key and every unlisted column. |
+| `table` | No | Table the family belongs to, when not the struct's own. |
+| `data` | No | Kind of storage pool the family is kept in, such as `ssd`. Omitted, the table keeps the pool it holds. |
+| `compression` | No | `off` or `lz4`. Omitted, the table keeps the compression it holds. |
+| `cache_mode` | No | `regular` or `in_memory`, either of which needs `column_family_cache_mode`. Omitted, the table keeps the cache mode it holds. |
+| `fields` | No | Columns the family holds, never a key column. The default family lists none. |
 
 ### `//ptah:schema:changefeed`
 
@@ -773,6 +811,31 @@ read position of its own.
 | `schema` | No | Directory of the topic, when it has one. |
 | `supported_codecs` | No | Codecs the consumer reads: `raw`, `gzip`, `lzop`, `zstd`, `custom`. |
 | `topic` | Yes | Topic the consumer reads. |
+
+### `//ptah:schema:coordinationnode`
+
+Declares a YDB coordination node, which holds an application's semaphores and
+rate limiter resources. A setting left out takes YDB's default.
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `attach_consistency_mode` | No | `strict` or `relaxed`. YDB's default is `strict`. |
+| `name` | Yes | Node name. |
+| `rate_limiter_counters_mode` | No | `aggregated` or `detailed`. YDB's default is `aggregated`. |
+| `read_consistency_mode` | No | `strict` or `relaxed`. YDB's default is `relaxed`. |
+| `schema` | No | Directory holding the node, relative to the database root. |
+| `self_check_period` | No | How often the node checks it is alive, as an ISO 8601 duration from `PT0.5S` to `PT10S`. YDB's default is `PT1S`. |
+| `session_grace_period` | No | How long a session keeps its semaphores while the node changes its leader, from the self-check period plus one second to `PT30S`. YDB's default is `PT10S`. |
+
+```go
+//ptah:schema:coordinationnode name="locks" schema="app" self_check_period="PT2S"
+type Locks struct{}
+```
+
+A coordination node is YDB's own object, and every other target refuses the
+declaration. `ptah_locks` at the database root is Ptah's lock node and is
+refused. [Coordination nodes](../../databases/ydb/#coordination-nodes) says how
+Ptah applies one.
 
 ## Security
 

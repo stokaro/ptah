@@ -138,12 +138,18 @@ func toDBTables(
 			VirtualModule:    table.VirtualModule,
 			VirtualArguments: table.VirtualArguments,
 			// A declaration compared as the current side of a file-to-file
-			// comparison carries its changefeeds as a database would.
-			Changefeeds: ast.CloneChangefeeds(table.Changefeeds),
+			// comparison carries its column families and changefeeds as a
+			// database would.
+			YDBColumnFamilies: ast.CloneYDBColumnFamilies(table.YDBColumnFamilies),
+			Changefeeds:       ast.CloneChangefeeds(table.Changefeeds),
 			// A database built from the document carries the policy it
 			// declares, so a file-to-file comparison of one document against
 			// itself has nothing to plan for it.
 			RowDeletionPolicy: table.RowDeletionPolicy.Clone(),
+			// A database built from the document carries the YDB settings it
+			// declares, so a file-to-file comparison of one document against
+			// itself has nothing to plan for them.
+			YDBPartitioning: table.YDBPartitioning.Clone(),
 		})
 	}
 	return out

@@ -10,9 +10,7 @@ import (
 
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Scheme"
 
-	"ptah.run/core/platform"
 	"ptah.run/internal/dbreset"
-	"ptah.run/internal/sqlident"
 	"ptah.run/internal/ydburl"
 )
 
@@ -31,10 +29,10 @@ type rootEntry struct {
 }
 
 // ResetObjects lists every object under the writer's root that
-// [Writer.DropDatabaseRealm] would drop or refuse to: tables, views, topics
-// and the directories that hold them, contents before the directory, and any other
-// object under its own kind, in the order a depth-first walk with each
-// directory's entries sorted by name meets them. It leaves out what the reset
+// [Writer.DropDatabaseRealm] would drop or refuse to: tables, views, topics,
+// coordination nodes and the directories that hold them, contents before the
+// directory, and any other object under its own kind, in the order a
+// depth-first walk with each directory's entries sorted by name meets them. It leaves out what the reset
 // leaves alone: the server's dot-directories, and at the root of a database
 // the coordination node Ptah's locks live on and the directory that holds the
 // dev realms. The scope is ignored: a YDB reset empties the root.
@@ -54,14 +52,13 @@ func (w *Writer) ResetObjects(ctx context.Context, _ dbreset.Scope) ([]dbreset.O
 }
 
 // DropDatabaseRealm empties the writer's root: it drops every table, column
-// table, view and topic under it and removes every directory below it,
-// deepest first. The root itself stays. What [Writer.ResetObjects] leaves out
-// is left alone.
+// table, view, topic and coordination node under it and removes every
+// directory below it, deepest first. The root itself stays. What
+// [Writer.ResetObjects] leaves out is left alone.
 //
-// An object Ptah has no statement to drop, such as a coordination node, stops
-// it before
-// anything is dropped, with the object named: a reset that dropped the rest
-// and left it would hand the next run a dev database that is not empty.
+// An object Ptah has no statement to drop, such as an external table, stops it
+// before anything is dropped, with the object named: a reset that dropped the
+// rest and left it would hand the next run a dev database that is not empty.
 func (w *Writer) DropDatabaseRealm(ctx context.Context) error {
 	entries, err := w.rootEntries(ctx)
 	if err != nil {
@@ -142,8 +139,8 @@ func (w *Writer) walkTree(ctx context.Context, t tree, dir string, entries *[]ro
 			continue
 		}
 		var step treeStep
-		if statement, droppable := treeStatements[entry.GetType()]; droppable {
-			step = treeStep{statement: fmt.Sprintf(statement, sqlident.Quote(platform.YDB, path.Join(t.base, child)))}
+		if statement, droppable := dropStatement(entry.GetType(), path.Join(t.base, child)); droppable {
+			step = treeStep{statement: statement}
 		}
 		*entries = append(*entries, rootEntry{object: object, step: step})
 	}

@@ -22,7 +22,10 @@ import (
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/uniquename"
 	"ptah.run/internal/ydbchangefeed"
+	"ptah.run/internal/ydbcoordination"
+	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
+	"ptah.run/internal/ydbpartition"
 	"ptah.run/internal/ydbtopic"
 	"ptah.run/internal/ydbtype"
 )
@@ -361,7 +364,8 @@ func (ctx *renderContext) hasGlobalObjects() bool {
 		len(ctx.db.Domains) > 0 ||
 		len(ctx.db.Ranges) > 0 ||
 		len(ctx.db.Sequences) > 0 ||
-		len(ctx.db.Topics) > 0
+		len(ctx.db.Topics) > 0 ||
+		len(ctx.db.CoordinationNodes) > 0
 }
 
 func (ctx *renderContext) writeEnums(w *sourceWriter) {
@@ -459,6 +463,9 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 	for _, privilege := range sortedDefaultPrivileges(ctx.db.DefaultPrivileges) {
 		w.writeComment(defaultPrivilegeAnnotation(privilege))
 	}
+	for _, node := range sortedCoordinationNodes(ctx.db.CoordinationNodes) {
+		w.writeComment(coordinationNodeAnnotation(node))
+	}
 	if ctx.hasGlobalObjects() {
 		w.writeLine("type PtahSchemaObjects struct{}")
 		w.writeLine("")
@@ -483,6 +490,9 @@ func (ctx *renderContext) writeTable(w *sourceWriter, table schemamodel.Table) {
 		w.writeComment(constraintAnnotation(constraint))
 	}
 	w.writeComment(tableAnnotation(table))
+	for _, family := range ydbfamily.Stated(table.YDBColumnFamilies) {
+		w.writeComment(annotation("ptah:schema:columnfamily", columnFamilyAttrs(family)...))
+	}
 	for _, changefeed := range table.Changefeeds {
 		w.writeComment(annotation("ptah:schema:changefeed", changefeedAttrs(changefeed)...))
 		for _, consumer := range changefeed.Consumers {
@@ -577,7 +587,8 @@ func tableAnnotation(table schemamodel.Table) string {
 		{name: "primary_key", value: strings.Join(table.PrimaryKey, ","), set: len(table.PrimaryKey) > 0},
 		{name: "comment", value: table.Comment, set: table.Comment != ""},
 	}
-	return annotation("ptah:schema:table", append(attrs, rowDeletionAttrs(table.RowDeletionPolicy)...)...)
+	attrs = append(attrs, rowDeletionAttrs(table.RowDeletionPolicy)...)
+	return annotation("ptah:schema:table", append(attrs, tablePartitioningAttrs(table.YDBPartitioning)...)...)
 }
 
 // rowDeletionAttrs writes a table's row deletion policy as the attributes the
@@ -590,6 +601,22 @@ func rowDeletionAttrs(policy *ast.RowDeletionPolicySpec) []attr {
 		{name: rowdeletion.AttributeColumn, value: policy.Column, set: true},
 		{name: rowdeletion.AttributeInterval, value: policy.Interval, set: true},
 		{name: rowdeletion.AttributeUnit, value: policy.Unit, set: policy.Unit != ""},
+	}
+}
+
+// columnFamilyAttrs writes a YDB column family as the attributes the
+// annotation parser reads it from. A table's default family is written only
+// where it holds something other than what YDB gives a family stating nothing
+// (see [ydbfamily.Stated]), so a table nobody gave families exports none.
+// keep_in_memory has no attribute: no statement writes it, and a declaration
+// that leaves it out keeps what the table holds.
+func columnFamilyAttrs(family ast.YDBColumnFamilySpec) []attr {
+	return []attr{
+		{name: ydbfamily.AttributeName, value: family.Name, set: true},
+		{name: ydbfamily.AttributeData, value: family.Data, set: family.Data != ""},
+		{name: ydbfamily.AttributeCompression, value: family.Compression, set: family.Compression != ""},
+		{name: ydbfamily.AttributeCacheMode, value: family.CacheMode, set: family.CacheMode != ""},
+		{name: ydbfamily.AttributeFields, value: strings.Join(family.Columns, ","), set: len(family.Columns) > 0},
 	}
 }
 
@@ -627,6 +654,33 @@ func consumerAttrs(changefeed string, consumer ast.TopicConsumerSpec) []attr {
 		{name: ydbchangefeed.AttributeAvailabilityPeriod, value: consumer.AvailabilityPeriod,
 			set: consumer.AvailabilityPeriod != ""},
 	}
+}
+
+// tablePartitioningAttrs writes a YDB row table's settings as the attributes
+// the annotation parser reads them from.
+func tablePartitioningAttrs(spec *ast.YDBTablePartitioningSpec) []attr {
+	if spec.IsZero() {
+		return nil
+	}
+	shared := partitioningAttrs(&ast.IndexPartitioningSpec{
+		BySize: spec.BySize, PartitionSizeMB: spec.PartitionSizeMB, ByLoad: spec.ByLoad,
+		MinPartitions: spec.MinPartitions, MaxPartitions: spec.MaxPartitions, ReadReplicas: spec.ReadReplicas,
+	})
+	return append(shared,
+		attr{name: ydbpartition.AttributeKeyBloomFilter, value: switchValue(spec.KeyBloomFilter), set: spec.KeyBloomFilter != nil},
+		attr{name: ydbpartition.AttributeUniformPartitions, value: strconv.FormatUint(spec.UniformPartitions, 10),
+			set: spec.UniformPartitions != 0},
+		attr{name: ydbpartition.AttributePartitionAtKeys, value: ydbpartition.FormatSplitPoints(spec.PartitionAtKeys),
+			set: len(spec.PartitionAtKeys) != 0},
+	)
+}
+
+// switchValue writes a YDB setting that is switched on or off.
+func switchValue(on *bool) string {
+	if on != nil && *on {
+		return "ENABLED"
+	}
+	return "DISABLED"
 }
 
 func fieldAttrs(field schemamodel.Field) []attr {
@@ -684,20 +738,14 @@ func partitioningAttrs(spec *ast.IndexPartitioningSpec) []attr {
 	if spec.IsZero() {
 		return nil
 	}
-	enabled := func(on *bool) string {
-		if on != nil && *on {
-			return "ENABLED"
-		}
-		return "DISABLED"
-	}
 	count := func(n uint64) string { return strconv.FormatUint(n, 10) }
 	return []attr{
-		{name: ydbindex.AttributeBySize, value: enabled(spec.BySize), set: spec.BySize != nil},
-		{name: ydbindex.AttributePartitionSizeMB, value: count(spec.PartitionSizeMB), set: spec.PartitionSizeMB != 0},
-		{name: ydbindex.AttributeByLoad, value: enabled(spec.ByLoad), set: spec.ByLoad != nil},
-		{name: ydbindex.AttributeMinPartitions, value: count(spec.MinPartitions), set: spec.MinPartitions != 0},
-		{name: ydbindex.AttributeMaxPartitions, value: count(spec.MaxPartitions), set: spec.MaxPartitions != 0},
-		{name: ydbindex.AttributeReadReplicas, value: spec.ReadReplicas, set: spec.ReadReplicas != ""},
+		{name: ydbpartition.AttributeBySize, value: switchValue(spec.BySize), set: spec.BySize != nil},
+		{name: ydbpartition.AttributePartitionSizeMB, value: count(spec.PartitionSizeMB), set: spec.PartitionSizeMB != 0},
+		{name: ydbpartition.AttributeByLoad, value: switchValue(spec.ByLoad), set: spec.ByLoad != nil},
+		{name: ydbpartition.AttributeMinPartitions, value: count(spec.MinPartitions), set: spec.MinPartitions != 0},
+		{name: ydbpartition.AttributeMaxPartitions, value: count(spec.MaxPartitions), set: spec.MaxPartitions != 0},
+		{name: ydbpartition.AttributeReadReplicas, value: spec.ReadReplicas, set: spec.ReadReplicas != ""},
 	}
 }
 
@@ -1030,6 +1078,19 @@ func defaultPrivilegeAnnotation(privilege schemamodel.DefaultPrivilege) string {
 	)
 }
 
+// coordinationNodeAnnotation declares a YDB coordination node with the
+// settings it was given; a setting left unset takes YDB's default.
+func coordinationNodeAnnotation(node schemamodel.CoordinationNode) string {
+	attrs := []attr{
+		{name: "name", value: node.Name, set: true},
+		{name: "schema", value: node.Schema, set: node.Schema != ""},
+	}
+	for _, setting := range ydbcoordination.Attributes(node.Spec) {
+		attrs = append(attrs, attr{name: setting[0], value: setting[1], set: true})
+	}
+	return annotation("ptah:schema:coordinationnode", attrs...)
+}
+
 func annotation(name string, attrs ...attr) string {
 	var builder strings.Builder
 	builder.WriteString("//")
@@ -1305,6 +1366,12 @@ func sortedTopics(values []schemamodel.Topic) []schemamodel.Topic {
 func sortedViews(values []schemamodel.View) []schemamodel.View {
 	result := append([]schemamodel.View(nil), values...)
 	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
+	return result
+}
+
+func sortedCoordinationNodes(values []schemamodel.CoordinationNode) []schemamodel.CoordinationNode {
+	result := append([]schemamodel.CoordinationNode(nil), values...)
+	sort.Slice(result, func(i, j int) bool { return result[i].QualifiedName() < result[j].QualifiedName() })
 	return result
 }
 

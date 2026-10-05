@@ -17,7 +17,8 @@ func ydbGuard(realm devclean.ReplayRealm) *devclean.ReplayGuard {
 
 // ydbConfinedStatements stay inside a dev realm: each writes a relative path
 // that does not climb out, reads, or defines a value. Ptah renders every one
-// of these shapes for a YDB schema.
+// of these shapes for a YDB schema, a coordination node's in a statement of
+// its own that the connection resolves against the realm's prefix.
 var ydbConfinedStatements = []struct {
 	name      string
 	statement string
@@ -49,6 +50,9 @@ var ydbConfinedStatements = []struct {
 	{name: "DECLARE", statement: "DECLARE $id AS Int64"},
 	{name: "DEFINE SUBQUERY", statement: "DEFINE SUBQUERY $q() AS SELECT 1; END DEFINE"},
 	{name: "a pragma that moves no name", statement: "PRAGMA AnsiInForEmptyOrNullableItemsCollections"},
+	{name: "CREATE COORDINATION NODE", statement: "CREATE COORDINATION NODE `app/locks` WITH (self_check_period = Interval('PT2S'))"},
+	{name: "ALTER COORDINATION NODE", statement: "ALTER COORDINATION NODE `locks` SET (read_consistency_mode = 'strict')"},
+	{name: "DROP COORDINATION NODE", statement: "DROP COORDINATION NODE `app/locks`"},
 }
 
 // Every confined statement passes in a dev realm and on a server the run owns.
@@ -108,7 +112,13 @@ var ydbRealmEscapes = []struct {
 	{name: "a topic that climbs out", statement: "DROP TOPIC IF EXISTS `../events`",
 		operation: "the path ../events, which climbs out of the dev database"},
 	{name: "a statement the guard does not know", statement: "IMPORT m SYMBOLS $f", operation: "unrecognized statement IMPORT"},
-	{name: "an object the guard does not know", statement: "CREATE COORDINATION NODE `n`", operation: "unrecognized object CREATE COORDINATION"},
+	{name: "a coordination node by its absolute path", statement: "DROP COORDINATION NODE `/local/locks`",
+		operation: "the absolute path /local/locks"},
+	{name: "a coordination node that climbs out", statement: "CREATE COORDINATION NODE `../locks`",
+		operation: "the path ../locks, which climbs out of the dev database"},
+	{name: "a coordination node named through a $ name", statement: "ALTER COORDINATION NODE $n SET (read_consistency_mode = 'strict')",
+		operation: "a target named through $n"},
+	{name: "an object the guard does not know", statement: "CREATE TABLESTORE `s`", operation: "unrecognized object CREATE TABLESTORE"},
 }
 
 // Each escape is refused in a dev realm, by name.

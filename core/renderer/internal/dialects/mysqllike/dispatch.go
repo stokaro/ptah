@@ -5,6 +5,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer/internal/dialects/internal/coordinationrefusal"
 	"ptah.run/core/renderer/internal/dialects/internal/grantrefusal"
 	"ptah.run/core/renderer/internal/dialects/internal/nodedispatch"
 )
@@ -152,6 +153,9 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderDropSynonym(n)
 	case *ast.CreateTopicNode, *ast.AlterTopicNode, *ast.DropTopicNode:
 		return nodedispatch.RefuseTopic(r.dialect, n)
+	case *ast.CreateCoordinationNodeNode, *ast.AlterCoordinationNodeNode, *ast.DropCoordinationNodeNode:
+		// A coordination node is YDB's own object.
+		return coordinationrefusal.Node(r.Dialect(), n)
 	case *ast.ExtendedPropertyNode:
 		return r.renderExtendedProperty(n)
 	case *ast.CreateHypertableNode:
@@ -200,9 +204,11 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.RenameIndexOperation,
 		*ast.AlterIndexVisibilityOperation,
 		*ast.SetIndexPartitioningOperation,
+		*ast.SetYDBColumnFamiliesOperation,
 		*ast.AddChangefeedOperation,
 		*ast.DropChangefeedOperation,
 		*ast.AlterChangefeedTopicOperation,
+		*ast.SetYDBTablePartitioningOperation,
 		*ast.ReplaceIndexOperation,
 		*ast.AddIndexOperation,
 		*ast.AddSkippingIndexOperation,
