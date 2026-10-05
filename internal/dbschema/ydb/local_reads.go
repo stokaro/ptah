@@ -27,8 +27,8 @@ var ErrReadLeavesDatabase = errors.New("the query reads rows from outside the da
 // path stores.
 type ReadCatalog interface {
 	Database() string
-	EntryType(ctx context.Context, path string) (Ydb_Scheme.Entry_Type, error)
-	ViewQuery(ctx context.Context, path string) (string, error)
+	EntryType(ctx context.Context, absolute string) (Ydb_Scheme.Entry_Type, error)
+	ViewQuery(ctx context.Context, absolute string) (string, error)
 }
 
 // ProveLocalReads proves that query, a YQL SELECT sent to a database whose
@@ -163,16 +163,16 @@ type grpcReadCatalog struct {
 
 func (c grpcReadCatalog) Database() string { return c.database }
 
-func (c grpcReadCatalog) EntryType(ctx context.Context, path string) (Ydb_Scheme.Entry_Type, error) {
-	entry, err := c.scheme.DescribePath(ctx, path)
+func (c grpcReadCatalog) EntryType(ctx context.Context, absolute string) (Ydb_Scheme.Entry_Type, error) {
+	entry, err := c.scheme.DescribePath(ctx, absolute)
 	if err != nil {
 		return Ydb_Scheme.Entry_TYPE_UNSPECIFIED, err
 	}
 	return entry.GetType(), nil
 }
 
-func (c grpcReadCatalog) ViewQuery(ctx context.Context, path string) (string, error) {
-	described, err := c.views.DescribeView(ctx, path)
+func (c grpcReadCatalog) ViewQuery(ctx context.Context, absolute string) (string, error) {
+	described, err := c.views.DescribeView(ctx, absolute)
 	if err != nil {
 		return "", err
 	}

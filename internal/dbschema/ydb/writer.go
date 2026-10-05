@@ -255,39 +255,45 @@ func (w *Writer) DropAllTables(ctx context.Context) error {
 		return fmt.Errorf("no YDB scheme connection")
 	}
 	changed := make(map[string]bool)
-	if _, err := w.dropDirectory(ctx, "", readersFirst, false, changed); err != nil {
+	if _, err := w.dropDirectory(ctx, "", readersFirst, changed); err != nil {
 		return err
 	}
-	_, err := w.dropDirectory(ctx, "", objectsAfterReaders, true, changed)
+	_, err := w.dropDirectory(ctx, "", objectsAfterReaders, changed)
 	return err
 }
 
-// readersFirst and objectsAfterReaders are the statements each walk of
-// DropAllTables drops each kind of entry with, the path in place of %s: the
-// objects that read another object first, and then the objects they read.
+// dropWalk is one walk of DropAllTables: the statement it drops each kind of
+// entry with, the path in place of %s, and whether it removes each directory
+// a walk changed once nothing is left in it.
+type dropWalk struct {
+	statements    map[Ydb_Scheme.Entry_Type]string
+	removeEmptied bool
+}
+
+// readersFirst and objectsAfterReaders are the walks of DropAllTables: the
+// objects that read another object first, and then the objects they read,
+// with the directories left empty.
 var (
-	readersFirst = map[Ydb_Scheme.Entry_Type]string{
+	readersFirst = dropWalk{statements: map[Ydb_Scheme.Entry_Type]string{
 		Ydb_Scheme.Entry_VIEW:           "DROP VIEW %s",
 		Ydb_Scheme.Entry_EXTERNAL_TABLE: "DROP EXTERNAL TABLE %s",
-	}
-	objectsAfterReaders = map[Ydb_Scheme.Entry_Type]string{
+	}}
+	objectsAfterReaders = dropWalk{statements: map[Ydb_Scheme.Entry_Type]string{
 		Ydb_Scheme.Entry_TABLE:                "DROP TABLE %s",
 		Ydb_Scheme.Entry_TOPIC:                "DROP TOPIC %s",
 		Ydb_Scheme.Entry_SECRET:               "DROP SECRET %s",
 		Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE: "DROP EXTERNAL DATA SOURCE %s",
-	}
+	}, removeEmptied: true}
 )
 
-// dropDirectory drops the entries of the kinds statements names in the
-// directory dir, relative to the database root, and in the directories under
-// it, and reports whether this walk or an earlier one dropped or removed
-// anything there, which changed records. With remove set it also removes each
-// directory a walk changed once nothing is left in it.
+// dropDirectory drops the entries of the kinds walk names in the directory
+// dir, relative to the database root, and in the directories under it, and
+// reports whether this walk or an earlier one dropped or removed anything
+// there, which changed records.
 func (w *Writer) dropDirectory(
 	ctx context.Context,
 	dir string,
-	statements map[Ydb_Scheme.Entry_Type]string,
-	remove bool,
+	walk dropWalk,
 	changed map[string]bool,
 ) (bool, error) {
 	entries, err := w.scheme.ListDirectory(ctx, path.Join(w.root, dir))
@@ -298,7 +304,7 @@ func (w *Writer) dropDirectory(
 	for _, entry := range entries {
 		name := entry.GetName()
 		child := path.Join(dir, name)
-		if statement, drops := statements[entry.GetType()]; drops {
+		if statement, drops := walk.statements[entry.GetType()]; drops {
 			if err := w.ExecuteSQL(ctx, fmt.Sprintf(statement, sqlident.Quote(platform.YDB, child))); err != nil {
 				return changed[dir], err
 			}
@@ -309,7 +315,7 @@ func (w *Writer) dropDirectory(
 			(dir == "" && name == ydburl.RealmDirectory) {
 			continue
 		}
-		childChanged, err := w.dropDirectory(ctx, child, statements, remove, changed)
+		childChanged, err := w.dropDirectory(ctx, child, walk, changed)
 		if err != nil {
 			return changed[dir], err
 		}
@@ -317,7 +323,7 @@ func (w *Writer) dropDirectory(
 			continue
 		}
 		changed[dir] = true
-		if !remove {
+		if !walk.removeEmptied {
 			continue
 		}
 		if err := w.removeIfEmpty(ctx, child); err != nil {

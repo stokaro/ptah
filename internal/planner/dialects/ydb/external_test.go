@@ -195,7 +195,7 @@ func TestGenerateMigrationAST_External_FailurePath(t *testing.T) {
 // without the parenthesis that opens its body.
 func statementHeads(sql string) []string {
 	var heads []string
-	for _, line := range strings.Split(sql, "\n") {
+	for line := range strings.SplitSeq(sql, "\n") {
 		if !strings.HasPrefix(line, "CREATE ") && !strings.HasPrefix(line, "DROP ") {
 			continue
 		}

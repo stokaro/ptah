@@ -169,7 +169,7 @@ func TestProveLocalReads_RefusesAReadItCannotFollow(t *testing.T) {
 			c := qt.New(t)
 			err := ydbschema.ProveLocalReads(c.Context(), newReadCatalog(), "/local", tc.query)
 			c.Assert(err, qt.ErrorMatches, tc.want)
-			c.Assert(errors.Is(err, ydbschema.ErrReadLeavesDatabase), qt.IsFalse)
+			c.Assert(err, qt.Not(qt.ErrorIs), ydbschema.ErrReadLeavesDatabase)
 		})
 	}
 }

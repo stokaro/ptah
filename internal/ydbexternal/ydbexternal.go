@@ -196,7 +196,7 @@ func CheckOptions(options map[string]string, reserved ...string) (map[string]str
 	return checkOptions(names, values, reserved)
 }
 
-func checkOptions(names, values []string, reserved []string) (map[string]string, error) {
+func checkOptions(names, values, reserved []string) (map[string]string, error) {
 	if len(names) == 0 {
 		return nil, nil
 	}
@@ -278,7 +278,9 @@ func FormatColumns(columns []Column) string {
 // not start with a digit.
 func plainName(name string) bool {
 	for i, r := range name {
-		if !(r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r == '_' || r >= '0' && r <= '9' && i > 0) {
+		letter := r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r == '_'
+		digit := r >= '0' && r <= '9' && i > 0
+		if !letter && !digit {
 			return false
 		}
 	}
@@ -295,7 +297,7 @@ var (
 // optionName reports a name of ASCII letters, digits and underscores.
 func optionName(name string) bool {
 	for _, r := range name {
-		if !(r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_') {
+		if (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' {
 			return false
 		}
 	}
@@ -395,7 +397,7 @@ func parseColumn(entry string) (Column, error) {
 
 // columnName reads the name at the start of entry, bare or backticked, and
 // returns the rest.
-func columnName(entry string) (string, string, error) {
+func columnName(entry string) (name, rest string, err error) {
 	if inner, ok := strings.CutPrefix(entry, "`"); ok {
 		end := strings.IndexByte(inner, '`')
 		if end <= 0 {
@@ -404,7 +406,7 @@ func columnName(entry string) (string, string, error) {
 		}
 		return inner[:end], inner[end+1:], nil
 	}
-	name, rest, _ := strings.Cut(entry, " ")
+	name, rest, _ = strings.Cut(entry, " ")
 	return name, rest, nil
 }
 
@@ -485,22 +487,30 @@ func Path(name string) string {
 	return sqlident.Qualified(platform.YDB, ref.Schema, ref.Name)
 }
 
-// CreateDataSourceStatement writes what creates the data source name, or
-// replaces it when replace is set.
-func CreateDataSourceStatement(name string, source DataSource, replace bool) string {
+// Creation is how a statement creates an external object: CREATE, or CREATE
+// OR REPLACE, which replaces one that exists at the path.
+type Creation string
+
+// The two creations.
+const (
+	Create  Creation = "CREATE"
+	Replace Creation = "CREATE OR REPLACE"
+)
+
+// CreateDataSourceStatement writes the creation of the data source name.
+func CreateDataSourceStatement(name string, source DataSource, creation Creation) string {
 	settings := []string{optionSetting(optionSourceType, source.SourceType)}
 	if source.Location != "" {
 		settings = append(settings, optionSetting(optionLocation, source.Location))
 	}
 	settings = append(settings, optionSetting(optionAuthMethod, source.AuthMethod))
 	settings = append(settings, sortedSettings(source.Options)...)
-	return fmt.Sprintf("CREATE %sEXTERNAL DATA SOURCE %s WITH (\n    %s\n);", replacing(replace), Path(name),
+	return fmt.Sprintf("%s EXTERNAL DATA SOURCE %s WITH (\n    %s\n);", creation, Path(name),
 		strings.Join(settings, ",\n    "))
 }
 
-// CreateTableStatement writes what creates the external table name, or
-// replaces it when replace is set.
-func CreateTableStatement(name string, table Table, replace bool) string {
+// CreateTableStatement writes the creation of the external table name.
+func CreateTableStatement(name string, table Table, creation Creation) string {
 	columns := make([]string, 0, len(table.Columns))
 	for _, column := range table.Columns {
 		definition := sqlident.Quote(platform.YDB, column.Name) + " " + column.Type
@@ -511,7 +521,7 @@ func CreateTableStatement(name string, table Table, replace bool) string {
 	}
 	settings := []string{optionSetting(optionDataSource, table.DataSource), optionSetting(optionLocation, table.Location)}
 	settings = append(settings, sortedSettings(table.Options)...)
-	return fmt.Sprintf("CREATE %sEXTERNAL TABLE %s (\n    %s\n) WITH (\n    %s\n);", replacing(replace), Path(name),
+	return fmt.Sprintf("%s EXTERNAL TABLE %s (\n    %s\n) WITH (\n    %s\n);", creation, Path(name),
 		strings.Join(columns, ",\n    "), strings.Join(settings, ",\n    "))
 }
 
@@ -523,13 +533,6 @@ func DropDataSourceStatement(name string) string {
 // DropTableStatement writes what drops the external table name.
 func DropTableStatement(name string) string {
 	return "DROP EXTERNAL TABLE " + Path(name) + ";"
-}
-
-func replacing(replace bool) string {
-	if replace {
-		return "OR REPLACE "
-	}
-	return ""
 }
 
 func optionSetting(name, value string) string {
@@ -704,7 +707,7 @@ func DeprecatedSecretNames(statement string) (string, []string) {
 	if i >= len(tokens) {
 		return "", nil
 	}
-	path := identifierText(tokens[i])
+	source := identifierText(tokens[i])
 	var options []string
 	depth := 0
 	for j := i + 1; j < len(tokens); j++ {
@@ -719,7 +722,7 @@ func DeprecatedSecretNames(statement string) (string, []string) {
 			options = append(options, strings.ToUpper(token.Value))
 		}
 	}
-	return path, options
+	return source, options
 }
 
 // significantTokens reads statement as YQL, leaving out whitespace and

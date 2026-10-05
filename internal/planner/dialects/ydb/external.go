@@ -39,39 +39,7 @@ func (p *Planner) planExternal(diff *difftypes.SchemaDiff) (externalPlan, error)
 		return externalPlan{}, err
 	}
 	replace := p.caps.Has(capability.ExternalObjectReplace)
-
-	root := diff.CurrentDatabasePath
-	recreatedSources := make(map[string]bool)
-	for _, change := range diff.ExternalDataSourcesChanged {
-		if !replace || change.Declared.SourceType != change.Current.SourceType {
-			recreatedSources[sourcePath(change.Declared)] = true
-		}
-	}
-
-	// The external tables created again: the changed ones a target without
-	// CREATE OR REPLACE drops first, and the declared ones over a data source
-	// dropped and created again, unless the plan creates them anyway.
-	added := make(map[string]bool, len(diff.ExternalTablesAdded))
-	for _, table := range diff.ExternalTablesAdded {
-		added[table.QualifiedName()] = true
-	}
-	recreated := make(map[string]schemamodel.ExternalTable)
-	replaced := make(map[string]schemamodel.ExternalTable)
-	for _, change := range diff.ExternalTablesChanged {
-		name := change.Declared.QualifiedName()
-		if replace && !recreatedSources[ydbexternal.RelativePath(change.Declared.DataSource, root)] {
-			replaced[name] = change.Declared
-			continue
-		}
-		recreated[name] = change.Declared
-	}
-	for _, table := range diff.DeclaredExternalTables {
-		name := table.QualifiedName()
-		if recreatedSources[ydbexternal.RelativePath(table.DataSource, root)] && !added[name] {
-			delete(replaced, name)
-			recreated[name] = table
-		}
-	}
+	recreated, replaced := p.externalTablesToWrite(diff)
 
 	var plan externalPlan
 	for _, table := range diff.ExternalTablesRemoved {
@@ -105,6 +73,47 @@ func (p *Planner) planExternal(diff *difftypes.SchemaDiff) (externalPlan, error)
 		plan.creations = append(plan.creations, modelast.FromExternalTable(replaced[name], true))
 	}
 	return plan, nil
+}
+
+// externalTablesToWrite returns the declared external tables a plan writes
+// besides the added ones: recreated, which the plan drops and creates again,
+// and replaced, which it replaces in place. A changed table is replaced where
+// the target has CREATE OR REPLACE and recreated where it does not, and every
+// declared table over a data source the plan drops and creates again is
+// recreated with it, unless the plan adds it anyway.
+func (p *Planner) externalTablesToWrite(
+	diff *difftypes.SchemaDiff,
+) (recreated, replaced map[string]schemamodel.ExternalTable) {
+	replace := p.caps.Has(capability.ExternalObjectReplace)
+	root := diff.CurrentDatabasePath
+	recreatedSources := make(map[string]bool)
+	for _, change := range diff.ExternalDataSourcesChanged {
+		if !replace || change.Declared.SourceType != change.Current.SourceType {
+			recreatedSources[sourcePath(change.Declared)] = true
+		}
+	}
+	added := make(map[string]bool, len(diff.ExternalTablesAdded))
+	for _, table := range diff.ExternalTablesAdded {
+		added[table.QualifiedName()] = true
+	}
+	recreated = make(map[string]schemamodel.ExternalTable)
+	replaced = make(map[string]schemamodel.ExternalTable)
+	for _, change := range diff.ExternalTablesChanged {
+		name := change.Declared.QualifiedName()
+		if replace && !recreatedSources[ydbexternal.RelativePath(change.Declared.DataSource, root)] {
+			replaced[name] = change.Declared
+			continue
+		}
+		recreated[name] = change.Declared
+	}
+	for _, table := range diff.DeclaredExternalTables {
+		name := table.QualifiedName()
+		if recreatedSources[ydbexternal.RelativePath(table.DataSource, root)] && !added[name] {
+			delete(replaced, name)
+			recreated[name] = table
+		}
+	}
+	return recreated, replaced
 }
 
 // refuseExternal refuses an external object change the target cannot make:

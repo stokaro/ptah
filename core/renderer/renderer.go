@@ -407,20 +407,9 @@ func prepareNode(
 		return node, refuseTopic(dialect, caps, "DROP TOPIC "+typed.Name)
 	case *ast.CreateRoleNode, *ast.DropRoleNode, *ast.GrantPrivilegeNode, *ast.RevokePrivilegeNode:
 		return node, refuseAccessNode(dialect, caps, node)
-	case *ast.CreateSecretNode:
-		return node, refuseSecret(dialect, caps, "secret "+typed.Name)
-	case *ast.AlterSecretNode:
-		return node, refuseSecret(dialect, caps, "ALTER SECRET "+typed.Name)
-	case *ast.DropSecretNode:
-		return node, refuseSecret(dialect, caps, "DROP SECRET "+typed.Name)
-	case *ast.CreateExternalDataSourceNode:
-		return node, refuseExternal(dialect, caps, "external data source "+typed.Name)
-	case *ast.DropExternalDataSourceNode:
-		return node, refuseExternal(dialect, caps, "DROP EXTERNAL DATA SOURCE "+typed.Name)
-	case *ast.CreateExternalTableNode:
-		return node, refuseExternal(dialect, caps, "external table "+typed.Name)
-	case *ast.DropExternalTableNode:
-		return node, refuseExternal(dialect, caps, "DROP EXTERNAL TABLE "+typed.Name)
+	case *ast.CreateSecretNode, *ast.AlterSecretNode, *ast.DropSecretNode, *ast.CreateExternalDataSourceNode,
+		*ast.DropExternalDataSourceNode, *ast.CreateExternalTableNode, *ast.DropExternalTableNode:
+		return node, refuseYDBObject(dialect, caps, node)
 	default:
 		return prepareStandaloneFragment(dialect, caps, node)
 	}
@@ -1000,6 +989,29 @@ func validateDeclaredYDBObjects(dialect string, caps capability.Capabilities, da
 		return err
 	}
 	return validateDeclaredExternalObjects(dialect, caps, database)
+}
+
+// refuseYDBObject refuses node, a YDB secret or external object statement, on
+// a target without the key it needs, naming the object.
+func refuseYDBObject(dialect string, caps capability.Capabilities, node ast.Node) error {
+	switch typed := node.(type) {
+	case *ast.CreateSecretNode:
+		return refuseSecret(dialect, caps, "secret "+typed.Name)
+	case *ast.AlterSecretNode:
+		return refuseSecret(dialect, caps, "ALTER SECRET "+typed.Name)
+	case *ast.DropSecretNode:
+		return refuseSecret(dialect, caps, "DROP SECRET "+typed.Name)
+	case *ast.CreateExternalDataSourceNode:
+		return refuseExternal(dialect, caps, "external data source "+typed.Name)
+	case *ast.DropExternalDataSourceNode:
+		return refuseExternal(dialect, caps, "DROP EXTERNAL DATA SOURCE "+typed.Name)
+	case *ast.CreateExternalTableNode:
+		return refuseExternal(dialect, caps, "external table "+typed.Name)
+	case *ast.DropExternalTableNode:
+		return refuseExternal(dialect, caps, "DROP EXTERNAL TABLE "+typed.Name)
+	default:
+		return nil
+	}
 }
 
 // refuseExternal refuses subject, a YDB external data source or external

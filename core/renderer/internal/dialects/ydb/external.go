@@ -13,10 +13,14 @@ func (r *Renderer) renderCreateExternalDataSource(node *ast.CreateExternalDataSo
 	if err := externalRefusal(ydbexternal.CheckDataSource(node.Name, source, r.caps)); err != nil {
 		return err
 	}
-	if err := r.refuseReplace(node.Replace, "external data source "+node.Name); err != nil {
-		return err
+	creation := ydbexternal.Create
+	if node.Replace {
+		if err := r.refuseReplace("external data source " + node.Name); err != nil {
+			return err
+		}
+		creation = ydbexternal.Replace
 	}
-	r.w.WriteLine(ydbexternal.CreateDataSourceStatement(node.Name, source, node.Replace))
+	r.w.WriteLine(ydbexternal.CreateDataSourceStatement(node.Name, source, creation))
 	return nil
 }
 
@@ -27,10 +31,14 @@ func (r *Renderer) renderCreateExternalTable(node *ast.CreateExternalTableNode) 
 	if err := externalRefusal(ydbexternal.CheckTable(node.Name, table, r.caps)); err != nil {
 		return err
 	}
-	if err := r.refuseReplace(node.Replace, "external table "+node.Name); err != nil {
-		return err
+	creation := ydbexternal.Create
+	if node.Replace {
+		if err := r.refuseReplace("external table " + node.Name); err != nil {
+			return err
+		}
+		creation = ydbexternal.Replace
 	}
-	r.w.WriteLine(ydbexternal.CreateTableStatement(node.Name, table, node.Replace))
+	r.w.WriteLine(ydbexternal.CreateTableStatement(node.Name, table, creation))
 	return nil
 }
 
@@ -58,12 +66,9 @@ func (r *Renderer) refuseExternal(subject string) error {
 	return externalRefusal(ydbexternal.CheckDrop(subject, r.caps))
 }
 
-// refuseReplace refuses a CREATE OR REPLACE on a target that does not take
-// one.
-func (r *Renderer) refuseReplace(replace bool, subject string) error {
-	if !replace {
-		return nil
-	}
+// refuseReplace refuses a CREATE OR REPLACE of subject on a target that does
+// not take one.
+func (r *Renderer) refuseReplace(subject string) error {
 	return externalRefusal(ydbexternal.CheckReplace(subject, r.caps))
 }
 

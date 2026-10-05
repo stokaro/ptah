@@ -161,7 +161,7 @@ func yqlSourceNames(tokens []lexer.Token) ([]string, error) {
 		if anchor {
 			lists[depth] = true
 		}
-		if !anchor && !(token.MatchOperatorValue(",") && lists[depth]) {
+		if !anchor && (!token.MatchOperatorValue(",") || !lists[depth]) {
 			continue
 		}
 		name, err := yqlSourceName(tokens, i+1)
@@ -204,9 +204,9 @@ func yqlSourceName(tokens []lexer.Token, i int) (string, error) {
 		return "", fmt.Errorf("%w: %s names a cluster or an external source", errYQLSource, token.Value)
 	}
 	name := token.Value
-	if strings.HasPrefix(name, "`") {
-		inner := strings.TrimSuffix(strings.TrimPrefix(name, "`"), "`")
-		if len(name) < 2 || !strings.HasSuffix(name, "`") || strings.ContainsAny(inner, "`\\") {
+	if quoted, backticked := strings.CutPrefix(name, "`"); backticked {
+		inner, closed := strings.CutSuffix(quoted, "`")
+		if !closed || strings.ContainsAny(inner, "`\\") {
 			return "", fmt.Errorf("%w: %s is quoted in a way the proof does not read", errYQLSource, name)
 		}
 		name = inner

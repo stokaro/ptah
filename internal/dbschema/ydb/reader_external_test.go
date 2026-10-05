@@ -25,6 +25,7 @@ func externalSource() fakeSource {
 			"/local/ext": {entry("pg", Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE), entry("s3", Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE), entry("events", Ydb_Scheme.Entry_EXTERNAL_TABLE)},
 		},
 		sources: map[string]*Ydb_Table.DescribeExternalDataSourceResult{
+			// #nosec G101 -- the path of a secret, as the server describes one, not a credential
 			"/local/ext/pg": {SourceType: new("PostgreSQL"), Location: new("pg:5432"), Properties: map[string]string{
 				"AUTH_METHOD": "BASIC", "DATABASE_NAME": "app", "LOGIN": "reader",
 				"PASSWORD_SECRET_PATH": "/local/ext/pg_password", "PROTOCOL": "native", "REFERENCES": "[]",

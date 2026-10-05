@@ -4,6 +4,7 @@ package ydb_test
 
 import (
 	"context"
+	"maps"
 	"path"
 	"strings"
 	"testing"
@@ -67,7 +68,7 @@ var externalLines = []externalLine{
 	},
 	{
 		line:       "25.1",
-		password:   map[string]string{"PASSWORD_SECRET_NAME": "ptah_ydb_external_pw"},
+		password:   map[string]string{"PASSWORD_SECRET_NAME": "ptah_ydb_external_pw"}, // #nosec G101 -- a secret object's name
 		setup:      []string{"CREATE OBJECT ptah_ydb_external_pw (TYPE SECRET) WITH value = 'probe'"},
 		teardown:   []string{"DROP OBJECT ptah_ydb_external_pw (TYPE SECRET)"},
 		statements: 3,
@@ -353,13 +354,8 @@ func removeTeardownLeftovers(c *qt.C, line ydbLine, conn *dbschema.DatabaseConne
 
 // merged is a copy of base with extra's entries added.
 func merged(base, extra map[string]string) map[string]string {
-	out := make(map[string]string, len(base)+len(extra))
-	for name, value := range base {
-		out[name] = value
-	}
-	for name, value := range extra {
-		out[name] = value
-	}
+	out := maps.Clone(base)
+	maps.Copy(out, extra)
 	return out
 }
 

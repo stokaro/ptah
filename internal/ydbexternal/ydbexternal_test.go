@@ -188,21 +188,22 @@ func TestStatements(t *testing.T) {
 		got  string
 		want string
 	}{
-		{name: "a data source", got: ydbexternal.CreateDataSourceStatement("ext.pg", postgresSource, false),
+		{name: "a data source", got: ydbexternal.CreateDataSourceStatement("ext.pg", postgresSource, ydbexternal.Create),
 			want: "CREATE EXTERNAL DATA SOURCE `ext/pg` WITH (\n    SOURCE_TYPE = 'PostgreSQL',\n    LOCATION = 'pg:5432',\n" +
 				"    AUTH_METHOD = 'BASIC',\n    DATABASE_NAME = 'app',\n    LOGIN = 'reader',\n" +
 				"    PASSWORD_SECRET_PATH = 'ext/pg_password'\n);"},
 		{name: "a data source replaced, with no location", got: ydbexternal.CreateDataSourceStatement("cluster",
 			ydbexternal.DataSource{SourceType: "PostgreSQL", AuthMethod: "MDB_BASIC",
-				Options: map[string]string{"MDB_CLUSTER_ID": "c'1"}}, true),
+				Options: map[string]string{"MDB_CLUSTER_ID": "c'1"}}, ydbexternal.Replace),
 			want: "CREATE OR REPLACE EXTERNAL DATA SOURCE `cluster` WITH (\n    SOURCE_TYPE = 'PostgreSQL',\n" +
 				"    AUTH_METHOD = 'MDB_BASIC',\n    MDB_CLUSTER_ID = 'c\\'1'\n);"},
-		{name: "an external table", got: ydbexternal.CreateTableStatement("ext.events", eventsTable, false),
+		{name: "an external table", got: ydbexternal.CreateTableStatement("ext.events", eventsTable, ydbexternal.Create),
 			want: "CREATE EXTERNAL TABLE `ext/events` (\n    `id` Int64 NOT NULL,\n    `name` Utf8\n) WITH (\n" +
 				"    DATA_SOURCE = 'ext/s3',\n    LOCATION = 'events/',\n    FORMAT = 'json_each_row',\n" +
 				"    PARTITIONED_BY = '[\"id\"]'\n);"},
 		{name: "an external table replaced", got: ydbexternal.CreateTableStatement("events",
-			ydbexternal.Table{DataSource: "s3", Location: "e/", Columns: []ydbexternal.Column{{Name: "id", Type: "Int64"}}}, true),
+			ydbexternal.Table{DataSource: "s3", Location: "e/", Columns: []ydbexternal.Column{{Name: "id", Type: "Int64"}}},
+			ydbexternal.Replace),
 			want: "CREATE OR REPLACE EXTERNAL TABLE `events` (\n    `id` Int64\n) WITH (\n    DATA_SOURCE = 's3',\n" +
 				"    LOCATION = 'e/'\n);"},
 		{name: "a data source dropped", got: ydbexternal.DropDataSourceStatement("ext.pg"),
@@ -225,6 +226,7 @@ func TestSameDataSource(t *testing.T) {
 		SourceType: "PostgreSQL",
 		Location:   "pg:5432",
 		AuthMethod: "BASIC",
+		// #nosec G101 -- the path of a secret, as the server describes one, not a credential
 		Options: ydbexternal.DescribedSourceOptions(map[string]string{
 			"DATABASE_NAME": "app", "LOGIN": "reader", "PASSWORD_SECRET_PATH": "/local/ext/pg_password",
 			"REFERENCES": `["/local/ext/events"]`,
