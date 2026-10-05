@@ -44,7 +44,14 @@ func validateDiff(dialect string, semantics identifier.Semantics, diff *difftype
 	for _, change := range diff.IndexPartitioningChanged {
 		repartitioned = append(repartitioned, difftypes.IndexRef{Name: change.Name, TableName: change.TableName})
 	}
-	return validateRefs(dialect, semantics, "repartitioned", repartitioned)
+	if err := validateRefs(dialect, semantics, "repartitioned", repartitioned); err != nil {
+		return err
+	}
+	commented := make([]difftypes.IndexRef, 0, len(diff.IndexCommentsChanged))
+	for _, change := range diff.IndexCommentsChanged {
+		commented = append(commented, difftypes.IndexRef{Name: change.Name, TableName: change.TableName})
+	}
+	return validateRefs(dialect, semantics, "commented", commented)
 }
 
 // ValidateDiff refuses an index reference a plan could not act on: an empty

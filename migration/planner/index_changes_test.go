@@ -30,6 +30,7 @@ func TestEveryPlannerButYDBRefusesIndexChangesInPlace(t *testing.T) {
 		"partitioning": {IndexPartitioningChanged: []difftypes.IndexPartitioningChange{
 			{TableName: "users", Name: "a", Partitioning: &ast.IndexPartitioningSpec{MinPartitions: 2}},
 		}},
+		"comment": {IndexCommentsChanged: []difftypes.IndexCommentChange{{TableName: "users", Name: "a", Desired: "x"}}},
 	}
 	for _, dialect := range dialects {
 		for name, diff := range diffs {

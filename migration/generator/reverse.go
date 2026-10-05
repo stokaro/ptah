@@ -358,6 +358,7 @@ func reverseSchemaDiffWithSchemaForDialect(
 		reversed.IndexVisibilityChanged = append(reversed.IndexVisibilityChanged, change)
 	}
 	reversed.IndexesRenamed, reversed.IndexPartitioningChanged = reverseIndexChangesInPlace(diff)
+	reversed.IndexCommentsChanged = reverseIndexComments(diff.IndexCommentsChanged)
 	for _, restored := range constraintRestorations {
 		reversed.ConstraintsAdded = append(reversed.ConstraintsAdded, restored)
 	}
@@ -648,6 +649,32 @@ func reverseIndexChangesInPlace(diff *difftypes.SchemaDiff) ([]difftypes.IndexRe
 		})
 	}
 	return renames, changes
+}
+
+// reverseIndexComments is the rollback of the index comments a forward diff
+// writes: each comment back to the one the database held, under the name the
+// index has once the rollback's renames run, so a renamed index's comment
+// moves back with its name. An index the forward diff drops is one the
+// rollback adds again, and its comment comes back with it.
+func reverseIndexComments(changes []difftypes.IndexCommentChange) []difftypes.IndexCommentChange {
+	if changes == nil {
+		return nil
+	}
+	reversed := make([]difftypes.IndexCommentChange, 0, len(changes))
+	for _, change := range changes {
+		name, from := change.Name, change.From
+		if from != "" {
+			name, from = from, name
+		}
+		reversed = append(reversed, difftypes.IndexCommentChange{
+			TableName: change.TableName,
+			Name:      name,
+			From:      from,
+			Current:   change.Desired,
+			Desired:   change.Current,
+		})
+	}
+	return reversed
 }
 
 // reverseTopicDiffs swaps the two states of every topic change and builds the

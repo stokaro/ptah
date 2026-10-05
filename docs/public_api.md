@@ -665,11 +665,17 @@ index changes a plan makes in place: a rename, as `IndexRename` entries naming
 the table and both names, and a change of a YDB global index's partitioning,
 as `IndexPartitioningChange` entries carrying the declared settings and the
 ones the database holds. An index in either list is in neither
-`IndexesAdded` nor `IndexesRemoved`. The comparison fills them only on a
-target whose capability set holds `index_rename` or `index_partitioning`,
-which only the YDB presets do, and every planner but YDB's refuses a diff that
-carries one with `ptaherr.ErrUnsupportedFeature`, so a diff built by hand
-cannot reach a planner that would plan nothing for it.
+`IndexesAdded` nor `IndexesRemoved`. `SchemaDiff.IndexCommentsChanged` holds
+the index comments a plan writes apart from the index, as
+`IndexCommentChange` entries naming the table, the index, the name a renamed
+index had, and both comments: a comment that differs, a renamed index's
+comment, which moves to the new name, and a dropped index's comment, which
+its table keeps until a plan removes it. The comparison fills these lists
+only on a target whose capability set holds `index_rename`,
+`index_partitioning` or `comment_attributes`, which only the YDB presets do,
+and every planner but YDB's refuses a diff that carries one with
+`ptaherr.ErrUnsupportedFeature`, so a diff built by hand cannot reach a
+planner that would plan nothing for it.
 
 `SchemaDiff.ExtensionsModified` contains `ExtensionDiff` entries with the
 extension name and its `FromSchema`/`ToSchema` placement. Empty and explicit

@@ -1096,6 +1096,18 @@ type SchemaDiff struct {
 	// not here.
 	IndexPartitioningChanged []IndexPartitioningChange `json:"index_partitioning_changed,omitempty"`
 
+	// IndexCommentsChanged holds the index comments a plan writes in place,
+	// on a target that keeps an index's comment apart from its definition
+	// ([ptah.run/core/platform/capability.CommentAttributes], which is
+	// YDB's: the comment is an attribute of the index's table, keyed by the
+	// index's name). An entry names an index whose comment differs between
+	// the two sides; a renamed index whose comment moves to its new name; and
+	// a dropped index whose comment its table keeps until a plan removes it.
+	// An index this diff adds writes its own comment with the addition, so
+	// one dropped and added again is here only where the addition cannot
+	// remove the comment the old index left.
+	IndexCommentsChanged []IndexCommentChange `json:"index_comments_changed,omitempty"`
+
 	// ExtensionsAdded is the PostgreSQL extensions that exist in the target
 	// schema and not in the current database, each carrying its declaration;
 	// see [ExtensionChanges].
@@ -1769,7 +1781,8 @@ func (d *SchemaDiff) hasIndexChanges() bool {
 		len(d.IndexesRemoved) > 0 ||
 		len(d.IndexVisibilityChanged) > 0 ||
 		len(d.IndexesRenamed) > 0 ||
-		len(d.IndexPartitioningChanged) > 0
+		len(d.IndexPartitioningChanged) > 0 ||
+		len(d.IndexCommentsChanged) > 0
 }
 
 // IndexRename is an index a plan renames in place; see
@@ -1799,6 +1812,24 @@ type IndexPartitioningChange struct {
 	// a statement that sets one setting can reset another, and which a
 	// rollback restores. Nil is the settings YDB gives a new index.
 	Previous *ast.IndexPartitioningSpec `json:"previous,omitempty"`
+}
+
+// IndexCommentChange is the comment transition of one index; see
+// [SchemaDiff.IndexCommentsChanged].
+type IndexCommentChange struct {
+	// TableName is the table the index belongs to, qualified the way
+	// [IndexRef.TableName] is.
+	TableName string `json:"table_name"`
+	// Name is the index's name once the plan's renames have run, or the
+	// name of the index the plan drops.
+	Name string `json:"name"`
+	// From is the name the database holds for an index the plan renames,
+	// and empty for any other index.
+	From string `json:"from,omitempty"`
+	// Current is the comment the database holds, empty for none.
+	Current string `json:"current,omitempty"`
+	// Desired is the comment the declaration asks for, empty for none.
+	Desired string `json:"desired,omitempty"`
 }
 
 // IndexVisibilityChange is an index whose visibility to the optimizer

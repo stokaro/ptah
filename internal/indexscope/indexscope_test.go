@@ -792,6 +792,9 @@ func TestValidate_MalformedIndexChangeInPlaceRejected(t *testing.T) {
 		{name: "a change of partitioning on no table",
 			diff:    &difftypes.SchemaDiff{IndexPartitioningChanged: []difftypes.IndexPartitioningChange{{Name: "a"}}},
 			wantErr: `invalid schema diff: repartitioned index reference at position 0 requires a name and owning table`},
+		{name: "a comment on no index",
+			diff:    &difftypes.SchemaDiff{IndexCommentsChanged: []difftypes.IndexCommentChange{{TableName: "t", Desired: "x"}}},
+			wantErr: `invalid schema diff: commented index reference at position 0 requires a name and owning table`},
 	}
 
 	for _, test := range tests {
