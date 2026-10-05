@@ -26,9 +26,8 @@ func ydbSessionOverSQLite(c *qt.C) *session {
 	return &session{conn: conn, dialect: platform.YDB, database: "/local", namespace: "ptah_capprobe_00"}
 }
 
-// A refused removal leaves the directory standing whatever the table count
-// says: the partition statistics list row tables only, so a directory holding
-// a coordination node counts no table at all.
+// A refused removal remains a failure even if a subsequent lookup could
+// establish absence. Both failures are retained when the lookup also fails.
 func TestLeftovers_ARefusedRemovalIsALeftover_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	s := ydbSessionOverSQLite(c)
@@ -41,7 +40,7 @@ func TestLeftovers_ARefusedRemovalIsALeftover_FailurePath(t *testing.T) {
 	c.Assert(remaining, qt.DeepEquals, []string{
 		"the directory /local/ptah_capprobe_00, which the teardown did not remove: " +
 			"the connection's schema writer *sqlite.Writer cannot remove a directory",
-		"the tables under /local/ptah_capprobe_00, which the server would not count",
+		"the directory /local/ptah_capprobe_00, which the scheme service would not look up",
 	})
 }
 
@@ -56,7 +55,7 @@ func TestLeftovers_AnAcceptedRemovalIsNot_HappyPath(t *testing.T) {
 
 	c.Assert(reads, qt.HasLen, 1)
 	c.Assert(remaining, qt.DeepEquals, []string{
-		"the tables under /local/ptah_capprobe_00, which the server would not count",
+		"the directory /local/ptah_capprobe_00, which the scheme service would not look up",
 	})
 }
 
@@ -83,7 +82,7 @@ func TestTeardown_DropsAndLooksUpTheResourcePools(t *testing.T) {
 		"DROP RESOURCE POOL `ptah_capprobe_00_rpk`;",
 	})
 	c.Assert(remaining, qt.DeepEquals, []string{
-		"the tables under /local/ptah_capprobe_00, which the server would not count",
+		"the directory /local/ptah_capprobe_00, which the scheme service would not look up",
 		"resource pool ptah_capprobe_00_rpk, which the server would not look up",
 		"resource pool classifier ptah_capprobe_00_rpc, which the server would not look up",
 	})
