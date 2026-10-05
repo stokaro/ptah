@@ -684,8 +684,10 @@ A change names only the settings that differ, and YDB keeps every setting a
 change leaves out. A node the declaration does not name is dropped with its
 semaphores and rate limiter resources, and YDB drops it even while a session
 holds a lock on it. The safety report counts such a drop as destructive, and
-`YD112` in `ptah migrations lint` reports it. A schema that leaves the nodes to
-the application declares `//ptah:schema:notdescribed kind="coordination_node"`.
+`DS107` in `ptah migrations lint` reports it, as it reports a dropped topic, so
+`ptah migrations up` stops before it by default. A schema that leaves the nodes
+to the application declares
+`//ptah:schema:notdescribed kind="coordination_node"`.
 
 The node `ptah_locks` at the database root is Ptah's own lock. A declaration
 that names it is refused, and so is a statement that does.
@@ -931,9 +933,9 @@ change that resets the minimum partition count, a table a view reads that is
 dropped or renamed, a renamed table that carries a changefeed,
 a `REVOKE GRANT OPTION FOR`, which takes the permission too, a dropped user
 or group, which leaves its permissions behind, a topic setting reset that
-changes nothing, a topic setting YDB keeps as nothing, and a dropped
-coordination node. `DS107` reports a dropped user or group as it reports a
-dropped role elsewhere, and a dropped topic.
+changes nothing, and a topic setting YDB keeps as nothing. `DS107` reports a
+dropped user or group as it reports a dropped role elsewhere, and a dropped
+topic or coordination node.
 [Lint rules](../../reference/lint-rules/#ydb) lists each rule with its
 meaning.
 
