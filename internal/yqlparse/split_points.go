@@ -1,9 +1,10 @@
 package yqlparse
 
 import (
+	"strings"
+
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/ydbtype"
-	"strings"
 )
 
 // splitPoints reads native literals before the declaration codec sees them.

@@ -921,7 +921,7 @@ func TestReader_FailurePath(t *testing.T) {
 				}()},
 			},
 			wantErr: `YDB table /local/t: index "body_idx" is a bloom_filter index: reading or creating ` +
-				`a YDB JSON or column-table index is not implemented yet \(stokaro/ptah#4015, phase 10\)`,
+				`a YDB JSON index is not implemented yet \(stokaro/ptah#4015, phase 10\)`,
 		},
 		{
 			// The scheme service lists it as a row table, so a description that
