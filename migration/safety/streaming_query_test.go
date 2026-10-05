@@ -29,7 +29,6 @@ func TestStreamingQueryCheckpointRisk(t *testing.T) {
 			sql, err := test.node.Statement(capability.YDB262().With(capability.StreamingQueries, true))
 			c.Assert(err, qt.IsNil)
 			c.Assert(safety.Assess([]ast.Node{ast.NewRawSQL(sql)})[0].Severity, qt.Equals, test.severity)
-
 		})
 	}
 }
