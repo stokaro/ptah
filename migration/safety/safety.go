@@ -561,15 +561,6 @@ func assessNode(node ast.Node) StatementAssessment {
 		assessment.Subject = n.Name
 		assessment.Severity = Destructive
 		assessment.Reason = "DROP POLICY removes an access-control protection"
-	case *ast.DropResourcePoolNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Warning
-		assessment.Reason = "DROP RESOURCE POOL runs the queries a classifier sends to the pool in the pool default"
-	case *ast.DropResourcePoolClassifierNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Warning
-		assessment.Reason = "DROP RESOURCE POOL CLASSIFIER sends its member's queries to another classifier's pool " +
-			"or to the pool default"
 	case *ast.AlterTableDisableRLSNode:
 		assessment.Subject = n.Table
 		assessment.Severity = Destructive
@@ -598,6 +589,20 @@ func assessNode(node ast.Node) StatementAssessment {
 	case *ast.AlterTypeNode:
 		assessment.Subject = n.Name
 		return assessAlterType(n, assessment)
+	case *ast.RawSQLNode:
+		assessment.Statement = n.SQL
+		return assessRawSQL(n.SQL, assessment, false)
+	default:
+		return assessYDBObject(node, assessment)
+	}
+	return assessment
+}
+
+// assessYDBObject assesses the statements on the YDB objects that are not
+// tables: topics, resource pools and their classifiers. Any other node is
+// safe.
+func assessYDBObject(node ast.Node, assessment StatementAssessment) StatementAssessment {
+	switch n := node.(type) {
 	case *ast.DropTopicNode:
 		assessment.Subject = n.Name
 		assessment.Severity = Destructive
@@ -605,9 +610,15 @@ func assessNode(node ast.Node) StatementAssessment {
 	case *ast.AlterTopicNode:
 		assessment.Subject = n.Name
 		return assessAlterTopic(n, assessment)
-	case *ast.RawSQLNode:
-		assessment.Statement = n.SQL
-		return assessRawSQL(n.SQL, assessment, false)
+	case *ast.DropResourcePoolNode:
+		assessment.Subject = n.Name
+		assessment.Severity = Warning
+		assessment.Reason = "DROP RESOURCE POOL runs the queries a classifier sends to the pool in the pool default"
+	case *ast.DropResourcePoolClassifierNode:
+		assessment.Subject = n.Name
+		assessment.Severity = Warning
+		assessment.Reason = "DROP RESOURCE POOL CLASSIFIER sends its member's queries to another classifier's pool " +
+			"or to the pool default"
 	}
 	return assessment
 }

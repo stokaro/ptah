@@ -1775,8 +1775,7 @@ func (d *SchemaDiff) HasChanges() bool {
 		d.hasUserTypeChanges() ||
 		d.hasViewChanges() ||
 		d.hasSynonymChanges() ||
-		d.hasTopicChanges() ||
-		d.hasResourcePoolChanges() ||
+		d.hasYDBObjectChanges() ||
 		d.hasHypertableChanges() ||
 		d.hasContinuousAggregateChanges() ||
 		d.hasExtendedPropertyChanges() ||
@@ -1786,6 +1785,12 @@ func (d *SchemaDiff) HasChanges() bool {
 		d.hasRoleChanges() ||
 		d.hasConstraintChanges() ||
 		len(d.ObjectCommentsChanged) > 0
+}
+
+// hasYDBObjectChanges reports whether the comparison changes a YDB object
+// that is not a table: a topic, a resource pool or a classifier.
+func (d *SchemaDiff) hasYDBObjectChanges() bool {
+	return d.hasTopicChanges() || d.hasResourcePoolChanges()
 }
 
 // SchemaChange is a schema whose attributes a whole-server comparison

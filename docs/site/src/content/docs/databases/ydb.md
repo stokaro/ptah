@@ -953,19 +953,28 @@ string, a backslash escapes a quote, and a block or an action body is one
 statement. `--server-version` names the release line a capability is read
 from, and the newest line is used without it.
 
-Migration lint reports the statements YDB refuses, or runs with an effect the
-statement does not state, under the `YD` family: a unique index added to an
-existing table, a block that mixes schema and data statements, an `ADD COLUMN`
-the line refuses, a dropped column an index or the TTL uses, a partitioning
-change that resets the minimum partition count, a table a view reads that is
-dropped or renamed, a renamed table that carries a changefeed,
-a `REVOKE GRANT OPTION FOR`, which takes the permission too, a dropped user
-or group, which leaves its permissions behind, a topic setting reset that
-changes nothing, a topic setting YDB keeps as nothing, a dropped resource
-pool `default`, after which no query of the database runs, a dropped backup
-collection, which deletes its backups, and `ANALYZE`, which the line refuses
-unless a flag that is off by default is on. `DS107` reports a dropped user or
-group as it reports a dropped role elsewhere, and a dropped topic.
+Migration lint reports, under the `YD` family, the statements YDB refuses or
+runs with an effect the statement does not state:
+
+- a unique index added to an existing table;
+- a block that mixes schema and data statements;
+- an `ADD COLUMN` the line refuses;
+- a dropped column an index or the TTL uses;
+- a partitioning change that resets the minimum partition count;
+- a table a view reads that is dropped or renamed;
+- a renamed table that carries a changefeed;
+- a `REVOKE GRANT OPTION FOR`, which takes the permission too;
+- a dropped user or group, which leaves its permissions behind;
+- a topic setting reset that changes nothing, and a topic setting YDB keeps
+  as nothing;
+- a dropped resource pool `default`, after which no query of the database
+  runs;
+- a dropped backup collection, which deletes its backups;
+- `ANALYZE`, which the line refuses unless a flag that is off by default is
+  on.
+
+`DS107` reports a dropped user or group as it reports a dropped role
+elsewhere, and a dropped topic.
 [Lint rules](../../reference/lint-rules/#ydb) lists each rule with its
 meaning.
 
