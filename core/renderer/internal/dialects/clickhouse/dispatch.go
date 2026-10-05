@@ -112,6 +112,8 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.CreateAsyncReplicationNode, *ast.AlterAsyncReplicationNode, *ast.DropAsyncReplicationNode,
 		*ast.CreateTransferNode, *ast.AlterTransferNode, *ast.DropTransferNode:
 		return nodedispatch.RefuseReplication(DialectName, n)
+	case *ast.CreateSecretNode, *ast.AlterSecretNode, *ast.DropSecretNode:
+		return nodedispatch.RefuseSecret(DialectName, n)
 
 	// Roles and privileges. ClickHouse has both, with a syntax of its own, so
 	// rbac.go renders them and refuses only what the server cannot represent.

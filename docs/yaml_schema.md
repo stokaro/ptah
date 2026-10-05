@@ -474,6 +474,10 @@ rendered for MySQL/MariaDB with dialect-specific trigger bodies.
 - `transfers` (YDB only): `name`, `schema`, `source`, `target`, `using`,
   `consumer`, `batch_size_bytes`, `flush_interval`, and the connection keys of
   `async_replications`
+- `secrets`: YDB secrets, keyed by name, with `name`, `schema` and
+  `value_env`, the environment variable the value comes from. A `value` key is
+  refused, so a document never holds a secret's value. See
+  [secrets](site/src/content/docs/databases/ydb.md#secrets).
 
 `matviews` accepts no refresh strategy. Ptah does not refresh materialized
 views: one is populated when it is created, a changed body is reconciled as a

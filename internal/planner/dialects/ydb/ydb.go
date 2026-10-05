@@ -16,7 +16,7 @@
 //     replication held;
 //  2. DROP VIEW for every view the plan removes or replaces, dependents first,
 //     so no table goes while a view the plan touches still reads it;
-//  3. DROP TOPIC for every removed topic, then the coordination nodes the
+//  3. DROP TOPIC and DROP SECRET for removed topics and secrets, then the coordination nodes the
 //     plan drops, so a table created under one's path finds the path free.
 //     YQL has no statement for a coordination node, so the plan carries Ptah's
 //     own, which Ptah's YDB connection runs through the coordination service;
@@ -45,7 +45,8 @@
 //     YDB adds one only to a table that exists;
 //  10. DROP TABLE for every removed table, which drops its changefeeds;
 //  11. CREATE TOPIC for every added topic and ALTER TOPIC for every changed
-//     one, then the coordination nodes the plan creates and changes, after
+//     one, then CREATE SECRET and the requested ALTER SECRET rotations,
+//     then the coordination nodes the plan creates and changes, after
 //     the tables are dropped, so an object created under a dropped table's
 //     path finds the path free;
 //  12. CREATE ASYNC REPLICATION and ALTER ASYNC REPLICATION, then CREATE
@@ -193,6 +194,9 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := p.refuseUnplannableObjectChanges(diff, ownIndexes, semantics); err != nil {
 		return nil, err
 	}
+	if err := p.refuseSecrets(diff); err != nil {
+		return nil, err
+	}
 	sequences, err := p.planSerialSequences(diff, rebuilds, semantics)
 	if err != nil {
 		return nil, err
@@ -214,6 +218,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	result = append(result, dropTopics(diff)...)
 	nodeChanges, nodeDrops := coordinationNodes(diff)
 	result = append(result, nodeDrops...)
+	result = append(result, dropSecrets(diff)...)
 	result = append(result, p.createTables(diff, inlineIndexes, sequences.created, semantics)...)
 	result = append(result, dropIndexes(diff.IndexRemovals(), removedTables, rebuilds, semantics)...)
 	result = append(result, renameIndexes(diff.IndexesRenamed, rebuilds, semantics)...)
@@ -231,6 +236,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	}
 	result = append(result, changeTopics(diff)...)
 	result = append(result, nodeChanges...)
+	result = append(result, changeSecrets(diff)...)
 	result = append(result, changeReplications(diff)...)
 	result = append(result, p.createViews(diff)...)
 	result = append(result, access.after...)

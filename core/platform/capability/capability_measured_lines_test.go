@@ -249,6 +249,7 @@ func measuredLines() map[string]measuredLine {
 				capability.PartitioningOptions:             tableSettingKeyCarried,
 				capability.ReadReplicas:                    tableSettingKeyCarried,
 				capability.KeyBloomFilter:                  tableSettingKeyCarried,
+				capability.Secrets:                         secretKeyCarried,
 				capability.SerialColumns:                   typeKeyCarried,
 				capability.SerialSequenceOptions:           serialKeyCarried,
 				capability.SerialSequenceKeepsRange:        serialKeyCarried,
@@ -423,6 +424,7 @@ func measuredLines() map[string]measuredLine {
 				capability.PartitioningOptions:             tableSettingKeyCarried,
 				capability.ReadReplicas:                    tableSettingKeyCarried,
 				capability.KeyBloomFilter:                  tableSettingKeyCarried,
+				capability.Secrets:                         secretKeyCarried,
 				capability.SerialColumns:                   typeKeyCarried,
 				capability.SerialSequenceOptions:           serialKeyCarried,
 				capability.SerialSequenceKeepsRange:        serialKeyCarried,
@@ -598,6 +600,7 @@ func measuredLines() map[string]measuredLine {
 				capability.PartitioningOptions:             tableSettingKeyCarried,
 				capability.ReadReplicas:                    tableSettingKeyCarried,
 				capability.KeyBloomFilter:                  tableSettingKeyCarried,
+				capability.Secrets:                         secretKeyCarried,
 				capability.SerialColumns:                   typeKeyCarried,
 				capability.SerialSequenceOptions:           serialKeyCarried,
 				capability.SerialSequenceKeepsRange:        serialKeyCarried,
@@ -833,3 +836,8 @@ const coordinationKeyCarried = "this run predates the key; it names whether Ptah
 // table-setting experiments, and the value here is the preset's.
 const tableSettingKeyCarried = "this run predates the key and sent no table-setting experiment; the probe asks it " +
 	"on every run through those experiments, and the value here is the preset's"
+
+// secretKeyCarried is why the secrets key is carried on every measured line:
+// the run named there predates it, and the value here is the preset's.
+const secretKeyCarried = "this run predates the key and sent no secret experiment; the probe asks it on " +
+	"every run, and the value here is the preset's"

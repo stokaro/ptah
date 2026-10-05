@@ -25,6 +25,7 @@ import (
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/diffreport"
 	"ptah.run/internal/cli/internal/exitcode"
+	"ptah.run/internal/cli/internal/secretrotation"
 	"ptah.run/internal/cli/internal/tablerebuild"
 	"ptah.run/internal/dbexprprobe"
 	"ptah.run/internal/dburldisplay"
@@ -97,6 +98,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
 	dbcli.RegisterIgnoreExtensionFlag(flags, &opts.ignoreExtensions)
 	tablerebuild.Register(cmd)
+	secretrotation.Register(cmd)
 }
 
 func compareCommand(cmd *cobra.Command, opts *options) error {
@@ -213,6 +215,13 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	// SQL that reconciles them.
 	rebuild, err := tablerebuild.Requested(cmd)
 	if err != nil {
+		return err
+	}
+	rotateSecrets, err := secretrotation.Requested(cmd)
+	if err != nil {
+		return err
+	}
+	if err := diff.RotateSecrets(rotateSecrets); err != nil {
 		return err
 	}
 	output, err := planner.GenerateSchemaDiffSQLWithOptions(diff, info.Dialect, planner.Options{

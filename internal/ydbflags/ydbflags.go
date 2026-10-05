@@ -160,6 +160,14 @@ var gates = []Gate{
 		Flag:     "EnableTableCacheModes",
 		refusals: []string{"Setting cache_mode is not allowed"},
 	},
+	{
+		// Off on 25.3 and on from 25.4; 25.1 and 25.2 do not list it, and
+		// their parser has no CREATE SECRET at all. With the flag on, 25.3
+		// creates, alters and drops a secret, and lists it as a SECRET entry.
+		Key:      capability.Secrets,
+		Flag:     "EnableSchemaSecrets",
+		refusals: []string{"Secrets are disabled"},
+	},
 }
 
 // Gates returns every capability a flag decides, in a fixed order.

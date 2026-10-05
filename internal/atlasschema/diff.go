@@ -447,6 +447,9 @@ func diffResolvedStates(
 	}
 
 	diff := applyDiffPolicy(compared, opts.Policy)
+	if err := applySecretRotation(diff, opts.Policy); err != nil {
+		return atlasreport.SchemaDiff{}, nil, err
+	}
 	var statements []string
 	if diff.HasChanges() {
 		statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, dialect, planner.Options{

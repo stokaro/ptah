@@ -186,7 +186,7 @@ const (
 // carries it, so a description's silence about them is never read as their
 // absence and nothing plans their removal. Like [ChangeStream], none of them
 // but [Topic], [ResourcePool], [ResourcePoolClassifier], [Replication],
-// [Transfer] and [ReplicaTable] is consulted by a comparator or a planner,
+// [Transfer], [Secret] and [ReplicaTable] is consulted by a comparator or a planner,
 // because no planner writes the others.
 const (
 	// View is a YDB view (CREATE VIEW ... WITH (security_invoker = TRUE)) on
@@ -229,7 +229,11 @@ const (
 	ExternalDataSource Kind = "external_data_source"
 	// ExternalTable is a YDB external table over an external data source.
 	ExternalTable Kind = "external_table"
-	// Secret is a YDB secret. Its value is never read.
+	// Secret is a YDB secret. Its value is never read. The reader describes a
+	// secret by its path on a server with the secrets capability, and records
+	// one it meets on a server without it. The secret comparator consults the
+	// kind in both directions, so a description that cannot express secrets,
+	// such as an HCL document, does not plan their removal.
 	Secret Kind = "secret"
 	// ResourcePool is a YDB resource pool, which limits the resources a class
 	// of queries may use. A read of a server without the resource_pools

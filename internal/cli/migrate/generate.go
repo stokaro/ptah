@@ -20,6 +20,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/migrateflags"
+	"ptah.run/internal/cli/internal/secretrotation"
 	"ptah.run/internal/cli/internal/tablerebuild"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/devclean"
@@ -104,6 +105,7 @@ repository alone.`,
 	dbcli.RegisterMigrationsTableFlag(flags, new(string))
 	dbcli.RegisterRevisionTableFormatFlag(flags, new(string))
 	tablerebuild.Register(cmd)
+	secretrotation.Register(cmd)
 
 	cmdutil.ConfigureCommand(cmd)
 	return cmd
@@ -504,7 +506,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	allowTableRebuild, err := tablerebuild.Requested(cmd)
+	diffPolicy, err := generateDiffPolicy(cmd, projectCfg)
 	if err != nil {
 		return err
 	}
@@ -640,13 +642,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		ShadowDatabaseURL: shadowDB,
 		PriorMigrationsFS: priorMigrations,
 		SchemaQualifier:   qualifierValue,
-		DiffPolicy: generator.DiffPolicy{
-			SkipChangeKinds:     projectCfg.Diff.SkipChangeKinds(),
-			ConcurrentIndex:     projectCfg.Diff.ConcurrentIndexCreate(),
-			ConcurrentIndexDrop: projectCfg.Diff.ConcurrentIndexDrop(),
-			OnlineAlter:         projectCfg.Diff.OnlineAlterRequested(),
-			AllowTableRebuild:   allowTableRebuild,
-		},
+		DiffPolicy:        diffPolicy,
 	}
 	outcome := &generateOutcome{current: "the database"}
 	generateOpts.OnUndecided = outcome.collect
@@ -769,4 +765,27 @@ func loadGenerateSchema(
 		Dialect:     dialect,
 		PlainHTTP:   plainHTTP,
 	})
+}
+
+// generateDiffPolicy maps the project's diff policy, and what the operator
+// asked this invocation to plan that a comparison alone would not -- a table
+// rebuild, and the rotation of the secrets named -- onto the generator's
+// policy.
+func generateDiffPolicy(cmd *cobra.Command, projectCfg projectconfig.Config) (generator.DiffPolicy, error) {
+	rebuild, err := tablerebuild.Requested(cmd)
+	if err != nil {
+		return generator.DiffPolicy{}, err
+	}
+	rotateSecrets, err := secretrotation.Requested(cmd)
+	if err != nil {
+		return generator.DiffPolicy{}, err
+	}
+	return generator.DiffPolicy{
+		SkipChangeKinds:     projectCfg.Diff.SkipChangeKinds(),
+		ConcurrentIndex:     projectCfg.Diff.ConcurrentIndexCreate(),
+		ConcurrentIndexDrop: projectCfg.Diff.ConcurrentIndexDrop(),
+		OnlineAlter:         projectCfg.Diff.OnlineAlterRequested(),
+		AllowTableRebuild:   rebuild,
+		RotateSecrets:       rotateSecrets,
+	}, nil
 }

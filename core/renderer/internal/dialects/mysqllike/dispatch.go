@@ -111,6 +111,8 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.CreateAsyncReplicationNode, *ast.AlterAsyncReplicationNode, *ast.DropAsyncReplicationNode,
 		*ast.CreateTransferNode, *ast.AlterTransferNode, *ast.DropTransferNode:
 		return nodedispatch.RefuseReplication(r.dialect, n)
+	case *ast.CreateSecretNode, *ast.AlterSecretNode, *ast.DropSecretNode:
+		return nodedispatch.RefuseSecret(r.dialect, n)
 
 	// Roles and privileges.
 	case *ast.CreateRoleNode:

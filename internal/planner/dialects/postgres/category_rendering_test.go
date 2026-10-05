@@ -36,6 +36,7 @@ var supplementalDiffCategories = map[string]string{
 	"DeclaredViewLikes":               "every declared view and materialized view, which a cascading DROP is resolved AGAINST rather than rendered from. The recreate it feeds belongs to the drop that cascaded, and several fixtures below carry it for exactly that reason; on its own it plans nothing (stokaro/ptah#2315)",
 	"DeclaredConstraintHosts":         "the declaration of every table a constraint change names, carried for a target that has to rebuild the table to change a constraint on it. PostgreSQL adds and drops constraints in place and never rebuilds, so this planner reads the field nowhere; a fixture here would assert that a list of table declarations plans nothing (stokaro/ptah#2315)",
 	"CurrentGrants":                   "every grant the read of the database reported, carried for a target that rebuilds a table and has to give the new one the grants the old one held. PostgreSQL changes its tables in place and never rebuilds one, so this planner reads the field nowhere",
+	"DeclaredSecrets":                 "every YDB secret the declaration holds, carried so a rotation request can find the variable a secret's value comes from. It is an input to a rotation rather than a change, and a PostgreSQL plan reaches no secret, so on its own it plans nothing",
 	"CurrentNotDescribed":             "what the read of the database declined to describe, carried for a target that rebuilds a table and must not drop a setting the read left out. PostgreSQL changes its tables in place and never rebuilds one, so this planner reads the field nowhere; a fixture here would assert that a coverage set plans nothing",
 	"CurrentYDBSettings":              "what each YDB row table and global index holds of its partitioning, carried for a YDB plan that rebuilds a table and gives the new one every setting the declaration leaves out. PostgreSQL never rebuilds a table and has no such setting, so this planner reads the field nowhere; a fixture here would assert that a list of settings plans nothing",
 	"CurrentDatabasePath":             "the absolute path of the database the read describes, carried for a target that names a Serial column's sequence, and some objects of a GRANT, by an absolute path. PostgreSQL addresses every object relative to the connection, so this planner reads the field nowhere; a fixture here would assert that a path plans nothing",
@@ -169,6 +170,18 @@ var refusedDiffCategories = map[string]refusedFixture{
 	"CoordinationNodesModified": {
 		why:  "a changed node configuration is YDB's too, for the same reason",
 		diff: &difftypes.SchemaDiff{CoordinationNodesModified: []difftypes.CoordinationNodeChange{{Name: "locks"}}},
+	},
+	"SecretsAdded": {
+		why:  "a secret is YDB's, and the comparison that feeds a PostgreSQL plan refuses a declared one before it diffs; a plan reaches one only through a diff built by hand, and planning nothing would report a secret created that the database does not hold",
+		diff: &difftypes.SchemaDiff{SecretsAdded: difftypes.SecretChanges{{Name: "pg_password", ValueEnv: "PTAH_SECRET_PG"}}},
+	},
+	"SecretsRemoved": {
+		why:  "no PostgreSQL read reports a secret, so a removal reaches the planner only through a diff built by hand, and planning nothing would report it dropped",
+		diff: &difftypes.SchemaDiff{SecretsRemoved: difftypes.SecretChanges{{Name: "pg_password"}}},
+	},
+	"SecretsRotated": {
+		why:  "a rotation names a declared secret, which a PostgreSQL comparison refuses, so a plan reaches one only through a diff built by hand, and planning nothing would report a value given that was not",
+		diff: &difftypes.SchemaDiff{SecretsRotated: difftypes.SecretChanges{{Name: "pg_password", ValueEnv: "PTAH_SECRET_PG"}}},
 	},
 	"RLSPolicyIdentityConflicts": {
 		why: "two declared policies that resolve to one identity cannot be planned: the comparison already reduced them to one entry, so applying it would apply whichever the map kept (stokaro/ptah#2440)",

@@ -16,6 +16,7 @@ import (
 	"ptah.run/internal/ydbpartition"
 	"ptah.run/internal/ydbpool"
 	"ptah.run/internal/ydbreplication"
+	"ptah.run/internal/ydbsecret"
 	"ptah.run/internal/ydbtopic"
 )
 
@@ -950,6 +951,20 @@ var directives = []Directive{
 				"query when omitted.", valueString, false, false),
 			attr(ydbpool.AttributeRank, "Order among the classifiers, lowest first; unique, from 0.",
 				valueString, true, false),
+		},
+	},
+	{
+		Name: "ptah:schema:secret",
+		Description: "Declares a YDB secret: a scheme object whose value the server keeps and never returns. " +
+			"The value comes from an environment variable when the statement that creates the secret runs, " +
+			"and a declaration never writes it.",
+		Scopes: []Scope{ScopeStruct, ScopeField},
+		Attributes: []Attribute{
+			attr(ydbsecret.AttributeName, "Secret name, the last segment of its path.", valueString, true, false),
+			attr(ydbsecret.AttributeSchema, "Directory that holds the secret, relative to the database root.",
+				valueString, false, false),
+			attr(ydbsecret.AttributeValueEnv, "Environment variable that holds the value; its name starts with "+
+				ydbsecret.ValuePrefix+".", valueString, true, false),
 		},
 	},
 	{

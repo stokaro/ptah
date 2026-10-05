@@ -131,6 +131,12 @@ func TestRefine_HappyPath(t *testing.T) {
 			key:   capability.ColumnFamilyCacheMode,
 			want:  true,
 		},
+		{
+			name:  "a secret follows its flag",
+			flags: ydbflags.Flags{"EnableSchemaSecrets": false},
+			key:   capability.Secrets,
+			want:  false,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -553,6 +559,13 @@ func TestRefused_HappyPath(t *testing.T) {
 				"[{1:101 => 'Executing CREATE TABLE' [{'Setting cache_mode is not allowed'}]}]}])",
 			wantKey:  capability.ColumnFamilyCacheMode,
 			wantFlag: "EnableTableCacheModes",
+		},
+		{
+			name: "25.3.1.25 a secret",
+			refusal: "Status: INTERNAL_ERROR Issues: <main>: Fatal: Secrets are disabled. Please contact your " +
+				"system administrator to enable it, code: 1",
+			wantKey:  capability.Secrets,
+			wantFlag: "EnableSchemaSecrets",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

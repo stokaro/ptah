@@ -1,6 +1,7 @@
 package ydb
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -48,7 +49,9 @@ import (
 // A view is read only on a server with [capability.Views], and a topic only on
 // one with [capability.Topics]; every YDB line Ptah measured has both. On a
 // server without the key, the object is recorded like the objects below, so a
-// plan never meets one the renderer would refuse. A table's TTL is read as its
+// plan never meets one the renderer would refuse. A secret is read the same
+// way under [capability.Secrets], by its path alone: the listing names it, and
+// no request the reader sends returns its value. A table's TTL is read as its
 // row deletion policy.
 //
 // It describes each coordination node with the coordination service, except
@@ -138,6 +141,12 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	if err := r.resourcePools(ctx, source, db); err != nil {
 		return nil, err
 	}
+	// The walk descends into a directory where its name sorts, so a secret
+	// in a directory can come before one at the root; a description lists
+	// them by directory and name, as it lists tables.
+	slices.SortFunc(db.Secrets, func(a, b catalog.Secret) int {
+		return cmp.Or(strings.Compare(a.Schema, b.Schema), strings.Compare(a.Name, b.Name))
+	})
 	return db, nil
 }
 
@@ -179,7 +188,8 @@ func (r *Reader) entry(
 		return r.directory(ctx, source, schema, name, db)
 	case Ydb_Scheme.Entry_TABLE:
 		return r.tableEntry(ctx, source, schema, name, db)
-	case Ydb_Scheme.Entry_VIEW, Ydb_Scheme.Entry_TOPIC, Ydb_Scheme.Entry_REPLICATION, Ydb_Scheme.Entry_TRANSFER:
+	case Ydb_Scheme.Entry_VIEW, Ydb_Scheme.Entry_TOPIC, Ydb_Scheme.Entry_REPLICATION, Ydb_Scheme.Entry_TRANSFER,
+		Ydb_Scheme.Entry_SECRET:
 		if described, err := r.keyedEntry(ctx, source, schema, entry, db); described || err != nil {
 			return err
 		}
@@ -238,6 +248,7 @@ func (r *Reader) tableEntry(ctx context.Context, source Source, schema, name str
 // the capability each names, and records rather than describes on one
 // without it.
 var keyedEntries = map[Ydb_Scheme.Entry_Type]capability.Capability{
+	Ydb_Scheme.Entry_SECRET:      capability.Secrets,
 	Ydb_Scheme.Entry_VIEW:        capability.Views,
 	Ydb_Scheme.Entry_TOPIC:       capability.Topics,
 	Ydb_Scheme.Entry_REPLICATION: capability.AsyncReplication,
@@ -267,6 +278,9 @@ func (r *Reader) keyedEntry(
 		return true, r.view(schema, name, described, db)
 	case Ydb_Scheme.Entry_TOPIC:
 		return true, r.topic(ctx, source, schema, name, db)
+	case Ydb_Scheme.Entry_SECRET:
+		db.Secrets = append(db.Secrets, catalog.Secret{Name: name, Schema: schema})
+		return true, nil
 	case Ydb_Scheme.Entry_REPLICATION:
 		return true, r.replication(ctx, source, schema, name, db)
 	default:

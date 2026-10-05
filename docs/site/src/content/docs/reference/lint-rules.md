@@ -190,7 +190,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## Migration lint rules
 
-115 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings unless the policy's `gate` section names more families, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
+116 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings unless the policy's `gate` section names more families, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
 
 ### Every dialect
 
@@ -351,6 +351,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `YD122` | `ANALYZE` in a migration, which YDB refuses unless `EnableColumnStatistics` is on, and on 25.1 refuses on a row table | both | Ptah |
 | `YD130` | a vector index a YDB line does not build: any where `vector_indexes` is false, and one over bit vectors where `vector_bit_type` is false | both | Ptah |
 | `YD131` | rows written into a table holding a vector index on a YDB line where `vector_index_maintained_on_write` is false, which the index does not find | both | Ptah |
+| `YD140` | a secret's value written into the migration: a `CREATE SECRET` or `ALTER SECRET` whose value is not a `$PTAH_SECRET_...` reference, or a statement on the deprecated `OBJECT ... (TYPE SECRET)` | both | Ptah |
 
 ### What the rules for every dialect do on YDB
 
@@ -407,7 +408,7 @@ A YDB run reads migrations as YQL. The `YD` family above is YDB's own, and every
 
 ## Default severities
 
-36 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `DS111P`, `MY146`, `ON101`, `ON102`, `ON103`, `SQL001`, `SQL002`, `YD101`, `YD102`, `YD103`, `YD104`, `YD106`, `YD107`, `YD108`, `YD109`, `YD110`, `YD113`, `YD114`, `YD116`, `YD120`, `YD121`, `YD130`. The other 86 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
+37 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `DS111P`, `MY146`, `ON101`, `ON102`, `ON103`, `SQL001`, `SQL002`, `YD101`, `YD102`, `YD103`, `YD104`, `YD106`, `YD107`, `YD108`, `YD109`, `YD110`, `YD113`, `YD114`, `YD116`, `YD120`, `YD121`, `YD130`, `YD140`. The other 86 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
 
 ## What ptah-compat prints
 

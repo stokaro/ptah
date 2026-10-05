@@ -194,6 +194,12 @@ func clonedCollectionRows() []clonedCollectionRow {
 			},
 		},
 		{
+			field: "Secrets", present: "pg_password", absent: "nosuch_secret",
+			seed: func(s *catalog.Database) {
+				s.Secrets = append(s.Secrets, catalog.Secret{Name: "pg_password"})
+			},
+		},
+		{
 			field: "MatViews", present: "mv_users", absent: "nosuch_matview",
 			seed: func(s *catalog.Database) {
 				s.MatViews = append(s.MatViews, catalog.MaterializedView{Name: "mv_users"})

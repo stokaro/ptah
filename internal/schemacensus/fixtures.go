@@ -129,6 +129,7 @@ func Fixtures() []Fixture {
 		{Name: "async-replication-token", Schema: asyncReplicationTokenFixture()},
 		{Name: "transfer", Schema: transferFixture()},
 		{Name: "coordination-node", Schema: coordinationNodeFixture()},
+		{Name: "secret", Schema: secretFixture()},
 		{Name: "extended-property", Schema: extendedPropertyFixture()},
 		{Name: "role", Schema: roleFixture()},
 		{Name: "ydb-group-membership", Schema: ydbGroupMembershipFixture()},
@@ -1508,6 +1509,16 @@ func coordinationNodeFixture() schemamodel.Database {
 			SelfCheckPeriodMillis: 2000, SessionGracePeriodMillis: 15000,
 			ReadConsistencyMode: "strict", AttachConsistencyMode: "relaxed", RateLimiterCountersMode: "detailed",
 		},
+	}}
+	return db
+}
+
+// secretFixture declares a YDB secret in a directory, naming the variable its
+// value comes from.
+func secretFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Secrets = []schemamodel.Secret{{
+		StructName: "SE", Name: "pg_password", Schema: "ext", ValueEnv: "PTAH_SECRET_PG_PASSWORD",
 	}}
 	return db
 }

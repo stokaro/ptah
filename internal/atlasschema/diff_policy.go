@@ -42,6 +42,22 @@ type DiffPolicy struct {
 	// refusal of a change only a rebuild can make names it. Empty names the
 	// native flag. See [ptah.run/migration/planner.Options.TableRebuildRequest].
 	TableRebuildRequest string
+
+	// RotateSecrets names the YDB secrets, by path, the plan gives the value
+	// their declared variable holds now. A comparison cannot find a changed
+	// value, which the server never returns, so this is the only way one is
+	// planned. The native commands set it from --rotate-secret; see
+	// [difftypes.SchemaDiff.RotateSecrets].
+	RotateSecrets []string
+}
+
+// applySecretRotation adds the secrets policy asks to rotate to diff, and
+// refuses a name the declaration does not hold.
+func applySecretRotation(diff *difftypes.SchemaDiff, policy DiffPolicy) error {
+	if diff == nil || len(policy.RotateSecrets) == 0 {
+		return nil
+	}
+	return diff.RotateSecrets(policy.RotateSecrets)
 }
 
 // declaredConcurrentIndexRefs is the index additions the desired description
