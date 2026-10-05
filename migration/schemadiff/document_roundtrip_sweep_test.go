@@ -207,6 +207,15 @@ func roundTripRows() []roundTripRow {
 			count: func(d *schemamodel.Database) int { return len(d.Synonyms) },
 		},
 		{
+			field: "CoordinationNodes",
+			seed: func(d *schemamodel.Database) {
+				d.CoordinationNodes = append(d.CoordinationNodes, schemamodel.CoordinationNode{
+					Name: "locks", Spec: ast.CoordinationNodeSpec{SelfCheckPeriodMillis: 2000},
+				})
+			},
+			count: func(d *schemamodel.Database) int { return len(d.CoordinationNodes) },
+		},
+		{
 			field: "ExtendedProperties",
 			seed: func(d *schemamodel.Database) {
 				d.ExtendedProperties = append(d.ExtendedProperties, schemamodel.ExtendedProperty{
@@ -383,20 +392,23 @@ func TestRoundTrip_EveryObjectFamilySurvives(t *testing.T) {
 }
 
 // hclUnwritableFields are the object families the HCL document has no block
-// for, and the coverage kind its header records each one under instead: a YDB
-// topic, a resource pool and a classifier. Atlas HCL has none of them, and
-// Ptah does not invent a block the pinned binary would refuse.
+// for, and the coverage kind its header records each one under instead. A YDB
+// topic, async replication and transfer are such families: Atlas HCL has none
+// of them, and Ptah does not invent a block the pinned binary would refuse.
 var hclUnwritableFields = map[string]coverage.Kind{
 	"Topics":                  coverage.Topic,
+	"AsyncReplications":       coverage.Replication,
+	"Transfers":               coverage.Transfer,
 	"ResourcePools":           coverage.ResourcePool,
 	"ResourcePoolClassifiers": coverage.ResourcePoolClassifier,
 }
 
-// TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped is the round trip of a
-// family the HCL document cannot carry: the document leaves the object out
-// and its header says so, so applying it back plans no removal. The control is
-// the same document's silence about a sequence, which it could have named and
-// so still removes.
+// TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped is the round trip of
+// a family the HCL document cannot carry: the document leaves the object out
+// and its header says so, so applying it back plans no removal -- for a
+// replication, no `DROP ASYNC REPLICATION ... CASCADE` of its replica tables.
+// The control is the same document's silence about a sequence, which it could
+// have named and so still removes.
 func TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped(t *testing.T) {
 	c := qt.New(t)
 	db := roundTripFixture()
@@ -405,11 +417,15 @@ func TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped(t *testing.T) {
 	db.ResourcePoolClassifiers = append(db.ResourcePoolClassifiers, schemamodel.ResourcePoolClassifier{
 		Name: "batch_users", Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "batch", Rank: 1},
 	})
+	db.AsyncReplications = append(db.AsyncReplications, schemamodel.AsyncReplication{Name: "mirror", Schema: "public"})
+	db.Transfers = append(db.Transfers, schemamodel.Transfer{Name: "ingest", Schema: "public"})
 	live := &catalog.Database{
-		Schemas:   []catalog.Schema{{Name: "public"}},
-		Tables:    []catalog.Table{{Schema: "public", Name: "users"}},
-		Topics:    []catalog.Topic{{Schema: "public", Name: "events"}},
-		Sequences: []catalog.Sequence{{Schema: "public", Name: "s1"}},
+		Schemas:           []catalog.Schema{{Name: "public"}},
+		Tables:            []catalog.Table{{Schema: "public", Name: "users"}},
+		Topics:            []catalog.Topic{{Schema: "public", Name: "events"}},
+		AsyncReplications: []catalog.AsyncReplication{{Schema: "public", Name: "mirror"}},
+		Transfers:         []catalog.Transfer{{Schema: "public", Name: "ingest"}},
+		Sequences:         []catalog.Sequence{{Schema: "public", Name: "s1"}},
 	}
 
 	parsed := loadPostgresDocument(c, renderPostgresDocument(c, db))
@@ -421,7 +437,13 @@ func TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped(t *testing.T) {
 	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["Topics"]), qt.IsFalse)
 	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["ResourcePools"]), qt.IsFalse)
 	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["ResourcePoolClassifiers"]), qt.IsFalse)
+	c.Assert(parsed.AsyncReplications, qt.HasLen, 0)
+	c.Assert(parsed.Transfers, qt.HasLen, 0)
+	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["AsyncReplications"]), qt.IsFalse)
+	c.Assert(parsed.NotDescribed.Describes(hclUnwritableFields["Transfers"]), qt.IsFalse)
 	c.Assert(diff.TopicsRemoved, qt.HasLen, 0)
+	c.Assert(diff.AsyncReplicationsRemoved, qt.HasLen, 0)
+	c.Assert(diff.TransfersRemoved, qt.HasLen, 0)
 	c.Assert(diff.SequencesRemoved.Names(), qt.HasLen, 1)
 }
 

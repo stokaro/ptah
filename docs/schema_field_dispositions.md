@@ -44,16 +44,16 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-466 fields are reachable from the desired schema, and each one carries
+529 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 402 | reaches rendered SQL on at least one target |
-| `comparison` | 7 | read when two schemas are compared, and written into no statement |
+| `ddl` | 461 | reaches rendered SQL on at least one target |
+| `comparison` | 8 | read when two schemas are compared, and written into no statement |
 | `planning` | 7 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
-| `source` | 19 | identifies the source text the declaration was read from |
+| `source` | 22 | identifies the source text the declaration was read from |
 | `export` | 10 | what a generated document carries, or reports that it cannot |
 | `data` | 11 | reference or seed rows, which are not DDL |
 
@@ -65,6 +65,12 @@ None.
 
 | Field | Disposition | Why it is not rendered |
 | --- | --- | --- |
+| `ast.AsyncReplicationItem.Source` | `ddl` | — |
+| `ast.AsyncReplicationItem.Target` | `ddl` | — |
+| `ast.AsyncReplicationSpec.CommitInterval` | `ddl` | — |
+| `ast.AsyncReplicationSpec.Connection` | `ddl` | — |
+| `ast.AsyncReplicationSpec.ConsistencyLevel` | `ddl` | — |
+| `ast.AsyncReplicationSpec.Items` | `ddl` | — |
 | `ast.ChangefeedSpec.Consumers` | `ddl` | — |
 | `ast.ChangefeedSpec.Disabled` | `ddl` | — |
 | `ast.ChangefeedSpec.Format` | `ddl` | — |
@@ -78,6 +84,11 @@ None.
 | `ast.ChangefeedSpec.TopicMinActivePartitions` | `ddl` | — |
 | `ast.ChangefeedSpec.UserSIDs` | `ddl` | — |
 | `ast.ChangefeedSpec.VirtualTimestamps` | `ddl` | — |
+| `ast.CoordinationNodeSpec.AttachConsistencyMode` | `ddl` | — |
+| `ast.CoordinationNodeSpec.RateLimiterCountersMode` | `ddl` | — |
+| `ast.CoordinationNodeSpec.ReadConsistencyMode` | `ddl` | — |
+| `ast.CoordinationNodeSpec.SelfCheckPeriodMillis` | `ddl` | — |
+| `ast.CoordinationNodeSpec.SessionGracePeriodMillis` | `ddl` | — |
 | `ast.IndexPartitioningSpec.ByLoad` | `ddl` | — |
 | `ast.IndexPartitioningSpec.BySize` | `ddl` | — |
 | `ast.IndexPartitioningSpec.MaxPartitions` | `ddl` | — |
@@ -90,6 +101,12 @@ None.
 | `ast.MatViewRefreshSpec.Mode` | `ddl` | — |
 | `ast.MatViewRefreshSpec.Offset` | `ddl` | — |
 | `ast.MatViewRefreshSpec.Randomize` | `ddl` | — |
+| `ast.ReplicationConnectionSpec.ConnectionString` | `ddl` | — |
+| `ast.ReplicationConnectionSpec.PasswordSecretName` | `ddl` | — |
+| `ast.ReplicationConnectionSpec.PasswordSecretPath` | `ddl` | — |
+| `ast.ReplicationConnectionSpec.TokenSecretName` | `ddl` | — |
+| `ast.ReplicationConnectionSpec.TokenSecretPath` | `ddl` | — |
+| `ast.ReplicationConnectionSpec.User` | `ddl` | — |
 | `ast.ResourcePoolClassifierSpec.MemberName` | `ddl` | — |
 | `ast.ResourcePoolClassifierSpec.Rank` | `ddl` | — |
 | `ast.ResourcePoolClassifierSpec.ResourcePool` | `ddl` | — |
@@ -135,11 +152,43 @@ None.
 | `ast.TopicSpec.PartitionWriteSpeedBytesPerSecond` | `ddl` | — |
 | `ast.TopicSpec.RetentionPeriod` | `ddl` | — |
 | `ast.TopicSpec.SupportedCodecs` | `ddl` | — |
+| `ast.TransferSpec.BatchSizeBytes` | `ddl` | — |
+| `ast.TransferSpec.Connection` | `ddl` | — |
+| `ast.TransferSpec.Consumer` | `ddl` | — |
+| `ast.TransferSpec.FlushInterval` | `ddl` | — |
+| `ast.TransferSpec.Lambda` | `ddl` | — |
+| `ast.TransferSpec.Source` | `ddl` | — |
+| `ast.TransferSpec.Target` | `ddl` | — |
+| `ast.VectorIndexSpec.Clusters` | `ddl` | — |
+| `ast.VectorIndexSpec.Dimension` | `ddl` | — |
+| `ast.VectorIndexSpec.Distance` | `ddl` | — |
+| `ast.VectorIndexSpec.Levels` | `ddl` | — |
+| `ast.VectorIndexSpec.Similarity` | `ddl` | — |
+| `ast.VectorIndexSpec.VectorType` | `ddl` | — |
+| `ast.YDBColumnFamilySpec.CacheMode` | `ddl` | — |
+| `ast.YDBColumnFamilySpec.Columns` | `ddl` | — |
+| `ast.YDBColumnFamilySpec.Compression` | `ddl` | — |
+| `ast.YDBColumnFamilySpec.Data` | `ddl` | — |
+| `ast.YDBColumnFamilySpec.KeepInMemory` | `comparison` | keep_in_memory as a read finds it on a YDB family; no YQL statement writes it, and it decides whether a change or a rebuild is refused |
+| `ast.YDBColumnFamilySpec.Name` | `ddl` | — |
+| `ast.YDBTablePartitioningSpec.ByLoad` | `ddl` | — |
+| `ast.YDBTablePartitioningSpec.BySize` | `ddl` | — |
+| `ast.YDBTablePartitioningSpec.KeyBloomFilter` | `ddl` | — |
+| `ast.YDBTablePartitioningSpec.MaxPartitions` | `ddl` | — |
+| `ast.YDBTablePartitioningSpec.MinPartitions` | `ddl` | — |
+| `ast.YDBTablePartitioningSpec.PartitionAtKeys` | `ddl` | — |
+| `ast.YDBTablePartitioningSpec.PartitionSizeMB` | `ddl` | — |
+| `ast.YDBTablePartitioningSpec.ReadReplicas` | `ddl` | — |
+| `ast.YDBTablePartitioningSpec.UniformPartitions` | `ddl` | — |
 | `coverage.Object.Kind` | `comparison` | which kind the undescribed object is |
 | `coverage.Object.Name` | `comparison` | which object was not described |
 | `coverage.Object.Provenance` | `comparison` | how Ptah learned the object was not described |
 | `coverage.Object.Reason` | `comparison` | why it was not described |
 | `coverage.Set.Objects` | `comparison` | the per-object half of that record |
+| `schemamodel.AsyncReplication.Name` | `ddl` | — |
+| `schemamodel.AsyncReplication.Schema` | `ddl` | — |
+| `schemamodel.AsyncReplication.Spec` | `ddl` | — |
+| `schemamodel.AsyncReplication.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.CompositeField.Name` | `ddl` | — |
 | `schemamodel.CompositeField.Type` | `ddl` | — |
 | `schemamodel.CompositeType.Comment` | `ddl` | — |
@@ -179,9 +228,15 @@ None.
 | `schemamodel.ContinuousAggregate.Name` | `ddl` | — |
 | `schemamodel.ContinuousAggregate.Schema` | `ddl` | — |
 | `schemamodel.ContinuousAggregate.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
+| `schemamodel.CoordinationNode.Name` | `ddl` | — |
+| `schemamodel.CoordinationNode.Schema` | `ddl` | — |
+| `schemamodel.CoordinationNode.Spec` | `ddl` | — |
+| `schemamodel.CoordinationNode.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
+| `schemamodel.Database.AsyncReplications` | `ddl` | — |
 | `schemamodel.Database.CompositeTypes` | `ddl` | — |
 | `schemamodel.Database.Constraints` | `ddl` | — |
 | `schemamodel.Database.ContinuousAggregates` | `ddl` | — |
+| `schemamodel.Database.CoordinationNodes` | `ddl` | — |
 | `schemamodel.Database.DatabasePath` | `ddl` | — |
 | `schemamodel.Database.DefaultPrivileges` | `ddl` | — |
 | `schemamodel.Database.Dependencies` | `derived` | table creation order, derived by Finalize from the declared foreign keys |
@@ -213,6 +268,7 @@ None.
 | `schemamodel.Database.Synonyms` | `ddl` | — |
 | `schemamodel.Database.Tables` | `ddl` | — |
 | `schemamodel.Database.Topics` | `ddl` | — |
+| `schemamodel.Database.Transfers` | `ddl` | — |
 | `schemamodel.Database.Triggers` | `ddl` | — |
 | `schemamodel.Database.Views` | `ddl` | — |
 | `schemamodel.DefaultPrivilege.Comment` | `ddl` | — |
@@ -366,6 +422,7 @@ None.
 | `schemamodel.Index.TableName` | `ddl` | — |
 | `schemamodel.Index.Type` | `ddl` | — |
 | `schemamodel.Index.Unique` | `ddl` | — |
+| `schemamodel.Index.Vector` | `ddl` | — |
 | `schemamodel.IndexPart.Desc` | `ddl` | — |
 | `schemamodel.IndexPart.Expr` | `ddl` | — |
 | `schemamodel.IndexPart.Name` | `ddl` | — |
@@ -503,6 +560,8 @@ None.
 | `schemamodel.Table.VirtualArguments` | `ddl` | — |
 | `schemamodel.Table.VirtualModule` | `ddl` | — |
 | `schemamodel.Table.WithoutRowID` | `ddl` | — |
+| `schemamodel.Table.YDBColumnFamilies` | `ddl` | — |
+| `schemamodel.Table.YDBPartitioning` | `ddl` | — |
 | `schemamodel.TargetNames.GraphQL` | `export` | the name one export format carries, overriding the general one |
 | `schemamodel.TargetNames.OpenAPI` | `export` | the name one export format carries, overriding the general one |
 | `schemamodel.TargetNames.Protobuf` | `export` | the name one export format carries, overriding the general one |
@@ -510,6 +569,10 @@ None.
 | `schemamodel.Topic.Schema` | `ddl` | — |
 | `schemamodel.Topic.Spec` | `ddl` | — |
 | `schemamodel.Topic.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
+| `schemamodel.Transfer.Name` | `ddl` | — |
+| `schemamodel.Transfer.Schema` | `ddl` | — |
+| `schemamodel.Transfer.Spec` | `ddl` | — |
+| `schemamodel.Transfer.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.Trigger.Body` | `ddl` | — |
 | `schemamodel.Trigger.Comment` | `ddl` | — |
 | `schemamodel.Trigger.Dialects` | `ddl` | — |

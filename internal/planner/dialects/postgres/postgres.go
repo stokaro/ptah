@@ -1675,6 +1675,27 @@ func currentRangeReferences(rangeDiff difftypes.RangeDiff) []string {
 	return []string{rangeDiff.CurrentSubtype}
 }
 
+// refuseYDBChanges refuses the changes only the YDB planner plans: a table's
+// column families and partitioning settings, changefeeds, topics, role
+// memberships and coordination nodes. A
+// diff reaches this planner with one only when it was built by hand or for
+// YDB, and planning nothing would report the change applied.
+func (p *Planner) refuseYDBChanges(diff *difftypes.SchemaDiff) error {
+	if err := schemaprecondition.RefuseYDBTableSettingChanges(p.targetDialect(), diff); err != nil {
+		return err
+	}
+	if err := schemaprecondition.RefuseChangefeedChanges(p.targetDialect(), diff); err != nil {
+		return err
+	}
+	if err := schemaprecondition.RefuseTopics(p.targetDialect(), diff); err != nil {
+		return err
+	}
+	if err := schemaprecondition.RefuseRoleMemberships(p.targetDialect(), diff); err != nil {
+		return err
+	}
+	return schemaprecondition.RefuseCoordinationNodes(p.targetDialect(), diff)
+}
+
 // GenerateMigrationAST generates PostgreSQL-specific migration AST statements from schema differences.
 //
 // This method transforms the schema differences captured in the SchemaDiff into executable
@@ -1774,13 +1795,10 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := schemaprecondition.RefuseSerialSequenceChanges(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}
-	if err := schemaprecondition.RefuseChangefeedChanges(p.targetDialect(), diff); err != nil {
+	if err := p.refuseYDBChanges(diff); err != nil {
 		return nil, err
 	}
-	if err := schemaprecondition.RefuseTopics(p.targetDialect(), diff); err != nil {
-		return nil, err
-	}
-	if err := schemaprecondition.RefuseRoleMemberships(p.targetDialect(), diff); err != nil {
+	if err := schemaprecondition.RefuseReplications(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}
 	if err := schemaprecondition.RefuseResourcePools(p.targetDialect(), diff); err != nil {

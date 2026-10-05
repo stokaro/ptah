@@ -10,8 +10,12 @@ import (
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/ydbchangefeed"
+	"ptah.run/internal/ydbcoordination"
+	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
+	"ptah.run/internal/ydbpartition"
 	"ptah.run/internal/ydbpool"
+	"ptah.run/internal/ydbreplication"
 	"ptah.run/internal/ydbtopic"
 )
 
@@ -400,15 +404,26 @@ var directives = []Directive{
 			attr("nulls_distinct", "Controls NULLS DISTINCT behavior where supported.", valueBoolean, false, false),
 			attr("invisible", "Hides the index from the optimizer: INVISIBLE on MySQL, IGNORED on MariaDB, NOT VISIBLE on CockroachDB.",
 				valueBoolean, false, true),
-			attr(ydbindex.AttributeBySize, "YDB: whether the index's table splits a partition that grows past its size, ENABLED or DISABLED.",
+			attr(ydbpartition.AttributeBySize, "YDB: whether the index's table splits a partition that grows past its size, ENABLED or DISABLED.",
 				valueString, false, false),
-			attr(ydbindex.AttributePartitionSizeMB, "YDB: the size in MB at which the index's table splits a partition.",
+			attr(ydbpartition.AttributePartitionSizeMB, "YDB: the size in MB at which the index's table splits a partition.",
 				valueString, false, false),
-			attr(ydbindex.AttributeByLoad, "YDB: whether the index's table splits a busy partition, ENABLED or DISABLED.",
+			attr(ydbpartition.AttributeByLoad, "YDB: whether the index's table splits a busy partition, ENABLED or DISABLED.",
 				valueString, false, false),
-			attr(ydbindex.AttributeMinPartitions, "YDB: the fewest partitions the index's table keeps.", valueString, false, false),
-			attr(ydbindex.AttributeMaxPartitions, "YDB: the most partitions the index's table splits into.", valueString, false, false),
-			attr(ydbindex.AttributeReadReplicas, "YDB: the index's read replicas, PER_AZ:<n> or ANY_AZ:<n>.", valueString, false, false),
+			attr(ydbpartition.AttributeMinPartitions, "YDB: the fewest partitions the index's table keeps.", valueString, false, false),
+			attr(ydbpartition.AttributeMaxPartitions, "YDB: the most partitions the index's table splits into.", valueString, false, false),
+			attr(ydbpartition.AttributeReadReplicas, "YDB: the index's read replicas, PER_AZ:<n> or ANY_AZ:<n>.", valueString, false, false),
+			attr(ydbindex.AttributeDistance, "YDB vector index: the distance it orders by, cosine, euclidean or manhattan.",
+				valueString, false, false),
+			attr(ydbindex.AttributeSimilarity, "YDB vector index: the similarity it orders by, inner_product or cosine.",
+				valueString, false, false),
+			attr(ydbindex.AttributeVectorType, "YDB vector index: the element type, float, uint8, int8 or bit.",
+				valueString, false, false),
+			attr(ydbindex.AttributeVectorDimension, "YDB vector index: the number of elements in a vector, 1 to 16384.",
+				valueString, false, false),
+			attr(ydbindex.AttributeLevels, "YDB vector index: the depth of its k-means tree, 1 to 16.", valueString, false, false),
+			attr(ydbindex.AttributeClusters, "YDB vector index: the clusters each level splits into, 2 to 2048.",
+				valueString, false, false),
 		},
 	},
 	{
@@ -463,6 +478,72 @@ var directives = []Directive{
 		},
 	},
 	{
+		Name: "ptah:schema:async_replication",
+		Description: "Declares a YDB async replication: tables of another database copied into read-only replica " +
+			"tables YDB creates and keeps current. Its tables are declared with ptah:schema:async_replication:item " +
+			"in the same file, and the replica tables are not declared as tables.",
+		Scopes: []Scope{ScopeStruct, ScopeField},
+		Attributes: append(replicationNaming("Replication"), append(replicationConnection(true),
+			attr(ydbreplication.AttributeConsistencyLevel, "Consistency of the replica: row or global; row when "+
+				"omitted.", valueString, false, false),
+			attr(ydbreplication.AttributeCommitInterval, "How often a global replication commits, an ISO 8601 "+
+				"duration; ten seconds when omitted.", valueString, false, false),
+		)...),
+	},
+	{
+		Name: "ptah:schema:async_replication:item",
+		Description: "Declares one table, or directory of tables, an async replication copies, and where its " +
+			"replica is created. The replication is declared in the same file.",
+		Scopes: []Scope{ScopeStruct, ScopeField},
+		Attributes: []Attribute{
+			attr(ydbreplication.AttributeReplication, "Replication the item belongs to.", valueString, true, false),
+			attr(ydbreplication.AttributeSchema, "Directory of the replication, when it has one.",
+				valueString, false, false),
+			attr(ydbreplication.AttributeSource, "Path in the source database, relative to its root or absolute.",
+				valueString, true, false),
+			attr(ydbreplication.AttributeTarget, "Path of the replica in this database, relative to its root.",
+				valueString, true, false),
+		},
+	},
+	{
+		Name: "ptah:schema:transfer",
+		Description: "Declares a YDB transfer: messages of a topic turned into rows of a table through a YQL " +
+			"lambda.",
+		Scopes: []Scope{ScopeStruct, ScopeField},
+		Attributes: append(replicationNaming("Transfer"), append(replicationConnection(false),
+			attr(ydbreplication.AttributeSource, "Topic the transfer reads, relative to the database root; for a "+
+				"topic of another database, relative to its root or absolute.", valueString, true, false),
+			attr(ydbreplication.AttributeTarget, "Table the transfer writes, relative to the database root.",
+				valueString, true, false),
+			attr(ydbreplication.AttributeUsing, "The YQL lambda, written inline: ($msg) -> { ... }.",
+				valueString, true, false),
+			attr(ydbreplication.AttributeConsumer, "Existing topic consumer the transfer reads through; YDB "+
+				"creates one when omitted.", valueString, false, false),
+			attr(ydbreplication.AttributeBatchSizeBytes, "Bytes the transfer gathers before a write; 8 MiB "+
+				"when omitted.", valueString, false, false),
+			attr(ydbreplication.AttributeFlushInterval, "Longest wait before a write, an ISO 8601 duration of "+
+				"whole seconds; a minute when omitted.", valueString, false, false),
+		)...),
+	},
+	{
+		Name: "ptah:schema:columnfamily",
+		Description: "Declares a YDB column family: columns stored together, with a storage pool, compression " +
+			"and cache mode of their own. It belongs to the struct's table, or to the table it names.",
+		Scopes: []Scope{ScopeStruct, ScopeField},
+		Attributes: []Attribute{
+			attr(ydbfamily.AttributeName, "Family name; default is the family holding the key and every column "+
+				"no other family names.", valueString, true, false),
+			attr(ydbfamily.AttributeTable, "Table the family belongs to, when not the struct's own.",
+				valueString, false, false),
+			attr(ydbfamily.AttributeData, "Kind of storage pool the family's columns are kept in, such as ssd.",
+				valueString, false, false),
+			attr(ydbfamily.AttributeCompression, "Compression: off or lz4.", valueString, false, false),
+			attr(ydbfamily.AttributeCacheMode, "Cache mode: regular or in_memory.", valueString, false, false),
+			attr(ydbfamily.AttributeFields, "Columns the family holds. The default family lists none.",
+				valueList, false, false),
+		},
+	},
+	{
 		Name:          "ptah:schema:table",
 		Description:   "Maps a Go struct to a database table.",
 		Scopes:        []Scope{ScopeStruct},
@@ -503,6 +584,23 @@ var directives = []Directive{
 			attr(rowdeletion.AttributeColumn, "Row deletion policy (Spanner and YDB TTL): the column a row's age is measured from. Needs row_deletion_interval.", valueString, false, false),
 			attr(rowdeletion.AttributeInterval, "Row deletion policy: how long after the column's time a row is deleted, such as `P30D` on YDB or `30 days` on Spanner.", valueString, false, false),
 			attr(rowdeletion.AttributeUnit, "YDB TTL on an integer column: what the column counts since the Unix epoch, SECONDS, MILLISECONDS, MICROSECONDS or NANOSECONDS.", valueString, false, false),
+			// A YDB row table's settings, named for the settings they become,
+			// as an index's partitioning is.
+			attr(ydbpartition.AttributeBySize, "YDB: whether the table splits a partition that grows past its size, ENABLED or DISABLED.",
+				valueString, false, false),
+			attr(ydbpartition.AttributePartitionSizeMB, "YDB: the size in MB at which the table splits a partition.",
+				valueString, false, false),
+			attr(ydbpartition.AttributeByLoad, "YDB: whether the table splits a busy partition, ENABLED or DISABLED.",
+				valueString, false, false),
+			attr(ydbpartition.AttributeMinPartitions, "YDB: the fewest partitions the table keeps.", valueString, false, false),
+			attr(ydbpartition.AttributeMaxPartitions, "YDB: the most partitions the table splits into.", valueString, false, false),
+			attr(ydbpartition.AttributeReadReplicas, "YDB: the table's read replicas, PER_AZ:<n> or ANY_AZ:<n>.", valueString, false, false),
+			attr(ydbpartition.AttributeKeyBloomFilter, "YDB: whether the table keeps a bloom filter of its keys, ENABLED or DISABLED.",
+				valueString, false, false),
+			attr(ydbpartition.AttributeUniformPartitions, "YDB: the partitions a new table starts with, splitting a Uint32 or Uint64 first key evenly.",
+				valueString, false, false),
+			attr(ydbpartition.AttributePartitionAtKeys, "YDB: the keys a new table starts split before, such as `10, 20` or `(10, 'a'), (20)`.",
+				valueString, false, false),
 		},
 	},
 	{
@@ -744,6 +842,27 @@ var directives = []Directive{
 			attr("schema", "Schema the alias lives in.", valueString, false, false),
 			attr("target", "Object the alias stands for, as one to four dot-separated parts.", valueString, true, false),
 			attr("comment", "Synonym comment.", valueString, false, false),
+		},
+	},
+	{
+		Name: "ptah:schema:coordinationnode",
+		Description: "Declares a YDB coordination node, which holds an application's semaphores " +
+			"and rate limiter resources. A setting left out takes YDB's default.",
+		Scopes: []Scope{ScopeStruct},
+		Attributes: []Attribute{
+			attr("name", "Node name.", valueString, true, false),
+			attr("schema", "Directory holding the node, relative to the database root.", valueString, false, false),
+			attr(ydbcoordination.SettingSelfCheckPeriod, "How often the node checks it is alive, as an ISO 8601 "+
+				"duration from `PT0.5S` to `PT10S`. YDB's default is `PT1S`.", valueString, false, false),
+			attr(ydbcoordination.SettingSessionGracePeriod, "How long a session keeps its semaphores while the "+
+				"node changes its leader, as an ISO 8601 duration from the self-check period plus one second "+
+				"to `PT30S`. YDB's default is `PT10S`.", valueString, false, false),
+			attr(ydbcoordination.SettingReadConsistencyMode, "`strict` or `relaxed`. YDB's default is `relaxed`.",
+				valueString, false, false),
+			attr(ydbcoordination.SettingAttachConsistencyMode, "`strict` or `relaxed`. YDB's default is `strict`.",
+				valueString, false, false),
+			attr(ydbcoordination.SettingRateLimiterCountersMode, "`aggregated` or `detailed`. YDB's default is "+
+				"`aggregated`.", valueString, false, false),
 		},
 	},
 	{
@@ -1077,4 +1196,34 @@ func alias(name, aliasFor, description, value string, boolean bool) Attribute {
 	a := attr(name, description, value, false, boolean)
 	a.AliasFor = aliasFor
 	return a
+}
+
+// replicationNaming is the name and the directory of an async replication or
+// a transfer.
+func replicationNaming(kind string) []Attribute {
+	return []Attribute{
+		attr(ydbreplication.AttributeName, kind+" name, the last segment of its path.", valueString, true, false),
+		attr(ydbreplication.AttributeSchema, "Directory that holds it, relative to the database root.",
+			valueString, false, false),
+	}
+}
+
+// replicationConnection is how an async replication or a transfer reaches
+// another database: the connection string and a credential, named by the
+// secret that holds it. A replication always reads another database, so its
+// connection string is required; a transfer reads its own without one.
+func replicationConnection(required bool) []Attribute {
+	return []Attribute{
+		attr(ydbreplication.AttributeConnectionString, "The other database: grpc://host:port/?database=/path or "+
+			"grpcs://...", valueString, required, false),
+		attr(ydbreplication.AttributeTokenSecretName, "Object secret holding an access token.",
+			valueString, false, false),
+		attr(ydbreplication.AttributeTokenSecretPath, "Path of a secret holding an access token, relative to "+
+			"the database root (YDB 25.4 and later).", valueString, false, false),
+		attr(ydbreplication.AttributeUser, "User a password secret signs in as.", valueString, false, false),
+		attr(ydbreplication.AttributePasswordSecretName, "Object secret holding the user's password.",
+			valueString, false, false),
+		attr(ydbreplication.AttributePasswordSecretPath, "Path of a secret holding the user's password, "+
+			"relative to the database root (YDB 25.4 and later).", valueString, false, false),
+	}
 }

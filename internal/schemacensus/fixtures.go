@@ -72,6 +72,7 @@ func Fixtures() []Fixture {
 		{Name: "table-override", Schema: tableOverrideFixture()},
 		{Name: "table-rowttl", Schema: tableRowTTLFixture()},
 		{Name: "table-row-deletion", Schema: tableRowDeletionFixture()},
+		{Name: "table-column-families", Schema: tableColumnFamiliesFixture()},
 		{Name: "table-changefeed", Schema: tableChangefeedFixture()},
 		{Name: "table-changefeed-disabled", Schema: tableChangefeedDisabledFixture()},
 		{Name: "table-row-deletion-epoch", Schema: tableRowDeletionEpochFixture()},
@@ -97,6 +98,16 @@ func Fixtures() []Fixture {
 		{Name: "index-key-block-size", Schema: indexKeyBlockSizeFixture()},
 		{Name: "index-partitioning", Schema: indexPartitioningFixture()},
 		{Name: "index-partitioning-unsplit", Schema: indexPartitioningUnsplitFixture()},
+		{Name: "index-vector", Schema: indexVectorFixture(&ast.VectorIndexSpec{
+			Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 2, Clusters: 128,
+		})},
+		{Name: "index-vector-similarity", Schema: indexVectorFixture(&ast.VectorIndexSpec{
+			Similarity: "inner_product", VectorType: "int8", Dimension: 3, Levels: 1, Clusters: 2,
+		})},
+		{Name: "table-partitioning", Schema: tablePartitioningFixture()},
+		{Name: "table-partitioning-unsplit", Schema: tablePartitioningUnsplitFixture()},
+		{Name: "table-uniform-partitions", Schema: tableUniformPartitionsFixture()},
+		{Name: "table-partition-at-keys", Schema: tablePartitionAtKeysFixture()},
 		{Name: "enum", Schema: enumFixture()},
 		{Name: "domain", Schema: domainFixture()},
 		{Name: "composite", Schema: compositeFixture()},
@@ -114,6 +125,10 @@ func Fixtures() []Fixture {
 		{Name: "synonym", Schema: synonymFixture()},
 		{Name: "topic", Schema: topicFixture()},
 		{Name: "resource-pool", Schema: resourcePoolFixture()},
+		{Name: "async-replication", Schema: asyncReplicationFixture()},
+		{Name: "async-replication-token", Schema: asyncReplicationTokenFixture()},
+		{Name: "transfer", Schema: transferFixture()},
+		{Name: "coordination-node", Schema: coordinationNodeFixture()},
 		{Name: "extended-property", Schema: extendedPropertyFixture()},
 		{Name: "role", Schema: roleFixture()},
 		{Name: "ydb-group-membership", Schema: ydbGroupMembershipFixture()},
@@ -795,6 +810,18 @@ func tableRowDeletionFixture() schemamodel.Database {
 	}, schemamodel.Field{StructName: "T", FieldName: "CreatedAt", Name: "created_at", Type: "TIMESTAMP", Nullable: true})
 }
 
+// tableColumnFamiliesFixture sets every setting of a YDB column family, on a
+// family holding a column, beside a default family with a setting of its own.
+func tableColumnFamiliesFixture() schemamodel.Database {
+	return oneTable("T", schemamodel.Table{
+		Name: "t",
+		YDBColumnFamilies: []ast.YDBColumnFamilySpec{
+			{Name: "default", Compression: "lz4"},
+			{Name: "cold", Data: "hdd", Compression: "lz4", CacheMode: "in_memory", Columns: []string{"payload"}},
+		},
+	}, schemamodel.Field{StructName: "T", FieldName: "Payload", Name: "payload", Type: "TEXT", Nullable: true})
+}
+
 // tableChangefeedFixture sets every option of a YDB changefeed and every
 // setting of a consumer, on two consumers since YDB refuses one that is both
 // important and limited by an availability period. Its starting partition
@@ -1100,6 +1127,52 @@ func indexPartitioningUnsplitFixture() schemamodel.Database {
 	return db
 }
 
+// indexVectorFixture declares a YDB vector index with settings over a vector
+// column of the dimension the settings name.
+func indexVectorFixture(settings *ast.VectorIndexSpec) schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"},
+		schemamodel.Field{StructName: "T", FieldName: "Emb", Name: "emb", Type: "vector(3)", Nullable: true},
+	)
+	db.Indexes = []schemamodel.Index{{
+		StructName: "T", Name: "idx_t_emb", TableName: "t", Fields: []string{"emb"}, Type: "vector_kmeans_tree",
+		Vector: settings,
+	}}
+	return db
+}
+
+// tablePartitioningFixture sets every setting of a YDB row table but the
+// switch that turns splitting by size off, which a partition size cannot share
+// a table with, and the two starting layouts, which cannot share a table with
+// each other; the three fixtures after it set those.
+func tablePartitioningFixture() schemamodel.Database {
+	return oneTable("T", schemamodel.Table{
+		Name: "t",
+		YDBPartitioning: &ast.YDBTablePartitioningSpec{
+			PartitionSizeMB: 512, ByLoad: new(true), MinPartitions: 3, MaxPartitions: 9, ReadReplicas: "PER_AZ:1",
+			KeyBloomFilter: new(true),
+		},
+	})
+}
+
+func tablePartitioningUnsplitFixture() schemamodel.Database {
+	return oneTable("T", schemamodel.Table{Name: "t", YDBPartitioning: &ast.YDBTablePartitioningSpec{BySize: new(false)}})
+}
+
+// tableUniformPartitionsFixture keys the table on an unsigned column, the
+// only kind whose range YDB splits evenly.
+func tableUniformPartitionsFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t", YDBPartitioning: &ast.YDBTablePartitioningSpec{UniformPartitions: 4}})
+	db.Fields[0].Type = "BIGINT UNSIGNED"
+	return db
+}
+
+func tablePartitionAtKeysFixture() schemamodel.Database {
+	return oneTable("T", schemamodel.Table{
+		Name:            "t",
+		YDBPartitioning: &ast.YDBTablePartitioningSpec{PartitionAtKeys: [][]string{{"10"}, {"20"}}},
+	})
+}
+
 func indexConcurrentFixture() schemamodel.Database {
 	db := indexedTable()
 	db.Indexes = []schemamodel.Index{{
@@ -1358,6 +1431,83 @@ func resourcePoolFixture() schemamodel.Database {
 	db.ResourcePoolClassifiers = []schemamodel.ResourcePoolClassifier{{
 		StructName: "RP", Name: "reporting_group",
 		Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "reporting", MemberName: "reporters", Rank: 100},
+	}}
+	return db
+}
+
+// asyncReplicationFixture declares a YDB async replication that sets every
+// setting a replication of a user with a password secret takes, and two items,
+// one naming its source by an absolute path.
+func asyncReplicationFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.AsyncReplications = []schemamodel.AsyncReplication{{
+		StructName: "AR", Name: "mirror", Schema: "app",
+		Spec: ast.AsyncReplicationSpec{
+			Connection: ast.ReplicationConnectionSpec{
+				ConnectionString:   "grpcs://primary.example.com:2135/?database=/prod",
+				User:               "replicator",
+				PasswordSecretPath: "secrets/replicator",
+			},
+			Items: []ast.AsyncReplicationItem{
+				{Source: "accounts", Target: "replica/accounts"},
+				{Source: "/prod/ledger", Target: "replica/ledger"},
+			},
+			ConsistencyLevel: "global",
+			CommitInterval:   "PT30S",
+		},
+	}}
+	return db
+}
+
+// asyncReplicationTokenFixture declares the two token credentials, one
+// replication each, since a connection takes one credential.
+func asyncReplicationTokenFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	connection := "grpc://primary.example.com:2136/?database=/prod"
+	db.AsyncReplications = []schemamodel.AsyncReplication{
+		{StructName: "AN", Name: "by_name", Spec: ast.AsyncReplicationSpec{
+			Connection: ast.ReplicationConnectionSpec{ConnectionString: connection, TokenSecretName: "token"},
+			Items:      []ast.AsyncReplicationItem{{Source: "orders", Target: "orders_by_name"}},
+		}},
+		{StructName: "AP", Name: "by_path", Spec: ast.AsyncReplicationSpec{
+			Connection: ast.ReplicationConnectionSpec{ConnectionString: connection, TokenSecretPath: "secrets/token"},
+			Items:      []ast.AsyncReplicationItem{{Source: "orders", Target: "orders_by_path"}},
+		}},
+	}
+	return db
+}
+
+// transferFixture declares a YDB transfer of a topic in another database into
+// a declared table, setting every setting a transfer takes, its credential a
+// user with a password secret named by name.
+func transferFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Transfers = []schemamodel.Transfer{{
+		StructName: "TF", Name: "ingest", Schema: "app",
+		Spec: ast.TransferSpec{
+			Connection: ast.ReplicationConnectionSpec{
+				ConnectionString:   "grpc://primary.example.com:2136/?database=/prod",
+				User:               "reader",
+				PasswordSecretName: "reader_password",
+			},
+			Source:         "events",
+			Target:         "t",
+			Lambda:         "($msg) -> { return [<| id: $msg._offset |>]; }",
+			Consumer:       "ingest",
+			BatchSizeBytes: 1048576,
+			FlushInterval:  "PT10S",
+		},
+	}}
+	return db
+}
+
+func coordinationNodeFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.CoordinationNodes = []schemamodel.CoordinationNode{{
+		StructName: "CN", Schema: "app", Name: "locks", Spec: ast.CoordinationNodeSpec{
+			SelfCheckPeriodMillis: 2000, SessionGracePeriodMillis: 15000,
+			ReadConsistencyMode: "strict", AttachConsistencyMode: "relaxed", RateLimiterCountersMode: "detailed",
+		},
 	}}
 	return db
 }

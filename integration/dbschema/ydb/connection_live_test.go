@@ -6,7 +6,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"regexp"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -18,7 +17,6 @@ import (
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasretry"
-	"ptah.run/internal/ydbgap"
 	"ptah.run/migration/migrator"
 )
 
@@ -29,8 +27,8 @@ var connectionSchemas = []string{connectionSchema}
 // The connection reports the server it reached: YDB, the version Version()
 // answers, the capabilities of the line that version is on, and the database
 // root as the schema an unqualified name means. The capabilities are the
-// line's preset, refined by the flags the contour turns on, so a target that
-// reaches a server on another line -- an
+// line's preset with the keys the contour's feature flags turn on, so a
+// target that reaches a server on another line -- an
 // address the server advertises through discovery that leads to the other
 // server, say -- fails here rather than letting the rest of the package
 // measure that line under this one's name.
@@ -48,7 +46,7 @@ func TestYDBConnection_DescribesTheServer(t *testing.T) {
 			c.Assert(info.Version, qt.Equals, version)
 			c.Assert(info.Schema, qt.Equals, "")
 			c.Assert(info.IdentifierSemantics.DefaultSchema, qt.Equals, "")
-			c.Assert(info.Capabilities, qt.DeepEquals, contourCapabilities(line))
+			c.Assert(info.Capabilities, qt.DeepEquals, line.capabilities())
 		})
 	}
 }
@@ -284,9 +282,10 @@ func TestYDBWriter_StatementsSucceedByStatus(t *testing.T) {
 }
 
 // An object Ptah does not model is recorded by the read, not dropped from it
-// in silence, and a table setting is recorded the same way. A view is
-// described, with the query the server stores, and the table's TTL is its row
-// deletion policy, which the read describes.
+// in silence, and so is a table setting it does not model: a TTL run
+// interval, which only the SDK and the CLI write. A view is described, with
+// the query the server stores, and the table's TTL, column family and
+// partitioning are read as its row deletion policy and its YDB settings.
 func TestYDBReader_RecordsWhatItDoesNotModel(t *testing.T) {
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
@@ -299,14 +298,15 @@ func TestYDBReader_RecordsWhatItDoesNotModel(t *testing.T) {
 				dropTables(c, conn, connectionSchemas)
 			})
 			for _, statement := range []string{
-				"CREATE TABLE `ptah_ydb_connection/base` (`id` Int64 NOT NULL, `ts` Timestamp, PRIMARY KEY (`id`)) " +
-					"WITH (TTL = Interval('P1D') ON `ts`, AUTO_PARTITIONING_BY_LOAD = ENABLED)",
+				"CREATE TABLE `ptah_ydb_connection/base` (`id` Int64 NOT NULL, `ts` Timestamp, PRIMARY KEY (`id`), " +
+					"FAMILY default (COMPRESSION = \"lz4\")) WITH (TTL = Interval('P1D') ON `ts`, AUTO_PARTITIONING_BY_LOAD = ENABLED)",
 				"CREATE VIEW `ptah_ydb_connection/v` WITH (security_invoker = TRUE) AS SELECT 1 AS a",
 				"CREATE TABLE `ptah_ydb_connection/olap` (`id` Int64 NOT NULL, PRIMARY KEY (`id`)) " +
 					"PARTITION BY HASH(`id`) WITH (STORE = COLUMN)",
 			} {
 				c.Assert(conn.Writer().ExecuteSQL(c.Context(), statement), qt.IsNil, qt.Commentf("execute: %s", statement))
 			}
+			setRunInterval(c, line, connectionSchema+"/base", "ts", 86400, 1800)
 
 			live := readScoped(c, conn, connectionSchemas)
 
@@ -314,22 +314,24 @@ func TestYDBReader_RecordsWhatItDoesNotModel(t *testing.T) {
 			c.Assert(live.Views, qt.DeepEquals, []catalog.View{{Name: "v", Schema: "ptah_ydb_connection", Body: "SELECT 1 AS a"}})
 			c.Assert(live.NotDescribed.Describes(coverage.View, "ptah_ydb_connection.v"), qt.IsTrue)
 			c.Assert(live.NotDescribed.Describes(coverage.ColumnTable, "ptah_ydb_connection.olap"), qt.IsFalse)
-			c.Assert(live.NotDescribed.Describes(coverage.TableOption, "ptah_ydb_connection.base"), qt.IsFalse)
-			c.Assert(live.NotDescribed.Describes(coverage.TTL, "ptah_ydb_connection.base"), qt.IsTrue)
+			c.Assert(live.NotDescribed.Describes(coverage.TTL, "ptah_ydb_connection.base"), qt.IsFalse)
+			c.Assert(live.NotDescribed.Describes(coverage.ColumnFamily, "ptah_ydb_connection.base"), qt.IsTrue)
+			c.Assert(live.NotDescribed.Describes(coverage.TableOption, "ptah_ydb_connection.base"), qt.IsTrue)
 			c.Assert(tableNamed(c, live, connectionSchema, "base").RowDeletionPolicy, qt.DeepEquals,
 				&ast.RowDeletionPolicySpec{Column: "ts", Interval: "P1D"})
+			c.Assert(tableNamed(c, live, connectionSchema, "base").YDBPartitioning, qt.DeepEquals,
+				&ast.YDBTablePartitioningSpec{ByLoad: new(true)})
 		})
 	}
 }
 
-// An index kind the reader does not read is refused by name rather than read
-// as a plain global index, which is how ydb-go-sdk's own description reads it.
-// The table has to hold a vector index for the refusal to be measured. 26.2
-// creates one by default; 25.1 keeps vector indexes behind the
-// EnableVectorIndex feature flag and answers `Vector index support is
-// disabled` without it, so go-integration-tests.yml starts the 25.1 server
-// with the flag on.
-func TestYDBReader_RefusesAVectorIndex(t *testing.T) {
+// A vector index is read as the kind it is, with the settings the server
+// built it with, rather than as a plain global index, which is how
+// ydb-go-sdk's own description reads it. 26.2 builds one by default; 25.1
+// keeps vector indexes behind the EnableVectorIndex feature flag and answers
+// `Vector index support is disabled` without it, so go-integration-tests.yml
+// starts the 25.1 server with the flag on.
+func TestYDBReader_ReadsAVectorIndex(t *testing.T) {
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -345,9 +347,10 @@ func TestYDBReader_RefusesAVectorIndex(t *testing.T) {
 
 			live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, connectionSchemas)
 
-			c.Assert(err, qt.ErrorMatches, `YDB table /\w+/ptah_ydb_connection/vectors: index "by_emb" is a vector_kmeans_tree index: `+
-				regexp.QuoteMeta(ydbgap.IndexFamilies.Message()))
-			c.Assert(live, qt.IsNil)
+			c.Assert(err, qt.IsNil)
+			c.Assert(indexNamed(c, live, "by_emb").Method, qt.Equals, "GLOBAL USING vector_kmeans_tree")
+			c.Assert(indexNamed(c, live, "by_emb").Vector, qt.DeepEquals,
+				&ast.VectorIndexSpec{Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 1, Clusters: 2})
 		})
 	}
 }

@@ -6,6 +6,7 @@ package generator
 import (
 	"slices"
 
+	"ptah.run/core/ast"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -57,6 +58,15 @@ func cloneSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 	clone.ResourcePoolClassifiersAdded = slices.Clone(diff.ResourcePoolClassifiersAdded)
 	clone.ResourcePoolClassifiersRemoved = slices.Clone(diff.ResourcePoolClassifiersRemoved)
 	clone.ResourcePoolClassifiersModified = slices.Clone(diff.ResourcePoolClassifiersModified)
+	clone.AsyncReplicationsAdded = cloneAsyncReplications(diff.AsyncReplicationsAdded)
+	clone.AsyncReplicationsRemoved = cloneAsyncReplications(diff.AsyncReplicationsRemoved)
+	clone.AsyncReplicationsModified = cloneAsyncReplicationDiffs(diff.AsyncReplicationsModified)
+	clone.TransfersAdded = slices.Clone(diff.TransfersAdded)
+	clone.TransfersRemoved = slices.Clone(diff.TransfersRemoved)
+	clone.TransfersModified = cloneTransferDiffs(diff.TransfersModified)
+	clone.CoordinationNodesAdded = slices.Clone(diff.CoordinationNodesAdded)
+	clone.CoordinationNodesRemoved = slices.Clone(diff.CoordinationNodesRemoved)
+	clone.CoordinationNodesModified = slices.Clone(diff.CoordinationNodesModified)
 	clone.HypertablesAdded = slices.Clone(diff.HypertablesAdded)
 	clone.HypertablesRemoved = slices.Clone(diff.HypertablesRemoved)
 	clone.HypertablesModified = slices.Clone(diff.HypertablesModified)
@@ -84,6 +94,7 @@ func cloneSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 	clone.RoleMembershipsAdded = slices.Clone(diff.RoleMembershipsAdded)
 	clone.RoleMembershipsRemoved = slices.Clone(diff.RoleMembershipsRemoved)
 	clone.CurrentGrants = slices.Clone(diff.CurrentGrants)
+	clone.CurrentYDBSettings = cloneYDBHeldSettings(diff.CurrentYDBSettings)
 	clone.GrantsAdded = slices.Clone(diff.GrantsAdded)
 	clone.GrantsRemoved = slices.Clone(diff.GrantsRemoved)
 	clone.GrantOptionsAdded = slices.Clone(diff.GrantOptionsAdded)
@@ -177,6 +188,69 @@ func cloneTopicDiffs(changes []difftypes.TopicDiff) []difftypes.TopicDiff {
 		change.Desired = change.Desired.Clone()
 		change.Current = change.Current.Clone()
 		clone[i] = change
+	}
+	return clone
+}
+
+// cloneAsyncReplications copies the replications and the items each carries,
+// so a reversal swapping them leaves the caller's diff alone.
+func cloneAsyncReplications(replications difftypes.AsyncReplicationChanges) difftypes.AsyncReplicationChanges {
+	if replications == nil {
+		return nil
+	}
+	clone := make(difftypes.AsyncReplicationChanges, len(replications))
+	for i, replication := range replications {
+		replication.Spec = replication.Spec.Clone()
+		clone[i] = replication
+	}
+	return clone
+}
+
+// cloneAsyncReplicationDiffs copies the changes, their lists and both specs.
+func cloneAsyncReplicationDiffs(changes []difftypes.AsyncReplicationDiff) []difftypes.AsyncReplicationDiff {
+	if changes == nil {
+		return nil
+	}
+	clone := make([]difftypes.AsyncReplicationDiff, len(changes))
+	for i, change := range changes {
+		change.CreateOnlyChanged = slices.Clone(change.CreateOnlyChanged)
+		change.Desired = change.Desired.Clone()
+		change.Current = change.Current.Clone()
+		clone[i] = change
+	}
+	return clone
+}
+
+// cloneTransferDiffs copies the changes and their lists.
+func cloneTransferDiffs(changes []difftypes.TransferDiff) []difftypes.TransferDiff {
+	if changes == nil {
+		return nil
+	}
+	clone := make([]difftypes.TransferDiff, len(changes))
+	for i, change := range changes {
+		change.CreateOnlyChanged = slices.Clone(change.CreateOnlyChanged)
+		clone[i] = change
+	}
+	return clone
+}
+
+// cloneYDBHeldSettings copies each table's held settings and its index map,
+// so a planner that reads them cannot change the caller's diff.
+func cloneYDBHeldSettings(settings []difftypes.YDBHeldSettings) []difftypes.YDBHeldSettings {
+	if settings == nil {
+		return nil
+	}
+	clone := make([]difftypes.YDBHeldSettings, len(settings))
+	for i, table := range settings {
+		table.Partitioning = table.Partitioning.Clone()
+		if table.Indexes != nil {
+			indexes := make(map[string]*ast.IndexPartitioningSpec, len(table.Indexes))
+			for name, spec := range table.Indexes {
+				indexes[name] = spec.Clone()
+			}
+			table.Indexes = indexes
+		}
+		clone[i] = table
 	}
 	return clone
 }

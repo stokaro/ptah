@@ -25,6 +25,20 @@ type ydbLine struct {
 	// TestYDBConnection_DescribesTheServer instead of measuring that line
 	// under this one's name.
 	preset func() capability.Capabilities
+	// flagged are the keys the contour's server holds beyond its line's
+	// defaults, through the feature flags go-integration-tests.yml starts it
+	// with, which the connection reads from the monitoring endpoint.
+	flagged []capability.Capability
+}
+
+// capabilities is the set a connection to the line's server reads: its
+// preset, with the keys its flags turn on.
+func (l ydbLine) capabilities() capability.Capabilities {
+	caps := l.preset()
+	for _, key := range l.flagged {
+		caps = caps.With(key, true)
+	}
+	return caps
 }
 
 // ydbLines are the lines whose capability cells are certified: 26.2, the
@@ -34,23 +48,9 @@ type ydbLine struct {
 // looked line-independent until 25.1 answered the abort at the write rather
 // than at the commit.
 var ydbLines = []ydbLine{
-	{name: "26.2", engine: dbtarget.YDB, preset: capability.YDB262},
-	{name: "25.1", engine: dbtarget.YDB251, preset: capability.YDB251},
-}
-
-// contourCapabilities is what a connection to the line's server in the
-// integration contour resolves to: the line's preset, refined by the feature
-// flags the contour turns on. Of those, EnableResourcePools is the one that
-// decides a capability (see .github/workflows/go-integration-tests.yml), so
-// the set is the preset with resource_pools on.
-func contourCapabilities(line ydbLine) capability.Capabilities {
-	return withContourFlags(line.preset())
-}
-
-// withContourFlags is preset on a server of the contour, whose feature flags
-// turn resource_pools on.
-func withContourFlags(preset capability.Capabilities) capability.Capabilities {
-	return preset.With(capability.ResourcePools, true)
+	{name: "26.2", engine: dbtarget.YDB, preset: capability.YDB262, flagged: []capability.Capability{capability.ResourcePools}},
+	// Started with EnableVectorIndex, which 25.1 keeps off by default.
+	{name: "25.1", engine: dbtarget.YDB251, preset: capability.YDB251, flagged: []capability.Capability{capability.VectorIndexes, capability.ResourcePools}},
 }
 
 // openYDB connects to the line's database.

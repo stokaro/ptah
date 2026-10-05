@@ -13,6 +13,8 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/sqlident"
+	"ptah.run/internal/ydbindex"
+	"ptah.run/internal/ydbpartition"
 	"ptah.run/internal/ydbtype"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -20,11 +22,16 @@ import (
 // How a YDB plan rebuilds a table.
 //
 // YDB cannot change a table's key, a column's type or a column's nullability
-// toward NOT NULL in place. When the caller asks for it (planner option
-// AllowTableRebuild, the native --allow-table-rebuild flag), the planner makes
-// such a change by recreating the table:
+// toward NOT NULL in place, nor give a table the partitions it starts with.
+// When the caller asks for it (planner option AllowTableRebuild, the native
+// --allow-table-rebuild flag), the planner makes such a change by recreating
+// the table:
 //
-//  1. CREATE TABLE a scratch table from the declaration, its indexes inside it;
+//  1. CREATE TABLE a scratch table from the declaration, its indexes and its
+//     column families inside it, each family with the settings the old table
+//     holds and the declaration does not state, and every partitioning setting
+//     of the table and its indexes named: the declared ones, and the value the
+//     old table or index holds for every other one;
 //  2. INSERT INTO the scratch table SELECT the rows of the old one, converting
 //     each changed column;
 //  3. ALTER TABLE the old table DROP CHANGEFEED, for each changefeed it holds,
@@ -78,6 +85,12 @@ type tableRebuild struct {
 	// scratch is the name the new table is created under, and replaced the
 	// name the old one is moved to before it is dropped.
 	scratch, replaced string
+	// held is what the old table holds of its partitioning, read replicas and
+	// key bloom filter, and heldIndexes the partitioning each of its indexes
+	// holds, by the name the declaration gives the index. The new table and
+	// its indexes take these for every setting the declaration leaves out.
+	held        *ast.YDBTablePartitioningSpec
+	heldIndexes map[string]*ast.IndexPartitioningSpec
 }
 
 // rebuildSubject names the table in a refusal.
@@ -162,6 +175,9 @@ func modificationOf(diff *difftypes.SchemaDiff, key string, semantics identifier
 // needsRebuild reports whether a modification carries a change YDB can make
 // only by recreating the table on this target.
 func (p *Planner) needsRebuild(tableDiff difftypes.TableDiff) bool {
+	if partitioningNeedsRebuild(tableDiff.YDBPartitioningChange) {
+		return true
+	}
 	if !p.caps.Has(capability.PrimaryKeyAlterable) &&
 		slices.ContainsFunc(tableDiff.ColumnsAdded, func(column schemamodel.Field) bool { return column.Primary }) {
 		return true
@@ -203,10 +219,17 @@ func (p *Planner) prepareRebuild(diff *difftypes.SchemaDiff, rebuild *tableRebui
 				"so no statement can move it past the copied rows", field.Name))
 		}
 	}
+	if err := p.refuseRebuiltFamilies(declaration, subject); err != nil {
+		return err
+	}
 	if settings := undescribedSettings(diff.CurrentNotDescribed, declaration.Table); len(settings) > 0 {
 		return refuseFact(subject, fmt.Sprintf("the table carries %s, which Ptah does not model and so cannot "+
 			"write on the new table: recreating it would drop them. Change the table by hand, or remove those "+
 			"settings first", strings.Join(settings, ", ")))
+	}
+	if transfer := transferOfTable(diff, declaration.Table); transfer != "" {
+		return refuseFact(subject, fmt.Sprintf("transfer %s writes the table or reads one of its changefeeds, and "+
+			"a rebuild swaps the table from under it; drop the transfer, rebuild, and create it again", transfer))
 	}
 	scratch, err := freeTableName(diff, declaration.Table, "__ptah_rebuild_")
 	if err != nil {
@@ -217,7 +240,83 @@ func (p *Planner) prepareRebuild(diff *difftypes.SchemaDiff, rebuild *tableRebui
 		return err
 	}
 	rebuild.scratch, rebuild.replaced = scratch, replaced
+	rebuild.held, rebuild.heldIndexes = heldSettings(diff, rebuild, semantics)
 	return nil
+}
+
+// heldSettings finds what the old table holds of its settings, and what each
+// index the declaration names holds of its partitioning: under the
+// declaration's name, or under the name the plan renames it from, since a
+// rebuilt table takes its indexes under their new names.
+func heldSettings(
+	diff *difftypes.SchemaDiff,
+	rebuild *tableRebuild,
+	semantics identifierSemantics,
+) (*ast.YDBTablePartitioningSpec, map[string]*ast.IndexPartitioningSpec) {
+	key := semantics.TableIdentityKey(rebuild.name)
+	index := slices.IndexFunc(diff.CurrentYDBSettings, func(held difftypes.YDBHeldSettings) bool {
+		return semantics.TableIdentityKey(held.TableName) == key
+	})
+	if index < 0 {
+		return nil, nil
+	}
+	held := diff.CurrentYDBSettings[index]
+	formerName := make(map[string]string)
+	for _, rename := range diff.IndexesRenamed {
+		if semantics.TableIdentityKey(rename.TableName) == key {
+			formerName[rename.To] = rename.From
+		}
+	}
+	indexes := make(map[string]*ast.IndexPartitioningSpec)
+	for _, declared := range rebuild.declaration.Indexes {
+		name := declared.Name
+		if former, renamed := formerName[name]; renamed {
+			name = former
+		}
+		if spec, ok := held.Indexes[name]; ok {
+			indexes[declared.Name] = spec
+		}
+	}
+	return held.Partitioning, indexes
+}
+
+// rebuiltPartitioning is the settings the new table is created with: each one
+// the declaration names, and the held value of every other one, all named, so
+// the new table takes none from the cluster's table profile. Measured on
+// 25.1.4.7 and 26.2.1.14, a table created under a dynamic configuration of the
+// cluster splits by size where it would not otherwise, so a new table left to
+// the profile could change a setting nobody declared. The starting layout is
+// the declaration's.
+func rebuiltPartitioning(subject string, declared, held *ast.YDBTablePartitioningSpec) (*ast.YDBTablePartitioningSpec, error) {
+	current, err := ydbpartition.HeldTable(held)
+	if err != nil {
+		return nil, refuseFact(subject, "the settings it holds: "+err.Error())
+	}
+	settings, err := ydbpartition.ResolveTable(declared, current)
+	if err != nil {
+		return nil, refuseFact(subject, err.Error())
+	}
+	spec := settings.Explicit()
+	if declared != nil {
+		spec.UniformPartitions = declared.UniformPartitions
+		spec.PartitionAtKeys = declared.Clone().PartitionAtKeys
+	}
+	return spec, nil
+}
+
+// rebuiltIndexPartitioning is the partitioning an index of the new table is
+// given, for the reason [rebuiltPartitioning] gives: each setting the
+// declaration names, and the held value of every other one, all named.
+func rebuiltIndexPartitioning(subject string, declared, held *ast.IndexPartitioningSpec) (*ast.IndexPartitioningSpec, error) {
+	current, err := ydbindex.Held(held)
+	if err != nil {
+		return nil, refuseFact(subject, "the settings it holds: "+err.Error())
+	}
+	settings, err := ydbindex.Resolve(declared, current)
+	if err != nil {
+		return nil, refuseFact(subject, err.Error())
+	}
+	return ydbindex.Explicit(settings), nil
 }
 
 // rebuildDeclaration is the desired table a rebuild writes: the
@@ -248,8 +347,8 @@ var settingKinds = []struct {
 }{
 	{coverage.TTL, "a TTL run interval or tiering policy"},
 	{coverage.Changefeed, "changefeeds with settings Ptah does not read"},
-	{coverage.ColumnFamily, "column families"},
-	{coverage.TableOption, "partitioning, read replica or key bloom filter options"},
+	{coverage.ColumnFamily, "column families with settings Ptah does not read"},
+	{coverage.TableOption, "storage settings (commit log pools, an external pool or external blobs)"},
 }
 
 // undescribedSettings names the settings of table that the read of the
@@ -290,11 +389,16 @@ func freeTableName(diff *difftypes.SchemaDiff, table schemamodel.Table, prefix s
 
 // refuseRebuiltTableChanges refuses what a rebuild cannot carry in a table's
 // modification. The new table is written from the declaration, so a column
-// added or dropped, a default, an index change and the TTL travel with it; a
-// comment and a constraint other than the key do not exist on YDB.
+// added or dropped, a default, an index change, the TTL, the column families
+// (prepareRebuild refuses families the new table cannot take) and the table's
+// partitioning, read replicas and key bloom filter travel with it; a comment
+// and a constraint other than the key do not exist on YDB.
 func (p *Planner) refuseRebuiltTableChanges(tableDiff difftypes.TableDiff) error {
 	subject := fmt.Sprintf("table %q", tableDiff.TableName)
 	if err := p.refuseTableSettings(tableDiff, subject); err != nil {
+		return err
+	}
+	if err := p.refuseRebuiltPartitioning(tableDiff); err != nil {
 		return err
 	}
 	for _, column := range tableDiff.ColumnsAdded {
@@ -349,6 +453,11 @@ func (p *Planner) rebuildNodes(rebuild *tableRebuild) ([]ast.Node, error) {
 	create := modelast.FromTableWithConstraints(table, rebuild.declaration.Fields, rebuild.declaration.Enums,
 		platform.YDB, rebuild.declaration.Constraints)
 	create.Name = scratchName
+	partitioning, err := rebuiltPartitioning(rebuildSubject(rebuild.name), table.YDBPartitioning, rebuild.held)
+	if err != nil {
+		return nil, err
+	}
+	create.YDBPartitioning = partitioning
 	// The scratch table takes no changefeed: YDB would refuse to move it into
 	// place (`Cannot move table with cdc streams`), so the changefeeds are
 	// added once it holds the table's name.
@@ -356,6 +465,10 @@ func (p *Planner) rebuildNodes(rebuild *tableRebuild) ([]ast.Node, error) {
 	current, desired := rebuildChangefeeds(rebuild)
 	for _, index := range rebuild.declaration.Indexes {
 		index.TableName = scratchName
+		subject := fmt.Sprintf("index %q of %s", index.Name, rebuildSubject(rebuild.name))
+		if index.Partitioning, err = rebuiltIndexPartitioning(subject, index.Partitioning, rebuild.heldIndexes[index.Name]); err != nil {
+			return nil, err
+		}
 		create.AddIndex(modelast.FromIndex(index))
 	}
 	copyStatement, err := p.copyStatement(rebuild, oldPath)

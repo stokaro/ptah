@@ -14,6 +14,7 @@ import (
 	"github.com/hashicorp/hcl/v2/hclwrite"
 	"github.com/zclconf/go-cty/cty"
 
+	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
@@ -22,6 +23,7 @@ import (
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlitekey"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/ydbindex"
 	"ptah.run/migration/risk"
 )
 
@@ -551,10 +553,13 @@ func hclRepresentsExportMetadata(metadata schemamodel.ExportMetadata) bool {
 func (r *renderer) renderBody() {
 	r.reportDialectScopes()
 	r.reportExportMetadata()
+	r.reportColumnFamilies()
 	r.reportChangefeeds()
 	r.reportRowDeletionPolicies()
 	r.reportTopics()
 	r.reportResourcePools()
+	r.reportReplications()
+	r.reportTablePartitioning()
 	r.renderExtensions()
 	r.renderSequences()
 	r.renderUserTypes()
@@ -566,6 +571,7 @@ func (r *renderer) renderBody() {
 	r.renderHypertables()
 	r.renderContinuousAggregates()
 	r.renderSynonyms()
+	r.renderCoordinationNodes()
 	r.renderExtendedProperties()
 	r.renderFunctions()
 	r.renderViews()
@@ -821,7 +827,7 @@ func (r *renderer) renderColumn(field schemamodel.Field) {
 		r.line("    as {")
 		r.stringAttr(3, "expr", field.GeneratedExpression)
 		r.stringAttr(3, "type", field.GeneratedKind)
-		r.line("    }")
+		r.line("  }")
 	}
 	if field.IdentityGeneration != "" || field.IdentityStart != "" || field.IdentityIncrement != "" || field.IdentityOptions != "" {
 		r.line("    identity {")
@@ -829,7 +835,7 @@ func (r *renderer) renderColumn(field schemamodel.Field) {
 		r.stringAttr(3, "start", field.IdentityStart)
 		r.stringAttr(3, "increment", field.IdentityIncrement)
 		r.stringAttr(3, "options", field.IdentityOptions)
-		r.line("    }")
+		r.line("  }")
 	}
 	if field.UniqueExpr != "" {
 		r.stringAttr(2, "unique_expr", field.UniqueExpr)
@@ -967,7 +973,7 @@ func (r *renderer) renderPartition(partition *schemamodel.PartitionSpec) {
 			r.rawAttr(3, "column", columnRef(part.Name))
 		}
 		r.stringAttr(3, "expr", part.Expr)
-		r.line("    }")
+		r.line("  }")
 	}
 	r.line("  }")
 }
@@ -1185,6 +1191,7 @@ func (r *renderer) renderIndex(index schemamodel.Index) {
 	if len(index.IncludeColumns) > 0 {
 		r.rawAttr(2, "include", columnRefs(index.IncludeColumns))
 	}
+	r.renderVectorSettings(index.Vector)
 	if pages, ok := index.StorageParams["pages_per_range"]; ok {
 		// `page_per_range`, singular, is the spelling the pinned Atlas community
 		// binary v1.3.0 both emits and honors. Measured on PostgreSQL 17.10
@@ -1704,6 +1711,28 @@ func (r *renderer) tableColumnRefs(table string, columns []string) string {
 		refs = append(refs, tableRef+".column"+objectRefPart(column))
 	}
 	return "[" + strings.Join(refs, ", ") + "]"
+}
+
+// renderVectorSettings writes a YDB vector index's settings as the index
+// block attributes the HCL parser reads them from, so an inspected vector
+// index applies back as the same index. They are a Ptah extension: Atlas has
+// no YDB driver and so no spelling for them.
+func (r *renderer) renderVectorSettings(vector *ast.VectorIndexSpec) {
+	if vector == nil {
+		return
+	}
+	count := func(n uint64) string {
+		if n == 0 {
+			return ""
+		}
+		return strconv.FormatUint(n, 10)
+	}
+	r.stringAttr(2, ydbindex.AttributeDistance, vector.Distance)
+	r.stringAttr(2, ydbindex.AttributeSimilarity, vector.Similarity)
+	r.stringAttr(2, ydbindex.AttributeVectorType, vector.VectorType)
+	r.rawAttr(2, ydbindex.AttributeVectorDimension, count(vector.Dimension))
+	r.rawAttr(2, ydbindex.AttributeLevels, count(vector.Levels))
+	r.rawAttr(2, ydbindex.AttributeClusters, count(vector.Clusters))
 }
 
 // renderIndexStorageParams writes the storage parameters that have no

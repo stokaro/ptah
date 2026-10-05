@@ -56,11 +56,28 @@ func TestRead_CreateTable(t *testing.T) {
 				Name:      "t",
 				IfExists:  true,
 				Columns:   []yqlddl.Column{{Name: "id", Type: "Uint64"}, {Name: "ts", Type: "Timestamp"}},
+				Families:  []string{"cold"},
 				TTLColumn: "ts",
 				Settings: []yqlddl.Setting{
 					{Name: "STORE", Value: "COLUMN"},
 					{Name: "TTL", Value: "INTERVAL", Column: "ts"},
 				},
+			},
+		},
+		{
+			name: "columns in families, the family before NOT NULL as YDB 25.1 takes it",
+			sql: "CREATE TABLE t (id Uint64 NOT NULL, a Utf8 FAMILY `cold`, c Int32 FAMILY cold NOT NULL DEFAULT 7, " +
+				"PRIMARY KEY (id), FAMILY `cold` (COMPRESSION = 'lz4'), FAMILY default (DATA = 'hdd'))",
+			want: yqlddl.Statement{
+				Kind: yqlddl.CreateTable,
+				Name: "t",
+				Columns: []yqlddl.Column{
+					{Name: "id", Type: "Uint64", NotNull: true},
+					{Name: "a", Type: "Utf8", Family: "cold"},
+					{Name: "c", Type: "Int32", NotNull: true, Default: true, Family: "cold"},
+				},
+				PrimaryKey: true,
+				Families:   []string{"cold", "default"},
 			},
 		},
 		{
@@ -163,6 +180,13 @@ func TestRead_AlterTable(t *testing.T) {
 			},
 		},
 		{
+			name: "a vector index with a prefix, a cover and its settings",
+			sql: "ALTER TABLE t ADD INDEX t_e GLOBAL SYNC USING vector_kmeans_tree ON (g, e) COVER (b) " +
+				"WITH (similarity = inner_product, vector_type = Uint8, vector_dimension = 3, levels = 1, clusters = 2)",
+			want: []yqlddl.Action{{Kind: yqlddl.AddIndex, Index: yqlddl.Index{Name: "t_e", Method: "vector_kmeans_tree",
+				VectorType: "uint8", Columns: []string{"g", "e"}, Cover: []string{"b"}}}},
+		},
+		{
 			name: "settings",
 			sql: "ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = ENABLED, TTL = Interval(\"P1D\") ON `ts` AS SECONDS), " +
 				"SET AUTO_PARTITIONING_BY_LOAD DISABLED, RESET (TTL, KEY_BLOOM_FILTER)",
@@ -177,14 +201,25 @@ func TestRead_AlterTable(t *testing.T) {
 		},
 		{
 			name: "renames, changefeeds and actions read as other",
-			sql: "ALTER TABLE t RENAME TO `dir/u`, ALTER COLUMN v DROP NOT NULL, ADD FAMILY f (DATA = \"ssd\"), " +
+			sql: "ALTER TABLE t RENAME TO `dir/u`, ALTER COLUMN v DROP NOT NULL, " +
 				"ADD CHANGEFEED cf WITH (MODE = 'KEYS_ONLY', FORMAT = 'JSON'), DROP CHANGEFEED old, DROP FAMILY f",
 			want: []yqlddl.Action{
 				{Kind: yqlddl.RenameTable, NewName: "dir/u"},
-				{}, {},
+				{},
 				{Kind: yqlddl.AddChangefeed, Changefeed: "cf"},
 				{Kind: yqlddl.DropChangefeed, Changefeed: "old"},
 				{},
+			},
+		},
+		{
+			name: "column families",
+			sql: "ALTER TABLE t ADD FAMILY `cold` (DATA = \"ssd\"), ALTER FAMILY default SET COMPRESSION 'lz4', " +
+				"ALTER COLUMN `v` SET FAMILY cold, ADD COLUMN w Int32 FAMILY `cold` NOT NULL DEFAULT 1",
+			want: []yqlddl.Action{
+				{Kind: yqlddl.AddFamily, Family: "cold"},
+				{Kind: yqlddl.AlterFamily, Family: "default"},
+				{Kind: yqlddl.SetColumnFamily, Column: yqlddl.Column{Name: "v"}, Family: "cold"},
+				{Kind: yqlddl.AddColumn, Column: yqlddl.Column{Name: "w", Type: "Int32", NotNull: true, Default: true, Family: "cold"}},
 			},
 		},
 	}
@@ -260,6 +295,81 @@ func TestRead_CreateTopic(t *testing.T) {
 			},
 		},
 		{name: "drop topic", sql: "DROP TOPIC IF EXISTS `dir/events`", want: yqlddl.Statement{Kind: yqlddl.DropTopic, Name: "dir/events", IfExists: true}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(yqlddl.Read(test.sql), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestRead_ReplicationsAndTransfers reads the settings of an async replication
+// and a transfer: a CREATE's as its settings, an ALTER's as one SET action,
+// and a DROP's CASCADE. A transfer's lambda, with semicolons, brackets and a
+// WITH of its own inside, is not read as a clause.
+func TestRead_ReplicationsAndTransfers(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+		want yqlddl.Statement
+	}{
+		{
+			name: "create replication",
+			sql: "CREATE ASYNC REPLICATION `dr/mirror` FOR a AS ra, `b` AS `rb` WITH (" +
+				"CONNECTION_STRING = 'grpc://p:2136/?database=/prod', PASSWORD = 'x', CONSISTENCY_LEVEL = 'GLOBAL')",
+			want: yqlddl.Statement{Kind: yqlddl.CreateAsyncReplication, Name: "dr/mirror", Settings: []yqlddl.Setting{
+				{Name: "CONNECTION_STRING", Text: "grpc://p:2136/?database=/prod"},
+				{Name: "PASSWORD", Text: "x"},
+				{Name: "CONSISTENCY_LEVEL", Text: "GLOBAL"},
+			}},
+		},
+		{
+			name: "alter replication",
+			sql:  "ALTER ASYNC REPLICATION mirror SET (STATE = 'DONE', FAILOVER_MODE = 'FORCE')",
+			want: yqlddl.Statement{Kind: yqlddl.AlterAsyncReplication, Name: "mirror", Actions: []yqlddl.Action{{
+				Kind: yqlddl.SetSettings, Settings: []yqlddl.Setting{
+					{Name: "STATE", Text: "DONE"},
+					{Name: "FAILOVER_MODE", Text: "FORCE"},
+				},
+			}}},
+		},
+		{
+			name: "drop replication with cascade",
+			sql:  "DROP ASYNC REPLICATION mirror CASCADE",
+			want: yqlddl.Statement{Kind: yqlddl.DropAsyncReplication, Name: "mirror", Cascade: true},
+		},
+		{
+			name: "drop replication",
+			sql:  "DROP ASYNC REPLICATION `dr/mirror`",
+			want: yqlddl.Statement{Kind: yqlddl.DropAsyncReplication, Name: "dr/mirror"},
+		},
+		{
+			name: "create transfer",
+			sql: "CREATE TRANSFER ingest FROM `orders/feed` TO log USING ($m) -> { $with = (1); " +
+				"return [<| a: $with, b: ListMap([1], ($x) -> { return $x; }) |>]; } WITH (TOKEN = 't', BATCH_SIZE_BYTES = 10)",
+			want: yqlddl.Statement{Kind: yqlddl.CreateTransfer, Name: "ingest", Settings: []yqlddl.Setting{
+				{Name: "TOKEN", Text: "t"},
+				{Name: "BATCH_SIZE_BYTES", Value: "10"},
+			}},
+		},
+		{
+			name: "alter transfer",
+			sql:  "ALTER TRANSFER ingest SET USING ($m) -> { return [<| a: 1 |>]; }, SET (FLUSH_INTERVAL = Interval('PT10S'))",
+			want: yqlddl.Statement{Kind: yqlddl.AlterTransfer, Name: "ingest", Actions: []yqlddl.Action{{
+				Kind: yqlddl.SetSettings, Settings: []yqlddl.Setting{{Name: "FLUSH_INTERVAL", Value: "INTERVAL"}},
+			}}},
+		},
+		{
+			name: "alter transfer lambda alone",
+			sql:  "ALTER TRANSFER ingest SET USING ($m) -> { return []; }",
+			want: yqlddl.Statement{Kind: yqlddl.AlterTransfer, Name: "ingest"},
+		},
+		{
+			name: "drop transfer",
+			sql:  "DROP TRANSFER `shop/ingest`",
+			want: yqlddl.Statement{Kind: yqlddl.DropTransfer, Name: "shop/ingest"},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -380,11 +490,72 @@ func TestStatement_Requirements(t *testing.T) {
 		},
 		{name: "a plain index and a nullable column", sql: "ALTER TABLE t ADD INDEX t_v GLOBAL ON (v), ADD COLUMN b Utf8", want: nil},
 		{name: "a unique index declared with its table", sql: "CREATE TABLE t (id Uint64 NOT NULL, v Utf8, PRIMARY KEY (id), INDEX t_v GLOBAL UNIQUE ON (v))", want: nil},
+		{
+			name: "vector indexes declared with their table, one over bit vectors",
+			sql: "CREATE TABLE t (id Uint64 NOT NULL, e String, PRIMARY KEY (id), INDEX t_g GLOBAL ON (id), " +
+				"INDEX t_e GLOBAL USING vector_kmeans_tree ON (e) WITH (distance=cosine, vector_type=float, vector_dimension=3, levels=1, clusters=2), " +
+				"INDEX t_b GLOBAL USING Vector_KMeans_Tree ON (e) WITH (similarity=cosine, vector_type='Bit', vector_dimension=8, levels=1, clusters=2))",
+			want: []yqlddl.Requirement{
+				{Capability: capability.VectorIndexes, Action: 1, Inline: true},
+				{Capability: capability.VectorIndexes, Action: 2, Inline: true},
+				{Capability: capability.VectorBitType, Action: 2, Inline: true},
+			},
+		},
+		{
+			name: "a vector index added, covering a column",
+			sql: "ALTER TABLE t ADD COLUMN b Utf8, ADD INDEX t_e GLOBAL USING vector_kmeans_tree ON (g, e) COVER (b) " +
+				"WITH (distance=cosine, vector_type=\"bit\", vector_dimension=8, levels=1, clusters=2)",
+			want: []yqlddl.Requirement{
+				{Capability: capability.VectorIndexes, Action: 1},
+				{Capability: capability.VectorBitType, Action: 1},
+			},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(yqlddl.Read(test.sql).Requirements(), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+func TestWrittenTable_HappyPath(t *testing.T) {
+	tests := []struct {
+		statement string
+		want      string
+	}{
+		{statement: "UPSERT INTO `docs/d` (id, emb) VALUES (1, \"x\")", want: "docs/d"},
+		{statement: "insert into d (id) values (1);", want: "d"},
+		{statement: "INSERT OR REVERT INTO d SELECT * FROM e", want: "d"},
+		{statement: "REPLACE INTO d (id) VALUES (1)", want: "d"},
+		{statement: "UPDATE d SET n = 1 WHERE id = 2", want: "d"},
+		{statement: "BATCH UPDATE d SET n = 1", want: "d"},
+		{statement: "DELETE FROM d WHERE id = 1", want: "d"},
+		{statement: "-- a comment\nBATCH DELETE FROM `d` WHERE id = 1", want: "d"},
+	}
+	for _, test := range tests {
+		t.Run(test.statement, func(t *testing.T) {
+			c := qt.New(t)
+			got, ok := yqlddl.WrittenTable(test.statement)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+func TestWrittenTable_FailurePath(t *testing.T) {
+	for _, statement := range []string{
+		"SELECT * FROM d",
+		"ALTER TABLE d ADD COLUMN n Int64",
+		"UPSERT INTO $target (id) VALUES (1)",
+		"DELETE d",
+		"",
+	} {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
+			got, ok := yqlddl.WrittenTable(statement)
+			c.Assert(ok, qt.IsFalse)
+			c.Assert(got, qt.Equals, "")
 		})
 	}
 }

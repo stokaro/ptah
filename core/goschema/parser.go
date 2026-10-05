@@ -27,7 +27,9 @@ import (
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbindex"
+	"ptah.run/internal/ydbpartition"
 )
 
 // annotationErrorContext locates one annotation in the source being parsed, so
@@ -377,6 +379,10 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 	if err != nil {
 		return err
 	}
+	vector, err := s.indexVector(kv, comment, structName)
+	if err != nil {
+		return err
+	}
 	s.schemaIndexes = append(s.schemaIndexes, schemamodel.Index{
 		StructName:     structName,
 		Name:           kv["name"],
@@ -393,6 +399,7 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 		TableName:      tableName,   // Target table name
 		Granularity:    granularity, // CH only: GRANULARITY n for data-skipping indexes
 		Partitioning:   partitioning,
+		Vector:         vector,
 	})
 	return nil
 }
@@ -401,7 +408,7 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 // which YDB's global indexes carry; see [ydbindex.ParseDeclaration].
 func (s *schemaParseState) indexPartitioning(kv map[string]string, comment *ast.Comment, structName string) (*ptahast.IndexPartitioningSpec, error) {
 	partitioning, err := ydbindex.ParseDeclaration(kv)
-	if declaration, ok := errors.AsType[*ydbindex.DeclarationError](err); ok {
+	if declaration, ok := errors.AsType[*ydbpartition.DeclarationError](err); ok {
 		return nil, &ptaherr.ParseError{
 			File: s.filename, Line: s.annotationContext(comment, "//ptah:schema:index", structName).line,
 			Directive: "ptah:schema:index", Attribute: declaration.Attribute, Err: ptaherr.ErrInvalidAttributeValue,
@@ -409,6 +416,20 @@ func (s *schemaParseState) indexPartitioning(kv map[string]string, comment *ast.
 		}
 	}
 	return partitioning, err
+}
+
+// indexVector reads the settings of a YDB vector index from an index
+// directive; see [ydbindex.ParseVectorDeclaration].
+func (s *schemaParseState) indexVector(kv map[string]string, comment *ast.Comment, structName string) (*ptahast.VectorIndexSpec, error) {
+	vector, err := ydbindex.ParseVectorDeclaration(kv)
+	if declaration, ok := errors.AsType[*ydbpartition.DeclarationError](err); ok {
+		return nil, &ptaherr.ParseError{
+			File: s.filename, Line: s.annotationContext(comment, "//ptah:schema:index", structName).line,
+			Directive: "ptah:schema:index", Attribute: declaration.Attribute, Err: ptaherr.ErrInvalidAttributeValue,
+			Message: fmt.Sprintf("%s on //ptah:schema:index at %s", declaration.Error(), structName),
+		}
+	}
+	return vector, err
 }
 
 func firstNonEmpty(values ...string) string {
@@ -639,6 +660,10 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 			Message:   err.Error(),
 		}
 	}
+	partitioning, err := s.tablePartitioning(kv, comment, structName)
+	if err != nil {
+		return err
+	}
 	s.tableDirectives = append(s.tableDirectives, schemamodel.Table{
 		StructName:          structName,
 		Name:                tableName,
@@ -655,9 +680,24 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 		CustomSQL:           kv["custom"],
 		RowTTL:              rowTTL,
 		RowDeletionPolicy:   rowDeletionPolicy,
+		YDBPartitioning:     partitioning,
 		Overrides:           parseutils.ParsePlatformSpecific(kv),
 	})
 	return nil
+}
+
+// tablePartitioning reads the settings of a table directive that a YDB row
+// table carries; see [ydbpartition.ParseTableDeclaration].
+func (s *schemaParseState) tablePartitioning(kv map[string]string, comment *ast.Comment, structName string) (*ptahast.YDBTablePartitioningSpec, error) {
+	partitioning, err := ydbpartition.ParseTableDeclaration(kv)
+	if declaration, ok := errors.AsType[*ydbpartition.DeclarationError](err); ok {
+		return nil, &ptaherr.ParseError{
+			File: s.filename, Line: s.annotationContext(comment, "//ptah:schema:table", structName).line,
+			Directive: "ptah:schema:table", Attribute: declaration.Attribute, Err: ptaherr.ErrInvalidAttributeValue,
+			Message: fmt.Sprintf("%s on //ptah:schema:table at %s", declaration.Error(), structName),
+		}
+	}
+	return partitioning, err
 }
 
 func tableDirectiveName(rawSchema, rawName string) (schemaName, tableName string) {
@@ -711,6 +751,7 @@ type schemaParseState struct {
 	ranges                  []schemamodel.Range
 	views                   []schemamodel.View
 	synonyms                []schemamodel.Synonym
+	coordinationNodes       []schemamodel.CoordinationNode
 	extendedProperties      []schemamodel.ExtendedProperty
 	materializedViews       []schemamodel.MaterializedView
 	triggers                []schemamodel.Trigger
@@ -726,11 +767,15 @@ type schemaParseState struct {
 	schemas                 []schemamodel.Schema
 	notDescribed            []coverage.Object
 	changefeeds             []pendingChangefeed
+	columnFamilies          []pendingColumnFamily
 	consumers               []pendingConsumer
 	topics                  []schemamodel.Topic
 	topicConsumers          []pendingTopicConsumer
 	resourcePools           []schemamodel.ResourcePool
 	resourcePoolClassifiers []schemamodel.ResourcePoolClassifier
+	asyncReplications       []schemamodel.AsyncReplication
+	replicationItems        []pendingReplicationItem
+	transfers               []schemamodel.Transfer
 }
 
 type structDeclaration struct {
@@ -843,6 +888,7 @@ var sharedDirectiveParsers = map[string]sharedDirectiveParser{
 	"ptah:schema:hypertable":              (*schemaParseState).parseHypertableComment,
 	"ptah:schema:continuousaggregate":     (*schemaParseState).parseContinuousAggregateComment,
 	"ptah:schema:synonym":                 (*schemaParseState).parseSynonymComment,
+	"ptah:schema:coordinationnode":        (*schemaParseState).parseCoordinationNodeComment,
 	"ptah:schema:extendedproperty":        (*schemaParseState).parseExtendedPropertyComment,
 	"ptah:schema:trigger":                 (*schemaParseState).parseTriggerComment,
 	"ptah:schema:rls:policy":              (*schemaParseState).parseRLSPolicyComment,
@@ -854,11 +900,17 @@ var sharedDirectiveParsers = map[string]sharedDirectiveParser{
 	"ptah:schema:data":                    (*schemaParseState).parseManagedDataComment,
 	"ptah:schema:notdescribed":            ignoringStruct((*schemaParseState).parseNotDescribedComment),
 	"ptah:schema:changefeed":              (*schemaParseState).parseChangefeedComment,
+	columnFamilyDirective:                 (*schemaParseState).parseColumnFamilyComment,
 	"ptah:schema:changefeed:consumer":     (*schemaParseState).parseChangefeedConsumerComment,
 	"ptah:schema:topic":                   (*schemaParseState).parseTopicComment,
 	"ptah:schema:topic:consumer":          (*schemaParseState).parseTopicConsumerComment,
 	"ptah:schema:resourcepool":            (*schemaParseState).parseResourcePoolComment,
 	"ptah:schema:resourcepool:classifier": (*schemaParseState).parseResourcePoolClassifierComment,
+
+	// YDB's async replications, their items and transfers.
+	"ptah:schema:async_replication":      (*schemaParseState).parseAsyncReplicationComment,
+	"ptah:schema:async_replication:item": (*schemaParseState).parseAsyncReplicationItemComment,
+	"ptah:schema:transfer":               (*schemaParseState).parseTransferComment,
 }
 
 // ignoringStruct adapts a parser that does not need the owning struct's name.
@@ -1002,6 +1054,12 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 	if err := state.attachTopicConsumers(); err != nil {
 		return schemamodel.Database{}, err
 	}
+	if err := state.attachReplicationItems(); err != nil {
+		return schemamodel.Database{}, err
+	}
+	if err := state.attachColumnFamilies(); err != nil {
+		return schemamodel.Database{}, err
+	}
 
 	enums := make([]schemamodel.Enum, 0, len(state.globalEnumsMap))
 	keys := make([]string, 0, len(state.globalEnumsMap))
@@ -1037,6 +1095,9 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 		Topics:                  state.topics,
 		ResourcePools:           state.resourcePools,
 		ResourcePoolClassifiers: state.resourcePoolClassifiers,
+		AsyncReplications:       state.asyncReplications,
+		Transfers:               state.transfers,
+		CoordinationNodes:       state.coordinationNodes,
 		ExtendedProperties:      state.extendedProperties,
 		MaterializedViews:       state.materializedViews,
 		Triggers:                state.triggers,
@@ -1803,6 +1864,55 @@ func (s *schemaParseState) parseSynonymComment(comment *ast.Comment, structName 
 		Comment:    kv["comment"],
 	})
 	return nil
+}
+
+// parseCoordinationNodeComment reads a YDB coordination node declaration.
+//
+// There is no dialect scope here, for the reason a synonym has none: a
+// coordination node is a YDB object and nothing else. The settings are read
+// and checked by internal/ydbcoordination, which the YAML reader asks too, so
+// a value one source accepts is one the other accepts. Ptah's own lock node
+// and a name with a segment that starts with a dot are refused where they are
+// written.
+func (s *schemaParseState) parseCoordinationNodeComment(comment *ast.Comment, structName string) error {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	ctx := s.annotationContext(comment, "//ptah:schema:coordinationnode", structName)
+	if err := validateAttributes(kv, ctx); err != nil {
+		return err
+	}
+	if err := requireAttributes(kv, ctx); err != nil {
+		return err
+	}
+	if err := ydbcoordination.RefuseName(kv["schema"], kv["name"]); err != nil {
+		return coordinationNodeError(ctx, "name", err)
+	}
+	spec, err := ydbcoordination.ParseDeclaration(kv)
+	if setting, ok := errors.AsType[*ydbcoordination.SettingError](err); ok {
+		return coordinationNodeError(ctx, setting.Setting, err)
+	}
+	if err != nil {
+		return err
+	}
+	s.coordinationNodes = append(s.coordinationNodes, schemamodel.CoordinationNode{
+		StructName: structName,
+		Schema:     kv["schema"],
+		Name:       kv["name"],
+		Spec:       spec,
+	})
+	return nil
+}
+
+// coordinationNodeError is the parse error for a coordination node
+// attribute whose value the node cannot take.
+func coordinationNodeError(ctx annotationErrorContext, attribute string, err error) error {
+	return &ptaherr.ParseError{
+		File:      ctx.file,
+		Line:      ctx.line,
+		Directive: strings.TrimPrefix(ctx.directive, "//"),
+		Attribute: attribute,
+		Err:       ptaherr.ErrInvalidAttributeValue,
+		Message:   fmt.Sprintf("%s on %s at %s", err.Error(), ctx.directive, ctx.location),
+	}
 }
 
 // parseExtendedPropertyComment reads a SQL Server extended-property

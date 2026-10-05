@@ -71,6 +71,8 @@ func ConvertDBSchemaToGoSchema(dbSchema *catalog.Database, dialect string) *sche
 	convertSynonyms(database, dbSchema.Synonyms)
 	convertTopics(database, dbSchema.Topics)
 	convertResourcePools(database, dbSchema.ResourcePools, dbSchema.ResourcePoolClassifiers)
+	convertReplications(database, dbSchema.AsyncReplications, dbSchema.Transfers)
+	convertCoordinationNodes(database, dbSchema.CoordinationNodes)
 	convertExtendedProperties(database, dbSchema.ExtendedProperties)
 	convertRoles(database, dbSchema.Roles, membershipsFor(dbSchema.RoleMemberships, dialect))
 	database.DatabasePath = dbSchema.DatabasePath
@@ -185,7 +187,9 @@ func convertTablesAndFields(
 			// other (stokaro/ptah#1027).
 			RowTTL:            dbTable.RowTTL.Clone(),
 			RowDeletionPolicy: dbTable.RowDeletionPolicy.Clone(),
+			YDBColumnFamilies: ast.CloneYDBColumnFamilies(dbTable.YDBColumnFamilies),
 			Changefeeds:       ast.CloneChangefeeds(dbTable.Changefeeds),
+			YDBPartitioning:   dbTable.YDBPartitioning.Clone(),
 			Overrides:         tableStorageOverrides(dbTable),
 		}
 		database.Tables = append(database.Tables, table)
@@ -316,6 +320,7 @@ func convertIndexes(
 			IncludeColumns: slices.Clone(dbIndex.IncludeColumns),
 			StorageParams:  maps.Clone(dbIndex.StorageParams),
 			Partitioning:   dbIndex.Partitioning.Clone(),
+			Vector:         dbIndex.Vector.Clone(),
 			// Carried rather than recomputed: only the reader has the catalog,
 			// and an operator class the index's own DDL leaves implicit is
 			// reachable no other way.
@@ -601,6 +606,42 @@ func convertResourcePools(
 		database.ResourcePoolClassifiers = append(database.ResourcePoolClassifiers, schemamodel.ResourcePoolClassifier{
 			Name: classifier.Name,
 			Spec: classifier.Spec,
+		})
+	}
+}
+
+// convertReplications carries the YDB async replications and transfers a read
+// found into the IR, each as the server holds it. The state stays behind: a
+// declaration names none, and a schema made from the read declares the
+// objects rather than what was done to them.
+func convertReplications(database *schemamodel.Database, replications []catalog.AsyncReplication,
+	transfers []catalog.Transfer,
+) {
+	for _, replication := range replications {
+		database.AsyncReplications = append(database.AsyncReplications, schemamodel.AsyncReplication{
+			Name:   replication.Name,
+			Schema: replication.Schema,
+			Spec:   replication.Spec.Clone(),
+		})
+	}
+	for _, transfer := range transfers {
+		database.Transfers = append(database.Transfers, schemamodel.Transfer{
+			Name:   transfer.Name,
+			Schema: transfer.Schema,
+			Spec:   transfer.Spec,
+		})
+	}
+}
+
+// convertCoordinationNodes carries the YDB coordination nodes a read found
+// into the IR, with the configuration as YDB stores it: a setting nobody set
+// stays unset, so the description declares only what the node was given.
+func convertCoordinationNodes(database *schemamodel.Database, nodes []catalog.CoordinationNode) {
+	for _, node := range nodes {
+		database.CoordinationNodes = append(database.CoordinationNodes, schemamodel.CoordinationNode{
+			Schema: node.Schema,
+			Name:   node.Name,
+			Spec:   node.Spec,
 		})
 	}
 }

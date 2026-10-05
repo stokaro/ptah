@@ -228,15 +228,27 @@ func measuredLines() map[string]measuredLine {
 				capability.AsyncIndexes:                    typeKeyCarried,
 				capability.IndexRename:                     indexKeyCarried,
 				capability.IndexPartitioning:               indexKeyCarried,
+				capability.VectorIndexes:                   vectorKeyCarried,
+				capability.VectorIndexMaintainedOnWrite:    vectorKeyCarried,
+				capability.VectorBitType:                   vectorKeyCarried,
 				capability.RoleMembership:                  accessKeyCarried,
 				capability.GroupPrincipals:                 accessKeyCarried,
 				capability.DatabaseGrants:                  accessKeyCarried,
 				capability.RelativeGrantPaths:              accessKeyCarried,
+				capability.ColumnFamilies:                  columnFamilyKeyCarried,
+				capability.ColumnFamilyCacheMode:           columnFamilyKeyCarried,
+				capability.CoordinationNodes:               coordinationKeyCarried,
 				capability.Changefeeds:                     changefeedKeyCarried,
 				capability.ChangefeedUserSIDs:              changefeedKeyCarried,
 				capability.ChangefeedSchemaChanges:         changefeedKeyCarried,
 				capability.ChangefeedTopicAutoPartitioning: changefeedKeyCarried,
 				capability.TopicConsumerAvailabilityPeriod: changefeedKeyCarried,
+				capability.AsyncReplication:                replicationKeyCarried,
+				capability.Transfers:                       replicationKeyCarried,
+				capability.ReplicationSecretPaths:          replicationKeyCarried,
+				capability.PartitioningOptions:             tableSettingKeyCarried,
+				capability.ReadReplicas:                    tableSettingKeyCarried,
+				capability.KeyBloomFilter:                  tableSettingKeyCarried,
 				capability.SerialColumns:                   typeKeyCarried,
 				capability.SerialSequenceOptions:           serialKeyCarried,
 				capability.SerialSequenceKeepsRange:        serialKeyCarried,
@@ -390,15 +402,27 @@ func measuredLines() map[string]measuredLine {
 				capability.AsyncIndexes:                    typeKeyCarried,
 				capability.IndexRename:                     indexKeyCarried,
 				capability.IndexPartitioning:               indexKeyCarried,
+				capability.VectorIndexes:                   vectorKeyCarried,
+				capability.VectorIndexMaintainedOnWrite:    vectorKeyCarried,
+				capability.VectorBitType:                   vectorKeyCarried,
 				capability.RoleMembership:                  accessKeyCarried,
 				capability.GroupPrincipals:                 accessKeyCarried,
 				capability.DatabaseGrants:                  accessKeyCarried,
 				capability.RelativeGrantPaths:              accessKeyCarried,
+				capability.ColumnFamilies:                  columnFamilyKeyCarried,
+				capability.ColumnFamilyCacheMode:           columnFamilyKeyCarried,
+				capability.CoordinationNodes:               coordinationKeyCarried,
 				capability.Changefeeds:                     changefeedKeyCarried,
 				capability.ChangefeedUserSIDs:              changefeedKeyCarried,
 				capability.ChangefeedSchemaChanges:         changefeedKeyCarried,
 				capability.ChangefeedTopicAutoPartitioning: changefeedKeyCarried,
 				capability.TopicConsumerAvailabilityPeriod: changefeedKeyCarried,
+				capability.AsyncReplication:                replicationKeyCarried,
+				capability.Transfers:                       replicationKeyCarried,
+				capability.ReplicationSecretPaths:          replicationKeyCarried,
+				capability.PartitioningOptions:             tableSettingKeyCarried,
+				capability.ReadReplicas:                    tableSettingKeyCarried,
+				capability.KeyBloomFilter:                  tableSettingKeyCarried,
 				capability.SerialColumns:                   typeKeyCarried,
 				capability.SerialSequenceOptions:           serialKeyCarried,
 				capability.SerialSequenceKeepsRange:        serialKeyCarried,
@@ -553,15 +577,27 @@ func measuredLines() map[string]measuredLine {
 				capability.AsyncIndexes:                    typeKeyCarried,
 				capability.IndexRename:                     indexKeyCarried,
 				capability.IndexPartitioning:               indexKeyCarried,
+				capability.VectorIndexes:                   vectorKeyCarried,
+				capability.VectorIndexMaintainedOnWrite:    vectorKeyCarried,
+				capability.VectorBitType:                   vectorKeyCarried,
 				capability.RoleMembership:                  accessKeyCarried,
 				capability.GroupPrincipals:                 accessKeyCarried,
 				capability.DatabaseGrants:                  accessKeyCarried,
 				capability.RelativeGrantPaths:              accessKeyCarried,
+				capability.ColumnFamilies:                  columnFamilyKeyCarried,
+				capability.ColumnFamilyCacheMode:           columnFamilyKeyCarried,
+				capability.CoordinationNodes:               coordinationKeyCarried,
 				capability.Changefeeds:                     changefeedKeyCarried,
 				capability.ChangefeedUserSIDs:              changefeedKeyCarried,
 				capability.ChangefeedSchemaChanges:         changefeedKeyCarried,
 				capability.ChangefeedTopicAutoPartitioning: changefeedKeyCarried,
 				capability.TopicConsumerAvailabilityPeriod: changefeedKeyCarried,
+				capability.AsyncReplication:                replicationKeyCarried,
+				capability.Transfers:                       replicationKeyCarried,
+				capability.ReplicationSecretPaths:          replicationKeyCarried,
+				capability.PartitioningOptions:             tableSettingKeyCarried,
+				capability.ReadReplicas:                    tableSettingKeyCarried,
+				capability.KeyBloomFilter:                  tableSettingKeyCarried,
 				capability.SerialColumns:                   typeKeyCarried,
 				capability.SerialSequenceOptions:           serialKeyCarried,
 				capability.SerialSequenceKeepsRange:        serialKeyCarried,
@@ -725,6 +761,13 @@ const queryKeyCarried = "this run predates the key and sent no query experiment;
 const indexKeyCarried = "this run predates the key and sent no index experiment; the probe asks it " +
 	"on every run through those experiments, and the value here is the preset's"
 
+// vectorKeyCarried is why the keys about YDB's vector index are carried on
+// every measured line: the run named there predates them. The probe asks them
+// on every run through its vector experiments, whose statements every engine
+// but YDB refuses, and the value here is the preset's.
+const vectorKeyCarried = "this run predates the key and sent no vector index experiment; the probe asks it " +
+	"on every run through those experiments, and the value here is the preset's"
+
 // viewKeyCarried is why the key about replacing a view in one statement is
 // carried on every measured line: the run named there predates it. The probe
 // asks it on every run through its view experiment, which reads the replaced
@@ -752,6 +795,12 @@ const serialKeyCarried = "this run predates the key and sent no serial sequence 
 const workloadKeyCarried = "this run predates the key and sent no experiment for its object family; the " +
 	"probe asks it on every run, and the value here is the preset's"
 
+// columnFamilyKeyCarried is why the keys about a YDB row table's column
+// families are carried on these lines: the run predates them. The probe asks
+// them on every run, and the value here is the preset's.
+const columnFamilyKeyCarried = "this run predates the key and sent no column family experiment; the probe asks " +
+	"it on every run, and the value here is the preset's"
+
 // changefeedKeyCarried is why the keys about a YDB changefeed and the
 // consumers of its topic are carried on these lines: the run predates them.
 const changefeedKeyCarried = "this run predates the key and sent no changefeed experiment; the probe asks " +
@@ -764,3 +813,23 @@ const changefeedKeyCarried = "this run predates the key and sent no changefeed e
 // these engines, and the value here is the preset's.
 const accessKeyCarried = "this run predates the key; the probe declares it undecided on this engine, " +
 	"because only the YDB planner plans it, and the value here is the preset's"
+
+// replicationKeyCarried is why the keys about a YDB async replication and a
+// transfer are carried on these lines: the run predates them. The probe asks
+// them on every run through its replication and transfer experiments, and the
+// value here is the preset's.
+const replicationKeyCarried = "this run predates the key and sent no replication or transfer experiment; the " +
+	"probe asks it on every run, and the value here is the preset's"
+
+// coordinationKeyCarried is why the key about YDB coordination nodes is
+// carried on every measured line: the run named there predates it, and no
+// statement can ask an engine other than YDB about an object only YDB has.
+const coordinationKeyCarried = "this run predates the key; it names whether Ptah manages YDB coordination " +
+	"nodes, which only YDB has, and the value here is the preset's"
+
+// tableSettingKeyCarried is why the keys about a row table's partitioning, read
+// replicas and key bloom filter are carried on every measured line: the run
+// named there predates them. The probe asks them on every run through its
+// table-setting experiments, and the value here is the preset's.
+const tableSettingKeyCarried = "this run predates the key and sent no table-setting experiment; the probe asks it " +
+	"on every run through those experiments, and the value here is the preset's"

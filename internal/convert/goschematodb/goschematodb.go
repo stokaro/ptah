@@ -88,6 +88,11 @@ func ToDBSchema(db *schemamodel.Database, dialect string) *catalog.Database {
 		// would hold, so a file-to-file comparison finds it on both sides.
 		ResourcePools:           toDBResourcePools(db.ResourcePools),
 		ResourcePoolClassifiers: toDBResourcePoolClassifiers(db.ResourcePoolClassifiers),
+		// A replication and a transfer declared in a document stand for the
+		// ones its database would hold, so a file-to-file comparison finds
+		// each on both sides.
+		AsyncReplications: toDBAsyncReplications(db.AsyncReplications),
+		Transfers:         toDBTransfers(db.Transfers),
 		// A file-to-file comparison uses this side as the current state, and a
 		// document that declared its own limits declares them here too
 		// (stokaro/ptah#1276).
@@ -142,12 +147,18 @@ func toDBTables(
 			VirtualModule:    table.VirtualModule,
 			VirtualArguments: table.VirtualArguments,
 			// A declaration compared as the current side of a file-to-file
-			// comparison carries its changefeeds as a database would.
-			Changefeeds: ast.CloneChangefeeds(table.Changefeeds),
+			// comparison carries its column families and changefeeds as a
+			// database would.
+			YDBColumnFamilies: ast.CloneYDBColumnFamilies(table.YDBColumnFamilies),
+			Changefeeds:       ast.CloneChangefeeds(table.Changefeeds),
 			// A database built from the document carries the policy it
 			// declares, so a file-to-file comparison of one document against
 			// itself has nothing to plan for it.
 			RowDeletionPolicy: table.RowDeletionPolicy.Clone(),
+			// A database built from the document carries the YDB settings it
+			// declares, so a file-to-file comparison of one document against
+			// itself has nothing to plan for them.
+			YDBPartitioning: table.YDBPartitioning.Clone(),
 		})
 	}
 	return out
@@ -302,6 +313,7 @@ func toDBIndexes(
 			IncludeColumns: append([]string(nil), index.IncludeColumns...),
 			StorageParams:  maps.Clone(index.StorageParams),
 			Partitioning:   index.Partitioning.Clone(),
+			Vector:         index.Vector.Clone(),
 			Type:           index.Type,
 			Granularity:    index.Granularity,
 		})
@@ -699,6 +711,19 @@ func toDBResourcePools(pools []schemamodel.ResourcePool) []catalog.ResourcePool 
 	return out
 }
 
+func toDBAsyncReplications(replications []schemamodel.AsyncReplication) []catalog.AsyncReplication {
+	if len(replications) == 0 {
+		return nil
+	}
+	out := make([]catalog.AsyncReplication, 0, len(replications))
+	for _, replication := range replications {
+		out = append(out, catalog.AsyncReplication{
+			Name: replication.Name, Schema: replication.Schema, Spec: replication.Spec.Clone(),
+		})
+	}
+	return out
+}
+
 func toDBResourcePoolClassifiers(classifiers []schemamodel.ResourcePoolClassifier) []catalog.ResourcePoolClassifier {
 	if len(classifiers) == 0 {
 		return nil
@@ -706,6 +731,17 @@ func toDBResourcePoolClassifiers(classifiers []schemamodel.ResourcePoolClassifie
 	out := make([]catalog.ResourcePoolClassifier, 0, len(classifiers))
 	for _, classifier := range classifiers {
 		out = append(out, catalog.ResourcePoolClassifier{Name: classifier.Name, Spec: classifier.Spec})
+	}
+	return out
+}
+
+func toDBTransfers(transfers []schemamodel.Transfer) []catalog.Transfer {
+	if len(transfers) == 0 {
+		return nil
+	}
+	out := make([]catalog.Transfer, 0, len(transfers))
+	for _, transfer := range transfers {
+		out = append(out, catalog.Transfer{Name: transfer.Name, Schema: transfer.Schema, Spec: transfer.Spec})
 	}
 	return out
 }

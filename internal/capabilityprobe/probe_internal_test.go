@@ -131,6 +131,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.BackupCollections,
 			capability.CatalogVectorInfo,
 			capability.ContinuousAggregates,
+			capability.CoordinationNodes,
 			// DatabaseGrants, GroupPrincipals, RelativeGrantPaths and
 			// RoleMembership name what Ptah's planner plans, which only the
 			// YDB planner does, as IndexRename below does.
@@ -145,6 +146,8 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.Hypertables,
 			// IndexRename names what Ptah's planner plans, and only the YDB
 			// planner plans a rename; the server's answer would not decide it.
+			// CoordinationNodes above is the same kind of key: it names what
+			// Ptah manages on YDB, which no statement can ask this engine.
 			capability.IndexRename,
 			capability.MigrationLockTimeout,
 			capability.MigrationStatementTimeout,
@@ -180,6 +183,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.CatalogVectorInfo,
 			capability.CompositeTypes,
 			capability.ContinuousAggregates,
+			capability.CoordinationNodes,
 			capability.DatabaseGrants,
 			capability.DDLInsideTransaction,
 			capability.DomainComments,
@@ -229,6 +233,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.CatalogVectorInfo,
 			capability.CompositeTypes,
 			capability.ContinuousAggregates,
+			capability.CoordinationNodes,
 			capability.DatabaseGrants,
 			capability.DDLInsideTransaction,
 			capability.DomainComments,
@@ -281,6 +286,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.CatalogVectorInfo,
 			capability.CompositeTypes,
 			capability.ContinuousAggregates,
+			capability.CoordinationNodes,
 			capability.DatabaseGrants,
 			capability.DDLInsideTransaction,
 			capability.DomainComments,
@@ -445,37 +451,37 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps capability.Capabilities
 		want int
 	}{{
-		name: "postgres owes nineteen fewer: the probe cannot ask whether a privilege exists, none of the three runtime policies nor the transaction wrapper is a statement it can send, TimescaleDB — hypertables and continuous aggregates both — is an extension none of these images has, the Oracle vector catalog column is not a relation it carries, index_rename, the two serial sequence keys and the four access keys only YDB plans name what Ptah's planner plans rather than what the server does, no engine of the family has a spelling of a TTL unit, and the three workload keys name YDB objects",
+		name: "postgres owes twenty fewer: the probe cannot ask whether a privilege exists, none of the three runtime policies nor the transaction wrapper is a statement it can send, TimescaleDB — hypertables and continuous aggregates both — is an extension none of these images has, the Oracle vector catalog column is not a relation it carries, index_rename, the two serial sequence keys, the four access keys only YDB plans and coordination_nodes and the three workload keys name what Ptah's planner plans rather than what the server does, and no engine of the family has a spelling of a TTL unit",
 		cell: measuredCell,
 		caps: capability.Postgres17(),
-		want: registered - 19,
+		want: registered - 20,
 	}, {
-		name: "mysql owes forty-five fewer: role_management, row_level_ttl, row_deletion_policy and its epoch column, named_not_null_constraints, schema_comments, index_rename, the two serial sequence keys, the four access keys only YDB plans, the ten object-comment keys, the two TimescaleDB keys, the seven catalog keys, the three user-type kinds, the four runtime properties, the sequence grammar restriction and the three workload keys name surfaces no MySQL path reads or no statement decides",
+		name: "mysql owes forty-six fewer: role_management, row_level_ttl, row_deletion_policy and its epoch column, named_not_null_constraints, schema_comments, index_rename, the two serial sequence keys, the four access keys only YDB plans, coordination_nodes, the three workload keys, the ten object-comment keys, the two TimescaleDB keys, the seven catalog keys, the three user-type kinds, the four runtime properties and the sequence grammar restriction name surfaces no MySQL path reads or no statement decides",
 		cell: Cell{
 			Dialect: platform.MySQL, Line: "9.7",
 			Preset: capability.MySQL84, PresetName: "MySQL84",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MySQL84(),
-		want: registered - 45,
+		want: registered - 46,
 	}, {
-		name: "mariadb owes forty-five fewer: COMMENT ON SCHEMA and the ten object-comment forms are not statements it has, the three user-type kinds have no MariaDB spelling, the four runtime properties are not statements, neither pg_class nor pg_default_acl nor pg_get_triggerdef nor the Oracle vector catalog column is something it has, the sequence grammar restriction has no control statement here, row_deletion_policy and its epoch column are Spanner and YDB clauses it has no spelling of, named_not_null_constraints is a PostgreSQL 18 catalog behavior, index_rename, the two serial sequence keys and the four access keys only YDB plans name what Ptah's planner plans, the three workload keys name YDB objects, and sequences is asked now that Ptah renders, reads and plans one",
+		name: "mariadb owes forty-six fewer: COMMENT ON SCHEMA and the ten object-comment forms are not statements it has, the three user-type kinds have no MariaDB spelling, the four runtime properties are not statements, neither pg_class nor pg_default_acl nor pg_get_triggerdef nor the Oracle vector catalog column is something it has, the sequence grammar restriction has no control statement here, row_deletion_policy and its epoch column are Spanner and YDB clauses it has no spelling of, named_not_null_constraints is a PostgreSQL 18 catalog behavior, index_rename, the two serial sequence keys, the four access keys only YDB plans and coordination_nodes and the three workload keys name what Ptah's planner plans, and sequences is asked now that Ptah renders, reads and plans one",
 		cell: Cell{
 			Dialect: platform.MariaDB, Line: "10.11",
 			Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MariaDB1011(),
-		want: registered - 45,
+		want: registered - 46,
 	}, {
-		name: "cockroachdb 26.2 owes every row its preset enables a prerequisite for, less the nineteen its plan declares undecidable and the domain comment row, whose domain prerequisite is absent",
+		name: "cockroachdb 26.2 owes every row its preset enables a prerequisite for, less the twenty its plan declares undecidable and the domain comment row, whose domain prerequisite is absent",
 		cell: Cell{
 			Dialect: platform.CockroachDB, Line: "26.2",
 			Preset: capability.CockroachDB26, PresetName: "CockroachDB26",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.CockroachDB26(),
-		want: registered - 20,
+		want: registered - 21,
 	}, {
 		name: "cockroachdb 25.4 excludes the guarded drop row and the domain comment row, whose prerequisites are absent",
 		cell: Cell{
@@ -484,7 +490,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.CockroachDB25(),
-		want: registered - 21,
+		want: registered - 22,
 	}, {
 		name: "ydb 26.2 owes every row but the ten it declares and the seven whose prerequisite the preset lacks: " +
 			"guarded DROP CONSTRAINT, CREATE OR REPLACE TRIGGER, SET EXPRESSION, the three reference policies " +
@@ -496,6 +502,16 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		},
 		caps: capability.YDB262(),
 		want: registered - 17,
+	}, {
+		name: "ydb 25.1 owes two rows fewer than 26.2: the vector index's writes and its bit vectors, whose " +
+			"prerequisite the line keeps behind a flag that is off by default",
+		cell: Cell{
+			Dialect: platform.YDB, Line: "25.1",
+			Preset: capability.YDB251, PresetName: "YDB251",
+			Refinement: RefinedByVersion,
+		},
+		caps: capability.YDB251(),
+		want: registered - 19,
 	}, {
 		name: "a banner-refined line owes nothing because no observation can be credited to it",
 		cell: Cell{

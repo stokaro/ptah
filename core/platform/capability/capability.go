@@ -479,6 +479,17 @@ const (
 	// both, and one of them could ship before the other.
 	ContinuousAggregates Capability = "continuous_aggregates"
 
+	// CoordinationNodes marks a target on which Ptah declares, reads, creates,
+	// changes and drops YDB coordination nodes, the objects that hold a YDB
+	// application's distributed locks and rate limiters.
+	//
+	// It describes Ptah rather than a statement the server takes: YQL has no
+	// statement for a coordination node (measured on YDB 25.1.4.7 and
+	// 26.2.1.14, `CREATE COORDINATION NODE` is a parse error), so Ptah writes
+	// a statement of its own and its YDB connection runs it through the
+	// coordination service. No other engine has the object.
+	CoordinationNodes Capability = "coordination_nodes"
+
 	// SequenceStartCounterOnly marks a target whose CREATE SEQUENCE carries a
 	// name and a start counter and refuses the option clauses PostgreSQL takes
 	// beside them.
@@ -1331,6 +1342,80 @@ const (
 	// table rather than on the index.
 	IndexPartitioning Capability = "index_partitioning"
 
+	// VectorIndexes marks a target on which Ptah declares, reads and plans a
+	// vector index of YDB's kind: `INDEX i GLOBAL USING vector_kmeans_tree ON
+	// ([prefix, ...] embedding) WITH (distance = ..., vector_type = ...,
+	// vector_dimension = ..., levels = ..., clusters = ...)`, an approximate
+	// nearest-neighbour index over a String column.
+	//
+	// pgvector's hnsw and ivfflat indexes are not this key's: a PostgreSQL
+	// index's method, operator class and storage parameters pass through
+	// every dialect that renders them, and a server takes them or refuses
+	// them. The key is false wherever YDB's statement is refused, which is
+	// every other engine.
+	//
+	// On YDB it is a feature flag. Measured on local-ydb, 25.1.4.7 keeps
+	// EnableVectorIndex off by default and answers `Vector index support is
+	// disabled` (code 2029) to the index in CREATE TABLE and in ADD INDEX,
+	// and builds it with the flag on; 25.2.1.24 and every later line turn the
+	// flag on. A connection that reads the cluster's flags follows it.
+	VectorIndexes Capability = "vector_indexes"
+
+	// VectorIndexMaintainedOnWrite marks a target whose vector index takes
+	// in the rows written after it was built: a row upserted, updated or
+	// deleted then is found, moved or gone through the index, as through a
+	// full scan.
+	//
+	// Measured on local-ydb with a table of five rows, a vector_kmeans_tree
+	// index built over them, and then an upsert, an update and a delete:
+	// 25.3.1.25, 25.4.1.15, 26.1.1.22 and 26.2.1.14 answer each write through
+	// the index. 25.1.4.7 and 25.2.1.24 accept every write and answer
+	// through the index as it was built, while a full scan sees the writes:
+	// a vector index there describes its table only as it stood at the
+	// build.
+	VectorIndexMaintainedOnWrite Capability = "vector_index_maintained_on_write"
+
+	// VectorBitType marks a target whose vector index takes bit vectors,
+	// `vector_type = bit`.
+	//
+	// Measured on local-ydb by building the index over a table holding two
+	// bit vectors: 26.1.1.22 and 26.2.1.14 build it and answer through it.
+	// 25.3.1.25 and 25.4.1.15 refuse the build with `Unsupported
+	// vector_type: VECTOR_TYPE_BIT`, and 25.1.4.7 and 25.2.1.24 with `bit
+	// vector type is not supported`. Every line accepts the index on an
+	// empty table, so acceptance alone does not decide the key.
+	VectorBitType Capability = "vector_bit_type"
+
+	// ColumnFamilies marks a target on which Ptah declares, reads and changes
+	// a row table's column families: YDB's `FAMILY f (DATA = ...,
+	// COMPRESSION = ...)` entries of CREATE TABLE, with the columns each
+	// holds, and `ALTER TABLE ... ADD FAMILY`, `ALTER FAMILY ... SET` and
+	// `ALTER COLUMN ... SET FAMILY` on a table that exists.
+	//
+	// Measured on YDB 25.1.4.7 and 26.2.1.14 alike: a family takes DATA, a
+	// storage pool kind the database has, and COMPRESSION `off` or `lz4`
+	// (`zstd` answers `Unsupported compression value 3`, and
+	// COMPRESSION_LEVEL `is not supported for OLTP tables`). A key column
+	// stays in the `default` family. YQL has no DROP FAMILY and no RESET of
+	// a family setting, and setting one setting resets no other. A cluster's
+	// table profile gives a new table's families settings, and a family, of
+	// its own, so a setting a declaration leaves out keeps what the table
+	// holds. A column table refuses FAMILY on 26.2.1.14 (`Column FAMILY is
+	// not supported for column tables`). CockroachDB's FAMILY clause groups
+	// columns with no settings of their own, and Ptah models none.
+	ColumnFamilies Capability = "column_families"
+
+	// ColumnFamilyCacheMode marks a target whose column family takes
+	// `CACHE_MODE = 'in_memory'` or `'regular'`, in CREATE TABLE and through
+	// `ALTER FAMILY ... SET CACHE_MODE`. It is behind YDB's
+	// EnableTableCacheModes flag. Measured: `Unknown table setting:
+	// CACHE_MODE` on 25.1.4.7 and 25.2.1.24, which do not list the flag;
+	// `Setting cache_mode is not allowed` on 25.3.1.25, where the flag is off
+	// by default and the setting is taken and read back once it is on; and
+	// taken and read back on 25.4.1.15, 26.1.1.22 and 26.2.1.14, where the
+	// flag is on by default.
+	ColumnFamilyCacheMode Capability = "column_family_cache_mode"
+
 	// Changefeeds marks a target on which Ptah declares, reads and plans a
 	// changefeed: YDB's stream of a row table's changes, added with `ALTER
 	// TABLE ... ADD CHANGEFEED ... WITH (MODE = ..., FORMAT = ...)` and kept
@@ -1434,6 +1519,76 @@ const (
 	// needs (`data source pq doesn't exist`) until EnableExternalDataSources
 	// is on too, and then runs the query.
 	StreamingQueries Capability = "streaming_queries"
+	// AsyncReplication marks a target on which Ptah declares, reads and plans
+	// an asynchronous replication: YDB's `CREATE ASYNC REPLICATION <name> FOR
+	// <source> AS <replica> WITH (CONNECTION_STRING = ...)`, which copies
+	// tables of a source database into read-only replica tables the server
+	// creates and keeps current.
+	//
+	// Measured on every YDB line from 25.1.4.7 to 26.2.1.14: the replication
+	// service's DescribeReplication reports the connection, the credentials
+	// by the secret they name, the consistency level and one item per
+	// replicated table, and `ALTER ASYNC REPLICATION ... SET` changes the
+	// connection and the credentials only while the replication is paused
+	// (`Modifications are not allowed in StandBy state`). The items, the
+	// consistency level and the commit interval never change in place
+	// (`CONSISTENCY_LEVEL is not supported in ALTER`). On 26.2.1.14 the
+	// statement is behind YDB's EnableReplication flag, on by default:
+	// turned off, it answers `Asynchronous replication is disabled`.
+	AsyncReplication Capability = "async_replication"
+
+	// Transfers marks a target on which Ptah declares, reads and plans a
+	// transfer: YDB's `CREATE TRANSFER <name> FROM <topic> TO <table> USING
+	// <lambda>`, which reads a topic's messages, turns each through a YQL
+	// lambda and writes the rows into a table.
+	//
+	// It is behind YDB's EnableTopicTransfer flag: off on 25.1.4.7, where the
+	// statement answers `Topic transfer creation is disabled` and is accepted
+	// and runs once the flag is on, and on from 25.2.1.24. DescribeTransfer
+	// reports the lambda as written, the source, the destination, the
+	// consumer and the batch settings, and `ALTER TRANSFER ... SET USING` and
+	// `SET (BATCH_SIZE_BYTES = ..., FLUSH_INTERVAL = ...)` change a running
+	// transfer in place.
+	Transfers Capability = "transfers"
+
+	// ReplicationSecretPaths marks a target whose async replication and
+	// transfer take `TOKEN_SECRET_PATH` and `PASSWORD_SECRET_PATH`, naming a
+	// secret by its scheme path rather than by the name of an object secret.
+	// Measured: accepted on YDB 25.4.1.15 and later and read back as the
+	// secret's absolute path, and `Unknown replication setting:
+	// TOKEN_SECRET_PATH` on 25.1.4.7 to 25.3.1.25.
+	ReplicationSecretPaths Capability = "replication_secret_paths" // #nosec G101 -- a capability key, not a credential
+
+	// PartitioningOptions marks a target on which Ptah declares, reads and
+	// changes how a row table splits into partitions -- YDB's
+	// AUTO_PARTITIONING_BY_SIZE, AUTO_PARTITIONING_PARTITION_SIZE_MB,
+	// AUTO_PARTITIONING_BY_LOAD and the minimum and maximum partition counts --
+	// and the partitions a new table starts with, UNIFORM_PARTITIONS or
+	// PARTITION_AT_KEYS.
+	//
+	// Measured on YDB 25.1.4.7 and 26.2.1.14 alike: CREATE TABLE ... WITH
+	// takes every setting, and `ALTER TABLE ... SET (...)` takes all but the
+	// starting layout (`UNIFORM_PARTITIONS alter is not supported`). No
+	// setting can be reset (`... reset is not supported`), setting one resets
+	// others -- AUTO_PARTITIONING_BY_LOAD = ENABLED resets the minimum to 1,
+	// AUTO_PARTITIONING_BY_SIZE = ENABLED resets the size to 2048 MB and the
+	// minimum to 1 -- and a maximum cannot be removed (`Can't set max
+	// partition count to 0`).
+	PartitioningOptions Capability = "partitioning_options"
+
+	// ReadReplicas marks a target on which Ptah declares, reads and changes a
+	// row table's read replicas: YDB's READ_REPLICAS_SETTINGS, `PER_AZ:<n>` or
+	// `ANY_AZ:<n>`. Measured on YDB 25.1.4.7 and 26.2.1.14, CREATE TABLE and
+	// ALTER TABLE ... SET take it, setting it resets no other setting, and
+	// `PER_AZ:0` removes the replicas where RESET is refused.
+	ReadReplicas Capability = "read_replicas"
+
+	// KeyBloomFilter marks a target on which Ptah declares, reads and changes
+	// whether a row table keeps a bloom filter of its keys: YDB's
+	// KEY_BLOOM_FILTER. Measured on YDB 25.1.4.7 and 26.2.1.14, CREATE TABLE
+	// and ALTER TABLE ... SET take ENABLED and DISABLED, setting it resets no
+	// other setting, and RESET is refused.
+	KeyBloomFilter Capability = "key_bloom_filter"
 
 	// SerialColumns marks a target whose SERIAL column types fill the column
 	// on insert without the application naming a value: PostgreSQL's serial
@@ -1646,6 +1801,9 @@ var registry = map[Capability]spec{
 	},
 	ContinuousAggregates: {
 		doc: "TimescaleDB continuous aggregates: CREATE MATERIALIZED VIEW WITH (timescaledb.continuous) and the catalog that reads one back",
+	},
+	CoordinationNodes: {
+		doc: "Ptah declares, reads and plans YDB coordination nodes, through a statement of its own that its YDB connection runs",
 	},
 	PostgresCatalogFunctions: {
 		doc: "obj_description reads a comment back out of the catalog",
@@ -1908,6 +2066,21 @@ var registry = map[Capability]spec{
 	IndexPartitioning: {
 		doc: "Ptah declares, reads and changes a global index's partitioning and read replicas (YDB's ALTER INDEX ... SET)",
 	},
+	VectorIndexes: {
+		doc: "Ptah declares, reads and plans a YDB vector index, GLOBAL USING vector_kmeans_tree (behind a flag on YDB 25.1)",
+	},
+	VectorIndexMaintainedOnWrite: {
+		doc: "a vector index takes in the rows written after its build (YDB 25.3 and later)",
+	},
+	VectorBitType: {
+		doc: "a vector index takes bit vectors, vector_type = bit (YDB 26.1 and later)",
+	},
+	ColumnFamilies: {
+		doc: "Ptah declares, reads and changes a row table's column families and the columns each holds (YDB's FAMILY)",
+	},
+	ColumnFamilyCacheMode: {
+		doc: "a column family takes CACHE_MODE, keeping its columns in memory (YDB 25.4 and later, behind a flag on 25.3)",
+	},
 	Changefeeds: {
 		doc: "Ptah declares, reads and plans a table's changefeeds and their topics' consumers (YDB's ADD CHANGEFEED)",
 	},
@@ -1934,6 +2107,24 @@ var registry = map[Capability]spec{
 	},
 	StreamingQueries: {
 		doc: "Ptah declares, reads and plans a streaming query (YDB's CREATE STREAMING QUERY; not modeled)",
+	},
+	AsyncReplication: {
+		doc: "Ptah declares, reads and plans an async replication of another database's tables (YDB's CREATE ASYNC REPLICATION)",
+	},
+	Transfers: {
+		doc: "Ptah declares, reads and plans a transfer from a topic into a table through a lambda (YDB's CREATE TRANSFER)",
+	},
+	ReplicationSecretPaths: {
+		doc: "a replication or a transfer names a secret by its path, TOKEN_SECRET_PATH (YDB 25.4 and later)",
+	},
+	PartitioningOptions: {
+		doc: "Ptah declares, reads and changes how a row table splits into partitions, and the partitions it starts with (YDB's AUTO_PARTITIONING_*, UNIFORM_PARTITIONS, PARTITION_AT_KEYS)",
+	},
+	ReadReplicas: {
+		doc: "Ptah declares, reads and changes a row table's read replicas (YDB's READ_REPLICAS_SETTINGS)",
+	},
+	KeyBloomFilter: {
+		doc: "Ptah declares, reads and changes whether a row table keeps a bloom filter of its keys (YDB's KEY_BLOOM_FILTER)",
 	},
 	SerialColumns: {
 		doc: "SERIAL column types fill the column from an implicit sequence (PostgreSQL serial, YDB Serial)",
@@ -2139,6 +2330,7 @@ func MySQL84() Capabilities {
 		RowLevelSecurity:               false,
 		Hypertables:                    false,
 		ContinuousAggregates:           false,
+		CoordinationNodes:              false,
 		PostgresCatalogFunctions:       false,
 		CatalogRowStatistics:           false,
 		CatalogVectorInfo:              false,
@@ -2237,6 +2429,14 @@ func MySQL84() Capabilities {
 		// index partitioning is YDB's, so both index keys are false here.
 		IndexRename:       false,
 		IndexPartitioning: false,
+		// A vector index of YDB's kind is YDB's: pgvector's indexes pass through
+		// as a method, an operator class and storage parameters instead.
+		VectorIndexes:                false,
+		VectorIndexMaintainedOnWrite: false,
+		VectorBitType:                false,
+		// Column families are YDB's, so both family keys are false here.
+		ColumnFamilies:        false,
+		ColumnFamilyCacheMode: false,
 		// A changefeed, a standalone topic and the consumers either carries
 		// are YDB's, so the changefeed and topic keys are false here.
 		Changefeeds:                     false,
@@ -2253,6 +2453,16 @@ func MySQL84() Capabilities {
 		SerialColumns:        true,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
+		// An async replication and a transfer are YDB's, so the three
+		// replication keys are false here.
+		AsyncReplication:       false,
+		Transfers:              false,
+		ReplicationSecretPaths: false,
+		// A row table's partitioning, read replicas and key bloom filter are
+		// YDB's table settings, so the three keys about them are false here.
+		PartitioningOptions: false,
+		ReadReplicas:        false,
+		KeyBloomFilter:      false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -2368,6 +2578,7 @@ func MariaDB1011() Capabilities {
 		RowLevelSecurity:               false,
 		Hypertables:                    false,
 		ContinuousAggregates:           false,
+		CoordinationNodes:              false,
 		PostgresCatalogFunctions:       false,
 		CatalogRowStatistics:           false,
 		CatalogVectorInfo:              false,
@@ -2473,6 +2684,14 @@ func MariaDB1011() Capabilities {
 		// index partitioning is YDB's, so both index keys are false here.
 		IndexRename:       false,
 		IndexPartitioning: false,
+		// A vector index of YDB's kind is YDB's: pgvector's indexes pass through
+		// as a method, an operator class and storage parameters instead.
+		VectorIndexes:                false,
+		VectorIndexMaintainedOnWrite: false,
+		VectorBitType:                false,
+		// Column families are YDB's, so both family keys are false here.
+		ColumnFamilies:        false,
+		ColumnFamilyCacheMode: false,
 		// A changefeed, a standalone topic and the consumers either carries
 		// are YDB's, so the changefeed and topic keys are false here.
 		Changefeeds:                     false,
@@ -2489,6 +2708,16 @@ func MariaDB1011() Capabilities {
 		SerialColumns:        true,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
+		// An async replication and a transfer are YDB's, so the three
+		// replication keys are false here.
+		AsyncReplication:       false,
+		Transfers:              false,
+		ReplicationSecretPaths: false,
+		// A row table's partitioning, read replicas and key bloom filter are
+		// YDB's table settings, so the three keys about them are false here.
+		PartitioningOptions: false,
+		ReadReplicas:        false,
+		KeyBloomFilter:      false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -2559,6 +2788,7 @@ func Postgres16() Capabilities {
 		RowLevelSecurity:               true,
 		Hypertables:                    false,
 		ContinuousAggregates:           false,
+		CoordinationNodes:              false,
 		PostgresCatalogFunctions:       true,
 		CatalogRowStatistics:           true,
 		CatalogVectorInfo:              false,
@@ -2648,6 +2878,14 @@ func Postgres16() Capabilities {
 		// index partitioning is YDB's, so both index keys are false here.
 		IndexRename:       false,
 		IndexPartitioning: false,
+		// A vector index of YDB's kind is YDB's: pgvector's indexes pass through
+		// as a method, an operator class and storage parameters instead.
+		VectorIndexes:                false,
+		VectorIndexMaintainedOnWrite: false,
+		VectorBitType:                false,
+		// Column families are YDB's, so both family keys are false here.
+		ColumnFamilies:        false,
+		ColumnFamilyCacheMode: false,
 		// A changefeed, a standalone topic and the consumers either carries
 		// are YDB's, so the changefeed and topic keys are false here.
 		// CockroachDB's CREATE CHANGEFEED, inherited from this preset, is a
@@ -2667,6 +2905,16 @@ func Postgres16() Capabilities {
 		SerialColumns:        true,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
+		// An async replication and a transfer are YDB's, so the three
+		// replication keys are false here.
+		AsyncReplication:       false,
+		Transfers:              false,
+		ReplicationSecretPaths: false,
+		// A row table's partitioning, read replicas and key bloom filter are
+		// YDB's table settings, so the three keys about them are false here.
+		PartitioningOptions: false,
+		ReadReplicas:        false,
+		KeyBloomFilter:      false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -2847,6 +3095,7 @@ func ClickHouse24() Capabilities {
 		RowLevelSecurity:         true,
 		Hypertables:              false,
 		ContinuousAggregates:     false,
+		CoordinationNodes:        false,
 		PostgresCatalogFunctions: false,
 		CatalogRowStatistics:     false,
 		CatalogVectorInfo:        false,
@@ -2952,6 +3201,14 @@ func ClickHouse24() Capabilities {
 		// index partitioning is YDB's, so both index keys are false here.
 		IndexRename:       false,
 		IndexPartitioning: false,
+		// A vector index of YDB's kind is YDB's: pgvector's indexes pass through
+		// as a method, an operator class and storage parameters instead.
+		VectorIndexes:                false,
+		VectorIndexMaintainedOnWrite: false,
+		VectorBitType:                false,
+		// Column families are YDB's, so both family keys are false here.
+		ColumnFamilies:        false,
+		ColumnFamilyCacheMode: false,
 		// A changefeed, a standalone topic and the consumers either carries
 		// are YDB's, so the changefeed and topic keys are false here.
 		Changefeeds:                     false,
@@ -2968,6 +3225,16 @@ func ClickHouse24() Capabilities {
 		SerialColumns:        false,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
+		// An async replication and a transfer are YDB's, so the three
+		// replication keys are false here.
+		AsyncReplication:       false,
+		Transfers:              false,
+		ReplicationSecretPaths: false,
+		// A row table's partitioning, read replicas and key bloom filter are
+		// YDB's table settings, so the three keys about them are false here.
+		PartitioningOptions: false,
+		ReadReplicas:        false,
+		KeyBloomFilter:      false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -3043,6 +3310,7 @@ func SQLite3() Capabilities {
 		RowLevelSecurity:               false,
 		Hypertables:                    false,
 		ContinuousAggregates:           false,
+		CoordinationNodes:              false,
 		PostgresCatalogFunctions:       false,
 		CatalogRowStatistics:           false,
 		CatalogVectorInfo:              false,
@@ -3148,6 +3416,14 @@ func SQLite3() Capabilities {
 		// index partitioning is YDB's, so both index keys are false here.
 		IndexRename:       false,
 		IndexPartitioning: false,
+		// A vector index of YDB's kind is YDB's: pgvector's indexes pass through
+		// as a method, an operator class and storage parameters instead.
+		VectorIndexes:                false,
+		VectorIndexMaintainedOnWrite: false,
+		VectorBitType:                false,
+		// Column families are YDB's, so both family keys are false here.
+		ColumnFamilies:        false,
+		ColumnFamilyCacheMode: false,
 		// A changefeed, a standalone topic and the consumers either carries
 		// are YDB's, so the changefeed and topic keys are false here.
 		Changefeeds:                     false,
@@ -3164,6 +3440,16 @@ func SQLite3() Capabilities {
 		SerialColumns:        false,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
+		// An async replication and a transfer are YDB's, so the three
+		// replication keys are false here.
+		AsyncReplication:       false,
+		Transfers:              false,
+		ReplicationSecretPaths: false,
+		// A row table's partitioning, read replicas and key bloom filter are
+		// YDB's table settings, so the three keys about them are false here.
+		PartitioningOptions: false,
+		ReadReplicas:        false,
+		KeyBloomFilter:      false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -3281,6 +3567,7 @@ func SQLServer2022() Capabilities {
 		RowLevelSecurity:         true,
 		Hypertables:              false,
 		ContinuousAggregates:     false,
+		CoordinationNodes:        false,
 		PostgresCatalogFunctions: false,
 		CatalogRowStatistics:     false,
 		CatalogVectorInfo:        false,
@@ -3423,6 +3710,14 @@ func SQLServer2022() Capabilities {
 		// index partitioning is YDB's, so both index keys are false here.
 		IndexRename:       false,
 		IndexPartitioning: false,
+		// A vector index of YDB's kind is YDB's: pgvector's indexes pass through
+		// as a method, an operator class and storage parameters instead.
+		VectorIndexes:                false,
+		VectorIndexMaintainedOnWrite: false,
+		VectorBitType:                false,
+		// Column families are YDB's, so both family keys are false here.
+		ColumnFamilies:        false,
+		ColumnFamilyCacheMode: false,
 		// A changefeed, a standalone topic and the consumers either carries
 		// are YDB's, so the changefeed and topic keys are false here.
 		Changefeeds:                     false,
@@ -3439,6 +3734,16 @@ func SQLServer2022() Capabilities {
 		SerialColumns:        false,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
+		// An async replication and a transfer are YDB's, so the three
+		// replication keys are false here.
+		AsyncReplication:       false,
+		Transfers:              false,
+		ReplicationSecretPaths: false,
+		// A row table's partitioning, read replicas and key bloom filter are
+		// YDB's table settings, so the three keys about them are false here.
+		PartitioningOptions: false,
+		ReadReplicas:        false,
+		KeyBloomFilter:      false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -4006,6 +4311,7 @@ func Oracle23() Capabilities {
 		RowLevelSecurity:         false,
 		Hypertables:              false,
 		ContinuousAggregates:     false,
+		CoordinationNodes:        false,
 		PostgresCatalogFunctions: false,
 		CatalogRowStatistics:     false,
 		// ALL_TAB_COLS.VECTOR_INFO reports VECTOR(1536,FLOAT32,DENSE) for a
@@ -4136,6 +4442,14 @@ func Oracle23() Capabilities {
 		// index partitioning is YDB's, so both index keys are false here.
 		IndexRename:       false,
 		IndexPartitioning: false,
+		// A vector index of YDB's kind is YDB's: pgvector's indexes pass through
+		// as a method, an operator class and storage parameters instead.
+		VectorIndexes:                false,
+		VectorIndexMaintainedOnWrite: false,
+		VectorBitType:                false,
+		// Column families are YDB's, so both family keys are false here.
+		ColumnFamilies:        false,
+		ColumnFamilyCacheMode: false,
 		// A changefeed, a standalone topic and the consumers either carries
 		// are YDB's, so the changefeed and topic keys are false here.
 		Changefeeds:                     false,
@@ -4152,6 +4466,16 @@ func Oracle23() Capabilities {
 		SerialColumns:        false,
 		SmallIntegerDefaults: true,
 		DocumentTypeDefaults: false,
+		// An async replication and a transfer are YDB's, so the three
+		// replication keys are false here.
+		AsyncReplication:       false,
+		Transfers:              false,
+		ReplicationSecretPaths: false,
+		// A row table's partitioning, read replicas and key bloom filter are
+		// YDB's table settings, so the three keys about them are false here.
+		PartitioningOptions: false,
+		ReadReplicas:        false,
+		KeyBloomFilter:      false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -4340,6 +4664,24 @@ func YDB262() Capabilities {
 		// them too.
 		IndexRename:       true,
 		IndexPartitioning: true,
+		// A vector index, `GLOBAL USING vector_kmeans_tree ... WITH
+		// (distance = cosine, vector_type = float, vector_dimension = 3,
+		// levels = 1, clusters = 2)`, is built inline and through ADD INDEX,
+		// renamed and dropped. It keeps the rows written after its build, and
+		// it takes bit vectors. Every setting is required, and none changes
+		// in place (`Unknown table setting: levels`); its partitioning does
+		// not change either (`Only index with one impl table is supported`).
+		VectorIndexes:                true,
+		VectorIndexMaintainedOnWrite: true,
+		VectorBitType:                true,
+
+		// Column families. CREATE TABLE takes FAMILY entries with DATA,
+		// COMPRESSION and CACHE_MODE, and ALTER TABLE takes ADD FAMILY, ALTER
+		// FAMILY ... SET and ALTER COLUMN ... SET FAMILY, each read back
+		// through DescribeTable, on 25.1.4.7 and 26.2.1.14 alike. CACHE_MODE is
+		// taken from 25.4.1.15 on; see [ColumnFamilyCacheMode].
+		ColumnFamilies:        true,
+		ColumnFamilyCacheMode: true,
 
 		// Changefeeds, measured on 26.2.1.14 and on every line down to
 		// 25.1.4.7 with the same statements: a changefeed is added with ALTER
@@ -4371,6 +4713,24 @@ func YDB262() Capabilities {
 		ResourcePools:     false,
 		BackupCollections: false,
 		StreamingQueries:  false,
+
+		// Async replication and transfers, measured on 26.2.1.14 with a
+		// replication of the server's own database: CREATE ASYNC
+		// REPLICATION creates the replica tables and keeps them current,
+		// CREATE TRANSFER moves a topic's messages into a table through a
+		// lambda, and the replication service describes both. Both name a
+		// secret by its path as well as by an object secret's name.
+		AsyncReplication:       true,
+		Transfers:              true,
+		ReplicationSecretPaths: true,
+		// A row table's settings: how it splits into partitions and the
+		// partitions it starts with, its read replicas and its key bloom
+		// filter. CREATE TABLE ... WITH takes each, and ALTER TABLE ... SET
+		// each but the starting layout, measured on 25.1.4.7 and 26.2.1.14
+		// alike, so every line between them carries them too.
+		PartitioningOptions: true,
+		ReadReplicas:        true,
+		KeyBloomFilter:      true,
 
 		// Tables and their in-place changes. A table needs a key (`Primary
 		// key is required for ydb tables.`), and no ALTER changes it. A
@@ -4458,6 +4818,12 @@ func YDB262() Capabilities {
 		// Extensions of other engines.
 		Hypertables:          false,
 		ContinuousAggregates: false,
+
+		// Coordination nodes. YQL has no statement for one, and the
+		// coordination service creates, changes, describes and drops one on
+		// 25.1.4.7 and 26.2.1.14 alike: Ptah's YDB connection runs Ptah's own
+		// statement through it, so every line between them carries the key.
+		CoordinationNodes: true,
 	}
 }
 
@@ -4469,7 +4835,7 @@ func YDB261() Capabilities {
 	return YDB262().With(AlterColumnDefault, false)
 }
 
-// YDB254 is the preset for YDB 25.4. It differs from [YDB261] in three keys,
+// YDB254 is the preset for YDB 25.4. It differs from [YDB261] in four keys,
 // each measured on 25.4.1.15:
 //
 //   - ADD COLUMN with a default is refused on an empty table and on one
@@ -4478,23 +4844,38 @@ func YDB261() Capabilities {
 //     USER_SIDS`;
 //   - a GRANT naming a table at the database root by its relative name
 //     answers `wrong path format 't'`, where 26.1.1.22 resolves it. 25.1,
-//     25.2 and 25.3 answer the same.
+//     25.2 and 25.3 answer the same;
+//   - a vector index over bit vectors fails its build with `Unsupported
+//     vector_type: VECTOR_TYPE_BIT`, where 26.1.1.22 builds it. 25.1, 25.2
+//     and 25.3 refuse it too.
 func YDB254() Capabilities {
 	return YDB261().
 		With(AddColumnWithDefault, false).
 		With(ChangefeedUserSIDs, false).
-		With(RelativeGrantPaths, false)
+		With(RelativeGrantPaths, false).
+		With(VectorBitType, false)
 }
 
-// YDB253 is the preset for YDB 25.3. It differs from [YDB254] in one key: a
-// topic consumer's availability_period answers `AVAILABILITY_PERIOD: unknown
-// option for consumer` on 25.3.1.25, where 25.4.1.15 takes it and reads it
-// back. Every other statement measured on the two lines answered alike.
+// YDB253 is the preset for YDB 25.3. It differs from [YDB254] in three keys,
+// each measured on 25.3.1.25, where 25.4.1.15 takes the statement and reads
+// it back:
+//
+//   - a topic consumer's availability_period answers `AVAILABILITY_PERIOD:
+//     unknown option for consumer`;
+//   - an async replication's TOKEN_SECRET_PATH answers `Unknown replication
+//     setting: TOKEN_SECRET_PATH`;
+//   - a column family's CACHE_MODE answers `Setting cache_mode is not
+//     allowed`, because the EnableTableCacheModes flag is off by default.
+//
+// Every other statement measured on the two lines answered alike.
 func YDB253() Capabilities {
-	return YDB254().With(TopicConsumerAvailabilityPeriod, false)
+	return YDB254().
+		With(TopicConsumerAvailabilityPeriod, false).
+		With(ReplicationSecretPaths, false).
+		With(ColumnFamilyCacheMode, false)
 }
 
-// YDB252 is the preset for YDB 25.2. It differs from [YDB253] in three keys,
+// YDB252 is the preset for YDB 25.2. It differs from [YDB253] in four keys,
 // each measured on 25.2.1.24 against 25.3.1.25:
 //
 //   - a JsonDocument or DyNumber column with a literal default answers
@@ -4503,17 +4884,20 @@ func YDB253() Capabilities {
 //   - `UPDATE ... RETURNING` on a table with a unique index fails with
 //     `INTERNAL_ERROR ... wrong returning expr type`, where 25.3 runs it;
 //   - a changefeed's SCHEMA_CHANGES answers `Unknown changefeed setting:
-//     SCHEMA_CHANGES`, where 25.3 takes it and reads it back.
+//     SCHEMA_CHANGES`, where 25.3 takes it and reads it back;
+//   - a vector index answers a search as its table stood at the build: a row
+//     written afterwards is not found through it, where 25.3 finds it.
 func YDB252() Capabilities {
 	return YDB253().
 		With(DocumentTypeDefaults, false).
 		With(ReturningClause, false).
-		With(ChangefeedSchemaChanges, false)
+		With(ChangefeedSchemaChanges, false).
+		With(VectorIndexMaintainedOnWrite, false)
 }
 
 // YDB251 is the preset for YDB 25.1, the oldest line Ptah measured.
 //
-// It differs from [YDB252] in four keys, each measured on 25.1.4.7:
+// It differs from [YDB252] in six keys, each measured on 25.1.4.7:
 //
 //   - the 64-bit date and time types are behind a flag that is off (`support
 //     for new date/time 64 types is disabled`);
@@ -4522,13 +4906,19 @@ func YDB252() Capabilities {
 //   - an Int16 or Uint16 column with a literal default fails the CREATE TABLE
 //     with `INTERNAL_ERROR ... Unexpected type slot Int16`;
 //   - a changefeed's auto-partitioned topic is behind a flag that is off
-//     (`Topic autopartitioning for CDC is disabled`).
+//     (`Topic autopartitioning for CDC is disabled`);
+//   - a vector index is behind a flag that is off (`Vector index support is
+//     disabled`);
+//   - a transfer is behind a flag that is off (`Topic transfer creation is
+//     disabled`).
 func YDB251() Capabilities {
 	return YDB252().
 		With(WideDateTimeTypes, false).
 		With(ParameterizedDecimal, false).
 		With(SmallIntegerDefaults, false).
-		With(ChangefeedTopicAutoPartitioning, false)
+		With(ChangefeedTopicAutoPartitioning, false).
+		With(VectorIndexes, false).
+		With(Transfers, false)
 }
 
 var defaultDialectPresets = map[string]func() Capabilities{

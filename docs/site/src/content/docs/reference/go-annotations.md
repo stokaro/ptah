@@ -93,6 +93,7 @@ type StatusEnumMarker struct{}
 | [`ptah:embedded`](#ptahembedded) | Columns or relations from an embedded Go field | field |
 | [`ptah:schema:index`](#ptahschemaindex) | An index | struct or field |
 | [`ptah:schema:constraint`](#ptahschemaconstraint) | A table constraint | struct or field |
+| [`ptah:schema:columnfamily`](#ptahschemacolumnfamily) | A YDB column family of a table | struct or field |
 | [`ptah:schema:changefeed`](#ptahschemachangefeed) | A YDB changefeed of a table | struct or field |
 | [`ptah:schema:changefeed:consumer`](#ptahschemachangefeedconsumer) | A consumer of a YDB changefeed's topic | struct or field |
 | [`ptah:schema:enum`](#ptahschemaenum) | A reusable enum type | struct |
@@ -111,6 +112,10 @@ type StatusEnumMarker struct{}
 | [`ptah:schema:topic:consumer`](#ptahschematopicconsumer) | A consumer of a YDB topic | struct or field |
 | [`ptah:schema:resourcepool`](#ptahschemaresourcepool) | A YDB resource pool | struct or field |
 | [`ptah:schema:resourcepool:classifier`](#ptahschemaresourcepoolclassifier) | A YDB resource pool classifier | struct or field |
+| [`ptah:schema:coordinationnode`](#ptahschemacoordinationnode) | A YDB coordination node | struct |
+| [`ptah:schema:async_replication`](#ptahschemaasync_replication) | A YDB async replication | struct or field |
+| [`ptah:schema:async_replication:item`](#ptahschemaasync_replicationitem) | A table an async replication copies | struct or field |
+| [`ptah:schema:transfer`](#ptahschematransfer) | A YDB transfer from a topic into a table | struct or field |
 | [`ptah:schema:role`](#ptahschemarole) | A database role | struct |
 | [`ptah:schema:grant`](#ptahschemagrant) | Database grants | struct |
 | [`ptah:schema:revoke`](#ptahschemarevoke) | Privileges a role must not hold | struct |
@@ -223,6 +228,25 @@ YDB have and every other target refuses. A policy needs its column and its
 interval, and each engine reads the interval in its own spelling. See
 [YDB TTL](../../databases/ydb/#ttl).
 
+A YDB row table also takes its partitioning, its read replicas and its key bloom
+filter, in attributes spelled as YDB names the settings, in lower case. A
+setting the table leaves out keeps what the table holds. Every other dialect
+refuses a table that declares one, rather than build it with the server's
+defaults. See
+[table partitioning](../../databases/ydb/#table-partitioning-read-replicas-and-key-bloom-filter).
+
+| Attribute | Value |
+| --- | --- |
+| `auto_partitioning_by_size` | `ENABLED` or `DISABLED` |
+| `auto_partitioning_partition_size_mb` | megabytes, at least 1 |
+| `auto_partitioning_by_load` | `ENABLED` or `DISABLED` |
+| `auto_partitioning_min_partitions_count` | at least 1 |
+| `auto_partitioning_max_partitions_count` | at least 1 |
+| `read_replicas_settings` | `PER_AZ:<n>` or `ANY_AZ:<n>` |
+| `key_bloom_filter` | `ENABLED` or `DISABLED` |
+| `uniform_partitions` | partitions a new table starts with, at least 1 |
+| `partition_at_keys` | split points a new table starts with: `10, 20` or `(10, 'a'), (20)` |
+
 Platform overrides: yes.
 
 ### `//ptah:schema:field`
@@ -299,7 +323,7 @@ Declares an index for a table.
 | `nulls_distinct` | No | Controls NULLS DISTINCT behavior. `true`/`false`. The clause is PostgreSQL's; a target whose capability set does not carry `unique_nulls_distinct_clause` refuses it at render time rather than dropping it, in either spelling. |
 | `ops` | No | PostgreSQL operator class. |
 | `table` | No | Explicit target table. |
-| `type` | No | Index type or method. On YDB, `async` builds a `GLOBAL ASYNC` index. |
+| `type` | No | Index type or method. On YDB, `async` builds a `GLOBAL ASYNC` index and `vector_kmeans_tree` a vector index. |
 | `unique` | No | Creates a unique index. `true`/`false`; bare form allowed. |
 | `where` | No | Atlas-style partial index condition alias. |
 
@@ -329,6 +353,20 @@ declares one, rather than build it with the server's defaults. See
 | `auto_partitioning_min_partitions_count` | at least 1 |
 | `auto_partitioning_max_partitions_count` | at least 1 |
 | `read_replicas_settings` | `PER_AZ:<n>` or `ANY_AZ:<n>` |
+
+A YDB vector index, `type="vector_kmeans_tree"`, takes its settings in
+attributes spelled as YDB names them. It names one of `distance` and
+`similarity`, and every other one. Every other dialect refuses an index that
+declares them. See [vector indexes](../../databases/ydb/#vector-indexes).
+
+| Attribute | Value |
+| --- | --- |
+| `distance` | `cosine`, `euclidean` or `manhattan` |
+| `similarity` | `inner_product` or `cosine` |
+| `vector_type` | `float`, `uint8`, `int8` or `bit` |
+| `vector_dimension` | 1 to 16384 |
+| `levels` | 1 to 16 |
+| `clusters` | 2 to 2048 |
 
 CockroachDB's catalog names its access methods `prefix` and `inverted`, and it
 refuses both as input. `ptah db read` reports them as `btree` and `gin`, the
@@ -388,6 +426,23 @@ A PRIMARY KEY constraint's `name` is the name the key is built with on
 PostgreSQL; without one the server names it `<table>_pkey`. MySQL and MariaDB
 call every primary key `PRIMARY` whatever it is declared as, so there the
 comparison matches the key without its name.
+
+### `//ptah:schema:columnfamily`
+
+Declares a YDB column family: columns a row table stores together, with a
+storage pool, a compression and a cache mode of their own. It belongs to the
+table of the struct it is on, or to the one `table` names, which the same file
+declares. Every other dialect refuses a table that declares one. See
+[column families](../../databases/ydb/#column-families).
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `name` | Yes | Family name. `default` sets the family that holds the key and every unlisted column. |
+| `table` | No | Table the family belongs to, when not the struct's own. |
+| `data` | No | Kind of storage pool the family is kept in, such as `ssd`. Omitted, the table keeps the pool it holds. |
+| `compression` | No | `off` or `lz4`. Omitted, the table keeps the compression it holds. |
+| `cache_mode` | No | `regular` or `in_memory`, either of which needs `column_family_cache_mode`. Omitted, the table keeps the cache mode it holds. |
+| `fields` | No | Columns the family holds, never a key column. The default family lists none. |
 
 ### `//ptah:schema:changefeed`
 
@@ -792,6 +847,89 @@ decides.
 | `resource_pool` | Yes | Pool the queries go to: a declared pool or `default`. |
 | `member_name` | No | User or group whose queries it matches; every query when omitted. |
 | `rank` | Yes | Order among the classifiers, from 0; unique. |
+
+### `//ptah:schema:coordinationnode`
+
+Declares a YDB coordination node, which holds an application's semaphores and
+rate limiter resources. A setting left out takes YDB's default.
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `attach_consistency_mode` | No | `strict` or `relaxed`. YDB's default is `strict`. |
+| `name` | Yes | Node name. |
+| `rate_limiter_counters_mode` | No | `aggregated` or `detailed`. YDB's default is `aggregated`. |
+| `read_consistency_mode` | No | `strict` or `relaxed`. YDB's default is `relaxed`. |
+| `schema` | No | Directory holding the node, relative to the database root. |
+| `self_check_period` | No | How often the node checks it is alive, as an ISO 8601 duration from `PT0.5S` to `PT10S`. YDB's default is `PT1S`. |
+| `session_grace_period` | No | How long a session keeps its semaphores while the node changes its leader, from the self-check period plus one second to `PT30S`. YDB's default is `PT10S`. |
+
+```go
+//ptah:schema:coordinationnode name="locks" schema="app" self_check_period="PT2S"
+type Locks struct{}
+```
+
+A coordination node is YDB's own object, and every other target refuses the
+declaration. `ptah_locks` at the database root is Ptah's lock node and is
+refused. [Coordination nodes](../../databases/ydb/#coordination-nodes) says how
+Ptah applies one.
+### `//ptah:schema:async_replication`
+
+Declares a YDB async replication: tables of another database copied into
+read-only replica tables YDB creates and keeps current. The tables it copies
+are declared with `//ptah:schema:async_replication:item` in the same file, and
+the replica tables are not declared as tables. A credential names a secret and
+never holds a value. Every target but YDB refuses a replication. See
+[Async replications and transfers](../../databases/ydb/#async-replications-and-transfers)
+for what a plan does with one.
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `commit_interval` | No | How often a global replication commits, an ISO 8601 duration; ten seconds when omitted. |
+| `connection_string` | Yes | The other database: `grpc://host:port/?database=/path` or `grpcs://...`. |
+| `consistency_level` | No | Consistency of the replica: `row` or `global`; `row` when omitted. |
+| `name` | Yes | Replication name, the last segment of its path. |
+| `password_secret_name` | No | Object secret holding the user's password. |
+| `password_secret_path` | No | Path of a secret holding the user's password, relative to the database root (YDB 25.4 and later). |
+| `schema` | No | Directory that holds it, relative to the database root. |
+| `token_secret_name` | No | Object secret holding an access token. |
+| `token_secret_path` | No | Path of a secret holding an access token, relative to the database root (YDB 25.4 and later). |
+| `user` | No | User a password secret signs in as. |
+
+### `//ptah:schema:async_replication:item`
+
+Declares one table, or directory of tables, an async replication copies, and
+where its replica is created. The replication is declared in the same file.
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `replication` | Yes | Replication the item belongs to. |
+| `schema` | No | Directory of the replication, when it has one. |
+| `source` | Yes | Path in the source database, relative to its root or absolute. |
+| `target` | Yes | Path of the replica in this database, relative to its root. |
+
+### `//ptah:schema:transfer`
+
+Declares a YDB transfer: messages of a topic turned into rows of a table
+through a YQL lambda. The table is declared in the same schema, and so is the
+topic, as a topic or as a changefeed, unless the transfer reads another
+database. Every target but YDB refuses a transfer.
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `batch_size_bytes` | No | Bytes the transfer gathers before a write; 8 MiB when omitted. |
+| `connection_string` | No | The other database, for a topic outside this one: `grpc://host:port/?database=/path` or `grpcs://...`. |
+| `consumer` | No | Existing topic consumer the transfer reads through; YDB creates one when omitted. |
+| `flush_interval` | No | Longest wait before a write, an ISO 8601 duration of whole seconds; a minute when omitted. |
+| `name` | Yes | Transfer name, the last segment of its path. |
+| `password_secret_name` | No | Object secret holding the user's password. |
+| `password_secret_path` | No | Path of a secret holding the user's password, relative to the database root (YDB 25.4 and later). |
+| `schema` | No | Directory that holds it, relative to the database root. |
+| `source` | Yes | Topic the transfer reads, relative to the database root; for a topic of another database, relative to its root or absolute. |
+| `target` | Yes | Table the transfer writes, relative to the database root. |
+| `token_secret_name` | No | Object secret holding an access token. |
+| `token_secret_path` | No | Path of a secret holding an access token, relative to the database root (YDB 25.4 and later). |
+| `user` | No | User a password secret signs in as. |
+| `using` | Yes | The YQL lambda, written inline: `($msg) -> { ... }`. |
 
 ## Security
 

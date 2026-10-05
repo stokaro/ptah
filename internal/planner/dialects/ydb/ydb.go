@@ -10,35 +10,49 @@
 // with the dialect's name, and orders what it emits so that no statement needs
 // one that has not run yet:
 //
-//  1. DROP VIEW for every view the plan removes or replaces, dependents first,
+//  1. DROP TRANSFER for every transfer the plan removes, then DROP ASYNC
+//     REPLICATION for every replication it removes, before anything a
+//     transfer reads or writes goes and before a table is created at a path a
+//     replication held;
+//  2. DROP VIEW for every view the plan removes or replaces, dependents first,
 //     so no table goes while a view the plan touches still reads it;
-//  2. DROP TOPIC for every removed topic, so a table created under its path
-//     finds the path free;
-//  3. CREATE TABLE for every added table, with the indexes it gains written
+//  3. DROP TOPIC for every removed topic, then the coordination nodes the
+//     plan drops, so a table created under one's path finds the path free.
+//     YQL has no statement for a coordination node, so the plan carries Ptah's
+//     own, which Ptah's YDB connection runs through the coordination service;
+//  4. CREATE TABLE for every added table, with the indexes it gains written
 //     inside the statement, because YDB has no CREATE INDEX
 //     ([capability.CreateIndexStatement]);
-//  4. DROP INDEX for every index the plan removes, before any column it names
+//  5. DROP INDEX for every index the plan removes, before any column it names
 //     is dropped (measured: `Impossible drop column because table has an index
 //     with that column`, and the same for a covered column);
-//  5. RENAME INDEX for every index the plan renames, one per statement
+//  6. RENAME INDEX for every index the plan renames, one per statement
 //     (`RENAME INDEX TO can not be used together with another table action`),
 //     then ALTER INDEX ... SET for every index whose partitioning changes in
 //     place, under the name it has once renamed;
-//  6. per table, ADD COLUMN, then the in-place column changes, then SET
-//     (TTL = ...) or RESET (TTL), then DROP COLUMN: a TTL may read a column
-//     the plan adds, and YDB refuses to drop the column a TTL reads;
-//  7. ADD INDEX for every index added to a table that already exists, one per
+//  7. per table, ADD COLUMN, then the in-place column changes, then SET
+//     (TTL = ...) or RESET (TTL), then one ALTER TABLE for its column
+//     families, then SET (...) for its partitioning, read replicas and key
+//     bloom filter, then DROP COLUMN: a TTL may read a column the plan adds,
+//     a column the plan adds may move into a family, and YDB refuses to drop
+//     the column a TTL reads;
+//  8. ADD INDEX for every index added to a table that already exists, one per
 //     statement (`Only one index can be added by one operation`), after the
 //     columns it names exist;
-//  8. per table, DROP CHANGEFEED, then ADD CHANGEFEED with the consumers of
+//  9. per table, DROP CHANGEFEED, then ADD CHANGEFEED with the consumers of
 //     its topic, then ALTER TOPIC for a retention or a consumer changed in
 //     place; a new table's changefeeds follow its CREATE TABLE instead, since
 //     YDB adds one only to a table that exists;
-//  9. DROP TABLE for every removed table, which drops its changefeeds;
-//  10. CREATE TOPIC for every added topic and ALTER TOPIC for every changed
-//     one, after the tables are dropped, so a topic created under a dropped
-//     table's path finds the path free;
-//  11. CREATE VIEW for every view the plan adds or replaces, last, a view after
+//  10. DROP TABLE for every removed table, which drops its changefeeds;
+//  11. CREATE TOPIC for every added topic and ALTER TOPIC for every changed
+//     one, then the coordination nodes the plan creates and changes, after
+//     the tables are dropped, so an object created under a dropped table's
+//     path finds the path free;
+//  12. CREATE ASYNC REPLICATION and ALTER ASYNC REPLICATION, then CREATE
+//     TRANSFER and ALTER TRANSFER, once the tables, changefeeds, topics and
+//     consumers a transfer uses exist and the paths a replication creates its
+//     replica tables at are free;
+//  13. CREATE VIEW for every view the plan adds or replaces, last, a view after
 //     the views it reads: YDB checks a view's query against the schema when
 //     the view is created, so the tables and columns it reads exist by then.
 //
@@ -153,6 +167,9 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := p.refuseObjects(scoped); err != nil {
 		return nil, err
 	}
+	if err := p.refuseCoordinationNodes(diff); err != nil {
+		return nil, err
+	}
 	for _, tableDiff := range diff.TablesModified {
 		if err := p.refuseModification(tableDiff, rebuilds, semantics, diff.CurrentNotDescribed); err != nil {
 			return nil, err
@@ -173,16 +190,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	for key := range rebuilds {
 		ownIndexes[key] = true
 	}
-	if err := p.refuseIndexAdditions(diff, ownIndexes, semantics); err != nil {
-		return nil, err
-	}
-	if err := p.refuseIndexChangesInPlace(diff); err != nil {
-		return nil, err
-	}
-	if err := p.refuseChangefeedChanges(diff); err != nil {
-		return nil, err
-	}
-	if err := p.refuseTopics(diff); err != nil {
+	if err := p.refuseUnplannableObjectChanges(diff, ownIndexes, semantics); err != nil {
 		return nil, err
 	}
 	sequences, err := p.planSerialSequences(diff, rebuilds, semantics)
@@ -200,9 +208,12 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	}
 
 	var result []ast.Node
+	result = append(result, dropReplications(diff)...)
 	result = append(result, p.dropViews(diff)...)
 	result = append(result, access.before...)
 	result = append(result, dropTopics(diff)...)
+	nodeChanges, nodeDrops := coordinationNodes(diff)
+	result = append(result, nodeDrops...)
 	result = append(result, p.createTables(diff, inlineIndexes, sequences.created, semantics)...)
 	result = append(result, dropIndexes(diff.IndexRemovals(), removedTables, rebuilds, semantics)...)
 	result = append(result, renameIndexes(diff.IndexesRenamed, rebuilds, semantics)...)
@@ -219,11 +230,37 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 		result = append(result, ast.NewDropTable(name))
 	}
 	result = append(result, changeTopics(diff)...)
+	result = append(result, nodeChanges...)
+	result = append(result, changeReplications(diff)...)
 	result = append(result, p.createViews(diff)...)
 	result = append(result, access.after...)
 	result = append(result, pools.nodes...)
 	result = append(result, access.last...)
 	return result, nil
+}
+
+// refuseUnplannableObjectChanges refuses every index addition, in-place index
+// change, changefeed change, topic change and replication or transfer change
+// this planner does not plan, in the order [Planner.GenerateMigrationAST]
+// reports them.
+func (p *Planner) refuseUnplannableObjectChanges(
+	diff *difftypes.SchemaDiff,
+	ownIndexes map[string]bool,
+	semantics identifier.Semantics,
+) error {
+	if err := p.refuseIndexAdditions(diff, ownIndexes, semantics); err != nil {
+		return err
+	}
+	if err := p.refuseIndexChangesInPlace(diff); err != nil {
+		return err
+	}
+	if err := p.refuseChangefeedChanges(diff); err != nil {
+		return err
+	}
+	if err := p.refuseTopics(diff); err != nil {
+		return err
+	}
+	return p.refuseReplications(diff)
 }
 
 // refuseModification refuses what one table's modification asks that the
@@ -357,9 +394,9 @@ func renameIndexes(renames []difftypes.IndexRename, rebuilds map[string]*tableRe
 }
 
 // changeIndexPartitioning changes each index's partitioning in place, carrying
-// the settings it holds so the renderer can write a statement whose outcome
-// does not depend on them. An index of a table the plan rebuilds takes its
-// declared settings in the new table, so it is not changed on its own.
+// the settings it holds so the renderer can keep each one the declaration
+// leaves out. An index of a table the plan rebuilds takes its settings in the
+// new table, so it is not changed on its own.
 func changeIndexPartitioning(
 	changes []difftypes.IndexPartitioningChange,
 	rebuilds map[string]*tableRebuild,
@@ -384,8 +421,8 @@ func changeIndexPartitioning(
 
 // refuseIndexChangesInPlace refuses, before anything is emitted, a rename or a
 // change of partitioning this target cannot make: by
-// [capability.IndexRename] and [capability.IndexPartitioning], and a change of
-// partitioning YDB refuses whatever the target, which the renderer would
+// [capability.IndexRename] and [capability.IndexPartitioning], and a
+// declaration YDB refuses whatever the target, which the renderer would
 // otherwise refuse after the statements before it were planned.
 func (p *Planner) refuseIndexChangesInPlace(diff *difftypes.SchemaDiff) error {
 	if len(diff.IndexesRenamed) > 0 && !p.caps.Has(capability.IndexRename) {
@@ -398,16 +435,12 @@ func (p *Planner) refuseIndexChangesInPlace(diff *difftypes.SchemaDiff) error {
 		if !p.caps.Has(capability.IndexPartitioning) {
 			return refuseKey(capability.IndexPartitioning, "changing the partitioning of "+subject)
 		}
-		desired, err := ydbindex.Resolve(change.Partitioning)
-		if err != nil {
-			return refuseFact(subject, err.Error())
-		}
-		previous, err := ydbindex.Resolve(change.Previous)
+		previous, err := ydbindex.Held(change.Previous)
 		if err != nil {
 			return refuseFact(subject, "the settings it holds: "+err.Error())
 		}
-		if reason := ydbindex.ChangeRefusal(desired, previous); reason != "" {
-			return refuseFact(subject, reason)
+		if _, err := ydbindex.Resolve(change.Partitioning, previous); err != nil {
+			return refuseFact(subject, err.Error())
 		}
 	}
 	return nil
@@ -433,10 +466,12 @@ func addIndexes(changes difftypes.IndexChanges, inlineIndexes map[string]bool, s
 }
 
 // changeTable writes one table's changes: added columns, then in-place
-// changes, then the TTL, then dropped columns. The drops come after the index
-// drops the plan emitted before it, so an indexed or covered column is free by
-// then, and after the TTL, so the column the TTL read is free too; the TTL
-// comes after the additions, so a column it reads exists.
+// changes, then the TTL, then the column families, then the partitioning,
+// read replicas and key bloom filter, then dropped columns. The
+// drops come after the index drops the plan emitted before it, so an indexed
+// or covered column is free by then, and after the TTL, so the column the TTL
+// read is free too; the TTL and the families come after the additions, so a
+// column the TTL reads exists, and so does a column that moves into a family.
 func (p *Planner) changeTable(tableDiff difftypes.TableDiff, enums []schemamodel.Enum) []ast.Node {
 	var nodes []ast.Node
 	alter := func(operation ast.AlterOperation) {
@@ -457,6 +492,12 @@ func (p *Planner) changeTable(tableDiff difftypes.TableDiff, enums []schemamodel
 		})
 	}
 	if operation := ttlOperation(tableDiff.RowDeletionPolicyChange); operation != nil {
+		alter(operation)
+	}
+	if operation := familyOperation(tableDiff); operation != nil {
+		alter(operation)
+	}
+	if operation := partitioningOperation(tableDiff.YDBPartitioningChange); operation != nil {
 		alter(operation)
 	}
 	for _, column := range tableDiff.ColumnsRemoved {
@@ -539,16 +580,21 @@ func (p *Planner) refuseIndexAdditions(
 // table: its key from the table or from its key fields, and each column's
 // type through the map the renderer writes with. A column whose type the map
 // refuses is answered as orderable, because that refusal is the column's and
-// is reported where the column is written.
+// is reported where the column is written. An index whose kind does not read
+// is left to the renderer, which refuses it by name.
 func (p *Planner) indexShapeRefusal(index schemamodel.Index, declaration difftypes.TableDeclaration) string {
-	types := make(map[string]string, len(declaration.Fields))
+	kind, err := ydbindex.KindOf(index.Type)
+	if err != nil {
+		return ""
+	}
+	columns := make(map[string]ydbindex.Column, len(declaration.Fields))
 	var fieldKey []string
 	for _, field := range declaration.Fields {
 		mapping, err := ydbtype.Map(field.Type, p.caps)
 		if err != nil {
 			mapping = ydbtype.Mapping{}
 		}
-		types[field.Name] = mapping.Type
+		columns[field.Name] = ydbindex.Column{Type: mapping.Type, Dimension: mapping.Dimension}
 		if field.Primary {
 			fieldKey = append(fieldKey, field.Name)
 		}
@@ -557,11 +603,15 @@ func (p *Planner) indexShapeRefusal(index schemamodel.Index, declaration difftyp
 	if len(key) == 0 {
 		key = fieldKey
 	}
-	columnType := func(column string) (string, bool) {
-		ydbType, declared := types[column]
-		return ydbType, declared
+	column := func(name string) (ydbindex.Column, bool) {
+		declared, ok := columns[name]
+		return declared, ok
 	}
-	return ydbindex.ShapeRefusal(indexKeyColumns(index), index.IncludeColumns, key, columnType)
+	shape := ydbindex.Shape{Kind: kind, Columns: indexKeyColumns(index), Cover: index.IncludeColumns}
+	if index.Vector != nil {
+		shape.Dimension = index.Vector.Dimension
+	}
+	return ydbindex.ShapeRefusal(shape, key, column)
 }
 
 // indexKeyColumns are the columns an index is keyed on, from its structured
@@ -582,6 +632,12 @@ func indexKeyColumns(index schemamodel.Index) []string {
 func (p *Planner) refuseTableChanges(tableDiff difftypes.TableDiff) error {
 	subject := fmt.Sprintf("table %q", tableDiff.TableName)
 	if err := p.refuseTableSettings(tableDiff, subject); err != nil {
+		return err
+	}
+	if err := p.refuseFamilyChange(tableDiff); err != nil {
+		return err
+	}
+	if err := p.refusePartitioningChange(tableDiff); err != nil {
 		return err
 	}
 	if tableDiff.Desired.HasTable() && !declaresKey(tableDiff.Desired) {
@@ -717,6 +773,16 @@ func (p *Planner) rebuildable(key capability.Capability, feature, subject string
 	}
 	refusal.Message += "; YDB makes it by rebuilding the table, which Ptah plans when asked with " + request
 	return refusal
+}
+
+// rebuildableFact refuses a change YDB makes only by rebuilding the table and
+// no capability key decides, saying reason and how to ask for the rebuild.
+func (p *Planner) rebuildableFact(subject, reason string) error {
+	request := p.rebuildRequest
+	if request == "" {
+		request = TableRebuildFlag
+	}
+	return refuseFact(subject, reason+"; YDB makes it by rebuilding the table, which Ptah plans when asked with "+request)
 }
 
 // sortedKeys returns the keys of changes in order, so a refusal names the same

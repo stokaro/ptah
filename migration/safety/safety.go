@@ -121,6 +121,9 @@ func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 	forced, unforced := rlsForceDirections(diff.RLSForceChanged)
 	add(&findings, "rls_force_added", forced, Safe)
 	add(&findings, "rls_force_removed", unforced, Destructive)
+	add(&findings, "coordination_nodes_added", len(diff.CoordinationNodesAdded), Safe)
+	add(&findings, "coordination_nodes_removed", len(diff.CoordinationNodesRemoved), Destructive)
+	add(&findings, "coordination_nodes_modified", len(diff.CoordinationNodesModified), Warning)
 	add(&findings, "roles_added", len(diff.RolesAdded), Safe)
 	add(&findings, "roles_removed", len(diff.RolesRemoved), Destructive)
 	add(&findings, "roles_modified", len(diff.RolesModified), Warning)
@@ -140,6 +143,16 @@ func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 	add(&findings, "topics_removed", len(diff.TopicsRemoved), Destructive)
 	add(&findings, "topics_modified", len(diff.TopicsModified), Warning)
 	add(&findings, "topic_consumers_removed", droppedTopicConsumers(diff.TopicsModified), Destructive)
+	// Dropping an async replication drops the replica tables it created, or
+	// leaves them read-only for good, and dropping a transfer drops the
+	// consumer YDB created for it, with its position in the topic. A change
+	// of either moves where data comes from or how it is written.
+	add(&findings, "async_replications_added", len(diff.AsyncReplicationsAdded), Safe)
+	add(&findings, "async_replications_removed", len(diff.AsyncReplicationsRemoved), Destructive)
+	add(&findings, "async_replications_modified", len(diff.AsyncReplicationsModified), Warning)
+	add(&findings, "transfers_added", len(diff.TransfersAdded), Safe)
+	add(&findings, "transfers_removed", len(diff.TransfersRemoved), Destructive)
+	add(&findings, "transfers_modified", len(diff.TransfersModified), Warning)
 
 	for _, table := range diff.TablesModified {
 		add(&findings, "columns_added", len(table.ColumnsAdded), Warning)
@@ -528,15 +541,15 @@ func assessNode(node ast.Node) StatementAssessment {
 		Severity: Safe,
 		Reason:   "does not remove data or tighten constraints",
 	}
+	if subject, reason, dropped := destructiveDrop(node); dropped {
+		assessment.Subject, assessment.Severity, assessment.Reason = subject, Destructive, reason
+		return assessment
+	}
 
 	switch n := node.(type) {
 	case *ast.AlterTableNode:
 		assessment.Subject = n.Name
 		return assessAlterTable(n, assessment)
-	case *ast.DropTableNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Destructive
-		assessment.Reason = "DROP TABLE removes the table and all rows"
 	case *ast.DropTypeNode:
 		assessment.Subject = n.Name
 		assessment.Severity = Destructive
@@ -545,22 +558,6 @@ func assessNode(node ast.Node) StatementAssessment {
 		} else {
 			assessment.Reason = "DROP TYPE removes an existing database type"
 		}
-	case *ast.DropExtensionNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Destructive
-		assessment.Reason = "DROP EXTENSION removes database objects owned by the extension"
-	case *ast.DropFunctionNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Destructive
-		assessment.Reason = "DROP FUNCTION removes executable database behavior"
-	case *ast.DropRoleNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Destructive
-		assessment.Reason = "DROP ROLE removes an existing database principal"
-	case *ast.DropPolicyNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Destructive
-		assessment.Reason = "DROP POLICY removes an access-control protection"
 	case *ast.AlterTableDisableRLSNode:
 		assessment.Subject = n.Table
 		assessment.Severity = Destructive
@@ -589,38 +586,40 @@ func assessNode(node ast.Node) StatementAssessment {
 	case *ast.AlterTypeNode:
 		assessment.Subject = n.Name
 		return assessAlterType(n, assessment)
+	case *ast.DropResourcePoolNode, *ast.DropResourcePoolClassifierNode:
+		return assessResourcePoolNode(node, assessment)
+	case *ast.DropTopicNode, *ast.AlterTopicNode, *ast.DropAsyncReplicationNode, *ast.DropTransferNode,
+		*ast.AlterAsyncReplicationNode, *ast.AlterTransferNode:
+		return assessYDBObjectNode(n, assessment)
 	case *ast.RawSQLNode:
 		assessment.Statement = n.SQL
 		return assessRawSQL(n.SQL, assessment, false)
-	default:
-		return assessYDBObject(node, assessment)
 	}
 	return assessment
 }
 
-// assessYDBObject assesses the statements on the YDB objects that are not
-// tables: topics, resource pools and their classifiers. Any other node is
-// safe.
-func assessYDBObject(node ast.Node, assessment StatementAssessment) StatementAssessment {
+// destructiveDrop is the subject and the reason of a statement that drops an
+// object and always removes data or behavior with it, and false for any other
+// node.
+func destructiveDrop(node ast.Node) (subject, reason string, dropped bool) {
 	switch n := node.(type) {
+	case *ast.DropTableNode:
+		return n.Name, "DROP TABLE removes the table and all rows", true
+	case *ast.DropExtensionNode:
+		return n.Name, "DROP EXTENSION removes database objects owned by the extension", true
+	case *ast.DropFunctionNode:
+		return n.Name, "DROP FUNCTION removes executable database behavior", true
+	case *ast.DropRoleNode:
+		return n.Name, "DROP ROLE removes an existing database principal", true
+	case *ast.DropPolicyNode:
+		return n.Name, "DROP POLICY removes an access-control protection", true
+	case *ast.DropCoordinationNodeNode:
+		return n.Name, dropCoordinationNodeReason, true
 	case *ast.DropTopicNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Destructive
-		assessment.Reason = dropTopicReason
-	case *ast.AlterTopicNode:
-		assessment.Subject = n.Name
-		return assessAlterTopic(n, assessment)
-	case *ast.DropResourcePoolNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Warning
-		assessment.Reason = "DROP RESOURCE POOL runs the queries a classifier sends to the pool in the pool default"
-	case *ast.DropResourcePoolClassifierNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Warning
-		assessment.Reason = "DROP RESOURCE POOL CLASSIFIER sends its member's queries to another classifier's pool " +
-			"or to the pool default"
+		return n.Name, dropTopicReason, true
+	default:
+		return "", "", false
 	}
-	return assessment
 }
 
 func assessAlterTable(n *ast.AlterTableNode, assessment StatementAssessment) StatementAssessment {
@@ -773,6 +772,11 @@ func classifyTypeOperation(op ast.TypeOperation) (Severity, string) {
 // existing constraint and not a new one.
 func assessRawSQL(sql string, assessment StatementAssessment, keepsNullability bool) StatementAssessment {
 	words, dropsDefault := withoutDefaultConstraintDrop(rawWords(sql))
+	if hasWordPrefix(words, "DROP", "ASYNC", "REPLICATION") && !slices.Contains(words, "CASCADE") {
+		assessment.Severity = Warning
+		assessment.Reason = keepReplicaTablesReason
+		return assessment
+	}
 	if reason, found := destructivePrefixReason(words); found {
 		assessment.Severity = Destructive
 		assessment.Reason = reason
@@ -1020,8 +1024,68 @@ var destructivePrefixes = []struct {
 	{words: []string{"DROP", "ROLE"}, reason: "DROP ROLE removes an existing database principal"},
 	{words: []string{"DROP", "POLICY"}, reason: "DROP POLICY removes an access-control protection"},
 	{words: []string{"DROP", "TOPIC"}, reason: dropTopicReason},
+	{words: []string{"DROP", "ASYNC", "REPLICATION"}, reason: dropReplicationReason},
+	{words: []string{"DROP", "TRANSFER"}, reason: dropTransferReason},
+	{words: []string{"DROP", "COORDINATION", "NODE"}, reason: dropCoordinationNodeReason},
 	{words: []string{"TRUNCATE"}, reason: "TRUNCATE removes all rows from a table"},
 }
+
+// assessYDBObjectNode judges a change of a YDB topic, async replication or
+// transfer.
+func assessYDBObjectNode(node ast.Node, assessment StatementAssessment) StatementAssessment {
+	switch n := node.(type) {
+	case *ast.DropTopicNode:
+		assessment.Subject = n.Name
+		assessment.Severity = Destructive
+		assessment.Reason = dropTopicReason
+	case *ast.AlterTopicNode:
+		assessment.Subject = n.Name
+		return assessAlterTopic(n, assessment)
+	case *ast.DropAsyncReplicationNode:
+		assessment.Subject = n.Name
+		assessment.Severity = Destructive
+		assessment.Reason = dropReplicationReason
+		if !n.Cascade {
+			assessment.Severity = Warning
+			assessment.Reason = keepReplicaTablesReason
+		}
+	case *ast.DropTransferNode:
+		assessment.Subject = n.Name
+		assessment.Severity = Destructive
+		assessment.Reason = dropTransferReason
+	case *ast.AlterAsyncReplicationNode:
+		assessment.Subject = n.Name
+		assessment.Severity = Warning
+		assessment.Reason = "ALTER ASYNC REPLICATION points the replication at another source or credential"
+	case *ast.AlterTransferNode:
+		assessment.Subject = n.Name
+		assessment.Severity = Warning
+		assessment.Reason = "ALTER TRANSFER changes the rows the transfer writes from each message"
+	}
+	return assessment
+}
+
+// dropReplicationReason and dropTransferReason are why dropping a YDB async
+// replication with CASCADE or a transfer is destructive, and
+// keepReplicaTablesReason why a replication dropped without CASCADE is a
+// warning, in the words both the AST and the SQL-text classifiers report.
+// Measured on 25.1.4.7 and 26.2.1.14: with CASCADE the replica tables go, and
+// without it they stay, read-only for good where the replication was not
+// failed over first. A plan drops only a failed-over replication without
+// CASCADE, whose tables are ordinary; a statement read as text cannot tell
+// which it is, and lint rule YD115 reads the migration directory for it.
+const (
+	dropReplicationReason   = "DROP ASYNC REPLICATION ... CASCADE drops the replica tables with the replication"
+	keepReplicaTablesReason = "DROP ASYNC REPLICATION without CASCADE ends the replication and keeps its tables, " +
+		"read-only for good unless it was failed over first"
+	dropTransferReason = "DROP TRANSFER stops the transfer and drops the topic consumer YDB created for it, with " +
+		"its position in the topic"
+)
+
+// dropCoordinationNodeReason is why dropping a YDB coordination node is
+// destructive, in the words both the AST and the SQL-text classifiers report.
+const dropCoordinationNodeReason = "DROP COORDINATION NODE removes the node with its semaphores and rate limiter " +
+	"resources, even while a session holds a lock on it"
 
 // destructivePrefixReason returns the reason of the first [destructivePrefixes]
 // entry the statement's words start with.
@@ -1087,4 +1151,21 @@ func rlsForceDirections(changes difftypes.RLSForceChanges) (forced, unforced int
 		unforced++
 	}
 	return forced, unforced
+}
+
+// assessResourcePoolNode assesses changes to YDB resource pools and their
+// classifiers. Any other node is safe.
+func assessResourcePoolNode(node ast.Node, assessment StatementAssessment) StatementAssessment {
+	switch n := node.(type) {
+	case *ast.DropResourcePoolNode:
+		assessment.Subject = n.Name
+		assessment.Severity = Warning
+		assessment.Reason = "DROP RESOURCE POOL runs the queries a classifier sends to the pool in the pool default"
+	case *ast.DropResourcePoolClassifierNode:
+		assessment.Subject = n.Name
+		assessment.Severity = Warning
+		assessment.Reason = "DROP RESOURCE POOL CLASSIFIER sends its member's queries to another classifier's pool " +
+			"or to the pool default"
+	}
+	return assessment
 }

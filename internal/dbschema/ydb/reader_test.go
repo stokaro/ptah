@@ -8,8 +8,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/ydb-platform/ydb-go-genproto/draft/protos/Ydb_Replication"
 	"github.com/ydb-platform/ydb-go-genproto/draft/protos/Ydb_View"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb"
+	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Coordination"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Scheme"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Table"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Topic"
@@ -26,10 +28,15 @@ import (
 // path. A path it does not know is an error, so a reader that asks about a
 // directory it should skip fails the test.
 type fakeSource struct {
-	directories map[string][]*Ydb_Scheme.Entry
-	tables      map[string]*Ydb_Table.DescribeTableResult
-	topics      map[string]*Ydb_Topic.DescribeTopicResult
-	views       map[string]*Ydb_View.DescribeViewResult
+	directories  map[string][]*Ydb_Scheme.Entry
+	tables       map[string]*Ydb_Table.DescribeTableResult
+	topics       map[string]*Ydb_Topic.DescribeTopicResult
+	views        map[string]*Ydb_View.DescribeViewResult
+	replications map[string]*Ydb_Replication.DescribeReplicationResult
+	transfers    map[string]*Ydb_Replication.DescribeTransferResult
+	// replicationErr answers every replication and transfer description,
+	// when set.
+	replicationErr error
 	// selves are the directories' own entries, which carry their owner and
 	// permission entries; a directory without one has neither.
 	selves map[string]*Ydb_Scheme.Entry
@@ -42,6 +49,15 @@ type fakeSource struct {
 	// database answers for /local, the database every fixture reads.
 	pools    ydbschema.ResourcePools
 	poolsErr error
+	nodes    map[string]*Ydb_Coordination.DescribeNodeResult
+}
+
+func (f fakeSource) DescribeCoordinationNode(_ context.Context, path string) (*Ydb_Coordination.DescribeNodeResult, error) {
+	described, ok := f.nodes[path]
+	if !ok {
+		return nil, fmt.Errorf("described coordination node %s, which the fixture does not hold", path)
+	}
+	return described, nil
 }
 
 func (f fakeSource) ListDirectory(_ context.Context, path string) (*Ydb_Scheme.Entry, []*Ydb_Scheme.Entry, error) {
@@ -83,6 +99,31 @@ func (f fakeSource) DescribeTopic(_ context.Context, path string) (*Ydb_Topic.De
 	described, ok := f.topics[path]
 	if !ok {
 		return nil, fmt.Errorf("described topic %s, which the fixture does not hold", path)
+	}
+	return described, nil
+}
+
+func (f fakeSource) DescribeReplication(
+	_ context.Context,
+	path string,
+) (*Ydb_Replication.DescribeReplicationResult, error) {
+	if f.replicationErr != nil {
+		return nil, f.replicationErr
+	}
+	described, ok := f.replications[path]
+	if !ok {
+		return nil, fmt.Errorf("described replication %s, which the fixture does not hold", path)
+	}
+	return described, nil
+}
+
+func (f fakeSource) DescribeTransfer(_ context.Context, path string) (*Ydb_Replication.DescribeTransferResult, error) {
+	if f.replicationErr != nil {
+		return nil, f.replicationErr
+	}
+	described, ok := f.transfers[path]
+	if !ok {
+		return nil, fmt.Errorf("described transfer %s, which the fixture does not hold", path)
 	}
 	return described, nil
 }
@@ -376,8 +417,9 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 	settings.TtlSettings = dateTTL("ts", 86400)
 	settings.TtlSettings.RunIntervalSeconds = 1800
 	settings.Changefeeds = []*Ydb_Table.ChangefeedDescription{{Name: "feed"}}
-	settings.ColumnFamilies = append(settings.ColumnFamilies, &Ydb_Table.ColumnFamily{Name: "cold"})
-	settings.KeyBloomFilter = Ydb.FeatureFlag_ENABLED
+	settings.ColumnFamilies = append(settings.ColumnFamilies,
+		&Ydb_Table.ColumnFamily{Name: "cold", Compression: 3})
+	settings.StorageSettings = &Ydb_Table.StorageSettings{StoreExternalBlobs: Ydb.FeatureFlag_ENABLED}
 	source := fakeSource{
 		directories: map[string][]*Ydb_Scheme.Entry{
 			"/local": {
@@ -385,7 +427,6 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 				entry("legacy_queue", Ydb_Scheme.Entry_PERS_QUEUE_GROUP),
 				entry("olap", Ydb_Scheme.Entry_COLUMN_TABLE),
 				entry("store", Ydb_Scheme.Entry_COLUMN_STORE),
-				entry("locks", Ydb_Scheme.Entry_COORDINATION_NODE),
 				entry("seq", Ydb_Scheme.Entry_SEQUENCE),
 				entry("repl", Ydb_Scheme.Entry_REPLICATION),
 				entry("xfer", Ydb_Scheme.Entry_TRANSFER),
@@ -404,6 +445,9 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 			"/local/app/plain": plainTable(),
 		},
 		views: map[string]*Ydb_View.DescribeViewResult{"/local/v": {QueryText: "SELECT 1 AS a"}},
+		// A cluster that does not serve the replication API, as local-ydb
+		// does not by default: the replication and the transfer are recorded.
+		replicationErr: fmt.Errorf("describe YDB async replication: %w", ydbschema.ErrReplicationServiceUnavailable),
 	}
 
 	db := readFrom(c, source)
@@ -419,7 +463,6 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 		observed(coverage.ExternalTable, "ext"),
 		observed(coverage.Secret, "key"),
 		observed(coverage.Topic, "legacy_queue"),
-		observed(coverage.CoordinationNode, "locks"),
 		observed(coverage.ColumnTable, "olap"),
 		observed(coverage.ResourcePool, "pool"),
 		observed(coverage.Replication, "repl"),
@@ -433,15 +476,14 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 	c.Assert(db.Views, qt.DeepEquals, []catalog.View{{Name: "v", Body: "SELECT 1 AS a"}})
 }
 
-// A table setting is recorded only where it differs from what a table created
-// without settings carries, measured on local-ydb 26.2.1.14.
-func TestReader_RecordsEachTableOption(t *testing.T) {
+// A storage setting is recorded only where it differs from what a table
+// created without settings carries, measured on local-ydb 26.2.1.14, and so is
+// partitioning by columns, which only a column table has.
+func TestReader_RecordsEachStorageSetting(t *testing.T) {
 	tests := []struct {
 		name         string
 		partitioning *Ydb_Table.PartitioningSettings
-		replicas     *Ydb_Table.ReadReplicasSettings
 		storage      *Ydb_Table.StorageSettings
-		bloom        Ydb.FeatureFlag_Status
 	}{
 		{
 			name: "partitioning by key",
@@ -449,12 +491,6 @@ func TestReader_RecordsEachTableOption(t *testing.T) {
 				PartitioningBySize: Ydb.FeatureFlag_ENABLED, PartitionSizeMb: 2048,
 				PartitioningByLoad: Ydb.FeatureFlag_DISABLED, MinPartitionsCount: 1},
 			storage: defaultStorage(),
-		},
-		{
-			name:         "a key bloom filter",
-			partitioning: defaultPartitioning(),
-			storage:      defaultStorage(),
-			bloom:        Ydb.FeatureFlag_ENABLED,
 		},
 		{
 			name:         "a commit log on a named pool",
@@ -475,45 +511,6 @@ func TestReader_RecordsEachTableOption(t *testing.T) {
 				External: &Ydb_Table.StoragePool{Media: "hdd"}},
 		},
 		{
-			name: "partitioning by load",
-			partitioning: &Ydb_Table.PartitioningSettings{PartitioningBySize: Ydb.FeatureFlag_ENABLED,
-				PartitionSizeMb: 2048, PartitioningByLoad: Ydb.FeatureFlag_ENABLED, MinPartitionsCount: 1},
-			storage: defaultStorage(),
-		},
-		{
-			name: "partitioning by size off",
-			partitioning: &Ydb_Table.PartitioningSettings{PartitioningBySize: Ydb.FeatureFlag_DISABLED,
-				PartitionSizeMb: 2048, PartitioningByLoad: Ydb.FeatureFlag_DISABLED, MinPartitionsCount: 1},
-			storage: defaultStorage(),
-		},
-		{
-			name: "a partition size",
-			partitioning: &Ydb_Table.PartitioningSettings{PartitioningBySize: Ydb.FeatureFlag_ENABLED,
-				PartitionSizeMb: 512, PartitioningByLoad: Ydb.FeatureFlag_DISABLED, MinPartitionsCount: 1},
-			storage: defaultStorage(),
-		},
-		{
-			name: "a minimum partition count",
-			partitioning: &Ydb_Table.PartitioningSettings{PartitioningBySize: Ydb.FeatureFlag_ENABLED,
-				PartitionSizeMb: 2048, PartitioningByLoad: Ydb.FeatureFlag_DISABLED, MinPartitionsCount: 3},
-			storage: defaultStorage(),
-		},
-		{
-			name: "a maximum partition count",
-			partitioning: &Ydb_Table.PartitioningSettings{PartitioningBySize: Ydb.FeatureFlag_ENABLED,
-				PartitionSizeMb: 2048, PartitioningByLoad: Ydb.FeatureFlag_DISABLED, MinPartitionsCount: 1,
-				MaxPartitionsCount: 50},
-			storage: defaultStorage(),
-		},
-		{
-			name:         "read replicas",
-			partitioning: defaultPartitioning(),
-			replicas: &Ydb_Table.ReadReplicasSettings{
-				Settings: &Ydb_Table.ReadReplicasSettings_PerAzReadReplicasCount{PerAzReadReplicasCount: 1},
-			},
-			storage: defaultStorage(),
-		},
-		{
 			name:         "external blobs",
 			partitioning: defaultPartitioning(),
 			storage:      &Ydb_Table.StorageSettings{StoreExternalBlobs: Ydb.FeatureFlag_ENABLED},
@@ -525,9 +522,7 @@ func TestReader_RecordsEachTableOption(t *testing.T) {
 			c := qt.New(t)
 			described := plainTable()
 			described.PartitioningSettings = test.partitioning
-			described.ReadReplicasSettings = test.replicas
 			described.StorageSettings = test.storage
-			described.KeyBloomFilter = test.bloom
 			source := fakeSource{
 				directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
 				tables:      map[string]*Ydb_Table.DescribeTableResult{"/local/t": described},
@@ -541,35 +536,74 @@ func TestReader_RecordsEachTableOption(t *testing.T) {
 	}
 }
 
-// A family layout is recorded where it differs from the one family, default,
-// uncompressed and on no pool of its own, that a table created without
-// families carries.
-func TestReader_RecordsEachColumnFamilyLayout(t *testing.T) {
+// A row table's partitioning, read replicas and key bloom filter are read as
+// the settings that differ from what a table created without settings
+// carries, measured on local-ydb 26.2.1.14 and 25.1.4.7, and none of them is
+// recorded as not described: a key bloom filter described as disabled is the
+// same as one left unspecified, and so are read replicas of zero.
+func TestReader_ReadsTableSettings(t *testing.T) {
 	tests := []struct {
-		name     string
-		families []*Ydb_Table.ColumnFamily
+		name         string
+		partitioning *Ydb_Table.PartitioningSettings
+		replicas     *Ydb_Table.ReadReplicasSettings
+		bloom        Ydb.FeatureFlag_Status
+		want         *ast.YDBTablePartitioningSpec
 	}{
-		{name: "a second family", families: []*Ydb_Table.ColumnFamily{
-			{Name: "default", Compression: Ydb_Table.ColumnFamily_COMPRESSION_NONE},
-			{Name: "cold", Compression: Ydb_Table.ColumnFamily_COMPRESSION_NONE},
-		}},
-		{name: "a compressed default family", families: []*Ydb_Table.ColumnFamily{
-			{Name: "default", Compression: Ydb_Table.ColumnFamily_COMPRESSION_LZ4},
-		}},
-		{name: "a default family on a named pool", families: []*Ydb_Table.ColumnFamily{
-			{Name: "default", Compression: Ydb_Table.ColumnFamily_COMPRESSION_NONE,
-				Data: &Ydb_Table.StoragePool{Media: "ssd"}},
-		}},
-		{name: "a default family kept in memory", families: []*Ydb_Table.ColumnFamily{
-			{Name: "default", Compression: Ydb_Table.ColumnFamily_COMPRESSION_NONE, KeepInMemory: Ydb.FeatureFlag_ENABLED},
-		}},
+		{name: "a table created without settings", partitioning: defaultPartitioning(), want: nil},
+		{
+			name: "partitioning by load",
+			partitioning: &Ydb_Table.PartitioningSettings{PartitioningBySize: Ydb.FeatureFlag_ENABLED,
+				PartitionSizeMb: 2048, PartitioningByLoad: Ydb.FeatureFlag_ENABLED, MinPartitionsCount: 1},
+			want: &ast.YDBTablePartitioningSpec{ByLoad: new(true)},
+		},
+		{
+			name: "partitioning by size off",
+			partitioning: &Ydb_Table.PartitioningSettings{PartitioningBySize: Ydb.FeatureFlag_DISABLED,
+				PartitioningByLoad: Ydb.FeatureFlag_DISABLED, MinPartitionsCount: 1},
+			want: &ast.YDBTablePartitioningSpec{BySize: new(false)},
+		},
+		{
+			name: "a partition size",
+			partitioning: &Ydb_Table.PartitioningSettings{PartitioningBySize: Ydb.FeatureFlag_ENABLED,
+				PartitionSizeMb: 512, PartitioningByLoad: Ydb.FeatureFlag_DISABLED, MinPartitionsCount: 1},
+			want: &ast.YDBTablePartitioningSpec{PartitionSizeMB: 512},
+		},
+		{
+			name: "a minimum and a maximum partition count",
+			partitioning: &Ydb_Table.PartitioningSettings{PartitioningBySize: Ydb.FeatureFlag_ENABLED,
+				PartitionSizeMb: 2048, PartitioningByLoad: Ydb.FeatureFlag_DISABLED, MinPartitionsCount: 3,
+				MaxPartitionsCount: 50},
+			want: &ast.YDBTablePartitioningSpec{MinPartitions: 3, MaxPartitions: 50},
+		},
+		{
+			name:         "read replicas in every zone",
+			partitioning: defaultPartitioning(),
+			replicas: &Ydb_Table.ReadReplicasSettings{
+				Settings: &Ydb_Table.ReadReplicasSettings_PerAzReadReplicasCount{PerAzReadReplicasCount: 1},
+			},
+			want: &ast.YDBTablePartitioningSpec{ReadReplicas: "PER_AZ:1"},
+		},
+		{
+			name:         "read replicas of zero",
+			partitioning: defaultPartitioning(),
+			replicas: &Ydb_Table.ReadReplicasSettings{
+				Settings: &Ydb_Table.ReadReplicasSettings_AnyAzReadReplicasCount{AnyAzReadReplicasCount: 0},
+			},
+			want: nil,
+		},
+		{name: "a key bloom filter", partitioning: defaultPartitioning(), bloom: Ydb.FeatureFlag_ENABLED,
+			want: &ast.YDBTablePartitioningSpec{KeyBloomFilter: new(true)}},
+		{name: "a key bloom filter described as disabled", partitioning: defaultPartitioning(),
+			bloom: Ydb.FeatureFlag_DISABLED, want: nil},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			described := plainTable()
-			described.ColumnFamilies = test.families
+			described.PartitioningSettings = test.partitioning
+			described.ReadReplicasSettings = test.replicas
+			described.KeyBloomFilter = test.bloom
 			source := fakeSource{
 				directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
 				tables:      map[string]*Ydb_Table.DescribeTableResult{"/local/t": described},
@@ -577,8 +611,45 @@ func TestReader_RecordsEachColumnFamilyLayout(t *testing.T) {
 
 			db := readFrom(c, source)
 
-			c.Assert(db.NotDescribed.Describes(coverage.ColumnFamily, "t"), qt.IsFalse)
+			c.Assert(db.Tables, qt.HasLen, 1)
+			c.Assert(db.Tables[0].YDBPartitioning, qt.DeepEquals, test.want)
 			c.Assert(db.NotDescribed.Describes(coverage.TableOption, "t"), qt.IsTrue)
+		})
+	}
+}
+
+// A table whose settings the reader cannot read is refused rather than read as
+// YDB's defaults, which a plan would then move the table back to.
+func TestReader_TableSettings_FailurePath(t *testing.T) {
+	withUnknownField := plainTable()
+	unknown := protowire.AppendTag(nil, 99, protowire.VarintType)
+	withUnknownField.PartitioningSettings.ProtoReflect().SetUnknown(protowire.AppendVarint(unknown, 1))
+	withUnknownFilter := plainTable()
+	withUnknownFilter.KeyBloomFilter = Ydb.FeatureFlag_Status(7)
+
+	tests := []struct {
+		name      string
+		described *Ydb_Table.DescribeTableResult
+		wantErr   string
+	}{
+		{name: "a field the protocol buffers do not model", described: withUnknownField,
+			wantErr: `YDB table /local/t: its partitioning carries field 99, which this build of Ptah does not read`},
+		{name: "a filter value the reader does not know", described: withUnknownFilter,
+			wantErr: `YDB table /local/t: its key bloom filter: the value 7 is not one this build of Ptah reads`},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			source := fakeSource{
+				directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
+				tables:      map[string]*Ydb_Table.DescribeTableResult{"/local/t": test.described},
+			}
+
+			db, err := ydbschema.NewReaderFromSource(source, "/local", capability.YDB262()).ReadSchemaContext(context.Background())
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(db, qt.IsNil)
 		})
 	}
 }
@@ -734,12 +805,13 @@ func TestReader_PlainTableRecordsNoSetting(t *testing.T) {
 	}
 }
 
-// vectorIndex is an index described with the type the pinned protocol buffers
-// do not model: the oneof is empty, and the kind sits in field 9 of the
-// message as bytes the decoder keeps unread.
-func vectorIndex() *Ydb_Table.TableIndexDescription {
-	index := &Ydb_Table.TableIndexDescription{Name: "embedding_idx", IndexColumns: []string{"emb"}}
-	unknown := protowire.AppendTag(nil, 9, protowire.BytesType)
+// fulltextIndex is an index described with a type the pinned protocol buffers
+// do not model and the reader does not read: the oneof is empty, and the kind
+// sits in field 10 of the message, global_fulltext_plain_index, as bytes the
+// decoder keeps unread.
+func fulltextIndex() *Ydb_Table.TableIndexDescription {
+	index := &Ydb_Table.TableIndexDescription{Name: "body_idx", IndexColumns: []string{"body"}}
+	unknown := protowire.AppendTag(nil, 10, protowire.BytesType)
 	unknown = protowire.AppendBytes(unknown, nil)
 	index.ProtoReflect().SetUnknown(unknown)
 	return index
@@ -758,13 +830,13 @@ func TestReader_FailurePath(t *testing.T) {
 			source: fakeSource{
 				directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
 				tables: map[string]*Ydb_Table.DescribeTableResult{"/local/t": func() *Ydb_Table.DescribeTableResult {
-					described := plainTable(&Ydb_Table.ColumnMeta{Name: "emb", Type: optional(primitive(Ydb.Type_STRING))})
-					described.Indexes = []*Ydb_Table.TableIndexDescription{vectorIndex()}
+					described := plainTable(&Ydb_Table.ColumnMeta{Name: "body", Type: optional(primitive(Ydb.Type_UTF8))})
+					described.Indexes = []*Ydb_Table.TableIndexDescription{fulltextIndex()}
 					return described
 				}()},
 			},
-			wantErr: `YDB table /local/t: index "embedding_idx" is a vector_kmeans_tree index: reading or creating ` +
-				`a YDB vector, full-text, JSON or column-table index is not implemented yet \(stokaro/ptah#4015, phase 10\)`,
+			wantErr: `YDB table /local/t: index "body_idx" is a fulltext_plain index: reading or creating ` +
+				`a YDB full-text, JSON or column-table index is not implemented yet \(stokaro/ptah#4015, phase 10\)`,
 		},
 		{
 			// The scheme service lists it as a row table, so a description that
@@ -959,6 +1031,18 @@ func (errorSource) DescribeTopic(context.Context, string) (*Ydb_Topic.DescribeTo
 	return nil, errors.New("connection refused")
 }
 
+func (errorSource) DescribeReplication(context.Context, string) (*Ydb_Replication.DescribeReplicationResult, error) {
+	return nil, errors.New("connection refused")
+}
+
+func (errorSource) DescribeTransfer(context.Context, string) (*Ydb_Replication.DescribeTransferResult, error) {
+	return nil, errors.New("connection refused")
+}
+
+func (errorSource) DescribeCoordinationNode(context.Context, string) (*Ydb_Coordination.DescribeNodeResult, error) {
+	return nil, errors.New("connection refused")
+}
+
 func TestReader_FailurePath_SourceFails(t *testing.T) {
 	c := qt.New(t)
 
@@ -1014,8 +1098,9 @@ func TestReader_LeavesTheMigratorsTablesOut(t *testing.T) {
 }
 
 // Ptah's lock node at the database root is Ptah's bookkeeping too, and the
-// reader leaves it out; a coordination node of the same name in a directory
-// below the root is not Ptah's, and is recorded as any other.
+// reader leaves it out without describing it; a coordination node of the same
+// name in a directory below the root is not Ptah's, and is described as any
+// other.
 func TestReader_LeavesPtahsLockNodeOut(t *testing.T) {
 	c := qt.New(t)
 	source := fakeSource{
@@ -1026,14 +1111,115 @@ func TestReader_LeavesPtahsLockNodeOut(t *testing.T) {
 			},
 			"/local/app": {entry(ydbschema.LockNode, Ydb_Scheme.Entry_COORDINATION_NODE)},
 		},
+		nodes: map[string]*Ydb_Coordination.DescribeNodeResult{
+			"/local/app/ptah_locks": {Config: &Ydb_Coordination.Config{}},
+		},
 	}
 
 	db := readFrom(c, source)
 
+	c.Assert(db.CoordinationNodes, qt.DeepEquals, []catalog.CoordinationNode{{Schema: "app", Name: "ptah_locks"}})
+	c.Assert(db.NotDescribed, qt.DeepEquals, coverage.Set{})
+}
+
+// A coordination node is described with the configuration YDB stores: a
+// setting nobody sent reads back unset, which the comparison fills in. Nodes
+// come out in the order the walk meets them, each directory's entries by
+// name. A node whose name starts with a dot is the server's and is recorded as
+// not described, and a node outside the directories the read is limited to is
+// not read at all.
+func TestReader_DescribesCoordinationNodes(t *testing.T) {
+	c := qt.New(t)
+	source := fakeSource{
+		directories: map[string][]*Ydb_Scheme.Entry{
+			"/local": {
+				entry("defaults", Ydb_Scheme.Entry_COORDINATION_NODE),
+				entry(".hidden", Ydb_Scheme.Entry_COORDINATION_NODE),
+				entry("app", Ydb_Scheme.Entry_DIRECTORY),
+				entry("other", Ydb_Scheme.Entry_DIRECTORY),
+			},
+			"/local/app":   {entry("limits", Ydb_Scheme.Entry_COORDINATION_NODE)},
+			"/local/other": {entry("elsewhere", Ydb_Scheme.Entry_COORDINATION_NODE)},
+		},
+		nodes: map[string]*Ydb_Coordination.DescribeNodeResult{
+			"/local/defaults": {Config: &Ydb_Coordination.Config{}},
+			"/local/app/limits": {Config: &Ydb_Coordination.Config{
+				SelfCheckPeriodMillis:    2500,
+				SessionGracePeriodMillis: 15000,
+				ReadConsistencyMode:      Ydb_Coordination.ConsistencyMode_CONSISTENCY_MODE_STRICT,
+				AttachConsistencyMode:    Ydb_Coordination.ConsistencyMode_CONSISTENCY_MODE_RELAXED,
+				RateLimiterCountersMode:  Ydb_Coordination.RateLimiterCountersMode_RATE_LIMITER_COUNTERS_MODE_DETAILED,
+			}},
+		},
+	}
+	reader := ydbschema.NewReaderFromSource(source, "/local", capability.YDB262())
+	reader.SetSchemas([]string{"", "app"})
+
+	db, err := reader.ReadSchema()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.CoordinationNodes, qt.DeepEquals, []catalog.CoordinationNode{
+		{Schema: "app", Name: "limits", Spec: ast.CoordinationNodeSpec{
+			SelfCheckPeriodMillis: 2500, SessionGracePeriodMillis: 15000,
+			ReadConsistencyMode: "strict", AttachConsistencyMode: "relaxed", RateLimiterCountersMode: "detailed",
+		}},
+		{Name: "defaults"},
+	})
 	c.Assert(db.NotDescribed, qt.DeepEquals, coverage.Set{}.With(
-		coverage.Object{Kind: coverage.CoordinationNode, Name: "app.ptah_locks", Reason: coverage.Unsupported,
+		coverage.Object{Kind: coverage.CoordinationNode, Name: `".hidden"`, Reason: coverage.Unsupported,
 			Provenance: coverage.Observed},
 	))
+}
+
+// A node carrying a mode or a setting the pinned protocol buffers do not
+// model is refused by name, because read as absent it would be planned away.
+func TestReader_DescribesCoordinationNodes_FailurePath(t *testing.T) {
+	unknownSetting := &Ydb_Coordination.DescribeNodeResult{Config: &Ydb_Coordination.Config{}}
+	unknownSetting.GetConfig().ProtoReflect().SetUnknown(protowire.AppendVarint(protowire.AppendTag(nil, 9,
+		protowire.VarintType), 1))
+	tests := []struct {
+		name      string
+		described *Ydb_Coordination.DescribeNodeResult
+		wantErr   string
+	}{
+		{
+			name: "a read mode",
+			described: &Ydb_Coordination.DescribeNodeResult{Config: &Ydb_Coordination.Config{
+				ReadConsistencyMode: Ydb_Coordination.ConsistencyMode(7)}},
+			wantErr: `YDB coordination node /local/locks: its read_consistency_mode is 7, which Ptah does not know`,
+		},
+		{
+			name: "an attach mode",
+			described: &Ydb_Coordination.DescribeNodeResult{Config: &Ydb_Coordination.Config{
+				AttachConsistencyMode: Ydb_Coordination.ConsistencyMode(3)}},
+			wantErr: `YDB coordination node /local/locks: its attach_consistency_mode is 3, which Ptah does not know`,
+		},
+		{
+			name: "a counters mode",
+			described: &Ydb_Coordination.DescribeNodeResult{Config: &Ydb_Coordination.Config{
+				RateLimiterCountersMode: Ydb_Coordination.RateLimiterCountersMode(9)}},
+			wantErr: `YDB coordination node /local/locks: its rate_limiter_counters_mode is 9, which Ptah does not know`,
+		},
+		{
+			name:      "a setting",
+			described: unknownSetting,
+			wantErr:   `YDB coordination node /local/locks: its description carries field 9, which this build of Ptah does not read`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			source := fakeSource{
+				directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("locks", Ydb_Scheme.Entry_COORDINATION_NODE)}},
+				nodes:       map[string]*Ydb_Coordination.DescribeNodeResult{"/local/locks": test.described},
+			}
+
+			db, err := ydbschema.NewReaderFromSource(source, "/local", capability.YDB262()).ReadSchema()
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(db, qt.IsNil)
+		})
+	}
 }
 
 func TestReader_TableColumns_HappyPath(t *testing.T) {

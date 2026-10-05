@@ -100,10 +100,25 @@ type session struct {
 // capability as absent. So after any failure the session is asked whether it
 // is still alive, and a dead session poisons the run instead of answering it.
 func (s *session) exec(ctx context.Context, statement string) Attempt {
+	return s.execWith(ctx, s.prefix, statement)
+}
+
+// execAtRoot is exec without the session's prefix, for a YDB statement the
+// server would keep the prefix in: a transfer's lambda is compiled under the
+// pragmas CREATE TRANSFER ran under, and measured on 26.2.1.14 one created
+// after `PRAGMA TablePathPrefix` stops at once (`Invalid table name
+// "/local/<ns>/Input": prefix must be "Input"`). Names in statement are
+// relative to the database root.
+func (s *session) execAtRoot(ctx context.Context, statement string) Attempt {
+	return s.execWith(ctx, "", statement)
+}
+
+// execWith runs statement after prefix, as exec describes.
+func (s *session) execWith(ctx context.Context, prefix, statement string) Attempt {
 	if s.broken != nil {
 		return Attempt{Statement: statement, ServerErr: "session already broken: " + s.broken.Error()}
 	}
-	_, err := s.conn.ExecContext(ctx, s.prefix+statement)
+	_, err := s.conn.ExecContext(ctx, prefix+statement)
 	if err == nil {
 		return Attempt{Statement: statement, Accepted: true}
 	}
@@ -646,8 +661,8 @@ func (s *session) leave(ctx context.Context, statement string) []Attempt {
 // the group the role experiment creates and the resource pool and classifier
 // another one creates are outside the directory. A refused
 // removal is a leftover by itself: DropDirectory refuses a tree holding an
-// object it has no statement for, such as a coordination node, before it
-// drops anything, and the partition statistics list row tables only, so they
+// object it has no statement for, such as an external table, before it drops
+// anything, and the partition statistics list row tables only, so they
 // would count no table under a directory still standing. The tables are read
 // from the partition statistics, which list a row table under its path the
 // moment it exists; a read the server refuses is itself a leftover, because

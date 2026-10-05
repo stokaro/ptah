@@ -12,13 +12,14 @@
 // The renderer, the planner, the connection, the schema reader, the schema
 // writer, the versioned migrator, both linters, the query builder, the data
 // layer -- the data diff, declared rows and seeds -- the dev databases, views,
-// a table's TTL and the access model -- users, groups, memberships and
-// permissions -- exist. The object families they do not carry yet -- comments,
-// the other table settings, the index kinds beyond global ones -- are layers
-// here too, because a declaration of one reaches the renderer by name, and a
-// database holding one reaches the reader, and each has to be refused there
-// rather than handled as something else. So are the commands that connect and
-// then need a layer that does not exist yet: inference.
+// a table's TTL, changefeeds, column families and partitioning settings, and
+// the access model -- users, groups, memberships and permissions -- exist. The
+// object families they do not carry yet -- comments, the index kinds beyond
+// global ones -- are layers here too, because a declaration of one reaches the
+// renderer by name, and a database holding one reaches the reader, and each
+// has to be refused there rather than handled as something else. So are the
+// commands that connect and then need a layer that does not exist yet:
+// inference.
 package ydbgap
 
 import (
@@ -44,17 +45,15 @@ const (
 	// no COMMENT statement; the comments family stores them as table
 	// attributes through the scheme API.
 	Comments
-	// TableSettings is a table's YDB settings beyond its TTL, which is its
-	// row deletion policy, and its changefeeds: partitioning and column
-	// families.
-	TableSettings
-	// IndexFamilies is the index kinds beyond a row table's global indexes:
-	// vector, full-text and JSON indexes, and a column table's local ones.
+	// IndexFamilies is the index kinds beyond a row table's global and
+	// vector indexes: full-text and JSON indexes, and a column table's local
+	// ones.
 	IndexFamilies
 	// Inference is an embedding generation on YDB: `ptah inference` and the
 	// agent surface's inference tools. The run state and the vectors they
-	// work on are a PostgreSQL vertical built on pgvector, and the YDB design
-	// waits for the vector index family.
+	// work on are a PostgreSQL vertical built on pgvector, and a YDB one
+	// needs the commands to reach the store through an engine boundary
+	// first.
 	Inference
 
 	// endOfLayers is one past the last layer and names none. It keeps
@@ -78,10 +77,8 @@ func (l Layer) work() string {
 		return "reading a YDB schema file"
 	case Comments:
 		return "storing a comment on a YDB object"
-	case TableSettings:
-		return "setting YDB table options (partitioning, column families)"
 	case IndexFamilies:
-		return "reading or creating a YDB vector, full-text, JSON or column-table index"
+		return "reading or creating a YDB full-text, JSON or column-table index"
 	case Inference:
 		return "running an embedding generation against YDB"
 	default:
@@ -93,7 +90,7 @@ func (l Layer) work() string {
 // that names no layer.
 func (l Layer) Phase() int {
 	switch l {
-	case SchemaFiles, Comments, TableSettings, IndexFamilies:
+	case SchemaFiles, Comments, IndexFamilies:
 		return 10
 	case Inference:
 		return 12
@@ -117,12 +114,10 @@ func (l Layer) Unsupported() string {
 		return "a YQL file as the desired schema (Go structs and YAML schemas work)"
 	case Comments:
 		return "comments on tables, columns and indexes"
-	case TableSettings:
-		return "a table's own settings: partitioning and column families"
 	case IndexFamilies:
-		return "vector, full-text, JSON and column-table indexes"
+		return "full-text, JSON and column-table indexes"
 	case Inference:
-		return "`ptah inference` and the inference tools of `ptah mcp`, which wait for the vector index family"
+		return "`ptah inference` and the inference tools of `ptah mcp`, which store their vectors through pgvector"
 	default:
 		return ""
 	}

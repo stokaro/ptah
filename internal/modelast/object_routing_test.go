@@ -44,6 +44,9 @@ var routedKinds = []routedKind{
 	{name: "topic", want: 1, count: countNodes[*ast.CreateTopicNode]},
 	{name: "resource pool", want: 1, count: countNodes[*ast.CreateResourcePoolNode]},
 	{name: "resource pool classifier", want: 1, count: countNodes[*ast.CreateResourcePoolClassifierNode]},
+	{name: "async replication", want: 1, count: countNodes[*ast.CreateAsyncReplicationNode]},
+	{name: "transfer", want: 1, count: countNodes[*ast.CreateTransferNode]},
+	{name: "coordination node", want: 1, count: countNodes[*ast.CreateCoordinationNodeNode]},
 	{name: "hypertable", want: 1, count: countNodes[*ast.CreateHypertableNode]},
 	{name: "continuous aggregate", want: 1, count: countNodes[*ast.CreateContinuousAggregateNode]},
 	{name: "extended property", want: 1, count: countNodes[*ast.ExtendedPropertyNode]},
@@ -94,6 +97,15 @@ func routingFixture() schemamodel.Database {
 			StructName: "RC", Name: "classifier_probe",
 			Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "pool_probe", Rank: 1},
 		}},
+		AsyncReplications: []schemamodel.AsyncReplication{{StructName: "AR", Name: "replication_probe",
+			Spec: ast.AsyncReplicationSpec{
+				Connection: ast.ReplicationConnectionSpec{ConnectionString: "grpc://primary:2136/?database=/prod"},
+				Items:      []ast.AsyncReplicationItem{{Source: "table_probe", Target: "replica_probe"}},
+			}}},
+		Transfers: []schemamodel.Transfer{{StructName: "TF", Name: "transfer_probe", Spec: ast.TransferSpec{
+			Source: "table_probe/feed", Target: "table_probe", Lambda: "($msg) -> { return []; }",
+		}}},
+		CoordinationNodes: []schemamodel.CoordinationNode{{StructName: "CN", Name: "node_probe"}},
 		Hypertables: []schemamodel.Hypertable{{
 			StructName: "HY", Table: "table_probe", Column: "n",
 		}},

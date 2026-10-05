@@ -126,15 +126,12 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	if assertBothSurfacesRefuseTheDomain(c, dialect, &desired) {
 		return
 	}
-	// A resource pool and its classifier are refused the same way on every
-	// target without the resource_pools key, which is every target's default
-	// preset, YDB's included, and so is a topic on every target without the
-	// topics key, which is every PostgreSQL-family one. The shared validation
-	// reaches the pools first, so they are taken out first. Once both surfaces
-	// are seen to refuse each, the census below runs over the rest of the
-	// fixture.
-	refused := assertBothSurfacesRefuseTheResourcePools(c, dialect, &desired)
+	// Remove refused YDB families in the order shared validation checks them,
+	// then run the census over the rest of the fixture.
+	refused := assertBothSurfacesRefuseTheCoordinationNode(c, dialect, &desired)
+	refused += assertBothSurfacesRefuseTheResourcePools(c, dialect, &desired)
 	refused += assertBothSurfacesRefuseTheTopic(c, dialect, &desired)
+	refused += assertBothSurfacesRefuseTheReplications(c, dialect, &desired)
 
 	renderCensus := surfaceCensus(c, dialect,
 		modelast.CollectDatabase(desired, dialect).Statements)
@@ -231,6 +228,28 @@ func assertBothSurfacesRefuseTheDomain(c *qt.C, dialect string, desired *schemam
 	return true
 }
 
+// assertBothSurfacesRefuseTheCoordinationNode checks that a target without
+// the coordination_nodes key refuses the fixture's coordination node on both
+// surfaces, through the one validation they share, and takes the node out of
+// desired so the census can run over the rest. It returns how many routed
+// kinds it took out.
+func assertBothSurfacesRefuseTheCoordinationNode(c *qt.C, dialect string, desired *schemamodel.Database) int {
+	c.Helper()
+	if capability.ForDialect(dialect).Has(capability.CoordinationNodes) {
+		return 0
+	}
+	_, planErr := schemadiff.CompareWithDatabaseInfo(
+		desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil,
+	)
+	renderErr := renderer.ValidateSchema(desired, dialect)
+	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(planErr.Error(), qt.Contains, "requires target capability coordination_nodes")
+	c.Assert(renderErr.Error(), qt.Contains, "requires target capability coordination_nodes")
+	desired.CoordinationNodes = nil
+	return 1
+}
+
 // assertBothSurfacesRefuseTheTopic checks that a target without the topics key
 // refuses the fixture's topic on both surfaces, through the one validation they
 // share, and takes the topic out of desired so the census can run over the
@@ -250,6 +269,39 @@ func assertBothSurfacesRefuseTheTopic(c *qt.C, dialect string, desired *schemamo
 	c.Assert(renderErr.Error(), qt.Contains, "requires target capability topics")
 	desired.Topics = nil
 	return 1
+}
+
+// assertBothSurfacesRefuseTheReplications checks that a target without the
+// async_replication and transfers keys refuses the fixture's replication and
+// transfer on both surfaces, through the one validation they share, and takes
+// each out of desired so the census can run over the rest. It returns how many
+// routed kinds it took out.
+func assertBothSurfacesRefuseTheReplications(c *qt.C, dialect string, desired *schemamodel.Database) int {
+	c.Helper()
+	caps := capability.ForDialect(dialect)
+	if caps.Has(capability.AsyncReplication) || caps.Has(capability.Transfers) {
+		return 0
+	}
+	_, planErr := schemadiff.CompareWithDatabaseInfo(
+		desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil,
+	)
+	renderErr := renderer.ValidateSchema(desired, dialect)
+	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(planErr.Error(), qt.Contains, "requires target capability async_replication")
+	c.Assert(renderErr.Error(), qt.Contains, "requires target capability async_replication")
+	desired.AsyncReplications = nil
+
+	_, planErr = schemadiff.CompareWithDatabaseInfo(
+		desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil,
+	)
+	renderErr = renderer.ValidateSchema(desired, dialect)
+	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(planErr.Error(), qt.Contains, "requires target capability transfers")
+	c.Assert(renderErr.Error(), qt.Contains, "requires target capability transfers")
+	desired.Transfers = nil
+	return 2
 }
 
 // assertBothSurfacesRefuseTheResourcePools checks that a target without the

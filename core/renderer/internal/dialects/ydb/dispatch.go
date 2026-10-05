@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer/internal/dialects/internal/nodedispatch"
+	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbgap"
 )
 
@@ -161,20 +162,35 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderAlterTopic(n)
 	case *ast.DropTopicNode:
 		return r.renderDropTopic(n)
+	// Coordination nodes. YQL has no statement for one, so this renderer
+	// writes Ptah's own, which Ptah's YDB connection runs through the
+	// coordination service.
+	case *ast.CreateCoordinationNodeNode:
+		return r.renderCoordinationNode(ydbcoordination.Create, n.Name, n.Spec)
+	case *ast.AlterCoordinationNodeNode:
+		return r.renderCoordinationNode(ydbcoordination.Alter, n.Name, n.Spec)
+	case *ast.DropCoordinationNodeNode:
+		return r.renderCoordinationNode(ydbcoordination.Drop, n.Name, ast.CoordinationNodeSpec{})
+
+	// Async replications and transfers.
+	case *ast.CreateAsyncReplicationNode:
+		return r.renderCreateAsyncReplication(n)
+	case *ast.AlterAsyncReplicationNode:
+		return r.renderAlterAsyncReplication(n)
+	case *ast.DropAsyncReplicationNode:
+		return r.renderDropAsyncReplication(n)
+	case *ast.CreateTransferNode:
+		return r.renderCreateTransfer(n)
+	case *ast.AlterTransferNode:
+		return r.renderAlterTransfer(n)
+	case *ast.DropTransferNode:
+		return r.renderDropTransfer(n)
 
 	// Resource pools and their classifiers.
-	case *ast.CreateResourcePoolNode:
-		return r.renderCreateResourcePool(n)
-	case *ast.AlterResourcePoolNode:
-		return r.renderAlterResourcePool(n)
-	case *ast.DropResourcePoolNode:
-		return r.renderDropResourcePool(n)
-	case *ast.CreateResourcePoolClassifierNode:
-		return r.renderCreateResourcePoolClassifier(n)
-	case *ast.AlterResourcePoolClassifierNode:
-		return r.renderAlterResourcePoolClassifier(n)
-	case *ast.DropResourcePoolClassifierNode:
-		return r.renderDropResourcePoolClassifier(n)
+	case *ast.CreateResourcePoolNode, *ast.AlterResourcePoolNode, *ast.DropResourcePoolNode,
+		*ast.CreateResourcePoolClassifierNode, *ast.AlterResourcePoolClassifierNode,
+		*ast.DropResourcePoolClassifierNode:
+		return r.renderResourcePoolNode(node)
 
 	// Objects of other engines.
 	case *ast.CreateSynonymNode:
@@ -242,9 +258,11 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.RenameIndexOperation,
 		*ast.AlterIndexVisibilityOperation,
 		*ast.SetIndexPartitioningOperation,
+		*ast.SetYDBColumnFamiliesOperation,
 		*ast.AddChangefeedOperation,
 		*ast.DropChangefeedOperation,
 		*ast.AlterChangefeedTopicOperation,
+		*ast.SetYDBTablePartitioningOperation,
 		*ast.ReplaceIndexOperation,
 		*ast.AddIndexOperation,
 		*ast.AddSkippingIndexOperation,
@@ -315,4 +333,25 @@ func (r *Renderer) renderComment(node *ast.CommentNode) error {
 func (r *Renderer) renderRawSQL(node *ast.RawSQLNode) error {
 	r.w.WriteLine(terminated(node.SQL))
 	return nil
+}
+
+// renderResourcePoolNode dispatches resource pools and classifiers to their statement renderers.
+func (r *Renderer) renderResourcePoolNode(node ast.Node) error {
+	switch n := node.(type) {
+	case *ast.CreateResourcePoolNode:
+		return r.renderCreateResourcePool(n)
+	case *ast.AlterResourcePoolNode:
+		return r.renderAlterResourcePool(n)
+	case *ast.DropResourcePoolNode:
+		return r.renderDropResourcePool(n)
+	case *ast.CreateResourcePoolClassifierNode:
+		return r.renderCreateResourcePoolClassifier(n)
+	case *ast.AlterResourcePoolClassifierNode:
+		return r.renderAlterResourcePoolClassifier(n)
+	case *ast.DropResourcePoolClassifierNode:
+		return r.renderDropResourcePoolClassifier(n)
+	default:
+		return fmt.Errorf("%w: %s: %T is not a resource pool or classifier node",
+			ptaherr.ErrInvalidSchemaDiff, DialectName, node)
+	}
 }

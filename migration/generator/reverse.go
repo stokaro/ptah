@@ -14,6 +14,9 @@ import (
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/indexscope"
+	"ptah.run/internal/ydbfamily"
+	"ptah.run/internal/ydbindex"
+	"ptah.run/internal/ydbpartition"
 	"ptah.run/internal/ydbtopic"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -220,6 +223,28 @@ func reverseSchemaDiffWithSchemaForDialect(
 		TopicsAdded:    cloneTopics(diff.TopicsRemoved),
 		TopicsRemoved:  cloneTopics(diff.TopicsAdded),
 		TopicsModified: reverseTopicDiffs(diff.TopicsModified),
+		// A coordination node carries its whole configuration in the diff:
+		// the down direction drops what the up direction created, creates what
+		// it dropped with the configuration the removal carried, and puts a
+		// changed node's settings back.
+		CoordinationNodesAdded:    slices.Clone(diff.CoordinationNodesRemoved),
+		CoordinationNodesRemoved:  slices.Clone(diff.CoordinationNodesAdded),
+		CoordinationNodesModified: reverseCoordinationNodeChanges(diff.CoordinationNodesModified),
+
+		// An async replication and a transfer reverse like a synonym: the down
+		// direction drops what the up direction created, and creates what it
+		// dropped from the specification the removal carried. A change carries
+		// both of its states, so the reversal swaps them and builds the change
+		// again. The context the down plan reads is the database the up
+		// migration left: the declared objects become the current ones, with
+		// the state each had where the database held it already.
+		AsyncReplicationsAdded:    cloneAsyncReplications(diff.AsyncReplicationsRemoved),
+		AsyncReplicationsRemoved:  cloneAsyncReplications(diff.AsyncReplicationsAdded),
+		AsyncReplicationsModified: reverseAsyncReplicationDiffs(diff.AsyncReplicationsModified),
+		TransfersAdded:            slices.Clone(diff.TransfersRemoved),
+		TransfersRemoved:          slices.Clone(diff.TransfersAdded),
+		TransfersModified:         reverseTransferDiffs(diff.TransfersModified),
+		Replications:              reverseReplicationContext(diff.Replications),
 
 		// A resource pool and a classifier reverse like a synonym: the down
 		// direction drops what the up direction created, and creates what it
@@ -382,10 +407,12 @@ func reverseSchemaDiffWithSchemaForDialect(
 	// A rollback runs against the same database, whose read declined the same
 	// settings.
 	reversed.CurrentNotDescribed = diff.CurrentNotDescribed
-	// The same database's path and grants: a rollback names an object by the
-	// same absolute path, and a table it rebuilds held the same grants.
+	// The same database's path, grants and YDB table settings: a rollback
+	// names an object by the same absolute path, and a table it rebuilds held
+	// the same grants and settings.
 	reversed.CurrentDatabasePath = diff.CurrentDatabasePath
 	reversed.CurrentGrants = diff.CurrentGrants
+	reversed.CurrentYDBSettings = diff.CurrentYDBSettings
 	return reversed
 }
 
@@ -537,6 +564,25 @@ func reverseRowDeletionPolicyChange(
 	return &difftypes.RowDeletionPolicyChange{Desired: change.Current, Current: change.Desired}
 }
 
+// reverseColumnFamiliesChange swaps the two sides of a table's YDB column
+// families, so a rollback moves each column back to the family it left and
+// gives back each setting the forward change wrote. Its current side is what
+// the table holds once the forward change has run (see [ydbfamily.Applied]).
+//
+// A family the forward change added, and a storage pool it named where the
+// table had none, are settings the earlier state does not state, so the
+// rollback keeps them, emptied of columns: YQL drops no family and removes no
+// pool, and a rollback refused for that would refuse the whole migration.
+func reverseColumnFamiliesChange(change *difftypes.YDBColumnFamiliesChange) *difftypes.YDBColumnFamiliesChange {
+	if change == nil {
+		return nil
+	}
+	return &difftypes.YDBColumnFamiliesChange{
+		Desired: ast.CloneYDBColumnFamilies(change.Current),
+		Current: ydbfamily.Applied(change.Desired, change.Current),
+	}
+}
+
 // reverseChangefeedsChange swaps the two sides of a table's changefeeds, so a
 // rollback drops what the forward change added and adds back what it
 // dropped, under the settings each side held.
@@ -548,6 +594,41 @@ func reverseChangefeedsChange(change *difftypes.ChangefeedsChange) *difftypes.Ch
 		Desired: ast.CloneChangefeeds(change.Current),
 		Current: ast.CloneChangefeeds(change.Desired),
 	}
+}
+
+// reversePartitioningChange is the rollback of a YDB table's settings
+// transition: back to every setting the table held, from every setting the
+// change left it with.
+//
+// Both sides are written to name every setting ([ydbpartition.TableSettings.Explicit]).
+// Swapping the two sides would not do: Current is a reader's report, which
+// leaves out each setting at YDB's documented default, and as a declaration a
+// setting left out keeps what the table holds, so a rollback of a minimum
+// raised from 1 would plan nothing. A side that does not resolve is swapped
+// as it is, and the renderer refuses it with the reason.
+func reversePartitioningChange(change *difftypes.YDBTablePartitioningChange) *difftypes.YDBTablePartitioningChange {
+	if change == nil {
+		return nil
+	}
+	held, heldErr := ydbpartition.HeldTable(change.Current)
+	after, afterErr := ydbpartition.ResolveTable(change.Desired, held)
+	if heldErr != nil || afterErr != nil {
+		return &difftypes.YDBTablePartitioningChange{Desired: change.Current.Clone(), Current: change.Desired.Clone()}
+	}
+	return &difftypes.YDBTablePartitioningChange{Desired: held.Explicit(), Current: after.Explicit()}
+}
+
+// reverseIndexPartitioning is the rollback of an index's partitioning change,
+// written to name every setting for the reason [reversePartitioningChange]
+// gives: back to the settings the index held, from the ones the change left it
+// with.
+func reverseIndexPartitioning(change difftypes.IndexPartitioningChange) (partitioning, previous *ast.IndexPartitioningSpec) {
+	held, heldErr := ydbindex.Held(change.Previous)
+	after, afterErr := ydbindex.Resolve(change.Partitioning, held)
+	if heldErr != nil || afterErr != nil {
+		return change.Previous.Clone(), change.Partitioning.Clone()
+	}
+	return ydbindex.Explicit(held), ydbindex.Explicit(after)
 }
 
 // reverseRefreshChange swaps the two sides of a materialized view's refresh
@@ -651,11 +732,12 @@ func reverseIndexChangesInPlace(diff *difftypes.SchemaDiff) ([]difftypes.IndexRe
 		if former, renamed := formerName[difftypes.IndexRef{TableName: change.TableName, Name: change.Name}]; renamed {
 			name = former
 		}
+		partitioning, previous := reverseIndexPartitioning(change)
 		changes = append(changes, difftypes.IndexPartitioningChange{
 			TableName:    change.TableName,
 			Name:         name,
-			Partitioning: change.Previous.Clone(),
-			Previous:     change.Partitioning.Clone(),
+			Partitioning: partitioning,
+			Previous:     previous,
 		})
 	}
 	return renames, changes
@@ -678,6 +760,81 @@ func reverseTopicDiffs(changes []difftypes.TopicDiff) []difftypes.TopicDiff {
 			reversed = append(reversed, back)
 		}
 	}
+	return reversed
+}
+
+// reverseAsyncReplicationDiffs swaps the two states of every replication
+// change and builds the change again from them. The state the database
+// reports is the forward change's: YDB changes a replication's connection
+// only while it is paused, and the change leaves it paused.
+func reverseAsyncReplicationDiffs(changes []difftypes.AsyncReplicationDiff) []difftypes.AsyncReplicationDiff {
+	if changes == nil {
+		return nil
+	}
+	reversed := make([]difftypes.AsyncReplicationDiff, 0, len(changes))
+	for _, change := range changes {
+		if back, differs := difftypes.NewAsyncReplicationDiff(change.Name, change.Current, change.Desired,
+			change.State); differs {
+			reversed = append(reversed, back)
+		}
+	}
+	return reversed
+}
+
+// reverseTransferDiffs swaps the two states of every transfer change and
+// builds the change again from them.
+func reverseTransferDiffs(changes []difftypes.TransferDiff) []difftypes.TransferDiff {
+	if changes == nil {
+		return nil
+	}
+	reversed := make([]difftypes.TransferDiff, 0, len(changes))
+	for _, change := range changes {
+		if back, differs := difftypes.NewTransferDiff(change.Name, change.Current, change.Desired,
+			change.State); differs {
+			reversed = append(reversed, back)
+		}
+	}
+	return reversed
+}
+
+// reverseReplicationContext is the context a down plan reads: the database the
+// up migration left holds the declared replications, transfers and topics,
+// each replication and transfer with the state the database reported where it
+// held the object already, and the schema the down plan restores declares the
+// ones the database held.
+func reverseReplicationContext(context difftypes.ReplicationContext) difftypes.ReplicationContext {
+	states := make(map[string]string, len(context.CurrentReplications)+len(context.CurrentTransfers))
+	for _, replication := range context.CurrentReplications {
+		states["replication "+replication.QualifiedName()] = replication.State
+	}
+	for _, transfer := range context.CurrentTransfers {
+		states["transfer "+transfer.QualifiedName()] = transfer.State
+	}
+	reversed := difftypes.ReplicationContext{}
+	for _, replication := range context.DeclaredReplications {
+		reversed.CurrentReplications = append(reversed.CurrentReplications, catalog.AsyncReplication{
+			Name: replication.Name, Schema: replication.Schema, Spec: replication.Spec.Clone(),
+			State: states["replication "+replication.QualifiedName()],
+		})
+	}
+	for _, transfer := range context.DeclaredTransfers {
+		reversed.CurrentTransfers = append(reversed.CurrentTransfers, catalog.Transfer{
+			Name: transfer.Name, Schema: transfer.Schema, Spec: transfer.Spec,
+			State: states["transfer "+transfer.QualifiedName()],
+		})
+	}
+	for _, replication := range context.CurrentReplications {
+		reversed.DeclaredReplications = append(reversed.DeclaredReplications, schemamodel.AsyncReplication{
+			Name: replication.Name, Schema: replication.Schema, Spec: replication.Spec.Clone(),
+		})
+	}
+	for _, transfer := range context.CurrentTransfers {
+		reversed.DeclaredTransfers = append(reversed.DeclaredTransfers, schemamodel.Transfer{
+			Name: transfer.Name, Schema: transfer.Schema, Spec: transfer.Spec,
+		})
+	}
+	reversed.CurrentTopics = slices.Clone(context.DeclaredTopics)
+	reversed.DeclaredTopics = slices.Clone(context.CurrentTopics)
 	return reversed
 }
 

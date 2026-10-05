@@ -737,7 +737,7 @@ var Cells = []Cell{
 		Preset: capability.YDB262, PresetName: "YDB262",
 		Refinement: RefinedByVersion, Support: capability.Certified,
 		Image: "ydbplatform/local-ydb:26.2", ResolveNewestPatch: true,
-		Note: ydbProbedNote("26.2.1.14") + " The current YDB release, and the first line that sets and drops " +
+		Note: ydbProbedNote("26.2.1.14", 108, 15) + " The current YDB release, and the first line that sets and drops " +
 			"a column default in place.",
 	},
 	{
@@ -779,8 +779,9 @@ var Cells = []Cell{
 		Preset: capability.YDB251, PresetName: "YDB251",
 		Refinement: RefinedByVersion, Support: capability.Certified,
 		Image: "ydbplatform/local-ydb:25.1", ResolveNewestPatch: true,
-		Note: ydbProbedNote("25.1.4.7") + " The line Yandex Enterprise Database 25.1 is certified on, and the " +
-			"oldest measured: no 64-bit date types, Decimal(22,9) only, and no default on a 16-bit integer.",
+		Note: ydbProbedNote("25.1.4.7", 106, 17) + " The line Yandex Enterprise Database 25.1 is certified on, and the " +
+			"oldest measured: no 64-bit date types, Decimal(22,9) only, no default on a 16-bit integer, and vector " +
+			"indexes behind a flag, so the two keys about a vector index's writes and bit vectors are undecidable there.",
 	},
 }
 
@@ -790,10 +791,11 @@ var Cells = []Cell{
 const ydbUnprobed = "YDB publishes no support period for its open-source lines, and the matrix probes the " +
 	"current release and the one line with a published support date"
 
-// ydbProbedNote opens the note of a YDB cell the probe runs.
-func ydbProbedNote(version string) string {
-	return "probed on every run of the tiered workflows. Measured on " + version + " through this cell's " +
-		"launch recipe: 117 rows, 102 agree, 15 are undecidable and none disagrees."
+// ydbProbedNote opens the note of a YDB cell the probe runs, with the rows
+// the probe decided on version through the cell's launch recipe.
+func ydbProbedNote(version string, agree, undecidable int) string {
+	return fmt.Sprintf("probed on every run of the tiered workflows. Measured on %s through this cell's "+
+		"launch recipe: %d rows, %d agree, %d are undecidable and none disagrees.", version, agree+undecidable, agree, undecidable)
 }
 
 // ydbUnprobedNote opens the note of a YDB cell the probe skips.

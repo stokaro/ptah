@@ -303,6 +303,8 @@ func validateDuplicateSchemaObjectDefinitions(r *Database) error {
 		validator.resourcePoolClassifiers,
 		validator.materializedViews,
 		validator.topics,
+		validator.asyncReplications,
+		validator.transfers,
 		validator.triggers,
 		validator.rlsPolicies,
 		validator.rlsEnabledTables,
@@ -538,6 +540,38 @@ func (v compositeDefinitionValidator) resourcePoolClassifiers() error {
 		},
 		func(_ ResourcePoolClassifier, key string) error {
 			return fmt.Errorf("conflicting resource pool classifier %q definitions", key)
+		},
+	)
+}
+
+// asyncReplications refuses two declarations of one YDB async replication
+// that differ. A replication is identified by its directory and name, as a
+// YDB table is.
+func (v compositeDefinitionValidator) asyncReplications() error {
+	return validateNamedDefinitions(
+		v.database.AsyncReplications,
+		func(replication AsyncReplication) string { return replication.QualifiedName() },
+		func(replication AsyncReplication) AsyncReplication {
+			replication.StructName = ""
+			return replication
+		},
+		func(_ AsyncReplication, key string) error {
+			return fmt.Errorf("conflicting async replication %q definitions", key)
+		},
+	)
+}
+
+// transfers refuses two declarations of one YDB transfer that differ.
+func (v compositeDefinitionValidator) transfers() error {
+	return validateNamedDefinitions(
+		v.database.Transfers,
+		func(transfer Transfer) string { return transfer.QualifiedName() },
+		func(transfer Transfer) Transfer {
+			transfer.StructName = ""
+			return transfer
+		},
+		func(_ Transfer, key string) error {
+			return fmt.Errorf("conflicting transfer %q definitions", key)
 		},
 	)
 }

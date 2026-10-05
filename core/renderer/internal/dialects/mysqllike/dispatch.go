@@ -5,6 +5,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer/internal/dialects/internal/coordinationrefusal"
 	"ptah.run/core/renderer/internal/dialects/internal/grantrefusal"
 	"ptah.run/core/renderer/internal/dialects/internal/nodedispatch"
 )
@@ -107,6 +108,9 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderDropSequence(n)
 	case *ast.AlterSerialSequenceNode:
 		return nodedispatch.RefuseSerialSequence(r.dialect, n)
+	case *ast.CreateAsyncReplicationNode, *ast.AlterAsyncReplicationNode, *ast.DropAsyncReplicationNode,
+		*ast.CreateTransferNode, *ast.AlterTransferNode, *ast.DropTransferNode:
+		return nodedispatch.RefuseReplication(r.dialect, n)
 
 	// Roles and privileges.
 	case *ast.CreateRoleNode:
@@ -156,6 +160,9 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.CreateResourcePoolClassifierNode, *ast.AlterResourcePoolClassifierNode,
 		*ast.DropResourcePoolClassifierNode:
 		return nodedispatch.RefuseResourcePool(r.dialect, n)
+	case *ast.CreateCoordinationNodeNode, *ast.AlterCoordinationNodeNode, *ast.DropCoordinationNodeNode:
+		// A coordination node is YDB's own object.
+		return coordinationrefusal.Node(r.Dialect(), n)
 	case *ast.ExtendedPropertyNode:
 		return r.renderExtendedProperty(n)
 	case *ast.CreateHypertableNode:
@@ -204,9 +211,11 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.RenameIndexOperation,
 		*ast.AlterIndexVisibilityOperation,
 		*ast.SetIndexPartitioningOperation,
+		*ast.SetYDBColumnFamiliesOperation,
 		*ast.AddChangefeedOperation,
 		*ast.DropChangefeedOperation,
 		*ast.AlterChangefeedTopicOperation,
+		*ast.SetYDBTablePartitioningOperation,
 		*ast.ReplaceIndexOperation,
 		*ast.AddIndexOperation,
 		*ast.AddSkippingIndexOperation,

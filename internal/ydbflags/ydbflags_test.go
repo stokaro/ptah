@@ -101,6 +101,36 @@ func TestRefine_HappyPath(t *testing.T) {
 			key:   capability.ResourcePools,
 			want:  true,
 		},
+		{
+			name:  "a vector index follows its flag on",
+			flags: ydbflags.Flags{"EnableVectorIndex": true},
+			key:   capability.VectorIndexes,
+			want:  true,
+		},
+		{
+			name:  "a vector index follows its flag off",
+			flags: ydbflags.Flags{"EnableVectorIndex": false},
+			key:   capability.VectorIndexes,
+			want:  false,
+		},
+		{
+			name:  "a transfer follows its flag",
+			flags: ydbflags.Flags{"EnableTopicTransfer": true},
+			key:   capability.Transfers,
+			want:  true,
+		},
+		{
+			name:  "an async replication follows its flag",
+			flags: ydbflags.Flags{"EnableReplication": false},
+			key:   capability.AsyncReplication,
+			want:  false,
+		},
+		{
+			name:  "a column family's cache mode follows its flag",
+			flags: ydbflags.Flags{"EnableTableCacheModes": true},
+			key:   capability.ColumnFamilyCacheMode,
+			want:  true,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -182,6 +212,23 @@ func TestRefine_MoveIndexFlagOffTurnsIndexRenameOff(t *testing.T) {
 			c.Assert(refined, qt.DeepEquals, test.preset().With(capability.IndexRename, false))
 		})
 	}
+}
+
+// A 25.1 cluster started with EnableVectorIndex on, as the integration
+// workflow starts its 25.1 server, builds a vector index: the flag turns
+// vector_indexes on and leaves every other key as the line's preset has it.
+// The page was recorded from local-ydb 25.1.4.7 started with
+// YDB_FEATURE_FLAGS=enable_vector_index, and differs from the default page in
+// that one flag's current value.
+func TestRefine_VectorIndexFlagOnTurnsVectorIndexesOn(t *testing.T) {
+	c := qt.New(t)
+	flags, err := ydbflags.Decode(page(c, "local-ydb-25.1.4.7-vector-index.json"), "/local")
+	c.Assert(err, qt.IsNil)
+	c.Assert(capability.YDB251().Has(capability.VectorIndexes), qt.IsFalse)
+
+	refined := flags.Refine(capability.YDB251())
+
+	c.Assert(refined, qt.DeepEquals, capability.YDB251().With(capability.VectorIndexes, true))
 }
 
 // TestRefine_LeavesUngatedKeysAndItsInputAlone pins the rest of the set: a
@@ -472,6 +519,40 @@ func TestRefused_HappyPath(t *testing.T) {
 				"are disabled. Please contact your system administrator to enable it",
 			wantKey:  capability.ResourcePools,
 			wantFlag: "EnableResourcePools",
+		},
+		{
+			name: "25.1.4.7 a vector index in CREATE TABLE",
+			refusal: "Status: PRECONDITION_FAILED Issues: <main>: Error: Execution, code: 1060 <main>:1:113: Error: " +
+				"Executing CREATE TABLE <main>: Error: Vector index support is disabled, code: 2029",
+			wantKey:  capability.VectorIndexes,
+			wantFlag: "EnableVectorIndex",
+		},
+		{
+			name: "25.1.4.7 a vector index added to a table",
+			refusal: "Status: GENERIC_ERROR Issues: <main>: Error: Execution, code: 1060 <main>:1:65: Error: " +
+				"Vector index support is disabled",
+			wantKey:  capability.VectorIndexes,
+			wantFlag: "EnableVectorIndex",
+		},
+		{
+			name:     "25.1.4.7 a transfer",
+			refusal:  "Status: BAD_REQUEST Issues: <main>: Error: Topic transfer creation is disabled, code: 2017",
+			wantKey:  capability.Transfers,
+			wantFlag: "EnableTopicTransfer",
+		},
+		{
+			name: "26.2.1.14 an async replication with the flag off",
+			refusal: "Status: PRECONDITION_FAILED Issues: <main>: Error: Executing ESchemeOpCreateReplication, " +
+				"code: 2029 <main>: Error: Asynchronous replication is disabled, code: 2029",
+			wantKey:  capability.AsyncReplication,
+			wantFlag: "EnableReplication",
+		},
+		{
+			name: "25.3.1.25 a column family's cache mode",
+			refusal: "operation/GENERIC_ERROR (code = 400080, address = localhost:2136, issues = [{#1060 'Execution' " +
+				"[{1:101 => 'Executing CREATE TABLE' [{'Setting cache_mode is not allowed'}]}]}])",
+			wantKey:  capability.ColumnFamilyCacheMode,
+			wantFlag: "EnableTableCacheModes",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

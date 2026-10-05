@@ -124,6 +124,7 @@ for the message and the flag it names.
 | `continuous_aggregate` | TimescaleDB continuous aggregate: `as` for the `SELECT` it materializes, and optionally `materialized_only`, a comment and the `schema` holding it. |
 | `synonym` | SQL Server alias: `target`, plus the `schema` the alias lives in and a comment. |
 | `extended_property` | SQL Server named value: `value`, and the object it is attached to as `schema`, `table` and `column`. |
+| `coordination_node` | Ptah block: a YDB coordination node, with `schema` and the settings of the [`//ptah:schema:coordinationnode`](../go-annotations/#ptahschemacoordinationnode) annotation as strings. |
 | `data` | Ptah managed-data declaration with a table reference, key columns, and a file path relative to the HCL file. |
 
 ## API export metadata attributes

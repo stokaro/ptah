@@ -32,24 +32,30 @@ import (
 // fingerprint it already had. [Database.NotDescribed] and [Field.APIExpose]
 // spell out the reasoning.
 type Database struct {
-	Schemas                    []Schema
-	Tables                     []Table
-	Fields                     []Field
-	Indexes                    []Index
-	Constraints                []Constraint // Table-level constraints (EXCLUDE, CHECK, etc.)
-	Enums                      []Enum
-	EmbeddedFields             []EmbeddedField
-	Extensions                 []Extension                    // PostgreSQL extensions (pg_trgm, postgis, etc.)
-	Functions                  []Function                     // PostgreSQL custom functions
-	Sequences                  []Sequence                     // PostgreSQL standalone sequences (CREATE SEQUENCE)
-	Domains                    []Domain                       // PostgreSQL domain types (CREATE DOMAIN)
-	CompositeTypes             []CompositeType                // PostgreSQL composite types (CREATE TYPE ... AS (...))
-	Ranges                     []Range                        // PostgreSQL range types (CREATE TYPE ... AS RANGE (...))
-	Views                      []View                         // Database views
-	Synonyms                   []Synonym                      // SQL Server synonyms
-	Topics                     []Topic                        `json:",omitempty"` // YDB topics and their consumers
-	ResourcePools              []ResourcePool                 `json:",omitempty"` // YDB resource pools
-	ResourcePoolClassifiers    []ResourcePoolClassifier       `json:",omitempty"` // YDB resource pool classifiers
+	Schemas                 []Schema
+	Tables                  []Table
+	Fields                  []Field
+	Indexes                 []Index
+	Constraints             []Constraint // Table-level constraints (EXCLUDE, CHECK, etc.)
+	Enums                   []Enum
+	EmbeddedFields          []EmbeddedField
+	Extensions              []Extension              // PostgreSQL extensions (pg_trgm, postgis, etc.)
+	Functions               []Function               // PostgreSQL custom functions
+	Sequences               []Sequence               // PostgreSQL standalone sequences (CREATE SEQUENCE)
+	Domains                 []Domain                 // PostgreSQL domain types (CREATE DOMAIN)
+	CompositeTypes          []CompositeType          // PostgreSQL composite types (CREATE TYPE ... AS (...))
+	Ranges                  []Range                  // PostgreSQL range types (CREATE TYPE ... AS RANGE (...))
+	Views                   []View                   // Database views
+	Synonyms                []Synonym                // SQL Server synonyms
+	Topics                  []Topic                  `json:",omitempty"` // YDB topics and their consumers
+	ResourcePools           []ResourcePool           `json:",omitempty"` // YDB resource pools
+	ResourcePoolClassifiers []ResourcePoolClassifier `json:",omitempty"` // YDB resource pool classifiers
+	AsyncReplications       []AsyncReplication       `json:",omitempty"` // YDB async replications
+	Transfers               []Transfer               `json:",omitempty"` // YDB transfers
+	// CoordinationNodes are the YDB coordination nodes the schema declares.
+	// omitempty keeps the encoding, and so the fingerprint, of every schema
+	// that declares none as it is.
+	CoordinationNodes          []CoordinationNode             `json:",omitempty"`
 	ExtendedProperties         []ExtendedProperty             // SQL Server extended properties
 	MaterializedViews          []MaterializedView             // Database materialized views
 	Triggers                   []Trigger                      // Database triggers
@@ -206,7 +212,7 @@ type TargetNames struct {
 // The Field supports platform-specific overrides through the Overrides field:
 //
 //	//ptah:schema:field name="id" type="SERIAL" platform.mysql.type="INT AUTO_INCREMENT"
-//	ID int64
+//	    ID int64
 type Field struct {
 	StructName string // Name of the Go struct this field belongs to
 	FieldName  string // Name of the Go struct field
@@ -485,6 +491,13 @@ type Index struct {
 	// declares none, which is the settings YDB gives a new index. A renderer
 	// for another dialect drops it and reports the loss.
 	Partitioning *ast.IndexPartitioningSpec
+	// Vector is the settings of a YDB vector index, the one Type
+	// vector_kmeans_tree names: the metric, the element type, the
+	// dimension, and the depth and width of its k-means tree, as the
+	// `distance`, `similarity`, `vector_type`, `vector_dimension`, `levels`
+	// and `clusters` attributes of `//ptah:schema:index` declare them. Nil
+	// declares none. A target without a vector index refuses it.
+	Vector *ast.VectorIndexSpec
 	// TableName is the cross-table association (overrides StructName-based
 	// resolution when set).
 	TableName string
@@ -528,7 +541,7 @@ type Index struct {
 //	    During string // TSRANGE type
 //
 //	    //ptah:schema:constraint name="one_active_session_per_user" type="EXCLUDE" using="gist" elements="user_id WITH =" condition="is_active = true"
-//	    UserID   int64
+//	    UserID int64
 //	    IsActive bool
 //	}
 //
@@ -819,12 +832,26 @@ type Table struct {
 	// a table declaring none. It carries the ast type for the same reason
 	// RowTTL does (stokaro/ptah#2236).
 	RowDeletionPolicy *ast.RowDeletionPolicySpec
+	// YDBColumnFamilies is YDB's, and every other target refuses it: the
+	// column families this row table declares, each with the columns it
+	// holds -- the `//ptah:schema:column_family` annotations and the YAML
+	// `column_families` map. Nil declares none, and every column then sits in
+	// YDB's default family. It carries the ast type for the reason RowTTL
+	// does.
+	YDBColumnFamilies []ast.YDBColumnFamilySpec
 	// Changefeeds are the YDB changefeeds this table declares: the
 	// `//ptah:schema:changefeed` annotations and the YAML `changefeeds`
 	// list. It carries the ast type for the reason RowTTL does. A renderer
 	// for a target without capability.Changefeeds refuses a table declaring
 	// one rather than building the table without its stream.
 	Changefeeds []ast.ChangefeedSpec
+	// YDBPartitioning is YDB's, and every other target refuses it: how this
+	// row table splits into partitions, its read replicas, its key bloom
+	// filter and the partitions it is created with, nil for a table declaring
+	// none of them. It carries the ast type for the same reason RowTTL does.
+	// omitzero keeps the JSON of a table declaring none byte-identical, and
+	// with it the desired-schema fingerprint a plan records.
+	YDBPartitioning *ast.YDBTablePartitioningSpec `json:",omitzero"`
 
 	// DependsOn names tables this one must be created after, beyond the ones
 	// its foreign keys imply. See [BuildDependencyGraph] for what a declared
@@ -1376,6 +1403,46 @@ type ResourcePoolClassifier struct {
 	Spec ast.ResourcePoolClassifierSpec
 }
 
+// AsyncReplication is a YDB async replication: a copy of tables of another
+// database, kept current in read-only replica tables YDB creates itself.
+//
+// Schema is the directory that holds it, "" for the database root, as it is
+// for a YDB table. The replica tables are the replication's: a schema that
+// declares one does not declare the tables it creates. Dialects is
+// deliberately absent, for the reason [Synonym] gives: a replication belongs
+// to YDB, and every other target refuses one rather than building nothing.
+type AsyncReplication struct {
+	StructName string // Name of the Go struct this replication is associated with
+	Name       string // Replication name, the last segment of its path
+	Schema     string // Directory that holds the replication, relative to the database root
+	// Spec is the replication's connection, items and consistency. It
+	// carries the ast type for the reason Table.RowDeletionPolicy does.
+	Spec ast.AsyncReplicationSpec
+}
+
+// QualifiedName returns the replication's canonical reference: schema.name,
+// or the name alone at the database root.
+func (r AsyncReplication) QualifiedName() string {
+	return tableref.Canonical(r.Schema, r.Name)
+}
+
+// Transfer is a YDB transfer: messages of a topic turned into rows of a
+// table through a YQL lambda. Dialects is deliberately absent, for the reason
+// [AsyncReplication] gives.
+type Transfer struct {
+	StructName string // Name of the Go struct this transfer is associated with
+	Name       string // Transfer name, the last segment of its path
+	Schema     string // Directory that holds the transfer, relative to the database root
+	// Spec is the transfer's source, target, lambda and settings.
+	Spec ast.TransferSpec
+}
+
+// QualifiedName returns the transfer's canonical reference: schema.name, or
+// the name alone at the database root.
+func (t Transfer) QualifiedName() string {
+	return tableref.Canonical(t.Schema, t.Name)
+}
+
 // ExtendedProperty is a SQL Server extended property: a named value attached
 // to a schema, a table, or a column of one.
 //
@@ -1431,6 +1498,31 @@ func (s Synonym) QualifiedName() string {
 		return s.Name
 	}
 	return s.Schema + "." + s.Name
+}
+
+// CoordinationNode is a YDB coordination node: the object that holds a YDB
+// application's semaphores, which serve as distributed locks, and its rate
+// limiter resources. Ptah manages the node and its configuration; what an
+// application keeps in it is the application's.
+//
+// Schema is the directory that holds the node, relative to the database root,
+// and empty for the root itself, as a YDB table's schema is.
+//
+// Dialects is deliberately absent, as on [Synonym]: a coordination node
+// belongs to YDB and to nothing else.
+type CoordinationNode struct {
+	StructName string // Name of the Go struct this node is declared on
+	Schema     string // Directory holding the node, relative to the database root
+	Name       string // Node name
+	// Spec is the node's configuration; a setting it leaves unset takes the
+	// server's default.
+	Spec ast.CoordinationNodeSpec
+}
+
+// QualifiedName returns the node's name qualified by its directory, in the
+// form a table's is, so a dotted name stays one name.
+func (n CoordinationNode) QualifiedName() string {
+	return tableref.Canonical(n.Schema, n.Name)
 }
 
 // sequenceTypeAliases maps accepted spellings of a sequence's underlying

@@ -78,6 +78,15 @@ type Database struct {
 	// that has none byte-identical.
 	ResourcePools           []ResourcePool           `json:"resource_pools,omitempty"`
 	ResourcePoolClassifiers []ResourcePoolClassifier `json:"resource_pool_classifiers,omitempty"`
+	// AsyncReplications are the YDB async replications this description
+	// covers, each with its connection, items and state. omitempty keeps the
+	// serialization of every dialect that has none byte-identical.
+	AsyncReplications []AsyncReplication `json:"async_replications,omitempty"`
+	// Transfers are the YDB transfers this description covers.
+	Transfers []Transfer `json:"transfers,omitempty"`
+	// CoordinationNodes are the YDB coordination nodes this read described.
+	// omitempty keeps the serialization of every other dialect as it is.
+	CoordinationNodes []CoordinationNode `json:"coordination_nodes,omitempty"`
 	// ExtendedProperties are the SQL Server extended properties this
 	// description covers: schema-, table- and column-scoped ones. See
 	// [ExtendedProperty] for what is deliberately not in it.
@@ -328,11 +337,25 @@ type Table struct {
 	// RowDeletionPolicy is the row deletion policy this table carries, nil for
 	// a table with none (stokaro/ptah#2236).
 	RowDeletionPolicy *ast.RowDeletionPolicySpec `json:"row_deletion_policy,omitzero"`
+	// YDBColumnFamilies is YDB's, and no other target fills it: the column
+	// families of a YDB row table, each with its settings and the columns it
+	// holds, the default family only where its settings are not YDB's own.
+	// A table whose families hold a setting Ptah does not read lists none
+	// here; the reader records them as not described instead, so a plan
+	// neither changes nor drops them.
+	YDBColumnFamilies []ast.YDBColumnFamilySpec `json:"ydb_column_families,omitempty"`
 	// Changefeeds are the YDB changefeeds this table carries, each with the
 	// retention and the consumers of its topic. A changefeed holding a
 	// setting Ptah does not model is not listed here; the reader records it
 	// as not described instead, so a plan neither drops nor changes it.
 	Changefeeds []ast.ChangefeedSpec `json:"changefeeds,omitempty"`
+	// YDBPartitioning is YDB's, and no other target fills it: the settings of
+	// a YDB row table that differ from what a new table is given -- how it
+	// splits into partitions, its read replicas and its key bloom filter. It
+	// is nil for a table holding the defaults. A read never fills the starting
+	// layout, which YDB keeps no record of; a description converted from a
+	// declaration does.
+	YDBPartitioning *ast.YDBTablePartitioningSpec `json:"ydb_partitioning,omitzero"`
 	// VirtualModule is the SQLite module that owns this table, from the USING
 	// clause of the CREATE VIRTUAL TABLE statement that created it -- `fts5`,
 	// `rtree`, `geopoly`, or any other module a build registers. It is empty
@@ -875,6 +898,9 @@ type Index struct {
 	// that differ from the ones YDB gives a new index, so an index nobody
 	// tuned carries nil.
 	Partitioning *ast.IndexPartitioningSpec `json:"partitioning,omitempty"`
+	// Vector is the settings a YDB vector index was built with, and nil for
+	// every other index. Its Method is vector_kmeans_tree.
+	Vector *ast.VectorIndexSpec `json:"vector,omitempty"`
 
 	// RequiresExtensions names the extensions this index cannot be built
 	// without, as the catalog resolved them rather than as the DDL spells them.
@@ -1500,6 +1526,65 @@ func (t Topic) QualifiedName() string {
 	return tableref.Canonical(t.Schema, t.Name)
 }
 
+// The states a YDB async replication or transfer reports, as
+// [AsyncReplication.State] and [Transfer.State] carry them.
+const (
+	// ReplicationRunning is a replication or transfer that copies, YDB's
+	// StandBy.
+	ReplicationRunning = "running"
+	// ReplicationPaused is one paused with `SET (STATE = 'PAUSED')`, the only
+	// state in which YDB changes its connection and credentials.
+	ReplicationPaused = "paused"
+	// ReplicationDone is a replication failed over with `SET (STATE =
+	// 'DONE')`. It copies nothing more, and its replica tables are ordinary
+	// writable tables.
+	ReplicationDone = "done"
+	// ReplicationError is one that stopped on an error, such as a secret it
+	// cannot read.
+	ReplicationError = "error"
+)
+
+// AsyncReplication is a YDB async replication read from the database.
+//
+// Schema is the directory that holds it, "" for the database root, as it is
+// for a table. The reader fills Spec with what the server holds: the
+// connection in its canonical form, the credentials by the secret each names,
+// and one item per replicated table, a directory item read back as the tables
+// it replicates. State is what the replication reports and no declaration
+// sets; a plan reads it to decide what it may change.
+type AsyncReplication struct {
+	Name   string                   `json:"name"`
+	Schema string                   `json:"schema,omitempty"`
+	Spec   ast.AsyncReplicationSpec `json:"spec"`
+	State  string                   `json:"state,omitempty"`
+}
+
+// QualifiedName returns the replication's canonical reference: schema.name,
+// or the name alone at the database root.
+func (r AsyncReplication) QualifiedName() string {
+	return tableref.Canonical(r.Schema, r.Name)
+}
+
+// Transfer is a YDB transfer read from the database.
+//
+// Schema is the directory that holds it, "" for the database root. Spec
+// carries the lambda as YDB stores it, the source and the target relative to
+// the database root where they lie under it, and the consumer the transfer
+// reads through, whether a declaration named it or YDB created it. State is
+// what the transfer reports.
+type Transfer struct {
+	Name   string           `json:"name"`
+	Schema string           `json:"schema,omitempty"`
+	Spec   ast.TransferSpec `json:"spec"`
+	State  string           `json:"state,omitempty"`
+}
+
+// QualifiedName returns the transfer's canonical reference: schema.name, or
+// the name alone at the database root.
+func (t Transfer) QualifiedName() string {
+	return tableref.Canonical(t.Schema, t.Name)
+}
+
 // ContinuousAggregate is one TimescaleDB continuous aggregate.
 //
 // To PostgreSQL it is a view: pg_class reports relkind 'v', and a reader that
@@ -1647,6 +1732,22 @@ func (p ExtendedProperty) QualifiedOwner() string {
 // QualifiedName returns schema.synonym when Schema is set, or Name otherwise.
 func (s Synonym) QualifiedName() string {
 	return QualifyTableName(s.Schema, s.Name)
+}
+
+// CoordinationNode is one YDB coordination node a read described.
+//
+// Spec is the configuration as YDB stores it, which is what was sent when the
+// node was created or last changed: a setting nobody set reads back unset,
+// and the node runs with the server's default for it.
+type CoordinationNode struct {
+	Schema string                   `json:"schema"` // Directory holding the node, relative to the database root
+	Name   string                   `json:"name"`   // Node name
+	Spec   ast.CoordinationNodeSpec `json:"spec"`
+}
+
+// QualifiedName returns the node's name qualified by its directory.
+func (n CoordinationNode) QualifiedName() string {
+	return QualifyTableName(n.Schema, n.Name)
 }
 
 // DeclaredTarget is the synonym's target in the spelling a declaration uses:

@@ -22,6 +22,9 @@ func NewDatabase() *Database {
 		Topics:                  make([]Topic, 0),
 		ResourcePools:           make([]ResourcePool, 0),
 		ResourcePoolClassifiers: make([]ResourcePoolClassifier, 0),
+		AsyncReplications:       make([]AsyncReplication, 0),
+		Transfers:               make([]Transfer, 0),
+		CoordinationNodes:       make([]CoordinationNode, 0),
 		ExtendedProperties:      make([]ExtendedProperty, 0),
 		MaterializedViews:       make([]MaterializedView, 0),
 		Triggers:                make([]Trigger, 0),
@@ -75,6 +78,9 @@ func AppendDatabase(dst, src *Database) {
 	dst.Topics = append(dst.Topics, src.Topics...)
 	dst.ResourcePools = append(dst.ResourcePools, src.ResourcePools...)
 	dst.ResourcePoolClassifiers = append(dst.ResourcePoolClassifiers, src.ResourcePoolClassifiers...)
+	dst.AsyncReplications = append(dst.AsyncReplications, src.AsyncReplications...)
+	dst.Transfers = append(dst.Transfers, src.Transfers...)
+	dst.CoordinationNodes = append(dst.CoordinationNodes, src.CoordinationNodes...)
 	dst.ExtendedProperties = append(dst.ExtendedProperties, src.ExtendedProperties...)
 	dst.MaterializedViews = append(dst.MaterializedViews, src.MaterializedViews...)
 	dst.Triggers = append(dst.Triggers, src.Triggers...)

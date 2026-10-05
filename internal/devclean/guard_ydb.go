@@ -24,6 +24,11 @@ import (
 //	GRANT SELECT ON t TO u1                 refused: a grant takes no prefix
 //	CREATE TOPIC tp                         created in the realm
 //
+// Ptah's own coordination node statement (see internal/ydbcoordination) is
+// resolved by Ptah's connection rather than the server, against the same
+// prefix and with the same rule: a relative path lands in the realm, and the
+// connection refuses one that leaves it.
+//
 // So a statement whose effect is not confined to the realm is refused: a
 // write whose target is an absolute path, climbs out with `..`, is named
 // through a `$` expression or carries a cluster, a pragma that moves the
@@ -35,7 +40,14 @@ import (
 //
 // On a server the run owns, the realm is the server, so only what reaches past
 // it stays refused: an external data source or table, async replication, a
-// transfer and a streaming query read from or write to somewhere else.
+// transfer and a streaming query read from or write to somewhere else. In a
+// realm the prefix would not confine a replication or a transfer either:
+// measured on 26.2.1.14, it prefixes a replication's own path and its
+// replica's, and a transfer's own path, while a replication's FOR and a
+// transfer's FROM and TO resolve at the database root (`Path does not exist`
+// for a table of the realm), and a transfer created under the prefix stops at
+// once, since YDB compiles its lambda under it (`Invalid table name
+// "/local/<realm>/Input": prefix must be "Input"`).
 //
 // A statement the guard does not recognize is refused, as an unknown
 // ClickHouse engine is.
@@ -156,6 +168,15 @@ func validateYDBObjectStatement(tokens []lexer.Token) error {
 		return ydbCheckRenameTarget(tokens)
 	case "VIEW", "SEQUENCE", "TOPIC":
 		return ydbCheckTarget(tokens, ydbSkipExistenceGuard(tokens, kind+1))
+	case "COORDINATION":
+		// Ptah's own statement for a coordination node, which Ptah's
+		// connection resolves against the realm's prefix as YDB resolves a
+		// table, and which the reset drops.
+		if ydbKeywordAt(tokens, kind+1) != "NODE" {
+			return unsafeReplayStatement(platform.YDB, "unrecognized object "+
+				strings.ToUpper(tokens[0].Value)+" COORDINATION "+strings.ToUpper(tokenValueAt(tokens, kind+1)))
+		}
+		return ydbCheckTarget(tokens, kind+2)
 	case "TEMP", "TEMPORARY":
 		return unsafeReplayStatement(platform.YDB, "temporary table")
 	case "USER", "GROUP":

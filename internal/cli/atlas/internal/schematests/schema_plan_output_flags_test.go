@@ -2,8 +2,10 @@ package schematests_test
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -193,11 +195,12 @@ func TestSchemaPlanNameFormatRendersPlanName(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
-	// The table name is still chosen rather than arbitrary: .ToHash is Atlas's
-	// untagged Base64, so roughly a third of 12-character windows hold "/" or
-	// "+". This fixture has a clean window, and .ToHashSafe exists so a
-	// template does not have to depend on that (stokaro/ptah#1685).
-	fixture := newPlanFixture(c, "nameformat", "", `CREATE TABLE nf_ledgers (id INTEGER PRIMARY KEY);`)
+	// .ToHash is Atlas's untagged Base64, so roughly a third of 12-character
+	// windows hold "/", which a plan name refuses (.ToHashSafe exists so a
+	// template does not have to care, stokaro/ptah#1685). The window is found
+	// in the hash rather than fixed, because every change to the hashed model
+	// moves the hash.
+	fixture := newPlanFixture(c, "nameformat", "", `CREATE TABLE nf_accounts (id INTEGER PRIMARY KEY);`)
 	referencePath := filepath.Join(dir, "reference.plan.json")
 	_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"), fixture.args("--output", referencePath)...)
 	c.Assert(err, qt.IsNil)
@@ -207,19 +210,32 @@ func TestSchemaPlanNameFormatRendersPlanName(t *testing.T) {
 
 	templateData, err := atlasreport.NewSchemaPlanName(reference.FromFingerprint, reference.ToFingerprint)
 	c.Assert(err, qt.IsNil)
+	start := slashFreeWindow(c, templateData.ToHash, 12)
 	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
-		fixture.args("--save", "--name-format", "plan_{{ slice .ToHash 0 12 }}")...)
+		fixture.args("--save", "--name-format", fmt.Sprintf("plan_{{ slice .ToHash %d %d }}", start, start+12))...)
 
 	// The template sees this plan's fingerprints in Atlas's untagged Base64
 	// representation. Asserting the exact expected name — not merely a shape —
 	// separates "the template ran" from "the template ran on the right value".
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	want := "plan_" + templateData.ToHash[:12]
+	want := "plan_" + templateData.ToHash[start:start+12]
 	c.Assert(out, qt.Contains, "Plan saved to file://"+want+".plan.hcl")
 	plan, format, err := atlasschema.ReadPlanDocument(filepath.Join(dir, want+".plan.hcl"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(format, qt.Equals, atlasschema.PlanFormatHCL)
 	c.Assert(plan.Name, qt.Equals, want)
+}
+
+// slashFreeWindow returns the first offset at which hash holds width
+// characters without a "/", which a plan name cannot carry.
+func slashFreeWindow(c *qt.C, hash string, width int) int {
+	for start := 0; start+width <= len(hash); start++ {
+		if !strings.Contains(hash[start:start+width], "/") {
+			return start
+		}
+	}
+	c.Fatalf("hash %q holds no %d-character window without a slash", hash, width)
+	return 0
 }
 
 func TestSchemaPlanNameFormatDistinguishesFromHashAndToHash(t *testing.T) {

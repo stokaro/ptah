@@ -71,6 +71,111 @@
       ],
       "type": "object"
     },
+    "ptah.schema.async_replication": {
+      "additionalProperties": false,
+      "description": "Declares a YDB async replication: tables of another database copied into read-only replica tables YDB creates and keeps current. Its tables are declared with ptah:schema:async_replication:item in the same file, and the replica tables are not declared as tables.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "commit_interval": {
+              "description": "How often a global replication commits, an ISO 8601 duration; ten seconds when omitted.",
+              "type": "string"
+            },
+            "connection_string": {
+              "description": "The other database: grpc://host:port/?database=/path or grpcs://...",
+              "type": "string"
+            },
+            "consistency_level": {
+              "description": "Consistency of the replica: row or global; row when omitted.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Replication name, the last segment of its path.",
+              "type": "string"
+            },
+            "password_secret_name": {
+              "description": "Object secret holding the user's password.",
+              "type": "string"
+            },
+            "password_secret_path": {
+              "description": "Path of a secret holding the user's password, relative to the database root (YDB 25.4 and later).",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Directory that holds it, relative to the database root.",
+              "type": "string"
+            },
+            "token_secret_name": {
+              "description": "Object secret holding an access token.",
+              "type": "string"
+            },
+            "token_secret_path": {
+              "description": "Path of a secret holding an access token, relative to the database root (YDB 25.4 and later).",
+              "type": "string"
+            },
+            "user": {
+              "description": "User a password secret signs in as.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "connection_string",
+            "name"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:async_replication"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "ptah.schema.async_replication.item": {
+      "additionalProperties": false,
+      "description": "Declares one table, or directory of tables, an async replication copies, and where its replica is created. The replication is declared in the same file.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "replication": {
+              "description": "Replication the item belongs to.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Directory of the replication, when it has one.",
+              "type": "string"
+            },
+            "source": {
+              "description": "Path in the source database, relative to its root or absolute.",
+              "type": "string"
+            },
+            "target": {
+              "description": "Path of the replica in this database, relative to its root.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "replication",
+            "source",
+            "target"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:async_replication:item"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
     "ptah.schema.changefeed": {
       "additionalProperties": false,
       "description": "Declares a YDB changefeed: a stream of a table's changes, kept in a topic at <table>/<name>. It belongs to the struct's table, or to the table it names.",
@@ -218,6 +323,53 @@
         },
         "directive": {
           "const": "ptah:schema:changefeed:consumer"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "ptah.schema.columnfamily": {
+      "additionalProperties": false,
+      "description": "Declares a YDB column family: columns stored together, with a storage pool, compression and cache mode of their own. It belongs to the struct's table, or to the table it names.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "cache_mode": {
+              "description": "Cache mode: regular or in_memory.",
+              "type": "string"
+            },
+            "compression": {
+              "description": "Compression: off or lz4.",
+              "type": "string"
+            },
+            "data": {
+              "description": "Kind of storage pool the family's columns are kept in, such as ssd.",
+              "type": "string"
+            },
+            "fields": {
+              "description": "Columns the family holds. The default family lists none.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Family name; default is the family holding the key and every column no other family names.",
+              "type": "string"
+            },
+            "table": {
+              "description": "Table the family belongs to, when not the struct's own.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:columnfamily"
         }
       },
       "required": [
@@ -402,6 +554,57 @@
         },
         "directive": {
           "const": "ptah:schema:continuousaggregate"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "ptah.schema.coordinationnode": {
+      "additionalProperties": false,
+      "description": "Declares a YDB coordination node, which holds an application's semaphores and rate limiter resources. A setting left out takes YDB's default.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "attach_consistency_mode": {
+              "description": "`strict` or `relaxed`. YDB's default is `strict`.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Node name.",
+              "type": "string"
+            },
+            "rate_limiter_counters_mode": {
+              "description": "`aggregated` or `detailed`. YDB's default is `aggregated`.",
+              "type": "string"
+            },
+            "read_consistency_mode": {
+              "description": "`strict` or `relaxed`. YDB's default is `relaxed`.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Directory holding the node, relative to the database root.",
+              "type": "string"
+            },
+            "self_check_period": {
+              "description": "How often the node checks it is alive, as an ISO 8601 duration from `PT0.5S` to `PT10S`. YDB's default is `PT1S`.",
+              "type": "string"
+            },
+            "session_grace_period": {
+              "description": "How long a session keeps its semaphores while the node changes its leader, as an ISO 8601 duration from the self-check period plus one second to `PT30S`. YDB's default is `PT10S`.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:coordinationnode"
         }
       },
       "required": [
@@ -1127,6 +1330,10 @@
               "description": "YDB: the size in MB at which the index's table splits a partition.",
               "type": "string"
             },
+            "clusters": {
+              "description": "YDB vector index: the clusters each level splits into, 2 to 2048.",
+              "type": "string"
+            },
             "columns": {
               "description": "Legacy synonym for fields.",
               "type": "string",
@@ -1138,6 +1345,10 @@
             },
             "condition": {
               "description": "Partial index condition.",
+              "type": "string"
+            },
+            "distance": {
+              "description": "YDB vector index: the distance it orders by, cosine, euclidean or manhattan.",
               "type": "string"
             },
             "fields": {
@@ -1165,6 +1376,10 @@
               "description": "MySQL and MariaDB index block-size hint; zero uses the engine default.",
               "type": "string"
             },
+            "levels": {
+              "description": "YDB vector index: the depth of its k-means tree, 1 to 16.",
+              "type": "string"
+            },
             "name": {
               "description": "Index name.",
               "type": "string"
@@ -1185,6 +1400,10 @@
               "description": "YDB: the index's read replicas, PER_AZ:<n> or ANY_AZ:<n>.",
               "type": "string"
             },
+            "similarity": {
+              "description": "YDB vector index: the similarity it orders by, inner_product or cosine.",
+              "type": "string"
+            },
             "table": {
               "description": "Explicit target table.",
               "type": "string"
@@ -1201,6 +1420,14 @@
               ],
               "type": "string",
               "x-ptah-bare-boolean": true
+            },
+            "vector_dimension": {
+              "description": "YDB vector index: the number of elements in a vector, 1 to 16384.",
+              "type": "string"
+            },
+            "vector_type": {
+              "description": "YDB vector index: the element type, float, uint8, int8 or bit.",
+              "type": "string"
             },
             "where": {
               "description": "Atlas-style partial index condition alias.",
@@ -1977,6 +2204,26 @@
               "description": "Name this table carries in an exported API schema, when that differs from the table name.",
               "type": "string"
             },
+            "auto_partitioning_by_load": {
+              "description": "YDB: whether the table splits a busy partition, ENABLED or DISABLED.",
+              "type": "string"
+            },
+            "auto_partitioning_by_size": {
+              "description": "YDB: whether the table splits a partition that grows past its size, ENABLED or DISABLED.",
+              "type": "string"
+            },
+            "auto_partitioning_max_partitions_count": {
+              "description": "YDB: the most partitions the table splits into.",
+              "type": "string"
+            },
+            "auto_partitioning_min_partitions_count": {
+              "description": "YDB: the fewest partitions the table keeps.",
+              "type": "string"
+            },
+            "auto_partitioning_partition_size_mb": {
+              "description": "YDB: the size in MB at which the table splits a partition.",
+              "type": "string"
+            },
             "checks": {
               "description": "Comma-separated table-level check expressions.",
               "type": "string"
@@ -2001,12 +2248,20 @@
               "description": "Name this table carries in the GraphQL export only, overriding api_name there.",
               "type": "string"
             },
+            "key_bloom_filter": {
+              "description": "YDB: whether the table keeps a bloom filter of its keys, ENABLED or DISABLED.",
+              "type": "string"
+            },
             "name": {
               "description": "Table name.",
               "type": "string"
             },
             "openapi_name": {
               "description": "Name this table carries in the OpenAPI export only, overriding api_name there.",
+              "type": "string"
+            },
+            "partition_at_keys": {
+              "description": "YDB: the keys a new table starts split before, such as `10, 20` or `(10, 'a'), (20)`.",
               "type": "string"
             },
             "primary_key": {
@@ -2023,6 +2278,10 @@
             },
             "proto_name": {
               "description": "Name this table carries in the Protobuf export only, overriding api_name there. It is the message identity, so changing it retires the old message.",
+              "type": "string"
+            },
+            "read_replicas_settings": {
+              "description": "YDB: the table's read replicas, PER_AZ:<n> or ANY_AZ:<n>.",
               "type": "string"
             },
             "row_deletion_column": {
@@ -2095,6 +2354,10 @@
             },
             "ttl_select_rate_limit": {
               "description": "CockroachDB row-level TTL: rows selected per second; at least 1.",
+              "type": "string"
+            },
+            "uniform_partitions": {
+              "description": "YDB: the partitions a new table starts with, splitting a Uint32 or Uint64 first key evenly.",
               "type": "string"
             }
           },
@@ -2230,6 +2493,88 @@
         },
         "directive": {
           "const": "ptah:schema:topic:consumer"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "ptah.schema.transfer": {
+      "additionalProperties": false,
+      "description": "Declares a YDB transfer: messages of a topic turned into rows of a table through a YQL lambda.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "batch_size_bytes": {
+              "description": "Bytes the transfer gathers before a write; 8 MiB when omitted.",
+              "type": "string"
+            },
+            "connection_string": {
+              "description": "The other database: grpc://host:port/?database=/path or grpcs://...",
+              "type": "string"
+            },
+            "consumer": {
+              "description": "Existing topic consumer the transfer reads through; YDB creates one when omitted.",
+              "type": "string"
+            },
+            "flush_interval": {
+              "description": "Longest wait before a write, an ISO 8601 duration of whole seconds; a minute when omitted.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Transfer name, the last segment of its path.",
+              "type": "string"
+            },
+            "password_secret_name": {
+              "description": "Object secret holding the user's password.",
+              "type": "string"
+            },
+            "password_secret_path": {
+              "description": "Path of a secret holding the user's password, relative to the database root (YDB 25.4 and later).",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Directory that holds it, relative to the database root.",
+              "type": "string"
+            },
+            "source": {
+              "description": "Topic the transfer reads, relative to the database root; for a topic of another database, relative to its root or absolute.",
+              "type": "string"
+            },
+            "target": {
+              "description": "Table the transfer writes, relative to the database root.",
+              "type": "string"
+            },
+            "token_secret_name": {
+              "description": "Object secret holding an access token.",
+              "type": "string"
+            },
+            "token_secret_path": {
+              "description": "Path of a secret holding an access token, relative to the database root (YDB 25.4 and later).",
+              "type": "string"
+            },
+            "user": {
+              "description": "User a password secret signs in as.",
+              "type": "string"
+            },
+            "using": {
+              "description": "The YQL lambda, written inline: ($msg) -> { ... }.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "source",
+            "target",
+            "using"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:transfer"
         }
       },
       "required": [
@@ -2386,6 +2731,18 @@
       "$ref": "#/$defs/ptah.schema.changefeed.consumer"
     },
     {
+      "$ref": "#/$defs/ptah.schema.async_replication"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.async_replication.item"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.transfer"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.columnfamily"
+    },
+    {
       "$ref": "#/$defs/ptah.schema.table"
     },
     {
@@ -2435,6 +2792,9 @@
     },
     {
       "$ref": "#/$defs/ptah.schema.synonym"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.coordinationnode"
     },
     {
       "$ref": "#/$defs/ptah.schema.topic"

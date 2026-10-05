@@ -182,7 +182,7 @@ func TestYDBRebuild_CarriesTheTTL(t *testing.T) {
 
 			file, err := rebuildPlan(c, conn, after, true)
 			c.Assert(err, qt.IsNil)
-			c.Assert(file, qt.Contains, ") WITH (TTL = Interval(\"P3D\") ON `seen`);")
+			c.Assert(file, qt.Contains, ") WITH (TTL = Interval(\"P3D\") ON `seen`, AUTO_PARTITIONING_BY_SIZE = ENABLED, ")
 			c.Assert(file, qt.Not(qt.Contains), "SET (TTL")
 			c.Assert(rebuildMigrator(c, conn, file, nil).MigrateUp(c.Context()), qt.IsNil)
 
@@ -210,9 +210,10 @@ func failingAfter(fragment string) migrator.StatementObserver {
 }
 
 // A run that stops after the copy committed -- here an observer fails it --
-// leaves both tables and a revision that records the CREATE and the copy. A
-// rerun with --allow-dirty resumes at the first rename and completes the
-// swap, and the rows are copied once.
+// leaves both tables and a revision that records the CREATE, the ALTER INDEX
+// that names the new index's settings, and the copy. A rerun with
+// --allow-dirty resumes at the first rename and completes the swap, and the
+// rows are copied once.
 func TestYDBRebuild_ResumesAfterAFailureAfterTheCopy(t *testing.T) {
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
@@ -228,14 +229,14 @@ func TestYDBRebuild_ResumesAfterAFailureAfterTheCopy(t *testing.T) {
 
 			c.Assert(failed, qt.ErrorIs, errInjected)
 			c.Assert(revisionProgress(c, rebuildMigrator(c, conn, file, nil)), qt.DeepEquals,
-				[]progress{{Version: 1, State: "failed", Applied: 2, Total: 5}})
+				[]progress{{Version: 1, State: "failed", Applied: 3, Total: 6}})
 			c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+rebuildSchema+"/items`"), qt.Equals, int64(2))
 			c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+rebuildSchema+"/__ptah_rebuild_items`"), qt.Equals, int64(2))
 
 			resumed := rebuildMigrator(c, conn, file, nil)
 			c.Assert(resumed.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true}), qt.IsNil)
 
-			c.Assert(revisionProgress(c, resumed), qt.DeepEquals, []progress{{Version: 1, State: "applied", Applied: 5, Total: 5}})
+			c.Assert(revisionProgress(c, resumed), qt.DeepEquals, []progress{{Version: 1, State: "applied", Applied: 6, Total: 6}})
 			c.Assert(planAgainst(c, conn, after, rebuildSchemas), qt.HasLen, 0)
 			c.Assert(tableNames(readScoped(c, conn, rebuildSchemas)), qt.DeepEquals, []string{rebuildSchema + "|items"})
 			c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+rebuildSchema+"/items`"), qt.Equals, int64(2))
@@ -265,7 +266,7 @@ func TestYDBRebuild_AConversionFailureLeavesTheOldTable(t *testing.T) {
 			c.Assert(failed, qt.ErrorMatches,
 				`(?s).*rebuilding table ptah_ydb_rebuild\.items: column n holds a value that does not convert to its new type.*`)
 			c.Assert(revisionProgress(c, rebuildMigrator(c, conn, file, nil)), qt.DeepEquals,
-				[]progress{{Version: 1, State: "failed", Applied: 1, Total: 5}})
+				[]progress{{Version: 1, State: "failed", Applied: 2, Total: 6}})
 			items := tableNamed(c, readScoped(c, conn, rebuildSchemas), rebuildSchema, "items")
 			c.Assert(columnNamed(c, items, "n").DataType, qt.Equals, "Utf8")
 			c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+rebuildSchema+"/items` WHERE `n` = 'x'u"), qt.Equals, int64(1))
@@ -283,27 +284,21 @@ func TestYDBRebuild_AConversionFailureLeavesTheOldTable(t *testing.T) {
 
 // A rebuild that would damage the table is refused while planning, even when
 // asked for: one whose key is a Serial column, whose new sequence would start
-// below the copied rows, and one carrying a partitioning setting Ptah does not
-// model, which recreating would drop. Without the request, the change is
-// refused with the flag that asks for it.
+// below the copied rows. Without the request, the change is refused with the
+// flag that asks for it. TestYDBRebuild_RefusesATTLRunInterval refuses the
+// other kind of damage, a setting Ptah does not model.
 func TestYDBRebuild_Refusals(t *testing.T) {
 	typeChange := withField("n", func(f *schemamodel.Field) { f.Type = "BIGINT" })
 	serialKey := withField("id", func(f *schemamodel.Field) { f.AutoInc = true })
 	tests := []struct {
-		name     string
-		before   *schemamodel.Database
-		settings []string
-		after    *schemamodel.Database
-		allow    bool
-		wantErr  string
+		name    string
+		before  *schemamodel.Database
+		after   *schemamodel.Database
+		allow   bool
+		wantErr string
 	}{
 		{name: "a Serial key", before: rebuildItems(serialKey), after: rebuildItems(serialKey, typeChange), allow: true,
 			wantErr: `(?s).*rebuilding table "ptah_ydb_rebuild\.items": column "id" takes its values from a sequence\..*`},
-		{name: "a partitioning setting", before: rebuildItems(),
-			settings: []string{"ALTER TABLE `" + rebuildSchema + "/items` SET (AUTO_PARTITIONING_BY_LOAD = ENABLED)"},
-			after:    rebuildItems(typeChange), allow: true,
-			wantErr: `(?s).*rebuilding table "ptah_ydb_rebuild\.items": the table carries partitioning, read replica or ` +
-				`key bloom filter options, which Ptah does not model.*`},
 		{name: "not asked for", before: rebuildItems(), after: rebuildItems(typeChange), allow: false,
 			wantErr: `(?s).*changing the type of column "n" of table "ptah_ydb_rebuild\.items" .*; YDB makes it by ` +
 				`rebuilding the table, which Ptah plans when asked with --allow-table-rebuild.*`},
@@ -316,7 +311,6 @@ func TestYDBRebuild_Refusals(t *testing.T) {
 				cleanRebuild(c, conn)
 				c.Cleanup(func() { cleanRebuild(c, conn) })
 				apply(c, conn, planAgainst(c, conn, test.before, rebuildSchemas))
-				apply(c, conn, test.settings)
 
 				file, err := rebuildPlan(c, conn, test.after, test.allow)
 
@@ -324,6 +318,30 @@ func TestYDBRebuild_Refusals(t *testing.T) {
 				c.Assert(file, qt.Equals, "")
 			})
 		}
+	}
+}
+
+// A rebuild of a table carrying a setting Ptah does not model is refused even
+// when asked for, since recreating the table would drop it: here a TTL run
+// interval, which only the SDK and the CLI write, so the new table could not
+// be given it.
+func TestYDBRebuild_RefusesATTLRunInterval(t *testing.T) {
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			cleanRebuild(c, conn)
+			c.Cleanup(func() { cleanRebuild(c, conn) })
+			apply(c, conn, planAgainst(c, conn, rebuildItems(withTTL("P1D")), rebuildSchemas))
+			setRunInterval(c, line, rebuildSchema+"/items", "seen", 86400, 1800)
+
+			file, err := rebuildPlan(c, conn,
+				rebuildItems(withTTL("P1D"), withField("n", func(f *schemamodel.Field) { f.Type = "BIGINT" })), true)
+
+			c.Assert(err, qt.ErrorMatches, `(?s).*rebuilding table "ptah_ydb_rebuild\.items": the table carries a TTL `+
+				`run interval or tiering policy, which Ptah does not model.*`)
+			c.Assert(file, qt.Equals, "")
+		})
 	}
 }
 

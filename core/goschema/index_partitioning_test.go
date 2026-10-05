@@ -49,7 +49,7 @@ func TestParseSource_IndexPartitioning_HappyPath(t *testing.T) {
 		},
 		{name: "a switch turned off", attributes: `auto_partitioning_by_size="DISABLED"`,
 			want: &ast.IndexPartitioningSpec{BySize: new(false)}},
-		{name: "no read replicas", attributes: `read_replicas_settings="ANY_AZ:0"`, want: &ast.IndexPartitioningSpec{}},
+		{name: "no read replicas", attributes: `read_replicas_settings="ANY_AZ:0"`, want: &ast.IndexPartitioningSpec{ReadReplicas: "ANY_AZ:0"}},
 	}
 
 	for _, test := range tests {

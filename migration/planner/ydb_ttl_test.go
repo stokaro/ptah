@@ -50,6 +50,6 @@ func TestGenerateSchemaDiff_YDBRebuildKeepsATTLTheDesiredStateDoesNotDescribe(t 
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(plan, qt.Contains, ") WITH (TTL = Interval(\"P30D\") ON `ts`);")
+	c.Assert(plan, qt.Contains, ") WITH (TTL = Interval(\"P30D\") ON `ts`, AUTO_PARTITIONING_BY_SIZE = ENABLED, ")
 	c.Assert(plan, qt.Not(qt.Contains), "RESET (TTL)")
 }

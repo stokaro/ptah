@@ -3,7 +3,8 @@
 // declares, the actions an ALTER TABLE takes, the settings and consumers a
 // CREATE TOPIC declares and the actions an ALTER TOPIC takes, the restart an
 // ALTER SEQUENCE makes, the resource pool or backup collection a DROP names,
-// the table an ANALYZE names, and the tables a query reads.
+// the table an ANALYZE names, the settings of an async replication or transfer,
+// the tables a query reads, and the table a data statement writes.
 //
 // It is the reading both linters share, so `ptah migrations lint` and
 // `ptah sql lint` cannot disagree about what a YQL statement does. It reads
@@ -65,6 +66,23 @@ const (
 	// Analyze is ANALYZE, which collects column statistics. Its name is the
 	// first table it names.
 	Analyze
+	// CreateAsyncReplication is CREATE ASYNC REPLICATION. Its settings are
+	// the WITH clause's.
+	CreateAsyncReplication
+	// AlterAsyncReplication is ALTER ASYNC REPLICATION, whose SET is one
+	// [SetSettings] action.
+	AlterAsyncReplication
+	// DropAsyncReplication is DROP ASYNC REPLICATION, with
+	// [Statement.Cascade] for CASCADE.
+	DropAsyncReplication
+	// CreateTransfer is CREATE TRANSFER. Its settings are the WITH clause
+	// after the lambda.
+	CreateTransfer
+	// AlterTransfer is ALTER TRANSFER, whose SET (...) is one [SetSettings]
+	// action; a SET USING is no setting.
+	AlterTransfer
+	// DropTransfer is DROP TRANSFER.
+	DropTransfer
 )
 
 // Statement is what one YQL statement does.
@@ -76,6 +94,8 @@ type Statement struct {
 	Name string
 	// IfExists records IF EXISTS on a DROP and IF NOT EXISTS on a CREATE.
 	IfExists bool
+	// Cascade records CASCADE on a DROP ASYNC REPLICATION.
+	Cascade bool
 
 	// Columns are the columns a CREATE TABLE declares, in order.
 	Columns []Column
@@ -83,6 +103,9 @@ type Statement struct {
 	PrimaryKey bool
 	// Indexes are the indexes a CREATE TABLE declares inline, in order.
 	Indexes []Index
+	// Families are the column families a CREATE TABLE declares with a FAMILY
+	// entry, in order.
+	Families []string
 	// TTLColumn is the column a CREATE TABLE's TTL setting reads, and empty
 	// when it sets none.
 	TTLColumn string
@@ -127,6 +150,9 @@ type Column struct {
 	NotNull bool
 	// Default reports a DEFAULT in the declaration.
 	Default bool
+	// Family is the column family the declaration puts the column in, and
+	// empty when it names none.
+	Family string
 }
 
 // Index is one index a statement declares or adds.
@@ -135,11 +161,20 @@ type Index struct {
 	Name string
 	// Unique reports UNIQUE among the words before ON.
 	Unique bool
+	// Method is the kind USING names, in lower case, such as
+	// vector_kmeans_tree, and empty for an index that names none.
+	Method string
+	// VectorType is the vector_type a vector index's WITH (...) names, in
+	// lower case, and empty where it names none.
+	VectorType string
 	// Columns are the key columns, from ON (...).
 	Columns []string
 	// Cover are the covered columns, from COVER (...).
 	Cover []string
 }
+
+// vectorMethod is the kind USING names for a vector index.
+const vectorMethod = "vector_kmeans_tree"
 
 // Uses reports whether the index keys or covers column.
 func (i Index) Uses(column string) bool {
@@ -180,6 +215,12 @@ const (
 	SetConsumerSettings
 	// ResetConsumerSettings is an ALTER TOPIC's ALTER CONSUMER ... RESET (...).
 	ResetConsumerSettings
+	// AddFamily is ADD FAMILY.
+	AddFamily
+	// AlterFamily is ALTER FAMILY ... SET.
+	AlterFamily
+	// SetColumnFamily is ALTER COLUMN ... SET FAMILY.
+	SetColumnFamily
 )
 
 // Action is one action of an ALTER TABLE.
@@ -197,6 +238,9 @@ type Action struct {
 	// Changefeed is the changefeed ADD CHANGEFEED adds or DROP CHANGEFEED
 	// drops.
 	Changefeed string
+	// Family is the column family ADD FAMILY adds, ALTER FAMILY changes, or
+	// ALTER COLUMN ... SET FAMILY moves Column into.
+	Family string
 	// Settings are what SET sets or RESET resets, of the table, the topic or
 	// the consumer.
 	Settings []Setting
@@ -229,14 +273,17 @@ type Requirement struct {
 	// Capability is the key the target has to hold.
 	Capability capability.Capability
 	// Action is the position in [Statement.Actions] of the action that needs
-	// it.
+	// it, or, where Inline holds, the position in [Statement.Indexes] of the
+	// index a CREATE TABLE declares that needs it.
 	Action int
+	// Inline reports a requirement of an index a CREATE TABLE declares.
+	Inline bool
 }
 
-// Requirements returns the capabilities an ALTER TABLE needs that a YDB line
-// may lack, in action order. Both linters judge a statement against its
-// target through this one list, so they cannot disagree about what a line
-// refuses. Measured on 26.2.1.14 and 25.1.4.7:
+// Requirements returns the capabilities a CREATE TABLE or an ALTER TABLE
+// needs that a YDB line may lack, in index and action order. Both linters
+// judge a statement against its target through this one list, so they cannot
+// disagree about what a line refuses. Measured on 26.2.1.14 and 25.1.4.7:
 //
 //   - ADD INDEX ... UNIQUE needs [capability.UniqueIndexOnExistingTable]: a
 //     table the statement alters exists, and YDB keeps adding a unique index
@@ -245,23 +292,58 @@ type Requirement struct {
 //     syncGlobalUnique` on 25.1.4.7);
 //   - ADD COLUMN with a DEFAULT needs [capability.AddColumnWithDefault]
 //     (`Column addition with default value is not supported now` on
-//     25.1.4.7).
+//     25.1.4.7);
+//   - a vector index, inline or added, needs [capability.VectorIndexes]
+//     (`Vector index support is disabled` on 25.1.4.7 with its flag off),
+//     and one over bit vectors needs [capability.VectorBitType] too (`bit
+//     vector type is not supported` on 25.1.4.7, `Unsupported vector_type:
+//     VECTOR_TYPE_BIT` on 25.4.1.15).
 //
 // Any other statement needs nothing listed here.
 func (s Statement) Requirements() []Requirement {
+	var requirements []Requirement
+	if s.Kind == CreateTable {
+		for i, index := range s.Indexes {
+			for _, key := range index.vectorRequirements() {
+				requirements = append(requirements, Requirement{Capability: key, Action: i, Inline: true})
+			}
+		}
+		return requirements
+	}
 	if s.Kind != AlterTable {
 		return nil
 	}
-	var requirements []Requirement
 	for i, action := range s.Actions {
 		switch {
 		case action.Kind == AddIndex && action.Index.Unique:
 			requirements = append(requirements, Requirement{Capability: capability.UniqueIndexOnExistingTable, Action: i})
 		case action.Kind == AddColumn && action.Column.Default:
 			requirements = append(requirements, Requirement{Capability: capability.AddColumnWithDefault, Action: i})
+		case action.Kind == AddIndex:
+			for _, key := range action.Index.vectorRequirements() {
+				requirements = append(requirements, Requirement{Capability: key, Action: i})
+			}
 		}
 	}
 	return requirements
+}
+
+// Vector reports a vector index.
+func (i Index) Vector() bool {
+	return i.Method == vectorMethod
+}
+
+// vectorRequirements are the capabilities a vector index needs, and none for
+// any other index.
+func (i Index) vectorRequirements() []capability.Capability {
+	switch {
+	case !i.Vector():
+		return nil
+	case i.VectorType == "bit":
+		return []capability.Capability{capability.VectorIndexes, capability.VectorBitType}
+	default:
+		return []capability.Capability{capability.VectorIndexes}
+	}
 }
 
 // Read reads one YQL statement. Comments and a terminating semicolon are
@@ -297,9 +379,51 @@ func Read(statement string) Statement {
 	case startsWith(tokens, "ANALYZE"):
 		name, _ := readName(tokens[1:])
 		return Statement{Kind: Analyze, Name: name}
+	case startsWith(tokens, "CREATE", "ASYNC", "REPLICATION"):
+		return readReplicationOrTransfer(CreateAsyncReplication, tokens[3:])
+	case startsWith(tokens, "ALTER", "ASYNC", "REPLICATION"):
+		return readReplicationOrTransfer(AlterAsyncReplication, tokens[3:])
+	case startsWith(tokens, "DROP", "ASYNC", "REPLICATION"):
+		stmt := readDrop(DropAsyncReplication, tokens[3:])
+		stmt.Cascade = slices.ContainsFunc(tokens[3:], func(token lexer.Token) bool {
+			return token.MatchIdentifierValue("CASCADE")
+		})
+		return stmt
+	case startsWith(tokens, "CREATE", "TRANSFER"):
+		return readReplicationOrTransfer(CreateTransfer, tokens[2:])
+	case startsWith(tokens, "ALTER", "TRANSFER"):
+		return readReplicationOrTransfer(AlterTransfer, tokens[2:])
+	case startsWith(tokens, "DROP", "TRANSFER"):
+		return readDrop(DropTransfer, tokens[2:])
 	default:
 		return Statement{}
 	}
+}
+
+// WrittenTable returns the table a data statement writes rows into: the name
+// after INSERT, UPSERT or REPLACE ... INTO, after UPDATE, and after DELETE
+// FROM, each also behind BATCH. It reports false for any other statement and
+// for a name written as a named expression, which is not known before the
+// query runs.
+func WrittenTable(statement string) (string, bool) {
+	tokens, _ := skipWords(significant(statement), "BATCH")
+	switch {
+	case startsWith(tokens, "INSERT"), startsWith(tokens, "UPSERT"), startsWith(tokens, "REPLACE"):
+		for i := range tokens {
+			if tokens[i].MatchIdentifierValue("INTO") {
+				tokens = tokens[i+1:]
+				break
+			}
+		}
+	case startsWith(tokens, "UPDATE"):
+		tokens = tokens[1:]
+	case startsWith(tokens, "DELETE", "FROM"):
+		tokens = tokens[2:]
+	default:
+		return "", false
+	}
+	name, _ := readName(tokens)
+	return name, name != ""
 }
 
 // TablesRead returns the tables the statement tokens start reads, in order: the
@@ -358,7 +482,11 @@ func readCreateTable(tokens []lexer.Token) Statement {
 			stmt.PrimaryKey = true
 		case startsWith(item, "INDEX"):
 			stmt.Indexes = append(stmt.Indexes, readIndex(item[1:]))
-		case startsWith(item, "FAMILY"), startsWith(item, "CHANGEFEED"):
+		case startsWith(item, "FAMILY"):
+			if name, _ := readName(item[1:]); name != "" {
+				stmt.Families = append(stmt.Families, name)
+			}
+		case startsWith(item, "CHANGEFEED"):
 		default:
 			if column, ok := readColumn(item); ok {
 				stmt.Columns = append(stmt.Columns, column)
@@ -413,7 +541,15 @@ func readAction(tokens []lexer.Token) Action {
 	case startsWith(tokens, "DROP", "CHANGEFEED"):
 		name, _ := readName(tokens[2:])
 		return Action{Kind: DropChangefeed, Changefeed: name}
-	case startsWith(tokens, "ADD", "FAMILY"), startsWith(tokens, "DROP", "FAMILY"):
+	case startsWith(tokens, "ADD", "FAMILY"):
+		name, _ := readName(tokens[2:])
+		return Action{Kind: AddFamily, Family: name}
+	case startsWith(tokens, "ALTER", "FAMILY"):
+		name, _ := readName(tokens[2:])
+		return Action{Kind: AlterFamily, Family: name}
+	case startsWith(tokens, "ALTER", "COLUMN"):
+		return readAlterColumn(tokens[2:])
+	case startsWith(tokens, "DROP", "FAMILY"):
 		return Action{}
 	case startsWith(tokens, "ADD"):
 		rest, _ := skipWords(tokens[1:], "COLUMN")
@@ -502,17 +638,42 @@ func readIndex(tokens []lexer.Token) Index {
 		switch {
 		case tokens[i].MatchIdentifierValue("UNIQUE"):
 			index.Unique = true
+		case tokens[i].MatchIdentifierValue("USING") && i+1 < len(tokens):
+			index.Method = strings.ToLower(tokens[i+1].Value)
 		case tokens[i].MatchIdentifierValue("ON"):
 			columns, rest := parenthesized(tokens[i+1:])
 			index.Columns = readNames(columns)
 			if startsWith(rest, "COVER") {
-				cover, _ := parenthesized(rest[1:])
+				var cover []lexer.Token
+				cover, rest = parenthesized(rest[1:])
 				index.Cover = readNames(cover)
+			}
+			if startsWith(rest, "WITH") {
+				settings, _ := parenthesized(rest[1:])
+				index.VectorType = indexSetting(settings, "vector_type")
 			}
 			return index
 		}
 	}
 	return index
+}
+
+// indexSetting is the value an index's WITH (...) list gives the setting
+// name, in lower case, written as a word or a string, and empty where the
+// list names it otherwise or not at all.
+func indexSetting(tokens []lexer.Token, name string) string {
+	for _, item := range splitTopLevel(tokens) {
+		if len(item) != 3 || !item[0].MatchIdentifierValue(name) || !item[1].MatchOperatorValue("=") {
+			continue
+		}
+		switch item[2].Type {
+		case lexer.TokenIdentifier:
+			return strings.ToLower(item[2].Value)
+		case lexer.TokenString:
+			return strings.ToLower(strings.Trim(item[2].Value, `"'`))
+		}
+	}
+	return ""
 }
 
 // readColumn reads a column declaration: name type [NOT NULL] [DEFAULT ...].
@@ -531,9 +692,22 @@ func readColumn(tokens []lexer.Token) (Column, bool) {
 			column.NotNull = true
 		case rest[i].MatchIdentifierValue("DEFAULT"):
 			column.Default = true
+		case rest[i].MatchIdentifierValue("FAMILY") && column.Family == "":
+			column.Family, _ = readName(rest[i+1:])
 		}
 	}
 	return column, true
+}
+
+// readAlterColumn reads ALTER COLUMN from the column's name on. Only SET
+// FAMILY is read; YDB's other column actions change no family.
+func readAlterColumn(tokens []lexer.Token) Action {
+	name, rest := readName(tokens)
+	if name == "" || !startsWith(rest, "SET", "FAMILY") {
+		return Action{}
+	}
+	family, _ := readName(rest[2:])
+	return Action{Kind: SetColumnFamily, Column: Column{Name: name}, Family: family}
 }
 
 // readAlterSequence reads ALTER SEQUENCE [IF EXISTS] path and the RESTART
@@ -661,6 +835,41 @@ func stringContent(literal string) string {
 		b.WriteByte(inner[i])
 	}
 	return b.String()
+}
+
+// readReplicationOrTransfer reads the name of an async replication or a
+// transfer and the settings of its WITH (...) or SET (...) clauses: a CREATE
+// keeps them as [Statement.Settings], an ALTER as one [SetSettings] action.
+//
+// A transfer's lambda comes before its WITH and carries semicolons and
+// parentheses of its own, `($msg) -> { return [...]; }`, so a clause is read
+// only where its keyword stands outside every bracket.
+func readReplicationOrTransfer(kind Kind, tokens []lexer.Token) Statement {
+	stmt := Statement{Kind: kind}
+	stmt.Name, tokens = readName(tokens)
+	var settings []Setting
+	depth := 0
+	for i, token := range tokens {
+		switch {
+		case token.MatchOperatorValue("(") || token.MatchOperatorValue("[") || token.MatchOperatorValue("{"):
+			depth++
+		case token.MatchOperatorValue(")") || token.MatchOperatorValue("]") || token.MatchOperatorValue("}"):
+			depth--
+		case depth == 0 && (token.MatchIdentifierValue("WITH") || token.MatchIdentifierValue("SET")) &&
+			i+1 < len(tokens) && tokens[i+1].MatchOperatorValue("("):
+			inside, _ := parenthesized(tokens[i+1:])
+			settings = append(settings, readSettings(inside)...)
+		}
+	}
+	switch kind {
+	case AlterAsyncReplication, AlterTransfer:
+		if len(settings) > 0 {
+			stmt.Actions = []Action{{Kind: SetSettings, Settings: settings}}
+		}
+	default:
+		stmt.Settings = settings
+	}
+	return stmt
 }
 
 func readCreateView(tokens []lexer.Token) Statement {

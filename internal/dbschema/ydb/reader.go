@@ -2,6 +2,7 @@ package ydb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
 	"slices"
@@ -15,19 +16,26 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydburl"
 )
 
-// Reader describes a YDB database's row tables, views, topics and access
-// model.
+// Reader describes a YDB database's row tables, views, topics, async
+// replications, transfers and access model.
 //
 // A Ptah schema is a directory on YDB, and "" is the database root, so a table
 // at /local/app/users is table users in schema app. The reader walks the whole
 // tree with the scheme service, skipping every directory whose name begins
 // with a dot (.sys, .metadata, .tmp, .sys_health, ...), and describes each row
-// table with the table service, each view with the view service and each topic
-// with the topic service. A changefeed's topic sits under its table rather
-// than in a directory, so the walk does not meet it as a topic.
+// table with the table service, each view with the view service, each topic
+// with the topic service, and each async replication and transfer with the
+// replication service. A changefeed's topic sits under its table rather than
+// in a directory, so the walk does not meet it as a topic.
+//
+// A table an async replication writes is recorded rather than described: YDB
+// marks one with the `__async_replica` attribute and keeps it read-only, and
+// the replication owns it. A replication and a transfer are recorded rather
+// than described on a cluster that does not serve the replication API.
 //
 // The access model is read where YDB keeps it. The owner and the permission
 // entries of the database, of each directory and of each table come with the
@@ -43,17 +51,26 @@ import (
 // plan never meets one the renderer would refuse. A table's TTL is read as its
 // row deletion policy.
 //
-// An object it meets and Ptah does not model -- a column table, a
-// coordination node, a topic of the older persistent queue kind, and the rest
-// of [coverage]'s YDB kinds -- is recorded in [catalog.Database.NotDescribed]
-// by its path, as is a table setting such as a changefeed or a TTL run
-// interval. An object or an index kind the reader does not know is refused by
-// name rather than read as the nearest known one.
+// It describes each coordination node with the coordination service, except
+// Ptah's own lock node at the root ([LockNode]), which it leaves out of every
+// read as it leaves out the migrator's tables. A node whose name starts with a
+// dot is the server's, like a dot-directory, and is recorded as not described.
+//
+// An object it meets and Ptah does not model -- a column table, a topic of the
+// older persistent queue kind, and the rest of [coverage]'s YDB kinds -- is
+// recorded in [catalog.Database.NotDescribed] by its path, as is a table
+// setting such as a changefeed or a TTL run interval. An object or an index
+// kind the reader does not know is refused by name rather than read as the
+// nearest known one.
 type Reader struct {
 	open     func(context.Context) (Source, func(), error)
 	database string
-	caps     capability.Capabilities
-	schemas  []string
+	// realm is set when the root the reader reads is a dev realm's
+	// directory rather than a database: Ptah's lock node and the dev realms
+	// live at the root of a database, so a realm's root holds neither.
+	realm   bool
+	caps    capability.Capabilities
+	schemas []string
 }
 
 // NewReader returns a reader that reads root, an absolute path in the database
@@ -65,6 +82,7 @@ func NewReader(driver *ydbsdk.Driver, root string, caps capability.Capabilities)
 			return newGRPCSource(ctx, driver)
 		},
 		database: "/" + strings.Trim(root, "/"),
+		realm:    strings.Trim(root, "/") != strings.Trim(driver.Name(), "/"),
 		caps:     caps.Clone(),
 	}
 }
@@ -145,7 +163,7 @@ func (r *Reader) walk(ctx context.Context, source Source, schema string, db *cat
 // schema, as it leaves out the migrator's tables: it is Ptah's bookkeeping,
 // and a plan that dropped it would only have the next run create it again.
 // It leaves out ydburl.RealmDirectory at the root for the same reason.
-const LockNode = "ptah_locks"
+const LockNode = ydbcoordination.LockNode
 
 // entry reads one directory entry.
 func (r *Reader) entry(
@@ -160,33 +178,11 @@ func (r *Reader) entry(
 	case Ydb_Scheme.Entry_DIRECTORY:
 		return r.directory(ctx, source, schema, name, db)
 	case Ydb_Scheme.Entry_TABLE:
-		if !r.inScope(schema) || revisiontable.IsDefault(name) {
-			// The migrator's own tables are its bookkeeping, not the
-			// schema, as every other reader treats its revision tables.
-			// The tag table is one of them: measured on 26.2.1.14, a read
-			// of the migrations directory listed it, so a scoped plan
-			// would drop it.
-			return nil
-		}
-		described, err := source.DescribeTable(ctx, r.absolute(schema, name))
-		if err != nil {
+		return r.tableEntry(ctx, source, schema, name, db)
+	case Ydb_Scheme.Entry_VIEW, Ydb_Scheme.Entry_TOPIC, Ydb_Scheme.Entry_REPLICATION, Ydb_Scheme.Entry_TRANSFER:
+		if described, err := r.keyedEntry(ctx, source, schema, entry, db); described || err != nil {
 			return err
 		}
-		return r.table(ctx, source, schema, name, described, db)
-	case Ydb_Scheme.Entry_VIEW:
-		if !r.caps.Has(capability.Views) || !r.inScope(schema) {
-			break
-		}
-		described, err := source.DescribeView(ctx, r.absolute(schema, name))
-		if err != nil {
-			return err
-		}
-		return r.view(schema, name, described, db)
-	case Ydb_Scheme.Entry_TOPIC:
-		if !r.caps.Has(capability.Topics) || !r.inScope(schema) {
-			break
-		}
-		return r.topic(ctx, source, schema, name, db)
 	case Ydb_Scheme.Entry_DATABASE:
 		// Another database whose root sits under this one. It is not part
 		// of the database this connection reads.
@@ -195,9 +191,7 @@ func (r *Reader) entry(
 		// A system view outside a dot-directory belongs to the server too.
 		return nil
 	case Ydb_Scheme.Entry_COORDINATION_NODE:
-		if schema == "" && name == LockNode {
-			return nil
-		}
+		return r.coordinationNode(ctx, source, schema, name, db)
 	}
 	if !r.inScope(schema) {
 		return nil
@@ -210,6 +204,74 @@ func (r *Reader) entry(
 	}
 	db.NotDescribed = db.NotDescribed.With(unmodeled(kind, schema, name))
 	return nil
+}
+
+// tableEntry describes the row table name in the directory schema, or records
+// it: a table an async replication writes is the replication's, and YDB
+// keeps it read-only, so it is recorded rather than described. A table
+// another operation drops while the read runs is left out, as one dropped
+// before it would be; see [describeListedTable].
+func (r *Reader) tableEntry(ctx context.Context, source Source, schema, name string, db *catalog.Database) error {
+	if !r.inScope(schema) || revisiontable.IsDefault(name) {
+		// The migrator's own tables are its bookkeeping, not the
+		// schema, as every other reader treats its revision tables.
+		// The tag table is one of them: measured on 26.2.1.14, a read
+		// of the migrations directory listed it, so a scoped plan
+		// would drop it.
+		return nil
+	}
+	described, err := describeListedTable(ctx, source, r.absolute(schema, ""), name)
+	if errors.Is(err, errTableGone) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if isReplica(described.GetAttributes()) {
+		db.NotDescribed = db.NotDescribed.With(replicaTable(schema, name))
+		return nil
+	}
+	return r.table(ctx, source, schema, name, described, db)
+}
+
+// keyedEntries are the kinds of entry the reader describes on a target with
+// the capability each names, and records rather than describes on one
+// without it.
+var keyedEntries = map[Ydb_Scheme.Entry_Type]capability.Capability{
+	Ydb_Scheme.Entry_VIEW:        capability.Views,
+	Ydb_Scheme.Entry_TOPIC:       capability.Topics,
+	Ydb_Scheme.Entry_REPLICATION: capability.AsyncReplication,
+	Ydb_Scheme.Entry_TRANSFER:    capability.Transfers,
+}
+
+// keyedEntry describes an entry of a kind [keyedEntries] names, and reports
+// false when the target lacks the kind's key or the entry is out of scope, so
+// the caller records the entry rather than describing it.
+func (r *Reader) keyedEntry(
+	ctx context.Context,
+	source Source,
+	schema string,
+	entry *Ydb_Scheme.Entry,
+	db *catalog.Database,
+) (bool, error) {
+	if !r.caps.Has(keyedEntries[entry.GetType()]) || !r.inScope(schema) {
+		return false, nil
+	}
+	name := entry.GetName()
+	switch entry.GetType() {
+	case Ydb_Scheme.Entry_VIEW:
+		described, err := source.DescribeView(ctx, r.absolute(schema, name))
+		if err != nil {
+			return true, err
+		}
+		return true, r.view(schema, name, described, db)
+	case Ydb_Scheme.Entry_TOPIC:
+		return true, r.topic(ctx, source, schema, name, db)
+	case Ydb_Scheme.Entry_REPLICATION:
+		return true, r.replication(ctx, source, schema, name, db)
+	default:
+		return true, r.transfer(ctx, source, schema, name, db)
+	}
 }
 
 // directory reads the directory name in schema, unless it belongs to the
@@ -229,16 +291,16 @@ func (r *Reader) directory(ctx context.Context, source Source, schema, name stri
 }
 
 // unmodeledEntries maps each scheme entry type Ptah does not model to the
-// coverage kind it is recorded under. A view and a topic are here for a
-// server without [capability.Views] or [capability.Topics], whose reader
-// records them rather than describing them.
+// coverage kind it is recorded under. A view, a topic, an async replication
+// and a transfer are here for a server without [capability.Views],
+// [capability.Topics], [capability.AsyncReplication] or [capability.Transfers],
+// whose reader records them rather than describing them.
 var unmodeledEntries = map[Ydb_Scheme.Entry_Type]coverage.Kind{
 	Ydb_Scheme.Entry_VIEW:                 coverage.View,
 	Ydb_Scheme.Entry_TOPIC:                coverage.Topic,
 	Ydb_Scheme.Entry_PERS_QUEUE_GROUP:     coverage.Topic,
 	Ydb_Scheme.Entry_COLUMN_TABLE:         coverage.ColumnTable,
 	Ydb_Scheme.Entry_COLUMN_STORE:         coverage.ColumnTable,
-	Ydb_Scheme.Entry_COORDINATION_NODE:    coverage.CoordinationNode,
 	Ydb_Scheme.Entry_SEQUENCE:             coverage.Sequence,
 	Ydb_Scheme.Entry_REPLICATION:          coverage.Replication,
 	Ydb_Scheme.Entry_TRANSFER:             coverage.Transfer,
@@ -255,6 +317,33 @@ var unmodeledEntries = map[Ydb_Scheme.Entry_Type]coverage.Kind{
 // the root and in a directory alike, as type 26. A read that met one refused
 // the whole database as an object of an unknown type.
 const EntryStreamingQuery Ydb_Scheme.Entry_Type = 26
+
+// coordinationNode describes the coordination node name in the directory
+// schema. Ptah's lock node at the root of a database is left out, and a node
+// whose name starts with a dot is the server's and recorded as not described.
+func (r *Reader) coordinationNode(ctx context.Context, source Source, schema, name string, db *catalog.Database) error {
+	if schema == "" && name == LockNode && !r.realm {
+		return nil
+	}
+	if !r.inScope(schema) {
+		return nil
+	}
+	if strings.HasPrefix(name, ".") {
+		db.NotDescribed = db.NotDescribed.With(unmodeled(coverage.CoordinationNode, schema, name))
+		return nil
+	}
+	absolute := r.absolute(schema, name)
+	described, err := source.DescribeCoordinationNode(ctx, absolute)
+	if err != nil {
+		return err
+	}
+	node, err := decodeCoordinationNode(schema, name, described)
+	if err != nil {
+		return fmt.Errorf("YDB coordination node %s: %w", absolute, err)
+	}
+	db.CoordinationNodes = append(db.CoordinationNodes, node)
+	return nil
+}
 
 // entryTypeName names a scheme entry type, including one the pinned protocol
 // buffers do not know.

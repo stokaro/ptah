@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbpool"
 	"ptah.run/internal/ydbsequence"
 	"ptah.run/internal/ydbtopic"
@@ -26,13 +27,14 @@ import (
 // it runs, which the server decides the same way in either direction, so each
 // one reads the down half of a migration as well.
 //
-// YD104, YD105 and YD106 need to know what the table looks like before the
-// statement: whether an index uses a column, which column the TTL reads,
-// what its minimum partition count is, which views read a table. They read
-// that state from the directory itself, whether or not the run has a dev
-// database: the up migrations before the analyzed version, in version order,
-// then the statements of the file before the one analyzed. A table created
-// outside the directory is unknown to it, and an unknown table reports nothing.
+// YD104, YD105, YD106 and YD118 need to know what the table looks like before
+// the statement: whether an index uses a column, which column the TTL reads,
+// what its minimum partition count and its partition size are, which views
+// read a table. They read that state from the directory itself, whether or not
+// the run has a dev database: the up migrations before the analyzed version, in
+// version order, then the statements of the file before the one analyzed. A
+// table created outside the directory is unknown to it, and an unknown table
+// reports nothing.
 //
 // A run that names no dialect runs every rule, YD included, and reads the
 // text with the hybrid lexer, which does not read YQL, against a target that
@@ -48,6 +50,7 @@ func ydbRules() []Rule {
 		ydbAddColumnRefusedRule(),
 		ydbDropUsedColumnRule(),
 		ydbPartitionMinimumResetRule(),
+		ydbPartitionSizeResetRule(),
 		ydbViewOrphanedRule(),
 		ydbNarrowSerialSequenceRule(),
 		ydbReplayedRestartRule(),
@@ -59,6 +62,11 @@ func ydbRules() []Rule {
 		ydbDefaultPoolDropRule(),
 		ydbBackupCollectionDropRule(),
 		ydbAnalyzeRule(),
+		ydbVectorIndexUnbuiltRule(),
+		ydbVectorIndexStaleRule(),
+		ydbReplicationDroppedWithoutFailoverRule(),
+		ydbSecretInClearRule(),
+		ydbUndeclaredColumnFamilyRule(),
 	}
 }
 
@@ -277,9 +285,18 @@ func ydbDropUsedColumnRule() Rule {
 // where the directory's own history says so (see [ydbTable.minPartitions]),
 // and warns where it does not know.
 func ydbPartitionMinimumResetRule() Rule {
+	return ydbTableResetRule("YD105", "partitioning change resets the minimum partition count", partitionMinimumReset)
+}
+
+// ydbTableResetRule is a warning about an ALTER TABLE that resets a setting of
+// its table. reset reads each statement against the table as the directory's
+// history leaves it before that statement, and says why the statement resets
+// the setting; the history then takes the statement whether it was reported or
+// not.
+func ydbTableResetRule(code, title string, reset func(yqlddl.Statement, ydbTable) (string, bool)) Rule {
 	return Rule{
-		Code:     "YD105",
-		Title:    "partitioning change resets the minimum partition count",
+		Code:     code,
+		Title:    title,
 		Severity: SeverityWarning,
 		Dialects: ydbOnly,
 		CheckFile: func(file *File) []Finding {
@@ -291,10 +308,10 @@ func ydbPartitionMinimumResetRule() Rule {
 			for i := range file.Statements {
 				stmt := &file.Statements[i]
 				read := yqlddl.Read(stmt.SQL)
-				if message, resets := partitionMinimumReset(read, state.table(read.Name)); resets {
+				if message, resets := reset(read, state.table(read.Name)); resets {
 					findings = append(findings, Finding{
-						Rule:     "YD105",
-						Title:    "partitioning change resets the minimum partition count",
+						Rule:     code,
+						Title:    title,
 						Severity: SeverityWarning,
 						File:     file.Path,
 						Line:     stmt.Line,
@@ -408,6 +425,106 @@ func alteredMinPartitions(read yqlddl.Statement, table ydbTable) (int, bool) {
 	return table.minPartitions, table.minKnown
 }
 
+// ydbPartitionSizeResetRule reports an ALTER TABLE that turns
+// AUTO_PARTITIONING_BY_SIZE on without setting
+// AUTO_PARTITIONING_PARTITION_SIZE_MB in the same statement. Measured on
+// 26.2.1.14 and 25.1.4.7 against a table whose partition size was 100 MB:
+//
+//	SET (AUTO_PARTITIONING_BY_SIZE = ENABLED)                         2048 MB, also when it was enabled already
+//	SET (..._MIN_PARTITIONS_COUNT = 6, ..._BY_SIZE = ENABLED)         2048 MB
+//	SET (..._BY_SIZE = ENABLED, ..._PARTITION_SIZE_MB = 100, ...)     100 MB
+//	SET (..._BY_LOAD = ENABLED), or a minimum or maximum setting      100 MB
+//
+// A table that splits at 2048 MB already, or does not split by size at all,
+// loses nothing, so the rule stays silent where the directory's own history
+// says so (see [ydbTable.sizeMB]), and warns where it does not know. YD105
+// reports the minimum the same statement resets.
+func ydbPartitionSizeResetRule() Rule {
+	return ydbTableResetRule("YD118", "partitioning change resets the partition size", partitionSizeReset)
+}
+
+// partitionSizeReset says why an ALTER TABLE of table resets its partition
+// size to 2048 MB, and reports whether it does. A table already at 2048 MB, or
+// one that does not split by size and so holds no size, has nothing to lose.
+func partitionSizeReset(read yqlddl.Statement, table ydbTable) (string, bool) {
+	if read.Kind != yqlddl.AlterTable ||
+		(table.sizeKnown && (table.sizeMB == ydbDefaultPartitionSize || table.sizeMB == 0)) {
+		return "", false
+	}
+	enabled := false
+	for _, setting := range settingsSet(read) {
+		switch {
+		case setting.Name == ydbPartitionSize:
+			return "", false
+		case setting.Name == ydbBySize && setting.Value == "ENABLED":
+			enabled = true
+		}
+	}
+	if !enabled {
+		return "", false
+	}
+	return fmt.Sprintf(
+		"setting %s = ENABLED resets %s of %s to %d, whatever size it held; set %s in the same ALTER TABLE to keep it",
+		ydbBySize, ydbPartitionSize, read.Name, ydbDefaultPartitionSize, ydbPartitionSize), true
+}
+
+// createdPartitionSize is the partition size a CREATE TABLE leaves, 0 for a
+// table that does not split by size, and whether it is known: the size the
+// statement names, else 0 where it turns splitting by size off, else YDB's
+// 2048 MB. A size the reader cannot read leaves it unknown.
+func createdPartitionSize(settings []yqlddl.Setting) (int, bool) {
+	size, splitting := ydbDefaultPartitionSize, true
+	for _, setting := range settings {
+		switch setting.Name {
+		case ydbPartitionSize:
+			value, ok := partitionCount(setting)
+			if !ok {
+				return 0, false
+			}
+			size = value
+		case ydbBySize:
+			splitting = setting.Value != "DISABLED"
+		}
+	}
+	if !splitting {
+		return 0, true
+	}
+	return size, true
+}
+
+// alteredPartitionSize is the partition size an ALTER TABLE leaves on table:
+// the size it sets, wherever in the statement -- a size set on a table that
+// does not split by size turns splitting on, measured on both lines -- else
+// 0 where it turns splitting by size off, 2048 MB where it turns it on, and
+// the table's own otherwise.
+func alteredPartitionSize(read yqlddl.Statement, table ydbTable) (int, bool) {
+	settings := settingsSet(read)
+	for _, setting := range settings {
+		if setting.Name == ydbPartitionSize {
+			return partitionCount(setting)
+		}
+	}
+	for _, setting := range settings {
+		if setting.Name == ydbBySize {
+			if setting.Value == "DISABLED" {
+				return 0, true
+			}
+			return ydbDefaultPartitionSize, true
+		}
+	}
+	return table.sizeMB, table.sizeKnown
+}
+
+// ydbBySize is the setting that turns splitting by size on and off.
+const ydbBySize = "AUTO_PARTITIONING_BY_SIZE"
+
+// ydbDefaultPartitionSize is the partition size YDB gives a table that names
+// none, and the one turning splitting by size on resets it to.
+const ydbDefaultPartitionSize = 2048
+
+// ydbPartitionSize is the setting turning splitting by size on resets.
+const ydbPartitionSize = "AUTO_PARTITIONING_PARTITION_SIZE_MB"
+
 // missingRequirement returns the first action of a statement that needs key,
 // and reports whether the target lacks it; see [yqlddl.Statement.Requirements],
 // which `ptah sql lint` judges a YQL statement by too.
@@ -416,7 +533,7 @@ func missingRequirement(read yqlddl.Statement, target Target, key capability.Cap
 		return yqlddl.Action{}, false
 	}
 	for _, requirement := range read.Requirements() {
-		if requirement.Capability == key {
+		if requirement.Capability == key && !requirement.Inline {
 			return read.Actions[requirement.Action], true
 		}
 	}
@@ -593,6 +710,9 @@ type ydbSchema struct {
 	tables map[string]ydbTable
 	// views are the tables each view reads, by view name.
 	views map[string][]string
+	// failedOver are the async replications an ALTER ASYNC REPLICATION SET
+	// (STATE = 'DONE') failed over, by name.
+	failedOver map[string]bool
 }
 
 // ydbTable is what the rules read about one table.
@@ -609,6 +729,11 @@ type ydbTable struct {
 	// ALTER TABLE that sets the count or resets it.
 	minPartitions int
 	minKnown      bool
+	// sizeMB is the table's AUTO_PARTITIONING_PARTITION_SIZE_MB when
+	// sizeKnown, and 0 for a table that does not split by size: set by the
+	// CREATE TABLE the directory ran, or by an ALTER TABLE that changes it.
+	sizeMB    int
+	sizeKnown bool
 	// serials are the YDB types of the table's Serial columns, by column:
 	// Serial, BigSerial or SmallSerial, whichever alias the CREATE TABLE
 	// wrote.
@@ -618,20 +743,29 @@ type ydbTable struct {
 	restarts map[string]string
 	// changefeeds are the table's changefeeds, in the order they were added.
 	changefeeds []string
+	// families are the table's column families, the default one included,
+	// when familiesKnown: a table the directory created has them all, and one
+	// it only altered does not.
+	families      []string
+	familiesKnown bool
 }
 
 func (s *ydbSchema) clone() *ydbSchema {
-	cloned := &ydbSchema{tables: make(map[string]ydbTable), views: make(map[string][]string)}
+	cloned := &ydbSchema{tables: make(map[string]ydbTable), views: make(map[string][]string),
+		failedOver: make(map[string]bool)}
 	if s == nil {
 		return cloned
 	}
+	maps.Copy(cloned.failedOver, s.failedOver)
 	for name, table := range s.tables {
 		cloned.tables[name] = ydbTable{
 			indexes: slices.Clone(table.indexes), ttl: table.ttl,
 			columns: slices.Clone(table.columns), columnsKnown: table.columnsKnown,
 			minPartitions: table.minPartitions, minKnown: table.minKnown,
+			sizeMB: table.sizeMB, sizeKnown: table.sizeKnown,
 			serials: maps.Clone(table.serials), restarts: maps.Clone(table.restarts),
 			changefeeds: slices.Clone(table.changefeeds),
+			families:    slices.Clone(table.families), familiesKnown: table.familiesKnown,
 		}
 	}
 	for name, reads := range s.views {
@@ -677,9 +811,11 @@ func (s *ydbSchema) apply(read yqlddl.Statement) {
 			columns = append(columns, column.Name)
 		}
 		minimum, minKnown := createdMinPartitions(read.Settings)
+		size, sizeKnown := createdPartitionSize(read.Settings)
 		s.tables[read.Name] = ydbTable{
 			indexes: slices.Clone(read.Indexes), ttl: read.TTLColumn, columns: columns, columnsKnown: true,
-			minPartitions: minimum, minKnown: minKnown, serials: serialColumns(read),
+			minPartitions: minimum, minKnown: minKnown, sizeMB: size, sizeKnown: sizeKnown, serials: serialColumns(read),
+			families: append([]string{ydbfamily.Default}, read.Families...), familiesKnown: true,
 		}
 	case yqlddl.AlterTable:
 		table := s.table(read.Name)
@@ -687,6 +823,7 @@ func (s *ydbSchema) apply(read yqlddl.Statement) {
 			table = table.applyAction(action)
 		}
 		table.minPartitions, table.minKnown = alteredMinPartitions(read, table)
+		table.sizeMB, table.sizeKnown = alteredPartitionSize(read, table)
 		s.store(read, table)
 	case yqlddl.DropTable:
 		delete(s.tables, read.Name)
@@ -697,6 +834,12 @@ func (s *ydbSchema) apply(read yqlddl.Statement) {
 		s.views[read.Name] = slices.Clone(read.Reads)
 	case yqlddl.DropView:
 		delete(s.views, read.Name)
+	case yqlddl.AlterAsyncReplication:
+		if failsOver(read) {
+			s.failedOver[read.Name] = true
+		}
+	case yqlddl.DropAsyncReplication, yqlddl.CreateAsyncReplication:
+		delete(s.failedOver, read.Name)
 	case yqlddl.AlterSequence:
 		name, column, owned := s.sequenceOwner(read.Name)
 		if !owned || !read.Restart {
@@ -879,6 +1022,7 @@ func (t ydbTable) applyAction(action yqlddl.Action) ydbTable {
 	switch action.Kind {
 	case yqlddl.AddColumn:
 		t.columns = append(slices.Clone(t.columns), action.Column.Name)
+		t.families = t.withFamily(action.Column.Family)
 	case yqlddl.DropColumn:
 		t.columns = slices.DeleteFunc(slices.Clone(t.columns), func(name string) bool { return name == action.Column.Name })
 	case yqlddl.AddIndex:
@@ -904,6 +1048,8 @@ func (t ydbTable) applyAction(action yqlddl.Action) ydbTable {
 				t.ttl = ""
 			}
 		}
+	case yqlddl.AddFamily, yqlddl.AlterFamily, yqlddl.SetColumnFamily:
+		t.families = t.withFamily(action.Family)
 	case yqlddl.AddChangefeed:
 		t.changefeeds = append(slices.Clone(t.changefeeds), action.Changefeed)
 	case yqlddl.DropChangefeed:
@@ -1216,6 +1362,232 @@ func unknownCodec(list string) string {
 		}
 	}
 	return ""
+}
+
+// ydbVectorIndexUnbuiltRule reports a vector index, inline in CREATE TABLE or
+// added by ALTER TABLE, on a target that does not build it: one without
+// [capability.VectorIndexes], or, for an index over bit vectors, one without
+// [capability.VectorBitType]. Measured on local-ydb:
+//
+//	25.1.4.7, flag off   Vector index support is disabled
+//	25.1.4.7, 25.2.1.24  bit vector type is not supported
+//	25.3.1.25, 25.4.1.15 Unsupported vector_type: VECTOR_TYPE_BIT
+//
+// 25.1.4.7 accepts a bit index on an empty table and refuses to build it over
+// rows, so a migration that creates the table applies and the first rebuild
+// fails. [yqlddl.Statement.Requirements] decides which statement needs which
+// key, as `ptah sql lint` reads it.
+func ydbVectorIndexUnbuiltRule() Rule {
+	return Rule{
+		Code:          "YD130",
+		Title:         "vector index the target does not build",
+		Severity:      SeverityError,
+		Dialects:      ydbOnly,
+		AppliesToDown: true,
+		CheckStatement: func(stmt *Statement) (bool, string) {
+			if !ydbRun(stmt.Target) {
+				return false, ""
+			}
+			read := yqlddl.Read(stmt.SQL)
+			for _, requirement := range read.Requirements() {
+				if stmt.Target.Capabilities.Has(requirement.Capability) {
+					continue
+				}
+				name := requiredIndex(read, requirement).Name
+				switch requirement.Capability {
+				case capability.VectorIndexes:
+					return true, fmt.Sprintf("vector index %s on %s needs target capability %s, unavailable on this %s "+
+						"target; YDB 25.1 keeps vector indexes behind the EnableVectorIndex feature flag (Vector index "+
+						"support is disabled), so turn the flag on for the cluster", name, read.Name, capability.VectorIndexes,
+						platform.YDB)
+				case capability.VectorBitType:
+					return true, fmt.Sprintf("vector index %s on %s stores bit vectors, which needs target capability %s, "+
+						"unavailable on this %s target, where the index is not built over rows; declare vector_type float, "+
+						"uint8 or int8", name, read.Name, capability.VectorBitType, platform.YDB)
+				}
+			}
+			return false, ""
+		},
+	}
+}
+
+// requiredIndex is the index a requirement of read belongs to: the one a
+// CREATE TABLE declares inline, or the one an ALTER TABLE action adds.
+func requiredIndex(read yqlddl.Statement, requirement yqlddl.Requirement) yqlddl.Index {
+	if requirement.Inline {
+		return read.Indexes[requirement.Action]
+	}
+	return read.Actions[requirement.Action].Index
+}
+
+// ydbVectorIndexStaleRule reports a statement that writes rows into a table
+// holding a vector index, on a target without
+// [capability.VectorIndexMaintainedOnWrite]. Measured on local-ydb 25.1.4.7
+// and 25.2.1.24, with a vector index built over five rows: an upsert, an
+// update and a delete afterwards are each accepted, a full scan sees them, and
+// a search through the index answers as the table stood when the index was
+// built. 25.3.1.25 and later answer each write through the index.
+//
+// The index is known from the directory itself, as YD104 knows a table's
+// indexes; a table created outside it reports nothing. The rule reads the up
+// migrations only: a down migration's writes meet the same index, and the
+// state before one is not the state the directory's own history builds.
+func ydbVectorIndexStaleRule() Rule {
+	return Rule{
+		Code:     "YD131",
+		Title:    "rows written past a vector index that does not take them",
+		Severity: SeverityWarning,
+		Dialects: ydbOnly,
+		CheckFile: func(file *File) []Finding {
+			caps := file.Target.Capabilities
+			if !ydbRun(file.Target) || !caps.Has(capability.VectorIndexes) || caps.Has(capability.VectorIndexMaintainedOnWrite) {
+				return nil
+			}
+			state := file.ydbBefore.clone()
+			var findings []Finding
+			for i := range file.Statements {
+				stmt := &file.Statements[i]
+				if table, writes := yqlddl.WrittenTable(stmt.SQL); writes {
+					if index, held := state.table(table).vectorIndex(); held {
+						findings = append(findings, Finding{
+							Rule:     "YD131",
+							Title:    "rows written past a vector index that does not take them",
+							Severity: SeverityWarning,
+							File:     file.Path,
+							Line:     stmt.Line,
+							Message: fmt.Sprintf("this statement writes rows into %s, whose vector index %s does not take "+
+								"them on this target (needs target capability %s): a search through the index answers as "+
+								"the table stood when the index was built; write the rows before the index is added, or "+
+								"drop and add the index after them. Rows the application writes later meet the same, and "+
+								"YDB 25.3 and later keep the index current",
+								table, index, capability.VectorIndexMaintainedOnWrite),
+							Context: statementFindingContext(i, Subject{Kind: SubjectTable, Name: table}),
+						})
+					}
+				}
+				state.apply(yqlddl.Read(stmt.SQL))
+			}
+			return findings
+		},
+	}
+}
+
+// vectorIndex returns the name of a vector index the table holds, and false
+// where it holds none.
+func (t ydbTable) vectorIndex() (string, bool) {
+	for _, index := range t.indexes {
+		if index.Vector() {
+			return index.Name, true
+		}
+	}
+	return "", false
+}
+
+// ydbReplicationDroppedWithoutFailoverRule reports a DROP ASYNC REPLICATION
+// without CASCADE of a replication the directory has not failed over. YDB
+// keeps the replica tables of such a replication, and keeps them read-only for
+// good. Measured on 26.2.1.14 and 25.1.4.7 after a plain DROP of a running
+// replication:
+//
+//	UPSERT INTO the replica     Can't execute write tx at replicated table
+//	ALTER TABLE ... ADD COLUMN  path is an async replica table
+//	ALTER TABLE ... RENAME TO   path is an async replica table
+//
+// while DROP TABLE takes it. A replication failed over first with `ALTER ASYNC
+// REPLICATION ... SET (STATE = 'DONE', FAILOVER_MODE = 'FORCE')` leaves
+// ordinary writable tables behind a plain DROP, and CASCADE drops them, which
+// DS107 judges. The failover is read from the directory: the up migrations
+// before the analyzed version, then the file's statements before the drop.
+func ydbReplicationDroppedWithoutFailoverRule() Rule {
+	return Rule{
+		Code:          "YD115",
+		Title:         "async replication dropped without failover",
+		Severity:      SeverityWarning,
+		Dialects:      ydbOnly,
+		AppliesToDown: true,
+		CheckFile: func(file *File) []Finding {
+			if !ydbRun(file.Target) {
+				return nil
+			}
+			state := file.ydbBefore.clone()
+			var findings []Finding
+			for i := range file.Statements {
+				stmt := &file.Statements[i]
+				read := yqlddl.Read(stmt.SQL)
+				if read.Kind == yqlddl.DropAsyncReplication && read.Name != "" && !read.Cascade &&
+					!state.failedOver[read.Name] {
+					findings = append(findings, Finding{
+						Rule:     "YD115",
+						Title:    "async replication dropped without failover",
+						Severity: SeverityWarning,
+						File:     file.Path,
+						Line:     stmt.Line,
+						Message: fmt.Sprintf("DROP ASYNC REPLICATION %s keeps its replica tables, and YDB keeps a "+
+							"replica of a replication that was not failed over read-only for good (path is an async "+
+							"replica table); fail it over first with ALTER ASYNC REPLICATION %s SET (STATE = 'DONE', "+
+							"FAILOVER_MODE = 'FORCE') to keep writable tables, or drop it with CASCADE to drop them",
+							read.Name, read.Name),
+						Context: statementFindingContext(i, Subject{Kind: SubjectTable, Name: read.Name}),
+					})
+				}
+				state.apply(read)
+			}
+			return findings
+		},
+	}
+}
+
+// failsOver reports an ALTER ASYNC REPLICATION that sets STATE = 'DONE'.
+func failsOver(read yqlddl.Statement) bool {
+	for _, action := range read.Actions {
+		for _, setting := range action.Settings {
+			if setting.Name == "STATE" && strings.EqualFold(setting.Text, "DONE") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ydbSecretInClearRule reports an async replication or a transfer given a
+// password or a token as a value rather than as the secret that holds it.
+// Measured on 26.2.1.14 and 25.1.4.7: `PASSWORD = '...'` and `TOKEN = '...'`
+// are accepted in CREATE ASYNC REPLICATION and CREATE TRANSFER, and the
+// description reads back neither, the password as no password at all and the
+// token as no credential. The value stays in the migration file, and in every
+// copy of it, while the database holds a secret nobody can read back.
+func ydbSecretInClearRule() Rule {
+	return Rule{
+		Code:          "YD116",
+		Title:         "secret written in clear",
+		Severity:      SeverityError,
+		Dialects:      ydbOnly,
+		AppliesToDown: true,
+		CheckStatement: func(stmt *Statement) (bool, string) {
+			if !ydbRun(stmt.Target) {
+				return false, ""
+			}
+			read := yqlddl.Read(stmt.SQL)
+			switch read.Kind {
+			case yqlddl.CreateAsyncReplication, yqlddl.AlterAsyncReplication,
+				yqlddl.CreateTransfer, yqlddl.AlterTransfer:
+			default:
+				return false, ""
+			}
+			settings := slices.Clone(read.Settings)
+			for _, action := range read.Actions {
+				settings = append(settings, action.Settings...)
+			}
+			for _, setting := range settings {
+				if setting.Name == "PASSWORD" || setting.Name == "TOKEN" {
+					return true, fmt.Sprintf("%s of %s is written in clear: the migration file now holds the "+
+						"secret, and YDB keeps it without reading it back; put it in a secret and name it with %s_SECRET_NAME "+
+						"or %s_SECRET_PATH", setting.Name, read.Name, setting.Name, setting.Name)
+				}
+			}
+			return false, ""
+		},
+	}
 }
 
 // ydbDefaultPoolDropRule reports DROP RESOURCE POOL default. Measured on

@@ -37,7 +37,9 @@ var supplementalDiffCategories = map[string]string{
 	"DeclaredConstraintHosts":         "the declaration of every table a constraint change names, carried for a target that has to rebuild the table to change a constraint on it. PostgreSQL adds and drops constraints in place and never rebuilds, so this planner reads the field nowhere; a fixture here would assert that a list of table declarations plans nothing (stokaro/ptah#2315)",
 	"CurrentGrants":                   "every grant the read of the database reported, carried for a target that rebuilds a table and has to give the new one the grants the old one held. PostgreSQL changes its tables in place and never rebuilds one, so this planner reads the field nowhere",
 	"CurrentNotDescribed":             "what the read of the database declined to describe, carried for a target that rebuilds a table and must not drop a setting the read left out. PostgreSQL changes its tables in place and never rebuilds one, so this planner reads the field nowhere; a fixture here would assert that a coverage set plans nothing",
+	"CurrentYDBSettings":              "what each YDB row table and global index holds of its partitioning, carried for a YDB plan that rebuilds a table and gives the new one every setting the declaration leaves out. PostgreSQL never rebuilds a table and has no such setting, so this planner reads the field nowhere; a fixture here would assert that a list of settings plans nothing",
 	"CurrentDatabasePath":             "the absolute path of the database the read describes, carried for a target that names a Serial column's sequence, and some objects of a GRANT, by an absolute path. PostgreSQL addresses every object relative to the connection, so this planner reads the field nowhere; a fixture here would assert that a path plans nothing",
+	"Replications":                    "every YDB async replication and transfer on each side, carried for the YDB planner to keep the tables and topics they own or depend on. It is an INPUT to that planner rather than a change: the changes are the six lists the refused categories name, and a fixture here would assert that a context plans nothing",
 	"ForeignKeysRemovedWithTables":    "supplements matching ConstraintsRemoved entries with column identities for MySQL/MariaDB drop ordering; it creates no operation by itself and PostgreSQL deliberately ignores it",
 	"FunctionsRemovedWithSignatures":  "the same removals FunctionsRemoved names, with the argument list that makes each one addressable; the planner reads this list and falls back to the bare names, so it creates no operation of its own and a fixture would exercise the same DROP twice (stokaro/ptah#2296)",
 	"ProceduresRemovedWithSignatures": "ProceduresRemoved with signatures, supplemental for the same reason",
@@ -131,6 +133,42 @@ var refusedDiffCategories = map[string]refusedFixture{
 		diff: &difftypes.SchemaDiff{ResourcePoolClassifiersModified: []difftypes.ResourcePoolClassifierDiff{{
 			Name: "batch_users",
 		}}},
+	},
+	"AsyncReplicationsAdded": {
+		why:  "an async replication is YDB's, and the comparison that feeds a PostgreSQL plan refuses a declared one before it diffs; a plan reaches one only through a diff built by hand, and planning nothing would report a replication applied that the database does not have",
+		diff: &difftypes.SchemaDiff{AsyncReplicationsAdded: difftypes.AsyncReplicationChanges{{Name: "mirror"}}},
+	},
+	"AsyncReplicationsRemoved": {
+		why:  "no PostgreSQL read reports an async replication, so a removal reaches the planner only through a diff built by hand, and planning nothing would report it dropped",
+		diff: &difftypes.SchemaDiff{AsyncReplicationsRemoved: difftypes.AsyncReplicationChanges{{Name: "mirror"}}},
+	},
+	"AsyncReplicationsModified": {
+		why:  "a changed async replication is YDB's for the same reason",
+		diff: &difftypes.SchemaDiff{AsyncReplicationsModified: []difftypes.AsyncReplicationDiff{{Name: "mirror", ConnectionChanged: true}}},
+	},
+	"TransfersAdded": {
+		why:  "a transfer is YDB's, for the reason an async replication is",
+		diff: &difftypes.SchemaDiff{TransfersAdded: difftypes.TransferChanges{{Name: "ingest"}}},
+	},
+	"TransfersRemoved": {
+		why:  "no PostgreSQL read reports a transfer, so a removal reaches the planner only through a diff built by hand",
+		diff: &difftypes.SchemaDiff{TransfersRemoved: difftypes.TransferChanges{{Name: "ingest"}}},
+	},
+	"TransfersModified": {
+		why:  "a changed transfer is YDB's for the same reason",
+		diff: &difftypes.SchemaDiff{TransfersModified: []difftypes.TransferDiff{{Name: "ingest", LambdaChanged: true}}},
+	},
+	"CoordinationNodesAdded": {
+		why:  "a coordination node is YDB's own object, and a schema that declares one reaches every planner; planning nothing would report the database synced while the node is missing",
+		diff: &difftypes.SchemaDiff{CoordinationNodesAdded: []schemamodel.CoordinationNode{{Name: "locks"}}},
+	},
+	"CoordinationNodesRemoved": {
+		why:  "a PostgreSQL read holds no coordination node, so a plan reaches a removal only through a diff built by hand, and the refusal names the capability rather than emitting nothing",
+		diff: &difftypes.SchemaDiff{CoordinationNodesRemoved: []schemamodel.CoordinationNode{{Name: "locks"}}},
+	},
+	"CoordinationNodesModified": {
+		why:  "a changed node configuration is YDB's too, for the same reason",
+		diff: &difftypes.SchemaDiff{CoordinationNodesModified: []difftypes.CoordinationNodeChange{{Name: "locks"}}},
 	},
 	"RLSPolicyIdentityConflicts": {
 		why: "two declared policies that resolve to one identity cannot be planned: the comparison already reduced them to one entry, so applying it would apply whichever the map kept (stokaro/ptah#2440)",

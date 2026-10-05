@@ -294,11 +294,16 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"DS107": {
 		// Broader than Atlas DS101, which is the schema drop alone: this rule
 		// also fires on DROP TYPE, EXTENSION, FUNCTION, PROCEDURE, TRIGGER,
-		// ROLE, and POLICY, and on YDB on DROP USER, DROP GROUP and DROP TOPIC,
-		// so the rule is ours even though it covers the Atlas one.
-		Summary: "dropping a schema, type, extension, function, procedure, trigger, role, policy, or YDB user, group or topic removes behavior or data",
+		// ROLE, and POLICY, and on YDB on DROP USER, DROP GROUP, DROP TOPIC,
+		// DROP TRANSFER, DROP ASYNC REPLICATION ... CASCADE and DROP
+		// COORDINATION NODE, so the rule is ours even though it covers the
+		// Atlas one.
+		Summary: "dropping a schema, type, extension, function, procedure, trigger, role, policy, or YDB user, group, topic, transfer, async replication, or coordination node removes behavior or data",
 		YDB:     YDBApplies,
-		YDBNote: "`DROP USER` and `DROP GROUP`, YDB's principals, and `DROP TOPIC`, which drops every message the topic holds and every consumer's position in it",
+		YDBNote: "`DROP USER` and `DROP GROUP`, YDB's principals; `DROP TOPIC`, which drops every message and " +
+			"consumer position; `DROP TRANSFER` and `DROP ASYNC REPLICATION ... CASCADE`, which drops the " +
+			"replica tables; and `DROP COORDINATION NODE`, which drops its semaphores and rate limiter " +
+			"resources even under a lock",
 	},
 	"AC101": {
 		Summary: "the migration defines a routine whose body is not analyzed, so a clean result says nothing about what the body does",
@@ -638,6 +643,24 @@ var migrationRuleMeta = map[string]ruleMeta{
 	},
 	"YD122": {
 		Summary: "`ANALYZE` in a migration, which YDB refuses unless `EnableColumnStatistics` is on, and on 25.1 refuses on a row table",
+	},
+	"YD115": {
+		Summary: "a `DROP ASYNC REPLICATION` without `CASCADE` of a replication not failed over, whose replica tables YDB keeps read-only for good",
+	},
+	"YD116": {
+		Summary: "a password or a token written in clear in an async replication or a transfer, which YDB keeps without reading it back while the migration file holds it",
+	},
+	"YD118": {
+		Summary: "turning auto partitioning by size on resets the partition size to 2048 MB unless the same statement sets it",
+	},
+	"YD119": {
+		Summary: "an `ALTER TABLE` that names a column family the table does not have, which YDB creates with its own settings rather than refusing, and YQL cannot drop",
+	},
+	"YD130": {
+		Summary: "a vector index a YDB line does not build: any where `vector_indexes` is false, and one over bit vectors where `vector_bit_type` is false",
+	},
+	"YD131": {
+		Summary: "rows written into a table holding a vector index on a YDB line where `vector_index_maintained_on_write` is false, which the index does not find",
 	},
 }
 

@@ -1326,8 +1326,8 @@ func (p *Planner) handleEnumRemovals(result []ast.Node, diff *difftypes.SchemaDi
 //				ColumnsAdded: []string{"email"},
 //				ColumnsModified: []differtypes.ColumnDiff{
 //					{ColumnName: "name", Changes: map[string]string{"type": "VARCHAR(255)"}},
-//				},
-//			},
+//		},
+//		},
 //		},
 //	}
 //	// Results in ALTER TABLE statements for adding and modifying columns
@@ -1341,6 +1341,9 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := schemaprecondition.RefuseIndexChangesInPlace(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}
+	if err := schemaprecondition.RefuseYDBTableSettingChanges(p.targetDialect(), diff); err != nil {
+		return nil, err
+	}
 	if err := schemaprecondition.RefuseChangefeedChanges(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}
@@ -1351,6 +1354,12 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 		return nil, err
 	}
 	if err := schemaprecondition.RefuseResourcePools(p.targetDialect(), diff); err != nil {
+		return nil, err
+	}
+	if err := schemaprecondition.RefuseReplications(p.targetDialect(), diff); err != nil {
+		return nil, err
+	}
+	if err := schemaprecondition.RefuseCoordinationNodes(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}
 	var result []ast.Node

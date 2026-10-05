@@ -72,6 +72,17 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	out.Topics = keep(db.Topics, func(topic catalog.Topic) bool {
 		return s.selected(typeList("topic"), topic.Schema, topic.Name)
 	})
+	// A YDB async replication and a transfer are each selected on their own
+	// name, in the directory that holds them.
+	out.AsyncReplications = keep(db.AsyncReplications, func(replication catalog.AsyncReplication) bool {
+		return s.selected(typeList("async_replication"), replication.Schema, replication.Name)
+	})
+	out.Transfers = keep(db.Transfers, func(transfer catalog.Transfer) bool {
+		return s.selected(typeList("transfer"), transfer.Schema, transfer.Name)
+	})
+	out.CoordinationNodes = keep(db.CoordinationNodes, func(node catalog.CoordinationNode) bool {
+		return s.selected(typeList("coordination_node"), node.Schema, node.Name)
+	})
 	// An extended property rides with the object it hangs off, and is also
 	// selectable on its own name. SQL Server drops the property with the
 	// table, so a selection that kept the property and dropped its owner would

@@ -12,7 +12,10 @@ import (
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbchangefeed"
+	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbgap"
+	"ptah.run/internal/ydbindex"
+	"ptah.run/internal/ydbpartition"
 	"ptah.run/internal/ydbsequence"
 	"ptah.run/internal/ydbttl"
 	"ptah.run/internal/ydbtype"
@@ -21,7 +24,8 @@ import (
 // mysqlTableOptions are the table options a MySQL-family declaration carries
 // that describe MySQL's storage and nothing YDB has. They are dropped with a
 // record, as every non-MySQL renderer drops them. An option outside this set
-// is a YDB table setting, which is a later phase's work and is refused.
+// is refused: a table's YDB settings are typed fields of the declaration, never
+// options.
 var mysqlTableOptions = map[string]bool{
 	"ENGINE":            true,
 	"CHARSET":           true,
@@ -56,20 +60,27 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 		return err
 	}
 
-	lines := make([]string, 0, len(node.Columns)+len(node.Indexes)+1)
+	families, err := r.columnFamilies(node, keyColumns)
+	if err != nil {
+		return err
+	}
+	lines := make([]string, 0, len(node.Columns)+len(node.Indexes)+len(families)+1)
 	columnTypes := make(map[string]string, len(node.Columns))
+	columns := make(map[string]ydbindex.Column, len(node.Columns))
 	for _, column := range node.Columns {
-		definition, ydbType, err := r.columnDefinition(node.Name, column, slices.Contains(keyColumns, column.Name))
+		definition, mapping, err := r.columnDefinition(node.Name, column, slices.Contains(keyColumns, column.Name),
+			ydbfamily.FamilyOf(node.YDBColumnFamilies, column.Name))
 		if err != nil {
 			return err
 		}
-		columnTypes[column.Name] = ydbType
+		columnTypes[column.Name] = mapping.Type
+		columns[column.Name] = ydbindex.Column{Type: mapping.Type, Dimension: mapping.Dimension}
 		lines = append(lines, definition)
 	}
 	if err := checkKeyTypes(node.Name, keyColumns, columnTypes); err != nil {
 		return err
 	}
-	settings, err := r.tableSettings(node, columnTypes)
+	settings, err := r.withSettings(node, keyColumns, columnTypes)
 	if err != nil {
 		return err
 	}
@@ -85,7 +96,7 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	var partitioning []string
 	named := make(map[string]bool, len(node.Indexes)+len(uniques))
 	for _, index := range append(slices.Clone(node.Indexes), uniques...) {
-		clause, err := r.inlineIndex(node.Name, index, keyColumns, columnTypes)
+		clause, err := r.inlineIndex(node.Name, index, keyColumns, columns)
 		if err != nil {
 			return err
 		}
@@ -99,6 +110,7 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 			partitioning = append(partitioning, statement)
 		}
 	}
+	lines = append(lines, families...)
 
 	changefeeds, err := r.changefeedStatements(node, slices.Collect(maps.Keys(named)), columnTypes[keyColumns[0]])
 	if err != nil {
@@ -170,6 +182,34 @@ func (r *Renderer) checkChangefeed(table string, changefeed ast.ChangefeedSpec) 
 	}
 }
 
+// columnFamilies writes the FAMILY entries of a new table's CREATE TABLE,
+// refusing a family the target has no key for, a declaration YDB refuses
+// (two families of one name, a column in two families or in none the table
+// declares, a key column outside the default family; see [ydbfamily.Refusal])
+// and a keep_in_memory no CREATE TABLE writes (see [ydbfamily.CreateRefusal]).
+func (r *Renderer) columnFamilies(node *ast.CreateTableNode, keyColumns []string) ([]string, error) {
+	if len(node.YDBColumnFamilies) == 0 {
+		return nil, nil
+	}
+	subject := fmt.Sprintf("table %q", node.Name)
+	for _, requirement := range ydbfamily.Requirements(node.YDBColumnFamilies) {
+		if !r.caps.Has(requirement.Key) {
+			return nil, refuseKey(requirement.Key, fmt.Sprintf("the %s of %s", requirement.Settings, subject))
+		}
+	}
+	columns := make([]string, 0, len(node.Columns))
+	for _, column := range node.Columns {
+		columns = append(columns, column.Name)
+	}
+	if reason := ydbfamily.Refusal(node.YDBColumnFamilies, columns, keyColumns); reason != "" {
+		return nil, refuseFact(subject, reason)
+	}
+	if reason := ydbfamily.CreateRefusal(node.YDBColumnFamilies); reason != "" {
+		return nil, refuseFact(subject, reason)
+	}
+	return ydbfamily.CreateEntries(node.YDBColumnFamilies), nil
+}
+
 // createGuard writes IF NOT EXISTS where the declaration asked for one.
 func (r *Renderer) createGuard(node *ast.CreateTableNode) (string, error) {
 	if !node.IfNotExists {
@@ -207,7 +247,8 @@ func (r *Renderer) refuseTableDeclarations(node *ast.CreateTableNode) error {
 		value := node.Options[key]
 		upper := strings.ToUpper(strings.TrimSpace(key))
 		if !mysqlTableOptions[upper] {
-			return refuseGap(ydbgap.TableSettings, fmt.Sprintf("the table option %s=%s on %s", key, value, subject))
+			return refuseFact(subject, fmt.Sprintf("the YDB renderer writes no table option %s=%s; a table's YDB "+
+				"settings are declared through the attributes named for them", key, value))
 		}
 		if dropped == nil {
 			dropped = make(map[string]string)
@@ -216,6 +257,21 @@ func (r *Renderer) refuseTableDeclarations(node *ast.CreateTableNode) error {
 	}
 	r.sink.RecordDroppedTableOptions(node.Name, dropped)
 	return r.refuseTableConstraints(node)
+}
+
+// withSettings writes everything the table's WITH clause carries: the TTL
+// first, then the partitioning, read replicas, key bloom filter and starting
+// layout.
+func (r *Renderer) withSettings(node *ast.CreateTableNode, keyColumns []string, columnTypes map[string]string) ([]string, error) {
+	settings, err := r.tableSettings(node, columnTypes)
+	if err != nil {
+		return nil, err
+	}
+	partitioning, err := r.partitioningSettings(node, keyColumns, columnTypes)
+	if err != nil {
+		return nil, err
+	}
+	return append(settings, partitioning...), nil
 }
 
 // tableSettings writes the settings the table's WITH clause carries: its TTL,
@@ -262,6 +318,50 @@ func (r *Renderer) ttlSetting(subject string, policy *ast.RowDeletionPolicySpec)
 		return "", refuseFact(subject, err.Error())
 	}
 	return setting, nil
+}
+
+// partitioningSettings writes the settings of a row table its WITH clause
+// carries: how it splits into partitions, its read replicas, its key bloom
+// filter, and the partitions it starts with, each as the declaration names it.
+// A setting the target has no key for is refused by the key, a declaration YDB
+// refuses is refused with YDB's reason, and a starting layout is held to the
+// table's key; see [ydbpartition.LayoutClause].
+func (r *Renderer) partitioningSettings(node *ast.CreateTableNode, keyColumns []string, columnTypes map[string]string) ([]string, error) {
+	spec := node.YDBPartitioning
+	if spec.IsZero() {
+		return nil, nil
+	}
+	subject := fmt.Sprintf("table %q", node.Name)
+	if err := r.refusePartitioningKeys(subject, spec); err != nil {
+		return nil, err
+	}
+	if _, err := ydbpartition.ResolveTable(spec, ydbpartition.DefaultTableSettings()); err != nil {
+		return nil, refuseFact(subject, err.Error())
+	}
+	keyTypes := make([]string, len(keyColumns))
+	for i, column := range keyColumns {
+		keyTypes[i] = columnTypes[column]
+	}
+	layout, err := ydbpartition.LayoutClause(spec, keyTypes, r.caps)
+	if err != nil {
+		return nil, refuseFact(subject, err.Error())
+	}
+	settings := ydbpartition.CreateClause(spec)
+	if layout != "" {
+		settings = append(settings, layout)
+	}
+	return settings, nil
+}
+
+// refusePartitioningKeys refuses the settings a declaration names that the
+// target has no capability key for; see [ydbpartition.Requirements].
+func (r *Renderer) refusePartitioningKeys(subject string, spec *ast.YDBTablePartitioningSpec) error {
+	for _, requirement := range ydbpartition.Requirements(spec) {
+		if !r.caps.Has(requirement.Key) {
+			return refuseKey(requirement.Key, subject+" declares its "+requirement.Settings)
+		}
+	}
+	return nil
 }
 
 // refuseTableConstraints refuses every table constraint but the key. YDB has
@@ -386,7 +486,7 @@ func (r *Renderer) renderColumnNode(column *ast.ColumnNode) error {
 		return refuseFact(fmt.Sprintf("column %q", column.Name),
 			"its UNIQUE is a unique index of its table on YDB, which a column definition alone cannot carry")
 	}
-	definition, _, err := r.columnDefinition("", column, column.Primary)
+	definition, _, err := r.columnDefinition("", column, column.Primary, "")
 	if err != nil {
 		return err
 	}
@@ -422,22 +522,29 @@ func (r *Renderer) renderConstraintNode(constraint *ast.ConstraintNode) error {
 }
 
 // columnDefinition writes one column, and returns the YDB type it chose so the
-// caller can hold a key or an index to it.
-func (r *Renderer) columnDefinition(table string, column *ast.ColumnNode, key bool) (definition, ydbType string, err error) {
+// caller can hold a key or an index to it. family is the column family the
+// column sits in, written right after the type, the only place YDB 25.1 takes
+// it; empty, or the default family, writes none.
+func (r *Renderer) columnDefinition(
+	table string,
+	column *ast.ColumnNode,
+	key bool,
+	family string,
+) (string, ydbtype.Mapping, error) {
 	subject := fmt.Sprintf("column %q", column.Name)
 	if table != "" {
 		subject = fmt.Sprintf("column %q of %s", column.Name, tableref.Phrase(table))
 	}
 	if err := r.refuseColumnDeclarations(subject, column); err != nil {
-		return "", "", err
+		return "", ydbtype.Mapping{}, err
 	}
 	mapping, err := r.columnType(subject, column)
 	if err != nil {
-		return "", "", err
+		return "", ydbtype.Mapping{}, err
 	}
 	if mapping.Serial {
 		if err := r.serialSequence(subject, table, column); err != nil {
-			return "", "", err
+			return "", ydbtype.Mapping{}, err
 		}
 	}
 	if mapping.Dropped != "" {
@@ -446,22 +553,22 @@ func (r *Renderer) columnDefinition(table string, column *ast.ColumnNode, key bo
 			column.Type+": "+mapping.Dropped))
 	}
 
-	parts := []string{quote(column.Name), mapping.Type}
+	parts := []string{quote(column.Name), mapping.Type + ydbfamily.ColumnClause(family)}
 	notNull := key || mapping.Serial || !column.Nullable
 	if notNull {
 		parts = append(parts, "NOT NULL")
 	}
 	if notNull && nullDefault(column.Default) {
-		return "", "", refuseFact(subject, "the column is NOT NULL and its default is NULL")
+		return "", ydbtype.Mapping{}, refuseFact(subject, "the column is NOT NULL and its default is NULL")
 	}
 	defaultClause, err := r.defaultClause(subject, column.Default, mapping.Type)
 	if err != nil {
-		return "", "", err
+		return "", ydbtype.Mapping{}, err
 	}
 	if defaultClause != "" {
 		parts = append(parts, defaultClause)
 	}
-	return strings.Join(parts, " "), mapping.Type, nil
+	return strings.Join(parts, " "), mapping, nil
 }
 
 // nullDefault reports a default that is the literal NULL.

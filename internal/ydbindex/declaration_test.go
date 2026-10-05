@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/internal/ydbindex"
+	"ptah.run/internal/ydbpartition"
 )
 
 // TestParseDeclaration_HappyPath reads the partitioning attributes out of an
@@ -30,8 +31,8 @@ func TestParseDeclaration_HappyPath(t *testing.T) {
 				BySize: new(true), PartitionSizeMB: 64, ByLoad: new(false), MinPartitions: 2, MaxPartitions: 8, ReadReplicas: "ANY_AZ:3",
 			},
 		},
-		{name: "no replicas is a declaration of none", values: map[string]string{"read_replicas_settings": "PER_AZ:0"},
-			want: &ast.IndexPartitioningSpec{}},
+		{name: "no replicas is a declaration of none", values: map[string]string{"read_replicas_settings": "per_az:0"},
+			want: &ast.IndexPartitioningSpec{ReadReplicas: "PER_AZ:0"}},
 	}
 
 	for _, test := range tests {
@@ -71,7 +72,7 @@ func TestParseDeclaration_FailurePath(t *testing.T) {
 			c := qt.New(t)
 			got, err := ydbindex.ParseDeclaration(test.values)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			var declaration *ydbindex.DeclarationError
+			var declaration *ydbpartition.DeclarationError
 			c.Assert(err, qt.ErrorAs, &declaration)
 			c.Assert(declaration.Attribute, qt.Equals, test.wantAttribute)
 			c.Assert(got, qt.IsNil)

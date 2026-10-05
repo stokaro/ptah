@@ -7,41 +7,82 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/internal/ydbindex"
+	"ptah.run/internal/ydbpartition"
 )
 
-// TestResolve_HappyPath reads each declaration as the settings an index takes
-// from it: a setting left out is YDB's default, and a partition size has no
-// value on an index that does not split by size.
+// tuned is an index's own table holding a setting off every default.
+var tuned = ydbpartition.Settings{
+	BySize: true, PartitionSizeMB: 100, ByLoad: true, MinPartitions: 6, MaxPartitions: 20,
+	ReadReplicas: ydbpartition.Replicas{PerAZ: true, Count: 1},
+}
+
+// TestResolve_HappyPath reads each declaration over what the index holds: a
+// setting it names, and the held value of each it leaves out, so a plan never
+// changes a setting nobody declared.
 func TestResolve_HappyPath(t *testing.T) {
 	tests := []struct {
 		name string
 		spec *ast.IndexPartitioningSpec
-		want ydbindex.Settings
+		held ydbpartition.Settings
+		want ydbpartition.Settings
 	}{
-		{name: "nil is the defaults", spec: nil, want: ydbindex.DefaultSettings()},
-		{name: "empty is the defaults", spec: &ast.IndexPartitioningSpec{}, want: ydbindex.DefaultSettings()},
+		{name: "nil keeps what the index holds", spec: nil, held: tuned, want: tuned},
+		{name: "empty keeps what the index holds", spec: &ast.IndexPartitioningSpec{}, held: tuned, want: tuned},
 		{
 			name: "every setting",
 			spec: &ast.IndexPartitioningSpec{
 				BySize: new(true), PartitionSizeMB: 512, ByLoad: new(true),
 				MinPartitions: 3, MaxPartitions: 9, ReadReplicas: "per_az:2",
 			},
-			want: ydbindex.Settings{
+			held: ydbpartition.DefaultSettings(),
+			want: ydbpartition.Settings{
 				BySize: true, PartitionSizeMB: 512, ByLoad: true, MinPartitions: 3, MaxPartitions: 9,
-				ReadReplicas: ydbindex.Replicas{PerAZ: true, Count: 2},
+				ReadReplicas: ydbpartition.Replicas{PerAZ: true, Count: 2},
+			},
+		},
+		{
+			name: "one setting keeps the others held",
+			spec: &ast.IndexPartitioningSpec{ByLoad: new(false)},
+			held: tuned,
+			want: ydbpartition.Settings{
+				BySize: true, PartitionSizeMB: 100, MinPartitions: 6, MaxPartitions: 20,
+				ReadReplicas: ydbpartition.Replicas{PerAZ: true, Count: 1},
 			},
 		},
 		{
 			name: "not splitting by size keeps no size",
 			spec: &ast.IndexPartitioningSpec{BySize: new(false)},
-			want: ydbindex.Settings{MinPartitions: 1},
+			held: tuned,
+			want: ydbpartition.Settings{
+				ByLoad: true, MinPartitions: 6, MaxPartitions: 20, ReadReplicas: ydbpartition.Replicas{PerAZ: true, Count: 1},
+			},
+		},
+		{
+			name: "a size alone splits by size",
+			spec: &ast.IndexPartitioningSpec{PartitionSizeMB: 64},
+			held: ydbpartition.Settings{MinPartitions: 1},
+			want: ydbpartition.Settings{BySize: true, PartitionSizeMB: 64, MinPartitions: 1},
+		},
+		{
+			name: "splitting by size turned on takes YDB's size",
+			spec: &ast.IndexPartitioningSpec{BySize: new(true)},
+			held: ydbpartition.Settings{MinPartitions: 1},
+			want: ydbpartition.Settings{BySize: true, PartitionSizeMB: 2048, MinPartitions: 1},
+		},
+		{
+			name: "replicas declared as none",
+			spec: &ast.IndexPartitioningSpec{ReadReplicas: "PER_AZ:0"},
+			held: tuned,
+			want: ydbpartition.Settings{BySize: true, PartitionSizeMB: 100, ByLoad: true, MinPartitions: 6, MaxPartitions: 20,
+				ReadReplicas: ydbpartition.Replicas{PerAZ: true}},
 		},
 		{
 			name: "replicas in all zones together",
 			spec: &ast.IndexPartitioningSpec{ReadReplicas: "ANY_AZ:3"},
-			want: ydbindex.Settings{
+			held: ydbpartition.DefaultSettings(),
+			want: ydbpartition.Settings{
 				BySize: true, PartitionSizeMB: 2048, MinPartitions: 1,
-				ReadReplicas: ydbindex.Replicas{Count: 3},
+				ReadReplicas: ydbpartition.Replicas{Count: 3},
 			},
 		},
 	}
@@ -49,9 +90,72 @@ func TestResolve_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			got, err := ydbindex.Resolve(test.spec)
+			got, err := ydbindex.Resolve(test.spec, test.held)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+// TestExplicit names every setting, so the declaration resolves to the
+// settings it was written from over an index holding others. The index it is
+// read over has no maximum, because no declaration names the absence of one:
+// YDB cannot remove a maximum.
+func TestExplicit(t *testing.T) {
+	tests := []struct {
+		name     string
+		settings ydbpartition.Settings
+		want     *ast.IndexPartitioningSpec
+	}{
+		{
+			name:     "the defaults",
+			settings: ydbpartition.DefaultSettings(),
+			want: &ast.IndexPartitioningSpec{BySize: new(true), PartitionSizeMB: 2048, ByLoad: new(false), MinPartitions: 1,
+				ReadReplicas: "PER_AZ:0"},
+		},
+		{
+			name:     "not splitting by size",
+			settings: ydbpartition.Settings{ByLoad: true, MinPartitions: 2, MaxPartitions: 4, ReadReplicas: ydbpartition.Replicas{Count: 1}},
+			want: &ast.IndexPartitioningSpec{BySize: new(false), ByLoad: new(true), MinPartitions: 2, MaxPartitions: 4,
+				ReadReplicas: "ANY_AZ:1"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			spec := ydbindex.Explicit(test.settings)
+			c.Assert(spec, qt.DeepEquals, test.want)
+			other := ydbpartition.Settings{BySize: true, PartitionSizeMB: 100, ByLoad: true, MinPartitions: 6,
+				ReadReplicas: ydbpartition.Replicas{PerAZ: true, Count: 1}}
+			resolved, err := ydbindex.Resolve(spec, other)
+			c.Assert(err, qt.IsNil)
+			c.Assert(resolved.Equal(test.settings), qt.IsTrue, qt.Commentf("%+v", resolved))
+		})
+	}
+}
+
+// TestCreateClause writes each setting a new index's declaration names, and
+// nothing for one it leaves out, which the index takes from YDB.
+func TestCreateClause(t *testing.T) {
+	tests := []struct {
+		name string
+		spec *ast.IndexPartitioningSpec
+		want []string
+	}{
+		{name: "nothing declared", spec: nil, want: nil},
+		{name: "one setting", spec: &ast.IndexPartitioningSpec{ByLoad: new(true)}, want: []string{"AUTO_PARTITIONING_BY_LOAD = ENABLED"}},
+		{
+			name: "a setting at YDB's default is written as declared",
+			spec: &ast.IndexPartitioningSpec{MinPartitions: 1, ReadReplicas: "PER_AZ:0"},
+			want: []string{"AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 1"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(ydbindex.CreateClause(test.spec), qt.DeepEquals, test.want)
 		})
 	}
 }
@@ -94,32 +198,32 @@ func TestResolve_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			got, err := ydbindex.Resolve(test.spec)
+			got, err := ydbindex.Resolve(test.spec, ydbpartition.DefaultSettings())
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(got, qt.Equals, ydbindex.Settings{})
+			c.Assert(got, qt.Equals, ydbpartition.Settings{})
 		})
 	}
 }
 
-// TestSettings_Spec writes what differs from the defaults, which is what the
-// reader reports, and resolving it gives the settings back.
-func TestSettings_Spec(t *testing.T) {
+// TestSpec writes what differs from the defaults, which is what the
+// reader reports, and reading the report gives the settings back.
+func TestSpec(t *testing.T) {
 	tests := []struct {
 		name     string
-		settings ydbindex.Settings
+		settings ydbpartition.Settings
 		want     *ast.IndexPartitioningSpec
 	}{
-		{name: "the defaults are nil", settings: ydbindex.DefaultSettings(), want: nil},
+		{name: "the defaults are nil", settings: ydbpartition.DefaultSettings(), want: nil},
 		{
 			name:     "replicas of zero are none",
-			settings: ydbindex.Settings{BySize: true, PartitionSizeMB: 2048, MinPartitions: 1, ReadReplicas: ydbindex.Replicas{PerAZ: true}},
+			settings: ydbpartition.Settings{BySize: true, PartitionSizeMB: 2048, MinPartitions: 1, ReadReplicas: ydbpartition.Replicas{PerAZ: true}},
 			want:     nil,
 		},
 		{
 			name: "every setting off its default",
-			settings: ydbindex.Settings{
+			settings: ydbpartition.Settings{
 				BySize: true, PartitionSizeMB: 64, ByLoad: true, MinPartitions: 7, MaxPartitions: 9,
-				ReadReplicas: ydbindex.Replicas{Count: 2},
+				ReadReplicas: ydbpartition.Replicas{Count: 2},
 			},
 			want: &ast.IndexPartitioningSpec{
 				PartitionSizeMB: 64, ByLoad: new(true), MinPartitions: 7, MaxPartitions: 9, ReadReplicas: "ANY_AZ:2",
@@ -127,7 +231,7 @@ func TestSettings_Spec(t *testing.T) {
 		},
 		{
 			name:     "not splitting by size",
-			settings: ydbindex.Settings{MinPartitions: 1},
+			settings: ydbpartition.Settings{MinPartitions: 1},
 			want:     &ast.IndexPartitioningSpec{BySize: new(false)},
 		},
 	}
@@ -135,120 +239,11 @@ func TestSettings_Spec(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			spec := test.settings.Spec()
+			spec := ydbindex.Spec(test.settings)
 			c.Assert(spec, qt.DeepEquals, test.want)
-			resolved, err := ydbindex.Resolve(spec)
+			held, err := ydbindex.Held(spec)
 			c.Assert(err, qt.IsNil)
-			c.Assert(resolved.Equal(test.settings), qt.IsTrue)
-		})
-	}
-}
-
-// TestChangeRefusal refuses the one change YDB cannot make in place: removing
-// a maximum partition count.
-func TestChangeRefusal(t *testing.T) {
-	defaults := ydbindex.DefaultSettings()
-	capped := defaults
-	capped.MaxPartitions = 9
-	recapped := defaults
-	recapped.MaxPartitions = 4
-
-	tests := []struct {
-		name             string
-		desired, current ydbindex.Settings
-		want             string
-	}{
-		{name: "nothing changes", desired: defaults, current: defaults, want: ""},
-		{name: "a maximum is set", desired: capped, current: defaults, want: ""},
-		{name: "a maximum changes", desired: recapped, current: capped, want: ""},
-		{
-			name: "a maximum is removed", desired: defaults, current: capped,
-			want: "its maximum of 9 partitions cannot be removed in place (`Can't set max partition count to 0`, and no RESET)",
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			c.Assert(ydbindex.ChangeRefusal(test.desired, test.current), qt.Equals, test.want)
-		})
-	}
-}
-
-// TestClause names every setting the index takes whenever it names any,
-// because setting one resets others, and clears read replicas only where the
-// index holds some.
-func TestClause(t *testing.T) {
-	defaults := ydbindex.DefaultSettings()
-	tuned := ydbindex.Settings{
-		BySize: true, PartitionSizeMB: 100, ByLoad: true, MinPartitions: 6, MaxPartitions: 9,
-		ReadReplicas: ydbindex.Replicas{PerAZ: true, Count: 1},
-	}
-	noSplitting := ydbindex.Settings{MinPartitions: 3}
-
-	tests := []struct {
-		name             string
-		desired, current ydbindex.Settings
-		want             []string
-	}{
-		{name: "equal settings write nothing", desired: tuned, current: tuned, want: nil},
-		{
-			name:    "replicas of zero equal none",
-			desired: defaults,
-			current: ydbindex.Settings{BySize: true, PartitionSizeMB: 2048, MinPartitions: 1, ReadReplicas: ydbindex.Replicas{PerAZ: true}},
-			want:    nil,
-		},
-		{
-			name: "a tuned index", desired: tuned, current: defaults,
-			want: []string{
-				"AUTO_PARTITIONING_BY_SIZE = ENABLED",
-				"AUTO_PARTITIONING_PARTITION_SIZE_MB = 100",
-				"AUTO_PARTITIONING_BY_LOAD = ENABLED",
-				"AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 6",
-				"AUTO_PARTITIONING_MAX_PARTITIONS_COUNT = 9",
-				`READ_REPLICAS_SETTINGS = "PER_AZ:1"`,
-			},
-		},
-		{
-			name: "back to the defaults clears the replicas", desired: ydbindex.Settings{
-				BySize: true, PartitionSizeMB: 2048, MinPartitions: 1, MaxPartitions: 9,
-			}, current: tuned,
-			want: []string{
-				"AUTO_PARTITIONING_BY_SIZE = ENABLED",
-				"AUTO_PARTITIONING_PARTITION_SIZE_MB = 2048",
-				"AUTO_PARTITIONING_BY_LOAD = DISABLED",
-				"AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 1",
-				"AUTO_PARTITIONING_MAX_PARTITIONS_COUNT = 9",
-				`READ_REPLICAS_SETTINGS = "PER_AZ:0"`,
-			},
-		},
-		{
-			// The minimum is the same on both sides and is named anyway: setting
-			// AUTO_PARTITIONING_BY_LOAD alone would reset it to 1.
-			name:    "a setting that resets another names the other too",
-			desired: ydbindex.Settings{BySize: true, PartitionSizeMB: 2048, ByLoad: true, MinPartitions: 5},
-			current: ydbindex.Settings{BySize: true, PartitionSizeMB: 2048, MinPartitions: 5},
-			want: []string{
-				"AUTO_PARTITIONING_BY_SIZE = ENABLED",
-				"AUTO_PARTITIONING_PARTITION_SIZE_MB = 2048",
-				"AUTO_PARTITIONING_BY_LOAD = ENABLED",
-				"AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 5",
-			},
-		},
-		{
-			name: "no splitting by size names no size", desired: noSplitting, current: defaults,
-			want: []string{
-				"AUTO_PARTITIONING_BY_SIZE = DISABLED",
-				"AUTO_PARTITIONING_BY_LOAD = DISABLED",
-				"AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 3",
-			},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			c.Assert(ydbindex.Clause(test.desired, test.current), qt.DeepEquals, test.want)
+			c.Assert(held.Equal(test.settings), qt.IsTrue)
 		})
 	}
 }

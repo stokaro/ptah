@@ -64,6 +64,7 @@
 //   - Roles, granted privileges, and row-level security policies
 //   - TimescaleDB hypertables and continuous aggregates
 //   - SQL Server extended properties
+//   - YDB coordination nodes and their configuration
 //
 // # Difference Types
 //
