@@ -82,6 +82,7 @@ import (
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/ydbchangefeed"
+	"ptah.run/internal/ydbcolumn"
 	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
@@ -166,6 +167,8 @@ type document struct {
 }
 
 type tableSpec struct {
+	Schema      stringScalar               `yaml:"schema"`
+	ColumnStore *ast.YDBColumnTableSpec    `yaml:"column_store"`
 	StructName  stringScalar               `yaml:"struct_name"`
 	Name        stringScalar               `yaml:"name"`
 	APIName     stringScalar               `yaml:"api_name"`
@@ -291,18 +294,21 @@ type fieldSpec struct {
 }
 
 type indexSpec struct {
-	Name        stringScalar `yaml:"name"`
-	Fields      stringList   `yaml:"fields"`
-	Columns     stringList   `yaml:"columns"`
-	Include     stringList   `yaml:"include"`
-	Unique      bool         `yaml:"unique"`
-	Comment     stringScalar `yaml:"comment"`
-	Type        stringScalar `yaml:"type"`
-	Condition   stringScalar `yaml:"condition"`
-	Where       stringScalar `yaml:"where"`
-	Operator    stringScalar `yaml:"ops"`
-	TableName   stringScalar `yaml:"table"`
-	Granularity int          `yaml:"granularity"`
+	FalsePositiveProbability *stringScalar `yaml:"false_positive_probability"`
+	NgramSize                *stringScalar `yaml:"ngram_size"`
+	CaseSensitive            *stringScalar `yaml:"case_sensitive"`
+	Name                     stringScalar  `yaml:"name"`
+	Fields                   stringList    `yaml:"fields"`
+	Columns                  stringList    `yaml:"columns"`
+	Include                  stringList    `yaml:"include"`
+	Unique                   bool          `yaml:"unique"`
+	Comment                  stringScalar  `yaml:"comment"`
+	Type                     stringScalar  `yaml:"type"`
+	Condition                stringScalar  `yaml:"condition"`
+	Where                    stringScalar  `yaml:"where"`
+	Operator                 stringScalar  `yaml:"ops"`
+	TableName                stringScalar  `yaml:"table"`
+	Granularity              int           `yaml:"granularity"`
 
 	// The partitioning of a YDB global index, keyed as the annotation keys
 	// it; see [ydbindex.ParseDeclaration].
@@ -338,20 +344,23 @@ type indexSpec struct {
 
 // fullTextValues preserves both omitted and explicitly false analyzer options.
 func (spec indexSpec) fullTextValues() map[string]string {
-	values := make(map[string]string)
+	values := map[string]string{"type": string(spec.Type)}
 	for name, value := range map[string]*stringScalar{
-		"tokenizer":               spec.Tokenizer,
-		"language":                spec.Language,
-		"use_filter_lowercase":    spec.UseFilterLowercase,
-		"use_filter_stopwords":    spec.UseFilterStopwords,
-		"use_filter_ngram":        spec.UseFilterNgram,
-		"use_filter_edge_ngram":   spec.UseFilterEdgeNgram,
-		"filter_ngram_min_length": spec.FilterNgramMinLength,
-		"filter_ngram_max_length": spec.FilterNgramMaxLength,
-		"use_filter_length":       spec.UseFilterLength,
-		"filter_length_min":       spec.FilterLengthMin,
-		"filter_length_max":       spec.FilterLengthMax,
-		"use_filter_snowball":     spec.UseFilterSnowball,
+		"false_positive_probability": spec.FalsePositiveProbability,
+		"ngram_size":                 spec.NgramSize,
+		"case_sensitive":             spec.CaseSensitive,
+		"tokenizer":                  spec.Tokenizer,
+		"language":                   spec.Language,
+		"use_filter_lowercase":       spec.UseFilterLowercase,
+		"use_filter_stopwords":       spec.UseFilterStopwords,
+		"use_filter_ngram":           spec.UseFilterNgram,
+		"use_filter_edge_ngram":      spec.UseFilterEdgeNgram,
+		"filter_ngram_min_length":    spec.FilterNgramMinLength,
+		"filter_ngram_max_length":    spec.FilterNgramMaxLength,
+		"use_filter_length":          spec.UseFilterLength,
+		"filter_length_min":          spec.FilterLengthMin,
+		"filter_length_max":          spec.FilterLengthMax,
+		"use_filter_snowball":        spec.UseFilterSnowball,
 	} {
 		if value != nil {
 			values[name] = string(*value)
@@ -879,6 +888,9 @@ func (d document) addTables(db *schemamodel.Database) error {
 			return fmt.Errorf("table %q: %w", tableKey, err)
 		}
 
+		if err := ydbcolumn.Validate(table.ColumnStore); err != nil {
+			return fmt.Errorf("table %q: %w", tableKey, err)
+		}
 		changefeeds, err := buildChangefeeds(tableName, table.Changefeeds)
 		if err != nil {
 			return err
@@ -890,6 +902,7 @@ func (d document) addTables(db *schemamodel.Database) error {
 		db.Tables = append(db.Tables, schemamodel.Table{
 			StructName:  structName,
 			Name:        tableName,
+			Schema:      string(table.Schema),
 			Changefeeds: changefeeds,
 			APIName:     string(table.APIName),
 			APINames: schemamodel.TargetNames{
@@ -907,6 +920,7 @@ func (d document) addTables(db *schemamodel.Database) error {
 			RowDeletionPolicy: rowDeletionPolicy,
 			YDBColumnFamilies: families,
 			YDBPartitioning:   partitioning,
+			YDBColumnTable:    table.ColumnStore.Clone(),
 		})
 
 		if err := addFields(db, structName, table.Columns, table.Fields); err != nil {
@@ -1106,7 +1120,7 @@ func buildIndex(key, structName string, spec indexSpec) (schemamodel.Index, erro
 		return schemamodel.Index{}, fmt.Errorf("index %q: %w", key, err)
 	}
 
-	fullText, err := ydbindex.ParseFullTextDeclaration(spec.fullTextValues())
+	fullText, err := ydbindex.ParseOptionsDeclaration(spec.fullTextValues())
 	if err != nil {
 		return schemamodel.Index{}, fmt.Errorf("index %q: %w", key, err)
 	}

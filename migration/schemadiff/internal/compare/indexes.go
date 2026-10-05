@@ -1225,7 +1225,8 @@ func ydbIndexDefinitionChanged(
 		indexKeyPartsChanged(desired, database, semantics) ||
 		postgresIncludeColumnsChanged(desired.IncludeColumns, database.IncludeColumns, semantics) ||
 		(desiredKind == ydbindex.Vector && !ydbindex.VectorEqual(desired.Vector, desired.Operator, database.Vector)) ||
-		(desiredKind.IsFullText() && !ydbindex.FullTextEqual(desired.StorageParams, database.StorageParams))
+		(desiredKind.IsFullText() && !ydbindex.FullTextEqual(desired.StorageParams, database.StorageParams)) ||
+		(desiredKind.IsLocal() && !ydbindex.LocalEqual(desiredKind, desired.StorageParams, database.StorageParams))
 }
 
 // ydbPartitioningChanged reports whether a YDB index's partitioning differs

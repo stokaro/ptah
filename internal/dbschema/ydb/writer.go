@@ -357,7 +357,7 @@ const (
 // the secrets they reference. Objects in different directories follow the same order.
 func phaseForEntry(kind Ydb_Scheme.Entry_Type) dropPhase {
 	switch kind {
-	case Ydb_Scheme.Entry_VIEW, Ydb_Scheme.Entry_EXTERNAL_TABLE:
+	case Ydb_Scheme.Entry_VIEW, Ydb_Scheme.Entry_EXTERNAL_TABLE, Ydb_Scheme.Entry_COLUMN_TABLE:
 		return dropReaders
 	case Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE:
 		return dropSources
@@ -521,7 +521,7 @@ func (w *Writer) describedDropStatement(dir string, entry *Ydb_Scheme.Entry, pha
 	}
 	switch entry.GetType() {
 	case Ydb_Scheme.Entry_VIEW, Ydb_Scheme.Entry_TOPIC, Ydb_Scheme.Entry_SECRET,
-		Ydb_Scheme.Entry_EXTERNAL_TABLE, Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE:
+		Ydb_Scheme.Entry_EXTERNAL_TABLE, Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE, Ydb_Scheme.Entry_COLUMN_TABLE:
 		return dropStatement(entry.GetType(), path.Join(dir, entry.GetName()))
 	case Ydb_Scheme.Entry_COORDINATION_NODE:
 		if w.leftAlone(dir, entry) {
@@ -623,7 +623,7 @@ func teardownRank(entryType Ydb_Scheme.Entry_Type) int {
 		return 0
 	case Ydb_Scheme.Entry_REPLICATION:
 		return 1
-	case Ydb_Scheme.Entry_EXTERNAL_TABLE:
+	case Ydb_Scheme.Entry_EXTERNAL_TABLE, Ydb_Scheme.Entry_COLUMN_TABLE:
 		return 2
 	case Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE:
 		return 3

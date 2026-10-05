@@ -35,6 +35,7 @@ type indexClause struct {
 	vector ast.VectorIndexSpec
 	// fullText holds normalized text-analysis options for the WITH clause.
 	fullText map[string]string
+	local    map[string]string
 }
 
 func (c indexClause) String() string {
@@ -51,6 +52,9 @@ func (c indexClause) String() string {
 	}
 	if c.kind == ydbindex.Vector {
 		clause += " " + ydbindex.VectorClause(c.vector)
+	}
+	if c.kind.IsLocal() && len(c.local) > 0 {
+		clause += " " + ydbindex.LocalClause(c.local)
 	}
 	if c.kind.IsFullText() {
 		clause += " " + ydbindex.FullTextClause(c.fullText)
@@ -146,6 +150,10 @@ func (r *Renderer) indexClauseOf(index *ast.IndexNode) (indexClause, error) {
 		clause.vector, err = r.vectorSettings(subject, index)
 		return clause, err
 	}
+	if kind.IsLocal() {
+		clause.local, err = r.localIndexSettings(subject, kind, index)
+		return clause, err
+	}
 	if kind.IsFullText() {
 		clause.fullText, err = r.fullTextSettings(subject, index)
 		return clause, err
@@ -203,7 +211,7 @@ func (r *Renderer) refuseIndexDeclarations(subject string, index *ast.IndexNode,
 		return refuseFact(subject, "YDB has no index operator class")
 	case index.Granularity != 0:
 		return refuseFact(subject, "GRANULARITY is ClickHouse's")
-	case len(index.StorageParams) > 0 && !vector && !kind.IsFullText():
+	case len(index.StorageParams) > 0 && !vector && !kind.IsFullText() && !kind.IsLocal():
 		return refuseFact(subject, "a YDB global index takes no storage parameters; its settings are its "+
 			"partitioning and read replicas, declared with the auto_partitioning_* and read_replicas_settings attributes")
 	case index.Vector != nil && !vector:
@@ -374,4 +382,14 @@ func (r *Renderer) fullTextSettings(subject string, index *ast.IndexNode) (map[s
 		return nil, refuseFact(subject, err.Error())
 	}
 	return options, nil
+}
+
+func (r *Renderer) localIndexSettings(subject string, kind ydbindex.Kind, index *ast.IndexNode) (map[string]string, error) {
+	if !r.caps.Has(kind.LocalCapability()) {
+		return nil, refuseKey(kind.LocalCapability(), subject)
+	}
+	if index.Unique || len(index.IncludeColumns) > 0 || !index.Partitioning.IsZero() {
+		return nil, refuseFact(subject, "local indexes cannot be unique, covering or independently partitioned")
+	}
+	return ydbindex.ResolveLocal(kind, index.StorageParams)
 }

@@ -277,7 +277,7 @@ func connect(ctx context.Context, dbURL string, scope scopeRule) (*DatabaseConne
 		// reads through the driver whatever runner a session hands it; YDB has
 		// no session state a schema read could see.
 		newReader = func(sqlrunner.Runner) catalog.SchemaReader {
-			return ydbschema.NewReader(ydbConnection.Driver, ydbConnection.Root, info.Capabilities)
+			return ydbschema.NewReader(ydbConnection, info.Capabilities)
 		}
 		newWriter = func(runner sqlrunner.Runner, _ *sql.Conn) catalog.SchemaWriter {
 			return ydbschema.NewWriter(runner, ydbConnection.Driver, ydbConnection.Realm)

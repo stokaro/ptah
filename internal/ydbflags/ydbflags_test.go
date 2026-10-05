@@ -464,6 +464,30 @@ func TestRefused_HappyPath(t *testing.T) {
 		wantFlag string
 	}{
 		{
+			name:     "26.2.1.14 a local Bloom index",
+			refusal:  "Status: GENERIC_ERROR Issues: <main>: Error: Local bloom filter index support is disabled",
+			wantKey:  capability.LocalBloomIndexes,
+			wantFlag: "EnableLocalBloomFilterIndex",
+		},
+		{
+			name:     "26.2.1.14 a local n-gram index",
+			refusal:  "Status: GENERIC_ERROR Issues: <main>: Error: Local bloom ngram filter index support is disabled",
+			wantKey:  capability.LocalNgramIndexes,
+			wantFlag: "EnableLocalBloomNgramFilterIndex",
+		},
+		{
+			name:     "26.2.1.14 a local min-max index",
+			refusal:  "Status: GENERIC_ERROR Issues: <main>: Error: Local min_max index is disabled with EnableLocalMinMaxIndex feature flag",
+			wantKey:  capability.LocalMinMaxIndexes,
+			wantFlag: "EnableLocalMinMaxIndex",
+		},
+		{
+			name:     "26.2.1.14 column TTL eviction",
+			refusal:  "Status: GENERIC_ERROR Issues: <main>: Error: Tiering functionality is disabled for OLAP tables",
+			wantKey:  capability.TieredTTL,
+			wantFlag: "EnableTieringInColumnShard",
+		},
+		{
 			name:     "26.2.1.14 adding a unique index",
 			refusal:  "Status: BAD_REQUEST Issues: <main>: Error: Failed item check: Adding a unique index to an existing table is disabled",
 			wantKey:  capability.UniqueIndexOnExistingTable,

@@ -36,7 +36,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 				"replication, transfer, secret, external object, resource pool or classifier",
 			file:     "schema.hcl",
 			contents: "schema \"main\" {\n}\n",
-			want: unsupportedRecords(coverage.Changefeed, coverage.ColumnFamily, coverage.ExternalDataSource, coverage.ExternalTable,
+			want: unsupportedRecords(coverage.Changefeed, coverage.ColumnFamily, coverage.ColumnTable, coverage.ExternalDataSource, coverage.ExternalTable,
 				coverage.Replication, coverage.ResourcePool, coverage.ResourcePoolClassifier, coverage.Secret, coverage.Topic,
 				coverage.Transfer, coverage.TTL, coverage.VirtualTable),
 		},
@@ -84,7 +84,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			file:     "schema.dbml",
 			contents: "Table users {\n  id integer [pk]\n}\n",
 			want: unsupportedRecords(
-				coverage.Changefeed, coverage.ColumnFamily, coverage.Composite, coverage.ContinuousAggregate,
+				coverage.Changefeed, coverage.ColumnFamily, coverage.ColumnTable, coverage.Composite, coverage.ContinuousAggregate,
 				coverage.Domain, coverage.ExtendedProperty, coverage.Extension, coverage.ExternalDataSource, coverage.ExternalTable, coverage.Hypertable,
 				coverage.Policy, coverage.Range, coverage.Replication, coverage.ResourcePool, coverage.ResourcePoolClassifier, coverage.Role, coverage.Secret, coverage.Sequence,
 				coverage.Synonym, coverage.Topic, coverage.Transfer, coverage.TTL, coverage.VirtualTable),

@@ -629,6 +629,59 @@ its member, so a user keeps the cluster's `USERS` group, which grants the right
 to connect. It grants a rebuilt table the permissions the old table held.
 [Planning changes](#planning-changes) says where each statement goes.
 
+## Column tables and local indexes
+
+Declare column storage with `store="column"`, `partition_by_hash="id"` and
+`column_shards="1"` on a table annotation. YAML uses `column_store`:
+
+```yaml
+tables:
+  events:
+    fields:
+      id: {type: Uint64, primary: true}
+      body: {type: Utf8}
+    column_store:
+      hash_columns: [id]
+      partitions: 1
+    indexes:
+      body_bloom:
+        type: bloom_filter
+        fields: [body]
+        false_positive_probability: 0.01
+```
+
+Hash columns must belong to the primary key. Omitted hash columns or shard
+count use the server defaults on creation and keep the held values on an
+existing table. Changing the storage kind, hash key or shard count requires an
+explicit data migration; `--allow-table-rebuild` does not rebuild column tables.
+
+Column tables use local indexes. Global indexes, UNIQUE constraints, defaults,
+Serial columns, row-table partitioning, column families and changefeeds are
+refused on this surface.
+
+| Index `type` | Columns and options |
+| --- | --- |
+| `bloom_filter` | Indexed columns; `false_positive_probability`, default `0.1` |
+| `bloom_ngram_filter` | One `Utf8` column; probability, `ngram_size` from `3` through `8`, and `case_sensitive`, default `true` |
+| `min_max` | One column; no options |
+
+Probabilities must be strictly between zero and one. For n-gram indexes they
+must also be greater than `1/512`, so the derived hash count stays within the
+server's limit. Ptah validates these bounds before sending SQL: YDB 26.2.1.14
+aborts its server process for an out-of-range n-gram size.
+
+The local index capabilities follow the cluster flags
+`EnableLocalBloomFilterIndex`, `EnableLocalBloomNgramFilterIndex` and
+`EnableLocalMinMaxIndex`. Read column tables with a URL that includes
+`monitoring=http://host:8765`, or an HTTPS monitoring endpoint for a connection
+using TLS credentials. `DescribeTable` omits local indexes; Ptah supplements
+it with the monitoring schema description. Unmodeled column settings are
+refused to prevent an export from losing them.
+
+HCL and DBML cannot declare column storage. HCL export warns about the missing
+storage settings, and applying either format to an existing column table keeps
+its storage and tiered TTL. Use Go or YAML to create a column table.
+
 ## TTL
 
 A table's TTL is its row deletion policy: YDB deletes a row once an interval
@@ -689,6 +742,36 @@ rebuilds gets that TTL on the new table.
 
 Spanner takes the same attributes, with its own interval spelling (`30 days`)
 and no unit. Every other dialect refuses a row deletion policy.
+
+### Eviction tiers
+
+Column tables can move old data to an external ObjectStorage source before
+optionally deleting it. The cluster must enable `EnableTieringInColumnShard`
+and external data sources. The source needs AWS authentication. Declare its
+absolute database path in each eviction tier:
+
+```yaml
+column_store:
+  hash_columns: [id]
+  partitions: 1
+  ttl:
+    column: id
+    unit: SECONDS
+    tiers:
+      - {interval: P1D, external_source: /local/archive}
+      - {interval: P7D}
+```
+
+In Go, `column_ttl` on the table annotation carries the same TTL object as
+JSON. Intervals must increase. A tier without `external_source` deletes data
+and must be last. For deletion alone, use the ordinary row deletion policy.
+The TTL column must be the first primary-key column or have a local `min_max`
+index.
+
+A migration creates the external source before enabling the eviction policy.
+When replacing a source, it resets dependent policies first and restores them
+afterward. A source still referenced by a declared policy cannot be removed.
+Removing the TTL from a Go or YAML declaration resets it on the table.
 
 ## Changefeeds
 
@@ -1777,7 +1860,7 @@ On a cluster with `EnableResourcePools` on, it also reads resource pools and the
 [Users, groups and permissions](#users-groups-and-permissions).
 
 What Ptah does not model yet is recorded rather than dropped:
-column-oriented tables, streaming queries, resource pools on a cluster whose
+column stores that group tables, streaming queries, resource pools on a cluster whose
 flags Ptah did not read, sequences other than a `Serial` column's, the settings
 of a table such as a TTL run interval and storage settings, a column family
 kept in memory with `keep_in_memory`, a changefeed holding a setting Ptah does
@@ -1786,7 +1869,7 @@ consumer, the replica tables an async replication writes, and external data sour
 and tables on a server without the `external_data_sources` key. A command
 reports them, and a plan neither drops nor changes them.
 
-An index kind Ptah cannot read, such as a column-table local index, is refused by name
+An index kind Ptah cannot read is refused by name
 rather than read as a plain index, and so is a vector index holding a setting
 Ptah does not model, such as the `overlap_clusters` 26.2 takes.
 

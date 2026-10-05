@@ -207,6 +207,10 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err != nil {
 		return nil, err
 	}
+	columnTTL, err := p.planColumnTTL(diff)
+	if err != nil {
+		return nil, err
+	}
 	sequences, err := p.planSerialSequences(diff, rebuilds, semantics)
 	if err != nil {
 		return nil, err
@@ -225,12 +229,15 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	result = append(result, dropReplications(diff)...)
 	result = append(result, p.dropViews(diff)...)
 	result = append(result, access.before...)
+	result = append(result, columnTTL.before...)
+	result = append(result, removedTablesBeforeSources(diff, external)...)
 	result = append(result, external.drops...)
 	result = append(result, dropTopics(diff)...)
 	nodeChanges, nodeDrops := coordinationNodes(diff)
 	result = append(result, nodeDrops...)
 	result = append(result, dropSecrets(diff)...)
-	result = append(result, p.createTables(diff, inlineIndexes, sequences.created, semantics)...)
+	earlyTables, lateTables := splitColumnTTLCreations(p.createTables(diff, inlineIndexes, sequences.created, semantics))
+	result = append(result, earlyTables...)
 	result = append(result, dropIndexes(diff.IndexRemovals(), removedTables, rebuilds, semantics)...)
 	result = append(result, renameIndexes(diff.IndexesRenamed, rebuilds, semantics)...)
 	result = append(result, changeIndexPartitioning(diff.IndexPartitioningChanged, rebuilds, semantics)...)
@@ -243,13 +250,13 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	result = append(result, addIndexes(diff.IndexesAdded, ownIndexes, semantics)...)
 	result = append(result, indexComments(diff, removedTables, rebuilds, semantics)...)
 	result = append(result, changeChangefeeds(diff, rebuilds, semantics)...)
-	for _, name := range diff.TablesRemoved {
-		result = append(result, ast.NewDropTable(name))
-	}
+	result = append(result, removedTablesAfterSources(diff, external)...)
 	result = append(result, changeTopics(diff)...)
 	result = append(result, nodeChanges...)
 	result = append(result, changeSecrets(diff)...)
 	result = append(result, external.creations...)
+	result = append(result, lateTables...)
+	result = append(result, columnTTL.after...)
 	result = append(result, changeReplications(diff)...)
 	result = append(result, p.createViews(diff)...)
 	result = append(result, viewComments(diff)...)
@@ -292,6 +299,12 @@ func (p *Planner) refuseModification(
 	semantics identifier.Semantics,
 	notDescribed coverage.Set,
 ) error {
+	if err := refuseColumnTTLShape(tableDiff.Desired); err != nil {
+		return err
+	}
+	if err := p.refuseColumnTableChange(tableDiff); err != nil {
+		return err
+	}
 	if _, rebuilt := rebuilds[semantics.TableIdentityKey(tableDiff.TableName)]; rebuilt {
 		if err := p.refuseRebuiltTableChanges(tableDiff); err != nil {
 			return err
@@ -630,6 +643,9 @@ func (p *Planner) indexShapeRefusal(index schemamodel.Index, declaration difftyp
 		declared, ok := columns[name]
 		return declared, ok
 	}
+	if kind.IsLocal() != (declaration.Table.YDBColumnTable != nil) {
+		return "LOCAL indexes require column storage and GLOBAL indexes require row storage"
+	}
 	shape := ydbindex.Shape{Kind: kind, Columns: indexKeyColumns(index), Cover: index.IncludeColumns}
 	if index.Vector != nil {
 		shape.Dimension = index.Vector.Dimension
@@ -654,6 +670,9 @@ func indexKeyColumns(index schemamodel.Index) []string {
 // this target.
 func (p *Planner) refuseTableChanges(tableDiff difftypes.TableDiff) error {
 	subject := fmt.Sprintf("table %q", tableDiff.TableName)
+	if err := p.refuseColumnTableChange(tableDiff); err != nil {
+		return err
+	}
 	if err := p.refuseTableSettings(tableDiff, subject); err != nil {
 		return err
 	}

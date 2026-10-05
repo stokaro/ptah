@@ -1,0 +1,207 @@
+{
+  "Status": "StatusSuccess",
+  "Path": "/local/col_index_probe",
+  "PathDescription": {
+    "ColumnTableDescription": {
+      "IsRestore": false,
+      "ColumnShardCount": 64,
+      "Schema": {
+        "Options": {
+          "SchemeNeedActualization": false
+        },
+        "NextColumnId": 9,
+        "KeyColumnNames": [
+          "id"
+        ],
+        "Version": "7",
+        "Columns": [
+          {
+            "NotNull": true,
+            "Id": 1,
+            "StorageId": "",
+            "DefaultValue": {},
+            "TypeId": 4,
+            "Type": "Uint64",
+            "Name": "id"
+          },
+          {
+            "NotNull": false,
+            "Id": 2,
+            "StorageId": "",
+            "DefaultValue": {},
+            "TypeId": 4608,
+            "Type": "Utf8",
+            "Name": "body"
+          }
+        ],
+        "Indexes": [
+          {
+            "BloomFilter": {
+              "DataExtractor": {
+                "ClassName": "DEFAULT"
+              },
+              "FalsePositiveProbability": 0.1,
+              "BitsStorage": {
+                "ClassName": "SIMPLE_STRING"
+              },
+              "ColumnIds": [
+                2
+              ]
+            },
+            "Id": 7,
+            "StorageId": "__DEFAULT",
+            "ClassName": "BLOOM_FILTER",
+            "InheritPortionStorage": true,
+            "Name": "bf_default"
+          },
+          {
+            "Id": 8,
+            "StorageId": "__DEFAULT",
+            "BloomNGrammFilter": {
+              "DataExtractor": {
+                "ClassName": "DEFAULT"
+              },
+              "ColumnId": 2,
+              "BitsStorage": {
+                "ClassName": "SIMPLE_STRING"
+              },
+              "CaseSensitive": true
+            },
+            "ClassName": "BLOOM_NGRAMM_FILTER",
+            "InheritPortionStorage": true,
+            "Name": "ng_default"
+          },
+          {
+            "BloomFilter": {
+              "DataExtractor": {
+                "ClassName": "DEFAULT"
+              },
+              "FalsePositiveProbability": 0.01,
+              "BitsStorage": {
+                "ClassName": "SIMPLE_STRING"
+              },
+              "ColumnIds": [
+                2
+              ]
+            },
+            "Id": 4,
+            "StorageId": "__DEFAULT",
+            "ClassName": "BLOOM_FILTER",
+            "InheritPortionStorage": true,
+            "Name": "bf"
+          },
+          {
+            "Id": 5,
+            "StorageId": "__DEFAULT",
+            "BloomNGrammFilter": {
+              "DataExtractor": {
+                "ClassName": "DEFAULT"
+              },
+              "ColumnId": 2,
+              "FalsePositiveProbability": 0.01,
+              "BitsStorage": {
+                "ClassName": "SIMPLE_STRING"
+              },
+              "NGrammSize": 3,
+              "CaseSensitive": true
+            },
+            "ClassName": "BLOOM_NGRAMM_FILTER",
+            "InheritPortionStorage": true,
+            "Name": "ng"
+          },
+          {
+            "MinMaxIndex": {
+              "DataExtractor": {
+                "ClassName": "DEFAULT"
+              },
+              "ColumnId": 1
+            },
+            "Id": 6,
+            "StorageId": "__LOCAL_METADATA",
+            "ClassName": "MIN_MAX",
+            "InheritPortionStorage": false,
+            "Name": "mm"
+          }
+        ]
+      },
+      "Sharding": {
+        "ColumnShards": [
+          "72075186224038217",
+          "72075186224038218",
+          "72075186224038219",
+          "72075186224038220",
+          "72075186224038221",
+          "72075186224038222",
+          "72075186224038223",
+          "72075186224038224",
+          "72075186224038225",
+          "72075186224038226",
+          "72075186224038227",
+          "72075186224038228",
+          "72075186224038229",
+          "72075186224038230",
+          "72075186224038231",
+          "72075186224038232",
+          "72075186224038233",
+          "72075186224038234",
+          "72075186224038235",
+          "72075186224038236",
+          "72075186224038237",
+          "72075186224038238",
+          "72075186224038239",
+          "72075186224038240",
+          "72075186224038241",
+          "72075186224038242",
+          "72075186224038243",
+          "72075186224038244",
+          "72075186224038245",
+          "72075186224038246",
+          "72075186224038247",
+          "72075186224038248",
+          "72075186224038249",
+          "72075186224038250",
+          "72075186224038251",
+          "72075186224038252",
+          "72075186224038253",
+          "72075186224038254",
+          "72075186224038255",
+          "72075186224038256",
+          "72075186224038257",
+          "72075186224038258",
+          "72075186224038259",
+          "72075186224038260",
+          "72075186224038261",
+          "72075186224038262",
+          "72075186224038263",
+          "72075186224038264",
+          "72075186224038265",
+          "72075186224038266",
+          "72075186224038267",
+          "72075186224038268",
+          "72075186224038269",
+          "72075186224038270",
+          "72075186224038271",
+          "72075186224038272",
+          "72075186224038273",
+          "72075186224038274",
+          "72075186224038275",
+          "72075186224038276",
+          "72075186224038277",
+          "72075186224038278",
+          "72075186224038279",
+          "72075186224038280"
+        ],
+        "HashSharding": {
+          "Function": 2,
+          "Columns": [
+            "id"
+          ]
+        }
+      },
+      "StorageConfig": {
+        "DataChannelCount": 64
+      },
+      "Name": "col_index_probe"
+    }
+  }
+}

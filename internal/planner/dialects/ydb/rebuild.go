@@ -206,6 +206,9 @@ func (p *Planner) prepareRebuild(diff *difftypes.SchemaDiff, rebuild *tableRebui
 	if !ok {
 		return refuseFact(subject, "the plan carries no declaration of the table to write the new one from")
 	}
+	if declaration.Table.YDBColumnTable != nil || (rebuild.tableDiff != nil && rebuild.tableDiff.YDBColumnTableChange != nil) {
+		return refuseFact(subject, "column-table rebuilds require an explicit data migration")
+	}
 	rebuild.declaration = declaration
 	if !declaresKey(declaration) {
 		return refuseKey(capability.PrimaryKeyRequired, fmt.Sprintf("table %q declares no primary key", rebuild.name))

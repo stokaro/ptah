@@ -96,6 +96,9 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	indexes := append(slices.Clone(node.Indexes), uniques...)
 	named := make(map[string]bool, len(indexes))
 	for _, index := range indexes {
+		if err := columnIndexStorage(node, index); err != nil {
+			return err
+		}
 		clause, err := r.inlineIndex(node.Name, index, keyColumns, columns)
 		if err != nil {
 			return err
@@ -123,7 +126,7 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	}
 	r.w.WriteLinef("CREATE TABLE%s %s (", guard, tablePath(node.Name))
 	r.w.WriteLine("    " + strings.Join(lines, ",\n    "))
-	closing := ")"
+	closing := ")" + columnHashClause(node.YDBColumnTable)
 	if len(settings) > 0 {
 		closing += " WITH (" + strings.Join(settings, ", ") + ")"
 	}
@@ -285,6 +288,10 @@ func (r *Renderer) withSettings(node *ast.CreateTableNode, keyColumns []string, 
 	settings, err := r.tableSettings(node, columnTypes)
 	if err != nil {
 		return nil, err
+	}
+	if node.YDBColumnTable != nil {
+		columnSettings, err := r.columnTableSettings(node, keyColumns, columnTypes)
+		return append(settings, columnSettings...), err
 	}
 	partitioning, err := r.partitioningSettings(node, keyColumns, columnTypes)
 	if err != nil {
@@ -753,4 +760,12 @@ func typeRefusal(subject string, err error) error {
 func terminated(statement string) string {
 	trimmed := strings.TrimRight(strings.TrimSpace(statement), ";")
 	return strings.TrimSpace(trimmed) + ";"
+}
+
+func columnIndexStorage(table *ast.CreateTableNode, index *ast.IndexNode) error {
+	kind, err := ydbindex.KindOf(index.Type)
+	if err == nil && kind.IsLocal() && table.YDBColumnTable == nil {
+		return refuseFact(table.Name, "LOCAL indexes require a column table on this YDB release")
+	}
+	return nil
 }

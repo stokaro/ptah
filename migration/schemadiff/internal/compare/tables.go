@@ -16,6 +16,7 @@ import (
 	"ptah.run/internal/objectidentity"
 	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/ydbcolumn"
 	"ptah.run/internal/ydbpartition"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -277,6 +278,9 @@ func TablesAndColumnsWithServerSpellings(
 			// difference is how it splits into partitions has to reach
 			// TablesModified or nothing ever sets them.
 			tableDiff.YDBPartitioningChange = partitioningChange(genTable.YDBPartitioning, dbTable.YDBPartitioning)
+			if !ydbcolumn.Equal(genTable.YDBColumnTable, dbTable.YDBColumnTable) {
+				tableDiff.YDBColumnTableChange = &difftypes.YDBColumnTableChange{Desired: genTable.YDBColumnTable.Clone(), Current: dbTable.YDBColumnTable.Clone()}
+			}
 			if tableChanged(tableDiff) {
 				diff.TablesModified = append(diff.TablesModified, tableDiff)
 			}
@@ -381,7 +385,7 @@ func tableChanged(tableDiff difftypes.TableDiff) bool {
 		len(tableDiff.ColumnsModified) > 0 || tableDiff.RowTTLChange != nil ||
 		tableDiff.RowDeletionPolicyChange != nil || tableDiff.CommentChange != nil ||
 		tableDiff.ChangefeedsChange != nil || tableDiff.YDBColumnFamiliesChange != nil ||
-		tableDiff.YDBPartitioningChange != nil
+		tableDiff.YDBPartitioningChange != nil || tableDiff.YDBColumnTableChange != nil
 }
 
 // partitioningChange is the transition a YDB table's settings make, and nil

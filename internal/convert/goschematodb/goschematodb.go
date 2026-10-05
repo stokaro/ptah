@@ -162,6 +162,7 @@ func toDBTables(
 			// declares, so a file-to-file comparison of one document against
 			// itself has nothing to plan for them.
 			YDBPartitioning: table.YDBPartitioning.Clone(),
+			YDBColumnTable:  table.YDBColumnTable.Clone(),
 		})
 	}
 	return out
