@@ -2279,9 +2279,12 @@ refuses such a column by name and writes nothing.
 
 ### Schema analysis
 
-`ptah schema stats` counts the tables, columns and indexes the reader
-describes, labeled with the dialect and the `--schemas` directories. Like
-every other dialect, it counts objects and reads no row counts or sizes.
+`ptah schema stats` counts the objects the reader describes, including topics,
+changefeeds, coordination nodes, resource pools, replications, transfers,
+secrets, external sources and tables, and streaming queries. Topic consumers
+and changefeed consumers have separate counters. Secret values never appear
+in metrics. Counts carry the dialect and the `--schemas` directories as labels.
+Like every other dialect, it reads no row counts or sizes.
 
 `ptah schema lineage --db-url ydb://...` traces views from the queries the
 server stores. A view's source is its table's Ptah name, such as `shop.items`

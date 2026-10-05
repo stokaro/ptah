@@ -93,7 +93,7 @@ ptah_schema_schemas{dialect="sqlite"} 0
 # HELP ptah_schema_tables Tables.
 # TYPE ptah_schema_tables gauge
 ptah_schema_tables{dialect="sqlite"} 2
-# HELP ptah_schema_columns Columns across all tables.
+# HELP ptah_schema_columns Columns across tables, excluding external tables.
 # TYPE ptah_schema_columns gauge
 ptah_schema_columns{dialect="sqlite"} 6
 # HELP ptah_schema_indexes Indexes.
@@ -141,6 +141,48 @@ ptah_schema_roles{dialect="sqlite"} 0
 # HELP ptah_schema_grants Privilege grants.
 # TYPE ptah_schema_grants gauge
 ptah_schema_grants{dialect="sqlite"} 0
+# HELP ptah_schema_topics Standalone topics.
+# TYPE ptah_schema_topics gauge
+ptah_schema_topics{dialect="sqlite"} 0
+# HELP ptah_schema_topic_consumers Consumers of standalone topics.
+# TYPE ptah_schema_topic_consumers gauge
+ptah_schema_topic_consumers{dialect="sqlite"} 0
+# HELP ptah_schema_changefeeds Table changefeeds.
+# TYPE ptah_schema_changefeeds gauge
+ptah_schema_changefeeds{dialect="sqlite"} 0
+# HELP ptah_schema_changefeed_consumers Consumers of table changefeeds.
+# TYPE ptah_schema_changefeed_consumers gauge
+ptah_schema_changefeed_consumers{dialect="sqlite"} 0
+# HELP ptah_schema_coordination_nodes Coordination nodes.
+# TYPE ptah_schema_coordination_nodes gauge
+ptah_schema_coordination_nodes{dialect="sqlite"} 0
+# HELP ptah_schema_resource_pools Resource pools.
+# TYPE ptah_schema_resource_pools gauge
+ptah_schema_resource_pools{dialect="sqlite"} 0
+# HELP ptah_schema_resource_pool_classifiers Resource pool classifiers.
+# TYPE ptah_schema_resource_pool_classifiers gauge
+ptah_schema_resource_pool_classifiers{dialect="sqlite"} 0
+# HELP ptah_schema_async_replications Async replications.
+# TYPE ptah_schema_async_replications gauge
+ptah_schema_async_replications{dialect="sqlite"} 0
+# HELP ptah_schema_transfers Transfers.
+# TYPE ptah_schema_transfers gauge
+ptah_schema_transfers{dialect="sqlite"} 0
+# HELP ptah_schema_secrets Secret objects, without their values.
+# TYPE ptah_schema_secrets gauge
+ptah_schema_secrets{dialect="sqlite"} 0
+# HELP ptah_schema_external_data_sources External data sources.
+# TYPE ptah_schema_external_data_sources gauge
+ptah_schema_external_data_sources{dialect="sqlite"} 0
+# HELP ptah_schema_external_tables External tables.
+# TYPE ptah_schema_external_tables gauge
+ptah_schema_external_tables{dialect="sqlite"} 0
+# HELP ptah_schema_external_columns Columns across external tables.
+# TYPE ptah_schema_external_columns gauge
+ptah_schema_external_columns{dialect="sqlite"} 0
+# HELP ptah_schema_streaming_queries Streaming queries.
+# TYPE ptah_schema_streaming_queries gauge
+ptah_schema_streaming_queries{dialect="sqlite"} 0
 # EOF
 ```
 
@@ -151,6 +193,11 @@ PostgreSQL or MySQL emits the same names in the same order and a dashboard built
 against one engine keeps working against another. Every family appears on every
 run, at zero where the reader found none. The body ends with a literal `# EOF`
 line, which is how a collector separates a complete scrape from a truncated one.
+
+On YDB, standalone topics and their consumers are separate from table
+changefeeds and their consumers. External tables and their columns also have
+separate families; the ordinary table and column counters exclude them.
+Secrets contribute only an object count, never their names or values.
 
 The counts describe the schema, not the contents. Row counts, table sizes, and
 index bloat are properties of the data, and the database's own statistics views
