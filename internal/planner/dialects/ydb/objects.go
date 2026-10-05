@@ -32,6 +32,7 @@ func (p *Planner) refuseObjects(diff *difftypes.SchemaDiff) error {
 		}
 	}
 	rest := *diff
+	rest.StreamingQueriesAdded, rest.StreamingQueriesRemoved, rest.StreamingQueriesChanged = nil, nil, nil
 	rest.TablesAdded, rest.TablesRemoved, rest.TablesModified = nil, nil, nil
 	rest.IndexesAdded, rest.IndexesRemoved = nil, nil
 	rest.IndexesRenamed, rest.IndexPartitioningChanged, rest.IndexCommentsChanged = nil, nil, nil

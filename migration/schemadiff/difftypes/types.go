@@ -1493,6 +1493,13 @@ type SchemaDiff struct {
 	ExternalTablesRemoved ExternalTableChanges  `json:"external_tables_removed,omitempty"`
 	ExternalTablesChanged []ExternalTableChange `json:"external_tables_changed,omitempty"`
 
+	// StreamingQueriesAdded creates queries after their sources and targets exist.
+	StreamingQueriesAdded []schemamodel.StreamingQuery `json:"streaming_queries_added,omitempty"`
+	// StreamingQueriesRemoved removes queries and their checkpoints before dependencies.
+	StreamingQueriesRemoved []schemamodel.StreamingQuery `json:"streaming_queries_removed,omitempty"`
+	// StreamingQueriesChanged changes persistent settings in place.
+	StreamingQueriesChanged []StreamingQueryChange `json:"streaming_queries_changed,omitempty"`
+
 	// ExtendedPropertiesAdded contains the SQL Server extended properties the
 	// target schema declares and the database does not have.
 	ExtendedPropertiesAdded []ExtendedPropertyRef `json:"extended_properties_added"`
@@ -2269,7 +2276,7 @@ func (d *SchemaDiff) hasSynonymChanges() bool {
 // coordination nodes and secrets.
 func (d *SchemaDiff) hasYDBObjectChanges() bool {
 	return d.hasTopicChanges() || d.hasResourcePoolChanges() || d.hasReplicationChanges() ||
-		d.hasCoordinationNodeChanges() || d.hasSecretChanges() || d.hasExternalChanges()
+		d.hasCoordinationNodeChanges() || d.hasSecretChanges() || d.hasExternalChanges() || d.hasStreamingQueryChanges()
 }
 
 func (d *SchemaDiff) hasTopicChanges() bool {
@@ -4577,4 +4584,8 @@ func (r DefaultPrivilegeRef) String() string {
 		where = "in every schema"
 	}
 	return r.Privilege + " on " + r.ObjectType + " " + where + " for " + r.Grantor + " to " + r.Grantee
+}
+
+func (d *SchemaDiff) hasStreamingQueryChanges() bool {
+	return len(d.StreamingQueriesAdded) > 0 || len(d.StreamingQueriesRemoved) > 0 || len(d.StreamingQueriesChanged) > 0
 }

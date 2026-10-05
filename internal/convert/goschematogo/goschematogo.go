@@ -377,6 +377,7 @@ func (ctx *renderContext) hasGlobalObjects() bool {
 		len(ctx.db.AsyncReplications) > 0 ||
 		len(ctx.db.Transfers) > 0 ||
 		len(ctx.db.CoordinationNodes) > 0 ||
+		len(ctx.db.StreamingQueries) > 0 ||
 		ctx.hasExternalObjects()
 }
 
@@ -478,6 +479,7 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 	}
 	ctx.writeSecrets(w)
 	ctx.writeExternalObjects(w)
+	ctx.writeStreamingQueries(w)
 	for _, role := range sortedRoles(ctx.db.Roles) {
 		w.writeComment(roleAnnotation(role))
 	}

@@ -24,6 +24,7 @@ import (
 	"ptah.run/internal/htmlstyle"
 	"ptah.run/internal/notnullfill"
 	"ptah.run/internal/typechange"
+	"ptah.run/internal/ydbstream"
 	"ptah.run/internal/ydbtopic"
 	"ptah.run/migration/risk"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -609,6 +610,8 @@ func assessNode(node ast.Node) StatementAssessment {
 	case *ast.DropSecretNode, *ast.AlterSecretNode, *ast.DropExternalDataSourceNode, *ast.DropExternalTableNode,
 		*ast.CreateExternalDataSourceNode, *ast.CreateExternalTableNode:
 		return assessYDBObject(n, assessment)
+	case *ydbstream.Node:
+		return assessStreamingQuery(n, assessment)
 	case *ast.RawSQLNode:
 		assessment.Statement = n.SQL
 		return assessRawSQL(n.SQL, assessment, false)
@@ -790,6 +793,11 @@ func classifyTypeOperation(op ast.TypeOperation) (Severity, string) {
 // existing constraint and not a new one.
 func assessRawSQL(sql string, assessment StatementAssessment, keepsNullability bool) StatementAssessment {
 	words, dropsDefault := withoutDefaultConstraintDrop(rawWords(sql))
+	if hasWordPrefix(words, "DROP", "STREAMING", "QUERY") || hasWordPrefix(words, "CREATE", "OR", "REPLACE", "STREAMING", "QUERY") || (hasWordPrefix(words, "ALTER", "STREAMING", "QUERY") && hasWordSequence(words, "AS", "DO", "BEGIN")) {
+		assessment.Severity, assessment.Reason = Destructive, streamingCheckpointLoss
+		return assessment
+	}
+
 	if hasWordPrefix(words, "DROP", "ASYNC", "REPLICATION") && !slices.Contains(words, "CASCADE") {
 		assessment.Severity = Warning
 		assessment.Reason = keepReplicaTablesReason

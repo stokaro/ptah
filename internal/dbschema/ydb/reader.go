@@ -195,7 +195,7 @@ func (r *Reader) entry(
 	case Ydb_Scheme.Entry_TABLE:
 		return r.tableEntry(ctx, source, schema, name, db)
 	case Ydb_Scheme.Entry_VIEW, Ydb_Scheme.Entry_TOPIC, Ydb_Scheme.Entry_REPLICATION, Ydb_Scheme.Entry_TRANSFER,
-		Ydb_Scheme.Entry_SECRET, Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE, Ydb_Scheme.Entry_EXTERNAL_TABLE:
+		Ydb_Scheme.Entry_SECRET, Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE, Ydb_Scheme.Entry_EXTERNAL_TABLE, EntryStreamingQuery:
 		if described, err := r.keyedEntry(ctx, source, schema, entry, db); described || err != nil {
 			return err
 		}
@@ -254,6 +254,7 @@ func (r *Reader) tableEntry(ctx context.Context, source Source, schema, name str
 // the capability each names, and records rather than describes on one
 // without it.
 var keyedEntries = map[Ydb_Scheme.Entry_Type]capability.Capability{
+	EntryStreamingQuery:                   capability.StreamingQueries,
 	Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE: capability.ExternalDataSources,
 	Ydb_Scheme.Entry_EXTERNAL_TABLE:       capability.ExternalDataSources,
 	Ydb_Scheme.Entry_SECRET:               capability.Secrets,
@@ -293,6 +294,8 @@ func (r *Reader) keyedEntry(
 		return true, r.replication(ctx, source, schema, name, db)
 	case Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE, Ydb_Scheme.Entry_EXTERNAL_TABLE:
 		return true, r.externalObject(ctx, source, schema, entry, db)
+	case EntryStreamingQuery:
+		return true, r.streamingQuery(ctx, source, schema, name, db)
 	default:
 		return true, r.transfer(ctx, source, schema, name, db)
 	}

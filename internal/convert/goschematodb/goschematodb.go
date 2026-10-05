@@ -72,6 +72,7 @@ func ToDBSchema(db *schemamodel.Database, dialect string) *catalog.Database {
 		Secrets:             toDBSecrets(db.Secrets),
 		ExternalDataSources: toDBExternalDataSources(db.ExternalDataSources),
 		ExternalTables:      toDBExternalTables(db.ExternalTables),
+		StreamingQueries:    toDBStreamingQueries(db.StreamingQueries),
 		Triggers:            toDBTriggers(db.Triggers, tableByStruct),
 		RLSPolicies:         toDBRLSPolicies(db.RLSPolicies),
 		Roles:               toDBRoles(db.Roles),

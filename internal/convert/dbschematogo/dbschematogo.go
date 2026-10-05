@@ -76,6 +76,7 @@ func ConvertDBSchemaToGoSchema(dbSchema *catalog.Database, dialect string) *sche
 	convertCoordinationNodes(database, dbSchema.CoordinationNodes)
 	convertSecrets(database, dbSchema.Secrets)
 	convertExternalObjects(database, dbSchema)
+	convertStreamingQueries(database, dbSchema.StreamingQueries)
 	convertExtendedProperties(database, dbSchema.ExtendedProperties)
 	convertRoles(database, dbSchema.Roles, membershipsFor(dbSchema.RoleMemberships, dialect))
 	database.DatabasePath = dbSchema.DatabasePath

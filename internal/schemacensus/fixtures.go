@@ -162,6 +162,7 @@ func Fixtures() []Fixture {
 		{Name: "transfer", Schema: transferFixture()},
 		{Name: "coordination-node", Schema: coordinationNodeFixture()},
 		{Name: "secret", Schema: secretFixture()},
+		{Name: "streaming-query", Schema: streamingQueryFixture(), Flags: []capability.Capability{capability.StreamingQueries}},
 		{Name: "external-objects", Schema: externalObjectsFixture(),
 			Flags: []capability.Capability{capability.ExternalDataSources}},
 		{Name: "extended-property", Schema: extendedPropertyFixture()},
@@ -1916,5 +1917,12 @@ func primaryKeyOptionsFixture() schemamodel.Database {
 func primaryKeyConstraintOptionsFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
 	db.Constraints = []schemamodel.Constraint{{StructName: "T", Table: "t", Name: "PRIMARY", Type: "PRIMARY KEY", Columns: []string{"id"}, Comment: "lookup", KeyBlockSize: 8}}
+	return db
+}
+
+func streamingQueryFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.StreamingQueries = []schemamodel.StreamingQuery{{Name: "copy", Schema: "streams", StructName: "Streaming", AllowStateReset: true,
+		Spec: ast.StreamingQuerySpec{Text: "INSERT INTO output SELECT * FROM input;", Run: new(false), ResourcePool: "reporting"}}}
 	return db
 }

@@ -335,7 +335,7 @@ func (w *Writer) DropAllTables(ctx context.Context) error {
 			return isReplica(described.GetAttributes()), nil
 		}
 	}
-	for _, phase := range []dropPhase{dropReaders, dropSources, dropRemaining} {
+	for _, phase := range []dropPhase{dropStreams, dropReaders, dropSources, dropRemaining} {
 		drop.phase = phase
 		if _, err = w.dropDirectory(ctx, "", drop); err != nil {
 			return err
@@ -348,7 +348,8 @@ func (w *Writer) DropAllTables(ctx context.Context) error {
 type dropPhase uint8
 
 const (
-	dropReaders dropPhase = iota
+	dropStreams dropPhase = iota
+	dropReaders
 	dropSources
 	dropRemaining
 )
@@ -357,6 +358,8 @@ const (
 // the secrets they reference. Objects in different directories follow the same order.
 func phaseForEntry(kind Ydb_Scheme.Entry_Type) dropPhase {
 	switch kind {
+	case EntryStreamingQuery:
+		return dropStreams
 	case Ydb_Scheme.Entry_VIEW, Ydb_Scheme.Entry_EXTERNAL_TABLE:
 		return dropReaders
 	case Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE:
@@ -521,7 +524,7 @@ func (w *Writer) describedDropStatement(dir string, entry *Ydb_Scheme.Entry, pha
 	}
 	switch entry.GetType() {
 	case Ydb_Scheme.Entry_VIEW, Ydb_Scheme.Entry_TOPIC, Ydb_Scheme.Entry_SECRET,
-		Ydb_Scheme.Entry_EXTERNAL_TABLE, Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE:
+		Ydb_Scheme.Entry_EXTERNAL_TABLE, Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE, EntryStreamingQuery:
 		return dropStatement(entry.GetType(), path.Join(dir, entry.GetName()))
 	case Ydb_Scheme.Entry_COORDINATION_NODE:
 		if w.leftAlone(dir, entry) {
@@ -602,6 +605,7 @@ func (w *Writer) droppableDirectory(dir string) (string, error) {
 // 26.2.1.14, YDB drops a replica table, read-only as it is, with DROP TABLE,
 // while CASCADE would drop it first and the step for it would then fail.
 var treeStatements = map[Ydb_Scheme.Entry_Type]string{
+	EntryStreamingQuery:                   "DROP STREAMING QUERY %s",
 	Ydb_Scheme.Entry_EXTERNAL_TABLE:       "DROP EXTERNAL TABLE %s",
 	Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE: "DROP EXTERNAL DATA SOURCE %s",
 	Ydb_Scheme.Entry_TABLE:                "DROP TABLE %s",
@@ -619,7 +623,7 @@ var treeStatements = map[Ydb_Scheme.Entry_Type]string{
 // directories. Entries at the same rank keep the order the walk met them.
 func teardownRank(entryType Ydb_Scheme.Entry_Type) int {
 	switch entryType {
-	case Ydb_Scheme.Entry_TRANSFER:
+	case Ydb_Scheme.Entry_TRANSFER, EntryStreamingQuery:
 		return 0
 	case Ydb_Scheme.Entry_REPLICATION:
 		return 1

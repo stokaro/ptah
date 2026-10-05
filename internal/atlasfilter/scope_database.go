@@ -91,6 +91,9 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	out.ExternalDataSources = keep(db.ExternalDataSources, func(source catalog.ExternalDataSource) bool {
 		return s.selected(typeList("external_data_source"), source.Schema, source.Name)
 	})
+	out.StreamingQueries = keep(db.StreamingQueries, func(query catalog.StreamingQuery) bool {
+		return s.selected(typeList("streaming_query"), query.Schema, query.Name)
+	})
 	out.ExternalTables = keep(db.ExternalTables, func(table catalog.ExternalTable) bool {
 		return s.selected(typeList("external_table"), table.Schema, table.Name)
 	})
