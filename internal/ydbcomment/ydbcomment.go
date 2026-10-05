@@ -43,8 +43,9 @@ const (
 	View
 )
 
-// keyword is the word COMMENT ON names the object with.
-func (o Object) keyword() string {
+// Keyword is the word COMMENT ON names the object with, and empty for a value
+// that names no object.
+func (o Object) Keyword() string {
 	switch o {
 	case Table:
 		return "TABLE"
@@ -64,7 +65,7 @@ func (o Object) noun() string {
 	if o == Index {
 		return "an index"
 	}
-	return "a " + strings.ToLower(o.keyword())
+	return "a " + strings.ToLower(o.Keyword())
 }
 
 // The attribute keys. A table's and a view's own comment is [OwnKey]; a
@@ -160,7 +161,7 @@ func Refusal(object Object, name, comment string) string {
 	key := Key(object, name)
 	switch {
 	case (object == Column || object == Index) && name == "":
-		return fmt.Sprintf("%s comment names no %s", object.noun(), strings.ToLower(object.keyword()))
+		return fmt.Sprintf("%s comment names no %s", object.noun(), strings.ToLower(object.Keyword()))
 	case len(key) > MaxKeyBytes:
 		return fmt.Sprintf("YDB keeps the comment as the table attribute %q, %d bytes long, and an attribute key "+
 			"takes at most %d bytes; %s name takes at most %d", key, len(key), MaxKeyBytes,

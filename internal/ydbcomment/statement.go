@@ -50,7 +50,7 @@ func (s Statement) Key() string {
 // Text writes the statement without a terminator. The comment is a YQL
 // string literal, and an empty one is written NULL.
 func (s Statement) Text() (string, error) {
-	keyword := s.Object.keyword()
+	keyword := s.Object.Keyword()
 	if keyword == "" {
 		return "", fmt.Errorf("%w: unknown object %d", ErrStatement, s.Object)
 	}
@@ -143,7 +143,7 @@ func opens(tokens []lexer.Token) bool {
 // objectOf reads the object keyword of a statement.
 func objectOf(token lexer.Token) (Object, bool) {
 	for _, object := range []Object{Table, Column, Index, View} {
-		if token.MatchIdentifierValue(object.keyword()) {
+		if token.MatchIdentifierValue(object.Keyword()) {
 			return object, true
 		}
 	}
@@ -187,7 +187,7 @@ func parse(tokens []lexer.Token) (Statement, error) {
 		rest = rest[3:]
 	default:
 		if len(rest) == 0 {
-			return refuse("the statement names no %s", strings.ToLower(object.keyword()))
+			return refuse("the statement names no %s", strings.ToLower(object.Keyword()))
 		}
 		if statement.Path, ok = name(rest[0]); !ok {
 			return refuse("%s does not name %s; write its path in backticks", rest[0].Value, object.noun())

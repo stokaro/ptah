@@ -10,7 +10,11 @@ import (
 	"reflect"
 	"strconv"
 
+	"github.com/ydb-platform/ydb-go-genproto/Ydb_Scheme_V1"
+	"github.com/ydb-platform/ydb-go-genproto/Ydb_Table_V1"
 	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
+
+	"ptah.run/internal/ydbcomment"
 )
 
 // connector hands database/sql the SDK's connections with Ptah's argument
@@ -20,9 +24,12 @@ import (
 // front of every query the connections run, and is empty unless the URL named
 // a dev realm.
 type connector struct {
-	inner   driver.Connector
-	sdk     *ydbsdk.Driver
-	prefix  string
+	inner  driver.Connector
+	sdk    *ydbsdk.Driver
+	prefix string
+	// root is the absolute path the connections treat as their database: the
+	// dev realm's directory when the URL named one, empty otherwise.
+	root    string
 	onClose func() error
 }
 
@@ -62,7 +69,7 @@ func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
 		_ = opened.Close()
 		return nil, fmt.Errorf("the YDB driver's connection %T no longer offers what Ptah binds through", opened)
 	}
-	return conn{sdkConn: sdk, driver: c.sdk, prefix: c.prefix}, nil
+	return conn{sdkConn: sdk, driver: c.sdk, prefix: c.prefix, root: c.root, state: &connState{}}, nil
 }
 
 // Driver returns the SDK's driver.
@@ -92,18 +99,76 @@ type conn struct {
 	sdkConn
 	driver *ydbsdk.Driver
 	prefix string
+	// root is the absolute path the connection treats as its database, empty
+	// when it is the driver's own database.
+	root string
+	// state is what the connection knows about itself between calls;
+	// database/sql uses a connection from one goroutine at a time.
+	state *connState
+}
+
+// connState is the state of one connection.
+type connState struct {
+	// inTransaction is set while a transaction the connection began is open.
+	inTransaction bool
 }
 
 // ExecContext runs a statement after the connection's prefix and returns its
 // error without stack frames.
+//
+// A query that runs one of Ptah's comment statements (see
+// [ydbcomment.Recognize]) is not sent to YDB, which has no COMMENT statement:
+// it is run through the table service as a change of the object's user
+// attributes, outside any transaction, as YDB runs every scheme statement
+// (see [RunCommentStatement]). The connection's prefix is read with it, so a
+// relative path names an object inside a dev realm as it names a table
+// there. It is refused inside a transaction, where it could not be rolled
+// back, and with arguments, which it takes none of.
 func (c conn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	comment, recognized, err := ydbcomment.Recognize(c.prefix + query)
+	switch {
+	case err != nil:
+		return nil, err
+	case recognized:
+		return c.runComment(ctx, comment, args)
+	}
 	result, err := c.sdkConn.ExecContext(ctx, c.prefix+query, args)
 	return result, WithoutStackFrames(err)
 }
 
+// runComment runs one of Ptah's comment statements through the scheme and
+// table services of the driver the connection belongs to.
+func (c conn) runComment(ctx context.Context, query ydbcomment.Query, args []driver.NamedValue) (driver.Result, error) {
+	switch {
+	case len(args) > 0:
+		return nil, fmt.Errorf("%w: a comment statement takes no arguments, and %d were given",
+			ydbcomment.ErrStatement, len(args))
+	case c.state != nil && c.state.inTransaction:
+		return nil, fmt.Errorf("%w: a comment statement runs outside a transaction, as YDB runs every "+
+			"scheme statement, and this connection has one open", ydbcomment.ErrStatement)
+	case c.driver == nil:
+		return nil, errNoTableService
+	}
+	root := c.root
+	if root == "" {
+		root = c.driver.Name()
+	}
+	connection := ydbsdk.GRPCConn(c.driver)
+	service := newGRPCAttributes(Ydb_Scheme_V1.NewSchemeServiceClient(connection), Ydb_Table_V1.NewTableServiceClient(connection))
+	if err := RunCommentStatement(ctx, service, c.driver.Name(), root, query); err != nil {
+		return nil, err
+	}
+	return driver.ResultNoRows, nil
+}
+
 // QueryContext runs a query after the connection's prefix and wraps the result
-// set it returns.
+// set it returns. A comment statement returns no rows, and is refused here
+// rather than sent to YDB, which would answer with a parse error.
 func (c conn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+	if _, recognized, err := ydbcomment.Recognize(query); err != nil || recognized {
+		return nil, errors.Join(err, fmt.Errorf("%w: a comment statement returns no rows; execute it",
+			ydbcomment.ErrStatement))
+	}
 	return wrapRows(c.sdkConn.QueryContext(ctx, c.prefix+query, args))
 }
 
@@ -149,21 +214,24 @@ func wrapStmt(prepared driver.Stmt, err error) (driver.Stmt, error) {
 
 // BeginTx starts a transaction and wraps it.
 func (c conn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
-	return wrapTx(c.sdkConn.BeginTx(ctx, opts))
+	return c.wrapTx(c.sdkConn.BeginTx(ctx, opts))
 }
 
 // Begin starts a transaction without a context or options and wraps it.
 func (c conn) Begin() (driver.Tx, error) {
-	return wrapTx(c.sdkConn.Begin())
+	return c.wrapTx(c.sdkConn.Begin())
 }
 
-// wrapTx wraps a transaction the SDK began, or returns its error without
-// stack frames.
-func wrapTx(begun driver.Tx, err error) (driver.Tx, error) {
+// wrapTx wraps a transaction the SDK began, and marks the connection as in
+// it until it ends, or returns its error without stack frames.
+func (c conn) wrapTx(begun driver.Tx, err error) (driver.Tx, error) {
 	if err != nil {
 		return nil, WithoutStackFrames(err)
 	}
-	return tx{inner: begun}, nil
+	if c.state != nil {
+		c.state.inTransaction = true
+	}
+	return tx{inner: begun, state: c.state}, nil
 }
 
 // Ping checks the connection and returns its error without stack frames.
@@ -176,10 +244,25 @@ func (c conn) Ping(ctx context.Context) error {
 // transaction its optimistic locks lost, so it is the error a retry names.
 type tx struct {
 	inner driver.Tx
+	state *connState
 }
 
-func (t tx) Commit() error   { return WithoutStackFrames(t.inner.Commit()) }
-func (t tx) Rollback() error { return WithoutStackFrames(t.inner.Rollback()) }
+func (t tx) Commit() error {
+	t.end()
+	return WithoutStackFrames(t.inner.Commit())
+}
+
+func (t tx) Rollback() error {
+	t.end()
+	return WithoutStackFrames(t.inner.Rollback())
+}
+
+// end marks the connection as out of the transaction.
+func (t tx) end() {
+	if t.state != nil {
+		t.state.inTransaction = false
+	}
+}
 
 // sdkRows is what database/sql uses of a ydb-go-sdk result set, checked when
 // a query returns one, as [sdkConn] is when a connection is made.

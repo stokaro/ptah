@@ -20,9 +20,9 @@ type recordingConn struct {
 
 func (recordingConn) Prepare(string) (driver.Stmt, error) { return nil, errors.New("not used") }
 func (recordingConn) Close() error                        { return nil }
-func (recordingConn) Begin() (driver.Tx, error)           { return nil, errors.New("not used") }
+func (recordingConn) Begin() (driver.Tx, error)           { return recordingTx{}, nil }
 func (recordingConn) BeginTx(context.Context, driver.TxOptions) (driver.Tx, error) {
-	return nil, errors.New("not used")
+	return recordingTx{}, nil
 }
 func (recordingConn) PrepareContext(context.Context, string) (driver.Stmt, error) {
 	return nil, errors.New("not used")
@@ -39,6 +39,12 @@ func (recordingConn) CheckNamedValue(*driver.NamedValue) error { return nil }
 func (recordingConn) ResetSession(context.Context) error       { return nil }
 func (recordingConn) IsValid() bool                            { return true }
 func (recordingConn) Driver() driver.Driver                    { return nil }
+
+// recordingTx is a transaction that commits and rolls back nothing.
+type recordingTx struct{}
+
+func (recordingTx) Commit() error   { return nil }
+func (recordingTx) Rollback() error { return nil }
 
 // recordingConnector hands out recordingConn.
 type recordingConnector struct {
