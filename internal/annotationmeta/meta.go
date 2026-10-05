@@ -10,6 +10,7 @@ import (
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/ydbchangefeed"
+	"ptah.run/internal/ydbcolumn"
 	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbexternal"
 	"ptah.run/internal/ydbfamily"
@@ -415,6 +416,9 @@ var directives = []Directive{
 			attr(ydbpartition.AttributeMinPartitions, "YDB: the fewest partitions the index's table keeps.", valueString, false, false),
 			attr(ydbpartition.AttributeMaxPartitions, "YDB: the most partitions the index's table splits into.", valueString, false, false),
 			attr(ydbpartition.AttributeReadReplicas, "YDB: the index's read replicas, PER_AZ:<n> or ANY_AZ:<n>.", valueString, false, false),
+			attr("false_positive_probability", "YDB local Bloom index: false-positive probability between zero and one.", valueString, false, false),
+			attr("ngram_size", "YDB local n-gram index: token length.", valueString, false, false),
+			attr("case_sensitive", "YDB local n-gram index: case-sensitive matching.", valueString, false, false),
 			attr("tokenizer", "YDB full-text index: tokenizer.", valueString, false, false),
 			attr("language", "YDB full-text index: language.", valueString, false, false),
 			attr("use_filter_lowercase", "YDB full-text index: use filter lowercase.", valueString, false, false),
@@ -600,6 +604,10 @@ var directives = []Directive{
 			attr(rowdeletion.AttributeUnit, "YDB TTL on an integer column: what the column counts since the Unix epoch, SECONDS, MILLISECONDS, MICROSECONDS or NANOSECONDS.", valueString, false, false),
 			// A YDB row table's settings, named for the settings they become,
 			// as an index's partitioning is.
+			attr(ydbcolumn.AttributeStore, "YDB table storage: ROW or COLUMN.", valueString, false, false),
+			attr(ydbcolumn.AttributeHash, "YDB column table: hash-partitioning columns, separated by commas.", valueString, false, false),
+			attr(ydbcolumn.AttributeShards, "YDB column table: initial shard count.", valueString, false, false),
+			attr(ydbcolumn.AttributeTTL, "YDB column table: JSON retention policy with column, optional unit and tiers.", valueString, false, false),
 			attr(ydbpartition.AttributeBySize, "YDB: whether the table splits a partition that grows past its size, ENABLED or DISABLED.",
 				valueString, false, false),
 			attr(ydbpartition.AttributePartitionSizeMB, "YDB: the size in MB at which the table splits a partition.",

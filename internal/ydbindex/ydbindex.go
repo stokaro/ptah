@@ -47,6 +47,12 @@ const (
 	FullTextPlain
 	// FullTextRelevance also stores data used to rank full-text matches.
 	FullTextRelevance
+	// LocalBloom is a column-table Bloom filter.
+	LocalBloom
+	// LocalNgram is a column-table n-gram Bloom filter.
+	LocalNgram
+	// LocalMinMax stores per-portion value bounds.
+	LocalMinMax
 )
 
 // VectorMethod is the access method a vector index declares, as YQL writes it
@@ -75,6 +81,12 @@ func KindOf(method string) (Kind, error) {
 		return FullTextPlain, nil
 	case "FULLTEXT RELEVANCE", "GLOBAL USING FULLTEXT RELEVANCE":
 		return FullTextRelevance, nil
+	case "BLOOM FILTER", "LOCAL USING BLOOM FILTER":
+		return LocalBloom, nil
+	case "BLOOM NGRAM FILTER", "LOCAL USING BLOOM NGRAM FILTER":
+		return LocalNgram, nil
+	case "MIN MAX", "LOCAL USING MIN MAX":
+		return LocalMinMax, nil
 	case "HNSW", "IVFFLAT":
 		return 0, fmt.Errorf("index method %q is pgvector's and has no YDB counterpart: YDB's vector index "+
 			"is %s, declared with type %q and its distance or similarity, vector_type, vector_dimension, "+
@@ -92,6 +104,8 @@ func KindOf(method string) (Kind, error) {
 // rather than this clause.
 func (k Kind) Clause(unique bool) string {
 	switch {
+	case k.IsLocal():
+		return "LOCAL USING " + k.String()
 	case k == Async:
 		return "GLOBAL ASYNC"
 	case k == Vector || k.IsFullText():
@@ -113,6 +127,12 @@ func (k Kind) String() string {
 		return "async"
 	case Vector:
 		return VectorMethod
+	case LocalBloom:
+		return "bloom_filter"
+	case LocalNgram:
+		return "bloom_ngram_filter"
+	case LocalMinMax:
+		return "min_max"
 	case FullTextPlain:
 		return FullTextPlainMethod
 	case FullTextRelevance:
@@ -163,13 +183,16 @@ type Column struct {
 // indexes and the planner of an index added to a table that exists, so the two
 // cannot accept different indexes.
 func ShapeRefusal(index Shape, key []string, column func(string) (Column, bool)) string {
+	if reason := localShapeRefusal(index); reason != "" {
+		return reason
+	}
 	if index.Kind.IsFullText() {
 		if reason := fullTextShapeRefusal(index, key, column); reason != "" {
 			return reason
 		}
 	}
 
-	if index.Kind != Vector && slices.Equal(index.Columns, key) {
+	if !index.Kind.IsLocal() && index.Kind != Vector && slices.Equal(index.Columns, key) {
 		return "its columns are the table's key, which YDB refuses (`index keys shouldn't be table keys`)"
 	}
 	for _, covered := range index.Cover {
@@ -182,6 +205,10 @@ func ShapeRefusal(index Shape, key []string, column func(string) (Column, bool))
 		switch {
 		case !ok:
 			return fmt.Sprintf("it names column %q, which the table does not declare", name)
+		case index.Kind.IsLocal():
+			if reason := localColumnRefusal(index.Kind, name, declared); reason != "" {
+				return reason
+			}
 		case index.Kind.IsFullText() && position == len(index.Columns)-1:
 			if declared.Type != ydbtype.String && declared.Type != ydbtype.Utf8 {
 				return fmt.Sprintf("its text column %q is %s; a full-text index reads String or Utf8", name, declared.Type)
@@ -222,6 +249,20 @@ func fullTextShapeRefusal(index Shape, key []string, column func(string) (Column
 	primary, known := column(key[0])
 	if !known || primary.Type != ydbtype.Uint64 {
 		return "a YDB full-text index requires a Uint64 primary key column"
+	}
+	return ""
+}
+
+func localShapeRefusal(index Shape) string {
+	if (index.Kind == LocalNgram || index.Kind == LocalMinMax) && len(index.Columns) != 1 {
+		return "this local index method requires exactly one column"
+	}
+	return ""
+}
+
+func localColumnRefusal(kind Kind, name string, column Column) string {
+	if kind == LocalNgram && column.Type != ydbtype.Utf8 {
+		return fmt.Sprintf("n-gram index column %q must be Utf8", name)
 	}
 	return ""
 }

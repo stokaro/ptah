@@ -640,6 +640,7 @@ func tableAnnotation(table schemamodel.Table) string {
 		{name: "comment", value: table.Comment, set: table.Comment != ""},
 	}
 	attrs = append(attrs, rowDeletionAttrs(table.RowDeletionPolicy)...)
+	attrs = append(attrs, columnStoreAttrs(table.YDBColumnTable)...)
 	return annotation("ptah:schema:table", append(attrs, tablePartitioningAttrs(table.YDBPartitioning)...)...)
 }
 
@@ -1694,11 +1695,15 @@ func (ctx *renderContext) writeResourcePools(w *sourceWriter) {
 // fullTextAttrs preserves full-text WITH options in the exported Go declaration.
 func fullTextAttrs(index schemamodel.Index) []attr {
 	kind, err := ydbindex.KindOf(index.Type)
-	if err != nil || !kind.IsFullText() {
+	if err != nil || (!kind.IsFullText() && !kind.IsLocal()) {
 		return nil
 	}
 	var attrs []attr
-	for _, name := range ydbindex.FullTextAttributes() {
+	names := ydbindex.FullTextAttributes()
+	if kind.IsLocal() {
+		names = ydbindex.LocalAttributes()
+	}
+	for _, name := range names {
 		value, present := index.StorageParams[name]
 		attrs = append(attrs, attr{name: name, value: value, set: present})
 	}
@@ -1710,7 +1715,13 @@ func fullTextAttrs(index schemamodel.Index) []attr {
 func validateFullTextIndexes(indexes []schemamodel.Index) error {
 	for _, index := range indexes {
 		kind, err := ydbindex.KindOf(index.Type)
-		if err != nil || !kind.IsFullText() {
+		if err != nil || (!kind.IsFullText() && !kind.IsLocal()) {
+			continue
+		}
+		if kind.IsLocal() {
+			if _, err := ydbindex.ResolveLocal(kind, index.StorageParams); err != nil {
+				return fmt.Errorf("index %q: %w", index.Name, err)
+			}
 			continue
 		}
 		if _, err := ydbindex.ResolveFullText(index.StorageParams); err != nil {

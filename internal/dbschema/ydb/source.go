@@ -61,10 +61,11 @@ type Source interface {
 // pinned protocol buffers do not know, where the reader decodes a vector index
 // and refuses every other kind by name.
 type grpcSource struct {
-	scheme Ydb_Scheme_V1.SchemeServiceClient
-	table  Ydb_Table_V1.TableServiceClient
-	view   Ydb_View_V1.ViewServiceClient
-	topic  Ydb_Topic_V1.TopicServiceClient
+	connection *Connection
+	scheme     Ydb_Scheme_V1.SchemeServiceClient
+	table      Ydb_Table_V1.TableServiceClient
+	view       Ydb_View_V1.ViewServiceClient
+	topic      Ydb_Topic_V1.TopicServiceClient
 	// replication is the replication service, which describes an async
 	// replication and a transfer. local-ydb leaves it out of the services it
 	// starts (its configuration lists them, and `replication` is not among

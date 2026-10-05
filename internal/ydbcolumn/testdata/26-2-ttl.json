@@ -1,0 +1,75 @@
+{
+  "Status": "StatusSuccess",
+  "Path": "/local/col_tier_probe",
+  "PathDescription": {
+    "ColumnTableDescription": {
+      "IsRestore": false,
+      "ColumnShardCount": 1,
+      "Schema": {
+        "Options": {
+          "SchemeNeedActualization": false
+        },
+        "NextColumnId": 3,
+        "KeyColumnNames": [
+          "at",
+          "id"
+        ],
+        "Version": "1",
+        "Columns": [
+          {
+            "NotNull": true,
+            "Id": 1,
+            "StorageId": "",
+            "DefaultValue": {},
+            "TypeId": 50,
+            "Type": "Timestamp",
+            "Name": "at"
+          },
+          {
+            "NotNull": true,
+            "Id": 2,
+            "StorageId": "",
+            "DefaultValue": {},
+            "TypeId": 4,
+            "Type": "Uint64",
+            "Name": "id"
+          }
+        ]
+      },
+      "Sharding": {
+        "ColumnShards": [
+          "72075186224038567"
+        ],
+        "HashSharding": {
+          "Function": 2,
+          "Columns": [
+            "id"
+          ]
+        }
+      },
+      "StorageConfig": {
+        "DataChannelCount": 64
+      },
+      "Name": "col_tier_probe",
+      "TtlSettings": {
+        "Version": "2",
+        "Enabled": {
+          "Tiers": [
+            {
+              "ApplyAfterSeconds": 86400,
+              "EvictToExternalStorage": {
+                "Storage": "/local/col_archive"
+              }
+            },
+            {
+              "Delete": {},
+              "ApplyAfterSeconds": 604800
+            }
+          ],
+          "ExpireAfterSeconds": 604800,
+          "ColumnName": "at"
+        }
+      }
+    }
+  }
+}

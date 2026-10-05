@@ -115,6 +115,7 @@ func reverseTableDiffs(tableDiffs []difftypes.TableDiff, prior *schemamodel.Data
 			YDBColumnFamiliesChange: reverseColumnFamiliesChange(tableDiff.YDBColumnFamiliesChange),
 			ChangefeedsChange:       reverseChangefeedsChange(tableDiff.ChangefeedsChange),
 			YDBPartitioningChange:   reversePartitioningChange(tableDiff.YDBPartitioningChange),
+			YDBColumnTableChange:    reverseColumnTableChange(tableDiff.YDBColumnTableChange),
 		}
 	}
 	return reversed
@@ -266,4 +267,11 @@ func priorTableCreation(prior *schemamodel.Database, name string) difftypes.Tabl
 	// constraint, so a copy here is a third (stokaro/ptah#2583).
 	// nestedCoverageExempt records that, so it is a decision and not a gap.
 	return creation
+}
+
+func reverseColumnTableChange(change *difftypes.YDBColumnTableChange) *difftypes.YDBColumnTableChange {
+	if change == nil {
+		return nil
+	}
+	return &difftypes.YDBColumnTableChange{Desired: change.Current.Clone(), Current: change.Desired.Clone()}
 }

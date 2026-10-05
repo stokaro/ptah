@@ -855,6 +855,9 @@ type Table struct {
 	// omitzero keeps the JSON of a table declaring none byte-identical, and
 	// with it the desired-schema fingerprint a plan records.
 	YDBPartitioning *ast.YDBTablePartitioningSpec `json:",omitzero"`
+	// YDBColumnTable selects column-oriented storage and its hash partitioning.
+	// Nil selects row storage. Other dialects refuse this declaration.
+	YDBColumnTable *ast.YDBColumnTableSpec `json:",omitzero"`
 
 	// DependsOn names tables this one must be created after, beyond the ones
 	// its foreign keys imply. See [BuildDependencyGraph] for what a declared

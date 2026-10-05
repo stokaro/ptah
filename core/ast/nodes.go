@@ -178,6 +178,9 @@ type CreateTableNode struct {
 	// filter and the partitions it starts with; nil for a table declaring
 	// none of them. See [YDBTablePartitioningSpec].
 	YDBPartitioning *YDBTablePartitioningSpec
+	// YDBColumnTable selects column-oriented storage and its hash partitioning.
+	// Nil selects row storage. Other dialects refuse this declaration.
+	YDBColumnTable *YDBColumnTableSpec
 }
 
 // RowDeletionPolicySpec is a table's row deletion policy: the engine deletes a

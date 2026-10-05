@@ -522,3 +522,18 @@ The parser is intentionally strict:
 - A `default_privileges` entry must name its grantor, schema, object type,
   grantee and privileges, and every `grantable` name must be one of the
   privileges it grants.
+
+## YDB Column Storage
+
+A table's `schema` names its database schema or YDB directory. Its
+`column_store` block selects column storage. `hash_columns` names the
+hash key, `partitions` sets its initial shard count, and `ttl` holds an optional
+eviction policy. Each TTL tier declares an `interval` and an absolute
+`external_source` path; omitting the source means deletion and is allowed only
+on the last tier. A deletion-only policy uses `row_deletion_policy` instead.
+
+Local indexes use `type: bloom_filter`, `bloom_ngram_filter`, or `min_max`.
+Bloom methods accept `false_positive_probability`; the n-gram method also
+accepts `ngram_size` and `case_sensitive`. See the
+[YDB reference](site/src/content/docs/databases/ydb.md#column-tables-and-local-indexes)
+for limits, cluster flags and examples.

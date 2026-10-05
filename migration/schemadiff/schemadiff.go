@@ -335,6 +335,7 @@ func compareReportingUndecidedAdditions(
 	desired = normalizeGeneratedColumnsForCompare(desired, opts)
 	desired = compare.AdoptUndescribedChangefeeds(desired, database, opts.Dialect, identifierSemantics)
 	desired = compare.AdoptTransferConsumers(desired, database, opts.Dialect, identifierSemantics)
+	desired = compare.AdoptUndescribedColumnTables(desired, database, opts.Dialect, identifierSemantics)
 	desired = compare.AdoptHeldColumnFamilies(desired, database, opts.Dialect, identifierSemantics)
 	desired = compare.AdoptUndescribedRowDeletionPolicies(desired, database, opts.Dialect, identifierSemantics)
 

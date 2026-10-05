@@ -554,6 +554,7 @@ func (r *renderer) renderBody() {
 	r.reportDialectScopes()
 	r.reportExportMetadata()
 	r.reportColumnFamilies()
+	r.reportColumnTables()
 	r.reportChangefeeds()
 	r.reportSecrets()
 	r.reportExternalObjects()

@@ -348,7 +348,7 @@ func TestWriter_DropAllTables(t *testing.T) {
 		"/local/nodes":   {entry("ptah_locks", Ydb_Scheme.Entry_COORDINATION_NODE)},
 		"/local/queues":  {entry("events", Ydb_Scheme.Entry_TOPIC), entry("olap", Ydb_Scheme.Entry_COLUMN_TABLE)},
 		"/local/z":       {entry("files", Ydb_Scheme.Entry_EXTERNAL_TABLE)},
-	}, readers: map[string][]string{"/local/app/s3": {"/local/z/files"}}}
+	}, readers: map[string][]string{"/local/app/s3": {"/local/z/files", "/local/queues/olap"}}}
 	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
 
 	err := writer.DropAllTables(context.Background())
@@ -357,6 +357,8 @@ func TestWriter_DropAllTables(t *testing.T) {
 	c.Assert(fake.executed, qt.DeepEquals, []string{
 		"DROP VIEW `v`",
 		"DROP VIEW `app/v2`",
+		"DROP TABLE `olap`",
+		"DROP TABLE `queues/olap`",
 		"DROP EXTERNAL TABLE `z/files`",
 		"DROP EXTERNAL DATA SOURCE `app/s3`",
 		"DROP SECRET `app/pw`",
@@ -369,13 +371,14 @@ func TestWriter_DropAllTables(t *testing.T) {
 		"DROP TOPIC `queues/events`",
 		"DROP TABLE `t1`",
 	})
-	c.Assert(fake.removed, qt.DeepEquals, []string{"/local/app/sub", "/local/app", "/local/mixed", "/local/nodes", "/local/z"})
+	c.Assert(fake.removed, qt.DeepEquals, []string{"/local/app/sub", "/local/app", "/local/mixed", "/local/nodes", "/local/queues", "/local/z"})
 	var left []string
 	for _, kept := range fake.tree["/local"] {
 		left = append(left, kept.GetName())
 	}
-	c.Assert(left, qt.DeepEquals, []string{".hidden", ".sys", "keep", "olap", "ptah_dev", "ptah_locks", "queues"})
-	c.Assert(fake.tree["/local/queues"], qt.HasLen, 1)
+	c.Assert(left, qt.DeepEquals, []string{".hidden", ".sys", "keep", "ptah_dev", "ptah_locks"})
+	_, queuesRemain := fake.tree["/local/queues"]
+	c.Assert(queuesRemain, qt.IsFalse)
 }
 
 // Every transfer and then every async replication goes first, before the
@@ -452,10 +455,10 @@ func TestWriter_DropDirectory(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(fake.executed, qt.DeepEquals, []string{
+		"DROP TABLE `probe/olap`",
 		"DROP EXTERNAL TABLE `probe/zz/et`",
 		"DROP EXTERNAL DATA SOURCE `probe/es`",
 		"DROP COORDINATION NODE `probe/locks`",
-		"DROP TABLE `probe/olap`",
 		"DROP TOPIC `probe/rb/events`",
 		"DROP TABLE `probe/rb/t\\`2`",
 		"DROP TABLE `probe/t`",
