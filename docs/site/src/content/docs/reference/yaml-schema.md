@@ -293,7 +293,8 @@ map with a `table` key.
 | `fields` / `columns` | Indexed columns. Required. |
 | `include` | Covered columns: `INCLUDE` on the PostgreSQL family, `COVER` on YDB. |
 | `unique` | Builds a unique index. |
-| `type` | Dialect-specific index type; `async` or `vector_kmeans_tree` on YDB. |
+| `type` | Dialect-specific index type; `async`, `vector_kmeans_tree`, `fulltext_plain` or `fulltext_relevance` on YDB. |
+| Full-text analyzer attributes | YDB [full-text indexes](../../databases/ydb/#full-text-indexes). |
 | `where` / `condition` | Partial-index condition where the target has one. |
 | `ops` | Operator class. |
 | `granularity` | ClickHouse data-skipping index granularity. |

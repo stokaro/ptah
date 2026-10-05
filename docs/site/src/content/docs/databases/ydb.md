@@ -35,7 +35,7 @@ against live YDB 26.2 and 25.1 servers. The nightly capability matrix runs the
 same suite on each YDB line it probes.
 
 `ptah-compat` takes a YDB URL on every verb; see [ptah-compat](#ptah-compat).
-Inference and the YDB object families such as full-text and JSON
+Inference and the YDB object families such as JSON
 indexes are not supported yet. See
 [What is not supported yet](#what-is-not-supported-yet).
 
@@ -408,6 +408,56 @@ A plan refuses a change to a sequence that YDB would turn against the table:
 increment below 1. The read reports a sequence's start, increment and last
 restart. `YD107` and `YD108` in `ptah migrations lint` report the same traps in
 a migration written by hand.
+
+## Full-text indexes
+
+YDB 26.2 builds `fulltext_plain` indexes for text matching and
+`fulltext_relevance` indexes for ranked matching. Enable `EnableFulltextIndex`
+on the cluster and include `monitoring=http://host:8765` in the connection URL
+so Ptah reads the `full_text_indexes` capability. YDB 25.1 has neither the
+index family nor its flag.
+
+The table must have one primary key column of type `Uint64`. The index must
+name one `String` or `Utf8` column. This release does not accept prefix columns
+or unique full-text indexes. Ptah preserves the internal tables' default
+partitioning; custom internal-table settings are refused when reading them.
+
+Declare the analyzer in the same attributes in Go and YAML:
+
+```yaml
+tables:
+  documents:
+    columns:
+      id: {type: Uint64, primary: true}
+      body: {type: Utf8}
+    indexes:
+      documents_text:
+        fields: [body]
+        type: fulltext_relevance
+        tokenizer: standard
+        use_filter_lowercase: true
+```
+
+The index renders as:
+
+```sql
+INDEX `documents_text` GLOBAL USING fulltext_relevance ON (`body`) WITH (tokenizer=standard, use_filter_lowercase=true)
+```
+
+| Attribute | Value |
+| --- | --- |
+| `tokenizer` | Required: `standard`, `whitespace` or `keyword` |
+| `language` | Analyzer language name |
+| `use_filter_lowercase`, `use_filter_stopwords`, `use_filter_snowball` | `true` or `false` |
+| `use_filter_ngram`, `use_filter_edge_ngram` | `true` or `false`; either enabled filter requires both n-gram bounds |
+| `filter_ngram_min_length`, `filter_ngram_max_length` | Nonnegative integer bounds |
+| `use_filter_length` | `true` or `false` |
+| `filter_length_min`, `filter_length_max` | Nonnegative integer bounds |
+
+Changing the method or analyzer settings drops and rebuilds the index.
+Reading a schema preserves explicit `false` settings. Comparing treats a
+missing boolean filter as `false`, so an unchanged declaration plans no work.
+Unknown analyzer settings are refused instead of disappearing from export.
 
 ## Views
 
@@ -1671,6 +1721,7 @@ The flags decide these capabilities:
 | `EnableTopicAutopartitioningForCDC` | `changefeed_topic_auto_partitioning` |
 | `EnableResourcePools` | `resource_pools` |
 | `EnableVectorIndex` | `vector_indexes` |
+| `EnableFulltextIndex` | `full_text_indexes` |
 | `EnableTopicTransfer` | `transfers` |
 | `EnableReplication` | `async_replication` |
 | `EnableTableCacheModes` | `column_family_cache_mode` |
@@ -1711,8 +1762,8 @@ the [support matrix](../support-matrix/).
 database read every row table under the database root, its columns, defaults,
 `Serial` columns with their sequence's start, increment and last restart,
 primary key, TTL, column families with the columns each holds, and global
-indexes, with each index's partitioning and read replicas, its vector indexes
-with their settings, its changefeeds, each with the retention and the
+indexes, with each index's partitioning and read replicas, its vector and
+full-text indexes with their settings, its changefeeds, each with the retention and the
 consumers of its topic, the table's own partitioning, read replicas and key
 bloom filter, every view with the query the server stores, every topic with
 its settings and consumers, every async replication and transfer with its
@@ -1734,7 +1785,7 @@ consumer, the replica tables an async replication writes, and external data sour
 and tables on a server without the `external_data_sources` key. A command
 reports them, and a plan neither drops nor changes them.
 
-An index kind Ptah cannot read, such as a full-text index, is refused by name
+An index kind Ptah cannot read, such as a column-table local index, is refused by name
 rather than read as a plain index, and so is a vector index holding a setting
 Ptah does not model, such as the `overlap_clusters` 26.2 takes.
 
@@ -2120,7 +2171,7 @@ These are refused with a message that names what is missing:
 
 <!-- BEGIN GENERATED YDB GAPS -->
 - a YQL file as the desired schema (Go structs and YAML schemas work);
-- full-text, JSON and column-table indexes;
+- JSON and column-table indexes;
 - `ptah inference` and the inference tools of `ptah mcp`, which store their vectors through pgvector.
 <!-- END GENERATED YDB GAPS -->
 

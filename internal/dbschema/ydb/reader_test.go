@@ -880,13 +880,13 @@ func TestReader_PlainTableRecordsNoSetting(t *testing.T) {
 	}
 }
 
-// fulltextIndex is an index described with a type the pinned protocol buffers
+// unreadBloomIndex is an index described with a type the pinned protocol buffers
 // do not model and the reader does not read: the oneof is empty, and the kind
-// sits in field 10 of the message, global_fulltext_plain_index, as bytes the
+// sits in field 12 of the message, local_bloom_filter_index, as bytes the
 // decoder keeps unread.
-func fulltextIndex() *Ydb_Table.TableIndexDescription {
+func unreadBloomIndex() *Ydb_Table.TableIndexDescription {
 	index := &Ydb_Table.TableIndexDescription{Name: "body_idx", IndexColumns: []string{"body"}}
-	unknown := protowire.AppendTag(nil, 10, protowire.BytesType)
+	unknown := protowire.AppendTag(nil, 12, protowire.BytesType)
 	unknown = protowire.AppendBytes(unknown, nil)
 	index.ProtoReflect().SetUnknown(unknown)
 	return index
@@ -906,12 +906,12 @@ func TestReader_FailurePath(t *testing.T) {
 				directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
 				tables: map[string]*Ydb_Table.DescribeTableResult{"/local/t": func() *Ydb_Table.DescribeTableResult {
 					described := plainTable(&Ydb_Table.ColumnMeta{Name: "body", Type: optional(primitive(Ydb.Type_UTF8))})
-					described.Indexes = []*Ydb_Table.TableIndexDescription{fulltextIndex()}
+					described.Indexes = []*Ydb_Table.TableIndexDescription{unreadBloomIndex()}
 					return described
 				}()},
 			},
-			wantErr: `YDB table /local/t: index "body_idx" is a fulltext_plain index: reading or creating ` +
-				`a YDB full-text, JSON or column-table index is not implemented yet \(stokaro/ptah#4015, phase 10\)`,
+			wantErr: `YDB table /local/t: index "body_idx" is a bloom_filter index: reading or creating ` +
+				`a YDB JSON or column-table index is not implemented yet \(stokaro/ptah#4015, phase 10\)`,
 		},
 		{
 			// The scheme service lists it as a row table, so a description that

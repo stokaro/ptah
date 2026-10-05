@@ -229,6 +229,7 @@ func measuredLines() map[string]measuredLine {
 				capability.IndexRename:                     indexKeyCarried,
 				capability.IndexPartitioning:               indexKeyCarried,
 				capability.VectorIndexes:                   vectorKeyCarried,
+				capability.FullTextIndexes:                 fullTextKeyCarried,
 				capability.VectorIndexMaintainedOnWrite:    vectorKeyCarried,
 				capability.VectorBitType:                   vectorKeyCarried,
 				capability.RoleMembership:                  accessKeyCarried,
@@ -408,6 +409,7 @@ func measuredLines() map[string]measuredLine {
 				capability.IndexRename:                     indexKeyCarried,
 				capability.IndexPartitioning:               indexKeyCarried,
 				capability.VectorIndexes:                   vectorKeyCarried,
+				capability.FullTextIndexes:                 fullTextKeyCarried,
 				capability.VectorIndexMaintainedOnWrite:    vectorKeyCarried,
 				capability.VectorBitType:                   vectorKeyCarried,
 				capability.RoleMembership:                  accessKeyCarried,
@@ -588,6 +590,7 @@ func measuredLines() map[string]measuredLine {
 				capability.IndexRename:                     indexKeyCarried,
 				capability.IndexPartitioning:               indexKeyCarried,
 				capability.VectorIndexes:                   vectorKeyCarried,
+				capability.FullTextIndexes:                 fullTextKeyCarried,
 				capability.VectorIndexMaintainedOnWrite:    vectorKeyCarried,
 				capability.VectorBitType:                   vectorKeyCarried,
 				capability.RoleMembership:                  accessKeyCarried,
@@ -865,3 +868,6 @@ const externalKeyCarried = "this run predates the key and sent no external objec
 
 const secretKeyCarried = "this run predates the key and sent no secret experiment; the probe asks it on " +
 	"every run, and the value here is the preset's"
+
+// fullTextKeyCarried records that the historical runs predate this key.
+const fullTextKeyCarried = "this run predates the YDB full-text key; the current probe asks its own DDL on every engine"

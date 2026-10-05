@@ -33,6 +33,8 @@ type indexClause struct {
 	// vector is a vector index's settings, resolved; it is written as the
 	// clause's WITH (...), the one place YDB takes them.
 	vector ast.VectorIndexSpec
+	// fullText holds normalized text-analysis options for the WITH clause.
+	fullText map[string]string
 }
 
 func (c indexClause) String() string {
@@ -49,6 +51,9 @@ func (c indexClause) String() string {
 	}
 	if c.kind == ydbindex.Vector {
 		clause += " " + ydbindex.VectorClause(c.vector)
+	}
+	if c.kind.IsFullText() {
+		clause += " " + ydbindex.FullTextClause(c.fullText)
 	}
 	return clause
 }
@@ -141,6 +146,10 @@ func (r *Renderer) indexClauseOf(index *ast.IndexNode) (indexClause, error) {
 		clause.vector, err = r.vectorSettings(subject, index)
 		return clause, err
 	}
+	if kind.IsFullText() {
+		clause.fullText, err = r.fullTextSettings(subject, index)
+		return clause, err
+	}
 	clause.settings, err = r.indexSettings(subject, index.Partitioning)
 	if err != nil {
 		return indexClause{}, err
@@ -194,7 +203,7 @@ func (r *Renderer) refuseIndexDeclarations(subject string, index *ast.IndexNode,
 		return refuseFact(subject, "YDB has no index operator class")
 	case index.Granularity != 0:
 		return refuseFact(subject, "GRANULARITY is ClickHouse's")
-	case len(index.StorageParams) > 0 && !vector:
+	case len(index.StorageParams) > 0 && !vector && !kind.IsFullText():
 		return refuseFact(subject, "a YDB global index takes no storage parameters; its settings are its "+
 			"partitioning and read replicas, declared with the auto_partitioning_* and read_replicas_settings attributes")
 	case index.Vector != nil && !vector:
@@ -346,4 +355,23 @@ func (r *Renderer) renderDropIndex(node *ast.DropIndexNode) error {
 	}
 	r.w.WriteLinef("ALTER TABLE %s DROP INDEX %s;", tablePath(node.Table), quote(node.Name))
 	return nil
+}
+
+// fullTextSettings validates full-text options before the renderer writes DDL.
+func (r *Renderer) fullTextSettings(subject string, index *ast.IndexNode) (map[string]string, error) {
+	switch {
+	case !r.caps.Has(capability.FullTextIndexes):
+		return nil, refuseKey(capability.FullTextIndexes, subject+" is a full-text index")
+	case index.Unique:
+		return nil, refuseFact(subject, "a YDB full-text index cannot be unique")
+	case len(index.EffectiveParts()) != 1:
+		return nil, refuseFact(subject, "a YDB full-text index requires exactly one text column; this release does not support prefix columns")
+	case !index.Partitioning.IsZero():
+		return nil, refuseFact(subject, "Ptah does not alter a full-text index's internal table partitioning")
+	}
+	options, err := ydbindex.ResolveFullText(index.StorageParams)
+	if err != nil {
+		return nil, refuseFact(subject, err.Error())
+	}
+	return options, nil
 }

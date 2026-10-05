@@ -383,6 +383,10 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 	if err != nil {
 		return err
 	}
+	fullText, err := ydbindex.ParseFullTextDeclaration(kv)
+	if err != nil {
+		return fmt.Errorf("index %q at %s: %w", kv["name"], structName, err)
+	}
 	s.schemaIndexes = append(s.schemaIndexes, schemamodel.Index{
 		StructName:     structName,
 		Name:           kv["name"],
@@ -400,6 +404,7 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 		Granularity:    granularity, // CH only: GRANULARITY n for data-skipping indexes
 		Partitioning:   partitioning,
 		Vector:         vector,
+		StorageParams:  fullText,
 	})
 	return nil
 }

@@ -321,6 +321,43 @@ type indexSpec struct {
 	VectorDimension *stringScalar `yaml:"vector_dimension"`
 	Levels          *stringScalar `yaml:"levels"`
 	Clusters        *stringScalar `yaml:"clusters"`
+	// Full-text analyzer options use the same names as Go annotations.
+	Tokenizer            *stringScalar `yaml:"tokenizer"`
+	Language             *stringScalar `yaml:"language"`
+	UseFilterLowercase   *stringScalar `yaml:"use_filter_lowercase"`
+	UseFilterStopwords   *stringScalar `yaml:"use_filter_stopwords"`
+	UseFilterNgram       *stringScalar `yaml:"use_filter_ngram"`
+	UseFilterEdgeNgram   *stringScalar `yaml:"use_filter_edge_ngram"`
+	FilterNgramMinLength *stringScalar `yaml:"filter_ngram_min_length"`
+	FilterNgramMaxLength *stringScalar `yaml:"filter_ngram_max_length"`
+	UseFilterLength      *stringScalar `yaml:"use_filter_length"`
+	FilterLengthMin      *stringScalar `yaml:"filter_length_min"`
+	FilterLengthMax      *stringScalar `yaml:"filter_length_max"`
+	UseFilterSnowball    *stringScalar `yaml:"use_filter_snowball"`
+}
+
+// fullTextValues preserves both omitted and explicitly false analyzer options.
+func (spec indexSpec) fullTextValues() map[string]string {
+	values := make(map[string]string)
+	for name, value := range map[string]*stringScalar{
+		"tokenizer":               spec.Tokenizer,
+		"language":                spec.Language,
+		"use_filter_lowercase":    spec.UseFilterLowercase,
+		"use_filter_stopwords":    spec.UseFilterStopwords,
+		"use_filter_ngram":        spec.UseFilterNgram,
+		"use_filter_edge_ngram":   spec.UseFilterEdgeNgram,
+		"filter_ngram_min_length": spec.FilterNgramMinLength,
+		"filter_ngram_max_length": spec.FilterNgramMaxLength,
+		"use_filter_length":       spec.UseFilterLength,
+		"filter_length_min":       spec.FilterLengthMin,
+		"filter_length_max":       spec.FilterLengthMax,
+		"use_filter_snowball":     spec.UseFilterSnowball,
+	} {
+		if value != nil {
+			values[name] = string(*value)
+		}
+	}
+	return values
 }
 
 // vectorValues are the vector attributes the index sets, keyed by attribute
@@ -1069,6 +1106,11 @@ func buildIndex(key, structName string, spec indexSpec) (schemamodel.Index, erro
 		return schemamodel.Index{}, fmt.Errorf("index %q: %w", key, err)
 	}
 
+	fullText, err := ydbindex.ParseFullTextDeclaration(spec.fullTextValues())
+	if err != nil {
+		return schemamodel.Index{}, fmt.Errorf("index %q: %w", key, err)
+	}
+
 	return schemamodel.Index{
 		StructName:     structName,
 		Name:           valueOrDefault(spec.Name, key),
@@ -1083,6 +1125,7 @@ func buildIndex(key, structName string, spec indexSpec) (schemamodel.Index, erro
 		Granularity:    spec.Granularity,
 		Partitioning:   partitioning,
 		Vector:         vector,
+		StorageParams:  fullText,
 	}, nil
 }
 

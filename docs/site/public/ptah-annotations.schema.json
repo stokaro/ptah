@@ -1454,6 +1454,22 @@
               "description": "Comma-separated Go field or column names.",
               "type": "string"
             },
+            "filter_length_max": {
+              "description": "YDB full-text index: filter length max.",
+              "type": "string"
+            },
+            "filter_length_min": {
+              "description": "YDB full-text index: filter length min.",
+              "type": "string"
+            },
+            "filter_ngram_max_length": {
+              "description": "YDB full-text index: filter ngram max length.",
+              "type": "string"
+            },
+            "filter_ngram_min_length": {
+              "description": "YDB full-text index: filter ngram min length.",
+              "type": "string"
+            },
             "granularity": {
               "description": "ClickHouse data-skipping index granularity.",
               "type": "string"
@@ -1473,6 +1489,10 @@
             },
             "key_block_size": {
               "description": "MySQL and MariaDB index block-size hint; zero uses the engine default.",
+              "type": "string"
+            },
+            "language": {
+              "description": "YDB full-text index: language.",
               "type": "string"
             },
             "levels": {
@@ -1507,6 +1527,10 @@
               "description": "Explicit target table.",
               "type": "string"
             },
+            "tokenizer": {
+              "description": "YDB full-text index: tokenizer.",
+              "type": "string"
+            },
             "type": {
               "description": "Index type or method.",
               "type": "string"
@@ -1519,6 +1543,30 @@
               ],
               "type": "string",
               "x-ptah-bare-boolean": true
+            },
+            "use_filter_edge_ngram": {
+              "description": "YDB full-text index: use filter edge ngram.",
+              "type": "string"
+            },
+            "use_filter_length": {
+              "description": "YDB full-text index: use filter length.",
+              "type": "string"
+            },
+            "use_filter_lowercase": {
+              "description": "YDB full-text index: use filter lowercase.",
+              "type": "string"
+            },
+            "use_filter_ngram": {
+              "description": "YDB full-text index: use filter ngram.",
+              "type": "string"
+            },
+            "use_filter_snowball": {
+              "description": "YDB full-text index: use filter snowball.",
+              "type": "string"
+            },
+            "use_filter_stopwords": {
+              "description": "YDB full-text index: use filter stopwords.",
+              "type": "string"
             },
             "vector_dimension": {
               "description": "YDB vector index: the number of elements in a vector, 1 to 16384.",

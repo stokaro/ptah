@@ -73,6 +73,9 @@ func Render(db *schemamodel.Database, opts Options) ([]File, error) {
 	if err := validatePackageName(opts.PackageName); err != nil {
 		return nil, err
 	}
+	if err := validateFullTextIndexes(db.Indexes); err != nil {
+		return nil, err
+	}
 	if err := validateIndexIncludeColumns(db.Indexes); err != nil {
 		return nil, err
 	}
@@ -761,6 +764,7 @@ func fieldAttrs(field schemamodel.Field) []attr {
 
 func indexAttrs(index schemamodel.Index) []attr {
 	attrs := append(indexDefinitionAttrs(index), partitioningAttrs(index.Partitioning)...)
+	attrs = append(attrs, fullTextAttrs(index)...)
 	return append(attrs, vectorAttrs(index.Vector)...)
 }
 
@@ -1685,4 +1689,33 @@ func (ctx *renderContext) writeResourcePools(w *sourceWriter) {
 	for _, comment := range resourcePoolAnnotations(ctx.db.ResourcePools, ctx.db.ResourcePoolClassifiers) {
 		w.writeComment(comment)
 	}
+}
+
+// fullTextAttrs preserves full-text WITH options in the exported Go declaration.
+func fullTextAttrs(index schemamodel.Index) []attr {
+	kind, err := ydbindex.KindOf(index.Type)
+	if err != nil || !kind.IsFullText() {
+		return nil
+	}
+	var attrs []attr
+	for _, name := range ydbindex.FullTextAttributes() {
+		value, present := index.StorageParams[name]
+		attrs = append(attrs, attr{name: name, value: value, set: present})
+	}
+	return attrs
+}
+
+// validateFullTextIndexes refuses settings an annotation cannot carry before
+// writing any file. The writer and parser share the supported option set.
+func validateFullTextIndexes(indexes []schemamodel.Index) error {
+	for _, index := range indexes {
+		kind, err := ydbindex.KindOf(index.Type)
+		if err != nil || !kind.IsFullText() {
+			continue
+		}
+		if _, err := ydbindex.ResolveFullText(index.StorageParams); err != nil {
+			return fmt.Errorf("index %q: %w", index.Name, err)
+		}
+	}
+	return nil
 }

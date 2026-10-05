@@ -485,7 +485,7 @@ type Index struct {
 	// IncludeColumns carries INCLUDE payload columns for PostgreSQL,
 	// YugabyteDB, and Spanner PostgreSQL-dialect covering indexes.
 	IncludeColumns []string
-	// StorageParams carries PostgreSQL index storage parameters rendered as
+	// StorageParams carries YDB full-text analyzer options and PostgreSQL index storage parameters rendered as
 	// WITH (key='value'), for example pages_per_range for BRIN indexes.
 	StorageParams map[string]string
 	// Partitioning is how a YDB global index's own table splits into
