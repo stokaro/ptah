@@ -188,19 +188,10 @@ func (r *Reader) entry(
 			return err
 		}
 		return r.view(schema, name, described, db)
-	case Ydb_Scheme.Entry_TOPIC:
-		if !r.caps.Has(capability.Topics) || !r.inScope(schema) {
-			break
+	case Ydb_Scheme.Entry_TOPIC, Ydb_Scheme.Entry_SECRET:
+		if read, err := r.gatedObject(ctx, source, schema, entry, db); read {
+			return err
 		}
-		return r.topic(ctx, source, schema, name, db)
-	case Ydb_Scheme.Entry_SECRET:
-		if !r.caps.Has(capability.Secrets) || !r.inScope(schema) {
-			break
-		}
-		// The listing is the whole description: a secret is its path, and
-		// nothing the server answers holds its value.
-		db.Secrets = append(db.Secrets, catalog.Secret{Name: name, Schema: schema})
-		return nil
 	case Ydb_Scheme.Entry_DATABASE:
 		// Another database whose root sits under this one. It is not part
 		// of the database this connection reads.
@@ -224,6 +215,36 @@ func (r *Reader) entry(
 	}
 	db.NotDescribed = db.NotDescribed.With(unmodeled(kind, schema, name))
 	return nil
+}
+
+// gatedEntryKeys is the capability key a server needs for gatedObject to read
+// each kind it reads. On a server without it, the entry is recorded as not
+// described, so a plan never meets an object the renderer would refuse.
+var gatedEntryKeys = map[Ydb_Scheme.Entry_Type]capability.Capability{
+	Ydb_Scheme.Entry_TOPIC:  capability.Topics,
+	Ydb_Scheme.Entry_SECRET: capability.Secrets,
+}
+
+// gatedObject reads a topic or a secret on a server with the key it needs, in
+// the read's scope, and reports whether it read the entry; one it did not read
+// is recorded as not described.
+func (r *Reader) gatedObject(
+	ctx context.Context,
+	source Source,
+	schema string,
+	entry *Ydb_Scheme.Entry,
+	db *catalog.Database,
+) (bool, error) {
+	if !r.caps.Has(gatedEntryKeys[entry.GetType()]) || !r.inScope(schema) {
+		return false, nil
+	}
+	if entry.GetType() == Ydb_Scheme.Entry_TOPIC {
+		return true, r.topic(ctx, source, schema, entry.GetName(), db)
+	}
+	// The listing is the whole description: a secret is its path, and
+	// nothing the server answers holds its value.
+	db.Secrets = append(db.Secrets, catalog.Secret{Name: entry.GetName(), Schema: schema})
+	return true, nil
 }
 
 // directory reads the directory name in schema, unless it belongs to the

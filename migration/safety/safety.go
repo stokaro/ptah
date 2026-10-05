@@ -559,14 +559,6 @@ func assessNode(node ast.Node) StatementAssessment {
 		assessment.Subject = n.Name
 		assessment.Severity = Destructive
 		assessment.Reason = "DROP POLICY removes an access-control protection"
-	case *ast.DropSecretNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Destructive
-		assessment.Reason = dropSecretReason
-	case *ast.AlterSecretNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Warning
-		assessment.Reason = "ALTER SECRET replaces the value every external data source naming the secret uses"
 	case *ast.AlterTableDisableRLSNode:
 		assessment.Subject = n.Table
 		assessment.Severity = Destructive
@@ -595,13 +587,8 @@ func assessNode(node ast.Node) StatementAssessment {
 	case *ast.AlterTypeNode:
 		assessment.Subject = n.Name
 		return assessAlterType(n, assessment)
-	case *ast.DropTopicNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Destructive
-		assessment.Reason = dropTopicReason
-	case *ast.AlterTopicNode:
-		assessment.Subject = n.Name
-		return assessAlterTopic(n, assessment)
+	case *ast.DropTopicNode, *ast.AlterTopicNode, *ast.DropSecretNode, *ast.AlterSecretNode:
+		return assessYDBObject(n, assessment)
 	case *ast.RawSQLNode:
 		assessment.Statement = n.SQL
 		return assessRawSQL(n.SQL, assessment, false)
@@ -1013,6 +1000,26 @@ var destructivePrefixes = []struct {
 // dropSecretReason is why DROP SECRET is destructive, in the words both the
 // AST and the SQL-text classifiers report.
 const dropSecretReason = "DROP SECRET removes a YDB secret whose value nothing can read back"
+
+// assessYDBObject judges a YDB topic or secret statement. A dropped topic
+// loses the messages it holds, and a dropped secret a value nothing can read
+// back; a rotated secret replaces the value every external data source naming
+// it uses.
+func assessYDBObject(node ast.Node, assessment StatementAssessment) StatementAssessment {
+	switch n := node.(type) {
+	case *ast.DropTopicNode:
+		assessment.Subject, assessment.Severity, assessment.Reason = n.Name, Destructive, dropTopicReason
+	case *ast.AlterTopicNode:
+		assessment.Subject = n.Name
+		return assessAlterTopic(n, assessment)
+	case *ast.DropSecretNode:
+		assessment.Subject, assessment.Severity, assessment.Reason = n.Name, Destructive, dropSecretReason
+	case *ast.AlterSecretNode:
+		assessment.Subject, assessment.Severity = n.Name, Warning
+		assessment.Reason = "ALTER SECRET replaces the value every external data source naming the secret uses"
+	}
+	return assessment
+}
 
 // destructivePrefixReason returns the reason of the first [destructivePrefixes]
 // entry the statement's words start with.

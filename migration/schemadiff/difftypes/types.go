@@ -1762,8 +1762,7 @@ func (d *SchemaDiff) HasChanges() bool {
 		d.hasUserTypeChanges() ||
 		d.hasViewChanges() ||
 		d.hasSynonymChanges() ||
-		d.hasTopicChanges() ||
-		d.hasSecretChanges() ||
+		d.hasYDBObjectChanges() ||
 		d.hasHypertableChanges() ||
 		d.hasContinuousAggregateChanges() ||
 		d.hasExtendedPropertyChanges() ||
@@ -2015,6 +2014,11 @@ func (d *SchemaDiff) hasTopicChanges() bool {
 	return len(d.TopicsAdded) > 0 ||
 		len(d.TopicsRemoved) > 0 ||
 		len(d.TopicsModified) > 0
+}
+
+// hasYDBObjectChanges reports a change to a YDB topic or secret.
+func (d *SchemaDiff) hasYDBObjectChanges() bool {
+	return d.hasTopicChanges() || d.hasSecretChanges()
 }
 
 func (d *SchemaDiff) hasSecretChanges() bool {
