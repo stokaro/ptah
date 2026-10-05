@@ -57,8 +57,10 @@ docker --context "$docker_context" run -d --name "$container" \
 	-e POSTGRES_USER=ptah -e POSTGRES_PASSWORD=ptah -e POSTGRES_DB=app \
 	-p "${port}:5432" postgres:18-alpine >/dev/null
 
+# The image initializes through a temporary Unix-socket server. Wait for TCP
+# so the first tutorial command cannot race that server shutting down.
 deadline=$(($(date +%s) + 120))
-until docker --context "$docker_context" exec "$container" pg_isready -U ptah >/dev/null 2>&1; do
+until docker --context "$docker_context" exec "$container" pg_isready -h 127.0.0.1 -U ptah -d app >/dev/null 2>&1; do
 	[ "$(date +%s)" -lt "$deadline" ] || fail "the database did not accept connections within 120s"
 	sleep 2
 done
