@@ -72,6 +72,7 @@ func ydbRules() []Rule {
 		ydbSchemaSecretInClearRule(),
 		ydbDeprecatedSecretRule(),
 		ydbCommentLeftBehindRule(),
+		ydbStreamingCheckpointRule(),
 	}
 }
 

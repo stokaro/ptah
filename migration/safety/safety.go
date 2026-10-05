@@ -1165,7 +1165,7 @@ const (
 // destructivePrefixReason returns the reason of the first [destructivePrefixes]
 // entry the statement's words start with.
 func destructivePrefixReason(words []string) (string, bool) {
-	if resetsStreamingCheckpoint(words) {
+	if ydbstream.LosesCheckpoint(words) {
 		return streamingCheckpointLoss, true
 	}
 	for _, prefix := range destructivePrefixes {

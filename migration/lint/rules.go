@@ -2138,6 +2138,8 @@ func scanDestructiveObjectDrop(w []string) bool {
 	// semaphores the dropped one held. Its rate limiter resources go with it.
 	case "COORDINATION":
 		return len(w) > 2 && w[2] == "NODE"
+	case "STREAMING":
+		return len(w) > 2 && w[2] == "QUERY"
 	default:
 		return false
 	}

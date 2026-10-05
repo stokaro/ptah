@@ -17,7 +17,3 @@ func assessStreamingQuery(node *ydbstream.Node, assessment StatementAssessment) 
 	}
 	return assessment
 }
-
-func resetsStreamingCheckpoint(words []string) bool {
-	return hasWordPrefix(words, "DROP", "STREAMING", "QUERY") || hasWordPrefix(words, "CREATE", "OR", "REPLACE", "STREAMING", "QUERY") || (hasWordPrefix(words, "ALTER", "STREAMING", "QUERY") && hasWordSequence(words, "AS", "DO", "BEGIN"))
-}

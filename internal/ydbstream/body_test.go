@@ -1,9 +1,11 @@
 package ydbstream_test
 
 import (
-	qt "github.com/frankban/quicktest"
-	"ptah.run/internal/ydbstream"
 	"testing"
+
+	qt "github.com/frankban/quicktest"
+
+	"ptah.run/internal/ydbstream"
 )
 
 func TestSameBody_CommentsDoNotResetState(t *testing.T) {

@@ -1027,6 +1027,8 @@ requires `allow_state_reset: true` in YAML, or `allow_state_reset="true"` in the
 Go annotation. Ptah then sends `FORCE = TRUE`: YDB resets aggregation state and
 retains topic offsets. A rollback restores the old declaration, not discarded
 state. Removing a query deletes its checkpoints and is classified as destructive.
+Migration lint reports a removal as `DS107` and a replacement or body change
+as `YD160`.
 
 A plan creates queries after topics, tables, external sources, views and pools.
 It stops a changed running query before other schema changes, then applies its
