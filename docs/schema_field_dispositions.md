@@ -44,16 +44,16 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-445 fields are reachable from the desired schema, and each one carries
+466 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 382 | reaches rendered SQL on at least one target |
+| `ddl` | 402 | reaches rendered SQL on at least one target |
 | `comparison` | 7 | read when two schemas are compared, and written into no statement |
 | `planning` | 7 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
-| `source` | 18 | identifies the source text the declaration was read from |
+| `source` | 19 | identifies the source text the declaration was read from |
 | `export` | 10 | what a generated document carries, or reports that it cannot |
 | `data` | 11 | reference or seed rows, which are not DDL |
 
@@ -115,10 +115,26 @@ None.
 | `ast.RowTTLSpec.SelectBatchSize` | `ddl` | — |
 | `ast.RowTTLSpec.SelectRateLimit` | `ddl` | — |
 | `ast.TopicConsumerSpec.AvailabilityPeriod` | `ddl` | — |
+| `ast.TopicConsumerSpec.AvailabilityPeriod` | `ddl` | — |
+| `ast.TopicConsumerSpec.Important` | `ddl` | — |
 | `ast.TopicConsumerSpec.Important` | `ddl` | — |
 | `ast.TopicConsumerSpec.Name` | `ddl` | — |
+| `ast.TopicConsumerSpec.Name` | `ddl` | — |
+| `ast.TopicConsumerSpec.ReadFrom` | `ddl` | — |
 | `ast.TopicConsumerSpec.ReadFrom` | `ddl` | — |
 | `ast.TopicConsumerSpec.SupportedCodecs` | `ddl` | — |
+| `ast.TopicConsumerSpec.SupportedCodecs` | `ddl` | — |
+| `ast.TopicSpec.AutoPartitioningDownUtilizationPercent` | `ddl` | — |
+| `ast.TopicSpec.AutoPartitioningStabilizationWindow` | `ddl` | — |
+| `ast.TopicSpec.AutoPartitioningStrategy` | `ddl` | — |
+| `ast.TopicSpec.AutoPartitioningUpUtilizationPercent` | `ddl` | — |
+| `ast.TopicSpec.Consumers` | `ddl` | — |
+| `ast.TopicSpec.MaxActivePartitions` | `ddl` | — |
+| `ast.TopicSpec.MinActivePartitions` | `ddl` | — |
+| `ast.TopicSpec.PartitionWriteBurstBytes` | `ddl` | — |
+| `ast.TopicSpec.PartitionWriteSpeedBytesPerSecond` | `ddl` | — |
+| `ast.TopicSpec.RetentionPeriod` | `ddl` | — |
+| `ast.TopicSpec.SupportedCodecs` | `ddl` | — |
 | `coverage.Object.Kind` | `comparison` | which kind the undescribed object is |
 | `coverage.Object.Name` | `comparison` | which object was not described |
 | `coverage.Object.Provenance` | `comparison` | how Ptah learned the object was not described |
@@ -196,6 +212,7 @@ None.
 | `schemamodel.Database.Sequences` | `ddl` | — |
 | `schemamodel.Database.Synonyms` | `ddl` | — |
 | `schemamodel.Database.Tables` | `ddl` | — |
+| `schemamodel.Database.Topics` | `ddl` | — |
 | `schemamodel.Database.Triggers` | `ddl` | — |
 | `schemamodel.Database.Views` | `ddl` | — |
 | `schemamodel.DefaultPrivilege.Comment` | `ddl` | — |
@@ -489,6 +506,10 @@ None.
 | `schemamodel.TargetNames.GraphQL` | `export` | the name one export format carries, overriding the general one |
 | `schemamodel.TargetNames.OpenAPI` | `export` | the name one export format carries, overriding the general one |
 | `schemamodel.TargetNames.Protobuf` | `export` | the name one export format carries, overriding the general one |
+| `schemamodel.Topic.Name` | `ddl` | — |
+| `schemamodel.Topic.Schema` | `ddl` | — |
+| `schemamodel.Topic.Spec` | `ddl` | — |
+| `schemamodel.Topic.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.Trigger.Body` | `ddl` | — |
 | `schemamodel.Trigger.Comment` | `ddl` | — |
 | `schemamodel.Trigger.Dialects` | `ddl` | — |

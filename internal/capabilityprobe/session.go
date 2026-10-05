@@ -646,12 +646,12 @@ func (s *session) leave(ctx context.Context, statement string) []Attempt {
 // the group the role experiment creates and the resource pool and classifier
 // another one creates are outside the directory. A refused
 // removal is a leftover by itself: DropDirectory refuses a tree holding an
-// object it has no statement for, such as a topic, before it drops anything,
-// and the partition statistics list row tables only, so they would count no
-// table under a directory still standing. The tables are read from the
-// partition statistics, which list a row table under its path the moment it
-// exists; a read the server refuses is itself a leftover, because the run
-// cannot say the server is clean.
+// object it has no statement for, such as a coordination node, before it
+// drops anything, and the partition statistics list row tables only, so they
+// would count no table under a directory still standing. The tables are read
+// from the partition statistics, which list a row table under its path the
+// moment it exists; a read the server refuses is itself a leftover, because
+// the run cannot say the server is clean.
 func (s *session) leftovers(ctx context.Context, removal []Attempt) ([]Attempt, []string) {
 	if platform.NormalizeDialect(s.dialect) != platform.YDB {
 		return nil, nil

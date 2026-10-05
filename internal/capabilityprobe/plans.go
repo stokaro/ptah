@@ -23,8 +23,8 @@ func planFor(dialect string) (plan, bool) {
 	withComments := withConstraintComments(withObjectComments(family, normalized), normalized)
 	withKeys := withInvisibleIndexes(withEnforcementAndMatch(withDeferrableKeys(withComments, normalized), normalized), normalized)
 	withTypes := withTypeKeys(withSchemaChanges(withKeys, normalized), normalized)
-	withFamilies := withSerialKeys(withIndexKeys(withQueryKeys(withTypes, normalized), normalized), normalized)
-	withObjects := withAccessKeys(withChangefeedKeys(withViewKeys(withFamilies, normalized), normalized), normalized)
+	withFamilies := withViewKeys(withSerialKeys(withIndexKeys(withQueryKeys(withTypes, normalized), normalized), normalized), normalized)
+	withObjects := withTopicKeys(withAccessKeys(withChangefeedKeys(withFamilies, normalized), normalized), normalized)
 	return withWorkloadKeys(withObjects, normalized), true
 }
 

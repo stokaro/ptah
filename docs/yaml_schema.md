@@ -427,6 +427,14 @@ rendered for MySQL/MariaDB with dialect-specific trigger bodies.
   `with_option`, `comment`
 - `default_privileges`: `for_role`, `schema`, `object_type`, `grantee`,
   `privileges`, `grantable`, `comment`, `dialects`
+- `topics` (YDB only): `name`, `schema`, `min_active_partitions`,
+  `max_active_partitions`, `auto_partitioning_strategy`,
+  `auto_partitioning_up_utilization_percent`,
+  `auto_partitioning_down_utilization_percent`,
+  `auto_partitioning_stabilization_window`, `retention_period`,
+  `partition_write_speed_bytes_per_second`, `partition_write_burst_bytes`,
+  `supported_codecs`, and `consumers`, a map of consumer names to `important`,
+  `read_from`, `supported_codecs` and `availability_period`
 - `resource_pools` (YDB): keyed by name, `concurrent_query_limit`,
   `queue_size`, `database_load_cpu_threshold`,
   `query_memory_limit_percent_per_node`, `query_cpu_limit_percent_per_node`,

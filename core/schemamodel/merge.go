@@ -19,6 +19,7 @@ func NewDatabase() *Database {
 		Ranges:                  make([]Range, 0),
 		Views:                   make([]View, 0),
 		Synonyms:                make([]Synonym, 0),
+		Topics:                  make([]Topic, 0),
 		ResourcePools:           make([]ResourcePool, 0),
 		ResourcePoolClassifiers: make([]ResourcePoolClassifier, 0),
 		ExtendedProperties:      make([]ExtendedProperty, 0),
@@ -71,6 +72,7 @@ func AppendDatabase(dst, src *Database) {
 	dst.Ranges = append(dst.Ranges, src.Ranges...)
 	dst.Views = append(dst.Views, src.Views...)
 	dst.Synonyms = append(dst.Synonyms, src.Synonyms...)
+	dst.Topics = append(dst.Topics, src.Topics...)
 	dst.ResourcePools = append(dst.ResourcePools, src.ResourcePools...)
 	dst.ResourcePoolClassifiers = append(dst.ResourcePoolClassifiers, src.ResourcePoolClassifiers...)
 	dst.ExtendedProperties = append(dst.ExtendedProperties, src.ExtendedProperties...)

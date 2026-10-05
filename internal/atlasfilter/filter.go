@@ -113,6 +113,7 @@ func excludeDatabase(
 	filtered.Functions = state.filterFunctions(filtered.Functions)
 	filtered.Views = state.filterViews(filtered.Views)
 	filtered.Synonyms = state.filterSynonyms(filtered.Synonyms)
+	filtered.Topics = state.filterTopics(filtered.Topics)
 	filtered.ExtendedProperties = state.filterExtendedProperties(filtered.ExtendedProperties)
 	filtered.ContinuousAggregates = state.filterContinuousAggregates(filtered.ContinuousAggregates)
 	filtered.Hypertables = state.filterHypertables(filtered.Hypertables)
@@ -1111,6 +1112,20 @@ func (s *exclusionState) filterSynonyms(synonyms []catalog.Synonym) []catalog.Sy
 	return result
 }
 
+// filterTopics drops YDB topics an exclusion selector names, and topics whose
+// directory is excluded. A topic is selected on its own name; its consumers
+// ride with it.
+func (s *exclusionState) filterTopics(topics []catalog.Topic) []catalog.Topic {
+	result := make([]catalog.Topic, 0, len(topics))
+	for _, topic := range topics {
+		if s.matches("topic", s.nameCandidates(topic.Schema, topic.Name)...) || s.schemaExcluded(topic.Schema) {
+			continue
+		}
+		result = append(result, topic)
+	}
+	return result
+}
+
 // filterExtendedProperties drops the extended properties an exclusion selector
 // names, and the ones whose owner is excluded.
 //
@@ -1882,6 +1897,7 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		Ranges:                  slices.Clone(schema.Ranges),
 		Views:                   slices.Clone(schema.Views),
 		Synonyms:                slices.Clone(schema.Synonyms),
+		Topics:                  slices.Clone(schema.Topics),
 		ResourcePools:           slices.Clone(schema.ResourcePools),
 		ResourcePoolClassifiers: slices.Clone(schema.ResourcePoolClassifiers),
 		ExtendedProperties:      slices.Clone(schema.ExtendedProperties),
@@ -1940,6 +1956,7 @@ func cloneGenerated(schema *schemamodel.Database) *schemamodel.Database {
 	filtered.Ranges = slices.Clone(schema.Ranges)
 	filtered.Views = slices.Clone(schema.Views)
 	filtered.Synonyms = slices.Clone(schema.Synonyms)
+	filtered.Topics = slices.Clone(schema.Topics)
 	filtered.ResourcePools = slices.Clone(schema.ResourcePools)
 	filtered.ResourcePoolClassifiers = slices.Clone(schema.ResourcePoolClassifiers)
 	filtered.ExtendedProperties = slices.Clone(schema.ExtendedProperties)

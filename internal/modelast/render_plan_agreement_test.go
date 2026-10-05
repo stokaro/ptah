@@ -128,9 +128,13 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	}
 	// A resource pool and its classifier are refused the same way on every
 	// target without the resource_pools key, which is every target's default
-	// preset, YDB's included. Once both surfaces are seen to refuse them, the
-	// census below runs over the rest of the fixture.
+	// preset, YDB's included, and so is a topic on every target without the
+	// topics key, which is every PostgreSQL-family one. The shared validation
+	// reaches the pools first, so they are taken out first. Once both surfaces
+	// are seen to refuse each, the census below runs over the rest of the
+	// fixture.
 	refused := assertBothSurfacesRefuseTheResourcePools(c, dialect, &desired)
+	refused += assertBothSurfacesRefuseTheTopic(c, dialect, &desired)
 
 	renderCensus := surfaceCensus(c, dialect,
 		modelast.CollectDatabase(desired, dialect).Statements)
@@ -225,6 +229,27 @@ func assertBothSurfacesRefuseTheDomain(c *qt.C, dialect string, desired *schemam
 	c.Assert(planErr.Error(), qt.Contains, "CREATE DOMAIN")
 	c.Assert(renderErr.Error(), qt.Contains, "CREATE DOMAIN")
 	return true
+}
+
+// assertBothSurfacesRefuseTheTopic checks that a target without the topics key
+// refuses the fixture's topic on both surfaces, through the one validation they
+// share, and takes the topic out of desired so the census can run over the
+// rest. It returns how many routed kinds it took out.
+func assertBothSurfacesRefuseTheTopic(c *qt.C, dialect string, desired *schemamodel.Database) int {
+	c.Helper()
+	if capability.ForDialect(dialect).Has(capability.Topics) {
+		return 0
+	}
+	_, planErr := schemadiff.CompareWithDatabaseInfo(
+		desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil,
+	)
+	renderErr := renderer.ValidateSchema(desired, dialect)
+	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(planErr.Error(), qt.Contains, "requires target capability topics")
+	c.Assert(renderErr.Error(), qt.Contains, "requires target capability topics")
+	desired.Topics = nil
+	return 1
 }
 
 // assertBothSurfacesRefuseTheResourcePools checks that a target without the

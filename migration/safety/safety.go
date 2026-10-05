@@ -24,6 +24,7 @@ import (
 	"ptah.run/internal/htmlstyle"
 	"ptah.run/internal/notnullfill"
 	"ptah.run/internal/typechange"
+	"ptah.run/internal/ydbtopic"
 	"ptah.run/migration/risk"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -133,6 +134,12 @@ func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 	add(&findings, "resource_pool_classifiers_modified", len(diff.ResourcePoolClassifiersModified), Warning)
 	add(&findings, "constraints_added", len(diff.ConstraintsAdded), Warning)
 	add(&findings, "constraints_removed", len(diff.ConstraintsRemoved), Destructive)
+	// A topic holds messages and each consumer's position in them, so dropping
+	// either loses what a reader has not read or where it was.
+	add(&findings, "topics_added", len(diff.TopicsAdded), Safe)
+	add(&findings, "topics_removed", len(diff.TopicsRemoved), Destructive)
+	add(&findings, "topics_modified", len(diff.TopicsModified), Warning)
+	add(&findings, "topic_consumers_removed", droppedTopicConsumers(diff.TopicsModified), Destructive)
 
 	for _, table := range diff.TablesModified {
 		add(&findings, "columns_added", len(table.ColumnsAdded), Warning)
@@ -591,6 +598,13 @@ func assessNode(node ast.Node) StatementAssessment {
 	case *ast.AlterTypeNode:
 		assessment.Subject = n.Name
 		return assessAlterType(n, assessment)
+	case *ast.DropTopicNode:
+		assessment.Subject = n.Name
+		assessment.Severity = Destructive
+		assessment.Reason = dropTopicReason
+	case *ast.AlterTopicNode:
+		assessment.Subject = n.Name
+		return assessAlterTopic(n, assessment)
 	case *ast.RawSQLNode:
 		assessment.Statement = n.SQL
 		return assessRawSQL(n.SQL, assessment, false)
@@ -763,6 +777,9 @@ func assessRawSQL(sql string, assessment StatementAssessment, keepsNullability b
 	case hasWordSequence(words, "DROP", "COLUMN"):
 		assessment.Severity = Destructive
 		assessment.Reason = "DROP COLUMN removes existing column data"
+	case hasWordSequence(words, "DROP", "CONSUMER"):
+		assessment.Severity = Destructive
+		assessment.Reason = dropConsumerReason
 	case hasWordSequence(words, "DROP", "CONSTRAINT"):
 		assessment.Severity = Destructive
 		assessment.Reason = "DROP CONSTRAINT removes an existing data protection"
@@ -991,6 +1008,7 @@ var destructivePrefixes = []struct {
 	{words: []string{"DROP", "FUNCTION"}, reason: "DROP FUNCTION removes executable database behavior"},
 	{words: []string{"DROP", "ROLE"}, reason: "DROP ROLE removes an existing database principal"},
 	{words: []string{"DROP", "POLICY"}, reason: "DROP POLICY removes an access-control protection"},
+	{words: []string{"DROP", "TOPIC"}, reason: dropTopicReason},
 	{words: []string{"TRUNCATE"}, reason: "TRUNCATE removes all rows from a table"},
 }
 
@@ -1005,9 +1023,48 @@ func destructivePrefixReason(words []string) (string, bool) {
 	return "", false
 }
 
+// dropTopicReason and dropConsumerReason are why dropping a YDB topic or one of
+// its consumers is destructive, in the words both the AST and the SQL-text
+// classifiers report. A consumer's position is where its reader resumes;
+// adding the consumer again starts it over at the beginning of the topic.
+const (
+	dropTopicReason    = "DROP TOPIC removes the topic, every message it holds and every consumer's position in it"
+	dropConsumerReason = "DROP CONSUMER removes a topic consumer and its position in the topic"
+)
+
+// assessAlterTopic judges a change of a YDB topic: destructive where it drops
+// a consumer, including one it adds again because YDB cannot change it in
+// place, safe where it only adds consumers, and a warning otherwise, since a
+// changed setting can shorten how long the topic keeps a message and a
+// changed consumer can read from another point.
+func assessAlterTopic(node *ast.AlterTopicNode, assessment StatementAssessment) StatementAssessment {
+	consumers := ydbtopic.Compare(node.Spec, node.Previous)
+	switch {
+	case len(consumers.Removed)+len(consumers.Restarted) > 0:
+		assessment.Severity = Destructive
+		assessment.Reason = dropConsumerReason
+	case ydbtopic.SettingsEqual(node.Spec, node.Previous) && len(consumers.Changed) == 0:
+		return assessment
+	default:
+		assessment.Severity = Warning
+		assessment.Reason = "ALTER TOPIC can shorten how long the topic keeps a message, or move where a consumer reads from"
+	}
+	return assessment
+}
+
 // noForceReason is why NO FORCE ROW LEVEL SECURITY is destructive, in the
 // words both the AST and the SQL-text classifiers report.
 const noForceReason = "NO FORCE ROW LEVEL SECURITY exempts the table owner from its policies"
+
+// droppedTopicConsumers counts the consumers the topic changes drop, those
+// added again because YDB cannot change them in place included.
+func droppedTopicConsumers(changes []difftypes.TopicDiff) int {
+	count := 0
+	for _, change := range changes {
+		count += len(change.ConsumersRemoved) + len(change.ConsumersRestarted)
+	}
+	return count
+}
 
 // rlsForceDirections counts the FORCE changes that turn the flag on and off.
 func rlsForceDirections(changes difftypes.RLSForceChanges) (forced, unforced int) {

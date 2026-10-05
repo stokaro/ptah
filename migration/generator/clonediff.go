@@ -48,6 +48,9 @@ func cloneSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 	clone.SynonymsAdded = slices.Clone(diff.SynonymsAdded)
 	clone.SynonymsRemoved = slices.Clone(diff.SynonymsRemoved)
 	clone.SynonymsModified = slices.Clone(diff.SynonymsModified)
+	clone.TopicsAdded = cloneTopics(diff.TopicsAdded)
+	clone.TopicsRemoved = cloneTopics(diff.TopicsRemoved)
+	clone.TopicsModified = cloneTopicDiffs(diff.TopicsModified)
 	clone.ResourcePoolsAdded = cloneResourcePools(diff.ResourcePoolsAdded)
 	clone.ResourcePoolsRemoved = cloneResourcePools(diff.ResourcePoolsRemoved)
 	clone.ResourcePoolsModified = cloneResourcePoolDiffs(diff.ResourcePoolsModified)
@@ -141,6 +144,38 @@ func cloneIndexPartitioningChanges(changes []difftypes.IndexPartitioningChange) 
 	for i, change := range changes {
 		change.Partitioning = change.Partitioning.Clone()
 		change.Previous = change.Previous.Clone()
+		clone[i] = change
+	}
+	return clone
+}
+
+// cloneTopics copies the topics and the settings and consumers each carries,
+// so a reversal swapping them leaves the caller's diff alone.
+func cloneTopics(topics difftypes.TopicChanges) difftypes.TopicChanges {
+	if topics == nil {
+		return nil
+	}
+	clone := make(difftypes.TopicChanges, len(topics))
+	for i, topic := range topics {
+		topic.Spec = topic.Spec.Clone()
+		clone[i] = topic
+	}
+	return clone
+}
+
+// cloneTopicDiffs copies the changes, their consumer lists and both specs.
+func cloneTopicDiffs(changes []difftypes.TopicDiff) []difftypes.TopicDiff {
+	if changes == nil {
+		return nil
+	}
+	clone := make([]difftypes.TopicDiff, len(changes))
+	for i, change := range changes {
+		change.ConsumersAdded = slices.Clone(change.ConsumersAdded)
+		change.ConsumersRemoved = slices.Clone(change.ConsumersRemoved)
+		change.ConsumersChanged = slices.Clone(change.ConsumersChanged)
+		change.ConsumersRestarted = slices.Clone(change.ConsumersRestarted)
+		change.Desired = change.Desired.Clone()
+		change.Current = change.Current.Clone()
 		clone[i] = change
 	}
 	return clone

@@ -553,6 +553,7 @@ func (r *renderer) renderBody() {
 	r.reportExportMetadata()
 	r.reportChangefeeds()
 	r.reportRowDeletionPolicies()
+	r.reportTopics()
 	r.reportResourcePools()
 	r.renderExtensions()
 	r.renderSequences()

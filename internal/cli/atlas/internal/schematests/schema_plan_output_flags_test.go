@@ -197,7 +197,7 @@ func TestSchemaPlanNameFormatRendersPlanName(t *testing.T) {
 	// untagged Base64, so roughly a third of 12-character windows hold "/" or
 	// "+". This fixture has a clean window, and .ToHashSafe exists so a
 	// template does not have to depend on that (stokaro/ptah#1685).
-	fixture := newPlanFixture(c, "nameformat", "", `CREATE TABLE nf_accounts (id INTEGER PRIMARY KEY);`)
+	fixture := newPlanFixture(c, "nameformat", "", `CREATE TABLE nf_ledgers (id INTEGER PRIMARY KEY);`)
 	referencePath := filepath.Join(dir, "reference.plan.json")
 	_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"), fixture.args("--output", referencePath)...)
 	c.Assert(err, qt.IsNil)

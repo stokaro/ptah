@@ -29,7 +29,7 @@
 // The top level is a set of object collections, each keyed by name: tables,
 // indexes, constraints, enums, extensions, functions, rls_policies,
 // rls_enabled_tables (also accepted as rls_enabled), roles, grants, revokes,
-// default_privileges, views, matviews, triggers, resource_pools and
+// default_privileges, views, matviews, triggers, topics, resource_pools and
 // resource_pool_classifiers. A table carries its columns in declaration
 // order, along with its primary key, checks, engine, comment, and
 // per-platform overrides. A column carries the type, its
@@ -148,6 +148,7 @@ type document struct {
 	Views                   map[string]viewSpec                   `yaml:"views"`
 	MaterializedViews       map[string]matViewSpec                `yaml:"matviews"`
 	Triggers                map[string]triggerSpec                `yaml:"triggers"`
+	Topics                  map[string]topicSpec                  `yaml:"topics"`
 	ResourcePools           map[string]resourcePoolSpec           `yaml:"resource_pools"`
 	ResourcePoolClassifiers map[string]resourcePoolClassifierSpec `yaml:"resource_pool_classifiers"`
 }
@@ -613,6 +614,9 @@ func (d document) toDatabase() (*schemamodel.Database, error) {
 		return nil, err
 	}
 	if err := d.addTriggers(db); err != nil {
+		return nil, err
+	}
+	if err := d.addTopics(db); err != nil {
 		return nil, err
 	}
 	if err := d.addResourcePools(db); err != nil {

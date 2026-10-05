@@ -302,7 +302,6 @@ func TestYDBReader_RecordsWhatItDoesNotModel(t *testing.T) {
 				"CREATE TABLE `ptah_ydb_connection/base` (`id` Int64 NOT NULL, `ts` Timestamp, PRIMARY KEY (`id`)) " +
 					"WITH (TTL = Interval('P1D') ON `ts`, AUTO_PARTITIONING_BY_LOAD = ENABLED)",
 				"CREATE VIEW `ptah_ydb_connection/v` WITH (security_invoker = TRUE) AS SELECT 1 AS a",
-				"CREATE TOPIC `ptah_ydb_connection/events`",
 				"CREATE TABLE `ptah_ydb_connection/olap` (`id` Int64 NOT NULL, PRIMARY KEY (`id`)) " +
 					"PARTITION BY HASH(`id`) WITH (STORE = COLUMN)",
 			} {
@@ -314,7 +313,6 @@ func TestYDBReader_RecordsWhatItDoesNotModel(t *testing.T) {
 			c.Assert(tableNames(live), qt.DeepEquals, []string{"ptah_ydb_connection|base"})
 			c.Assert(live.Views, qt.DeepEquals, []catalog.View{{Name: "v", Schema: "ptah_ydb_connection", Body: "SELECT 1 AS a"}})
 			c.Assert(live.NotDescribed.Describes(coverage.View, "ptah_ydb_connection.v"), qt.IsTrue)
-			c.Assert(live.NotDescribed.Describes(coverage.Topic, "ptah_ydb_connection.events"), qt.IsFalse)
 			c.Assert(live.NotDescribed.Describes(coverage.ColumnTable, "ptah_ydb_connection.olap"), qt.IsFalse)
 			c.Assert(live.NotDescribed.Describes(coverage.TableOption, "ptah_ydb_connection.base"), qt.IsFalse)
 			c.Assert(live.NotDescribed.Describes(coverage.TTL, "ptah_ydb_connection.base"), qt.IsTrue)
@@ -359,7 +357,6 @@ func dropObjects(c *qt.C, conn *dbschema.DatabaseConnection) {
 	c.Helper()
 	for _, statement := range []string{
 		"DROP VIEW IF EXISTS `ptah_ydb_connection/v`",
-		"DROP TOPIC IF EXISTS `ptah_ydb_connection/events`",
 		"DROP TABLE IF EXISTS `ptah_ydb_connection/olap`",
 	} {
 		c.Assert(conn.Writer().ExecuteSQL(context.Background(), statement), qt.IsNil, qt.Commentf("execute: %s", statement))

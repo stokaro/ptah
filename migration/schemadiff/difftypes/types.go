@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/planner/objectlookup"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/ydbtopic"
 )
 
 // ViewChanges is a set of views one change applies to, carrying each one's
@@ -127,6 +128,32 @@ func (s SynonymChanges) Names() []string {
 	names := make([]string, 0, len(s))
 	for _, synonym := range s {
 		names = append(names, synonym.QualifiedName())
+	}
+	return names
+}
+
+// TopicChanges is a set of YDB topics one change applies to, carrying each
+// one's settings and consumers and not only its name: a created topic is
+// written from them, and so is the topic a rollback creates again.
+type TopicChanges []schemamodel.Topic
+
+// MarshalJSON writes the topic names alone, as the other object lists of a
+// diff write theirs.
+func (t TopicChanges) MarshalJSON() ([]byte, error) {
+	if t == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(t.Names())
+}
+
+// Names is the canonical references of the topics this change applies to.
+func (t TopicChanges) Names() []string {
+	if t == nil {
+		return nil
+	}
+	names := make([]string, 0, len(t))
+	for _, topic := range t {
+		names = append(names, topic.QualifiedName())
 	}
 	return names
 }
@@ -1257,6 +1284,19 @@ type SchemaDiff struct {
 	// name with an unrelated create.
 	SynonymsModified []SynonymDiff `json:"synonyms_modified"`
 
+	// TopicsAdded are the YDB topics the target schema declares and the
+	// database does not have, each with its settings and consumers.
+	TopicsAdded TopicChanges `json:"topics_added,omitempty"`
+
+	// TopicsRemoved are the YDB topics the database has and the target schema
+	// does not declare. Dropping one drops every message it holds and every
+	// consumer's position in it.
+	TopicsRemoved TopicChanges `json:"topics_removed,omitempty"`
+
+	// TopicsModified are the YDB topics both sides hold whose settings or
+	// consumers differ, each changed in place by ALTER TOPIC.
+	TopicsModified []TopicDiff `json:"topics_modified,omitempty"`
+
 	// ResourcePoolsAdded are the YDB resource pools the target schema
 	// declares and the database does not have, each with its settings.
 	ResourcePoolsAdded ResourcePoolChanges `json:"resource_pools_added,omitempty"`
@@ -1735,6 +1775,7 @@ func (d *SchemaDiff) HasChanges() bool {
 		d.hasUserTypeChanges() ||
 		d.hasViewChanges() ||
 		d.hasSynonymChanges() ||
+		d.hasTopicChanges() ||
 		d.hasResourcePoolChanges() ||
 		d.hasHypertableChanges() ||
 		d.hasContinuousAggregateChanges() ||
@@ -1990,6 +2031,12 @@ func (d *SchemaDiff) hasSynonymChanges() bool {
 	return len(d.SynonymsAdded) > 0 ||
 		len(d.SynonymsRemoved) > 0 ||
 		len(d.SynonymsModified) > 0
+}
+
+func (d *SchemaDiff) hasTopicChanges() bool {
+	return len(d.TopicsAdded) > 0 ||
+		len(d.TopicsRemoved) > 0 ||
+		len(d.TopicsModified) > 0
 }
 
 func (d *SchemaDiff) hasHypertableChanges() bool {
@@ -2759,6 +2806,52 @@ type ExtendedPropertyDiff struct {
 	// OldValue is what the database holds now. Value on the embedded ref is
 	// what the declaration asks for.
 	OldValue string `json:"old_value"`
+}
+
+// TopicDiff describes a YDB topic whose settings or consumers differ between
+// the target schema and the database.
+//
+// The lists name consumers; the two specs are the operands, off the wire as
+// [SynonymDiff.Desired] is. A consumer dropped or restarted loses its
+// position in the topic, which is why the lists keep them apart from the
+// consumers changed in place.
+type TopicDiff struct {
+	// Name is the topic's canonical reference.
+	Name string `json:"name"`
+	// SettingsChanged reports settings that differ, consumers aside.
+	SettingsChanged bool `json:"settings_changed,omitempty"`
+	// ConsumersAdded are the consumers only the target schema has.
+	ConsumersAdded []string `json:"consumers_added,omitempty"`
+	// ConsumersRemoved are the consumers only the database has.
+	ConsumersRemoved []string `json:"consumers_removed,omitempty"`
+	// ConsumersChanged are the consumers both have, changed in place.
+	ConsumersChanged []string `json:"consumers_changed,omitempty"`
+	// ConsumersRestarted are the consumers both have whose change YDB makes
+	// only by dropping the consumer and adding it again.
+	ConsumersRestarted []string `json:"consumers_restarted,omitempty"`
+	// Desired is the topic as the target schema declares it.
+	Desired ast.TopicSpec `json:"-"`
+	// Current is the topic as the database holds it.
+	Current ast.TopicSpec `json:"-"`
+}
+
+// NewTopicDiff reads how the topic name differs between desired and current,
+// and reports whether it differs at all. A comparison and a rollback build the
+// change the same way, so the consumer lists of a reversed change are the ones
+// a comparison of the swapped sides would give.
+func NewTopicDiff(name string, desired, current ast.TopicSpec) (TopicDiff, bool) {
+	consumers := ydbtopic.Compare(desired, current)
+	change := TopicDiff{
+		Name:               name,
+		SettingsChanged:    !ydbtopic.SettingsEqual(desired, current),
+		ConsumersAdded:     consumers.Added,
+		ConsumersRemoved:   consumers.Removed,
+		ConsumersChanged:   consumers.Changed,
+		ConsumersRestarted: consumers.Restarted,
+		Desired:            desired.Clone(),
+		Current:            current.Clone(),
+	}
+	return change, change.SettingsChanged || len(consumers.Consumers()) > 0
 }
 
 // ResourcePoolDiff describes a YDB resource pool whose settings differ

@@ -47,6 +47,7 @@ type Database struct {
 	Ranges                     []Range                        // PostgreSQL range types (CREATE TYPE ... AS RANGE (...))
 	Views                      []View                         // Database views
 	Synonyms                   []Synonym                      // SQL Server synonyms
+	Topics                     []Topic                        `json:",omitempty"` // YDB topics and their consumers
 	ResourcePools              []ResourcePool                 `json:",omitempty"` // YDB resource pools
 	ResourcePoolClassifiers    []ResourcePoolClassifier       `json:",omitempty"` // YDB resource pool classifiers
 	ExtendedProperties         []ExtendedProperty             // SQL Server extended properties
@@ -1318,6 +1319,31 @@ type Synonym struct {
 	// emitted: one to four dot-separated parts, unquoted.
 	Target  string
 	Comment string // Optional comment for documentation
+}
+
+// Topic is a YDB topic: a persistent message queue at a path of YDB's scheme
+// tree, and the consumers that each keep their own position in it.
+//
+// Schema is the directory that holds it, "" for the database root, as it is
+// for a YDB table. A changefeed's topic is not a Topic: it belongs to its
+// table. Dialects is deliberately absent, for the reason [Synonym] gives: a
+// topic belongs to YDB and to nothing else, and every other target refuses
+// one rather than building nothing. So is a comment: YQL has no COMMENT, and
+// a comment Ptah could not store would be dropped in silence.
+type Topic struct {
+	StructName string // Name of the Go struct this topic is associated with
+	Name       string // Topic name, the last segment of its path
+	Schema     string // Directory that holds the topic, relative to the database root
+	// Spec is the topic's settings and consumers. It carries the ast type for
+	// the reason Table.RowDeletionPolicy does: the renderer, the reader and
+	// the comparison read one value rather than three copies of it.
+	Spec ast.TopicSpec
+}
+
+// QualifiedName returns the topic's canonical reference: schema.name, or the
+// name alone at the database root.
+func (t Topic) QualifiedName() string {
+	return tableref.Canonical(t.Schema, t.Name)
 }
 
 // ResourcePool is a YDB resource pool: a named set of limits on the queries

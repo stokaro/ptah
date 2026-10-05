@@ -85,7 +85,7 @@ func (f *fakeDatabase) ExecContext(_ context.Context, query string, _ ...any) (s
 	if position < len(f.failures) && f.failures[position] != nil {
 		return nil, f.failures[position]
 	}
-	for _, verb := range []string{"DROP TABLE `", "DROP VIEW `"} {
+	for _, verb := range []string{"DROP TABLE `", "DROP VIEW `", "DROP TOPIC `"} {
 		if object, dropped := strings.CutPrefix(query, verb); dropped {
 			full := path.Join("/local", strings.ReplaceAll(strings.TrimSuffix(object, "`"), "\\`", "`"))
 			parent, name := path.Split(full)
@@ -284,11 +284,11 @@ func TestWriter_TransactionIsANoOp(t *testing.T) {
 	c.Assert(fake.executed, qt.DeepEquals, []string{"DROP TABLE `t`"})
 }
 
-// DropAllTables drops every view and row table, a directory's views first, and
-// removes the directories that left empty. What the reader does not describe
-// stays, and so does the directory that holds it; a directory that was empty
-// before is not touched, and a dot-directory is never listed, nor are the dev
-// realms at the root.
+// DropAllTables drops every view, row table and topic, a directory's views
+// first, and removes the directories that left empty. What the reader does not
+// describe stays, and so does the directory that holds it; a directory that
+// was empty before is not touched, and a dot-directory is never listed, nor
+// are the dev realms at the root.
 func TestWriter_DropAllTables(t *testing.T) {
 	c := qt.New(t)
 	fake := &fakeDatabase{tree: map[string][]*Ydb_Scheme.Entry{
@@ -300,6 +300,7 @@ func TestWriter_DropAllTables(t *testing.T) {
 			entry("mixed", Ydb_Scheme.Entry_DIRECTORY),
 			entry("olap", Ydb_Scheme.Entry_COLUMN_TABLE),
 			entry("ptah_dev", Ydb_Scheme.Entry_DIRECTORY),
+			entry("queues", Ydb_Scheme.Entry_DIRECTORY),
 			entry("v", Ydb_Scheme.Entry_VIEW),
 		},
 		"/local/app": {
@@ -310,6 +311,7 @@ func TestWriter_DropAllTables(t *testing.T) {
 		"/local/app/sub": {entry("t`3", Ydb_Scheme.Entry_TABLE)},
 		"/local/keep":    nil,
 		"/local/mixed":   {entry("t4", Ydb_Scheme.Entry_TABLE), entry("events", Ydb_Scheme.Entry_TOPIC)},
+		"/local/queues":  {entry("events", Ydb_Scheme.Entry_TOPIC), entry("olap", Ydb_Scheme.Entry_COLUMN_TABLE)},
 	}}
 	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
 
@@ -321,16 +323,18 @@ func TestWriter_DropAllTables(t *testing.T) {
 		"DROP VIEW `app/v2`",
 		"DROP TABLE `app/sub/t\\`3`",
 		"DROP TABLE `app/t2`",
+		"DROP TOPIC `mixed/events`",
 		"DROP TABLE `mixed/t4`",
+		"DROP TOPIC `queues/events`",
 		"DROP TABLE `t1`",
 	})
-	c.Assert(fake.removed, qt.DeepEquals, []string{"/local/app/sub", "/local/app"})
+	c.Assert(fake.removed, qt.DeepEquals, []string{"/local/app/sub", "/local/app", "/local/mixed"})
 	var left []string
 	for _, kept := range fake.tree["/local"] {
 		left = append(left, kept.GetName())
 	}
-	c.Assert(left, qt.DeepEquals, []string{".sys", "keep", "mixed", "olap", "ptah_dev"})
-	c.Assert(fake.tree["/local/mixed"], qt.HasLen, 1)
+	c.Assert(left, qt.DeepEquals, []string{".sys", "keep", "olap", "ptah_dev", "queues"})
+	c.Assert(fake.tree["/local/queues"], qt.HasLen, 1)
 }
 
 // A drop the server refuses stops the cleanup with the statement named.
@@ -349,7 +353,8 @@ func TestWriter_DropAllTables_FailurePath(t *testing.T) {
 }
 
 // DropDirectory removes a directory a caller made for itself with everything
-// in it, deepest first: tables of both kinds, views, and the directories below.
+// in it, deepest first: tables of both kinds, views, topics, and the
+// directories below.
 // What sits beside the directory is not touched.
 func TestWriter_DropDirectory(t *testing.T) {
 	c := qt.New(t)
@@ -361,7 +366,7 @@ func TestWriter_DropDirectory(t *testing.T) {
 			entry("v", Ydb_Scheme.Entry_VIEW),
 			entry("rb", Ydb_Scheme.Entry_DIRECTORY),
 		},
-		"/local/probe/rb": {entry("t`2", Ydb_Scheme.Entry_TABLE)},
+		"/local/probe/rb": {entry("t`2", Ydb_Scheme.Entry_TABLE), entry("events", Ydb_Scheme.Entry_TOPIC)},
 		"/local/app":      {entry("keep", Ydb_Scheme.Entry_TABLE)},
 	}}
 	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
@@ -371,6 +376,7 @@ func TestWriter_DropDirectory(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(fake.executed, qt.DeepEquals, []string{
 		"DROP TABLE `probe/olap`",
+		"DROP TOPIC `probe/rb/events`",
 		"DROP TABLE `probe/rb/t\\`2`",
 		"DROP TABLE `probe/t`",
 		"DROP VIEW `probe/v`",
@@ -398,9 +404,9 @@ func TestWriter_DropDirectory_FailurePath(t *testing.T) {
 		{name: "a real directory and its parent", dir: "app/../", wantErr: fmt.Sprintf(dotSegment, "app/../", "..")},
 		{name: "a server directory", dir: ".sys", wantErr: fmt.Sprintf(dotSegment, ".sys", ".sys")},
 		{
-			name: "a topic below a table the walk meets first",
+			name: "a coordination node below a table the walk meets first",
 			dir:  "probe",
-			wantErr: "ydb: /local/probe/z holds events, a TOPIC, which Ptah has no statement to drop; " +
+			wantErr: "ydb: /local/probe/z holds locks, a COORDINATION_NODE, which Ptah has no statement to drop; " +
 				"nothing was dropped",
 		},
 		{
@@ -423,7 +429,7 @@ func TestWriter_DropDirectory_FailurePath(t *testing.T) {
 				"/local/.sys":         nil,
 				"/local/app":          {entry("users", Ydb_Scheme.Entry_TABLE)},
 				"/local/probe":        {entry("a", Ydb_Scheme.Entry_TABLE), entry("z", Ydb_Scheme.Entry_DIRECTORY)},
-				"/local/probe/z":      {entry("events", Ydb_Scheme.Entry_TOPIC)},
+				"/local/probe/z":      {entry("locks", Ydb_Scheme.Entry_COORDINATION_NODE)},
 				"/local/scratch":      {entry("t", Ydb_Scheme.Entry_TABLE), entry(".tmp", Ydb_Scheme.Entry_DIRECTORY)},
 				"/local/scratch/.tmp": {entry("x", Ydb_Scheme.Entry_TABLE)},
 			}}
@@ -476,7 +482,9 @@ func rootTree() map[string][]*Ydb_Scheme.Entry {
 			entry("ptah_dev", Ydb_Scheme.Entry_DIRECTORY),
 			entry("ptah_locks", Ydb_Scheme.Entry_COORDINATION_NODE),
 		},
-		"/local/app":                  {entry("v", Ydb_Scheme.Entry_VIEW), entry("orders", Ydb_Scheme.Entry_TABLE)},
+		"/local/app": {
+			entry("v", Ydb_Scheme.Entry_VIEW), entry("orders", Ydb_Scheme.Entry_TABLE), entry("events", Ydb_Scheme.Entry_TOPIC),
+		},
 		"/local/empty":                nil,
 		"/local/ptah_dev":             {entry("r1", Ydb_Scheme.Entry_DIRECTORY), entry("r2", Ydb_Scheme.Entry_DIRECTORY)},
 		"/local/ptah_dev/r1":          {entry("t", Ydb_Scheme.Entry_TABLE), entry("ptah_dev", Ydb_Scheme.Entry_DIRECTORY)},
@@ -496,6 +504,7 @@ func TestWriter_ResetObjects(t *testing.T) {
 		{
 			name: "a database",
 			want: []dbreset.Object{
+				{Kind: "topic", Schema: "app", Name: "events"},
 				{Kind: "table", Schema: "app", Name: "orders"},
 				{Kind: "view", Schema: "app", Name: "v"},
 				{Kind: "directory", Name: "app"},
@@ -538,9 +547,11 @@ func TestWriter_DropDatabaseRealm(t *testing.T) {
 		wantRemoved  []string
 	}{
 		{
-			name:         "a database",
-			wantExecuted: []string{"DROP TABLE `app/orders`", "DROP VIEW `app/v`", "DROP TABLE `users`"},
-			wantRemoved:  []string{"/local/app", "/local/empty"},
+			name: "a database",
+			wantExecuted: []string{
+				"DROP TOPIC `app/events`", "DROP TABLE `app/orders`", "DROP VIEW `app/v`", "DROP TABLE `users`",
+			},
+			wantRemoved: []string{"/local/app", "/local/empty"},
 		},
 		{
 			name:         "a realm",
@@ -567,17 +578,17 @@ func TestWriter_DropDatabaseRealm(t *testing.T) {
 // An object a reset has no statement for stops it before anything is dropped,
 // and so does an environment a YDB reset cannot keep.
 func TestWriter_DropDatabaseRealm_FailurePath(t *testing.T) {
-	t.Run("a topic", func(t *testing.T) {
+	t.Run("a coordination node", func(t *testing.T) {
 		c := qt.New(t)
 		tree := rootTree()
-		tree["/local/app"] = append(tree["/local/app"], entry("events", Ydb_Scheme.Entry_TOPIC))
+		tree["/local/app"] = append(tree["/local/app"], entry("semaphores", Ydb_Scheme.Entry_COORDINATION_NODE))
 		fake := &fakeDatabase{tree: tree}
 		writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
 
 		err := writer.DropDatabaseRealm(context.Background())
 
-		c.Assert(err, qt.ErrorMatches,
-			`ydb: /local holds topic "events" in directory "app", which Ptah has no statement to drop; nothing was dropped`)
+		c.Assert(err, qt.ErrorMatches, `ydb: /local holds coordination node "semaphores" in directory "app", `+
+			`which Ptah has no statement to drop; nothing was dropped`)
 		c.Assert(fake.executed, qt.HasLen, 0)
 		c.Assert(fake.removed, qt.HasLen, 0)
 	})
@@ -660,9 +671,9 @@ func TestWriter_RemoveRealm_FailurePath(t *testing.T) {
 			wantErr: `the dev_realm parameter "../app" is not a realm name: use 1 to 64 lowercase letters, digits and underscores`,
 		},
 		{
-			name:  "a topic inside",
+			name:  "a coordination node inside",
 			realm: "r1",
-			wantErr: `ydb: the dev realm /local/ptah_dev/r1 holds topic "events" in directory "app", ` +
+			wantErr: `ydb: the dev realm /local/ptah_dev/r1 holds coordination node "semaphores" in directory "app", ` +
 				`which Ptah has no statement to drop; nothing was dropped`,
 		},
 	}
@@ -673,7 +684,7 @@ func TestWriter_RemoveRealm_FailurePath(t *testing.T) {
 				"/local":                 {entry("ptah_dev", Ydb_Scheme.Entry_DIRECTORY)},
 				"/local/ptah_dev":        {entry("r1", Ydb_Scheme.Entry_DIRECTORY)},
 				"/local/ptah_dev/r1":     {entry("t", Ydb_Scheme.Entry_TABLE), entry("app", Ydb_Scheme.Entry_DIRECTORY)},
-				"/local/ptah_dev/r1/app": {entry("events", Ydb_Scheme.Entry_TOPIC)},
+				"/local/ptah_dev/r1/app": {entry("semaphores", Ydb_Scheme.Entry_COORDINATION_NODE)},
 			}}
 			writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", test.in)
 

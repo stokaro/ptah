@@ -2110,6 +2110,134 @@
       ],
       "type": "object"
     },
+    "ptah.schema.topic": {
+      "additionalProperties": false,
+      "description": "Declares a YDB topic: a persistent message queue at a path of the scheme tree. Its consumers are declared with ptah:schema:topic:consumer in the same file.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "auto_partitioning_down_utilization_percent": {
+              "description": "Share of a partition's write speed below which partitions merge, 1 to 100.",
+              "type": "string"
+            },
+            "auto_partitioning_stabilization_window": {
+              "description": "How long a load lasts before the partition count follows it, an ISO 8601 duration.",
+              "type": "string"
+            },
+            "auto_partitioning_strategy": {
+              "description": "Auto-partitioning: disabled, scale_up, scale_up_and_down or paused.",
+              "type": "string"
+            },
+            "auto_partitioning_up_utilization_percent": {
+              "description": "Share of a partition's write speed above which it splits, 1 to 100.",
+              "type": "string"
+            },
+            "max_active_partitions": {
+              "description": "Most partitions auto-partitioning splits the topic into; needs a strategy other than disabled.",
+              "type": "string"
+            },
+            "min_active_partitions": {
+              "description": "Partitions writers write to; the count only grows.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Topic name, the last segment of its path.",
+              "type": "string"
+            },
+            "partition_write_burst_bytes": {
+              "description": "Burst a partition takes above its quota, in bytes; the write speed when omitted.",
+              "type": "string"
+            },
+            "partition_write_speed_bytes_per_second": {
+              "description": "Write quota of one partition in bytes per second.",
+              "type": "string"
+            },
+            "retention_period": {
+              "description": "How long the topic keeps a message, an ISO 8601 duration; 24 hours when omitted.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Directory that holds the topic, relative to the database root.",
+              "type": "string"
+            },
+            "supported_codecs": {
+              "description": "Codecs a writer may use: raw, gzip, lzop, zstd, custom.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:topic"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "ptah.schema.topic.consumer": {
+      "additionalProperties": false,
+      "description": "Declares a consumer of a YDB topic: a named reader that keeps its own position in the topic. The topic is declared in the same file.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "availability_period": {
+              "description": "How long the topic keeps a message this consumer has not read past the retention period, an ISO 8601 duration.",
+              "type": "string"
+            },
+            "important": {
+              "description": "The topic keeps a message this consumer has not read past the retention period.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string",
+              "x-ptah-bare-boolean": true
+            },
+            "name": {
+              "description": "Consumer name, unique within the topic.",
+              "type": "string"
+            },
+            "read_from": {
+              "description": "RFC 3339 time a partition this consumer has not read is read from.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Directory of the topic, when it has one.",
+              "type": "string"
+            },
+            "supported_codecs": {
+              "description": "Codecs the consumer reads: raw, gzip, lzop, zstd, custom.",
+              "type": "string"
+            },
+            "topic": {
+              "description": "Topic the consumer reads.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "topic"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:topic:consumer"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
     "ptah.schema.trigger": {
       "additionalProperties": false,
       "description": "Declares a database trigger.",
@@ -2307,6 +2435,12 @@
     },
     {
       "$ref": "#/$defs/ptah.schema.synonym"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.topic"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.topic.consumer"
     },
     {
       "$ref": "#/$defs/ptah.schema.resourcepool"

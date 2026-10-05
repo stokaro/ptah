@@ -335,6 +335,10 @@ var yamlOnlyExtensions = []string{".yaml", ".yml"}
 //     through `ptah-compat schema inspect` and applied back from that HCL
 //     planned `ALTER TABLE ... RESET (TTL)`, and an HCL or a DBML document
 //     declaring a table that carries a changefeed planned `DROP CHANGEFEED`.
+//   - Only YAML and a Go schema express a YDB topic. HCL has no block for
+//     one, and neither the SQL parser nor DBML produces one, so an HCL
+//     document applied to a YDB database holding a topic would otherwise plan
+//     `DROP TOPIC`.
 //   - Only YAML and a Go schema express a YDB resource pool or classifier.
 //     HCL has no block for either, and neither the SQL parser nor DBML
 //     produces one, so the document cannot say that a database holds none.
@@ -357,6 +361,9 @@ func withFormatLimits(database *schemamodel.Database, resolved string) *schemamo
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(
 			coverage.Synonym, coverage.ExtendedProperty, coverage.Hypertable,
 			coverage.ContinuousAggregate)...)
+	}
+	if !slices.Contains(yamlOnlyExtensions, extension) {
+		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(coverage.Topic)...)
 	}
 	if !slices.Contains(yamlOnlyExtensions, extension) {
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(
@@ -817,6 +824,7 @@ func appendDatabase(dst, src *schemamodel.Database) {
 	dst.Hypertables = append(dst.Hypertables, src.Hypertables...)
 	dst.ContinuousAggregates = append(dst.ContinuousAggregates, src.ContinuousAggregates...)
 	dst.Synonyms = append(dst.Synonyms, src.Synonyms...)
+	dst.Topics = append(dst.Topics, src.Topics...)
 	dst.ResourcePools = append(dst.ResourcePools, src.ResourcePools...)
 	dst.ResourcePoolClassifiers = append(dst.ResourcePoolClassifiers, src.ResourcePoolClassifiers...)
 	dst.ExtendedProperties = append(dst.ExtendedProperties, src.ExtendedProperties...)

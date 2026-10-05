@@ -112,6 +112,7 @@ func Fixtures() []Fixture {
 		{Name: "hypertable", Schema: hypertableFixture()},
 		{Name: "continuous-aggregate", Schema: continuousAggregateFixture()},
 		{Name: "synonym", Schema: synonymFixture()},
+		{Name: "topic", Schema: topicFixture()},
 		{Name: "resource-pool", Schema: resourcePoolFixture()},
 		{Name: "extended-property", Schema: extendedPropertyFixture()},
 		{Name: "role", Schema: roleFixture()},
@@ -1313,6 +1314,30 @@ func synonymFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
 	db.Synonyms = []schemamodel.Synonym{{
 		StructName: "SY", Name: "tt", Schema: "dbo", Target: "dbo.t", Comment: "alias",
+	}}
+	return db
+}
+
+// topicFixture declares a YDB topic that sets every setting and two consumers
+// that set every consumer setting between them: important and an
+// availability period are one consumer each, because YDB refuses a consumer
+// holding both.
+func topicFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Topics = []schemamodel.Topic{{
+		StructName: "TO", Name: "events", Schema: "app",
+		Spec: ast.TopicSpec{
+			MinActivePartitions: 2, MaxActivePartitions: 6, AutoPartitioningStrategy: "scale_up",
+			AutoPartitioningUpUtilizationPercent: 70, AutoPartitioningDownUtilizationPercent: 10,
+			AutoPartitioningStabilizationWindow: "PT2M", RetentionPeriod: "PT36H",
+			PartitionWriteSpeedBytesPerSecond: 2097152, PartitionWriteBurstBytes: 3145728,
+			SupportedCodecs: []string{"raw", "gzip"},
+			Consumers: []ast.TopicConsumerSpec{
+				{Name: "billing", Important: true},
+				{Name: "audit", ReadFrom: "2026-01-01T00:00:00Z", SupportedCodecs: []string{"raw", "gzip"},
+					AvailabilityPeriod: "PT2H"},
+			},
+		},
 	}}
 	return db
 }

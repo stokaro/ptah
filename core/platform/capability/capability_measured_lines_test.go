@@ -240,6 +240,7 @@ func measuredLines() map[string]measuredLine {
 				capability.SerialColumns:                   typeKeyCarried,
 				capability.SerialSequenceOptions:           serialKeyCarried,
 				capability.SerialSequenceKeepsRange:        serialKeyCarried,
+				capability.Topics:                          topicKeyCarried,
 				capability.ResourcePools:                   workloadKeyCarried,
 				capability.BackupCollections:               workloadKeyCarried,
 				capability.StreamingQueries:                workloadKeyCarried,
@@ -401,6 +402,7 @@ func measuredLines() map[string]measuredLine {
 				capability.SerialColumns:                   typeKeyCarried,
 				capability.SerialSequenceOptions:           serialKeyCarried,
 				capability.SerialSequenceKeepsRange:        serialKeyCarried,
+				capability.Topics:                          topicKeyCarried,
 				capability.ResourcePools:                   workloadKeyCarried,
 				capability.BackupCollections:               workloadKeyCarried,
 				capability.StreamingQueries:                workloadKeyCarried,
@@ -563,6 +565,7 @@ func measuredLines() map[string]measuredLine {
 				capability.SerialColumns:                   typeKeyCarried,
 				capability.SerialSequenceOptions:           serialKeyCarried,
 				capability.SerialSequenceKeepsRange:        serialKeyCarried,
+				capability.Topics:                          topicKeyCarried,
 				capability.ResourcePools:                   workloadKeyCarried,
 				capability.BackupCollections:               workloadKeyCarried,
 				capability.StreamingQueries:                workloadKeyCarried,
@@ -727,6 +730,12 @@ const indexKeyCarried = "this run predates the key and sent no index experiment;
 // asks it on every run through its view experiment, which reads the replaced
 // view back, and the value here is the preset's.
 const viewKeyCarried = "this run predates the key and sent no view-replacement experiment; the probe asks it " +
+	"on every run through that experiment, and the value here is the preset's"
+
+// topicKeyCarried is why the key about standalone YDB topics is carried on
+// every measured line: the run named there predates it. The probe asks it on
+// every run through its topic experiment, and the value here is the preset's.
+const topicKeyCarried = "this run predates the key and sent no topic experiment; the probe asks it " +
 	"on every run through that experiment, and the value here is the preset's"
 
 // serialKeyCarried is why the keys about a Serial column's sequence are

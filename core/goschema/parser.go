@@ -727,6 +727,8 @@ type schemaParseState struct {
 	notDescribed            []coverage.Object
 	changefeeds             []pendingChangefeed
 	consumers               []pendingConsumer
+	topics                  []schemamodel.Topic
+	topicConsumers          []pendingTopicConsumer
 	resourcePools           []schemamodel.ResourcePool
 	resourcePoolClassifiers []schemamodel.ResourcePoolClassifier
 }
@@ -853,6 +855,8 @@ var sharedDirectiveParsers = map[string]sharedDirectiveParser{
 	"ptah:schema:notdescribed":            ignoringStruct((*schemaParseState).parseNotDescribedComment),
 	"ptah:schema:changefeed":              (*schemaParseState).parseChangefeedComment,
 	"ptah:schema:changefeed:consumer":     (*schemaParseState).parseChangefeedConsumerComment,
+	"ptah:schema:topic":                   (*schemaParseState).parseTopicComment,
+	"ptah:schema:topic:consumer":          (*schemaParseState).parseTopicConsumerComment,
 	"ptah:schema:resourcepool":            (*schemaParseState).parseResourcePoolComment,
 	"ptah:schema:resourcepool:classifier": (*schemaParseState).parseResourcePoolClassifierComment,
 }
@@ -995,6 +999,9 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 	if err := state.attachChangefeeds(); err != nil {
 		return schemamodel.Database{}, err
 	}
+	if err := state.attachTopicConsumers(); err != nil {
+		return schemamodel.Database{}, err
+	}
 
 	enums := make([]schemamodel.Enum, 0, len(state.globalEnumsMap))
 	keys := make([]string, 0, len(state.globalEnumsMap))
@@ -1027,6 +1034,7 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 		Ranges:                  state.ranges,
 		Views:                   state.views,
 		Synonyms:                state.synonyms,
+		Topics:                  state.topics,
 		ResourcePools:           state.resourcePools,
 		ResourcePoolClassifiers: state.resourcePoolClassifiers,
 		ExtendedProperties:      state.extendedProperties,

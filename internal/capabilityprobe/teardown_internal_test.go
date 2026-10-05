@@ -28,7 +28,7 @@ func ydbSessionOverSQLite(c *qt.C) *session {
 
 // A refused removal leaves the directory standing whatever the table count
 // says: the partition statistics list row tables only, so a directory holding
-// a topic counts no table at all.
+// a coordination node counts no table at all.
 func TestLeftovers_ARefusedRemovalIsALeftover_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	s := ydbSessionOverSQLite(c)

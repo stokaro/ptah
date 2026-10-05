@@ -610,10 +610,10 @@ func TestRenderSQL_TypedNilForeignKeyContainers_FailurePath(t *testing.T) {
 		node    ast.Node
 		wantErr string
 	}{
-		{name: "create table", node: createTable, wantErr: "invalid foreign key: create-table node is nil"},
-		{name: "alter table", node: alterTable, wantErr: "invalid foreign key: alter-table node is nil"},
-		{name: "column", node: column, wantErr: "invalid foreign key: column node is nil"},
-		{name: "constraint", node: constraint, wantErr: "invalid foreign key: constraint node is nil"},
+		{name: "create table", node: createTable, wantErr: `\*ast\.CreateTableNode is nil`},
+		{name: "alter table", node: alterTable, wantErr: `\*ast\.AlterTableNode is nil`},
+		{name: "column", node: column, wantErr: `\*ast\.ColumnNode is nil`},
+		{name: "constraint", node: constraint, wantErr: `\*ast\.ConstraintNode is nil`},
 	}
 
 	for _, test := range tests {
@@ -633,7 +633,7 @@ func TestRenderSQL_NilASTNode_FailurePath(t *testing.T) {
 	sql, err := renderer.RenderSQL("postgres", nil)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-	c.Assert(err, qt.ErrorMatches, "invalid foreign key: AST node is nil")
+	c.Assert(err, qt.ErrorMatches, "AST node is nil")
 	c.Assert(sql, qt.Equals, "")
 }
 
@@ -644,7 +644,7 @@ func TestRenderSQL_TypedNilGenericASTNode_FailurePath(t *testing.T) {
 	sql, err := renderer.RenderSQL("postgres", index)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-	c.Assert(err, qt.ErrorMatches, "index node is nil")
+	c.Assert(err, qt.ErrorMatches, `\*ast\.IndexNode is nil`)
 	c.Assert(sql, qt.Equals, "")
 }
 
@@ -656,7 +656,7 @@ func TestRenderSQL_NilAlterOperation_FailurePath(t *testing.T) {
 	sql, err := renderer.RenderSQL("postgres", node)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-	c.Assert(err, qt.ErrorMatches, "invalid foreign key: alter-table operation is nil")
+	c.Assert(err, qt.ErrorMatches, "alter-table operation is nil")
 	c.Assert(sql, qt.Equals, "")
 }
 
@@ -689,7 +689,7 @@ func TestRenderSQL_TypedNilAlterOperations_FailurePath(t *testing.T) {
 			node := &ast.AlterTableNode{Name: "children", Operations: []ast.AlterOperation{test.operation}}
 			sql, err := renderer.RenderSQL("postgres", node)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-			c.Assert(err, qt.ErrorMatches, "invalid foreign key: alter-table operation is nil")
+			c.Assert(err, qt.ErrorMatches, "alter-table operation is nil")
 			c.Assert(sql, qt.Equals, "")
 		})
 	}

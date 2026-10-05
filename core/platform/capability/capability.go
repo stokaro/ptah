@@ -1368,6 +1368,20 @@ const (
 	// accepted once the flag is on, and on from 25.2.1.24.
 	ChangefeedTopicAutoPartitioning Capability = "changefeed_topic_auto_partitioning"
 
+	// Topics marks a target on which Ptah declares, reads and plans a
+	// standalone topic and its consumers: YDB's `CREATE TOPIC`, `ALTER TOPIC`
+	// and `DROP TOPIC`, a persistent message queue at a path of the scheme
+	// tree with readers that each keep their own position in it. A
+	// changefeed's topic belongs to its table and is not one of them.
+	//
+	// Measured on YDB 25.1.4.7 and 26.2.1.14 alike: a topic is created with
+	// its consumers and settings in one statement, `ALTER TOPIC` adds,
+	// changes and drops consumers and changes settings in place, and the
+	// topic service's DescribeTopic reports the settings and the consumers.
+	// No setting can be reset: `RESET (...)` changes nothing on 26.2.1.14
+	// and is a parse error on 25.1.4.7, so a change names the value.
+	Topics Capability = "topics"
+
 	// TopicConsumerAvailabilityPeriod marks a target whose topic consumer
 	// takes `availability_period`, the time the topic keeps a record that
 	// consumer has not read beyond the retention period. Measured: accepted
@@ -1906,6 +1920,9 @@ var registry = map[Capability]spec{
 	ChangefeedTopicAutoPartitioning: {
 		doc: "a changefeed's topic gains partitions as writes grow, TOPIC_AUTO_PARTITIONING (behind a flag on YDB 25.1)",
 	},
+	Topics: {
+		doc: "Ptah declares, reads and plans a standalone topic and its consumers (YDB's CREATE TOPIC)",
+	},
 	TopicConsumerAvailabilityPeriod: {
 		doc: "a topic consumer keeps unread records past the retention, availability_period (YDB 25.4 and later)",
 	},
@@ -2220,12 +2237,13 @@ func MySQL84() Capabilities {
 		// index partitioning is YDB's, so both index keys are false here.
 		IndexRename:       false,
 		IndexPartitioning: false,
-		// A changefeed and the topic consumers it carries are YDB's, so the
-		// five changefeed keys are false here.
+		// A changefeed, a standalone topic and the consumers either carries
+		// are YDB's, so the changefeed and topic keys are false here.
 		Changefeeds:                     false,
 		ChangefeedUserSIDs:              false,
 		ChangefeedSchemaChanges:         false,
 		ChangefeedTopicAutoPartitioning: false,
+		Topics:                          false,
 		TopicConsumerAvailabilityPeriod: false,
 		// Resource pools, backup collections and streaming queries are
 		// YDB's, so the three keys are false here.
@@ -2455,12 +2473,13 @@ func MariaDB1011() Capabilities {
 		// index partitioning is YDB's, so both index keys are false here.
 		IndexRename:       false,
 		IndexPartitioning: false,
-		// A changefeed and the topic consumers it carries are YDB's, so the
-		// five changefeed keys are false here.
+		// A changefeed, a standalone topic and the consumers either carries
+		// are YDB's, so the changefeed and topic keys are false here.
 		Changefeeds:                     false,
 		ChangefeedUserSIDs:              false,
 		ChangefeedSchemaChanges:         false,
 		ChangefeedTopicAutoPartitioning: false,
+		Topics:                          false,
 		TopicConsumerAvailabilityPeriod: false,
 		// Resource pools, backup collections and streaming queries are
 		// YDB's, so the three keys are false here.
@@ -2629,14 +2648,16 @@ func Postgres16() Capabilities {
 		// index partitioning is YDB's, so both index keys are false here.
 		IndexRename:       false,
 		IndexPartitioning: false,
-		// A changefeed and the topic consumers it carries are YDB's, so the
-		// five changefeed keys are false here. CockroachDB's CREATE
-		// CHANGEFEED, inherited from this preset, is a job that exports rows
-		// rather than a setting of the table, and Ptah models none.
+		// A changefeed, a standalone topic and the consumers either carries
+		// are YDB's, so the changefeed and topic keys are false here.
+		// CockroachDB's CREATE CHANGEFEED, inherited from this preset, is a
+		// job that exports rows rather than a setting of the table, and Ptah
+		// models none.
 		Changefeeds:                     false,
 		ChangefeedUserSIDs:              false,
 		ChangefeedSchemaChanges:         false,
 		ChangefeedTopicAutoPartitioning: false,
+		Topics:                          false,
 		TopicConsumerAvailabilityPeriod: false,
 		// Resource pools, backup collections and streaming queries are
 		// YDB's, so the three keys are false here.
@@ -2931,12 +2952,13 @@ func ClickHouse24() Capabilities {
 		// index partitioning is YDB's, so both index keys are false here.
 		IndexRename:       false,
 		IndexPartitioning: false,
-		// A changefeed and the topic consumers it carries are YDB's, so the
-		// five changefeed keys are false here.
+		// A changefeed, a standalone topic and the consumers either carries
+		// are YDB's, so the changefeed and topic keys are false here.
 		Changefeeds:                     false,
 		ChangefeedUserSIDs:              false,
 		ChangefeedSchemaChanges:         false,
 		ChangefeedTopicAutoPartitioning: false,
+		Topics:                          false,
 		TopicConsumerAvailabilityPeriod: false,
 		// Resource pools, backup collections and streaming queries are
 		// YDB's, so the three keys are false here.
@@ -3126,12 +3148,13 @@ func SQLite3() Capabilities {
 		// index partitioning is YDB's, so both index keys are false here.
 		IndexRename:       false,
 		IndexPartitioning: false,
-		// A changefeed and the topic consumers it carries are YDB's, so the
-		// five changefeed keys are false here.
+		// A changefeed, a standalone topic and the consumers either carries
+		// are YDB's, so the changefeed and topic keys are false here.
 		Changefeeds:                     false,
 		ChangefeedUserSIDs:              false,
 		ChangefeedSchemaChanges:         false,
 		ChangefeedTopicAutoPartitioning: false,
+		Topics:                          false,
 		TopicConsumerAvailabilityPeriod: false,
 		// Resource pools, backup collections and streaming queries are
 		// YDB's, so the three keys are false here.
@@ -3400,12 +3423,13 @@ func SQLServer2022() Capabilities {
 		// index partitioning is YDB's, so both index keys are false here.
 		IndexRename:       false,
 		IndexPartitioning: false,
-		// A changefeed and the topic consumers it carries are YDB's, so the
-		// five changefeed keys are false here.
+		// A changefeed, a standalone topic and the consumers either carries
+		// are YDB's, so the changefeed and topic keys are false here.
 		Changefeeds:                     false,
 		ChangefeedUserSIDs:              false,
 		ChangefeedSchemaChanges:         false,
 		ChangefeedTopicAutoPartitioning: false,
+		Topics:                          false,
 		TopicConsumerAvailabilityPeriod: false,
 		// Resource pools, backup collections and streaming queries are
 		// YDB's, so the three keys are false here.
@@ -4112,12 +4136,13 @@ func Oracle23() Capabilities {
 		// index partitioning is YDB's, so both index keys are false here.
 		IndexRename:       false,
 		IndexPartitioning: false,
-		// A changefeed and the topic consumers it carries are YDB's, so the
-		// five changefeed keys are false here.
+		// A changefeed, a standalone topic and the consumers either carries
+		// are YDB's, so the changefeed and topic keys are false here.
 		Changefeeds:                     false,
 		ChangefeedUserSIDs:              false,
 		ChangefeedSchemaChanges:         false,
 		ChangefeedTopicAutoPartitioning: false,
+		Topics:                          false,
 		TopicConsumerAvailabilityPeriod: false,
 		// Resource pools, backup collections and streaming queries are
 		// YDB's, so the three keys are false here.
@@ -4330,6 +4355,11 @@ func YDB262() Capabilities {
 		ChangefeedUserSIDs:              true,
 		ChangefeedSchemaChanges:         true,
 		ChangefeedTopicAutoPartitioning: true,
+		// Topics and their consumers: CREATE TOPIC, ALTER TOPIC and DROP
+		// TOPIC, read back through DescribeTopic, measured on 25.1.4.7 and
+		// 26.2.1.14 alike, so every line between them carries them too. A
+		// consumer takes availability_period from 25.4 on.
+		Topics:                          true,
 		TopicConsumerAvailabilityPeriod: true,
 		// Workload management and backups. Resource pools and their
 		// classifiers are behind EnableResourcePools, off by default on every

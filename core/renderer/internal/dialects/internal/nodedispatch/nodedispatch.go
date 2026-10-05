@@ -52,6 +52,34 @@ func RefuseSerialSequence(dialect string, node *ast.AlterSerialSequenceNode) err
 	}
 }
 
+// RefuseTopic refuses a topic node on a renderer whose engine has no topic
+// Ptah models: every renderer but YDB's. The central renderer refuses a topic
+// on a target without [capability.Topics] before a dialect sees the node, so
+// this answers a caller that visits the node with a dialect renderer directly,
+// whatever capability set it claims, and names the renderer that refused.
+//
+// It is one constructor rather than one per renderer because the refusal names
+// the capability rather than a dialect's own construct, and eight copies of it
+// would agree only until the first one changed.
+func RefuseTopic(dialect string, node ast.Node) error {
+	subject := "a topic"
+	switch typed := node.(type) {
+	case *ast.CreateTopicNode:
+		subject = "topic " + typed.Name
+	case *ast.AlterTopicNode:
+		subject = "ALTER TOPIC " + typed.Name
+	case *ast.DropTopicNode:
+		subject = "DROP TOPIC " + typed.Name
+	}
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: string(capability.Topics),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s: the %s renderer writes no topic; a topic needs target capability %s, which only "+
+			"YDB has", subject, dialect, capability.Topics),
+	}
+}
+
 // RefuseResourcePool refuses a resource pool or classifier node on a renderer
 // whose engine has no resource pool Ptah models: every renderer but YDB's. The
 // central renderer refuses one on a target without [capability.ResourcePools]

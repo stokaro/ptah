@@ -81,6 +81,9 @@ func ToDBSchema(db *schemamodel.Database, dialect string) *catalog.Database {
 		// comparison reports none, so the diff plans the same ALTER DEFAULT
 		// PRIVILEGES on every run and never converges.
 		DefaultPrivileges: toDBDefaultPrivileges(db.DefaultPrivileges),
+		// A topic declared in a document stands for the topic its database
+		// would hold, so a file-to-file comparison finds it on both sides.
+		Topics: toDBTopics(db.Topics),
 		// A pool declared in a document stands for the pool its database
 		// would hold, so a file-to-file comparison finds it on both sides.
 		ResourcePools:           toDBResourcePools(db.ResourcePools),
@@ -670,6 +673,17 @@ func toDBFunctions(functions []schemamodel.Function) []catalog.Function {
 			Body:       function.Body,
 			Comment:    function.Comment,
 		})
+	}
+	return out
+}
+
+func toDBTopics(topics []schemamodel.Topic) []catalog.Topic {
+	if len(topics) == 0 {
+		return nil
+	}
+	out := make([]catalog.Topic, 0, len(topics))
+	for _, topic := range topics {
+		out = append(out, catalog.Topic{Name: topic.Name, Schema: topic.Schema, Spec: topic.Spec.Clone()})
 	}
 	return out
 }

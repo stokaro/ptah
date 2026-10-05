@@ -232,6 +232,85 @@ func TestRead_DropsAndViews(t *testing.T) {
 	}
 }
 
+func TestRead_CreateTopic(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+		want yqlddl.Statement
+	}{
+		{name: "a name alone", sql: "CREATE TOPIC `dir/events`;", want: yqlddl.Statement{Kind: yqlddl.CreateTopic, Name: "dir/events"}},
+		{
+			name: "consumers and settings",
+			sql: "CREATE TOPIC IF NOT EXISTS events (CONSUMER billing WITH (important = TRUE, supported_codecs = 'raw,gzip'), " +
+				"CONSUMER `audit`) WITH (min_active_partitions = 2, retention_period = Interval('PT2H'), metering_mode = \"it\\'s\")",
+			want: yqlddl.Statement{
+				Kind: yqlddl.CreateTopic, Name: "events", IfExists: true,
+				Consumers: []yqlddl.Consumer{
+					{Name: "billing", Settings: []yqlddl.Setting{
+						{Name: "IMPORTANT", Value: "TRUE"},
+						{Name: "SUPPORTED_CODECS", Text: "raw,gzip"},
+					}},
+					{Name: "audit"},
+				},
+				Settings: []yqlddl.Setting{
+					{Name: "MIN_ACTIVE_PARTITIONS", Value: "2"},
+					{Name: "RETENTION_PERIOD", Value: "INTERVAL"},
+					{Name: "METERING_MODE", Text: "it's"},
+				},
+			},
+		},
+		{name: "drop topic", sql: "DROP TOPIC IF EXISTS `dir/events`", want: yqlddl.Statement{Kind: yqlddl.DropTopic, Name: "dir/events", IfExists: true}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(yqlddl.Read(test.sql), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+func TestRead_AlterTopic(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+		want []yqlddl.Action
+	}{
+		{
+			name: "topic settings",
+			sql:  "ALTER TOPIC events SET (retention_period = Interval('P1D'), supported_codecs = 'raw'u), RESET (partition_count_limit)",
+			want: []yqlddl.Action{
+				{Kind: yqlddl.SetSettings, Settings: []yqlddl.Setting{
+					{Name: "RETENTION_PERIOD", Value: "INTERVAL"},
+					{Name: "SUPPORTED_CODECS", Text: "raw"},
+				}},
+				{Kind: yqlddl.ResetSettings, Settings: []yqlddl.Setting{{Name: "PARTITION_COUNT_LIMIT"}}},
+			},
+		},
+		{
+			name: "consumers",
+			sql: "ALTER TOPIC events ADD CONSUMER `fresh` WITH (important = TRUE), DROP CONSUMER gone, " +
+				"ALTER CONSUMER kept SET (read_from = Timestamp('2026-01-01T00:00:00Z')), ALTER CONSUMER kept RESET (availability_period), " +
+				"ALTER CONSUMER odd RENAME TO other",
+			want: []yqlddl.Action{
+				{Kind: yqlddl.AddConsumer, Consumer: "fresh", Settings: []yqlddl.Setting{{Name: "IMPORTANT", Value: "TRUE"}}},
+				{Kind: yqlddl.DropConsumer, Consumer: "gone"},
+				{Kind: yqlddl.SetConsumerSettings, Consumer: "kept", Settings: []yqlddl.Setting{{Name: "READ_FROM", Value: "TIMESTAMP"}}},
+				{Kind: yqlddl.ResetConsumerSettings, Consumer: "kept", Settings: []yqlddl.Setting{{Name: "AVAILABILITY_PERIOD"}}},
+				{Consumer: "odd"},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			stmt := yqlddl.Read(test.sql)
+			c.Assert(stmt.Kind, qt.Equals, yqlddl.AlterTopic)
+			c.Assert(stmt.Name, qt.Equals, "events")
+			c.Assert(stmt.Actions, qt.DeepEquals, test.want)
+		})
+	}
+}
+
 // tokens lexes a statement the way the package does, comments and whitespace
 // left out.
 func tokens(statement string) []lexer.Token {
