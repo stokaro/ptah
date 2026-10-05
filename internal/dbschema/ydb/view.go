@@ -9,6 +9,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/ydbcomment"
+	"ptah.run/internal/ydbview"
 )
 
 // view adds one described view, whose body is the query text the server
@@ -22,6 +23,9 @@ import (
 // none to record. A field the pinned protocol buffers do not model refuses
 // the read, as a column's does, because a view setting a newer YDB added
 // would otherwise be lost in silence.
+//
+// Inside a dev realm, the leading pragma added by the connection is removed:
+// the catalog already resolves relative paths from that realm.
 func (r *Reader) view(
 	ctx context.Context,
 	source Source,
@@ -37,7 +41,11 @@ func (r *Reader) view(
 	if err != nil {
 		return err
 	}
-	db.Views = append(db.Views, catalog.View{Name: name, Schema: schema, Body: described.GetQueryText(), Comment: comment})
+	body := described.GetQueryText()
+	if r.realm {
+		body = ydbview.RealmQueryText(body, r.database)
+	}
+	db.Views = append(db.Views, catalog.View{Name: name, Schema: schema, Body: body, Comment: comment})
 	return nil
 }
 
