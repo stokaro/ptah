@@ -557,6 +557,7 @@ func (r *renderer) renderBody() {
 	r.reportChangefeeds()
 	r.reportRowDeletionPolicies()
 	r.reportTopics()
+	r.reportReplications()
 	r.reportTablePartitioning()
 	r.renderExtensions()
 	r.renderSequences()

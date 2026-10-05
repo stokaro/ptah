@@ -10,7 +10,9 @@ import (
 	"github.com/ydb-platform/ydb-go-genproto/Ydb_Scheme_V1"
 	"github.com/ydb-platform/ydb-go-genproto/Ydb_Table_V1"
 	"github.com/ydb-platform/ydb-go-genproto/Ydb_Topic_V1"
+	"github.com/ydb-platform/ydb-go-genproto/draft/Ydb_Replication_V1"
 	"github.com/ydb-platform/ydb-go-genproto/draft/Ydb_View_V1"
+	"github.com/ydb-platform/ydb-go-genproto/draft/protos/Ydb_Replication"
 	"github.com/ydb-platform/ydb-go-genproto/draft/protos/Ydb_View"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Coordination"
@@ -20,14 +22,17 @@ import (
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Table"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Topic"
 	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
+	grpccodes "google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
 // Source is what the reader asks a YDB database: a directory's own entry and
 // the entries under it, the description of a row table, of a view or of a
 // coordination node, the description of a topic, which is how a standalone
-// topic and a changefeed's retention and consumers are read, and the
-// database's users, groups and memberships. A path is absolute.
+// topic and a changefeed's retention and consumers are read, the description
+// of an async replication or a transfer, and the database's users, groups and
+// memberships. A path is absolute.
 //
 // A directory's own entry and a table's description each carry the object's
 // owner and its permission entries, which is where the reader reads them from:
@@ -38,6 +43,8 @@ type Source interface {
 	DescribeView(ctx context.Context, path string) (*Ydb_View.DescribeViewResult, error)
 	DescribeTopic(ctx context.Context, path string) (*Ydb_Topic.DescribeTopicResult, error)
 	Principals(ctx context.Context) (Principals, error)
+	DescribeReplication(ctx context.Context, path string) (*Ydb_Replication.DescribeReplicationResult, error)
+	DescribeTransfer(ctx context.Context, path string) (*Ydb_Replication.DescribeTransferResult, error)
 	DescribeCoordinationNode(ctx context.Context, path string) (*Ydb_Coordination.DescribeNodeResult, error)
 }
 
@@ -51,10 +58,16 @@ type Source interface {
 // pinned protocol buffers do not know, where the reader decodes a vector index
 // and refuses every other kind by name.
 type grpcSource struct {
-	scheme       Ydb_Scheme_V1.SchemeServiceClient
-	table        Ydb_Table_V1.TableServiceClient
-	view         Ydb_View_V1.ViewServiceClient
-	topic        Ydb_Topic_V1.TopicServiceClient
+	scheme Ydb_Scheme_V1.SchemeServiceClient
+	table  Ydb_Table_V1.TableServiceClient
+	view   Ydb_View_V1.ViewServiceClient
+	topic  Ydb_Topic_V1.TopicServiceClient
+	// replication is the replication service, which describes an async
+	// replication and a transfer. local-ydb leaves it out of the services it
+	// starts (its configuration lists them, and `replication` is not among
+	// them), while a cluster whose configuration lists none starts it with
+	// the rest; YDB_GRPC_SERVICES=replication adds it to local-ydb.
+	replication  Ydb_Replication_V1.ReplicationServiceClient
 	coordination grpcCoordination
 	session      string
 	database     string
@@ -69,6 +82,7 @@ func newGRPCSource(ctx context.Context, driver *ydbsdk.Driver) (*grpcSource, fun
 		table:        Ydb_Table_V1.NewTableServiceClient(connection),
 		view:         Ydb_View_V1.NewViewServiceClient(connection),
 		topic:        Ydb_Topic_V1.NewTopicServiceClient(connection),
+		replication:  Ydb_Replication_V1.NewReplicationServiceClient(connection),
 		coordination: grpcCoordination{client: Ydb_Coordination_V1.NewCoordinationServiceClient(connection)},
 		database:     driver.Name(),
 	}
@@ -198,6 +212,58 @@ func (s *grpcSource) DescribeTopic(ctx context.Context, path string) (*Ydb_Topic
 		return nil, fmt.Errorf("describe YDB topic %s: %w", path, err)
 	}
 	return &described, nil
+}
+
+// DescribeReplication describes the async replication at path: its
+// connection, its credential by the secret it names, its consistency, its
+// items and its state.
+func (s *grpcSource) DescribeReplication(
+	ctx context.Context,
+	path string,
+) (*Ydb_Replication.DescribeReplicationResult, error) {
+	response, err := s.replication.DescribeReplication(ctx, &Ydb_Replication.DescribeReplicationRequest{Path: path})
+	if err != nil {
+		return nil, replicationServiceError("describe YDB async replication "+path, err)
+	}
+	var described Ydb_Replication.DescribeReplicationResult
+	if err := operationResult(response.GetOperation(), &described); err != nil {
+		return nil, fmt.Errorf("describe YDB async replication %s: %w", path, err)
+	}
+	return &described, nil
+}
+
+// DescribeTransfer describes the transfer at path: its connection, its
+// source, its destination, its lambda as stored, its consumer, its batch
+// settings and its state.
+func (s *grpcSource) DescribeTransfer(ctx context.Context, path string) (*Ydb_Replication.DescribeTransferResult, error) {
+	response, err := s.replication.DescribeTransfer(ctx, &Ydb_Replication.DescribeTransferRequest{Path: path})
+	if err != nil {
+		return nil, replicationServiceError("describe YDB transfer "+path, err)
+	}
+	var described Ydb_Replication.DescribeTransferResult
+	if err := operationResult(response.GetOperation(), &described); err != nil {
+		return nil, fmt.Errorf("describe YDB transfer %s: %w", path, err)
+	}
+	return &described, nil
+}
+
+// ErrReplicationServiceUnavailable is the answer of a cluster that does not
+// serve YDB's replication API, which describes async replications and
+// transfers. Measured on local-ydb 25.1.4.7 and 26.2.1.14 with their default
+// configuration: the CLI's `scheme describe` of a replication answers `GRpc
+// error: (12)`, UNIMPLEMENTED, and describes it once the container starts
+// with YDB_GRPC_SERVICES=replication.
+var ErrReplicationServiceUnavailable = errors.New("the YDB cluster does not serve the replication API " +
+	"(grpc_config services lack replication)")
+
+// replicationServiceError wraps an error of a replication service call,
+// naming [ErrReplicationServiceUnavailable] where the server answered
+// UNIMPLEMENTED.
+func replicationServiceError(subject string, err error) error {
+	if grpcstatus.Code(err) == grpccodes.Unimplemented {
+		return fmt.Errorf("%s: %w: %w", subject, ErrReplicationServiceUnavailable, WithoutStackFrames(err))
+	}
+	return fmt.Errorf("%s: %w", subject, WithoutStackFrames(err))
 }
 
 // DescribeCoordinationNode describes the coordination node at path.

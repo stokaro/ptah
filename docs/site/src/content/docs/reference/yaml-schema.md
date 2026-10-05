@@ -82,7 +82,8 @@ Top-level objects are maps. Their keys are used as default object names when a
 | `revokes` | Privileges a role must not hold, named like a grant: `role`, `privileges`, one target, and `comment`. |
 | `default_privileges` | PostgreSQL default privileges: what a grantee receives on objects a role creates later. |
 | `topics` | YDB topics: the settings their annotation takes, and `consumers` keyed by name. See [Topics](../../databases/ydb/#topics). |
-| `coordination_nodes` | YDB coordination nodes: `schema` and the settings of [`//ptah:schema:coordinationnode`](../go-annotations/#ptahschemacoordinationnode). |
+| `async_replications` | YDB async replications: the connection and consistency settings their annotation takes, and `items`, a list of `source` and `target` pairs. See [Async replications and transfers](../../databases/ydb/#async-replications-and-transfers). |
+| `transfers` | YDB transfers: `source`, `target`, `using` and the settings their annotation takes. |
 
 Unknown keys fail. Ptah does not silently ignore fields that look meaningful but
 are outside the supported schema.
@@ -209,7 +210,6 @@ Each entry under `tables` declares one table.
 | `columns` / `fields` | Ordered column map. Use one or the other. |
 | `indexes` | Ordered table-local index map. |
 | `constraints` | Ordered table-local constraint map. |
-| `column_families` | Ordered map of a YDB table's column families; see [Column families](#column-families). |
 | `changefeeds` | Ordered map of a YDB table's changefeeds; see [Changefeeds](#changefeeds). |
 | `rls_enabled` | Enables row-level security for the table. |
 | `row_deletion_column`, `row_deletion_interval`, `row_deletion_unit` | The table's [row deletion policy](../../databases/ydb/#ttl), with the values the annotation attributes of the same names take. Spanner and YDB have one; every other dialect refuses it. |
@@ -293,26 +293,6 @@ map with a `table` key.
 | `comment` | Index comment. |
 | `auto_partitioning_by_size`, `auto_partitioning_partition_size_mb`, `auto_partitioning_by_load`, `auto_partitioning_min_partitions_count`, `auto_partitioning_max_partitions_count`, `read_replicas_settings` | A YDB global index's [partitioning](../../databases/ydb/#index-partitioning), with the values the annotation attributes of the same names take. Every other dialect refuses them. |
 | `distance`, `similarity`, `vector_type`, `vector_dimension`, `levels`, `clusters` | A YDB [vector index](../../databases/ydb/#vector-indexes)'s settings, with the values the annotation attributes of the same names take. Every other dialect refuses them. |
-
-## Column families
-
-A YDB table's column families sit under `tables.<table>.column_families`, keyed
-by name. The keys are the attributes of `//ptah:schema:columnfamily`, with the
-same values; `fields` is a list of the columns the family holds. Every other
-dialect refuses a table that declares a column family. See
-[column families](../../databases/ydb/#column-families).
-
-```yaml
-tables:
-  documents:
-    column_families:
-      default:
-        compression: lz4
-      cold:
-        data: hdd
-        compression: lz4
-        fields: [body, attachment]
-```
 
 ## Changefeeds
 

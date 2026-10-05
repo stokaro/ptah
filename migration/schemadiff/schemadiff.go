@@ -334,6 +334,7 @@ func compareReportingUndecidedAdditions(
 	desired, database = normalizeInlineEnumsForCompare(desired, database, opts)
 	desired = normalizeGeneratedColumnsForCompare(desired, opts)
 	desired = compare.AdoptUndescribedChangefeeds(desired, database, opts.Dialect, identifierSemantics)
+	desired = compare.AdoptTransferConsumers(desired, database, opts.Dialect, identifierSemantics)
 	desired = compare.AdoptHeldColumnFamilies(desired, database, opts.Dialect, identifierSemantics)
 	desired = compare.AdoptUndescribedRowDeletionPolicies(desired, database, opts.Dialect, identifierSemantics)
 
@@ -395,6 +396,7 @@ func compareReportingUndecidedAdditions(
 	compare.ViewsWithSemantics(desired, database, diff, opts.Dialect, identifierSemantics, opts.ViewBodies)
 	compare.Synonyms(desired, database, diff, cov)
 	compare.Topics(desired, database, diff, cov)
+	compare.Replications(desired, database, diff, cov)
 
 	// Compare YDB coordination nodes
 	compare.CoordinationNodes(desired, database, diff, cov)

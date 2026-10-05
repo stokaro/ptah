@@ -1579,6 +1579,33 @@ func appendTopicStatements(visit func(ast.Node) error, topics []schemamodel.Topi
 	return nil
 }
 
+// FromAsyncReplication converts a schemamodel.AsyncReplication to an
+// ast.CreateAsyncReplicationNode carrying its connection and items.
+func FromAsyncReplication(replication schemamodel.AsyncReplication) *ast.CreateAsyncReplicationNode {
+	return ast.NewCreateAsyncReplication(replication.QualifiedName(), replication.Spec)
+}
+
+// FromTransfer converts a schemamodel.Transfer to an ast.CreateTransferNode.
+func FromTransfer(transfer schemamodel.Transfer) *ast.CreateTransferNode {
+	return ast.NewCreateTransfer(transfer.QualifiedName(), transfer.Spec)
+}
+
+// appendReplicationStatements adds a CREATE ASYNC REPLICATION node for each
+// declared replication and a CREATE TRANSFER node for each declared transfer.
+func appendReplicationStatements(visit func(ast.Node) error, database schemamodel.Database) error {
+	for _, replication := range database.AsyncReplications {
+		if err := visit(FromAsyncReplication(replication)); err != nil {
+			return err
+		}
+	}
+	for _, transfer := range database.Transfers {
+		if err := visit(FromTransfer(transfer)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // appendSynonymStatements adds a CREATE SYNONYM node for each declared synonym.
 func appendSynonymStatements(visit func(ast.Node) error, synonyms []schemamodel.Synonym) error {
 	for _, synonym := range synonyms {
@@ -2220,6 +2247,36 @@ func WalkDatabase(
 		return err
 	}
 
+	// 9b1-9c. The objects that depend on the tables existing and on nothing
+	// declared here but each other's order.
+	if err := appendTableIndependentObjectStatements(visit, database); err != nil {
+		return err
+	}
+
+	// 10. Add non-unique indexes last, except on MySQL-family targets where both
+	// sides of a foreign key need their declared indexes before ADD CONSTRAINT.
+	if !mysqlFamily {
+		if err := appendNonUniqueIndexStatements(visit, database.Tables, tableIndexes); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// appendTableIndependentObjectStatements appends the statements for every
+// object family that depends on the tables existing and on nothing else
+// declared here, in the order WalkDatabase reports them. Extracted from
+// WalkDatabase to keep its branching under the complexity limit.
+func appendTableIndependentObjectStatements(visit func(ast.Node) error, database schemamodel.Database) error {
+	// 9b1. A YDB async replication creates its replica tables itself and
+	// names no object of this database but their paths; a transfer writes a
+	// table and reads a topic, a changefeed's among them, so it follows the
+	// tables and the changefeeds their CREATE TABLE carries.
+	if err := appendReplicationStatements(visit, database); err != nil {
+		return err
+	}
+
 	// 9b2. A coordination node depends on nothing in the schema and nothing
 	// depends on it, so it takes its place after the objects that do.
 	if err := appendCoordinationNodeStatements(visit, database.CoordinationNodes); err != nil {
@@ -2255,19 +2312,7 @@ func WalkDatabase(
 	// answers `Cannot find the object ... because it does not exist or you do
 	// not have permission` when the table is not there yet, so a property can
 	// never precede its owner.
-	if err := appendExtendedPropertyStatements(visit, database.ExtendedProperties); err != nil {
-		return err
-	}
-
-	// 10. Add non-unique indexes last, except on MySQL-family targets where both
-	// sides of a foreign key need their declared indexes before ADD CONSTRAINT.
-	if !mysqlFamily {
-		if err := appendNonUniqueIndexStatements(visit, database.Tables, tableIndexes); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return appendExtendedPropertyStatements(visit, database.ExtendedProperties)
 }
 
 func appendPreTableStatements(

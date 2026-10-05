@@ -26,6 +26,7 @@ import (
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
+	"ptah.run/internal/ydbreplication"
 	"ptah.run/internal/ydbtopic"
 	"ptah.run/internal/ydbtype"
 )
@@ -365,6 +366,8 @@ func (ctx *renderContext) hasGlobalObjects() bool {
 		len(ctx.db.Ranges) > 0 ||
 		len(ctx.db.Sequences) > 0 ||
 		len(ctx.db.Topics) > 0 ||
+		len(ctx.db.AsyncReplications) > 0 ||
+		len(ctx.db.Transfers) > 0 ||
 		len(ctx.db.CoordinationNodes) > 0
 }
 
@@ -451,6 +454,14 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 			w.writeComment(comment)
 		}
 	}
+	for _, replication := range sortedReplications(ctx.db.AsyncReplications) {
+		for _, comment := range replicationAnnotations(replication) {
+			w.writeComment(comment)
+		}
+	}
+	for _, transfer := range sortedTransfers(ctx.db.Transfers) {
+		w.writeComment(transferAnnotation(transfer))
+	}
 	for _, role := range sortedRoles(ctx.db.Roles) {
 		w.writeComment(roleAnnotation(role))
 	}
@@ -463,12 +474,19 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 	for _, privilege := range sortedDefaultPrivileges(ctx.db.DefaultPrivileges) {
 		w.writeComment(defaultPrivilegeAnnotation(privilege))
 	}
-	for _, node := range sortedCoordinationNodes(ctx.db.CoordinationNodes) {
-		w.writeComment(coordinationNodeAnnotation(node))
-	}
+	ctx.writeCoordinationNodes(w)
 	if ctx.hasGlobalObjects() {
 		w.writeLine("type PtahSchemaObjects struct{}")
 		w.writeLine("")
+	}
+}
+
+// writeCoordinationNodes writes an annotation for each of the database's YDB
+// coordination nodes, broken out of [renderContext.writeGlobalObjects] to
+// keep that function's branching under the complexity limit.
+func (ctx *renderContext) writeCoordinationNodes(w *sourceWriter) {
+	for _, node := range sortedCoordinationNodes(ctx.db.CoordinationNodes) {
+		w.writeComment(coordinationNodeAnnotation(node))
 	}
 }
 
@@ -984,6 +1002,66 @@ func topicAnnotations(topic schemamodel.Topic) []string {
 	return comments
 }
 
+// connectionAttrs writes a replication's or a transfer's connection as
+// annotation attributes, each naming only what the connection names.
+func connectionAttrs(connection ast.ReplicationConnectionSpec) []attr {
+	text := func(name, value string) attr { return attr{name: name, value: value, set: value != ""} }
+	return []attr{
+		text(ydbreplication.AttributeConnectionString, connection.ConnectionString),
+		text(ydbreplication.AttributeTokenSecretName, connection.TokenSecretName),
+		text(ydbreplication.AttributeTokenSecretPath, connection.TokenSecretPath),
+		text(ydbreplication.AttributeUser, connection.User),
+		text(ydbreplication.AttributePasswordSecretName, connection.PasswordSecretName),
+		text(ydbreplication.AttributePasswordSecretPath, connection.PasswordSecretPath),
+	}
+}
+
+// replicationAnnotations writes a YDB async replication as its annotation and
+// one annotation per item, each naming only what differs from the zero value.
+func replicationAnnotations(replication schemamodel.AsyncReplication) []string {
+	spec := replication.Spec
+	text := func(name, value string) attr { return attr{name: name, value: value, set: value != ""} }
+	attrs := append([]attr{
+		{name: ydbreplication.AttributeName, value: replication.Name, set: true},
+		text(ydbreplication.AttributeSchema, replication.Schema),
+	}, connectionAttrs(spec.Connection)...)
+	attrs = append(attrs,
+		text(ydbreplication.AttributeConsistencyLevel, spec.ConsistencyLevel),
+		text(ydbreplication.AttributeCommitInterval, spec.CommitInterval),
+	)
+	comments := []string{annotation("ptah:schema:async_replication", attrs...)}
+	for _, item := range spec.Items {
+		comments = append(comments, annotation("ptah:schema:async_replication:item",
+			attr{name: ydbreplication.AttributeReplication, value: replication.Name, set: true},
+			text(ydbreplication.AttributeSchema, replication.Schema),
+			attr{name: ydbreplication.AttributeSource, value: item.Source, set: true},
+			attr{name: ydbreplication.AttributeTarget, value: item.Target, set: true},
+		))
+	}
+	return comments
+}
+
+// transferAnnotation writes a YDB transfer as its annotation, naming only what
+// differs from the zero value.
+func transferAnnotation(transfer schemamodel.Transfer) string {
+	spec := transfer.Spec
+	text := func(name, value string) attr { return attr{name: name, value: value, set: value != ""} }
+	attrs := append([]attr{
+		{name: ydbreplication.AttributeName, value: transfer.Name, set: true},
+		text(ydbreplication.AttributeSchema, transfer.Schema),
+	}, connectionAttrs(spec.Connection)...)
+	attrs = append(attrs,
+		attr{name: ydbreplication.AttributeSource, value: spec.Source, set: true},
+		attr{name: ydbreplication.AttributeTarget, value: spec.Target, set: true},
+		attr{name: ydbreplication.AttributeUsing, value: spec.Lambda, set: true},
+		text(ydbreplication.AttributeConsumer, spec.Consumer),
+		attr{name: ydbreplication.AttributeBatchSizeBytes, value: strconv.FormatUint(spec.BatchSizeBytes, 10),
+			set: spec.BatchSizeBytes != 0},
+		text(ydbreplication.AttributeFlushInterval, spec.FlushInterval),
+	)
+	return annotation("ptah:schema:transfer", attrs...)
+}
+
 func roleAnnotation(role schemamodel.Role) string {
 	return annotation("ptah:schema:role",
 		attr{name: "name", value: role.Name, set: true},
@@ -1358,6 +1436,18 @@ func sortedFunctions(values []schemamodel.Function) []schemamodel.Function {
 }
 
 func sortedTopics(values []schemamodel.Topic) []schemamodel.Topic {
+	sorted := slices.Clone(values)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].QualifiedName() < sorted[j].QualifiedName() })
+	return sorted
+}
+
+func sortedReplications(values []schemamodel.AsyncReplication) []schemamodel.AsyncReplication {
+	sorted := slices.Clone(values)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].QualifiedName() < sorted[j].QualifiedName() })
+	return sorted
+}
+
+func sortedTransfers(values []schemamodel.Transfer) []schemamodel.Transfer {
 	sorted := slices.Clone(values)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].QualifiedName() < sorted[j].QualifiedName() })
 	return sorted

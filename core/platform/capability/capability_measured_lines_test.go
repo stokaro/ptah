@@ -243,6 +243,9 @@ func measuredLines() map[string]measuredLine {
 				capability.ChangefeedSchemaChanges:         changefeedKeyCarried,
 				capability.ChangefeedTopicAutoPartitioning: changefeedKeyCarried,
 				capability.TopicConsumerAvailabilityPeriod: changefeedKeyCarried,
+				capability.AsyncReplication:                replicationKeyCarried,
+				capability.Transfers:                       replicationKeyCarried,
+				capability.ReplicationSecretPaths:          replicationKeyCarried,
 				capability.PartitioningOptions:             tableSettingKeyCarried,
 				capability.ReadReplicas:                    tableSettingKeyCarried,
 				capability.KeyBloomFilter:                  tableSettingKeyCarried,
@@ -411,6 +414,9 @@ func measuredLines() map[string]measuredLine {
 				capability.ChangefeedSchemaChanges:         changefeedKeyCarried,
 				capability.ChangefeedTopicAutoPartitioning: changefeedKeyCarried,
 				capability.TopicConsumerAvailabilityPeriod: changefeedKeyCarried,
+				capability.AsyncReplication:                replicationKeyCarried,
+				capability.Transfers:                       replicationKeyCarried,
+				capability.ReplicationSecretPaths:          replicationKeyCarried,
 				capability.PartitioningOptions:             tableSettingKeyCarried,
 				capability.ReadReplicas:                    tableSettingKeyCarried,
 				capability.KeyBloomFilter:                  tableSettingKeyCarried,
@@ -580,6 +586,9 @@ func measuredLines() map[string]measuredLine {
 				capability.ChangefeedSchemaChanges:         changefeedKeyCarried,
 				capability.ChangefeedTopicAutoPartitioning: changefeedKeyCarried,
 				capability.TopicConsumerAvailabilityPeriod: changefeedKeyCarried,
+				capability.AsyncReplication:                replicationKeyCarried,
+				capability.Transfers:                       replicationKeyCarried,
+				capability.ReplicationSecretPaths:          replicationKeyCarried,
 				capability.PartitioningOptions:             tableSettingKeyCarried,
 				capability.ReadReplicas:                    tableSettingKeyCarried,
 				capability.KeyBloomFilter:                  tableSettingKeyCarried,
@@ -788,6 +797,13 @@ const changefeedKeyCarried = "this run predates the key and sent no changefeed e
 // these engines, and the value here is the preset's.
 const accessKeyCarried = "this run predates the key; the probe declares it undecided on this engine, " +
 	"because only the YDB planner plans it, and the value here is the preset's"
+
+// replicationKeyCarried is why the keys about a YDB async replication and a
+// transfer are carried on these lines: the run predates them. The probe asks
+// them on every run through its replication and transfer experiments, and the
+// value here is the preset's.
+const replicationKeyCarried = "this run predates the key and sent no replication or transfer experiment; the " +
+	"probe asks it on every run, and the value here is the preset's"
 
 // coordinationKeyCarried is why the key about YDB coordination nodes is
 // carried on every measured line: the run named there predates it, and no

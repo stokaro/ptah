@@ -190,7 +190,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## Migration lint rules
 
-108 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings unless the policy's `gate` section names more families, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
+110 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings unless the policy's `gate` section names more families, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
 
 ### Every dialect
 
@@ -211,7 +211,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `DS104` | DROP NOT NULL removes a column-level data protection | both | Ptah |
 | `DS105` | an untyped DROP CONSTRAINT removes a data protection the SQL does not name | both | Ptah |
 | `DS106` | removing an enum value can invalidate rows that still hold it | both | Ptah |
-| `DS107` | dropping a schema, type, extension, function, procedure, trigger, role, policy, or YDB user, group, topic or coordination node removes behavior or data | both | Ptah |
+| `DS107` | dropping a schema, type, extension, function, procedure, trigger, role, policy, or YDB user, group, topic, transfer, async replication, or coordination node removes behavior or data | both | Ptah |
 | `DS108` | TRUNCATE deletes every row in the table | both | Ptah |
 | `DS109` | DISABLE ROW LEVEL SECURITY removes an access-control protection | both | Ptah |
 | `DS110P` | a column a view or routine reads is dropped, and the finding names what breaks | both | Ptah |
@@ -342,6 +342,8 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `YD111` | `DROP USER` or `DROP GROUP` on YDB leaves the principal's permissions behind, and a principal created later under the name holds them | both | Ptah |
 | `YD113` | an `ALTER TOPIC` that resets a topic setting, or a consumer setting other than its availability period, which YDB 26.2 accepts and keeps as it was, and 25.1 refuses | both | Ptah |
 | `YD114` | a topic or consumer setting YDB accepts and keeps nothing of, such as a storage limit or a codec it does not know | both | Ptah |
+| `YD115` | a `DROP ASYNC REPLICATION` without `CASCADE` of a replication not failed over, whose replica tables YDB keeps read-only for good | both | Ptah |
+| `YD116` | a password or a token written in clear in an async replication or a transfer, which YDB keeps without reading it back while the migration file holds it | both | Ptah |
 | `YD118` | turning auto partitioning by size on resets the partition size to 2048 MB unless the same statement sets it | both | Ptah |
 | `YD119` | an `ALTER TABLE` that names a column family the table does not have, which YDB creates with its own settings rather than refusing, and YQL cannot drop | both | Ptah |
 | `YD130` | a vector index a YDB line does not build: any where `vector_indexes` is false, and one over bit vectors where `vector_bit_type` is false | both | Ptah |
@@ -368,7 +370,7 @@ A YDB run reads migrations as YQL. The `YD` family above is YDB's own, and every
 | `DS104` | applies | `ALTER TABLE ... ALTER COLUMN ... DROP NOT NULL` |
 | `DS105` | no such statement in YQL | YDB has no named constraint to drop |
 | `DS106` | no such statement in YQL | YDB has no enum type |
-| `DS107` | applies | `DROP USER` and `DROP GROUP`, YDB's principals; `DROP TOPIC`, which drops every message the topic holds and every consumer's position in it; and `DROP COORDINATION NODE`, which drops the node's semaphores and rate limiter resources even while a session holds a lock on it |
+| `DS107` | applies | `DROP USER` and `DROP GROUP`, YDB's principals; `DROP TOPIC`, which drops every message and consumer position; `DROP TRANSFER` and `DROP ASYNC REPLICATION ... CASCADE`, which drops the replica tables; and `DROP COORDINATION NODE`, which drops its semaphores and rate limiter resources even under a lock |
 | `DS108` | applies | `TRUNCATE TABLE`, on lines with `truncate_table` |
 | `DS109` | no such statement in YQL | YDB has no row-level security |
 | `DS110P` | needs a dev database | what reads a column comes from a dev database replay |
@@ -402,7 +404,7 @@ A YDB run reads migrations as YQL. The `YD` family above is YDB's own, and every
 
 ## Default severities
 
-33 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `DS111P`, `MY146`, `ON101`, `ON102`, `ON103`, `SQL001`, `SQL002`, `YD101`, `YD102`, `YD103`, `YD104`, `YD106`, `YD107`, `YD108`, `YD109`, `YD110`, `YD113`, `YD114`, `YD130`. The other 84 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
+34 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `DS111P`, `MY146`, `ON101`, `ON102`, `ON103`, `SQL001`, `SQL002`, `YD101`, `YD102`, `YD103`, `YD104`, `YD106`, `YD107`, `YD108`, `YD109`, `YD110`, `YD113`, `YD114`, `YD116`, `YD130`. The other 85 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
 
 ## What ptah-compat prints
 

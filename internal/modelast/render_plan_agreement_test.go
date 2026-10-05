@@ -126,13 +126,16 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	if assertBothSurfacesRefuseTheDomain(c, dialect, &desired) {
 		return
 	}
-	// A coordination node and a topic are YDB's own objects, refused the same
-	// way on every target without their keys. The validation both surfaces
-	// share meets the node first, so it is taken out first; once both
-	// surfaces are seen to refuse each, the census below runs over the rest of
-	// the fixture.
+	// A coordination node, a topic, an async replication and a transfer are
+	// YDB's own objects, refused the same way on every target without their
+	// keys, which is every PostgreSQL-family one. The validation both
+	// surfaces share meets the node first, then the topic, then the
+	// replication and the transfer, so they are taken out in that order; once
+	// both surfaces are seen to refuse each, the census below runs over the
+	// rest of the fixture.
 	refused := assertBothSurfacesRefuseTheCoordinationNode(c, dialect, &desired)
 	refused += assertBothSurfacesRefuseTheTopic(c, dialect, &desired)
+	refused += assertBothSurfacesRefuseTheReplications(c, dialect, &desired)
 
 	renderCensus := surfaceCensus(c, dialect,
 		modelast.CollectDatabase(desired, dialect).Statements)
@@ -270,4 +273,37 @@ func assertBothSurfacesRefuseTheTopic(c *qt.C, dialect string, desired *schemamo
 	c.Assert(renderErr.Error(), qt.Contains, "requires target capability topics")
 	desired.Topics = nil
 	return 1
+}
+
+// assertBothSurfacesRefuseTheReplications checks that a target without the
+// async_replication and transfers keys refuses the fixture's replication and
+// transfer on both surfaces, through the one validation they share, and takes
+// each out of desired so the census can run over the rest. It returns how many
+// routed kinds it took out.
+func assertBothSurfacesRefuseTheReplications(c *qt.C, dialect string, desired *schemamodel.Database) int {
+	c.Helper()
+	caps := capability.ForDialect(dialect)
+	if caps.Has(capability.AsyncReplication) || caps.Has(capability.Transfers) {
+		return 0
+	}
+	_, planErr := schemadiff.CompareWithDatabaseInfo(
+		desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil,
+	)
+	renderErr := renderer.ValidateSchema(desired, dialect)
+	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(planErr.Error(), qt.Contains, "requires target capability async_replication")
+	c.Assert(renderErr.Error(), qt.Contains, "requires target capability async_replication")
+	desired.AsyncReplications = nil
+
+	_, planErr = schemadiff.CompareWithDatabaseInfo(
+		desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil,
+	)
+	renderErr = renderer.ValidateSchema(desired, dialect)
+	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(planErr.Error(), qt.Contains, "requires target capability transfers")
+	c.Assert(renderErr.Error(), qt.Contains, "requires target capability transfers")
+	desired.Transfers = nil
+	return 2
 }

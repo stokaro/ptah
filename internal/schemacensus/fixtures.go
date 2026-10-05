@@ -124,6 +124,9 @@ func Fixtures() []Fixture {
 		{Name: "continuous-aggregate", Schema: continuousAggregateFixture()},
 		{Name: "synonym", Schema: synonymFixture()},
 		{Name: "topic", Schema: topicFixture()},
+		{Name: "async-replication", Schema: asyncReplicationFixture()},
+		{Name: "async-replication-token", Schema: asyncReplicationTokenFixture()},
+		{Name: "transfer", Schema: transferFixture()},
 		{Name: "coordination-node", Schema: coordinationNodeFixture()},
 		{Name: "extended-property", Schema: extendedPropertyFixture()},
 		{Name: "role", Schema: roleFixture()},
@@ -1406,6 +1409,72 @@ func topicFixture() schemamodel.Database {
 				{Name: "audit", ReadFrom: "2026-01-01T00:00:00Z", SupportedCodecs: []string{"raw", "gzip"},
 					AvailabilityPeriod: "PT2H"},
 			},
+		},
+	}}
+	return db
+}
+
+// asyncReplicationFixture declares a YDB async replication that sets every
+// setting a replication of a user with a password secret takes, and two items,
+// one naming its source by an absolute path.
+func asyncReplicationFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.AsyncReplications = []schemamodel.AsyncReplication{{
+		StructName: "AR", Name: "mirror", Schema: "app",
+		Spec: ast.AsyncReplicationSpec{
+			Connection: ast.ReplicationConnectionSpec{
+				ConnectionString:   "grpcs://primary.example.com:2135/?database=/prod",
+				User:               "replicator",
+				PasswordSecretPath: "secrets/replicator",
+			},
+			Items: []ast.AsyncReplicationItem{
+				{Source: "accounts", Target: "replica/accounts"},
+				{Source: "/prod/ledger", Target: "replica/ledger"},
+			},
+			ConsistencyLevel: "global",
+			CommitInterval:   "PT30S",
+		},
+	}}
+	return db
+}
+
+// asyncReplicationTokenFixture declares the two token credentials, one
+// replication each, since a connection takes one credential.
+func asyncReplicationTokenFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	connection := "grpc://primary.example.com:2136/?database=/prod"
+	db.AsyncReplications = []schemamodel.AsyncReplication{
+		{StructName: "AN", Name: "by_name", Spec: ast.AsyncReplicationSpec{
+			Connection: ast.ReplicationConnectionSpec{ConnectionString: connection, TokenSecretName: "token"},
+			Items:      []ast.AsyncReplicationItem{{Source: "orders", Target: "orders_by_name"}},
+		}},
+		{StructName: "AP", Name: "by_path", Spec: ast.AsyncReplicationSpec{
+			Connection: ast.ReplicationConnectionSpec{ConnectionString: connection, TokenSecretPath: "secrets/token"},
+			Items:      []ast.AsyncReplicationItem{{Source: "orders", Target: "orders_by_path"}},
+		}},
+	}
+	return db
+}
+
+// transferFixture declares a YDB transfer of a topic in another database into
+// a declared table, setting every setting a transfer takes, its credential a
+// user with a password secret named by name.
+func transferFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Transfers = []schemamodel.Transfer{{
+		StructName: "TF", Name: "ingest", Schema: "app",
+		Spec: ast.TransferSpec{
+			Connection: ast.ReplicationConnectionSpec{
+				ConnectionString:   "grpc://primary.example.com:2136/?database=/prod",
+				User:               "reader",
+				PasswordSecretName: "reader_password",
+			},
+			Source:         "events",
+			Target:         "t",
+			Lambda:         "($msg) -> { return [<| id: $msg._offset |>]; }",
+			Consumer:       "ingest",
+			BatchSizeBytes: 1048576,
+			FlushInterval:  "PT10S",
 		},
 	}}
 	return db

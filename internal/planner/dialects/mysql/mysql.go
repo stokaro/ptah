@@ -1353,6 +1353,9 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := schemaprecondition.RefuseRoleMemberships(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}
+	if err := schemaprecondition.RefuseReplications(p.targetDialect(), diff); err != nil {
+		return nil, err
+	}
 	if err := schemaprecondition.RefuseCoordinationNodes(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}

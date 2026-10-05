@@ -122,6 +122,23 @@ var gates = []Gate{
 		refusals: []string{"Vector index support is disabled"},
 	},
 	{
+		// Off on 25.1 and on from 25.2. With the flag on, 25.1 creates a
+		// transfer, moves a topic's message into its table, describes it and
+		// changes its lambda and batch settings in place.
+		Key:      capability.Transfers,
+		Flag:     "EnableTopicTransfer",
+		refusals: []string{"Topic transfer creation is disabled"},
+	},
+	{
+		// Listed on 26.2 only, on by default; the lines before it create a
+		// replication with no flag at all, so an absent flag keeps their
+		// preset. Turned off through the dynamic configuration of 26.2.1.14,
+		// CREATE ASYNC REPLICATION answers PRECONDITION_FAILED with this text.
+		Key:      capability.AsyncReplication,
+		Flag:     "EnableReplication",
+		refusals: []string{"Asynchronous replication is disabled"},
+	},
+	{
 		// Off on 25.3 and on from 25.4; 25.1 and 25.2 do not list it, and
 		// their parser has no CACHE_MODE at all (`Unknown table setting:
 		// CACHE_MODE`). With the flag on, 25.3 takes a family's CACHE_MODE

@@ -1606,9 +1606,9 @@ func TestParseDir_AllIntegrationFixturesRemainParsable(t *testing.T) {
 // ParseFS append path used by ParseDir.
 // Merge uses general reflection over all slice fields from ParseSource results (no hard-coded list).
 //
-// Fixture 023 carries every object kind a PostgreSQL render takes, refused or
-// skipped. A YDB topic and a YDB coordination node are refused by every target
-// but YDB, so each has a fixture of its own, and the guard reads all three.
+// skipped. A YDB topic, a YDB coordination node, a YDB async replication and
+// a transfer are refused by every target but YDB, so each has a fixture of
+// its own, and the guard reads all four.
 func TestParseDir_ReflectionGuard(t *testing.T) {
 	c := qt.New(t)
 
@@ -1616,6 +1616,7 @@ func TestParseDir_ReflectionGuard(t *testing.T) {
 		"../../integration/internal/fixtures/entities/023-go-annotations-objects",
 		"../../integration/internal/fixtures/entities/048-ydb-topics",
 		"../../integration/internal/fixtures/entities/049-ydb-coordination-nodes",
+		"../../integration/internal/fixtures/entities/050-ydb-replication",
 	}
 
 	merged := schemamodel.Database{}

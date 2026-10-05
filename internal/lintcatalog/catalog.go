@@ -294,14 +294,16 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"DS107": {
 		// Broader than Atlas DS101, which is the schema drop alone: this rule
 		// also fires on DROP TYPE, EXTENSION, FUNCTION, PROCEDURE, TRIGGER,
-		// ROLE, and POLICY, and on YDB on DROP USER, DROP GROUP, DROP TOPIC and
-		// DROP COORDINATION NODE, so the rule is ours even though it covers the
+		// ROLE, and POLICY, and on YDB on DROP USER, DROP GROUP, DROP TOPIC,
+		// DROP TRANSFER, DROP ASYNC REPLICATION ... CASCADE and DROP
+		// COORDINATION NODE, so the rule is ours even though it covers the
 		// Atlas one.
-		Summary: "dropping a schema, type, extension, function, procedure, trigger, role, policy, or YDB user, group, topic or coordination node removes behavior or data",
+		Summary: "dropping a schema, type, extension, function, procedure, trigger, role, policy, or YDB user, group, topic, transfer, async replication, or coordination node removes behavior or data",
 		YDB:     YDBApplies,
-		YDBNote: "`DROP USER` and `DROP GROUP`, YDB's principals; `DROP TOPIC`, which drops every message the " +
-			"topic holds and every consumer's position in it; and `DROP COORDINATION NODE`, which drops the " +
-			"node's semaphores and rate limiter resources even while a session holds a lock on it",
+		YDBNote: "`DROP USER` and `DROP GROUP`, YDB's principals; `DROP TOPIC`, which drops every message and " +
+			"consumer position; `DROP TRANSFER` and `DROP ASYNC REPLICATION ... CASCADE`, which drops the " +
+			"replica tables; and `DROP COORDINATION NODE`, which drops its semaphores and rate limiter " +
+			"resources even under a lock",
 	},
 	"AC101": {
 		Summary: "the migration defines a routine whose body is not analyzed, so a clean result says nothing about what the body does",
@@ -632,6 +634,12 @@ var migrationRuleMeta = map[string]ruleMeta{
 	},
 	"YD114": {
 		Summary: "a topic or consumer setting YDB accepts and keeps nothing of, such as a storage limit or a codec it does not know",
+	},
+	"YD115": {
+		Summary: "a `DROP ASYNC REPLICATION` without `CASCADE` of a replication not failed over, whose replica tables YDB keeps read-only for good",
+	},
+	"YD116": {
+		Summary: "a password or a token written in clear in an async replication or a transfer, which YDB keeps without reading it back while the migration file holds it",
 	},
 	"YD118": {
 		Summary: "turning auto partitioning by size on resets the partition size to 2048 MB unless the same statement sets it",

@@ -176,6 +176,18 @@ func clonedCollectionRows() []clonedCollectionRow {
 			},
 		},
 		{
+			field: "AsyncReplications", present: "mirror", absent: "nosuch_replication",
+			seed: func(s *catalog.Database) {
+				s.AsyncReplications = append(s.AsyncReplications, catalog.AsyncReplication{Name: "mirror"})
+			},
+		},
+		{
+			field: "Transfers", present: "ingest", absent: "nosuch_transfer",
+			seed: func(s *catalog.Database) {
+				s.Transfers = append(s.Transfers, catalog.Transfer{Name: "ingest"})
+			},
+		},
+		{
 			field: "CoordinationNodes", present: "locks", absent: "nosuch_node",
 			seed: func(s *catalog.Database) {
 				s.CoordinationNodes = append(s.CoordinationNodes, catalog.CoordinationNode{Name: "locks"})
