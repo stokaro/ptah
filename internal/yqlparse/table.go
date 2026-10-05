@@ -14,11 +14,8 @@ func (p *parser) table() *ast.CreateTableNode {
 		p.wantWord("NOT")
 		p.wantWord("EXISTS")
 	}
-	table := ast.NewCreateTable(p.identifier())
+	table := ast.NewCreateTable(p.path())
 	table.IfNotExists = guard
-	if strings.HasPrefix(decodedName(table.Name), "/") {
-		p.failf("desired YQL schema paths must be database-relative")
-	}
 	p.want("(")
 	var key []string
 	familyColumns := make(map[string][]string)

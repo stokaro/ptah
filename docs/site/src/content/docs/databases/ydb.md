@@ -2349,18 +2349,25 @@ eviction tier names its external source by an absolute database path, such as
 family settings use the same validation as Go and YAML declarations. Omitting
 TTL requests removal of an existing deletion policy.
 
-Other statements are refused, including queries, `ALTER` and declarations of
-other object families. Use Go or YAML for those declarations. An unsupported
-statement rejects the whole document. Existing changefeeds and other
-unrepresented families are preserved when planning from a YQL file; their
-absence in that file does not request their removal.
+Views use `CREATE VIEW` with the required `WITH (security_invoker = TRUE)`
+clause. The query body is retained, including semicolons inside lambdas and
+inline actions. Topics use `CREATE TOPIC`, with optional consumers and settings.
+Their intervals use `Interval('P1D')`; a consumer's `read_from` uses
+`Timestamp('2026-01-01T00:00:00Z')`. Topic settings and consumers use the same
+validation as Go and YAML declarations.
+
+Omitting a view or topic requests its removal. Other statements are refused,
+including standalone queries, `ALTER` and declarations of other object families.
+Use Go or YAML for those declarations. An unsupported statement rejects the
+whole document. Existing changefeeds and other unrepresented families are
+preserved when planning from a YQL file; their absence does not request removal.
 
 ## What is not supported yet
 
 These are refused with a message that names what is missing:
 
 <!-- BEGIN GENERATED YDB GAPS -->
-- YQL desired-schema declarations beyond the supported `CREATE TABLE` clauses; use Go or YAML for other object families;
+- YQL desired-schema declarations beyond the supported table, view and topic declarations; use Go or YAML for other object families;
 - JSON indexes;
 - `ptah inference` and the inference tools of `ptah mcp`, which store their vectors through pgvector.
 <!-- END GENERATED YDB GAPS -->

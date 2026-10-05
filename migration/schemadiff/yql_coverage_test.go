@@ -18,8 +18,7 @@ func TestCompare_YQLPreservesUnrepresentedFamilies(t *testing.T) {
 	desired, _, err := sqlschema.Read(nil, "ydb")
 	c.Assert(err, qt.IsNil)
 	held := &catalog.Database{
-		Topics: []catalog.Topic{readTopic("events")},
-		Views:  []catalog.View{{Name: "summary"}},
+		CoordinationNodes: []catalog.CoordinationNode{{Name: "locks"}},
 	}
 	diff := schemadiff.CompareWithDialect(&desired, held, "ydb")
 	c.Assert(diff.HasChanges(), qt.IsFalse)
@@ -32,4 +31,14 @@ func TestCompare_YQLOmittedTTLRequestsRemoval(t *testing.T) {
 	held := ydbTTLCatalog(&ast.RowDeletionPolicySpec{Column: "ts", Interval: "PT1H"})
 	diff := schemadiff.CompareWithDialect(&desired, held, "ydb")
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
+}
+
+func TestCompare_YQLOmittedViewsAndTopicsRequestRemoval(t *testing.T) {
+	c := qt.New(t)
+	desired, _, err := sqlschema.Read(nil, "ydb")
+	c.Assert(err, qt.IsNil)
+	held := &catalog.Database{Topics: []catalog.Topic{readTopic("events")}, Views: []catalog.View{{Name: "summary"}}}
+	diff := schemadiff.CompareWithDialect(&desired, held, "ydb")
+	c.Assert(diff.ViewsRemoved, qt.HasLen, 1)
+	c.Assert(diff.TopicsRemoved, qt.HasLen, 1)
 }

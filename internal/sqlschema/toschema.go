@@ -745,6 +745,9 @@ func appendStatement(
 	if handled, err := appendRowSecurity(database, stmt, sourcePlatform); handled {
 		return err
 	}
+	if appendView(database, stmt, sourcePlatform) {
+		return nil
+	}
 	if appendNamespace(database, stmt, sourcePlatform) {
 		return nil
 	}
@@ -762,10 +765,9 @@ func appendStatement(
 		appendCreateType(database, node, sourcePlatform)
 	case *ast.ExtensionNode:
 		database.Extensions = append(database.Extensions, ToExtension(node, sourcePlatform))
-	case *ast.CreateViewNode:
-		database.Views = append(database.Views, toView(node, sourcePlatform))
-	case *ast.CreateMaterializedViewNode:
-		database.MaterializedViews = append(database.MaterializedViews, toMaterializedView(node, sourcePlatform))
+	case *ast.CreateTopicNode:
+		schema, name := normalizeSQLTableIdentifier(sourcePlatform, node.Name)
+		database.Topics = append(database.Topics, schemamodel.Topic{Name: name, Schema: schema, Spec: node.Spec.Clone()})
 	case *ast.CreateFunctionNode:
 		database.Functions = append(database.Functions, toFunction(node, sourcePlatform))
 	case *ast.CreateTriggerNode:

@@ -36,7 +36,7 @@ type Layer int
 // The layers YDB does not reach yet. Each answers [Layer.Phase] with the phase
 // of [Plan] that implements it.
 const (
-	// SchemaFiles is the YQL declarations beyond the CREATE TABLE subset.
+	// SchemaFiles is the YQL declarations outside the supported object families.
 	// The table frontend refuses other object families and preserves those
 	// held by a live database until their clauses can be represented.
 	SchemaFiles Layer = iota + 1
@@ -68,7 +68,7 @@ func Layers() []Layer {
 func (l Layer) work() string {
 	switch l {
 	case SchemaFiles:
-		return "reading YDB schema declarations beyond the supported CREATE TABLE clauses"
+		return "reading YDB schema declarations beyond the supported table, view and topic declarations"
 	case IndexFamilies:
 		return "reading or creating a YDB JSON index"
 	case Inference:
@@ -103,7 +103,7 @@ func (l Layer) Message() string {
 func (l Layer) Unsupported() string {
 	switch l {
 	case SchemaFiles:
-		return "YQL desired-schema declarations beyond the supported `CREATE TABLE` clauses; use Go or YAML for other object families"
+		return "YQL desired-schema declarations beyond the supported table, view and topic declarations; use Go or YAML for other object families"
 	case IndexFamilies:
 		return "JSON indexes"
 	case Inference:

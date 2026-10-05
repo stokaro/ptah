@@ -215,6 +215,18 @@ func applyForcedRowSecurity(database *schemamodel.Database, statements []ast.Nod
 	return nil
 }
 
+func appendView(database *schemamodel.Database, statement ast.Node, sourcePlatform string) bool {
+	switch node := statement.(type) {
+	case *ast.CreateViewNode:
+		database.Views = append(database.Views, toView(node, sourcePlatform))
+	case *ast.CreateMaterializedViewNode:
+		database.MaterializedViews = append(database.MaterializedViews, toMaterializedView(node, sourcePlatform))
+	default:
+		return false
+	}
+	return true
+}
+
 func toView(node *ast.CreateViewNode, sourcePlatform string) schemamodel.View {
 	return schemamodel.View{
 		Name:      normalizeSQLTableReference(sourcePlatform, node.Name),

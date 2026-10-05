@@ -9,6 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/dbschema"
 	"ptah.run/internal/schemafile"
 )
 
@@ -31,10 +32,7 @@ func TestYDBDesiredYQL_AppliesAndSettles(t *testing.T) {
 			plan := planAgainst(c, conn, desired, schemas)
 			c.Assert(plan, qt.Not(qt.HasLen), 0)
 			apply(c, conn, plan)
-			execute(c, conn, "CREATE VIEW `"+directory+"/summary` WITH (security_invoker = TRUE) AS SELECT id FROM `"+directory+"/items`")
-			c.Cleanup(func() { execute(c, conn, "DROP VIEW `"+directory+"/summary`") })
-			execute(c, conn, "CREATE TOPIC `"+directory+"/events`")
-			c.Cleanup(func() { execute(c, conn, "DROP TOPIC `"+directory+"/events`") })
+
 			c.Assert(planAgainst(c, conn, desired, schemas), qt.HasLen, 0)
 		})
 	}
@@ -62,6 +60,38 @@ func TestYDBDesiredYQL_TTLAndColumnFamilies(t *testing.T) {
 				apply(c, conn, statements)
 				c.Assert(planAgainst(c, conn, desired, schemas), qt.HasLen, 0)
 			}
+		})
+	}
+}
+
+// File loading must carry declared objects through create, update, and removal,
+// while a family the parser cannot express remains outside the desired state.
+func TestYDBDesiredYQL_ViewsAndTopics(t *testing.T) {
+	const table = "CREATE TABLE items (id Int64 NOT NULL, PRIMARY KEY (id));"
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := connect(c, enterRealm(c, line))
+			execute(c, conn, "CREATE COORDINATION NODE locks")
+			path := filepath.Join(c.TempDir(), "schema.sql")
+			for _, source := range []string{
+				table + "CREATE VIEW summary WITH (security_invoker = TRUE) AS SELECT id FROM items; CREATE TOPIC events (CONSUMER worker WITH (important = TRUE)) WITH (retention_period = Interval('P1D'));",
+				table + "CREATE VIEW summary WITH (security_invoker = TRUE) AS SELECT id FROM items WHERE id > 0; CREATE TOPIC events (CONSUMER audit WITH (read_from = Timestamp('2026-01-01T00:00:00Z'))) WITH (retention_period = Interval('P2D'));",
+				table,
+			} {
+				c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)
+				desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{Dialect: "ydb"})
+				c.Assert(err, qt.IsNil)
+				statements := planAgainst(c, conn, desired, nil)
+				c.Assert(statements, qt.Not(qt.HasLen), 0)
+				apply(c, conn, statements)
+				c.Assert(planAgainst(c, conn, desired, nil), qt.HasLen, 0)
+			}
+			live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, nil)
+			c.Assert(err, qt.IsNil)
+			c.Assert(live.CoordinationNodes, qt.HasLen, 1)
+			c.Assert(live.Views, qt.HasLen, 0)
+			c.Assert(live.Topics, qt.HasLen, 0)
 		})
 	}
 }

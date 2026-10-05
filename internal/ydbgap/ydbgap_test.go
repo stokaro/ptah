@@ -17,7 +17,7 @@ func TestLayer_Message_HappyPath(t *testing.T) {
 		layer ydbgap.Layer
 		want  string
 	}{
-		{name: "schema files", layer: ydbgap.SchemaFiles, want: "reading YDB schema declarations beyond the supported CREATE TABLE clauses is not implemented yet (stokaro/ptah#4015, phase 10)"},
+		{name: "schema files", layer: ydbgap.SchemaFiles, want: "reading YDB schema declarations beyond the supported table, view and topic declarations is not implemented yet (stokaro/ptah#4015, phase 10)"},
 		{name: "index families", layer: ydbgap.IndexFamilies, want: "reading or creating a YDB JSON index is not implemented yet (stokaro/ptah#4015, phase 10)"},
 		{name: "inference", layer: ydbgap.Inference, want: "running an embedding generation against YDB is not implemented yet (stokaro/ptah#4015, phase 12)"},
 	}

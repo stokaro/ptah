@@ -12,6 +12,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
+	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/yamlschema"
 	"ptah.run/internal/atlashcl"
@@ -263,7 +264,7 @@ func loadSchemaDirEntry(
 		// applies the format limits itself. A directory entry that skipped
 		// them would be the one route where the round trip is still
 		// destructive.
-		return withFormatLimits(db, resolved), statements, nil
+		return withFormatLimits(db, resolved, opts.Dialect), statements, nil
 	}
 	db, err := loadSchemaFile(resolved, opts)
 	if err != nil {
@@ -296,7 +297,7 @@ func loadSchemaFile(resolved string, opts Options) (*schemamodel.Database, error
 	if err != nil {
 		return nil, err
 	}
-	return withFormatLimits(database, resolved), nil
+	return withFormatLimits(database, resolved, opts.Dialect), nil
 }
 
 // yamlOnlyExtensions are the extensions [withFormatLimits] treats as the YAML
@@ -335,10 +336,9 @@ var yamlOnlyExtensions = []string{".yaml", ".yml"}
 //     through `ptah-compat schema inspect` and applied back from that HCL
 //     planned `ALTER TABLE ... RESET (TTL)`, and an HCL or a DBML document
 //     declaring a table that carries a changefeed planned `DROP CHANGEFEED`.
-//   - Only YAML and a Go schema express a YDB topic. HCL has no block for
-//     one, and neither the SQL parser nor DBML produces one, so an HCL
-//     document applied to a YDB database holding a topic would otherwise plan
-//     `DROP TOPIC`.
+//   - YAML, Go, and YQL schemas express a YDB topic. HCL and DBML cannot,
+//     and SQL without the YDB dialect cannot either. Those sources must not
+//     request DROP TOPIC by omission.
 //   - Only YAML and a Go schema express a YDB resource pool or classifier.
 //     HCL has no block for either, and neither the SQL parser nor DBML
 //     produces one, so the document cannot say that a database holds none.
@@ -359,7 +359,7 @@ var yamlOnlyExtensions = []string{".yaml", ".yml"}
 //     would otherwise plan `DROP SECRET`, which loses a value nothing can read
 //     back. The same holds for a YDB external data source and an external
 //     table, which only YAML and a Go schema declare.
-func withFormatLimits(database *schemamodel.Database, resolved string) *schemamodel.Database {
+func withFormatLimits(database *schemamodel.Database, resolved, dialect string) *schemamodel.Database {
 	if database == nil {
 		return nil
 	}
@@ -380,7 +380,7 @@ func withFormatLimits(database *schemamodel.Database, resolved string) *schemamo
 			coverage.Synonym, coverage.ExtendedProperty, coverage.Hypertable,
 			coverage.ContinuousAggregate)...)
 	}
-	if !slices.Contains(yamlOnlyExtensions, extension) {
+	if !slices.Contains(yamlOnlyExtensions, extension) && (extension != dirSQLExtension || platform.NormalizeDialect(dialect) != platform.YDB) {
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(coverage.Topic)...)
 	}
 	if !slices.Contains(yamlOnlyExtensions, extension) {
@@ -719,7 +719,7 @@ func loadSourceInto(source Source, opts Options, merged *schemamodel.Database, d
 		if err := loadSQLWithImports(filepath.Dir(resolved), resolved, opts, make(map[string]struct{}), 0, merged, document); err != nil {
 			return err
 		}
-		withFormatLimits(merged, resolved)
+		withFormatLimits(merged, resolved, opts.Dialect)
 		return nil
 	}
 	db, err := LoadPath(resolved, opts)

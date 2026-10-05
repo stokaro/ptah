@@ -30,10 +30,12 @@ func TestYQLSourceLimitsSurviveFileLoading(t *testing.T) {
 			c.Assert(os.WriteFile(path, []byte("CREATE TABLE t (id Int64 NOT NULL, PRIMARY KEY (id));"), 0o600), qt.IsNil)
 			database, err := load.read(path, schemafile.Options{Dialect: "ydb"})
 			c.Assert(err, qt.IsNil)
-			for _, kind := range []coverage.Kind{coverage.View, coverage.Topic, coverage.CoordinationNode, coverage.Changefeed} {
+			for _, kind := range []coverage.Kind{coverage.CoordinationNode, coverage.Changefeed} {
 				c.Assert(database.NotDescribed.Describes(kind), qt.IsFalse, qt.Commentf("%s", kind))
 			}
-			c.Assert(database.NotDescribed.Describes(coverage.ColumnTable), qt.IsTrue)
+			for _, kind := range []coverage.Kind{coverage.ColumnTable, coverage.View, coverage.Topic} {
+				c.Assert(database.NotDescribed.Describes(kind), qt.IsTrue)
+			}
 		})
 	}
 }
