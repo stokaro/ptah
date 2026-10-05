@@ -27,7 +27,7 @@ func (p *parser) tableSettings(table *ast.CreateTableNode) {
 		for _, name := range slices.Sorted(maps.Keys(values)) {
 			value := values[name]
 			switch name {
-			case "store":
+			case "store", "ttl":
 			case ydbpartition.AttributeMinPartitions:
 				columnValues["column_shards"] = value
 			default:
@@ -51,16 +51,19 @@ func (p *parser) tableSettings(table *ast.CreateTableNode) {
 	if err != nil {
 		p.failf("%v", err)
 	}
+	if ttl, ok := values["ttl"]; ok {
+		p.applyTTL(table, ttl)
+	}
 }
 
 func (p *parser) tableOptions() map[string]string {
 	values := make(map[string]string)
 	if p.word("WITH") {
 		p.pos++
-		raw := p.options()
+		raw := p.optionsUsing(p.tableOptionValue)
 		for _, name := range slices.Sorted(maps.Keys(raw)) {
 			value := raw[name]
-			if name != "store" && !slices.Contains(ydbpartition.TableAttributes(), name) {
+			if name != "store" && name != "ttl" && !slices.Contains(ydbpartition.TableAttributes(), name) {
 				p.failf("unsupported table setting %q", name)
 			}
 			if name == "partition_at_keys" {

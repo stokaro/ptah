@@ -21,6 +21,7 @@ func (p *parser) table() *ast.CreateTableNode {
 	}
 	p.want("(")
 	var key []string
+	familyColumns := make(map[string][]string)
 	for !p.done() && p.peek().Value != ")" {
 		switch {
 		case p.word("PRIMARY"):
@@ -33,10 +34,13 @@ func (p *parser) table() *ast.CreateTableNode {
 		case p.word("INDEX"):
 			p.pos++
 			table.AddIndex(p.index(table.Name))
-		case p.anyWord([]string{"FAMILY", "CONSTRAINT", "UNIQUE", "CHECK", "FOREIGN"}):
+		case p.word("FAMILY"):
+			p.pos++
+			table.YDBColumnFamilies = append(table.YDBColumnFamilies, p.family())
+		case p.anyWord([]string{"CONSTRAINT", "UNIQUE", "CHECK", "FOREIGN"}):
 			p.failf("this table element is not supported in a desired YQL schema")
 		default:
-			table.AddColumn(p.column())
+			table.AddColumn(p.column(familyColumns))
 		}
 		if !p.accept(",") {
 			break
@@ -44,11 +48,12 @@ func (p *parser) table() *ast.CreateTableNode {
 	}
 	p.want(")")
 	p.primaryKey(table, key)
+	p.bindFamilies(table, familyColumns)
 	p.tableSettings(table)
 	return table
 }
 
-func (p *parser) column() *ast.ColumnNode {
+func (p *parser) column(families map[string][]string) *ast.ColumnNode {
 	column := ast.NewColumn(p.identifier(), p.identifier())
 	if p.peek().Value == "(" {
 		column.Type += p.typeParameters()
@@ -66,6 +71,12 @@ func (p *parser) column() *ast.ColumnNode {
 			p.pos++
 			p.wantWord("NULL")
 			column.Nullable = false
+		case p.word("FAMILY"):
+			p.pos++
+			family := decodedName(p.identifier())
+			if family != "default" {
+				families[family] = append(families[family], decodedName(column.Name))
+			}
 		case p.word("DEFAULT"):
 			p.pos++
 			literal := p.expression("NOT", "FAMILY")

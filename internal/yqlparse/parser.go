@@ -144,6 +144,10 @@ func scalar(value string) string {
 func decodedName(value string) string { name, _ := lexer.YQLIdentifierValue(value); return name }
 
 func (p *parser) options() map[string]string {
+	return p.optionsUsing(func(string) string { return p.expression() })
+}
+
+func (p *parser) optionsUsing(valueOf func(string) string) map[string]string {
 	p.want("(")
 	values := make(map[string]string)
 	for !p.done() {
@@ -152,7 +156,7 @@ func (p *parser) options() map[string]string {
 			p.failf("setting %q is declared twice", name)
 		}
 		p.want("=")
-		values[name] = p.expression()
+		values[name] = valueOf(name)
 		if !p.accept(",") {
 			break
 		}

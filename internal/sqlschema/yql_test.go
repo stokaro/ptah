@@ -72,7 +72,6 @@ func TestReadYQLRefusals(t *testing.T) {
 		"CREATE TABLE t (id Int64 NOT NULL, v Int64 DEFAULT 42, PRIMARY KEY (id));",
 		`CREATE TABLE t (id Int64 NOT NULL, v String DEFAULT "x"pt, PRIMARY KEY (id));`,
 		"CREATE TABLE t (id Int64 NOT NULL, PRIMARY KEY (id)); DELETE FROM t;",
-		"CREATE TABLE t (id Int64 NOT NULL, PRIMARY KEY (id)) WITH (TTL = Interval('PT1H') ON id);",
 	} {
 		t.Run(text, func(t *testing.T) {
 			c := qt.New(t)
@@ -88,8 +87,10 @@ func TestReadYQLLimits(t *testing.T) {
 	c := qt.New(t)
 	database, _, err := sqlschema.Read(nil, "ydb")
 	c.Assert(err, qt.IsNil)
-	for _, kind := range []coverage.Kind{coverage.View, coverage.Topic, coverage.CoordinationNode, coverage.Secret, coverage.StreamingQuery, coverage.TTL, coverage.ColumnFamily, coverage.Changefeed, coverage.Grant} {
+	for _, kind := range []coverage.Kind{coverage.View, coverage.Topic, coverage.CoordinationNode, coverage.Secret, coverage.StreamingQuery, coverage.Changefeed, coverage.Grant} {
 		c.Assert(database.NotDescribed.Describes(kind), qt.IsFalse, qt.Commentf("%s", kind))
 	}
-	c.Assert(database.NotDescribed.Describes(coverage.ColumnTable), qt.IsTrue)
+	for _, kind := range []coverage.Kind{coverage.ColumnTable, coverage.TTL, coverage.ColumnFamily} {
+		c.Assert(database.NotDescribed.Describes(kind), qt.IsTrue)
+	}
 }

@@ -270,6 +270,7 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Tabl
 		RowDeletionPolicy: table.RowDeletionPolicy.Clone(),
 		YDBPartitioning:   table.YDBPartitioning.Clone(),
 		YDBColumnTable:    table.YDBColumnTable.Clone(),
+		YDBColumnFamilies: ast.CloneYDBColumnFamilies(table.YDBColumnFamilies),
 		// Carried for the same reason: `db read` emits CREATE UNLOGGED TABLE,
 		// and a schema file holding that output has to describe the table it
 		// came from rather than a logged one.
