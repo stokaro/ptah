@@ -10,20 +10,14 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/ydb-platform/ydb-go-sdk/v3/coordination"
 
-	"ptah.run/core/coverage"
 	"ptah.run/dbschema"
 	"ptah.run/internal/ydbcoordination"
 )
 
-// TestYDBWriter_DropAllTablesKeepsWhatItDoesNotDescribe pins what drop-all
-// leaves: an object the reader records as not described, the directory that
-// holds it, and Ptah's lock node at the root. A view, a topic and a
-// coordination node, which the reader describes, go with the tables, and a
-// directory whose tables, views, topics and coordination nodes went, and whose
-// subdirectory went, is removed. A table carrying a changefeed goes with its
-// changefeed and the topic's consumers: DROP TABLE takes them, measured on
-// 25.1.4.7 and 26.2.1.14, so neither needs a statement of its own.
-func TestYDBWriter_DropAllTablesKeepsWhatItDoesNotDescribe(t *testing.T) {
+// Drop-all removes row and column tables, views, topics and coordination nodes,
+// then removes their empty directories. Ptah's root lock node stays. Dropping
+// a table also removes its changefeeds and their consumers on both release lines.
+func TestYDBWriter_DropAllTablesRemovesModeledObjects(t *testing.T) {
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -61,9 +55,7 @@ func TestYDBWriter_DropAllTablesKeepsWhatItDoesNotDescribe(t *testing.T) {
 			c.Assert(live.Views, qt.HasLen, 0)
 			c.Assert(live.Topics, qt.HasLen, 0)
 			c.Assert(live.CoordinationNodes, qt.HasLen, 0)
-			c.Assert(live.NotDescribed.Describes(coverage.ColumnTable, "ptah_ydb_dropall/keep.olap"), qt.IsFalse)
-			c.Assert(directoryNames(c, c.Context(), line, "ptah_ydb_dropall"), qt.DeepEquals, []string{"keep"})
-			c.Assert(directoryNames(c, c.Context(), line, "ptah_ydb_dropall", "keep"), qt.DeepEquals, []string{"olap"})
+			c.Assert(directoryNames(c, c.Context(), line), qt.Not(qt.Contains), "ptah_ydb_dropall")
 			_, lockErr := nodeConfig(c, driver, ydbcoordination.LockNode)
 			c.Assert(lockErr, qt.IsNil)
 		})

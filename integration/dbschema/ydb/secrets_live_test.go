@@ -187,8 +187,7 @@ func planRotating(c *qt.C, conn *dbschema.DatabaseConnection, declared *schemamo
 
 // TestYDBSecrets_DropAllTablesDropsThem holds the cleanup to what the reader
 // describes: a secret is described, so DropAllTables drops it and removes
-// the directory it leaves empty, and the column table beside it, which the
-// reader records rather than describes, stays.
+// the column table beside it and the directories they leave empty.
 func TestYDBSecrets_DropAllTablesDropsThem(t *testing.T) {
 	c := qt.New(t)
 	line := lineNamed(c, "26.2")
@@ -211,8 +210,8 @@ func TestYDBSecrets_DropAllTablesDropsThem(t *testing.T) {
 	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, nil)
 	c.Assert(err, qt.IsNil)
 	c.Assert(live.Secrets, qt.HasLen, 0)
-	c.Assert(directoryNames(c, c.Context(), line, "ptah_ydb_dropall_secrets"), qt.DeepEquals, []string{"keep"})
-	c.Assert(directoryNames(c, c.Context(), line, "ptah_ydb_dropall_secrets", "keep"), qt.DeepEquals, []string{"olap"})
+	c.Assert(live.Tables, qt.HasLen, 0)
+	c.Assert(directoryNames(c, c.Context(), line), qt.Not(qt.Contains), "ptah_ydb_dropall_secrets")
 }
 
 // TestYDBSecrets_DropDirectoryDropsThem tears down a directory that holds a
