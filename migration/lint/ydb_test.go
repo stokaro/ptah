@@ -232,6 +232,18 @@ func TestYDBRules_ReportWhatTheServerRefuses(t *testing.T) {
 			files: map[string]string{"0001_t.up.sql": "DROP USER app;\nDROP GROUP IF EXISTS readers;\n"},
 			want:  []string{"0001_t.up.sql:1:YD111", "0001_t.up.sql:2:YD111"},
 		},
+		{
+			name: "a column family the table does not have, named three ways",
+			files: map[string]string{
+				"0001_t.up.sql": "CREATE TABLE t (id Uint64 NOT NULL, a Utf8 FAMILY `cold`, PRIMARY KEY (id), " +
+					"FAMILY `cold` (COMPRESSION = 'lz4'));\n",
+				"0002_t.up.sql": "ALTER TABLE t ALTER COLUMN a SET FAMILY clod;\n" +
+					"ALTER TABLE t ALTER FAMILY warm SET COMPRESSION 'lz4';\n" +
+					"ALTER TABLE t ADD COLUMN b Int32 FAMILY hot;\n" +
+					"ALTER TABLE t ALTER COLUMN b SET FAMILY hot;\n",
+			},
+			want: []string{"0002_t.up.sql:1:YD119", "0002_t.up.sql:2:YD119", "0002_t.up.sql:3:YD119"},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -284,6 +296,17 @@ func TestYDBRules_LeaveWhatTheServerRuns(t *testing.T) {
 				"ALTER TABLE t ADD CHANGEFEED feed WITH (MODE = 'UPDATES', FORMAT = 'JSON');\n",
 			"0002_t.up.sql": "ALTER TABLE t DROP CHANGEFEED feed;\nALTER TABLE t RENAME TO u;\n" +
 				"ALTER TABLE u ADD CHANGEFEED feed WITH (MODE = 'UPDATES', FORMAT = 'JSON');\n"}},
+		{name: "the statements Ptah's planner writes for column families", files: map[string]string{
+			"0001_t.up.sql": "CREATE TABLE `t` (\n    `id` Uint64 NOT NULL,\n    `a` Utf8 FAMILY `cold`,\n" +
+				"    `c` Int32 FAMILY `cold` NOT NULL DEFAULT 7,\n    PRIMARY KEY (`id`),\n" +
+				"    FAMILY `cold` (DATA = 'hdd', COMPRESSION = 'lz4'),\n    FAMILY `default` (COMPRESSION = 'lz4')\n);\n",
+			"0002_t.up.sql": "ALTER TABLE `t` ADD COLUMN `b` Utf8;\n" +
+				"ALTER TABLE `t` ADD FAMILY `warm` (COMPRESSION = 'lz4'), ALTER FAMILY `cold` SET COMPRESSION 'off', " +
+				"ALTER FAMILY `default` SET COMPRESSION 'off', ALTER COLUMN `a` SET FAMILY `default`, " +
+				"ALTER COLUMN `b` SET FAMILY `warm`;\n" +
+				"ALTER TABLE `t` ADD COLUMN `d` Int32 FAMILY `warm` NOT NULL DEFAULT 1;\n"}},
+		{name: "a family of a table the directory never created", files: map[string]string{
+			"0001_t.up.sql": "ALTER TABLE elsewhere ALTER COLUMN v SET FAMILY cold;\n"}},
 		{name: "a column of the same name in another table", files: map[string]string{
 			"0001_users.up.sql": usersTable,
 			"0002_drop.up.sql":  "ALTER TABLE users DROP COLUMN email;\n"}},

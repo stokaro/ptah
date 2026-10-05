@@ -72,6 +72,7 @@ func Fixtures() []Fixture {
 		{Name: "table-override", Schema: tableOverrideFixture()},
 		{Name: "table-rowttl", Schema: tableRowTTLFixture()},
 		{Name: "table-row-deletion", Schema: tableRowDeletionFixture()},
+		{Name: "table-column-families", Schema: tableColumnFamiliesFixture()},
 		{Name: "table-changefeed", Schema: tableChangefeedFixture()},
 		{Name: "table-changefeed-disabled", Schema: tableChangefeedDisabledFixture()},
 		{Name: "table-row-deletion-epoch", Schema: tableRowDeletionEpochFixture()},
@@ -793,6 +794,18 @@ func tableRowDeletionFixture() schemamodel.Database {
 		Name:              "t",
 		RowDeletionPolicy: &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "30d"},
 	}, schemamodel.Field{StructName: "T", FieldName: "CreatedAt", Name: "created_at", Type: "TIMESTAMP", Nullable: true})
+}
+
+// tableColumnFamiliesFixture sets every setting of a YDB column family, on a
+// family holding a column, beside a default family with a setting of its own.
+func tableColumnFamiliesFixture() schemamodel.Database {
+	return oneTable("T", schemamodel.Table{
+		Name: "t",
+		YDBColumnFamilies: []ast.YDBColumnFamilySpec{
+			{Name: "default", Compression: "lz4"},
+			{Name: "cold", Data: "hdd", Compression: "lz4", CacheMode: "in_memory", Columns: []string{"payload"}},
+		},
+	}, schemamodel.Field{StructName: "T", FieldName: "Payload", Name: "payload", Type: "TEXT", Nullable: true})
 }
 
 // tableChangefeedFixture sets every option of a YDB changefeed and every

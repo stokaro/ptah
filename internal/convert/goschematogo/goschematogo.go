@@ -23,6 +23,7 @@ import (
 	"ptah.run/internal/uniquename"
 	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbcoordination"
+	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbtopic"
 	"ptah.run/internal/ydbtype"
@@ -488,6 +489,9 @@ func (ctx *renderContext) writeTable(w *sourceWriter, table schemamodel.Table) {
 		w.writeComment(constraintAnnotation(constraint))
 	}
 	w.writeComment(tableAnnotation(table))
+	for _, family := range ydbfamily.Stated(table.YDBColumnFamilies) {
+		w.writeComment(annotation("ptah:schema:columnfamily", columnFamilyAttrs(family)...))
+	}
 	for _, changefeed := range table.Changefeeds {
 		w.writeComment(annotation("ptah:schema:changefeed", changefeedAttrs(changefeed)...))
 		for _, consumer := range changefeed.Consumers {
@@ -595,6 +599,22 @@ func rowDeletionAttrs(policy *ast.RowDeletionPolicySpec) []attr {
 		{name: rowdeletion.AttributeColumn, value: policy.Column, set: true},
 		{name: rowdeletion.AttributeInterval, value: policy.Interval, set: true},
 		{name: rowdeletion.AttributeUnit, value: policy.Unit, set: policy.Unit != ""},
+	}
+}
+
+// columnFamilyAttrs writes a YDB column family as the attributes the
+// annotation parser reads it from. A table's default family is written only
+// where it holds something other than what YDB gives a family stating nothing
+// (see [ydbfamily.Stated]), so a table nobody gave families exports none.
+// keep_in_memory has no attribute: no statement writes it, and a declaration
+// that leaves it out keeps what the table holds.
+func columnFamilyAttrs(family ast.YDBColumnFamilySpec) []attr {
+	return []attr{
+		{name: ydbfamily.AttributeName, value: family.Name, set: true},
+		{name: ydbfamily.AttributeData, value: family.Data, set: family.Data != ""},
+		{name: ydbfamily.AttributeCompression, value: family.Compression, set: family.Compression != ""},
+		{name: ydbfamily.AttributeCacheMode, value: family.CacheMode, set: family.CacheMode != ""},
+		{name: ydbfamily.AttributeFields, value: strings.Join(family.Columns, ","), set: len(family.Columns) > 0},
 	}
 }
 

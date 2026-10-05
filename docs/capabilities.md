@@ -113,6 +113,8 @@ so typos fail fast. Current registry:
 | `check_constraints` | the grammar has CHECK constraints at all, enforced or not (not YDB) |
 | `check_constraints_enforced` | CHECK constraints are enforced, not parsed-and-ignored (MySQL 8.0.16+, MariaDB 10.2.1+, PostgreSQL) |
 | `check_grant_statement` | a statement answering whether the connected account holds a privilege (ClickHouse CHECK GRANT) |
+| `column_families` | Ptah declares, reads and changes a row table's column families and the columns each holds (YDB's FAMILY) |
+| `column_family_cache_mode` | a column family takes CACHE_MODE, keeping its columns in memory (YDB 25.4 and later, behind a flag on 25.3) |
 | `common_table_expressions` | a SELECT can open with a WITH clause naming subqueries (not YDB) |
 | `composite_types` | CREATE TYPE ... AS (field type, ...) |
 | `constraint_comments` | COMMENT ON CONSTRAINT ... ON a table, stored where obj_description reads it back |
@@ -313,6 +315,8 @@ set that names no mode at all, which only a hand-built set produces and
 | `check_constraints` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `check_constraints_enforced` | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `check_grant_statement` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `column_families` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `column_family_cache_mode` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ |
 | `common_table_expressions` | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `composite_types` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `constraint_comments` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
@@ -465,7 +469,7 @@ derive from; each line below it turns off what it was measured without:
 | `YDB262()` | 26.2 | sets and drops a column default in place |
 | `YDB261()` | 26.1 | no `ALTER COLUMN ... SET DEFAULT` or `DROP DEFAULT` |
 | `YDB254()` | 25.4 | no `ADD COLUMN` with a default (`Adding columns with defaults is disabled`), no changefeed `USER_SIDS` |
-| `YDB253()` | 25.3 | no consumer `availability_period` |
+| `YDB253()` | 25.3 | no consumer `availability_period`, no column family `CACHE_MODE` (`EnableTableCacheModes` is off) |
 | `YDB252()` | 25.2 | no literal default on `JsonDocument` or `DyNumber`, no changefeed `SCHEMA_CHANGES` |
 | `YDB251()` | 25.1 | no 64-bit date and time types, `Decimal(22,9)` only, no default on a 16-bit integer, no auto-partitioned changefeed topic |
 

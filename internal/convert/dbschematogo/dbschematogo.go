@@ -184,6 +184,7 @@ func convertTablesAndFields(
 			// other (stokaro/ptah#1027).
 			RowTTL:            dbTable.RowTTL.Clone(),
 			RowDeletionPolicy: dbTable.RowDeletionPolicy.Clone(),
+			YDBColumnFamilies: ast.CloneYDBColumnFamilies(dbTable.YDBColumnFamilies),
 			Changefeeds:       ast.CloneChangefeeds(dbTable.Changefeeds),
 			Overrides:         tableStorageOverrides(dbTable),
 		}

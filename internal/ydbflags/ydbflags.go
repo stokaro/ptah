@@ -112,6 +112,15 @@ var gates = []Gate{
 		Flag:     "EnableTopicAutopartitioningForCDC",
 		refusals: []string{"Topic autopartitioning for CDC is disabled"},
 	},
+	{
+		// Off on 25.3 and on from 25.4; 25.1 and 25.2 do not list it, and
+		// their parser has no CACHE_MODE at all (`Unknown table setting:
+		// CACHE_MODE`). With the flag on, 25.3 takes a family's CACHE_MODE
+		// in CREATE TABLE and through ALTER FAMILY, and reads it back.
+		Key:      capability.ColumnFamilyCacheMode,
+		Flag:     "EnableTableCacheModes",
+		refusals: []string{"Setting cache_mode is not allowed"},
+	},
 }
 
 // Gates returns every capability a flag decides, in a fixed order.

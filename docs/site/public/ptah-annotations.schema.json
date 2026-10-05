@@ -226,6 +226,53 @@
       ],
       "type": "object"
     },
+    "ptah.schema.columnfamily": {
+      "additionalProperties": false,
+      "description": "Declares a YDB column family: columns stored together, with a storage pool, compression and cache mode of their own. It belongs to the struct's table, or to the table it names.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "cache_mode": {
+              "description": "Cache mode: regular or in_memory.",
+              "type": "string"
+            },
+            "compression": {
+              "description": "Compression: off or lz4.",
+              "type": "string"
+            },
+            "data": {
+              "description": "Kind of storage pool the family's columns are kept in, such as ssd.",
+              "type": "string"
+            },
+            "fields": {
+              "description": "Columns the family holds. The default family lists none.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Family name; default is the family holding the key and every column no other family names.",
+              "type": "string"
+            },
+            "table": {
+              "description": "Table the family belongs to, when not the struct's own.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:columnfamily"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
     "ptah.schema.composite": {
       "additionalProperties": false,
       "description": "Declares a PostgreSQL composite type.",
@@ -2339,6 +2386,9 @@
     },
     {
       "$ref": "#/$defs/ptah.schema.changefeed.consumer"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.columnfamily"
     },
     {
       "$ref": "#/$defs/ptah.schema.table"

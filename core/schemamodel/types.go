@@ -821,6 +821,13 @@ type Table struct {
 	// a table declaring none. It carries the ast type for the same reason
 	// RowTTL does (stokaro/ptah#2236).
 	RowDeletionPolicy *ast.RowDeletionPolicySpec
+	// YDBColumnFamilies is YDB's, and every other target refuses it: the
+	// column families this row table declares, each with the columns it
+	// holds -- the `//ptah:schema:column_family` annotations and the YAML
+	// `column_families` map. Nil declares none, and every column then sits in
+	// YDB's default family. It carries the ast type for the reason RowTTL
+	// does.
+	YDBColumnFamilies []ast.YDBColumnFamilySpec
 	// Changefeeds are the YDB changefeeds this table declares: the
 	// `//ptah:schema:changefeed` annotations and the YAML `changefeeds`
 	// list. It carries the ast type for the reason RowTTL does. A renderer

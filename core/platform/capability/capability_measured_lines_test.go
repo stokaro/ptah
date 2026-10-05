@@ -232,6 +232,8 @@ func measuredLines() map[string]measuredLine {
 				capability.GroupPrincipals:                 accessKeyCarried,
 				capability.DatabaseGrants:                  accessKeyCarried,
 				capability.RelativeGrantPaths:              accessKeyCarried,
+				capability.ColumnFamilies:                  columnFamilyKeyCarried,
+				capability.ColumnFamilyCacheMode:           columnFamilyKeyCarried,
 				capability.CoordinationNodes:               coordinationKeyCarried,
 				capability.Changefeeds:                     changefeedKeyCarried,
 				capability.ChangefeedUserSIDs:              changefeedKeyCarried,
@@ -392,6 +394,8 @@ func measuredLines() map[string]measuredLine {
 				capability.GroupPrincipals:                 accessKeyCarried,
 				capability.DatabaseGrants:                  accessKeyCarried,
 				capability.RelativeGrantPaths:              accessKeyCarried,
+				capability.ColumnFamilies:                  columnFamilyKeyCarried,
+				capability.ColumnFamilyCacheMode:           columnFamilyKeyCarried,
 				capability.CoordinationNodes:               coordinationKeyCarried,
 				capability.Changefeeds:                     changefeedKeyCarried,
 				capability.ChangefeedUserSIDs:              changefeedKeyCarried,
@@ -553,6 +557,8 @@ func measuredLines() map[string]measuredLine {
 				capability.GroupPrincipals:                 accessKeyCarried,
 				capability.DatabaseGrants:                  accessKeyCarried,
 				capability.RelativeGrantPaths:              accessKeyCarried,
+				capability.ColumnFamilies:                  columnFamilyKeyCarried,
+				capability.ColumnFamilyCacheMode:           columnFamilyKeyCarried,
 				capability.CoordinationNodes:               coordinationKeyCarried,
 				capability.Changefeeds:                     changefeedKeyCarried,
 				capability.ChangefeedUserSIDs:              changefeedKeyCarried,
@@ -738,6 +744,12 @@ const topicKeyCarried = "this run predates the key and sent no topic experiment;
 // here is the preset's.
 const serialKeyCarried = "this run predates the key and sent no serial sequence experiment; the probe asks it " +
 	"on every run through those experiments, and the value here is the preset's"
+
+// columnFamilyKeyCarried is why the keys about a YDB row table's column
+// families are carried on these lines: the run predates them. The probe asks
+// them on every run, and the value here is the preset's.
+const columnFamilyKeyCarried = "this run predates the key and sent no column family experiment; the probe asks " +
+	"it on every run, and the value here is the preset's"
 
 // changefeedKeyCarried is why the keys about a YDB changefeed and the
 // consumers of its topic are carried on these lines: the run predates them.

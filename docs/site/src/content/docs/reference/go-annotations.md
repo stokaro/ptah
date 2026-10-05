@@ -93,6 +93,7 @@ type StatusEnumMarker struct{}
 | [`ptah:embedded`](#ptahembedded) | Columns or relations from an embedded Go field | field |
 | [`ptah:schema:index`](#ptahschemaindex) | An index | struct or field |
 | [`ptah:schema:constraint`](#ptahschemaconstraint) | A table constraint | struct or field |
+| [`ptah:schema:columnfamily`](#ptahschemacolumnfamily) | A YDB column family of a table | struct or field |
 | [`ptah:schema:changefeed`](#ptahschemachangefeed) | A YDB changefeed of a table | struct or field |
 | [`ptah:schema:changefeed:consumer`](#ptahschemachangefeedconsumer) | A consumer of a YDB changefeed's topic | struct or field |
 | [`ptah:schema:enum`](#ptahschemaenum) | A reusable enum type | struct |
@@ -387,6 +388,23 @@ A PRIMARY KEY constraint's `name` is the name the key is built with on
 PostgreSQL; without one the server names it `<table>_pkey`. MySQL and MariaDB
 call every primary key `PRIMARY` whatever it is declared as, so there the
 comparison matches the key without its name.
+
+### `//ptah:schema:columnfamily`
+
+Declares a YDB column family: columns a row table stores together, with a
+storage pool, a compression and a cache mode of their own. It belongs to the
+table of the struct it is on, or to the one `table` names, which the same file
+declares. Every other dialect refuses a table that declares one. See
+[column families](../../databases/ydb/#column-families).
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `name` | Yes | Family name. `default` sets the family that holds the key and every unlisted column. |
+| `table` | No | Table the family belongs to, when not the struct's own. |
+| `data` | No | Kind of storage pool the family is kept in, such as `ssd`. Omitted, the table keeps the pool it holds. |
+| `compression` | No | `off` or `lz4`. Omitted, the table keeps the compression it holds. |
+| `cache_mode` | No | `regular` or `in_memory`, either of which needs `column_family_cache_mode`. Omitted, the table keeps the cache mode it holds. |
+| `fields` | No | Columns the family holds, never a key column. The default family lists none. |
 
 ### `//ptah:schema:changefeed`
 

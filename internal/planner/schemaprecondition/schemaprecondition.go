@@ -141,6 +141,25 @@ func RefuseSerialSequenceChanges(dialect string, diff *difftypes.SchemaDiff) err
 	return nil
 }
 
+// RefuseYDBColumnFamilyChanges refuses a diff that changes a table's YDB column
+// families, for a planner of dialect that plans none. Only a YDB catalog
+// reports column families, so another planner reaches such a change through a
+// declaration that names them, or a diff built by hand, and planning nothing
+// would leave every column where the server put it while the comparison kept
+// reporting the difference.
+func RefuseYDBColumnFamilyChanges(dialect string, diff *difftypes.SchemaDiff) error {
+	if diff == nil {
+		return nil
+	}
+	for _, tableDiff := range diff.TablesModified {
+		if tableDiff.YDBColumnFamiliesChange != nil {
+			return fmt.Errorf("%w: the diff changes the column families of table %q, which only a YDB plan does; "+
+				"the %s planner plans none", ptaherr.ErrUnsupportedFeature, tableDiff.TableName, dialect)
+		}
+	}
+	return nil
+}
+
 // RefuseChangefeedChanges refuses a diff that changes a table's changefeeds,
 // for a planner of dialect that plans none. The comparison records such a
 // change only where the two sides hold changefeeds, which only a YDB

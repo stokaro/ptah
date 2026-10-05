@@ -727,6 +727,7 @@ func fromTableWithFieldConverter(
 	// this was built from (stokaro/ptah#1027).
 	createTable.RowTTL = newTable.RowTTL.Clone()
 	createTable.RowDeletionPolicy = newTable.RowDeletionPolicy.Clone()
+	createTable.YDBColumnFamilies = ast.CloneYDBColumnFamilies(newTable.YDBColumnFamilies)
 	createTable.Changefeeds = ast.CloneChangefeeds(newTable.Changefeeds)
 	// Raw SQL the author asked to be appended to CREATE TABLE. It is carried
 	// verbatim; see [ptah.run/core/ast.CreateTableNode.CustomSQL] for why

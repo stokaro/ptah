@@ -27,8 +27,10 @@
 //     then ALTER INDEX ... SET for every index whose partitioning changes in
 //     place, under the name it has once renamed;
 //  6. per table, ADD COLUMN, then the in-place column changes, then SET
-//     (TTL = ...) or RESET (TTL), then DROP COLUMN: a TTL may read a column
-//     the plan adds, and YDB refuses to drop the column a TTL reads;
+//     (TTL = ...) or RESET (TTL), then one ALTER TABLE for its column
+//     families, then DROP COLUMN: a TTL may read a column the plan adds, a
+//     column the plan adds may move into a family, and YDB refuses to drop
+//     the column a TTL reads;
 //  7. ADD INDEX for every index added to a table that already exists, one per
 //     statement (`Only one index can be added by one operation`), after the
 //     columns it names exist;
@@ -434,10 +436,11 @@ func addIndexes(changes difftypes.IndexChanges, inlineIndexes map[string]bool, s
 }
 
 // changeTable writes one table's changes: added columns, then in-place
-// changes, then the TTL, then dropped columns. The drops come after the index
-// drops the plan emitted before it, so an indexed or covered column is free by
-// then, and after the TTL, so the column the TTL read is free too; the TTL
-// comes after the additions, so a column it reads exists.
+// changes, then the TTL, then the column families, then dropped columns. The
+// drops come after the index drops the plan emitted before it, so an indexed
+// or covered column is free by then, and after the TTL, so the column the TTL
+// read is free too; the TTL and the families come after the additions, so a
+// column the TTL reads exists, and so does a column that moves into a family.
 func (p *Planner) changeTable(tableDiff difftypes.TableDiff, enums []schemamodel.Enum) []ast.Node {
 	var nodes []ast.Node
 	alter := func(operation ast.AlterOperation) {
@@ -458,6 +461,9 @@ func (p *Planner) changeTable(tableDiff difftypes.TableDiff, enums []schemamodel
 		})
 	}
 	if operation := ttlOperation(tableDiff.RowDeletionPolicyChange); operation != nil {
+		alter(operation)
+	}
+	if operation := familyOperation(tableDiff); operation != nil {
 		alter(operation)
 	}
 	for _, column := range tableDiff.ColumnsRemoved {
@@ -583,6 +589,9 @@ func indexKeyColumns(index schemamodel.Index) []string {
 func (p *Planner) refuseTableChanges(tableDiff difftypes.TableDiff) error {
 	subject := fmt.Sprintf("table %q", tableDiff.TableName)
 	if err := p.refuseTableSettings(tableDiff, subject); err != nil {
+		return err
+	}
+	if err := p.refuseFamilyChange(tableDiff); err != nil {
 		return err
 	}
 	if tableDiff.Desired.HasTable() && !declaresKey(tableDiff.Desired) {
