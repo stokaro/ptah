@@ -163,6 +163,7 @@ type document struct {
 	Secrets           map[string]secretSpec           `yaml:"secrets"`
 	// ExternalDataSources and ExternalTables are YDB's.
 	ExternalDataSources map[string]externalDataSourceSpec `yaml:"external_data_sources"`
+	StreamingQueries    map[string]streamingQuerySpec     `yaml:"streaming_queries"`
 	ExternalTables      map[string]externalTableSpec      `yaml:"external_tables"`
 }
 
@@ -836,6 +837,9 @@ func (d document) toDatabase() (*schemamodel.Database, error) {
 		return nil, err
 	}
 	if err := d.addSecrets(db); err != nil {
+		return nil, err
+	}
+	if err := d.addStreamingQueries(db); err != nil {
 		return nil, err
 	}
 	if err := d.addExternalObjects(db); err != nil {

@@ -82,6 +82,7 @@ import (
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
 	"ptah.run/internal/ydbreplication"
+	"ptah.run/internal/ydbstream"
 )
 
 // RenderVisitor defines the interface for rendering AST nodes to SQL statements.
@@ -421,6 +422,8 @@ func prepareNode(
 		return node, refuseReplicationFamily(dialect, caps, key, subject)
 	case *ast.CreateCoordinationNodeNode, *ast.AlterCoordinationNodeNode, *ast.DropCoordinationNodeNode:
 		return node, refuseCoordinationNode(dialect, caps, node)
+	case *ydbstream.Node:
+		return node, ydbstream.Refuse(dialect, caps, "streaming query "+typed.Name)
 	case *ast.CreateSecretNode, *ast.AlterSecretNode, *ast.DropSecretNode, *ast.CreateExternalDataSourceNode,
 		*ast.DropExternalDataSourceNode, *ast.CreateExternalTableNode, *ast.DropExternalTableNode:
 		return node, refuseYDBObject(dialect, caps, node)
@@ -1182,6 +1185,14 @@ func validateDeclaredYDBObjects(dialect string, caps capability.Capabilities, da
 	}
 	if err := validateDeclaredSecrets(dialect, caps, database); err != nil {
 		return err
+	}
+	for _, query := range database.StreamingQueries {
+		if err := ydbstream.Refuse(dialect, caps, "streaming query "+query.QualifiedName()); err != nil {
+			return err
+		}
+		if err := ydbstream.Validate(query.Spec); err != nil {
+			return err
+		}
 	}
 	return validateDeclaredExternalObjects(dialect, caps, database)
 }

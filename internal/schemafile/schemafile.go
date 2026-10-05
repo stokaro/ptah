@@ -395,7 +395,7 @@ func withFormatLimits(database *schemamodel.Database, resolved string) *schemamo
 			coverage.Replication, coverage.Transfer)...)
 	}
 	if !slices.Contains(yamlOnlyExtensions, extension) {
-		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(coverage.Secret, coverage.ExternalDataSource, coverage.ExternalTable)...)
+		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(coverage.Secret, coverage.ExternalDataSource, coverage.ExternalTable, coverage.StreamingQuery)...)
 	}
 	return database
 }
@@ -858,6 +858,7 @@ func appendDatabase(dst, src *schemamodel.Database) {
 	dst.Secrets = append(dst.Secrets, src.Secrets...)
 	dst.ExternalDataSources = append(dst.ExternalDataSources, src.ExternalDataSources...)
 	dst.ExternalTables = append(dst.ExternalTables, src.ExternalTables...)
+	dst.StreamingQueries = append(dst.StreamingQueries, src.StreamingQueries...)
 	dst.ExtendedProperties = append(dst.ExtendedProperties, src.ExtendedProperties...)
 	dst.ManagedData = append(dst.ManagedData, src.ManagedData...)
 	// Several files loaded together are one description, and it describes only

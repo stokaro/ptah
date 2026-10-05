@@ -32,6 +32,7 @@ func (p *Planner) refuseObjects(diff *difftypes.SchemaDiff) error {
 		}
 	}
 	rest := *diff
+	rest.StreamingQueriesAdded, rest.StreamingQueriesRemoved, rest.StreamingQueriesChanged = nil, nil, nil
 	rest.TablesAdded, rest.TablesRemoved, rest.TablesModified = nil, nil, nil
 	rest.IndexesAdded, rest.IndexesRemoved = nil, nil
 	rest.IndexesRenamed, rest.IndexPartitioningChanged, rest.IndexCommentsChanged = nil, nil, nil
@@ -129,4 +130,14 @@ func (p *Planner) constraintRefusal(constraintType, name, verb string) error {
 	default:
 		return refuseFact(subject, "YDB has no "+constraintType+" constraint")
 	}
+}
+
+func (p *Planner) refuseDeclaredObjectChanges(diff *difftypes.SchemaDiff) error {
+	if err := p.refuseComments(diff); err != nil {
+		return err
+	}
+	if err := p.refuseObjects(diff); err != nil {
+		return err
+	}
+	return p.refuseCoordinationNodes(diff)
 }

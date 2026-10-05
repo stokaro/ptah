@@ -44,16 +44,16 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-562 fields are reachable from the desired schema, and each one carries
+571 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 491 | reaches rendered SQL on at least one target |
+| `ddl` | 498 | reaches rendered SQL on at least one target |
 | `comparison` | 8 | read when two schemas are compared, and written into no statement |
-| `planning` | 7 | read while a change set is assembled or ordered |
+| `planning` | 8 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
-| `source` | 25 | identifies the source text the declaration was read from |
+| `source` | 26 | identifies the source text the declaration was read from |
 | `export` | 10 | what a generated document carries, or reports that it cannot |
 | `data` | 11 | reference or seed rows, which are not DDL |
 
@@ -131,6 +131,9 @@ None.
 | `ast.RowTTLSpec.RowStatsPollInterval` | `ddl` | — |
 | `ast.RowTTLSpec.SelectBatchSize` | `ddl` | — |
 | `ast.RowTTLSpec.SelectRateLimit` | `ddl` | — |
+| `ast.StreamingQuerySpec.ResourcePool` | `ddl` | — |
+| `ast.StreamingQuerySpec.Run` | `ddl` | — |
+| `ast.StreamingQuerySpec.Text` | `ddl` | — |
 | `ast.TopicConsumerSpec.AvailabilityPeriod` | `ddl` | — |
 | `ast.TopicConsumerSpec.AvailabilityPeriod` | `ddl` | — |
 | `ast.TopicConsumerSpec.Important` | `ddl` | — |
@@ -276,6 +279,7 @@ None.
 | `schemamodel.Database.Secrets` | `ddl` | — |
 | `schemamodel.Database.SelfReferencingForeignKeys` | `derived` | derived by Finalize from the declared foreign keys, so the planner can create the table before the reference to itself |
 | `schemamodel.Database.Sequences` | `ddl` | — |
+| `schemamodel.Database.StreamingQueries` | `ddl` | — |
 | `schemamodel.Database.Synonyms` | `ddl` | — |
 | `schemamodel.Database.Tables` | `ddl` | — |
 | `schemamodel.Database.Topics` | `ddl` | — |
@@ -555,6 +559,11 @@ None.
 | `schemamodel.Sequence.Schema` | `ddl` | — |
 | `schemamodel.Sequence.Start` | `ddl` | — |
 | `schemamodel.Sequence.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
+| `schemamodel.StreamingQuery.AllowStateReset` | `planning` | permits an ALTER that discards aggregation state; creation does not consume this permission |
+| `schemamodel.StreamingQuery.Name` | `ddl` | — |
+| `schemamodel.StreamingQuery.Schema` | `ddl` | — |
+| `schemamodel.StreamingQuery.Spec` | `ddl` | — |
+| `schemamodel.StreamingQuery.StructName` | `source` | the annotation holder, not the query identity |
 | `schemamodel.Synonym.Comment` | `ddl` | — |
 | `schemamodel.Synonym.Name` | `ddl` | — |
 | `schemamodel.Synonym.Schema` | `ddl` | — |

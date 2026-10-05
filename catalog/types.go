@@ -95,6 +95,8 @@ type Database struct {
 	// ExternalDataSources and ExternalTables are the YDB external data
 	// sources and external tables this description covers. omitempty keeps
 	// the serialization of every other dialect byte-identical.
+	// StreamingQueries contains the persistent declarations of YDB streaming queries.
+	StreamingQueries    []StreamingQuery     `json:"streaming_queries,omitempty"`
 	ExternalDataSources []ExternalDataSource `json:"external_data_sources,omitempty"`
 	ExternalTables      []ExternalTable      `json:"external_tables,omitempty"`
 	// ExtendedProperties are the SQL Server extended properties this

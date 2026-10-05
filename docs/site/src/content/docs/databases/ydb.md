@@ -990,10 +990,62 @@ classifiers in place. The read takes them from `.sys/resource_pools` and
 `.sys/resource_pool_classifiers`. HCL, SQL and DBML have no spelling for
 either, and a document in one of them records both as not described.
 
-### Backup collections, streaming queries and statistics
+### Streaming queries
 
-These are not part of the declared schema. `backup_collections` and
-`streaming_queries` are false on every line:
+A streaming query runs continuously over topic messages. Declare its query body,
+execution state and resource pool in Go or YAML. YDB 26.2 requires both
+`EnableStreamingQueries` and `EnableExternalDataSources`; name the monitoring
+endpoint in the connection URL so Ptah reads those flags. Default release-line
+presets leave `streaming_queries` disabled. YDB 25.1 has no such statement.
+
+```go
+//ptah:schema:streamingquery name="copy" schema="jobs" run="false" resource_pool="default" text="INSERT INTO `output` SELECT * FROM `input`;"
+type CopyStream struct{}
+```
+
+The same declaration in YAML:
+
+```yaml
+streaming_queries:
+  copy:
+    schema: jobs
+    run: false
+    resource_pool: default
+    text: |
+      INSERT INTO `output` SELECT * FROM `input`;
+```
+
+The topics `input` and `output` must exist or be declared beside the query.
+Names in the body resolve from the database root, independently of the query's
+`schema` directory. Declare `run: false` to create a stopped query; omitting
+`run` uses YDB's default, `true`. An omitted pool means `default`.
+
+Ptah reads the persistent `Text`, `Run` and `ResourcePool` fields from
+`.sys/streaming_queries`. Runtime status, retry counters and checkpoint contents
+are not schema. Reading, exporting to Go and applying the same declaration
+leaves the query unchanged. Comparison ignores comments and whitespace between
+YQL tokens because YDB removes comments from the stored body. Literal contents
+and operators remain significant. HCL and DBML cannot declare this family, so applying
+those formats preserves queries already in the database.
+
+Changing `run` or `resource_pool` uses `ALTER STREAMING QUERY`. A body change
+requires `allow_state_reset: true` in YAML, or `allow_state_reset="true"` in the
+Go annotation. Ptah then sends `FORCE = TRUE`: YDB resets aggregation state and
+retains topic offsets. A rollback restores the old declaration, not discarded
+state. Removing a query deletes its checkpoints and is classified as destructive.
+Migration lint reports a removal as `DS107` and a replacement or body change
+as `YD160`.
+
+A plan creates queries after topics, tables, external sources, views and pools.
+It stops a changed running query before other schema changes, then applies its
+new declaration. Removed queries are dropped before their sources and targets.
+Dev database replay continues to refuse streaming queries because their bodies
+can read or write outside the isolated directory.
+
+### Backup collections and statistics
+
+Backup collections and runtime statistics are not part of the declared schema.
+`backup_collections` remains false on every line:
 
 - A backup collection, `CREATE BACKUP COLLECTION`, is behind the
   `EnableBackupService` flag. No public API reads one back: the scheme service
@@ -1002,11 +1054,6 @@ These are not part of the declared schema. `backup_collections` and
   would drop the collection with every backup in it, and on 25.1 `DROP BACKUP
   COLLECTION` stops the server. A read does not list collections, and
   `ptah migrations lint` reports a drop of one as YD121.
-- A streaming query, `CREATE STREAMING QUERY`, runs continuously over a topic.
-  25.1 has no such statement. 26.2 has it, and refuses the topic read every
-  one needs (`data source pq doesn't exist`) unless `EnableExternalDataSources`
-  is on. A read records a streaming query as not described rather than
-  refusing the database.
 - `ANALYZE` collects statistics, which are data rather than schema, and no YQL
   statement declares a statistics setting. YDB refuses it unless
   `EnableColumnStatistics` is on, and 25.1 refuses it on a row table whatever
@@ -1814,6 +1861,7 @@ The flags decide these capabilities:
 | `EnableMoveIndex` | `index_rename` |
 | `EnableTopicAutopartitioningForCDC` | `changefeed_topic_auto_partitioning` |
 | `EnableResourcePools` | `resource_pools` |
+| `EnableStreamingQueries` and `EnableExternalDataSources` | `streaming_queries` |
 | `EnableVectorIndex` | `vector_indexes` |
 | `EnableFulltextIndex` | `full_text_indexes` |
 | `EnableTopicTransfer` | `transfers` |
@@ -1865,12 +1913,16 @@ state, every secret by its path, external data sources and tables on
 a server with the `external_data_sources` key, every coordination node with its configuration, and the users, groups
 and permissions.
 
+With the streaming-query capability enabled, the reader also preserves each
+query's body, run setting, and resource pool. See [Streaming queries](#streaming-queries).
+
 On a cluster with `EnableResourcePools` on, it also reads resource pools and their classifiers; see
 [Resource pools and classifiers](#resource-pools-and-classifiers) and
 [Users, groups and permissions](#users-groups-and-permissions).
 
 What Ptah does not model yet is recorded rather than dropped:
-column stores that group tables, streaming queries, resource pools on a cluster whose
+column stores that group tables, streaming queries on a cluster whose flags
+Ptah did not read, resource pools on a cluster whose
 flags Ptah did not read, sequences other than a `Serial` column's, the settings
 of a table such as a TTL run interval and storage settings, a column family
 kept in memory with `keep_in_memory`, a changefeed holding a setting Ptah does

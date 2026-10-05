@@ -147,6 +147,8 @@ func TestMeasureEmissions_TheGuardsBlindSpotsAreWrittenDown(t *testing.T) {
 		"COMMENT ON VIEW",
 		// The third tail of a split function body.
 		"END",
+		// The streaming query owns the enclosing block; END creates no object.
+		"END DO",
 		// SQL Server's spelling of a comment.
 		"EXEC SP_ADDEXTENDEDPROPERTY @NAME",
 		"GRANT 'YDB.DATABASE.CONNECT' ON",

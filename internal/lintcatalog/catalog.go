@@ -298,12 +298,11 @@ var migrationRuleMeta = map[string]ruleMeta{
 		// DROP TRANSFER, DROP ASYNC REPLICATION ... CASCADE and DROP
 		// COORDINATION NODE, so the rule is ours even though it covers the
 		// Atlas one.
-		Summary: "dropping a schema, type, extension, function, procedure, trigger, role, policy, or YDB user, group, topic, transfer, async replication, or coordination node removes behavior or data",
+		Summary: "dropping a schema, type, extension, function, procedure, trigger, role, policy, or YDB user, group, topic, transfer, async replication, coordination node, or streaming query removes behavior or data",
 		YDB:     YDBApplies,
-		YDBNote: "`DROP USER` and `DROP GROUP`, YDB's principals; `DROP TOPIC`, which drops every message and " +
-			"consumer position; `DROP TRANSFER` and `DROP ASYNC REPLICATION ... CASCADE`, which drops the " +
-			"replica tables; and `DROP COORDINATION NODE`, which drops its semaphores and rate limiter " +
-			"resources even under a lock",
+		YDBNote: "Drops YDB users, groups, topics, transfers, replication replica tables with CASCADE, " +
+			"coordination nodes and streaming queries. Topic positions, streaming checkpoints and " +
+			"coordination resources are lost with their objects",
 	},
 	"AC101": {
 		Summary: "the migration defines a routine whose body is not analyzed, so a clean result says nothing about what the body does",
@@ -667,6 +666,9 @@ var migrationRuleMeta = map[string]ruleMeta{
 	},
 	"YD141": {
 		Summary: "an external data source that names its credential by a deprecated secret object (`..._SECRET_NAME`), whose value the database administrator reads in clear",
+	},
+	"YD160": {
+		Summary: "replacing a streaming query or changing its body discards checkpoint state that rollback cannot restore",
 	},
 	"YD150": {
 		Summary: "a dropped or renamed column or index whose comment stays on the YDB table as an attribute under its old name",

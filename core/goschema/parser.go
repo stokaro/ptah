@@ -764,6 +764,7 @@ type schemaParseState struct {
 	synonyms                []schemamodel.Synonym
 	coordinationNodes       []schemamodel.CoordinationNode
 	secrets                 []schemamodel.Secret
+	streamingQueries        []schemamodel.StreamingQuery
 	externalDataSources     []schemamodel.ExternalDataSource
 	externalTables          []schemamodel.ExternalTable
 	extendedProperties      []schemamodel.ExtendedProperty
@@ -926,6 +927,7 @@ var sharedDirectiveParsers = map[string]sharedDirectiveParser{
 	"ptah:schema:async_replication:item": (*schemaParseState).parseAsyncReplicationItemComment,
 	"ptah:schema:transfer":               (*schemaParseState).parseTransferComment,
 	"ptah:schema:secret":                 (*schemaParseState).parseSecretComment,
+	"ptah:schema:streamingquery":         (*schemaParseState).parseStreamingQueryComment,
 	"ptah:schema:externaldatasource":     (*schemaParseState).parseExternalDataSourceComment,
 	"ptah:schema:externaltable":          (*schemaParseState).parseExternalTableComment,
 }
@@ -1116,6 +1118,7 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 		Transfers:               state.transfers,
 		CoordinationNodes:       state.coordinationNodes,
 		Secrets:                 state.secrets,
+		StreamingQueries:        state.streamingQueries,
 		ExternalDataSources:     state.externalDataSources,
 		ExternalTables:          state.externalTables,
 		ExtendedProperties:      state.extendedProperties,

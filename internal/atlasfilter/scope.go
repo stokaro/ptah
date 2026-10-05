@@ -132,6 +132,7 @@ var includeSelectableTypes = map[string]struct{}{
 	"secret":                   {},
 	"external_data_source":     {},
 	"external_table":           {},
+	"streaming_query":          {},
 	"function":                 {},
 	"enum":                     {},
 	"extension":                {},

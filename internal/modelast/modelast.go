@@ -2412,6 +2412,12 @@ func appendTableIndependentObjectStatements(visit func(ast.Node) error, database
 		return err
 	}
 
+	for _, query := range database.StreamingQueries {
+		if err := visit(FromStreamingQuery(query)); err != nil {
+			return err
+		}
+	}
+
 	// 9c. Extended properties come after every object one can hang off.
 	// sp_addextendedproperty resolves @level1name through the catalog and
 	// answers `Cannot find the object ... because it does not exist or you do

@@ -396,6 +396,7 @@ func TestRoundTrip_EveryObjectFamilySurvives(t *testing.T) {
 // topic, secret, async replication, transfer and external objects are such families: Atlas HCL has none
 // of them, and Ptah does not invent a block the pinned binary would refuse.
 var hclUnwritableFields = map[string]coverage.Kind{
+	"StreamingQueries":        coverage.StreamingQuery,
 	"Topics":                  coverage.Topic,
 	"AsyncReplications":       coverage.Replication,
 	"Transfers":               coverage.Transfer,
