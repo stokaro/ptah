@@ -59,7 +59,7 @@ func Collect(db *schemamodel.Database) Stats {
 	metrics := []Metric{
 		{Name: "schemas", Help: "Schemas declared or read", Value: len(db.Schemas)},
 		{Name: "tables", Help: "Tables", Value: len(db.Tables)},
-		{Name: "columns", Help: "Columns across all tables", Value: len(db.Fields)},
+		{Name: "columns", Help: "Columns across tables, excluding external tables", Value: len(db.Fields)},
 		{Name: "indexes", Help: "Indexes", Value: len(db.Indexes)},
 		{Name: "constraints", Help: "Table-level constraints", Value: len(db.Constraints)},
 		{Name: "enums", Help: "Enum types", Value: len(db.Enums)},
@@ -76,7 +76,7 @@ func Collect(db *schemamodel.Database) Stats {
 		{Name: "roles", Help: "Roles", Value: len(db.Roles)},
 		{Name: "grants", Help: "Privilege grants", Value: len(db.Grants)},
 	}
-	return Stats{Metrics: metrics}
+	return Stats{Metrics: append(metrics, ydbMetrics(db)...)}
 }
 
 // metricPrefix namespaces every metric, so a pipeline scraping several tools

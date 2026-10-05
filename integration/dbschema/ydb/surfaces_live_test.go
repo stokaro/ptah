@@ -110,8 +110,8 @@ func TestYDBIntrospect_FailurePath_NullableKeyColumn(t *testing.T) {
 }
 
 // TestYDBSchemaStats_CountsWhatTheReaderDescribes counts a directory holding
-// two tables, five columns and one index. The labels name the dialect and the
-// directory the counts came from.
+// tables, indexes, a topic, a changefeed and their consumers. The labels name
+// the dialect and the directory the counts came from.
 func TestYDBSchemaStats_CountsWhatTheReaderDescribes(t *testing.T) {
 	const directory = "ptah_ydb_stats"
 	for _, line := range ydbLines {
@@ -124,6 +124,10 @@ func TestYDBSchemaStats_CountsWhatTheReaderDescribes(t *testing.T) {
 				"CREATE TABLE `"+directory+"/a` (id Int64 NOT NULL, name Utf8, PRIMARY KEY (id), "+
 					"INDEX a_name GLOBAL SYNC ON (name))",
 				"CREATE TABLE `"+directory+"/b` (x Uint64 NOT NULL, y Utf8 NOT NULL, z Bool, PRIMARY KEY (x, y))",
+				"CREATE TOPIC `"+directory+"/events` (CONSUMER `one`, CONSUMER `two`)",
+				"ALTER TABLE `"+directory+"/a` ADD CHANGEFEED `changes` WITH (MODE = 'UPDATES', FORMAT = 'JSON')",
+				"ALTER TOPIC `"+directory+"/a/changes` ADD CONSUMER `reader`",
+				"CREATE COORDINATION NODE `"+directory+"/locks`",
 			)
 
 			stdout, err := runCommand(schema.NewSchemaStatsCommand(),
@@ -137,6 +141,12 @@ func TestYDBSchemaStats_CountsWhatTheReaderDescribes(t *testing.T) {
 				"ptah_schema_indexes" + labels + " 1\n",
 				"ptah_schema_constraints" + labels + " 0\n",
 				"ptah_schema_views" + labels + " 0\n",
+				"ptah_schema_topics" + labels + " 1\n",
+				"ptah_schema_topic_consumers" + labels + " 2\n",
+				"ptah_schema_changefeeds" + labels + " 1\n",
+				"ptah_schema_changefeed_consumers" + labels + " 1\n",
+				"ptah_schema_coordination_nodes" + labels + " 1\n",
+				"ptah_schema_streaming_queries" + labels + " 0\n",
 			} {
 				c.Assert(stdout, qt.Contains, sample)
 			}
