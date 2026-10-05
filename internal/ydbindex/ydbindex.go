@@ -16,9 +16,8 @@
 // column-table indexes. A global index is an ordered table of its own, which
 // is why a declared BTREE builds one and nothing is lost. A vector index,
 // `GLOBAL USING vector_kmeans_tree`, is a global index too, built over a tree
-// of tables and declared with its settings ([ResolveVector]). The full-text
-// kinds are a later family's work, and a declaration naming one is refused
-// here rather than built as a plain index.
+// of tables and declared with its settings ([ResolveVector]). Full-text
+// indexes declare their analyzers through [ResolveFullText].
 package ydbindex
 
 import (
@@ -41,9 +40,13 @@ const (
 	// index, and a read through the index may trail the table.
 	Async
 	// Vector is `GLOBAL USING vector_kmeans_tree`: an approximate
-	// nearest-neighbour index whose last column holds the vectors and whose
+	// nearest-neighbor index whose last column holds the vectors and whose
 	// other columns are a prefix a search names.
 	Vector
+	// FullTextPlain stores tokens for full-text matching.
+	FullTextPlain
+	// FullTextRelevance also stores data used to rank full-text matches.
+	FullTextRelevance
 )
 
 // VectorMethod is the access method a vector index declares, as YQL writes it
@@ -68,13 +71,17 @@ func KindOf(method string) (Kind, error) {
 		return Async, nil
 	case "VECTOR KMEANS TREE", "GLOBAL USING VECTOR KMEANS TREE":
 		return Vector, nil
+	case "FULLTEXT PLAIN", "GLOBAL USING FULLTEXT PLAIN":
+		return FullTextPlain, nil
+	case "FULLTEXT RELEVANCE", "GLOBAL USING FULLTEXT RELEVANCE":
+		return FullTextRelevance, nil
 	case "HNSW", "IVFFLAT":
 		return 0, fmt.Errorf("index method %q is pgvector's and has no YDB counterpart: YDB's vector index "+
 			"is %s, declared with type %q and its distance or similarity, vector_type, vector_dimension, "+
 			"levels and clusters", method, VectorMethod, VectorMethod)
 	default:
 		return 0, fmt.Errorf("index method %q has no YDB counterpart: a row table has global indexes, "+
-			"synchronous or asynchronous, and vector indexes; declare type \"async\" for an asynchronous one "+
+			"synchronous or asynchronous, vector and full-text indexes; declare type \"async\" for an asynchronous one "+
 			"and type %q for a vector one", method, VectorMethod)
 	}
 }
@@ -87,8 +94,8 @@ func (k Kind) Clause(unique bool) string {
 	switch {
 	case k == Async:
 		return "GLOBAL ASYNC"
-	case k == Vector:
-		return "GLOBAL USING " + VectorMethod
+	case k == Vector || k.IsFullText():
+		return "GLOBAL USING " + k.String()
 	case unique:
 		return "GLOBAL UNIQUE SYNC"
 	default:
@@ -106,6 +113,10 @@ func (k Kind) String() string {
 		return "async"
 	case Vector:
 		return VectorMethod
+	case FullTextPlain:
+		return FullTextPlainMethod
+	case FullTextRelevance:
+		return FullTextRelevanceMethod
 	default:
 		return "unknown"
 	}
@@ -152,6 +163,12 @@ type Column struct {
 // indexes and the planner of an index added to a table that exists, so the two
 // cannot accept different indexes.
 func ShapeRefusal(index Shape, key []string, column func(string) (Column, bool)) string {
+	if index.Kind.IsFullText() {
+		if reason := fullTextShapeRefusal(index, key, column); reason != "" {
+			return reason
+		}
+	}
+
 	if index.Kind != Vector && slices.Equal(index.Columns, key) {
 		return "its columns are the table's key, which YDB refuses (`index keys shouldn't be table keys`)"
 	}
@@ -165,6 +182,10 @@ func ShapeRefusal(index Shape, key []string, column func(string) (Column, bool))
 		switch {
 		case !ok:
 			return fmt.Sprintf("it names column %q, which the table does not declare", name)
+		case index.Kind.IsFullText() && position == len(index.Columns)-1:
+			if declared.Type != ydbtype.String && declared.Type != ydbtype.Utf8 {
+				return fmt.Sprintf("its text column %q is %s; a full-text index reads String or Utf8", name, declared.Type)
+			}
 		case index.Kind == Vector && position == len(index.Columns)-1:
 			return vectorColumnRefusal(name, declared, index.Dimension)
 		case !ydbtype.KeyComparable(declared.Type):
@@ -185,6 +206,22 @@ func vectorColumnRefusal(name string, column Column, dimension uint64) string {
 		return fmt.Sprintf("its vector column %q is declared with dimension %d and the index with "+
 			"vector_dimension %d; YDB checks neither, and leaves a vector of the wrong length out of the index",
 			name, column.Dimension, dimension)
+	}
+	return ""
+}
+
+// fullTextShapeRefusal holds the declaration to the measured 26.2 grammar:
+// one Uint64 primary key and one analyzed column, without a prefix.
+func fullTextShapeRefusal(index Shape, key []string, column func(string) (Column, bool)) string {
+	if len(index.Columns) != 1 {
+		return "a YDB full-text index requires exactly one text column; this release does not support prefix columns"
+	}
+	if len(key) != 1 {
+		return "a YDB full-text index requires exactly one Uint64 primary key column"
+	}
+	primary, known := column(key[0])
+	if !known || primary.Type != ydbtype.Uint64 {
+		return "a YDB full-text index requires a Uint64 primary key column"
 	}
 	return ""
 }

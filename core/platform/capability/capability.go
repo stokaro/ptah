@@ -1362,6 +1362,11 @@ const (
 	// table rather than on the index.
 	IndexPartitioning Capability = "index_partitioning"
 
+	// FullTextIndexes marks a target on which Ptah declares, reads and plans
+	// YDB fulltext_plain and fulltext_relevance indexes. The server feature
+	// flag controls this key; an unknown cluster uses the release default.
+	FullTextIndexes Capability = "full_text_indexes"
+
 	// VectorIndexes marks a target on which Ptah declares, reads and plans a
 	// vector index of YDB's kind: `INDEX i GLOBAL USING vector_kmeans_tree ON
 	// ([prefix, ...] embedding) WITH (distance = ..., vector_type = ...,
@@ -2139,6 +2144,9 @@ var registry = map[Capability]spec{
 	IndexPartitioning: {
 		doc: "Ptah declares, reads and changes a global index's partitioning and read replicas (YDB's ALTER INDEX ... SET)",
 	},
+	FullTextIndexes: {
+		doc: "Ptah declares, reads and plans YDB fulltext_plain and fulltext_relevance indexes (behind a feature flag)",
+	},
 	VectorIndexes: {
 		doc: "Ptah declares, reads and plans a YDB vector index, GLOBAL USING vector_kmeans_tree (behind a flag on YDB 25.1)",
 	},
@@ -2521,6 +2529,7 @@ func MySQL84() Capabilities {
 		// A vector index of YDB's kind is YDB's: pgvector's indexes pass through
 		// as a method, an operator class and storage parameters instead.
 		VectorIndexes:                false,
+		FullTextIndexes:              false,
 		VectorIndexMaintainedOnWrite: false,
 		VectorBitType:                false,
 		// Column families are YDB's, so both family keys are false here.
@@ -2783,6 +2792,7 @@ func MariaDB1011() Capabilities {
 		// A vector index of YDB's kind is YDB's: pgvector's indexes pass through
 		// as a method, an operator class and storage parameters instead.
 		VectorIndexes:                false,
+		FullTextIndexes:              false,
 		VectorIndexMaintainedOnWrite: false,
 		VectorBitType:                false,
 		// Column families are YDB's, so both family keys are false here.
@@ -2984,6 +2994,7 @@ func Postgres16() Capabilities {
 		// A vector index of YDB's kind is YDB's: pgvector's indexes pass through
 		// as a method, an operator class and storage parameters instead.
 		VectorIndexes:                false,
+		FullTextIndexes:              false,
 		VectorIndexMaintainedOnWrite: false,
 		VectorBitType:                false,
 		// Column families are YDB's, so both family keys are false here.
@@ -3314,6 +3325,7 @@ func ClickHouse24() Capabilities {
 		// A vector index of YDB's kind is YDB's: pgvector's indexes pass through
 		// as a method, an operator class and storage parameters instead.
 		VectorIndexes:                false,
+		FullTextIndexes:              false,
 		VectorIndexMaintainedOnWrite: false,
 		VectorBitType:                false,
 		// Column families are YDB's, so both family keys are false here.
@@ -3536,6 +3548,7 @@ func SQLite3() Capabilities {
 		// A vector index of YDB's kind is YDB's: pgvector's indexes pass through
 		// as a method, an operator class and storage parameters instead.
 		VectorIndexes:                false,
+		FullTextIndexes:              false,
 		VectorIndexMaintainedOnWrite: false,
 		VectorBitType:                false,
 		// Column families are YDB's, so both family keys are false here.
@@ -3837,6 +3850,7 @@ func SQLServer2022() Capabilities {
 		// A vector index of YDB's kind is YDB's: pgvector's indexes pass through
 		// as a method, an operator class and storage parameters instead.
 		VectorIndexes:                false,
+		FullTextIndexes:              false,
 		VectorIndexMaintainedOnWrite: false,
 		VectorBitType:                false,
 		// Column families are YDB's, so both family keys are false here.
@@ -4576,6 +4590,7 @@ func Oracle23() Capabilities {
 		// A vector index of YDB's kind is YDB's: pgvector's indexes pass through
 		// as a method, an operator class and storage parameters instead.
 		VectorIndexes:                false,
+		FullTextIndexes:              false,
 		VectorIndexMaintainedOnWrite: false,
 		VectorBitType:                false,
 		// Column families are YDB's, so both family keys are false here.
@@ -4818,6 +4833,7 @@ func YDB262() Capabilities {
 		// in place (`Unknown table setting: levels`); its partitioning does
 		// not change either (`Only index with one impl table is supported`).
 		VectorIndexes:                true,
+		FullTextIndexes:              true,
 		VectorIndexMaintainedOnWrite: true,
 		VectorBitType:                true,
 
@@ -4986,12 +5002,13 @@ func YDB262() Capabilities {
 	}
 }
 
-// YDB261 is the preset for YDB 26.1. It differs from [YDB262] in one key:
+// YDB261 is the preset for YDB 26.1. Its full-text flag is off by default.
+// It also differs from [YDB262] in altering defaults:
 // measured on 26.1.1.22, `ALTER TABLE ... ALTER COLUMN b SET DEFAULT 2` and
 // `DROP DEFAULT` are both refused at type annotation, where 26.2.1.14 accepts
 // them.
 func YDB261() Capabilities {
-	return YDB262().With(AlterColumnDefault, false)
+	return YDB262().With(AlterColumnDefault, false).With(FullTextIndexes, false)
 }
 
 // YDB254 is the preset for YDB 25.4. It differs from [YDB261] in four keys,
@@ -4999,11 +5016,14 @@ func YDB261() Capabilities {
 //
 //   - ADD COLUMN with a default is refused on an empty table and on one
 //     holding rows, as `Adding columns with defaults is disabled`;
+//
 //   - a changefeed's USER_SIDS answers `Unknown changefeed setting:
 //     USER_SIDS`;
+//
 //   - a GRANT naming a table at the database root by its relative name
 //     answers `wrong path format 't'`, where 26.1.1.22 resolves it. 25.1,
 //     25.2 and 25.3 answer the same;
+//
 //   - a vector index over bit vectors fails its build with `Unsupported
 //     vector_type: VECTOR_TYPE_BIT`, where 26.1.1.22 builds it. 25.1, 25.2
 //     and 25.3 refuse it too.

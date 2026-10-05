@@ -28,7 +28,7 @@ func planFor(dialect string) (plan, bool) {
 	withChangefeeds := withTopicKeys(withAccessKeys(withChangefeedKeys(withColumnFamilies, normalized), normalized), normalized)
 	withObjects := withCoordinationNodes(withReplicationKeys(withChangefeeds, normalized), normalized)
 	withTableSettings := withTableSettingKeys(withObjects, normalized)
-	withWorkloads := withWorkloadKeys(withVectorKeys(withTableSettings, normalized), normalized)
+	withWorkloads := withWorkloadKeys(withFullTextKeys(withVectorKeys(withTableSettings, normalized), normalized), normalized)
 	return withExternalKeys(withSecretKeys(withWorkloads, normalized), normalized), true
 }
 

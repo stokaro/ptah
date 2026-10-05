@@ -54,7 +54,7 @@ func TestKindOf_FailurePath(t *testing.T) {
 		{name: "hash", method: "hash", wantErr: `index method "hash" has no YDB counterpart: .*`},
 		{name: "gin", method: "GIN", wantErr: `index method "GIN" has no YDB counterpart: .*`},
 		{name: "local", method: "LOCAL", wantErr: `index method "LOCAL" has no YDB counterpart: .*`},
-		{name: "fulltext", method: "fulltext_plain", wantErr: `index method "fulltext_plain" has no YDB counterpart: .*`},
+		{name: "json", method: "json", wantErr: `index method "json" has no YDB counterpart: .*`},
 		{name: "pgvector hnsw", method: "hnsw",
 			wantErr: `index method "hnsw" is pgvector's and has no YDB counterpart: YDB's vector index is vector_kmeans_tree, .*`},
 		{name: "pgvector ivfflat", method: "IVFFLAT",

@@ -126,6 +126,14 @@ var gates = []Gate{
 		},
 	},
 	{
+		// Off on 25.3 through 26.1 and on from 26.2, as the captured
+		// monitoring pages record. Measured on 26.2: both full-text methods
+		// create indexes whose analyzer settings DescribeTable reports.
+		Key:      capability.FullTextIndexes,
+		Flag:     "EnableFulltextIndex",
+		refusals: []string{"Fulltext index support is disabled"},
+	},
+	{
 		// Off on 25.1 and on from 25.2. 25.1 answers a vector index in
 		// CREATE TABLE and in ADD INDEX with this text, and with the flag on
 		// builds it over a table holding rows and answers a search through

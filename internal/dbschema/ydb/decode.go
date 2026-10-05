@@ -314,6 +314,16 @@ func (r *Reader) index(
 	case *Ydb_Table.TableIndexDescription_GlobalAsyncIndex:
 		kind = ydbindex.Async
 	case nil:
+		fullTextKind, options, err := fullTextIndex(described)
+		if err != nil {
+			return catalog.Index{}, fmt.Errorf("index %q: %w", described.GetName(), err)
+		}
+		if fullTextKind.IsFullText() {
+			index.Method = fullTextKind.Clause(false)
+			index.StorageParams = options
+			index.Definition = indexClause(index, fullTextKind) + " " + ydbindex.FullTextClause(options)
+			return index, nil
+		}
 		vector, isVector, err := vectorIndex(described)
 		switch {
 		case err != nil:
@@ -425,8 +435,6 @@ func featureFlag(flag Ydb.FeatureFlag_Status, unspecified bool) (bool, error) {
 // unreadIndexFields names the index kinds by the field number ydb_table.proto
 // gives each in TableIndexDescription's type oneof.
 var unreadIndexFields = map[protowire.Number]string{
-	10: "fulltext_plain index",
-	11: "fulltext_relevance index",
 	12: "bloom_filter index",
 	13: "bloom_ngram_filter index",
 	14: "global JSON index",

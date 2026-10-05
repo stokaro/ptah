@@ -97,7 +97,7 @@ func TestYDBPresets_DifferOnlyWhereTheLinesDid(t *testing.T) {
 		want  []capability.Capability
 	}{
 		{name: "26.1 below 26.2", lower: capability.YDB261(), upper: capability.YDB262(),
-			want: []capability.Capability{capability.AlterColumnDefault}},
+			want: []capability.Capability{capability.AlterColumnDefault, capability.FullTextIndexes}},
 		{name: "25.4 below 26.1", lower: capability.YDB254(), upper: capability.YDB261(),
 			want: []capability.Capability{capability.AddColumnWithDefault, capability.ChangefeedUserSIDs, capability.RelativeGrantPaths,
 				capability.VectorBitType}},
