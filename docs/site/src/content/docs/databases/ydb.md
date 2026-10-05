@@ -21,8 +21,9 @@ owns:
   - dialect-ydb
 ---
 
-Ptah renders YQL for YDB row tables, views and the users, groups and
-permissions of a database, plans a migration between two schemas,
+Ptah renders YQL for YDB row tables, views, the users, groups and
+permissions of a database and its resource pools, plans a migration between
+two schemas,
 connects to a live database, reads its tables back, applies DDL to it, runs
 versioned migrations against it, lints YQL for it, and writes data to it:
 seeds, declared rows and the statements the query builder renders. The
@@ -545,6 +546,97 @@ on 26.2 to `TRUNCATE` it. The consumers of a changefeed's topic belong to the
 changefeed, which creates and drops the topic; a topic made with `CREATE
 TOPIC` is a different object, which a read records.
 
+## Resource pools and classifiers
+
+A resource pool limits the queries that run in it, and a classifier sends the
+queries of a user or a group to a pool. Both belong to the whole database
+rather than to a directory, so their names are not paths:
+
+```go
+//ptah:schema:resourcepool name="batch" concurrent_query_limit="10" queue_size="5"
+//ptah:schema:resourcepool name="default" resource_weight="30"
+//ptah:schema:resourcepool:classifier name="etl_users" resource_pool="batch" member_name="etl" rank="10"
+type Workload struct{}
+```
+
+plans as:
+
+```sql
+CREATE RESOURCE POOL `batch` WITH (CONCURRENT_QUERY_LIMIT = 10, QUEUE_SIZE = 5);
+ALTER RESOURCE POOL `default` SET (RESOURCE_WEIGHT = 30);
+CREATE RESOURCE POOL CLASSIFIER `etl_users` WITH (RESOURCE_POOL = 'batch', RANK = 10, MEMBER_NAME = 'etl');
+```
+
+YAML spells the same settings under `resource_pools` and
+`resource_pool_classifiers`, each keyed by name.
+
+YDB keeps both behind its `EnableResourcePools` feature flag, which is off by
+default on every line, so every YDB preset says `resource_pools` is false.
+Turn the flag on and name the cluster's monitoring endpoint in the URL, and
+Ptah reads the flag when it connects (see [Feature flags](#feature-flags)).
+Without that, a declared pool or classifier is refused before anything runs,
+and the refusal names the flag. `ptah schema render` cannot know a cluster's
+flags, so it refuses one too; `ptah schema apply` and a plan against a
+connection that read the flag write it.
+
+The pool `default` is YDB's own: every query no classifier sends elsewhere
+runs there. A declaration of `default` changes its settings and never creates
+or drops it. YDB takes `DROP RESOURCE POOL default`, and every later query of
+the database fails with `Resource pool default not found`; `ptah migrations
+lint` reports the statement as YD120.
+
+A setting left out has no limit, which YDB keeps as -1. `concurrent_query_limit`
+and `queue_size` take whole numbers; the others are percentages from 0 to 100,
+fractions allowed. A queue needs `concurrent_query_limit` or
+`database_load_cpu_threshold` beside it, as YDB requires. A change sets and
+resets only the settings that differ, in one statement, since YDB checks the
+pool a statement leaves as a whole.
+
+A classifier needs a rank: one created without it gets the highest rank in the
+database plus 1000, which would make the declaration depend on the database.
+No two classifiers share a rank, so a plan moves classifiers that trade ranks
+by dropping and creating them. A classifier names a declared pool or
+`default`: YDB takes a classifier whose pool does not exist and runs its
+member's queries in `default` without a word.
+
+A plan never drops a pool or a classifier the database holds and the schema
+does not declare, as it never drops a user: several applications may share a
+database. Drop one by hand, or roll back the plan that created it. A dev realm
+cannot hold one, so a plan against a realm withholds a declared pool and
+reports it; `ptah db drop-all` and a dev database reset leave pools and
+classifiers in place. The read takes them from `.sys/resource_pools` and
+`.sys/resource_pool_classifiers`. HCL, SQL and DBML have no spelling for
+either, and a document in one of them records both as not described.
+
+### Backup collections, streaming queries and statistics
+
+These are not part of the declared schema. `backup_collections` and
+`streaming_queries` are false on every line:
+
+- A backup collection, `CREATE BACKUP COLLECTION`, is behind the
+  `EnableBackupService` flag. No public API reads one back: the scheme service
+  answers it with its name alone, and no system view or `SHOW CREATE` reports
+  its tables. `ALTER BACKUP COLLECTION` is refused in every form, so a change
+  would drop the collection with every backup in it, and on 25.1 `DROP BACKUP
+  COLLECTION` stops the server. A read does not list collections, and
+  `ptah migrations lint` reports a drop of one as YD121.
+- A streaming query, `CREATE STREAMING QUERY`, runs continuously over a topic.
+  25.1 has no such statement. 26.2 has it, and refuses the topic read every
+  one needs (`data source pq doesn't exist`) unless `EnableExternalDataSources`
+  is on. A read records a streaming query as not described rather than
+  refusing the database.
+- `ANALYZE` collects statistics, which are data rather than schema, and no YQL
+  statement declares a statistics setting. YDB refuses it unless
+  `EnableColumnStatistics` is on, and 25.1 refuses it on a row table whatever
+  the flag says.
+
+A migration file may hold `BACKUP`, `RESTORE` and `ANALYZE`. Each runs as a
+query of its own, outside a transaction, like a schema statement, so a refusal
+stops the migration after the statements before it applied. `ptah migrations
+lint` reports `ANALYZE` as YD122. A dev realm refuses `BACKUP`, `RESTORE`,
+resource pools and backup collections in a replay, since each belongs to the
+whole database.
+
 ## Planning changes
 
 YDB changes a table in place less than the SQL engines do, and runs a schema
@@ -574,7 +666,11 @@ statement needs one that has not run yet:
 11. Create the added and replaced views, a view after the view it reads. YDB
     checks a view's query against the schema when it creates the view.
 12. Add memberships and grants, once the tables they name exist.
-13. Drop the removed users and groups, after revoking what they hold:
+13. Drop the classifiers and the resource pools a rollback removes, then
+    create and change pools, then change classifiers in place, then create
+    classifiers. A classifier names a user or a group, so this comes after
+    the principals are created and before they are dropped.
+14. Drop the removed users and groups, after revoking what they hold:
     `DROP USER` leaves its permissions behind, and a user created later under
     the name would hold them.
 
@@ -691,6 +787,7 @@ The flags decide these capabilities:
 | `EnableParameterizedDecimal` | `parameterized_decimal` |
 | `EnableMoveIndex` | `index_rename` |
 | `EnableTopicAutopartitioningForCDC` | `changefeed_topic_auto_partitioning` |
+| `EnableResourcePools` | `resource_pools` |
 
 `EnableAsyncIndexes` decides no capability: a cluster with the flag off still
 builds a `GLOBAL ASYNC` index, so `async_indexes` keeps the preset's answer.
@@ -726,11 +823,14 @@ database read every row table under the database root, its columns, defaults,
 `Serial` columns with their sequence's start, increment and last restart,
 primary key, TTL and global indexes, with each index's partitioning and read
 replicas, its changefeeds, each with the retention and the consumers of its
-topic, every view with the query the server stores, and the users, groups and
-permissions; see [Users, groups and permissions](#users-groups-and-permissions).
+topic, every view with the query the server stores, the users, groups and
+permissions; see [Users, groups and permissions](#users-groups-and-permissions),
+and, on a cluster with `EnableResourcePools` on, the resource pools and their
+classifiers; see [Resource pools and classifiers](#resource-pools-and-classifiers).
 
 What Ptah does not model yet is recorded rather than dropped: topics,
-column-oriented tables, sequences other than a `Serial` column's, the settings
+column-oriented tables, streaming queries, resource pools on a cluster whose
+flags Ptah did not read, sequences other than a `Serial` column's, the settings
 of a table such as a TTL run interval, column families and partitioning
 options, and a changefeed holding a setting Ptah does not read, such as
 attributes, an AWS region, trace identifiers or a shared consumer. A command
@@ -777,8 +877,11 @@ existing table, a block that mixes schema and data statements, an `ADD COLUMN`
 the line refuses, a dropped column an index or the TTL uses, a partitioning
 change that resets the minimum partition count, a table a view reads that is
 dropped or renamed, a renamed table that carries a changefeed,
-a `REVOKE GRANT OPTION FOR`, which takes the permission too, and a dropped user
-or group, which leaves its permissions behind. `DS107` reports a dropped user
+a `REVOKE GRANT OPTION FOR`, which takes the permission too, a dropped user
+or group, which leaves its permissions behind, a dropped resource pool
+`default`, after which no query of the database runs, a dropped backup
+collection, which deletes its backups, and `ANALYZE`, which the line refuses
+unless a flag that is off by default is on. `DS107` reports a dropped user
 or group as it reports a dropped role elsewhere.
 [Lint rules](../../reference/lint-rules/#ydb) lists each rule with its
 meaning.

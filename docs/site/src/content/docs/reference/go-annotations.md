@@ -107,6 +107,8 @@ type StatusEnumMarker struct{}
 | [`ptah:schema:trigger`](#ptahschematrigger) | A database trigger | struct |
 | [`ptah:schema:view`](#ptahschemaview) | A database view | struct |
 | [`ptah:schema:matview`](#ptahschemamatview) | A materialized view | struct |
+| [`ptah:schema:resourcepool`](#ptahschemaresourcepool) | A YDB resource pool | struct or field |
+| [`ptah:schema:resourcepool:classifier`](#ptahschemaresourcepoolclassifier) | A YDB resource pool classifier | struct or field |
 | [`ptah:schema:role`](#ptahschemarole) | A database role | struct |
 | [`ptah:schema:grant`](#ptahschemagrant) | Database grants | struct |
 | [`ptah:schema:revoke`](#ptahschemarevoke) | Privileges a role must not hold | struct |
@@ -720,6 +722,37 @@ parsed, with that reason, on every dialect -- including the bare form with no
 value, and including a view scoped away from the current target by `dialects`.
 The name stays recognized so the refusal explains itself instead of reading as
 a misspelling.
+
+### `//ptah:schema:resourcepool`
+
+Declares a YDB resource pool, which limits the queries that run in it. A pool
+belongs to the whole database, and a setting left out has no limit. YDB keeps
+pools behind the `EnableResourcePools` flag; see
+[resource pools](../../databases/ydb/#resource-pools-and-classifiers).
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `name` | Yes | Pool name; `default` changes the pool YDB creates. |
+| `concurrent_query_limit` | No | Most queries that run at once, a whole number. |
+| `queue_size` | No | Most queries that wait; needs `concurrent_query_limit` or `database_load_cpu_threshold`. |
+| `database_load_cpu_threshold` | No | Database CPU load in percent above which new queries wait. |
+| `query_memory_limit_percent_per_node` | No | Share of a node's memory one query may take, in percent. |
+| `query_cpu_limit_percent_per_node` | No | Share of a node's CPU one query may take, in percent. |
+| `total_cpu_limit_percent_per_node` | No | Share of a node's CPU the pool's queries take together. |
+| `resource_weight` | No | The pool's share of the CPU when pools compete, in percent. |
+
+### `//ptah:schema:resourcepool:classifier`
+
+Declares a YDB resource pool classifier, which sends a user's or a group's
+queries to a pool. Of the classifiers that match a query, the lowest rank
+decides.
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `name` | Yes | Classifier name. |
+| `resource_pool` | Yes | Pool the queries go to: a declared pool or `default`. |
+| `member_name` | No | User or group whose queries it matches; every query when omitted. |
+| `rank` | Yes | Order among the classifiers, from 0; unique. |
 
 ## Security
 
