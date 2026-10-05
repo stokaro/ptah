@@ -142,9 +142,15 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		return nil, err
 	}
 	// The walk descends into a directory where its name sorts, so a secret
-	// in a directory can come before one at the root; a description lists
-	// them by directory and name, as it lists tables.
+	// or an external object in a directory can come before one at the root;
+	// a description lists them by directory and name, as it lists tables.
 	slices.SortFunc(db.Secrets, func(a, b catalog.Secret) int {
+		return cmp.Or(strings.Compare(a.Schema, b.Schema), strings.Compare(a.Name, b.Name))
+	})
+	slices.SortFunc(db.ExternalDataSources, func(a, b catalog.ExternalDataSource) int {
+		return cmp.Or(strings.Compare(a.Schema, b.Schema), strings.Compare(a.Name, b.Name))
+	})
+	slices.SortFunc(db.ExternalTables, func(a, b catalog.ExternalTable) int {
 		return cmp.Or(strings.Compare(a.Schema, b.Schema), strings.Compare(a.Name, b.Name))
 	})
 	return db, nil
@@ -189,7 +195,7 @@ func (r *Reader) entry(
 	case Ydb_Scheme.Entry_TABLE:
 		return r.tableEntry(ctx, source, schema, name, db)
 	case Ydb_Scheme.Entry_VIEW, Ydb_Scheme.Entry_TOPIC, Ydb_Scheme.Entry_REPLICATION, Ydb_Scheme.Entry_TRANSFER,
-		Ydb_Scheme.Entry_SECRET:
+		Ydb_Scheme.Entry_SECRET, Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE, Ydb_Scheme.Entry_EXTERNAL_TABLE:
 		if described, err := r.keyedEntry(ctx, source, schema, entry, db); described || err != nil {
 			return err
 		}
@@ -248,11 +254,13 @@ func (r *Reader) tableEntry(ctx context.Context, source Source, schema, name str
 // the capability each names, and records rather than describes on one
 // without it.
 var keyedEntries = map[Ydb_Scheme.Entry_Type]capability.Capability{
-	Ydb_Scheme.Entry_SECRET:      capability.Secrets,
-	Ydb_Scheme.Entry_VIEW:        capability.Views,
-	Ydb_Scheme.Entry_TOPIC:       capability.Topics,
-	Ydb_Scheme.Entry_REPLICATION: capability.AsyncReplication,
-	Ydb_Scheme.Entry_TRANSFER:    capability.Transfers,
+	Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE: capability.ExternalDataSources,
+	Ydb_Scheme.Entry_EXTERNAL_TABLE:       capability.ExternalDataSources,
+	Ydb_Scheme.Entry_SECRET:               capability.Secrets,
+	Ydb_Scheme.Entry_VIEW:                 capability.Views,
+	Ydb_Scheme.Entry_TOPIC:                capability.Topics,
+	Ydb_Scheme.Entry_REPLICATION:          capability.AsyncReplication,
+	Ydb_Scheme.Entry_TRANSFER:             capability.Transfers,
 }
 
 // keyedEntry describes an entry of a kind [keyedEntries] names, and reports
@@ -283,6 +291,8 @@ func (r *Reader) keyedEntry(
 		return true, nil
 	case Ydb_Scheme.Entry_REPLICATION:
 		return true, r.replication(ctx, source, schema, name, db)
+	case Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE, Ydb_Scheme.Entry_EXTERNAL_TABLE:
+		return true, r.externalObject(ctx, source, schema, entry, db)
 	default:
 		return true, r.transfer(ctx, source, schema, name, db)
 	}

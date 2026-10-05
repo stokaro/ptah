@@ -265,6 +265,19 @@ func reverseSchemaDiffWithSchemaForDialect(
 		ResourcePoolClassifiersRemoved:  slices.Clone(diff.ResourcePoolClassifiersAdded),
 		ResourcePoolClassifiersModified: reverseResourcePoolClassifierDiffs(diff.ResourcePoolClassifiersModified),
 
+		// An external object the change dropped carries everything the
+		// database described of it, so the rollback creates it again as it
+		// was; a replaced one is replaced again by what the database held.
+		// The external tables the rollback may have to create again over a
+		// data source it replaces are the ones the database held.
+		ExternalDataSourcesAdded:   diff.ExternalDataSourcesRemoved,
+		ExternalDataSourcesRemoved: diff.ExternalDataSourcesAdded,
+		ExternalDataSourcesChanged: reverseExternalDataSourceChanges(diff.ExternalDataSourcesChanged),
+		ExternalTablesAdded:        diff.ExternalTablesRemoved,
+		ExternalTablesRemoved:      diff.ExternalTablesAdded,
+		ExternalTablesChanged:      reverseExternalTableChanges(diff.ExternalTablesChanged),
+		DeclaredExternalTables:     priorExternalTables(prior),
+
 		// A hypertable reverses like a synonym in the diff and unlike one in
 		// the plan. The swap is the same -- what the up direction partitioned,
 		// the down direction stops declaring -- but the DOWN plan is a refusal
@@ -893,4 +906,37 @@ func secretsRestoredByRollback(removed difftypes.SecretChanges) difftypes.Secret
 		restored = append(restored, secret)
 	}
 	return restored
+}
+
+// reverseExternalDataSourceChanges swaps each change's sides, so the rollback
+// replaces a data source with what the database held before the change.
+func reverseExternalDataSourceChanges(changes []difftypes.ExternalDataSourceChange) []difftypes.ExternalDataSourceChange {
+	if changes == nil {
+		return nil
+	}
+	reversed := make([]difftypes.ExternalDataSourceChange, 0, len(changes))
+	for _, change := range changes {
+		reversed = append(reversed, difftypes.ExternalDataSourceChange{Declared: change.Current, Current: change.Declared})
+	}
+	return reversed
+}
+
+// reverseExternalTableChanges swaps each change's sides.
+func reverseExternalTableChanges(changes []difftypes.ExternalTableChange) []difftypes.ExternalTableChange {
+	if changes == nil {
+		return nil
+	}
+	reversed := make([]difftypes.ExternalTableChange, 0, len(changes))
+	for _, change := range changes {
+		reversed = append(reversed, difftypes.ExternalTableChange{Declared: change.Current, Current: change.Declared})
+	}
+	return reversed
+}
+
+// priorExternalTables is the external tables the pre-change database held.
+func priorExternalTables(prior *schemamodel.Database) []schemamodel.ExternalTable {
+	if prior == nil {
+		return nil
+	}
+	return prior.ExternalTables
 }

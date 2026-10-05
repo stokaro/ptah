@@ -57,7 +57,7 @@ const (
 	namedObjectKind = `MATERIALIZED\s+VIEW|TYPE|DOMAIN|SEQUENCE|VIEW|FUNCTION|` +
 		`PROCEDURE|TRIGGER|SCHEMA|EXTENSION|ROLE|USER|GROUP|POLICY|DATABASE|SYNONYM|TOPIC|SECRET|ASYNC\s+REPLICATION|` +
 		`TRANSFER|COORDINATION\s+NODE` +
-		`|RESOURCE\s+POOL\s+CLASSIFIER|RESOURCE\s+POOL`
+		`|RESOURCE\s+POOL\s+CLASSIFIER|RESOURCE\s+POOL|EXTERNAL\s+DATA\s+SOURCE|EXTERNAL\s+TABLE`
 	anyObjectKind = `TABLE|INDEX|` + namedObjectKind
 )
 
@@ -327,7 +327,7 @@ func MeasureEmissions() CorpusEmissions {
 		byFixture[fixture.Name] = 0
 	}
 	for _, fixture := range Fixtures() {
-		for _, cell := range capabilityprobe.Cells {
+		for _, cell := range fixture.Cells(capabilityprobe.Cells) {
 			statements, err := RenderStatements(fixture.Schema, cell)
 			if err != nil {
 				byFixture[fixture.Name]++

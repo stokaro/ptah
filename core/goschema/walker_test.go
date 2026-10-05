@@ -1607,7 +1607,7 @@ func TestParseDir_AllIntegrationFixturesRemainParsable(t *testing.T) {
 // Merge uses general reflection over all slice fields from ParseSource results (no hard-coded list).
 //
 // skipped. A YDB topic, a YDB coordination node, a YDB async replication and
-// a transfer are refused by every target but YDB, so each has a fixture of
+// a transfer, secret, external data source and external table are refused by every target but YDB, so each has a fixture of
 // its own, and the guard reads every fixture.
 func TestParseDir_ReflectionGuard(t *testing.T) {
 	c := qt.New(t)
@@ -1623,6 +1623,7 @@ func TestParseDir_ReflectionGuard(t *testing.T) {
 		"../../integration/internal/fixtures/entities/049-ydb-coordination-nodes",
 		"../../integration/internal/fixtures/entities/050-ydb-replication",
 		"../../integration/internal/fixtures/entities/052-ydb-secrets",
+		"../../integration/internal/fixtures/entities/053-ydb-external-sources",
 	}
 
 	merged := schemamodel.Database{}

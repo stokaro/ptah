@@ -130,6 +130,8 @@ var includeSelectableTypes = map[string]struct{}{
 	"transfer":                 {},
 	"coordination_node":        {},
 	"secret":                   {},
+	"external_data_source":     {},
+	"external_table":           {},
 	"function":                 {},
 	"enum":                     {},
 	"extension":                {},

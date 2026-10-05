@@ -68,6 +68,7 @@ func ydbRules() []Rule {
 		ydbSecretInClearRule(),
 		ydbUndeclaredColumnFamilyRule(),
 		ydbSchemaSecretInClearRule(),
+		ydbDeprecatedSecretRule(),
 	}
 }
 

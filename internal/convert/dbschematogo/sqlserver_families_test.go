@@ -241,6 +241,8 @@ var convertedFamilies = map[string]string{
 	"Transfers":               "Transfers",
 	"CoordinationNodes":       "CoordinationNodes",
 	"Secrets":                 "Secrets",
+	"ExternalDataSources":     "ExternalDataSources",
+	"ExternalTables":          "ExternalTables",
 	"ExtendedProperties":      "ExtendedProperties",
 	"Triggers":                "Triggers",
 	"RLSPolicies":             "RLSPolicies",

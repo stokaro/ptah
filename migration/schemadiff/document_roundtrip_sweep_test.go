@@ -393,7 +393,7 @@ func TestRoundTrip_EveryObjectFamilySurvives(t *testing.T) {
 
 // hclUnwritableFields are the object families the HCL document has no block
 // for, and the coverage kind its header records each one under instead. A YDB
-// topic, secret, async replication and transfer are such families: Atlas HCL has none
+// topic, secret, async replication, transfer and external objects are such families: Atlas HCL has none
 // of them, and Ptah does not invent a block the pinned binary would refuse.
 var hclUnwritableFields = map[string]coverage.Kind{
 	"Topics":                  coverage.Topic,
@@ -402,6 +402,8 @@ var hclUnwritableFields = map[string]coverage.Kind{
 	"ResourcePools":           coverage.ResourcePool,
 	"ResourcePoolClassifiers": coverage.ResourcePoolClassifier,
 	"Secrets":                 coverage.Secret,
+	"ExternalDataSources":     coverage.ExternalDataSource,
+	"ExternalTables":          coverage.ExternalTable,
 }
 
 // TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped is the round trip of
@@ -461,6 +463,35 @@ func TestYAMLDocument_DescribesSecrets(t *testing.T) {
 	parsed := loadYAMLDocument(c)
 
 	c.Assert(parsed.NotDescribed.Describes(coverage.Secret), qt.IsTrue)
+}
+
+// The same holds for YDB's external objects: the HCL document leaves both out
+// and records it, so applying it back plans no drop of either, and the YAML
+// surface has keys for both and records nothing.
+func TestRoundTrip_ExternalObjectsAreRecordedNotDropped(t *testing.T) {
+	c := qt.New(t)
+	db := roundTripFixture()
+	db.ExternalDataSources = append(db.ExternalDataSources, schemamodel.ExternalDataSource{
+		Name: "s3", SourceType: "ObjectStorage", AuthMethod: "NONE"})
+	db.ExternalTables = append(db.ExternalTables, schemamodel.ExternalTable{Name: "events", DataSource: "s3",
+		Location: "e/", Columns: []schemamodel.ExternalColumn{{Name: "id", Type: "Int64"}}})
+	live := &catalog.Database{
+		Schemas:             []catalog.Schema{{Name: "public"}},
+		Tables:              []catalog.Table{{Schema: "public", Name: "users"}},
+		ExternalDataSources: []catalog.ExternalDataSource{{Name: "s3", SourceType: "ObjectStorage", AuthMethod: "NONE"}},
+		ExternalTables:      []catalog.ExternalTable{{Name: "events", DataSource: "s3", Location: "e/"}},
+	}
+
+	parsed := loadPostgresDocument(c, renderPostgresDocument(c, db))
+	diff := schemadiff.Compare(parsed, live)
+	yaml := loadYAMLDocument(c)
+
+	c.Assert(parsed.ExternalDataSources, qt.HasLen, 0)
+	c.Assert(parsed.ExternalTables, qt.HasLen, 0)
+	c.Assert(diff.ExternalDataSourcesRemoved, qt.HasLen, 0)
+	c.Assert(diff.ExternalTablesRemoved, qt.HasLen, 0)
+	c.Assert(yaml.NotDescribed.Describes(coverage.ExternalDataSource), qt.IsTrue)
+	c.Assert(yaml.NotDescribed.Describes(coverage.ExternalTable), qt.IsTrue)
 }
 
 // TestRoundTrip_SweepCoversEveryObjectFamily is the guard that makes the test

@@ -30,7 +30,8 @@
 // indexes, constraints, enums, extensions, functions, rls_policies,
 // rls_enabled_tables (also accepted as rls_enabled), roles, grants, revokes,
 // default_privileges, views, matviews, triggers, topics, resource_pools,
-// resource_pool_classifiers, async_replications, transfers and secrets. A table carries
+// resource_pool_classifiers, async_replications, transfers, secrets,
+// external_data_sources and external_tables. A table carries
 // its columns in declaration order, along with its primary key, checks, engine,
 // comment, and per-platform overrides. A column carries the type, its
 // nullability, key and uniqueness flags, defaults, generated and identity
@@ -159,6 +160,9 @@ type document struct {
 	Transfers         map[string]transferSpec         `yaml:"transfers"`
 	CoordinationNodes map[string]coordinationNodeSpec `yaml:"coordination_nodes"`
 	Secrets           map[string]secretSpec           `yaml:"secrets"`
+	// ExternalDataSources and ExternalTables are YDB's.
+	ExternalDataSources map[string]externalDataSourceSpec `yaml:"external_data_sources"`
+	ExternalTables      map[string]externalTableSpec      `yaml:"external_tables"`
 }
 
 type tableSpec struct {
@@ -786,6 +790,9 @@ func (d document) toDatabase() (*schemamodel.Database, error) {
 		return nil, err
 	}
 	if err := d.addSecrets(db); err != nil {
+		return nil, err
+	}
+	if err := d.addExternalObjects(db); err != nil {
 		return nil, err
 	}
 	d.addRLS(db)

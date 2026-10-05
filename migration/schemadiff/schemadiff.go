@@ -402,6 +402,7 @@ func compareReportingUndecidedAdditions(
 	// Compare YDB coordination nodes
 	compare.CoordinationNodes(desired, database, diff, cov)
 	compare.Secrets(desired, database, diff, cov)
+	compare.ExternalObjects(desired, database, diff, cov)
 
 	// Compare TimescaleDB hypertables (PostgreSQL with the extension)
 	compare.Hypertables(desired, database, diff, cov)

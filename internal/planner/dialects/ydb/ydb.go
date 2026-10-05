@@ -16,6 +16,7 @@
 //     replication held;
 //  2. DROP VIEW for every view the plan removes or replaces, dependents first,
 //     so no table goes while a view the plan touches still reads it;
+//     External tables are dropped before their data sources.
 //  3. DROP TOPIC and DROP SECRET for removed topics and secrets, then the coordination nodes the
 //     plan drops, so a table created under one's path finds the path free.
 //     YQL has no statement for a coordination node, so the plan carries Ptah's
@@ -49,6 +50,7 @@
 //     then the coordination nodes the plan creates and changes, after
 //     the tables are dropped, so an object created under a dropped table's
 //     path finds the path free;
+//     External data sources and external tables follow their secrets.
 //  12. CREATE ASYNC REPLICATION and ALTER ASYNC REPLICATION, then CREATE
 //     TRANSFER and ALTER TRANSFER, once the tables, changefeeds, topics and
 //     consumers a transfer uses exist and the paths a replication creates its
@@ -194,7 +196,8 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := p.refuseUnplannableObjectChanges(diff, ownIndexes, semantics); err != nil {
 		return nil, err
 	}
-	if err := p.refuseSecrets(diff); err != nil {
+	external, err := p.planExternal(diff)
+	if err != nil {
 		return nil, err
 	}
 	sequences, err := p.planSerialSequences(diff, rebuilds, semantics)
@@ -215,6 +218,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	result = append(result, dropReplications(diff)...)
 	result = append(result, p.dropViews(diff)...)
 	result = append(result, access.before...)
+	result = append(result, external.drops...)
 	result = append(result, dropTopics(diff)...)
 	nodeChanges, nodeDrops := coordinationNodes(diff)
 	result = append(result, nodeDrops...)
@@ -237,6 +241,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	result = append(result, changeTopics(diff)...)
 	result = append(result, nodeChanges...)
 	result = append(result, changeSecrets(diff)...)
+	result = append(result, external.creations...)
 	result = append(result, changeReplications(diff)...)
 	result = append(result, p.createViews(diff)...)
 	result = append(result, access.after...)
@@ -263,7 +268,7 @@ func (p *Planner) refuseUnplannableObjectChanges(
 	if err := p.refuseChangefeedChanges(diff); err != nil {
 		return err
 	}
-	if err := p.refuseTopics(diff); err != nil {
+	if err := p.refuseTopicsAndSecrets(diff); err != nil {
 		return err
 	}
 	return p.refuseReplications(diff)

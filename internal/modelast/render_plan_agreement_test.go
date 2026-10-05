@@ -131,6 +131,7 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	refused := assertBothSurfacesRefuseTheCoordinationNode(c, dialect, &desired)
 	refused += assertBothSurfacesRefuseTheResourcePools(c, dialect, &desired)
 	refused += assertBothSurfacesRefuseTheSecret(c, dialect, &desired)
+	refused += assertBothSurfacesRefuseTheExternalObjects(c, dialect, &desired)
 	refused += assertBothSurfacesRefuseTheTopic(c, dialect, &desired)
 	refused += assertBothSurfacesRefuseTheReplications(c, dialect, &desired)
 
@@ -332,16 +333,16 @@ func assertBothSurfacesRefuseTheResourcePools(c *qt.C, dialect string, desired *
 // validation they share, and takes the secret out of desired so the census can
 // run over the rest. It returns how many routed kinds it took out.
 //
-// The fixture holds a topic too, which the same targets refuse, so the probe
-// leaves the topic out: the refusal measured here is the secret's whichever
-// family the validation reaches first.
+// The fixture holds a topic and external objects too, which the same targets
+// refuse, so the probe leaves them out: the refusal measured here is the
+// secret's whichever family the validation reaches first.
 func assertBothSurfacesRefuseTheSecret(c *qt.C, dialect string, desired *schemamodel.Database) int {
 	c.Helper()
 	if capability.ForDialect(dialect).Has(capability.Secrets) {
 		return 0
 	}
 	probe := *desired
-	probe.Topics = nil
+	probe.Topics, probe.ExternalDataSources, probe.ExternalTables = nil, nil, nil
 	_, planErr := schemadiff.CompareWithDatabaseInfo(
 		&probe, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil,
 	)
@@ -352,4 +353,28 @@ func assertBothSurfacesRefuseTheSecret(c *qt.C, dialect string, desired *schemam
 	c.Assert(renderErr.Error(), qt.Contains, "requires target capability secrets")
 	desired.Secrets = nil
 	return 1
+}
+
+// assertBothSurfacesRefuseTheExternalObjects checks that a target without the
+// external_data_sources key refuses the fixture's data source on both
+// surfaces, and takes the data source and the external table out of desired.
+// It returns how many routed kinds it took out. The probe leaves the topic
+// out, for the reason [assertBothSurfacesRefuseTheSecret] gives.
+func assertBothSurfacesRefuseTheExternalObjects(c *qt.C, dialect string, desired *schemamodel.Database) int {
+	c.Helper()
+	if capability.ForDialect(dialect).Has(capability.ExternalDataSources) {
+		return 0
+	}
+	probe := *desired
+	probe.Topics = nil
+	_, planErr := schemadiff.CompareWithDatabaseInfo(
+		&probe, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil,
+	)
+	renderErr := renderer.ValidateSchema(&probe, dialect)
+	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(planErr.Error(), qt.Contains, "requires target capability external_data_sources")
+	c.Assert(renderErr.Error(), qt.Contains, "requires target capability external_data_sources")
+	desired.ExternalDataSources, desired.ExternalTables = nil, nil
+	return 2
 }

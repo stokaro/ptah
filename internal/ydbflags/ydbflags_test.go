@@ -137,6 +137,18 @@ func TestRefine_HappyPath(t *testing.T) {
 			key:   capability.Secrets,
 			want:  false,
 		},
+		{
+			name:  "an external data source follows its flag",
+			flags: ydbflags.Flags{"EnableExternalDataSources": true},
+			key:   capability.ExternalDataSources,
+			want:  true,
+		},
+		{
+			name:  "replacing an external object follows its flag",
+			flags: ydbflags.Flags{"EnableReplaceIfExistsForExternalEntities": true},
+			key:   capability.ExternalObjectReplace,
+			want:  true,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -566,6 +578,20 @@ func TestRefused_HappyPath(t *testing.T) {
 				"system administrator to enable it, code: 1",
 			wantKey:  capability.Secrets,
 			wantFlag: "EnableSchemaSecrets",
+		},
+		{
+			name: "26.2.1.14 an external data source",
+			refusal: "Status: GENERIC_ERROR Issues: <main>: Error: External data sources are disabled. Please " +
+				"contact your system administrator to enable it",
+			wantKey:  capability.ExternalDataSources,
+			wantFlag: "EnableExternalDataSources",
+		},
+		{
+			name: "26.2.1.14 replacing an external data source",
+			refusal: "Status: PRECONDITION_FAILED Issues: <main>: Error: Unsupported: feature flag " +
+				"EnableReplaceIfExistsForExternalEntities is off, code: 2029",
+			wantKey:  capability.ExternalObjectReplace,
+			wantFlag: "EnableReplaceIfExistsForExternalEntities",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

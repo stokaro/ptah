@@ -1608,6 +1608,38 @@ const (
 	// .metadata, and Ptah models it on no line.
 	Secrets Capability = "secrets"
 
+	// ExternalDataSources marks a target on which Ptah declares, reads and
+	// plans a YDB external data source and the external tables over it:
+	// `CREATE EXTERNAL DATA SOURCE`, `CREATE EXTERNAL TABLE` and their DROP
+	// statements, read back through the table service's
+	// DescribeExternalDataSource and DescribeExternalTable.
+	//
+	// The statements are behind YDB's EnableExternalDataSources flag, off by
+	// default on every measured line (`External data sources are disabled.
+	// Please contact your system administrator to enable it`), and the key is
+	// false on every preset. A cluster that turns the flag on reads true
+	// through its monitoring endpoint.
+	ExternalDataSources Capability = "external_data_sources"
+
+	// ExternalDataSourceSecretPaths marks a target whose external data source
+	// names a credential by the path of a YDB secret, in an option ending in
+	// _SECRET_PATH, such as PASSWORD_SECRET_PATH. The server stores the path
+	// as an absolute one. Measured: accepted on YDB 25.4.1.15 and later, and
+	// read by the parser of 25.1.4.7 to 25.3.1.25 as a missing name
+	// (`PASSWORD_SECRET_NAME requires key`), where only the _SECRET_NAME
+	// options of the deprecated secret objects work.
+	ExternalDataSourceSecretPaths Capability = "external_data_source_secret_paths"
+
+	// ExternalObjectReplace marks a target that replaces an external data
+	// source or an external table in one statement, `CREATE OR REPLACE
+	// EXTERNAL ...`, which a plan then uses for a changed one. Without it the
+	// plan drops the object and creates it again, and the external tables of a
+	// data source it replaces with it. Behind YDB's
+	// EnableReplaceIfExistsForExternalEntities flag, off by default on every
+	// measured line (`feature flag EnableReplaceIfExistsForExternalEntities is
+	// off`).
+	ExternalObjectReplace Capability = "external_object_replace"
+
 	// SerialColumns marks a target whose SERIAL column types fill the column
 	// on insert without the application naming a value: PostgreSQL's serial
 	// pseudo-types and YDB's Serial, BigSerial and SmallSerial, each backed by
@@ -2147,6 +2179,18 @@ var registry = map[Capability]spec{
 	Secrets: {
 		doc: "Ptah declares, reads and plans a YDB secret, whose value comes from an environment variable and is never read back (YDB's CREATE SECRET)",
 	},
+	ExternalDataSources: {
+		doc: "Ptah declares, reads and plans YDB external data sources and external tables (behind a flag on every YDB line)",
+	},
+	// Neither key requires ExternalDataSources: each says what the line's
+	// statements take, and a cluster turns the flags behind them on one by
+	// one.
+	ExternalDataSourceSecretPaths: {
+		doc: "an external data source names a credential by a YDB secret's path, PASSWORD_SECRET_PATH (YDB 25.4 and later)",
+	},
+	ExternalObjectReplace: {
+		doc: "CREATE OR REPLACE replaces an external data source or table in one statement (behind a flag on every YDB line)",
+	},
 	SerialColumns: {
 		doc: "SERIAL column types fill the column from an implicit sequence (PostgreSQL serial, YDB Serial)",
 	},
@@ -2486,6 +2530,10 @@ func MySQL84() Capabilities {
 		KeyBloomFilter:      false,
 		// A secret Ptah models is a YDB scheme object; no other engine has one.
 		Secrets: false,
+		// External data sources and external tables Ptah models are YDB's.
+		ExternalDataSources:           false,
+		ExternalDataSourceSecretPaths: false,
+		ExternalObjectReplace:         false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -2743,6 +2791,10 @@ func MariaDB1011() Capabilities {
 		KeyBloomFilter:      false,
 		// A secret Ptah models is a YDB scheme object; no other engine has one.
 		Secrets: false,
+		// External data sources and external tables Ptah models are YDB's.
+		ExternalDataSources:           false,
+		ExternalDataSourceSecretPaths: false,
+		ExternalObjectReplace:         false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -2942,6 +2994,10 @@ func Postgres16() Capabilities {
 		KeyBloomFilter:      false,
 		// A secret Ptah models is a YDB scheme object; no other engine has one.
 		Secrets: false,
+		// External data sources and external tables Ptah models are YDB's.
+		ExternalDataSources:           false,
+		ExternalDataSourceSecretPaths: false,
+		ExternalObjectReplace:         false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -3264,6 +3320,10 @@ func ClickHouse24() Capabilities {
 		KeyBloomFilter:      false,
 		// A secret Ptah models is a YDB scheme object; no other engine has one.
 		Secrets: false,
+		// External data sources and external tables Ptah models are YDB's.
+		ExternalDataSources:           false,
+		ExternalDataSourceSecretPaths: false,
+		ExternalObjectReplace:         false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -3481,6 +3541,10 @@ func SQLite3() Capabilities {
 		KeyBloomFilter:      false,
 		// A secret Ptah models is a YDB scheme object; no other engine has one.
 		Secrets: false,
+		// External data sources and external tables Ptah models are YDB's.
+		ExternalDataSources:           false,
+		ExternalDataSourceSecretPaths: false,
+		ExternalObjectReplace:         false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -3777,6 +3841,10 @@ func SQLServer2022() Capabilities {
 		KeyBloomFilter:      false,
 		// A secret Ptah models is a YDB scheme object; no other engine has one.
 		Secrets: false,
+		// External data sources and external tables Ptah models are YDB's.
+		ExternalDataSources:           false,
+		ExternalDataSourceSecretPaths: false,
+		ExternalObjectReplace:         false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -4511,6 +4579,10 @@ func Oracle23() Capabilities {
 		KeyBloomFilter:      false,
 		// A secret Ptah models is a YDB scheme object; no other engine has one.
 		Secrets: false,
+		// External data sources and external tables Ptah models are YDB's.
+		ExternalDataSources:           false,
+		ExternalDataSourceSecretPaths: false,
+		ExternalObjectReplace:         false,
 		// Only the YDB planner compares and changes a Serial's sequence, so
 		// both sequence keys are false here.
 		SerialSequenceOptions:    false,
@@ -4772,6 +4844,14 @@ func YDB262() Capabilities {
 		// and no statement or service returns its value.
 		Secrets: true,
 
+		// External data sources and external tables are behind
+		// EnableExternalDataSources and CREATE OR REPLACE of either behind
+		// EnableReplaceIfExistsForExternalEntities, both off by default here.
+		// A data source names a secret by its path once the flag is on.
+		ExternalDataSources:           false,
+		ExternalDataSourceSecretPaths: true,
+		ExternalObjectReplace:         false,
+
 		// Tables and their in-place changes. A table needs a key (`Primary
 		// key is required for ydb tables.`), and no ALTER changes it. A
 		// column's type never changes and a column is never renamed: `ALTER
@@ -4909,6 +4989,8 @@ func YDB254() Capabilities {
 //
 // CREATE SECRET also requires EnableSchemaSecrets, which is off by default
 // on 25.3 and on by default on 25.4.
+// An external source on 25.3 requires PASSWORD_SECRET_NAME rather than
+// PASSWORD_SECRET_PATH; 25.4 accepts the path.
 //
 // Every other statement measured on the two lines answered alike.
 func YDB253() Capabilities {
@@ -4916,7 +4998,8 @@ func YDB253() Capabilities {
 		With(TopicConsumerAvailabilityPeriod, false).
 		With(ReplicationSecretPaths, false).
 		With(ColumnFamilyCacheMode, false).
-		With(Secrets, false)
+		With(Secrets, false).
+		With(ExternalDataSourceSecretPaths, false)
 }
 
 // YDB252 is the preset for YDB 25.2. It differs from [YDB253] in four keys,

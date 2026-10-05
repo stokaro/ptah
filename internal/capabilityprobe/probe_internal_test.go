@@ -326,12 +326,14 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 		// The PostgreSQL set, for the PostgreSQL reasons: YDB is asked in its
 		// own spelling or in the standard one everywhere else, and what is
 		// left is a property of the probe, of the migrator or of an extension
-		// no YDB has.
+		// no YDB has. A data source's secret path is the one YDB key besides:
+		// its statement needs a flag that is off on every line the probe runs.
 		want: []capability.Capability{
 			capability.BackupCollections,
 			capability.CatalogVectorInfo,
 			capability.ContinuousAggregates,
 			capability.DDLInsideTransaction,
+			capability.ExternalDataSourceSecretPaths,
 			capability.Hypertables,
 			capability.MigrationLockTimeout,
 			capability.MigrationStatementTimeout,
@@ -492,7 +494,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps: capability.CockroachDB25(),
 		want: registered - 22,
 	}, {
-		name: "ydb 26.2 owes every row but the ten it declares and the seven whose prerequisite the preset lacks: " +
+		name: "ydb 26.2 owes every row but the eleven it declares and the seven whose prerequisite the preset lacks: " +
 			"guarded DROP CONSTRAINT, CREATE OR REPLACE TRIGGER, SET EXPRESSION, the three reference policies " +
 			"and the sequence grammar restriction",
 		cell: Cell{
@@ -501,7 +503,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.YDB262(),
-		want: registered - 17,
+		want: registered - 18,
 	}, {
 		name: "ydb 25.1 owes two rows fewer than 26.2: the vector index's writes and its bit vectors, whose " +
 			"prerequisite the line keeps behind a flag that is off by default",
@@ -511,7 +513,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.YDB251(),
-		want: registered - 19,
+		want: registered - 20,
 	}, {
 		name: "a banner-refined line owes nothing because no observation can be credited to it",
 		cell: Cell{

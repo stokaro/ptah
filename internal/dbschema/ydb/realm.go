@@ -59,7 +59,7 @@ func (w *Writer) ResetObjects(ctx context.Context, _ dbreset.Scope) ([]dbreset.O
 // first. The root itself stays. What [Writer.ResetObjects] leaves out is
 // left alone.
 //
-// An object Ptah has no statement to drop, such as an external table, stops it
+// An object Ptah has no statement to drop, such as a column store, stops it
 // before anything is dropped, with the object named: a reset that dropped the
 // rest and left it would hand the next run a dev database that is not empty.
 func (w *Writer) DropDatabaseRealm(ctx context.Context) error {
@@ -258,8 +258,14 @@ func (w *Writer) RemoveRealm(ctx context.Context, realm string) error {
 				absolute, describeObject(entry.object))
 		}
 	}
-	for _, entry := range append(entries, rootEntry{step: treeStep{directory: absolute}}) {
-		if err := w.runTreeStep(ctx, entry.step); err != nil {
+	steps := make([]treeStep, 0, len(entries)+1)
+	for _, entry := range entries {
+		steps = append(steps, entry.step)
+	}
+	steps = append(steps, treeStep{directory: absolute, rank: teardownRank(Ydb_Scheme.Entry_DIRECTORY)})
+	slices.SortStableFunc(steps, func(a, b treeStep) int { return cmp.Compare(a.rank, b.rank) })
+	for _, step := range steps {
+		if err := w.runTreeStep(ctx, step); err != nil {
 			return err
 		}
 	}

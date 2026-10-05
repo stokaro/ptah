@@ -1347,7 +1347,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := schemaprecondition.RefuseChangefeedChanges(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}
-	if err := schemaprecondition.RefuseTopics(p.targetDialect(), diff); err != nil {
+	if err := schemaprecondition.RefuseYDBObjects(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}
 	if err := schemaprecondition.RefuseRoleMemberships(p.targetDialect(), diff); err != nil {
@@ -1364,9 +1364,6 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	}
 	var result []ast.Node
 	if err := schemaprecondition.RefuseSerialSequenceChanges(p.targetDialect(), diff); err != nil {
-		return nil, err
-	}
-	if err := schemaprecondition.RefuseSecrets(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}
 	// One fold, at the door, beside the index resolver that has always been

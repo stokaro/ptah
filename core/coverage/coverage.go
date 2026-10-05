@@ -225,9 +225,13 @@ const (
 	// as [Hypertable] is; see that constant for what this means for a [Set]
 	// carrying it.
 	ReplicaTable Kind = "replica_table"
-	// ExternalDataSource is a YDB external data source.
+	// ExternalDataSource is a YDB external data source. The reader describes
+	// one on a server with the external_data_sources capability, and records
+	// one it meets on a server without it. The comparator consults the kind in
+	// both directions, as it does a secret's.
 	ExternalDataSource Kind = "external_data_source"
-	// ExternalTable is a YDB external table over an external data source.
+	// ExternalTable is a YDB external table over an external data source,
+	// described and recorded as an external data source is.
 	ExternalTable Kind = "external_table"
 	// Secret is a YDB secret. Its value is never read. The reader describes a
 	// secret by its path on a server with the secrets capability, and records
