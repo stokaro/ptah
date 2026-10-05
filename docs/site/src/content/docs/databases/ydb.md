@@ -758,6 +758,74 @@ Other dialects refuse a table that declares a column family. CockroachDB's
 `FAMILY` clause groups columns with no settings of their own, and Ptah models
 none.
 
+## Coordination nodes
+
+A coordination node holds an application's semaphores, which serve as
+distributed locks, and its rate limiter resources. Ptah declares, reads,
+creates, changes and drops a node and its configuration. The semaphores and the
+resources inside a node belong to the application. A Go annotation declares one:
+
+```go
+//ptah:schema:coordinationnode name="locks" schema="app" self_check_period="PT2S" read_consistency_mode="strict"
+type Locks struct{}
+```
+
+So does the `coordination_nodes` key of a YAML schema, with the same settings:
+
+```yaml
+coordination_nodes:
+  locks:
+    schema: app
+    self_check_period: PT2S
+    read_consistency_mode: strict
+```
+
+| Setting | Value | YDB's default |
+| --- | --- | --- |
+| `self_check_period` | how often the node checks that it is alive, from `PT0.5S` to `PT10S` | `PT1S` |
+| `session_grace_period` | how long a session keeps its semaphores while the node changes its leader, from the self-check period plus `PT1S` to `PT30S` | `PT10S` |
+| `read_consistency_mode` | `strict` or `relaxed` | `relaxed` |
+| `attach_consistency_mode` | `strict` or `relaxed` | `strict` |
+| `rate_limiter_counters_mode` | `aggregated` or `detailed` | `aggregated` |
+
+A setting left out takes YDB's default. YDB stores only the settings a node was
+given, so the comparison fills in the defaults on both sides: a declaration that
+names a default and a node that never had the setting are the same node. YDB
+stores a period outside its range and runs the node with the period moved into
+the range, so Ptah refuses such a period where it is written.
+
+YQL has no statement for a coordination node: `CREATE COORDINATION NODE` is a
+parse error, and YDB creates, changes and drops one through its coordination
+service. So Ptah writes a statement of its own, and Ptah's YDB connection runs
+it through that service instead of sending it to the server:
+
+```sql
+CREATE COORDINATION NODE `app/locks` WITH (self_check_period = Interval('PT2S'), read_consistency_mode = 'strict');
+ALTER COORDINATION NODE `app/locks` SET (read_consistency_mode = 'relaxed');
+DROP COORDINATION NODE `app/locks`;
+```
+
+A plan, a plan file and a migration file carry these statements as text, and
+`ptah migrations up` runs and records them like any other schema statement.
+Only Ptah runs them: another client, `ydb sql` included, answers with a parse
+error. The connection refuses one inside a transaction, beside another
+statement in one query, and for a node that already exists, because the
+service answers a second creation with success and keeps the node as it was.
+In a [dev realm](#dev-shadow-and-scratch-databases) a relative path names a node
+under the realm, as it names a table there.
+
+A change names only the settings that differ, and YDB keeps every setting a
+change leaves out. A node the declaration does not name is dropped with its
+semaphores and rate limiter resources, and YDB drops it even while a session
+holds a lock on it. The safety report counts such a drop as destructive, and
+`DS107` in `ptah migrations lint` reports it, as it reports a dropped topic, so
+`ptah migrations up` stops before it by default. A schema that leaves the nodes
+to the application declares
+`//ptah:schema:notdescribed kind="coordination_node"`.
+
+The node `ptah_locks` at the database root is Ptah's own lock. A declaration
+that names it is refused, and so is a statement that does.
+
 ## Planning changes
 
 YDB changes a table in place less than the SQL engines do, and runs a schema
@@ -769,7 +837,8 @@ statement needs one that has not run yet:
    reads.
 2. Revoke the permissions and remove the memberships the plan takes away, then
    create and change users and groups.
-3. Drop the removed topics, so a table created at a topic's path finds it free.
+3. Drop the removed topics, then the removed coordination nodes, so a table
+   created at one's path finds it free.
 4. Create the added tables, with their indexes and changefeeds, each followed
    by the `ALTER SEQUENCE` that gives a Serial column its declared start and
    increment.
@@ -786,8 +855,9 @@ statement needs one that has not run yet:
     then change topics in place. Drops come first, so a table that swaps one
     changefeed for another stays within YDB's limit.
 11. Drop the removed tables.
-12. Create the added topics, then change the changed ones, so a topic created
-    at a dropped table's path finds it free.
+12. Create the added topics, then change the changed ones, then create and
+    change coordination nodes, so an object created at a dropped table's path
+    finds it free.
 13. Create the added and replaced views, a view after the view it reads. YDB
     checks a view's query against the schema when it creates the view.
 14. Add memberships and grants, once the tables they name exist.
@@ -949,8 +1019,9 @@ database read every row table under the database root, its columns, defaults,
 primary key, TTL, column families with the columns each holds, and global
 indexes, with each index's partitioning and read replicas, its changefeeds,
 each with the retention and the consumers of its topic, every view with the
-query the server stores, every topic with its settings and consumers, and the
-users, groups and permissions; see
+query the server stores, every topic with its settings and consumers, every
+coordination node with its configuration, and the users, groups and
+permissions; see
 [Users, groups and permissions](#users-groups-and-permissions).
 
 What Ptah does not model yet is recorded rather than dropped:
@@ -997,17 +1068,24 @@ statement. `--server-version` names the release line a capability is read
 from, and the newest line is used without it.
 
 Migration lint reports the statements YDB refuses, or runs with an effect the
-statement does not state, under the `YD` family: a unique index added to an
-existing table, a block that mixes schema and data statements, an `ADD COLUMN`
-the line refuses, a dropped column an index or the TTL uses, a partitioning
-change that resets the minimum partition count, a table a view reads that is
-dropped or renamed, a renamed table that carries a changefeed,
-a `REVOKE GRANT OPTION FOR`, which takes the permission too, a dropped user
-or group, which leaves its permissions behind, a topic setting reset that
-changes nothing, a topic setting YDB keeps as nothing, and a statement that
-names a column family the table does not have, which YDB creates rather than
-refuses. `DS107` reports a dropped user or group as it reports a dropped role
-elsewhere, and a dropped topic.
+statement does not state, under the `YD` family:
+
+- a unique index added to an existing table;
+- a block that mixes schema and data statements;
+- an `ADD COLUMN` the line refuses;
+- a dropped column an index or the TTL uses;
+- a partitioning change that resets the minimum partition count;
+- a table a view reads that is dropped or renamed;
+- a renamed table that carries a changefeed;
+- a `REVOKE GRANT OPTION FOR`, which takes the permission too;
+- a dropped user or group, which leaves its permissions behind;
+- a topic setting reset that changes nothing, and a topic setting YDB keeps as
+  nothing;
+- a statement that names a column family the table does not have, which YDB
+  creates rather than refuses.
+
+`DS107` reports a dropped user or group as it reports a dropped role
+elsewhere, and a dropped topic or coordination node.
 [Lint rules](../../reference/lint-rules/#ydb) lists each rule with its
 meaning.
 
@@ -1136,7 +1214,8 @@ effect it does not confine:
 - external data sources and tables, async replication, transfers and streaming
   queries, which reach outside the server.
 
-A read outside the realm is allowed, since it leaves nothing behind.
+A read outside the realm is allowed, since it leaves nothing behind. A
+coordination node is confined like a table, and the realm's reset drops it.
 
 `docker://ydb/<tag>[/local]` starts `ydbplatform/local-ydb:<tag>` for one
 command and removes it afterwards. The image serves the one database `local`,

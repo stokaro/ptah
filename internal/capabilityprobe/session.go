@@ -626,8 +626,8 @@ func (s *session) leave(ctx context.Context, statement string) []Attempt {
 // rather than a statement whose acceptance says the namespace is gone, and
 // the group the role experiment creates is outside the directory. A refused
 // removal is a leftover by itself: DropDirectory refuses a tree holding an
-// object it has no statement for, such as a coordination node, before it
-// drops anything, and the partition statistics list row tables only, so they
+// object it has no statement for, such as an external table, before it drops
+// anything, and the partition statistics list row tables only, so they
 // would count no table under a directory still standing. The tables are read
 // from the partition statistics, which list a row table under its path the
 // moment it exists; a read the server refuses is itself a leftover, because

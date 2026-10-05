@@ -16,6 +16,7 @@ import (
 	"fmt"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
@@ -228,5 +229,35 @@ func RefuseRoleMemberships(dialect string, diff *difftypes.SchemaDiff) error {
 			ptaherr.ErrUnsupportedFeature, membership.Member, membership.Role, dialect)
 	default:
 		return nil
+	}
+}
+
+// RefuseCoordinationNodes refuses a diff that creates, changes or drops a YDB
+// coordination node, for a planner of dialect, which has none, with a
+// [ptaherr.CapabilityError] naming [capability.CoordinationNodes]. The
+// comparison records a declared node on any target, so a schema that declares
+// one reaches every planner, and planning nothing would report the database
+// synced while the node is missing.
+func RefuseCoordinationNodes(dialect string, diff *difftypes.SchemaDiff) error {
+	var subject string
+	switch {
+	case diff == nil:
+		return nil
+	case len(diff.CoordinationNodesAdded) > 0:
+		subject = "the diff creates coordination node " + diff.CoordinationNodesAdded[0].QualifiedName()
+	case len(diff.CoordinationNodesModified) > 0:
+		subject = "the diff changes coordination node " + diff.CoordinationNodesModified[0].QualifiedName()
+	case len(diff.CoordinationNodesRemoved) > 0:
+		subject = "the diff drops coordination node " + diff.CoordinationNodesRemoved[0].QualifiedName()
+	default:
+		return nil
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: string(capability.CoordinationNodes),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target: "+
+			"a coordination node is a YDB object", subject, capability.CoordinationNodes, normalized),
 	}
 }

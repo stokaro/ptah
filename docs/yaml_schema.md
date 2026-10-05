@@ -456,6 +456,9 @@ rendered for MySQL/MariaDB with dialect-specific trigger bodies.
   `partition_write_speed_bytes_per_second`, `partition_write_burst_bytes`,
   `supported_codecs`, and `consumers`, a map of consumer names to `important`,
   `read_from`, `supported_codecs` and `availability_period`
+- `coordination_nodes` (YDB only): `name`, `schema`, `self_check_period`,
+  `session_grace_period`, `read_consistency_mode`, `attach_consistency_mode`,
+  `rate_limiter_counters_mode`
 
 `matviews` accepts no refresh strategy. Ptah does not refresh materialized
 views: one is populated when it is created, a changed body is reconciled as a

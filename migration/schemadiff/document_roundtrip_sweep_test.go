@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
@@ -204,6 +205,15 @@ func roundTripRows() []roundTripRow {
 				d.Synonyms = append(d.Synonyms, schemamodel.Synonym{Name: "s1", Target: "other.dbo.users"})
 			},
 			count: func(d *schemamodel.Database) int { return len(d.Synonyms) },
+		},
+		{
+			field: "CoordinationNodes",
+			seed: func(d *schemamodel.Database) {
+				d.CoordinationNodes = append(d.CoordinationNodes, schemamodel.CoordinationNode{
+					Name: "locks", Spec: ast.CoordinationNodeSpec{SelfCheckPeriodMillis: 2000},
+				})
+			},
+			count: func(d *schemamodel.Database) int { return len(d.CoordinationNodes) },
 		},
 		{
 			field: "ExtendedProperties",

@@ -294,11 +294,14 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"DS107": {
 		// Broader than Atlas DS101, which is the schema drop alone: this rule
 		// also fires on DROP TYPE, EXTENSION, FUNCTION, PROCEDURE, TRIGGER,
-		// ROLE, and POLICY, and on YDB on DROP USER, DROP GROUP and DROP TOPIC,
-		// so the rule is ours even though it covers the Atlas one.
-		Summary: "dropping a schema, type, extension, function, procedure, trigger, role, policy, or YDB user, group or topic removes behavior or data",
+		// ROLE, and POLICY, and on YDB on DROP USER, DROP GROUP, DROP TOPIC and
+		// DROP COORDINATION NODE, so the rule is ours even though it covers the
+		// Atlas one.
+		Summary: "dropping a schema, type, extension, function, procedure, trigger, role, policy, or YDB user, group, topic or coordination node removes behavior or data",
 		YDB:     YDBApplies,
-		YDBNote: "`DROP USER` and `DROP GROUP`, YDB's principals, and `DROP TOPIC`, which drops every message the topic holds and every consumer's position in it",
+		YDBNote: "`DROP USER` and `DROP GROUP`, YDB's principals; `DROP TOPIC`, which drops every message the " +
+			"topic holds and every consumer's position in it; and `DROP COORDINATION NODE`, which drops the " +
+			"node's semaphores and rate limiter resources even while a session holds a lock on it",
 	},
 	"AC101": {
 		Summary: "the migration defines a routine whose body is not analyzed, so a clean result says nothing about what the body does",

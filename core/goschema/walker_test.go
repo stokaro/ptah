@@ -1607,18 +1607,19 @@ func TestParseDir_AllIntegrationFixturesRemainParsable(t *testing.T) {
 // Merge uses general reflection over all slice fields from ParseSource results (no hard-coded list).
 //
 // Fixture 023 carries every object kind a PostgreSQL render takes, refused or
-// skipped. A YDB topic is refused by every target but YDB, so it has a
-// fixture of its own, and the guard reads both.
+// skipped. A YDB topic and a YDB coordination node are refused by every target
+// but YDB, so each has a fixture of its own, and the guard reads all three.
 func TestParseDir_ReflectionGuard(t *testing.T) {
 	c := qt.New(t)
 
 	fixtureDirs := []string{
 		"../../integration/internal/fixtures/entities/023-go-annotations-objects",
 		"../../integration/internal/fixtures/entities/048-ydb-topics",
+		"../../integration/internal/fixtures/entities/049-ydb-coordination-nodes",
 	}
 
 	merged := schemamodel.Database{}
-	dirDb := schemamodel.NewDatabase()
+	dirMerged := schemamodel.Database{}
 	for _, fixtureDir := range fixtureDirs {
 		entries, err := os.ReadDir(fixtureDir)
 		c.Assert(err, qt.IsNil)
@@ -1631,23 +1632,16 @@ func TestParseDir_ReflectionGuard(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			db := mustParseSource(c, e.Name(), string(content))
 			// General reflection merge over ALL slice fields from ParseSource (future-proof, no hard-coded list of 6)
-			fvSrc := reflect.ValueOf(db)
-			fvDst := reflect.ValueOf(&merged).Elem()
-			for j := 0; j < fvSrc.NumField(); j++ {
-				if fvSrc.Field(j).Kind() == reflect.Slice {
-					dstField := fvDst.Field(j)
-					dstField.Set(reflect.AppendSlice(dstField, fvSrc.Field(j)))
-				}
-			}
+			appendSlices(&merged, db)
 		}
 
-		parsed, err := goschema.ParseDir(fixtureDir)
+		dirDb, err := goschema.ParseDir(fixtureDir)
 		c.Assert(err, qt.IsNil)
-		schemamodel.AppendDatabase(dirDb, parsed)
+		appendSlices(&dirMerged, *dirDb)
 	}
 
 	fvMerged := reflect.ValueOf(merged)
-	fvDir := reflect.ValueOf(*dirDb)
+	fvDir := reflect.ValueOf(dirMerged)
 	typ := fvMerged.Type()
 	for i := 0; i < fvMerged.NumField(); i++ {
 		if fvMerged.Field(i).Kind() != reflect.Slice {
@@ -1656,11 +1650,23 @@ func TestParseDir_ReflectionGuard(t *testing.T) {
 		name := typ.Field(i).Name
 		mLen := fvMerged.Field(i).Len()
 		if mLen == 0 {
-			c.Fatalf("%s is not exercised by the fixtures; add it to 023-go-annotations-objects, or to 048-ydb-topics "+
-				"for a kind only YDB renders, so the walker append stays covered", name)
+			c.Fatalf("%s is not exercised by the fixtures; add it to 023-go-annotations-objects, or to the "+
+				"YDB fixture of its family for a kind only YDB renders, so the walker append stays covered", name)
 		}
 		dLen := fvDir.Field(i).Len()
 		c.Assert(dLen > 0, qt.IsTrue, qt.Commentf("%s populated by per-file parse (%d) but ParseDir/ParseFS gave %d — missing append in walker.go?", name, mLen, dLen))
+	}
+}
+
+// appendSlices appends every slice field of src to the same field of dst.
+func appendSlices(dst *schemamodel.Database, src schemamodel.Database) {
+	fvSrc := reflect.ValueOf(src)
+	fvDst := reflect.ValueOf(dst).Elem()
+	for j := 0; j < fvSrc.NumField(); j++ {
+		if fvSrc.Field(j).Kind() == reflect.Slice {
+			dstField := fvDst.Field(j)
+			dstField.Set(reflect.AppendSlice(dstField, fvSrc.Field(j)))
+		}
 	}
 }
 

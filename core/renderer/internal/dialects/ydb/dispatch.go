@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer/internal/dialects/internal/nodedispatch"
+	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbgap"
 )
 
@@ -161,6 +162,15 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderAlterTopic(n)
 	case *ast.DropTopicNode:
 		return r.renderDropTopic(n)
+	// Coordination nodes. YQL has no statement for one, so this renderer
+	// writes Ptah's own, which Ptah's YDB connection runs through the
+	// coordination service.
+	case *ast.CreateCoordinationNodeNode:
+		return r.renderCoordinationNode(ydbcoordination.Create, n.Name, n.Spec)
+	case *ast.AlterCoordinationNodeNode:
+		return r.renderCoordinationNode(ydbcoordination.Alter, n.Name, n.Spec)
+	case *ast.DropCoordinationNodeNode:
+		return r.renderCoordinationNode(ydbcoordination.Drop, n.Name, ast.CoordinationNodeSpec{})
 
 	// Objects of other engines.
 	case *ast.CreateSynonymNode:

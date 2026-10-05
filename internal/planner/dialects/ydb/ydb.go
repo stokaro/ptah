@@ -12,8 +12,10 @@
 //
 //  1. DROP VIEW for every view the plan removes or replaces, dependents first,
 //     so no table goes while a view the plan touches still reads it;
-//  2. DROP TOPIC for every removed topic, so a table created under its path
-//     finds the path free;
+//  2. DROP TOPIC for every removed topic, then the coordination nodes the
+//     plan drops, so a table created under one's path finds the path free.
+//     YQL has no statement for a coordination node, so the plan carries Ptah's
+//     own, which Ptah's YDB connection runs through the coordination service;
 //  3. CREATE TABLE for every added table, with the indexes it gains written
 //     inside the statement, because YDB has no CREATE INDEX
 //     ([capability.CreateIndexStatement]);
@@ -38,8 +40,9 @@
 //     YDB adds one only to a table that exists;
 //  9. DROP TABLE for every removed table, which drops its changefeeds;
 //  10. CREATE TOPIC for every added topic and ALTER TOPIC for every changed
-//     one, after the tables are dropped, so a topic created under a dropped
-//     table's path finds the path free;
+//     one, then the coordination nodes the plan creates and changes, after
+//     the tables are dropped, so an object created under a dropped table's
+//     path finds the path free;
 //  11. CREATE VIEW for every view the plan adds or replaces, last, a view after
 //     the views it reads: YDB checks a view's query against the schema when
 //     the view is created, so the tables and columns it reads exist by then.
@@ -152,6 +155,9 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := p.refuseObjects(scoped); err != nil {
 		return nil, err
 	}
+	if err := p.refuseCoordinationNodes(diff); err != nil {
+		return nil, err
+	}
 	for _, tableDiff := range diff.TablesModified {
 		if err := p.refuseModification(tableDiff, rebuilds, semantics, diff.CurrentNotDescribed); err != nil {
 			return nil, err
@@ -198,6 +204,8 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	result = append(result, p.dropViews(diff)...)
 	result = append(result, access.before...)
 	result = append(result, dropTopics(diff)...)
+	nodeChanges, nodeDrops := coordinationNodes(diff)
+	result = append(result, nodeDrops...)
 	result = append(result, p.createTables(diff, inlineIndexes, sequences.created, semantics)...)
 	result = append(result, dropIndexes(diff.IndexRemovals(), removedTables, rebuilds, semantics)...)
 	result = append(result, renameIndexes(diff.IndexesRenamed, rebuilds, semantics)...)
@@ -214,6 +222,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 		result = append(result, ast.NewDropTable(name))
 	}
 	result = append(result, changeTopics(diff)...)
+	result = append(result, nodeChanges...)
 	result = append(result, p.createViews(diff)...)
 	result = append(result, access.after...)
 	result = append(result, access.last...)

@@ -53,6 +53,7 @@ func omittedFamilies(db *schemamodel.Database) []string {
 	families := []omittedFamily{
 		{"composite types", len(db.CompositeTypes)},
 		{"continuous aggregates", len(db.ContinuousAggregates)},
+		{"coordination nodes", len(db.CoordinationNodes)},
 		{"domains", len(db.Domains)},
 		{"extended properties", len(db.ExtendedProperties)},
 		{"extensions", len(db.Extensions)},

@@ -114,6 +114,7 @@ func Fixtures() []Fixture {
 		{Name: "continuous-aggregate", Schema: continuousAggregateFixture()},
 		{Name: "synonym", Schema: synonymFixture()},
 		{Name: "topic", Schema: topicFixture()},
+		{Name: "coordination-node", Schema: coordinationNodeFixture()},
 		{Name: "extended-property", Schema: extendedPropertyFixture()},
 		{Name: "role", Schema: roleFixture()},
 		{Name: "ydb-group-membership", Schema: ydbGroupMembershipFixture()},
@@ -1349,6 +1350,17 @@ func topicFixture() schemamodel.Database {
 				{Name: "audit", ReadFrom: "2026-01-01T00:00:00Z", SupportedCodecs: []string{"raw", "gzip"},
 					AvailabilityPeriod: "PT2H"},
 			},
+		},
+	}}
+	return db
+}
+
+func coordinationNodeFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.CoordinationNodes = []schemamodel.CoordinationNode{{
+		StructName: "CN", Schema: "app", Name: "locks", Spec: ast.CoordinationNodeSpec{
+			SelfCheckPeriodMillis: 2000, SessionGracePeriodMillis: 15000,
+			ReadConsistencyMode: "strict", AttachConsistencyMode: "relaxed", RateLimiterCountersMode: "detailed",
 		},
 	}}
 	return db

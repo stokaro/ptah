@@ -44,16 +44,16 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-455 fields are reachable from the desired schema, and each one carries
+465 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 392 | reaches rendered SQL on at least one target |
+| `ddl` | 401 | reaches rendered SQL on at least one target |
 | `comparison` | 8 | read when two schemas are compared, and written into no statement |
 | `planning` | 7 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
-| `source` | 17 | identifies the source text the declaration was read from |
+| `source` | 18 | identifies the source text the declaration was read from |
 | `export` | 10 | what a generated document carries, or reports that it cannot |
 | `data` | 11 | reference or seed rows, which are not DDL |
 
@@ -78,6 +78,11 @@ None.
 | `ast.ChangefeedSpec.TopicMinActivePartitions` | `ddl` | — |
 | `ast.ChangefeedSpec.UserSIDs` | `ddl` | — |
 | `ast.ChangefeedSpec.VirtualTimestamps` | `ddl` | — |
+| `ast.CoordinationNodeSpec.AttachConsistencyMode` | `ddl` | — |
+| `ast.CoordinationNodeSpec.RateLimiterCountersMode` | `ddl` | — |
+| `ast.CoordinationNodeSpec.ReadConsistencyMode` | `ddl` | — |
+| `ast.CoordinationNodeSpec.SelfCheckPeriodMillis` | `ddl` | — |
+| `ast.CoordinationNodeSpec.SessionGracePeriodMillis` | `ddl` | — |
 | `ast.IndexPartitioningSpec.ByLoad` | `ddl` | — |
 | `ast.IndexPartitioningSpec.BySize` | `ddl` | — |
 | `ast.IndexPartitioningSpec.MaxPartitions` | `ddl` | — |
@@ -175,9 +180,14 @@ None.
 | `schemamodel.ContinuousAggregate.Name` | `ddl` | — |
 | `schemamodel.ContinuousAggregate.Schema` | `ddl` | — |
 | `schemamodel.ContinuousAggregate.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
+| `schemamodel.CoordinationNode.Name` | `ddl` | — |
+| `schemamodel.CoordinationNode.Schema` | `ddl` | — |
+| `schemamodel.CoordinationNode.Spec` | `ddl` | — |
+| `schemamodel.CoordinationNode.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.Database.CompositeTypes` | `ddl` | — |
 | `schemamodel.Database.Constraints` | `ddl` | — |
 | `schemamodel.Database.ContinuousAggregates` | `ddl` | — |
+| `schemamodel.Database.CoordinationNodes` | `ddl` | — |
 | `schemamodel.Database.DatabasePath` | `ddl` | — |
 | `schemamodel.Database.DefaultPrivileges` | `ddl` | — |
 | `schemamodel.Database.Dependencies` | `derived` | table creation order, derived by Finalize from the declared foreign keys |

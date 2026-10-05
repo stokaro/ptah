@@ -10,6 +10,7 @@ import (
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/ydbchangefeed"
+	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbtopic"
@@ -762,6 +763,27 @@ var directives = []Directive{
 			attr("schema", "Schema the alias lives in.", valueString, false, false),
 			attr("target", "Object the alias stands for, as one to four dot-separated parts.", valueString, true, false),
 			attr("comment", "Synonym comment.", valueString, false, false),
+		},
+	},
+	{
+		Name: "ptah:schema:coordinationnode",
+		Description: "Declares a YDB coordination node, which holds an application's semaphores " +
+			"and rate limiter resources. A setting left out takes YDB's default.",
+		Scopes: []Scope{ScopeStruct},
+		Attributes: []Attribute{
+			attr("name", "Node name.", valueString, true, false),
+			attr("schema", "Directory holding the node, relative to the database root.", valueString, false, false),
+			attr(ydbcoordination.SettingSelfCheckPeriod, "How often the node checks it is alive, as an ISO 8601 "+
+				"duration from `PT0.5S` to `PT10S`. YDB's default is `PT1S`.", valueString, false, false),
+			attr(ydbcoordination.SettingSessionGracePeriod, "How long a session keeps its semaphores while the "+
+				"node changes its leader, as an ISO 8601 duration from the self-check period plus one second "+
+				"to `PT30S`. YDB's default is `PT10S`.", valueString, false, false),
+			attr(ydbcoordination.SettingReadConsistencyMode, "`strict` or `relaxed`. YDB's default is `relaxed`.",
+				valueString, false, false),
+			attr(ydbcoordination.SettingAttachConsistencyMode, "`strict` or `relaxed`. YDB's default is `strict`.",
+				valueString, false, false),
+			attr(ydbcoordination.SettingRateLimiterCountersMode, "`aggregated` or `detailed`. YDB's default is "+
+				"`aggregated`.", valueString, false, false),
 		},
 	},
 	{

@@ -125,6 +125,7 @@ func Open(ctx context.Context, rawURL string) (*Connection, error) {
 			inner:   inner,
 			sdk:     driver,
 			prefix:  pathPrefix(parsed),
+			root:    parsed.Root(),
 			onClose: func() error { return closeDriver(driver) },
 		}),
 		Driver:        driver,
