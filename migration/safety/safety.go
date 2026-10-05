@@ -121,6 +121,9 @@ func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 	forced, unforced := rlsForceDirections(diff.RLSForceChanged)
 	add(&findings, "rls_force_added", forced, Safe)
 	add(&findings, "rls_force_removed", unforced, Destructive)
+	add(&findings, "coordination_nodes_added", len(diff.CoordinationNodesAdded), Safe)
+	add(&findings, "coordination_nodes_removed", len(diff.CoordinationNodesRemoved), Destructive)
+	add(&findings, "coordination_nodes_modified", len(diff.CoordinationNodesModified), Warning)
 	add(&findings, "roles_added", len(diff.RolesAdded), Safe)
 	add(&findings, "roles_removed", len(diff.RolesRemoved), Destructive)
 	add(&findings, "roles_modified", len(diff.RolesModified), Warning)
@@ -530,15 +533,15 @@ func assessNode(node ast.Node) StatementAssessment {
 		Severity: Safe,
 		Reason:   "does not remove data or tighten constraints",
 	}
+	if subject, reason, dropped := destructiveDrop(node); dropped {
+		assessment.Subject, assessment.Severity, assessment.Reason = subject, Destructive, reason
+		return assessment
+	}
 
 	switch n := node.(type) {
 	case *ast.AlterTableNode:
 		assessment.Subject = n.Name
 		return assessAlterTable(n, assessment)
-	case *ast.DropTableNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Destructive
-		assessment.Reason = "DROP TABLE removes the table and all rows"
 	case *ast.DropTypeNode:
 		assessment.Subject = n.Name
 		assessment.Severity = Destructive
@@ -547,22 +550,6 @@ func assessNode(node ast.Node) StatementAssessment {
 		} else {
 			assessment.Reason = "DROP TYPE removes an existing database type"
 		}
-	case *ast.DropExtensionNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Destructive
-		assessment.Reason = "DROP EXTENSION removes database objects owned by the extension"
-	case *ast.DropFunctionNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Destructive
-		assessment.Reason = "DROP FUNCTION removes executable database behavior"
-	case *ast.DropRoleNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Destructive
-		assessment.Reason = "DROP ROLE removes an existing database principal"
-	case *ast.DropPolicyNode:
-		assessment.Subject = n.Name
-		assessment.Severity = Destructive
-		assessment.Reason = "DROP POLICY removes an access-control protection"
 	case *ast.AlterTableDisableRLSNode:
 		assessment.Subject = n.Table
 		assessment.Severity = Destructive
@@ -599,6 +586,30 @@ func assessNode(node ast.Node) StatementAssessment {
 		return assessRawSQL(n.SQL, assessment, false)
 	}
 	return assessment
+}
+
+// destructiveDrop is the subject and the reason of a statement that drops an
+// object and always removes data or behavior with it, and false for any other
+// node.
+func destructiveDrop(node ast.Node) (subject, reason string, dropped bool) {
+	switch n := node.(type) {
+	case *ast.DropTableNode:
+		return n.Name, "DROP TABLE removes the table and all rows", true
+	case *ast.DropExtensionNode:
+		return n.Name, "DROP EXTENSION removes database objects owned by the extension", true
+	case *ast.DropFunctionNode:
+		return n.Name, "DROP FUNCTION removes executable database behavior", true
+	case *ast.DropRoleNode:
+		return n.Name, "DROP ROLE removes an existing database principal", true
+	case *ast.DropPolicyNode:
+		return n.Name, "DROP POLICY removes an access-control protection", true
+	case *ast.DropCoordinationNodeNode:
+		return n.Name, dropCoordinationNodeReason, true
+	case *ast.DropTopicNode:
+		return n.Name, dropTopicReason, true
+	default:
+		return "", "", false
+	}
 }
 
 func assessAlterTable(n *ast.AlterTableNode, assessment StatementAssessment) StatementAssessment {
@@ -1005,6 +1016,7 @@ var destructivePrefixes = []struct {
 	{words: []string{"DROP", "TOPIC"}, reason: dropTopicReason},
 	{words: []string{"DROP", "ASYNC", "REPLICATION"}, reason: dropReplicationReason},
 	{words: []string{"DROP", "TRANSFER"}, reason: dropTransferReason},
+	{words: []string{"DROP", "COORDINATION", "NODE"}, reason: dropCoordinationNodeReason},
 	{words: []string{"TRUNCATE"}, reason: "TRUNCATE removes all rows from a table"},
 }
 
@@ -1059,6 +1071,11 @@ const (
 	dropTransferReason = "DROP TRANSFER stops the transfer and drops the topic consumer YDB created for it, with " +
 		"its position in the topic"
 )
+
+// dropCoordinationNodeReason is why dropping a YDB coordination node is
+// destructive, in the words both the AST and the SQL-text classifiers report.
+const dropCoordinationNodeReason = "DROP COORDINATION NODE removes the node with its semaphores and rate limiter " +
+	"resources, even while a session holds a lock on it"
 
 // destructivePrefixReason returns the reason of the first [destructivePrefixes]
 // entry the statement's words start with.

@@ -244,8 +244,13 @@ const (
 	// kind, and the comparison then keeps the policy the database holds for
 	// each table, through a rebuild too.
 	TTL Kind = "ttl"
-	// ColumnFamily is a YDB table's column families beyond the default one,
-	// or a default family with its own storage pool or compression.
+	// ColumnFamily is a YDB row table's column families. A YDB read records,
+	// by the table's path, families holding a setting Ptah does not read -- a
+	// compression only a column table takes, or a field the pinned protocol
+	// buffers do not model -- and then lists none of the table's families. A document
+	// in a format with no spelling for a family, HCL or DBML, records the
+	// whole kind, and the comparison then keeps the families the database
+	// holds for each table, through a rebuild too.
 	ColumnFamily Kind = "column_family"
 	// TableOption is a YDB table's partitioning, read replica, key bloom
 	// filter and storage settings, where they differ from what a table Ptah

@@ -24,6 +24,11 @@ import (
 //	GRANT SELECT ON t TO u1                 refused: a grant takes no prefix
 //	CREATE TOPIC tp                         created in the realm
 //
+// Ptah's own coordination node statement (see internal/ydbcoordination) is
+// resolved by Ptah's connection rather than the server, against the same
+// prefix and with the same rule: a relative path lands in the realm, and the
+// connection refuses one that leaves it.
+//
 // So a statement whose effect is not confined to the realm is refused: a
 // write whose target is an absolute path, climbs out with `..`, is named
 // through a `$` expression or carries a cluster, a pragma that moves the
@@ -163,6 +168,15 @@ func validateYDBObjectStatement(tokens []lexer.Token) error {
 		return ydbCheckRenameTarget(tokens)
 	case "VIEW", "SEQUENCE", "TOPIC":
 		return ydbCheckTarget(tokens, ydbSkipExistenceGuard(tokens, kind+1))
+	case "COORDINATION":
+		// Ptah's own statement for a coordination node, which Ptah's
+		// connection resolves against the realm's prefix as YDB resolves a
+		// table, and which the reset drops.
+		if ydbKeywordAt(tokens, kind+1) != "NODE" {
+			return unsafeReplayStatement(platform.YDB, "unrecognized object "+
+				strings.ToUpper(tokens[0].Value)+" COORDINATION "+strings.ToUpper(tokenValueAt(tokens, kind+1)))
+		}
+		return ydbCheckTarget(tokens, kind+2)
 	case "TEMP", "TEMPORARY":
 		return unsafeReplayStatement(platform.YDB, "temporary table")
 	case "USER", "GROUP":

@@ -14,6 +14,7 @@ import (
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/indexscope"
+	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbtopic"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -220,6 +221,13 @@ func reverseSchemaDiffWithSchemaForDialect(
 		TopicsAdded:    cloneTopics(diff.TopicsRemoved),
 		TopicsRemoved:  cloneTopics(diff.TopicsAdded),
 		TopicsModified: reverseTopicDiffs(diff.TopicsModified),
+		// A coordination node carries its whole configuration in the diff:
+		// the down direction drops what the up direction created, creates what
+		// it dropped with the configuration the removal carried, and puts a
+		// changed node's settings back.
+		CoordinationNodesAdded:    slices.Clone(diff.CoordinationNodesRemoved),
+		CoordinationNodesRemoved:  slices.Clone(diff.CoordinationNodesAdded),
+		CoordinationNodesModified: reverseCoordinationNodeChanges(diff.CoordinationNodesModified),
 
 		// An async replication and a transfer reverse like a synonym: the down
 		// direction drops what the up direction created, and creates what it
@@ -539,6 +547,25 @@ func reverseRowDeletionPolicyChange(
 		return nil
 	}
 	return &difftypes.RowDeletionPolicyChange{Desired: change.Current, Current: change.Desired}
+}
+
+// reverseColumnFamiliesChange swaps the two sides of a table's YDB column
+// families, so a rollback moves each column back to the family it left and
+// gives back each setting the forward change wrote. Its current side is what
+// the table holds once the forward change has run (see [ydbfamily.Applied]).
+//
+// A family the forward change added, and a storage pool it named where the
+// table had none, are settings the earlier state does not state, so the
+// rollback keeps them, emptied of columns: YQL drops no family and removes no
+// pool, and a rollback refused for that would refuse the whole migration.
+func reverseColumnFamiliesChange(change *difftypes.YDBColumnFamiliesChange) *difftypes.YDBColumnFamiliesChange {
+	if change == nil {
+		return nil
+	}
+	return &difftypes.YDBColumnFamiliesChange{
+		Desired: ast.CloneYDBColumnFamilies(change.Current),
+		Current: ydbfamily.Applied(change.Desired, change.Current),
+	}
 }
 
 // reverseChangefeedsChange swaps the two sides of a table's changefeeds, so a

@@ -232,6 +232,9 @@ func measuredLines() map[string]measuredLine {
 				capability.GroupPrincipals:                 accessKeyCarried,
 				capability.DatabaseGrants:                  accessKeyCarried,
 				capability.RelativeGrantPaths:              accessKeyCarried,
+				capability.ColumnFamilies:                  columnFamilyKeyCarried,
+				capability.ColumnFamilyCacheMode:           columnFamilyKeyCarried,
+				capability.CoordinationNodes:               coordinationKeyCarried,
 				capability.Changefeeds:                     changefeedKeyCarried,
 				capability.ChangefeedUserSIDs:              changefeedKeyCarried,
 				capability.ChangefeedSchemaChanges:         changefeedKeyCarried,
@@ -394,6 +397,9 @@ func measuredLines() map[string]measuredLine {
 				capability.GroupPrincipals:                 accessKeyCarried,
 				capability.DatabaseGrants:                  accessKeyCarried,
 				capability.RelativeGrantPaths:              accessKeyCarried,
+				capability.ColumnFamilies:                  columnFamilyKeyCarried,
+				capability.ColumnFamilyCacheMode:           columnFamilyKeyCarried,
+				capability.CoordinationNodes:               coordinationKeyCarried,
 				capability.Changefeeds:                     changefeedKeyCarried,
 				capability.ChangefeedUserSIDs:              changefeedKeyCarried,
 				capability.ChangefeedSchemaChanges:         changefeedKeyCarried,
@@ -557,6 +563,9 @@ func measuredLines() map[string]measuredLine {
 				capability.GroupPrincipals:                 accessKeyCarried,
 				capability.DatabaseGrants:                  accessKeyCarried,
 				capability.RelativeGrantPaths:              accessKeyCarried,
+				capability.ColumnFamilies:                  columnFamilyKeyCarried,
+				capability.ColumnFamilyCacheMode:           columnFamilyKeyCarried,
+				capability.CoordinationNodes:               coordinationKeyCarried,
 				capability.Changefeeds:                     changefeedKeyCarried,
 				capability.ChangefeedUserSIDs:              changefeedKeyCarried,
 				capability.ChangefeedSchemaChanges:         changefeedKeyCarried,
@@ -745,6 +754,12 @@ const topicKeyCarried = "this run predates the key and sent no topic experiment;
 const serialKeyCarried = "this run predates the key and sent no serial sequence experiment; the probe asks it " +
 	"on every run through those experiments, and the value here is the preset's"
 
+// columnFamilyKeyCarried is why the keys about a YDB row table's column
+// families are carried on these lines: the run predates them. The probe asks
+// them on every run, and the value here is the preset's.
+const columnFamilyKeyCarried = "this run predates the key and sent no column family experiment; the probe asks " +
+	"it on every run, and the value here is the preset's"
+
 // changefeedKeyCarried is why the keys about a YDB changefeed and the
 // consumers of its topic are carried on these lines: the run predates them.
 const changefeedKeyCarried = "this run predates the key and sent no changefeed experiment; the probe asks " +
@@ -764,3 +779,9 @@ const accessKeyCarried = "this run predates the key; the probe declares it undec
 // value here is the preset's.
 const replicationKeyCarried = "this run predates the key and sent no replication or transfer experiment; the " +
 	"probe asks it on every run, and the value here is the preset's"
+
+// coordinationKeyCarried is why the key about YDB coordination nodes is
+// carried on every measured line: the run named there predates it, and no
+// statement can ask an engine other than YDB about an object only YDB has.
+const coordinationKeyCarried = "this run predates the key; it names whether Ptah manages YDB coordination " +
+	"nodes, which only YDB has, and the value here is the preset's"

@@ -81,6 +81,8 @@ import (
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/ydbchangefeed"
+	"ptah.run/internal/ydbcoordination"
+	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
 )
 
@@ -152,6 +154,7 @@ type document struct {
 	// YDB's async replications and transfers.
 	AsyncReplications map[string]asyncReplicationSpec `yaml:"async_replications"`
 	Transfers         map[string]transferSpec         `yaml:"transfers"`
+	CoordinationNodes map[string]coordinationNodeSpec `yaml:"coordination_nodes"`
 }
 
 type tableSpec struct {
@@ -172,6 +175,11 @@ type tableSpec struct {
 	Constraints orderedMap[constraintSpec] `yaml:"constraints"`
 	Changefeeds orderedMap[changefeedSpec] `yaml:"changefeeds"`
 	RLSEnabled  bool                       `yaml:"rls_enabled"`
+
+	// ColumnFamilies are the table's YDB column families; see
+	// [columnFamilySpec].
+	ColumnFamilies orderedMap[columnFamilySpec] `yaml:"column_families"`
+
 	// The row deletion policy, keyed as the annotation keys it.
 	RowDeletionColumn   *stringScalar `yaml:"row_deletion_column"`
 	RowDeletionInterval *stringScalar `yaml:"row_deletion_interval"`
@@ -281,6 +289,50 @@ func (spec indexSpec) partitioningValues() map[string]string {
 		}
 	}
 	return values
+}
+
+// columnFamilySpec is a YDB column family of the table, keyed by its name,
+// with each setting keyed as the annotation keys it; see
+// [ydbfamily.ParseDeclaration].
+type columnFamilySpec struct {
+	Data        *stringScalar `yaml:"data"`
+	Compression *stringScalar `yaml:"compression"`
+	CacheMode   *stringScalar `yaml:"cache_mode"`
+	Fields      stringList    `yaml:"fields"`
+}
+
+// values are the attributes the family sets, keyed by attribute name. An
+// attribute the document leaves out is absent, and one it sets to an empty
+// value is present, so an empty value is refused rather than read as no
+// declaration.
+func (spec columnFamilySpec) values(name string) map[string]string {
+	values := map[string]string{ydbfamily.AttributeName: name}
+	for attribute, value := range map[string]*stringScalar{
+		ydbfamily.AttributeData:        spec.Data,
+		ydbfamily.AttributeCompression: spec.Compression,
+		ydbfamily.AttributeCacheMode:   spec.CacheMode,
+	} {
+		if value != nil {
+			values[attribute] = string(*value)
+		}
+	}
+	if spec.Fields != nil {
+		values[ydbfamily.AttributeFields] = strings.Join(spec.Fields, ",")
+	}
+	return values
+}
+
+// buildColumnFamilies reads a table's YDB column families.
+func buildColumnFamilies(table string, specs orderedMap[columnFamilySpec]) ([]ast.YDBColumnFamilySpec, error) {
+	var families []ast.YDBColumnFamilySpec
+	for _, entry := range specs {
+		family, err := ydbfamily.ParseDeclaration(entry.Value.values(entry.Name))
+		if err != nil {
+			return nil, fmt.Errorf("table %q: column family %q: %w", table, entry.Name, err)
+		}
+		families = append(families, family)
+	}
+	return families, nil
 }
 
 // changefeedSpec is a YDB changefeed of the table, keyed by its name, with
@@ -438,6 +490,39 @@ type functionSpec struct {
 	Settings []stringScalar `yaml:"settings"`
 	Body     stringScalar   `yaml:"body"`
 	Comment  stringScalar   `yaml:"comment"`
+}
+
+// coordinationNodeSpec declares a YDB coordination node. The settings are
+// keyed as the annotation keys them; see [ydbcoordination.ParseDeclaration].
+type coordinationNodeSpec struct {
+	StructName              stringScalar  `yaml:"struct_name"`
+	Name                    stringScalar  `yaml:"name"`
+	Schema                  stringScalar  `yaml:"schema"`
+	SelfCheckPeriod         *stringScalar `yaml:"self_check_period"`
+	SessionGracePeriod      *stringScalar `yaml:"session_grace_period"`
+	ReadConsistencyMode     *stringScalar `yaml:"read_consistency_mode"`
+	AttachConsistencyMode   *stringScalar `yaml:"attach_consistency_mode"`
+	RateLimiterCountersMode *stringScalar `yaml:"rate_limiter_counters_mode"`
+}
+
+// settingValues are the settings the node sets, keyed by setting name. A
+// setting the document leaves out is absent, and one it sets to an empty
+// value is present, so an empty value is refused rather than read as no
+// declaration.
+func (spec coordinationNodeSpec) settingValues() map[string]string {
+	values := make(map[string]string)
+	for setting, value := range map[string]*stringScalar{
+		ydbcoordination.SettingSelfCheckPeriod:         spec.SelfCheckPeriod,
+		ydbcoordination.SettingSessionGracePeriod:      spec.SessionGracePeriod,
+		ydbcoordination.SettingReadConsistencyMode:     spec.ReadConsistencyMode,
+		ydbcoordination.SettingAttachConsistencyMode:   spec.AttachConsistencyMode,
+		ydbcoordination.SettingRateLimiterCountersMode: spec.RateLimiterCountersMode,
+	} {
+		if value != nil {
+			values[setting] = string(*value)
+		}
+	}
+	return values
 }
 
 type viewSpec struct {
@@ -626,6 +711,9 @@ func (d document) toDatabase() (*schemamodel.Database, error) {
 	if err := d.addTransfers(db); err != nil {
 		return nil, err
 	}
+	if err := d.addCoordinationNodes(db); err != nil {
+		return nil, err
+	}
 	d.addRLS(db)
 	d.addRoles(db)
 	if err := d.addGrants(db); err != nil {
@@ -673,6 +761,10 @@ func (d document) addTables(db *schemamodel.Database) error {
 		if err != nil {
 			return err
 		}
+		families, err := buildColumnFamilies(tableName, table.ColumnFamilies)
+		if err != nil {
+			return err
+		}
 		db.Tables = append(db.Tables, schemamodel.Table{
 			StructName:  structName,
 			Name:        tableName,
@@ -691,6 +783,7 @@ func (d document) addTables(db *schemamodel.Database) error {
 			Overrides:  mergePlatform(table.Platform, table.Overrides),
 
 			RowDeletionPolicy: rowDeletionPolicy,
+			YDBColumnFamilies: families,
 		})
 
 		if err := addFields(db, structName, table.Columns, table.Fields); err != nil {
@@ -1053,6 +1146,28 @@ func (d document) addViews(db *schemamodel.Database) error {
 			Body:       string(spec.Body),
 			WithCheck:  spec.WithCheck,
 			Comment:    string(spec.Comment),
+		})
+	}
+	return nil
+}
+
+// addCoordinationNodes reads the YDB coordination nodes, in key order.
+func (d document) addCoordinationNodes(db *schemamodel.Database) error {
+	for _, key := range sortedKeys(d.CoordinationNodes) {
+		spec := d.CoordinationNodes[key]
+		name := valueOrDefault(spec.Name, key)
+		if err := ydbcoordination.RefuseName(string(spec.Schema), name); err != nil {
+			return fmt.Errorf("coordination node %q: %w", key, err)
+		}
+		settings, err := ydbcoordination.ParseDeclaration(spec.settingValues())
+		if err != nil {
+			return fmt.Errorf("coordination node %q: %w", key, err)
+		}
+		db.CoordinationNodes = append(db.CoordinationNodes, schemamodel.CoordinationNode{
+			StructName: string(spec.StructName),
+			Schema:     string(spec.Schema),
+			Name:       name,
+			Spec:       settings,
 		})
 	}
 	return nil

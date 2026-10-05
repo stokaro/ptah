@@ -188,6 +188,12 @@ func clonedCollectionRows() []clonedCollectionRow {
 			},
 		},
 		{
+			field: "CoordinationNodes", present: "locks", absent: "nosuch_node",
+			seed: func(s *catalog.Database) {
+				s.CoordinationNodes = append(s.CoordinationNodes, catalog.CoordinationNode{Name: "locks"})
+			},
+		},
+		{
 			field: "MatViews", present: "mv_users", absent: "nosuch_matview",
 			seed: func(s *catalog.Database) {
 				s.MatViews = append(s.MatViews, catalog.MaterializedView{Name: "mv_users"})

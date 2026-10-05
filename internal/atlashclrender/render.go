@@ -551,6 +551,7 @@ func hclRepresentsExportMetadata(metadata schemamodel.ExportMetadata) bool {
 func (r *renderer) renderBody() {
 	r.reportDialectScopes()
 	r.reportExportMetadata()
+	r.reportColumnFamilies()
 	r.reportChangefeeds()
 	r.reportRowDeletionPolicies()
 	r.reportTopics()
@@ -566,6 +567,7 @@ func (r *renderer) renderBody() {
 	r.renderHypertables()
 	r.renderContinuousAggregates()
 	r.renderSynonyms()
+	r.renderCoordinationNodes()
 	r.renderExtendedProperties()
 	r.renderFunctions()
 	r.renderViews()

@@ -77,6 +77,8 @@ import (
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/usertypescope"
+	"ptah.run/internal/ydbcoordination"
+	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbreplication"
 )
@@ -412,6 +414,8 @@ func prepareNode(
 		*ast.CreateTransferNode, *ast.AlterTransferNode, *ast.DropTransferNode:
 		key, subject := replicationNodeSubject(typed)
 		return node, refuseReplicationFamily(dialect, caps, key, subject)
+	case *ast.CreateCoordinationNodeNode, *ast.AlterCoordinationNodeNode, *ast.DropCoordinationNodeNode:
+		return node, refuseCoordinationNode(dialect, caps, node)
 	default:
 		return prepareStandaloneFragment(dialect, caps, node)
 	}
@@ -666,6 +670,10 @@ func prepareCreateTableNode(
 		}
 	}
 	cloned.Changefeeds = ast.CloneChangefeeds(node.Changefeeds)
+	if err := refuseColumnFamilies(dialect, caps, declaringFamilies(node.Name), node.YDBColumnFamilies); err != nil {
+		return nil, err
+	}
+	cloned.YDBColumnFamilies = ast.CloneYDBColumnFamilies(node.YDBColumnFamilies)
 	if err := validateCreateTableForeignKeyColumns(dialect, &cloned); err != nil {
 		return nil, err
 	}
@@ -679,6 +687,77 @@ func prepareCreateTableNode(
 		return nil, err
 	}
 	return &cloned, nil
+}
+
+// refuseColumnFamilies refuses a YDB row table's column families on a target
+// without the capability key each needs; see [ydbfamily.Requirements]. A
+// renderer that has no column families writes the table without them, and
+// every column then sits in one storage pool, uncompressed, with nothing
+// reporting the difference. A table declaring none passes, and so does one
+// declaring only the default family stating no setting. subject names what is
+// refused from the settings a requirement names.
+func refuseColumnFamilies(
+	dialect string,
+	caps capability.Capabilities,
+	subject func(settings string) string,
+	families []ast.YDBColumnFamilySpec,
+) error {
+	for _, requirement := range ydbfamily.Requirements(families) {
+		if caps.Has(requirement.Key) {
+			continue
+		}
+		normalized := platform.NormalizeDialect(dialect)
+		return &ptaherr.CapabilityError{
+			Dialect: normalized,
+			Feature: string(requirement.Key),
+			Err:     ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
+				subject(requirement.Settings), requirement.Key, normalized),
+		}
+	}
+	return nil
+}
+
+// refuseColumnFamilyChange refuses a change of a table's column families on a
+// target without the key what the change writes needs; see
+// [ydbfamily.ChangeRequirements].
+func refuseColumnFamilyChange(
+	dialect string,
+	caps capability.Capabilities,
+	table string,
+	change *ast.SetYDBColumnFamiliesOperation,
+) error {
+	for _, requirement := range ydbfamily.ChangeRequirements(change.Families, change.Previous) {
+		if caps.Has(requirement.Key) {
+			continue
+		}
+		normalized := platform.NormalizeDialect(dialect)
+		return &ptaherr.CapabilityError{
+			Dialect: normalized,
+			Feature: string(requirement.Key),
+			Err:     ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf("changing the %s of %s, which requires target capability %s, unavailable on this %s target",
+				requirement.Settings, tableref.Phrase(table), requirement.Key, normalized),
+		}
+	}
+	return nil
+}
+
+// declaringFamilies names a table's column families as the table declares
+// them, for [refuseColumnFamilies].
+func declaringFamilies(table string) func(string) string {
+	return func(settings string) string { return fmt.Sprintf("table %q declares %s", table, settings) }
+}
+
+// refuseDeclaredColumnFamilies refuses the first declared table whose column
+// families the target cannot carry; see [refuseColumnFamilies].
+func refuseDeclaredColumnFamilies(dialect string, caps capability.Capabilities, tables []schemamodel.Table) error {
+	for _, table := range tables {
+		if err := refuseColumnFamilies(dialect, caps, declaringFamilies(table.QualifiedName()), table.YDBColumnFamilies); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // refuseDeclaredRowDeletionPolicies refuses the first declared table whose row
@@ -895,7 +974,7 @@ func prepareAlterOperation(
 		}
 		return operation, nil
 	case *ast.AddChangefeedOperation, *ast.DropChangefeedOperation, *ast.AlterChangefeedTopicOperation,
-		*ast.SetRowDeletionPolicyOperation:
+		*ast.SetRowDeletionPolicyOperation, *ast.SetYDBColumnFamiliesOperation:
 		// One arm for a table's YDB settings, for the reason the column arm
 		// gives.
 		if err := validateTableSettingOperation(dialect, caps, table, operation); err != nil {
@@ -910,14 +989,17 @@ func prepareAlterOperation(
 	}
 }
 
-// validateTableSettingOperation refuses a change to a table's changefeeds or
-// row deletion policy on a target that has neither.
+// validateTableSettingOperation refuses a change to a table's changefeeds,
+// row deletion policy or YDB column families on a target that cannot carry it.
 func validateTableSettingOperation(
 	dialect string,
 	caps capability.Capabilities,
 	table string,
 	operation ast.AlterOperation,
 ) error {
+	if families, ok := operation.(*ast.SetYDBColumnFamiliesOperation); ok {
+		return refuseColumnFamilyChange(dialect, caps, table, families)
+	}
 	if policy, ok := operation.(*ast.SetRowDeletionPolicyOperation); ok {
 		spec := &ast.RowDeletionPolicySpec{Column: policy.Column, Interval: policy.Interval, Unit: policy.Unit}
 		return refuseRowDeletionPolicy(dialect, caps, table, spec)
@@ -1081,6 +1163,9 @@ func validateDeclaredTableSettings(dialect string, caps capability.Capabilities,
 	if err := refuseDeclaredRowDeletionPolicies(dialect, caps, database.Tables); err != nil {
 		return err
 	}
+	if err := refuseDeclaredColumnFamilies(dialect, caps, database.Tables); err != nil {
+		return err
+	}
 	return validateDeclaredChangefeeds(dialect, caps, database)
 }
 
@@ -1122,16 +1207,13 @@ func refuseTopic(dialect string, caps capability.Capabilities, subject string) e
 // one object (measured: `CREATE TOPIC` over a table's path answers
 // `unexpected path type ... EPathTypeTable`).
 func validateDeclaredTopics(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
-	tables := make(map[string]bool, len(database.Tables))
-	for _, table := range database.Tables {
-		tables[table.QualifiedName()] = true
-	}
+	paths := declaredPaths(database)
 	for _, topic := range database.Topics {
 		name := topic.QualifiedName()
 		if err := refuseTopic(dialect, caps, "topic "+name); err != nil {
 			return err
 		}
-		if tables[name] {
+		if slices.Contains(paths[name], pathTable) {
 			return &ptaherr.RenderError{
 				Dialect: platform.NormalizeDialect(dialect),
 				Err:     ptaherr.ErrUnsupportedFeature,
@@ -1141,6 +1223,108 @@ func validateDeclaredTopics(dialect string, caps capability.Capabilities, databa
 		}
 	}
 	return nil
+}
+
+// The kinds of declared object YDB keeps at a path of its scheme tree, as a
+// refusal names them.
+const (
+	pathTable            = "table"
+	pathView             = "view"
+	pathTopic            = "topic"
+	pathCoordinationNode = "coordination node"
+)
+
+// declaredPaths maps the qualified name of every declared table, view, topic
+// and coordination node to the kinds declared under it, in that order. It is
+// the one answer to which declared objects share a path, for
+// [validateDeclaredTopics] and [validateDeclaredCoordinationNodePaths]: on YDB
+// a path names one object, so a name that carries two kinds is a declaration
+// the server cannot hold. A view's name is parsed as the YDB renderer reads
+// it, so `app.v` is the view v in the directory app.
+func declaredPaths(database *schemamodel.Database) map[string][]string {
+	paths := make(map[string][]string)
+	for _, table := range database.Tables {
+		paths[table.QualifiedName()] = append(paths[table.QualifiedName()], pathTable)
+	}
+	for _, view := range database.Views {
+		name := view.Name
+		if ref, ok := tableref.Parse(view.Name); ok {
+			name = tableref.Canonical(ref.Schema, ref.Name)
+		}
+		paths[name] = append(paths[name], pathView)
+	}
+	for _, topic := range database.Topics {
+		paths[topic.QualifiedName()] = append(paths[topic.QualifiedName()], pathTopic)
+	}
+	for _, node := range database.CoordinationNodes {
+		paths[node.QualifiedName()] = append(paths[node.QualifiedName()], pathCoordinationNode)
+	}
+	return paths
+}
+
+// validateDeclaredCoordinationNodePaths refuses, on a target with
+// [capability.CoordinationNodes], a declared coordination node whose path a
+// declared table, view or topic holds, before any statement is emitted. A
+// plan creates the table and the topic before the node and the view after
+// it, and YDB refuses the later of the two. Measured on 26.2.1.14 and
+// 25.1.4.7:
+//
+//	CREATE COORDINATION NODE over a table  unexpected path type (... type: EPathTypeTable ...), expected types: EPathTypeKesus
+//	CREATE COORDINATION NODE over a topic  unexpected path type (... type: EPathTypePersQueueGroup ...), expected types: EPathTypeKesus
+//	CREATE COORDINATION NODE over a view   unexpected path type (... type: EPathTypeView ...), expected types: EPathTypeKesus
+//	CREATE VIEW over a node                unexpected path type (... type: EPathTypeKesus ...), expected types: EPathTypeView
+//	CREATE TOPIC over a node               unexpected path type (... type: EPathTypeKesus ...), expected types: EPathTypePersQueueGroup
+//	CREATE TABLE over a node               Path is not a table or topic (26.2), PathNotTable (25.1)
+func validateDeclaredCoordinationNodePaths(
+	dialect string,
+	caps capability.Capabilities,
+	database *schemamodel.Database,
+) error {
+	if len(database.CoordinationNodes) == 0 || !caps.Has(capability.CoordinationNodes) {
+		return nil
+	}
+	paths := declaredPaths(database)
+	for _, node := range database.CoordinationNodes {
+		name := node.QualifiedName()
+		for _, kind := range paths[name] {
+			if kind == pathCoordinationNode {
+				continue
+			}
+			return &ptaherr.RenderError{
+				Dialect: platform.NormalizeDialect(dialect),
+				Err:     ptaherr.ErrUnsupportedFeature,
+				Message: fmt.Sprintf("coordination node %s has the path of a declared %s, and YDB keeps one object "+
+					"at a path (`unexpected path type`)", name, kind),
+			}
+		}
+	}
+	return nil
+}
+
+// refuseCoordinationNode refuses node, a coordination node statement, on a
+// target without [capability.CoordinationNodes]: a coordination node is YDB's
+// own object, and another engine has nothing to create.
+func refuseCoordinationNode(dialect string, caps capability.Capabilities, node ast.Node) error {
+	if caps.Has(capability.CoordinationNodes) {
+		return nil
+	}
+	var name string
+	switch typed := node.(type) {
+	case *ast.CreateCoordinationNodeNode:
+		name = typed.Name
+	case *ast.AlterCoordinationNodeNode:
+		name = typed.Name
+	case *ast.DropCoordinationNodeNode:
+		name = typed.Name
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: string(capability.CoordinationNodes),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("coordination node %s, which requires target capability %s, unavailable on this %s target",
+			name, capability.CoordinationNodes, normalized),
+	}
 }
 
 // refuseInvisibleIndexNode refuses index when the optimizer is not to use it
@@ -1966,6 +2150,14 @@ func validateDatabaseDeclarations(
 	// own columns naming a type the server has no definition of
 	// (stokaro/ptah#1717).
 	if err := usertypescope.ValidateDeclared(dialect, caps, database); err != nil {
+		return err
+	}
+	// A coordination node is YDB's own object; anywhere else it is refused
+	// here, before anything is rendered, with the words a plan uses.
+	if err := ydbcoordination.ValidateDeclared(dialect, caps, database.CoordinationNodes); err != nil {
+		return err
+	}
+	if err := validateDeclaredCoordinationNodePaths(dialect, caps, database); err != nil {
 		return err
 	}
 	if err := validateDeclaredAccess(dialect, caps, database); err != nil {

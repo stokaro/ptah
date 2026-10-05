@@ -22,6 +22,8 @@ import (
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/uniquename"
 	"ptah.run/internal/ydbchangefeed"
+	"ptah.run/internal/ydbcoordination"
+	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbreplication"
 	"ptah.run/internal/ydbtopic"
@@ -364,7 +366,8 @@ func (ctx *renderContext) hasGlobalObjects() bool {
 		len(ctx.db.Sequences) > 0 ||
 		len(ctx.db.Topics) > 0 ||
 		len(ctx.db.AsyncReplications) > 0 ||
-		len(ctx.db.Transfers) > 0
+		len(ctx.db.Transfers) > 0 ||
+		len(ctx.db.CoordinationNodes) > 0
 }
 
 func (ctx *renderContext) writeEnums(w *sourceWriter) {
@@ -470,9 +473,19 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 	for _, privilege := range sortedDefaultPrivileges(ctx.db.DefaultPrivileges) {
 		w.writeComment(defaultPrivilegeAnnotation(privilege))
 	}
+	ctx.writeCoordinationNodes(w)
 	if ctx.hasGlobalObjects() {
 		w.writeLine("type PtahSchemaObjects struct{}")
 		w.writeLine("")
+	}
+}
+
+// writeCoordinationNodes writes an annotation for each of the database's YDB
+// coordination nodes, broken out of [renderContext.writeGlobalObjects] to
+// keep that function's branching under the complexity limit.
+func (ctx *renderContext) writeCoordinationNodes(w *sourceWriter) {
+	for _, node := range sortedCoordinationNodes(ctx.db.CoordinationNodes) {
+		w.writeComment(coordinationNodeAnnotation(node))
 	}
 }
 
@@ -494,6 +507,9 @@ func (ctx *renderContext) writeTable(w *sourceWriter, table schemamodel.Table) {
 		w.writeComment(constraintAnnotation(constraint))
 	}
 	w.writeComment(tableAnnotation(table))
+	for _, family := range ydbfamily.Stated(table.YDBColumnFamilies) {
+		w.writeComment(annotation("ptah:schema:columnfamily", columnFamilyAttrs(family)...))
+	}
 	for _, changefeed := range table.Changefeeds {
 		w.writeComment(annotation("ptah:schema:changefeed", changefeedAttrs(changefeed)...))
 		for _, consumer := range changefeed.Consumers {
@@ -601,6 +617,22 @@ func rowDeletionAttrs(policy *ast.RowDeletionPolicySpec) []attr {
 		{name: rowdeletion.AttributeColumn, value: policy.Column, set: true},
 		{name: rowdeletion.AttributeInterval, value: policy.Interval, set: true},
 		{name: rowdeletion.AttributeUnit, value: policy.Unit, set: policy.Unit != ""},
+	}
+}
+
+// columnFamilyAttrs writes a YDB column family as the attributes the
+// annotation parser reads it from. A table's default family is written only
+// where it holds something other than what YDB gives a family stating nothing
+// (see [ydbfamily.Stated]), so a table nobody gave families exports none.
+// keep_in_memory has no attribute: no statement writes it, and a declaration
+// that leaves it out keeps what the table holds.
+func columnFamilyAttrs(family ast.YDBColumnFamilySpec) []attr {
+	return []attr{
+		{name: ydbfamily.AttributeName, value: family.Name, set: true},
+		{name: ydbfamily.AttributeData, value: family.Data, set: family.Data != ""},
+		{name: ydbfamily.AttributeCompression, value: family.Compression, set: family.Compression != ""},
+		{name: ydbfamily.AttributeCacheMode, value: family.CacheMode, set: family.CacheMode != ""},
+		{name: ydbfamily.AttributeFields, value: strings.Join(family.Columns, ","), set: len(family.Columns) > 0},
 	}
 }
 
@@ -1083,6 +1115,19 @@ func defaultPrivilegeAnnotation(privilege schemamodel.DefaultPrivilege) string {
 	)
 }
 
+// coordinationNodeAnnotation declares a YDB coordination node with the
+// settings it was given; a setting left unset takes YDB's default.
+func coordinationNodeAnnotation(node schemamodel.CoordinationNode) string {
+	attrs := []attr{
+		{name: "name", value: node.Name, set: true},
+		{name: "schema", value: node.Schema, set: node.Schema != ""},
+	}
+	for _, setting := range ydbcoordination.Attributes(node.Spec) {
+		attrs = append(attrs, attr{name: setting[0], value: setting[1], set: true})
+	}
+	return annotation("ptah:schema:coordinationnode", attrs...)
+}
+
 func annotation(name string, attrs ...attr) string {
 	var builder strings.Builder
 	builder.WriteString("//")
@@ -1370,6 +1415,12 @@ func sortedTransfers(values []schemamodel.Transfer) []schemamodel.Transfer {
 func sortedViews(values []schemamodel.View) []schemamodel.View {
 	result := append([]schemamodel.View(nil), values...)
 	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
+	return result
+}
+
+func sortedCoordinationNodes(values []schemamodel.CoordinationNode) []schemamodel.CoordinationNode {
+	result := append([]schemamodel.CoordinationNode(nil), values...)
+	sort.Slice(result, func(i, j int) bool { return result[i].QualifiedName() < result[j].QualifiedName() })
 	return result
 }
 

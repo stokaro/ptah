@@ -295,13 +295,15 @@ var migrationRuleMeta = map[string]ruleMeta{
 		// Broader than Atlas DS101, which is the schema drop alone: this rule
 		// also fires on DROP TYPE, EXTENSION, FUNCTION, PROCEDURE, TRIGGER,
 		// ROLE, and POLICY, and on YDB on DROP USER, DROP GROUP, DROP TOPIC,
-		// DROP TRANSFER and DROP ASYNC REPLICATION ... CASCADE, so the rule is
-		// ours even though it covers the Atlas one.
-		Summary: "dropping a schema, type, extension, function, procedure, trigger, role, policy, or YDB user, group, topic, transfer, or async replication with CASCADE removes behavior or data",
+		// DROP TRANSFER, DROP ASYNC REPLICATION ... CASCADE and DROP
+		// COORDINATION NODE, so the rule is ours even though it covers the
+		// Atlas one.
+		Summary: "dropping a schema, type, extension, function, procedure, trigger, role, policy, or YDB user, group, topic, transfer, async replication, or coordination node removes behavior or data",
 		YDB:     YDBApplies,
-		YDBNote: "`DROP USER` and `DROP GROUP`, YDB's principals, `DROP TOPIC`, which drops every message the topic " +
-			"holds and every consumer's position in it, `DROP TRANSFER`, and `DROP ASYNC REPLICATION ... CASCADE`, " +
-			"which drops the replica tables",
+		YDBNote: "`DROP USER` and `DROP GROUP`, YDB's principals; `DROP TOPIC`, which drops every message and " +
+			"consumer position; `DROP TRANSFER` and `DROP ASYNC REPLICATION ... CASCADE`, which drops the " +
+			"replica tables; and `DROP COORDINATION NODE`, which drops its semaphores and rate limiter " +
+			"resources even under a lock",
 	},
 	"AC101": {
 		Summary: "the migration defines a routine whose body is not analyzed, so a clean result says nothing about what the body does",
@@ -638,6 +640,9 @@ var migrationRuleMeta = map[string]ruleMeta{
 	},
 	"YD116": {
 		Summary: "a password or a token written in clear in an async replication or a transfer, which YDB keeps without reading it back while the migration file holds it",
+	},
+	"YD119": {
+		Summary: "an `ALTER TABLE` that names a column family the table does not have, which YDB creates with its own settings rather than refusing, and YQL cannot drop",
 	},
 }
 

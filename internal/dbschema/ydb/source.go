@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ydb-platform/ydb-go-genproto/Ydb_Coordination_V1"
 	"github.com/ydb-platform/ydb-go-genproto/Ydb_Scheme_V1"
 	"github.com/ydb-platform/ydb-go-genproto/Ydb_Table_V1"
 	"github.com/ydb-platform/ydb-go-genproto/Ydb_Topic_V1"
@@ -14,6 +15,7 @@ import (
 	"github.com/ydb-platform/ydb-go-genproto/draft/protos/Ydb_Replication"
 	"github.com/ydb-platform/ydb-go-genproto/draft/protos/Ydb_View"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb"
+	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Coordination"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Issue"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Operations"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Scheme"
@@ -26,11 +28,11 @@ import (
 )
 
 // Source is what the reader asks a YDB database: a directory's own entry and
-// the entries under it, the description of a row table or a view, the
-// description of a topic, which is how a standalone topic and a changefeed's
-// retention and consumers are read, the description of an async replication
-// or a transfer, and the database's users, groups and memberships. A path is
-// absolute.
+// the entries under it, the description of a row table, of a view or of a
+// coordination node, the description of a topic, which is how a standalone
+// topic and a changefeed's retention and consumers are read, the description
+// of an async replication or a transfer, and the database's users, groups and
+// memberships. A path is absolute.
 //
 // A directory's own entry and a table's description each carry the object's
 // owner and its permission entries, which is where the reader reads them from:
@@ -43,6 +45,7 @@ type Source interface {
 	Principals(ctx context.Context) (Principals, error)
 	DescribeReplication(ctx context.Context, path string) (*Ydb_Replication.DescribeReplicationResult, error)
 	DescribeTransfer(ctx context.Context, path string) (*Ydb_Replication.DescribeTransferResult, error)
+	DescribeCoordinationNode(ctx context.Context, path string) (*Ydb_Coordination.DescribeNodeResult, error)
 }
 
 // grpcSource answers through the SDK driver's gRPC connection with raw scheme
@@ -63,9 +66,10 @@ type grpcSource struct {
 	// starts (its configuration lists them, and `replication` is not among
 	// them), while a cluster whose configuration lists none starts it with
 	// the rest; YDB_GRPC_SERVICES=replication adds it to local-ydb.
-	replication Ydb_Replication_V1.ReplicationServiceClient
-	session     string
-	database    string
+	replication  Ydb_Replication_V1.ReplicationServiceClient
+	coordination grpcCoordination
+	session      string
+	database     string
 }
 
 // newGRPCSource opens a table session for one read. The caller ends it with
@@ -73,12 +77,13 @@ type grpcSource struct {
 func newGRPCSource(ctx context.Context, driver *ydbsdk.Driver) (*grpcSource, func(), error) {
 	connection := ydbsdk.GRPCConn(driver)
 	source := &grpcSource{
-		scheme:      Ydb_Scheme_V1.NewSchemeServiceClient(connection),
-		table:       Ydb_Table_V1.NewTableServiceClient(connection),
-		view:        Ydb_View_V1.NewViewServiceClient(connection),
-		topic:       Ydb_Topic_V1.NewTopicServiceClient(connection),
-		replication: Ydb_Replication_V1.NewReplicationServiceClient(connection),
-		database:    driver.Name(),
+		scheme:       Ydb_Scheme_V1.NewSchemeServiceClient(connection),
+		table:        Ydb_Table_V1.NewTableServiceClient(connection),
+		view:         Ydb_View_V1.NewViewServiceClient(connection),
+		topic:        Ydb_Topic_V1.NewTopicServiceClient(connection),
+		replication:  Ydb_Replication_V1.NewReplicationServiceClient(connection),
+		coordination: grpcCoordination{client: Ydb_Coordination_V1.NewCoordinationServiceClient(connection)},
+		database:     driver.Name(),
 	}
 	response, err := source.table.CreateSession(ctx, &Ydb_Table.CreateSessionRequest{})
 	if err != nil {
@@ -258,6 +263,11 @@ func replicationServiceError(subject string, err error) error {
 		return fmt.Errorf("%s: %w: %w", subject, ErrReplicationServiceUnavailable, WithoutStackFrames(err))
 	}
 	return fmt.Errorf("%s: %w", subject, WithoutStackFrames(err))
+}
+
+// DescribeCoordinationNode describes the coordination node at path.
+func (s *grpcSource) DescribeCoordinationNode(ctx context.Context, path string) (*Ydb_Coordination.DescribeNodeResult, error) {
+	return s.coordination.DescribeNode(ctx, path)
 }
 
 // operationResult unpacks a completed operation's result into result, or

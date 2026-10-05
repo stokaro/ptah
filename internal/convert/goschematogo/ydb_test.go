@@ -6,7 +6,10 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/ast"
+	"ptah.run/core/goschema"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematogo"
 )
@@ -169,4 +172,32 @@ func TestRender_NullableKeyColumnOfAnotherDialect(t *testing.T) {
 	source := introspect(c, db, platform.SQLite)
 
 	c.Assert(source, qt.Contains, `//ptah:schema:field name="id" type="INTEGER" primary="true"`)
+}
+
+// A coordination node read from YDB is written back as the annotation that
+// declares it, with the settings it was given and none it was not, and the
+// annotation parses back into the node it was written from.
+func TestRender_YDBCoordinationNodesRoundTrip(t *testing.T) {
+	c := qt.New(t)
+	read := ydbTable()
+	read.CoordinationNodes = []catalog.CoordinationNode{
+		{Name: "locks"},
+		{Schema: "shop", Name: "limits", Spec: ast.CoordinationNodeSpec{
+			SelfCheckPeriodMillis: 2500, ReadConsistencyMode: "strict", RateLimiterCountersMode: "detailed",
+		}},
+	}
+
+	source := introspect(c, read, platform.YDB)
+
+	c.Assert(source, qt.Contains, `//ptah:schema:coordinationnode name="locks"`+"\n")
+	c.Assert(source, qt.Contains, `//ptah:schema:coordinationnode name="limits" schema="shop" `+
+		`self_check_period="PT2.5S" read_consistency_mode="strict" rate_limiter_counters_mode="detailed"`+"\n")
+	parsed, err := goschema.ParseSource("models.go", source)
+	c.Assert(err, qt.IsNil)
+	c.Assert(parsed.CoordinationNodes, qt.DeepEquals, []schemamodel.CoordinationNode{
+		{StructName: "PtahSchemaObjects", Name: "locks"},
+		{StructName: "PtahSchemaObjects", Schema: "shop", Name: "limits", Spec: ast.CoordinationNodeSpec{
+			SelfCheckPeriodMillis: 2500, ReadConsistencyMode: "strict", RateLimiterCountersMode: "detailed",
+		}},
+	})
 }

@@ -127,6 +127,18 @@ var refusedDiffCategories = map[string]refusedFixture{
 		why:  "a changed transfer is YDB's for the same reason",
 		diff: &difftypes.SchemaDiff{TransfersModified: []difftypes.TransferDiff{{Name: "ingest", LambdaChanged: true}}},
 	},
+	"CoordinationNodesAdded": {
+		why:  "a coordination node is YDB's own object, and a schema that declares one reaches every planner; planning nothing would report the database synced while the node is missing",
+		diff: &difftypes.SchemaDiff{CoordinationNodesAdded: []schemamodel.CoordinationNode{{Name: "locks"}}},
+	},
+	"CoordinationNodesRemoved": {
+		why:  "a PostgreSQL read holds no coordination node, so a plan reaches a removal only through a diff built by hand, and the refusal names the capability rather than emitting nothing",
+		diff: &difftypes.SchemaDiff{CoordinationNodesRemoved: []schemamodel.CoordinationNode{{Name: "locks"}}},
+	},
+	"CoordinationNodesModified": {
+		why:  "a changed node configuration is YDB's too, for the same reason",
+		diff: &difftypes.SchemaDiff{CoordinationNodesModified: []difftypes.CoordinationNodeChange{{Name: "locks"}}},
+	},
 	"RLSPolicyIdentityConflicts": {
 		why: "two declared policies that resolve to one identity cannot be planned: the comparison already reduced them to one entry, so applying it would apply whichever the map kept (stokaro/ptah#2440)",
 		diff: &difftypes.SchemaDiff{RLSPolicyIdentityConflicts: []difftypes.RLSPolicyConflict{{

@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/atlasretry"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlrunner"
+	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbflags"
 	"ptah.run/internal/ydbreplication"
 	"ptah.run/internal/ydburl"
@@ -277,14 +278,16 @@ func (t *transaction) Commit() error { return nil }
 // request is not wrong; YDB has nothing it could undo.
 func (t *transaction) Rollback() error { return nil }
 
-// DropAllTables drops every transfer, async replication, view, row table and
-// topic in the database and then removes each directory that dropping them
-// left empty, deepest first.
+// DropAllTables drops every transfer, async replication, view, row table,
+// topic and coordination node in the database and then removes each
+// directory that dropping them left empty, deepest first.
 //
 // It drops what the schema reader describes and nothing else. A column table
 // and the other objects the reader records as not described stay, and so does
 // the directory that holds one, so a cleanup planned from a read removes
-// exactly what the plan listed. Dot-directories are never entered, nor is
+// exactly what the plan listed. Ptah's own lock node at the root of a
+// database ([LockNode]) stays too, as the reader leaves it out, and so does a
+// node whose name starts with a dot. Dot-directories are never entered, nor is
 // ydburl.RealmDirectory at the root, and a directory that was empty before is
 // left alone. A directory's views go before its tables; YDB would take either
 // order, since it records no dependency on a view or on the table a view
@@ -401,10 +404,10 @@ func parentDirectory(relative string) string {
 	return ""
 }
 
-// dropDirectory drops the views, tables and topics in the directory dir,
-// relative to the database root, and the directories under it, and reports
-// whether it or the pass before it dropped or removed anything there. A table
-// drop reports as a replica stays where it is.
+// dropDirectory drops the views, tables, topics and coordination nodes in the
+// directory dir, relative to the database root, and the directories under it,
+// and reports whether it or the pass before it dropped or removed anything
+// there. A table drop reports as a replica stays where it is.
 func (w *Writer) dropDirectory(ctx context.Context, dir string, drop allTablesDrop) (bool, error) {
 	entries, err := w.scheme.ListDirectory(ctx, path.Join(w.root, dir))
 	if err != nil {
@@ -418,38 +421,37 @@ func (w *Writer) dropDirectory(ctx context.Context, dir string, drop allTablesDr
 	})
 	changed := drop.emptied[dir]
 	for _, entry := range entries {
-		name := entry.GetName()
-		switch {
-		case entry.GetType() == Ydb_Scheme.Entry_VIEW:
-			if err := w.ExecuteSQL(ctx, "DROP VIEW "+sqlident.Quote(platform.YDB, path.Join(dir, name))); err != nil {
-				return changed, err
-			}
-			changed = true
-		case entry.GetType() == Ydb_Scheme.Entry_TABLE:
-			dropped, err := w.dropTableUnlessReplica(ctx, path.Join(dir, name), drop)
+		if entry.GetType() == Ydb_Scheme.Entry_TABLE {
+			dropped, err := w.dropTableUnlessReplica(ctx, path.Join(dir, entry.GetName()), drop)
 			if err != nil {
 				return changed, err
 			}
 			changed = changed || dropped
-		case entry.GetType() == Ydb_Scheme.Entry_TOPIC:
-			if err := w.ExecuteSQL(ctx, "DROP TOPIC "+sqlident.Quote(platform.YDB, path.Join(dir, name))); err != nil {
+			continue
+		}
+		if statement, droppable := w.describedDropStatement(dir, entry); droppable {
+			if err := w.ExecuteSQL(ctx, statement); err != nil {
 				return changed, err
 			}
 			changed = true
-		case entry.GetType() == Ydb_Scheme.Entry_DIRECTORY && !strings.HasPrefix(name, ".") &&
-			(dir != "" || name != ydburl.RealmDirectory):
-			child := path.Join(dir, name)
-			childChanged, err := w.dropDirectory(ctx, child, drop)
-			if err != nil {
-				return changed, err
-			}
-			if !childChanged {
-				continue
-			}
-			changed = true
-			if err := w.removeIfEmpty(ctx, child); err != nil {
-				return changed, err
-			}
+			continue
+		}
+		name := entry.GetName()
+		if entry.GetType() != Ydb_Scheme.Entry_DIRECTORY || strings.HasPrefix(name, ".") ||
+			(dir == "" && name == ydburl.RealmDirectory) {
+			continue
+		}
+		child := path.Join(dir, name)
+		childChanged, err := w.dropDirectory(ctx, child, drop)
+		if err != nil {
+			return changed, err
+		}
+		if !childChanged {
+			continue
+		}
+		changed = true
+		if err := w.removeIfEmpty(ctx, child); err != nil {
+			return changed, err
 		}
 	}
 	return changed, nil
@@ -468,6 +470,26 @@ func (w *Writer) dropTableUnlessReplica(ctx context.Context, table string, drop 
 	return true, nil
 }
 
+// describedDropStatement is the statement DropAllTables drops entry, in the
+// directory dir, with: a view, a topic, or a coordination node other than one
+// [Writer.leftAlone] keeps. A row table goes through
+// [Writer.dropTableUnlessReplica] instead, since dropping one depends on
+// whether a replication keeps it read-only. It reports false for any other
+// entry, which the reader does not describe and the cleanup keeps.
+func (w *Writer) describedDropStatement(dir string, entry *Ydb_Scheme.Entry) (string, bool) {
+	switch entry.GetType() {
+	case Ydb_Scheme.Entry_VIEW, Ydb_Scheme.Entry_TOPIC:
+		return dropStatement(entry.GetType(), path.Join(dir, entry.GetName()))
+	case Ydb_Scheme.Entry_COORDINATION_NODE:
+		if w.leftAlone(dir, entry) {
+			return "", false
+		}
+		return dropStatement(entry.GetType(), path.Join(dir, entry.GetName()))
+	default:
+		return "", false
+	}
+}
+
 // dropRank orders a directory's entries for DropAllTables: views first, then
 // everything else.
 func dropRank(entry *Ydb_Scheme.Entry) int {
@@ -478,16 +500,17 @@ func dropRank(entry *Ydb_Scheme.Entry) int {
 }
 
 // DropDirectory drops dir, a directory relative to the database root, together
-// with everything in it: row and column tables, views, topics and the
-// directories below, deepest first. It is the teardown of a directory a
-// caller created for itself, such as the capability probe's namespace;
-// DropAllTables is the cleanup that keeps what the reader does not describe.
+// with everything in it: row and column tables, views, topics, coordination
+// nodes and the directories below, deepest first. It is the teardown of a
+// directory a caller created for itself, such as the capability probe's
+// namespace; DropAllTables is the cleanup that keeps what the reader does not
+// describe.
 //
 // dir names a directory below the root and nothing else: a segment that
 // starts with a dot -- `.`, `..`, or a server directory such as `.sys` -- is
 // refused, so no spelling of dir reaches the root or leaves it. The whole tree
 // is read and checked before anything is dropped. An entry of a kind there is
-// no measured statement for, such as a coordination node, and an entry whose
+// no measured statement for, such as an external table, and an entry whose
 // name starts with a dot, which belongs to the server, stop it with the entry
 // named and nothing dropped.
 func (w *Writer) DropDirectory(ctx context.Context, dir string) error {
@@ -558,6 +581,30 @@ func teardownRank(entryType Ydb_Scheme.Entry_Type) int {
 	}
 }
 
+// dropStatement is the statement that drops an entry of entryType at target,
+// a path the writer's runner resolves, and reports false for a kind the
+// teardown has no statement for. A coordination node is dropped with Ptah's
+// own statement; see [dropCoordinationNode].
+func dropStatement(entryType Ydb_Scheme.Entry_Type, target string) (string, bool) {
+	if entryType == Ydb_Scheme.Entry_COORDINATION_NODE {
+		return dropCoordinationNode(target), true
+	}
+	statement, droppable := treeStatements[entryType]
+	if !droppable {
+		return "", false
+	}
+	return fmt.Sprintf(statement, sqlident.Quote(platform.YDB, target)), true
+}
+
+// dropCoordinationNode is Ptah's statement that drops the coordination node
+// at target, a path the writer's runner resolves. Ptah's YDB connection runs
+// it through the coordination service; see [ydbcoordination.Recognize].
+func dropCoordinationNode(target string) string {
+	// A drop carries no setting, so writing it cannot fail.
+	text, _ := ydbcoordination.Statement{Verb: ydbcoordination.Drop, Path: target}.Text()
+	return text
+}
+
 // treeStep is one step of a directory teardown: a statement that drops an
 // object, or the removal of a directory, by its absolute path, once it is
 // empty.
@@ -580,7 +627,7 @@ func (w *Writer) planTree(ctx context.Context, dir string, steps *[]treeStep) er
 	for _, entry := range entries {
 		name := entry.GetName()
 		child := path.Join(dir, name)
-		statement, droppable := treeStatements[entry.GetType()]
+		statement, droppable := dropStatement(entry.GetType(), child)
 		switch {
 		case strings.HasPrefix(name, "."):
 			return fmt.Errorf("ydb: %s holds %s, whose name starts with a dot and so belongs to the server; "+
@@ -590,8 +637,7 @@ func (w *Writer) planTree(ctx context.Context, dir string, steps *[]treeStep) er
 				return err
 			}
 		case droppable:
-			*steps = append(*steps, treeStep{statement: fmt.Sprintf(statement, sqlident.Quote(platform.YDB, child)),
-				rank: teardownRank(entry.GetType())})
+			*steps = append(*steps, treeStep{statement: statement, rank: teardownRank(entry.GetType())})
 		default:
 			return fmt.Errorf("ydb: %s holds %s, a %s, which Ptah has no statement to drop; nothing was dropped",
 				absolute, name, entryTypeName(entry.GetType()))

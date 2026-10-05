@@ -111,7 +111,7 @@ func (s *schemaParseState) attachChangefeeds() error {
 		if slices.ContainsFunc(table.Changefeeds, func(have ptahast.ChangefeedSpec) bool {
 			return have.Name == pending.spec.Name
 		}) {
-			return s.changefeedPlacementError(pending.ctx, "ptah:schema:changefeed",
+			return s.placementError(pending.ctx, "ptah:schema:changefeed",
 				fmt.Sprintf("table %q declares changefeed %q twice", table.Name, pending.spec.Name))
 		}
 		table.Changefeeds = append(table.Changefeeds, pending.spec)
@@ -126,7 +126,7 @@ func (s *schemaParseState) attachChangefeeds() error {
 			return have.Name == pending.changefeed
 		})
 		if feed < 0 {
-			return s.changefeedPlacementError(pending.ctx, "ptah:schema:changefeed:consumer",
+			return s.placementError(pending.ctx, "ptah:schema:changefeed:consumer",
 				fmt.Sprintf("table %q declares no changefeed %q for consumer %q", table.Name, pending.changefeed,
 					pending.consumer.Name))
 		}
@@ -138,6 +138,13 @@ func (s *schemaParseState) attachChangefeeds() error {
 // changefeedTable finds the table a changefeed annotation belongs to: the one
 // its table attribute names, or the one its struct maps to.
 func (s *schemaParseState) changefeedTable(structName, table string, ctx annotationErrorContext, directive string) (int, error) {
+	return s.ownerTable(structName, table, ctx, directive, "a changefeed")
+}
+
+// ownerTable finds the table an annotation declaring one of the table's parts
+// belongs to: the one its table attribute names, or the one its struct maps
+// to. object names the part, as the refusal reads it.
+func (s *schemaParseState) ownerTable(structName, table string, ctx annotationErrorContext, directive, object string) (int, error) {
 	schemaName, tableName := tableDirectiveName("", table)
 	index := slices.IndexFunc(s.tableDirectives, func(declared schemamodel.Table) bool {
 		if table == "" {
@@ -149,16 +156,17 @@ func (s *schemaParseState) changefeedTable(structName, table string, ctx annotat
 		return index, nil
 	}
 	if table == "" {
-		return -1, s.changefeedPlacementError(ctx, directive,
+		return -1, s.placementError(ctx, directive,
 			fmt.Sprintf("struct %s maps to no table in this file; name the table with the table attribute", structName))
 	}
-	return -1, s.changefeedPlacementError(ctx, directive,
-		fmt.Sprintf("table %q is not declared in this file, and a changefeed is declared beside its table", table))
+	return -1, s.placementError(ctx, directive,
+		fmt.Sprintf("table %q is not declared in this file, and %s is declared beside its table", table, object))
 }
 
-// changefeedPlacementError reports an annotation whose table or changefeed
-// cannot be found.
-func (s *schemaParseState) changefeedPlacementError(ctx annotationErrorContext, directive, reason string) error {
+// placementError reports an annotation that cannot be placed: one whose table
+// or changefeed cannot be found, or that declares a part its table already
+// has.
+func (s *schemaParseState) placementError(ctx annotationErrorContext, directive, reason string) error {
 	return &ptaherr.ParseError{
 		File:      ctx.file,
 		Line:      ctx.line,

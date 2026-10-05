@@ -479,6 +479,17 @@ const (
 	// both, and one of them could ship before the other.
 	ContinuousAggregates Capability = "continuous_aggregates"
 
+	// CoordinationNodes marks a target on which Ptah declares, reads, creates,
+	// changes and drops YDB coordination nodes, the objects that hold a YDB
+	// application's distributed locks and rate limiters.
+	//
+	// It describes Ptah rather than a statement the server takes: YQL has no
+	// statement for a coordination node (measured on YDB 25.1.4.7 and
+	// 26.2.1.14, `CREATE COORDINATION NODE` is a parse error), so Ptah writes
+	// a statement of its own and its YDB connection runs it through the
+	// coordination service. No other engine has the object.
+	CoordinationNodes Capability = "coordination_nodes"
+
 	// SequenceStartCounterOnly marks a target whose CREATE SEQUENCE carries a
 	// name and a start counter and refuses the option clauses PostgreSQL takes
 	// beside them.
@@ -1331,6 +1342,36 @@ const (
 	// table rather than on the index.
 	IndexPartitioning Capability = "index_partitioning"
 
+	// ColumnFamilies marks a target on which Ptah declares, reads and changes
+	// a row table's column families: YDB's `FAMILY f (DATA = ...,
+	// COMPRESSION = ...)` entries of CREATE TABLE, with the columns each
+	// holds, and `ALTER TABLE ... ADD FAMILY`, `ALTER FAMILY ... SET` and
+	// `ALTER COLUMN ... SET FAMILY` on a table that exists.
+	//
+	// Measured on YDB 25.1.4.7 and 26.2.1.14 alike: a family takes DATA, a
+	// storage pool kind the database has, and COMPRESSION `off` or `lz4`
+	// (`zstd` answers `Unsupported compression value 3`, and
+	// COMPRESSION_LEVEL `is not supported for OLTP tables`). A key column
+	// stays in the `default` family. YQL has no DROP FAMILY and no RESET of
+	// a family setting, and setting one setting resets no other. A cluster's
+	// table profile gives a new table's families settings, and a family, of
+	// its own, so a setting a declaration leaves out keeps what the table
+	// holds. A column table refuses FAMILY on 26.2.1.14 (`Column FAMILY is
+	// not supported for column tables`). CockroachDB's FAMILY clause groups
+	// columns with no settings of their own, and Ptah models none.
+	ColumnFamilies Capability = "column_families"
+
+	// ColumnFamilyCacheMode marks a target whose column family takes
+	// `CACHE_MODE = 'in_memory'` or `'regular'`, in CREATE TABLE and through
+	// `ALTER FAMILY ... SET CACHE_MODE`. It is behind YDB's
+	// EnableTableCacheModes flag. Measured: `Unknown table setting:
+	// CACHE_MODE` on 25.1.4.7 and 25.2.1.24, which do not list the flag;
+	// `Setting cache_mode is not allowed` on 25.3.1.25, where the flag is off
+	// by default and the setting is taken and read back once it is on; and
+	// taken and read back on 25.4.1.15, 26.1.1.22 and 26.2.1.14, where the
+	// flag is on by default.
+	ColumnFamilyCacheMode Capability = "column_family_cache_mode"
+
 	// Changefeeds marks a target on which Ptah declares, reads and plans a
 	// changefeed: YDB's stream of a row table's changes, added with `ALTER
 	// TABLE ... ADD CHANGEFEED ... WITH (MODE = ..., FORMAT = ...)` and kept
@@ -1641,6 +1682,9 @@ var registry = map[Capability]spec{
 	ContinuousAggregates: {
 		doc: "TimescaleDB continuous aggregates: CREATE MATERIALIZED VIEW WITH (timescaledb.continuous) and the catalog that reads one back",
 	},
+	CoordinationNodes: {
+		doc: "Ptah declares, reads and plans YDB coordination nodes, through a statement of its own that its YDB connection runs",
+	},
 	PostgresCatalogFunctions: {
 		doc: "obj_description reads a comment back out of the catalog",
 	},
@@ -1902,6 +1946,12 @@ var registry = map[Capability]spec{
 	IndexPartitioning: {
 		doc: "Ptah declares, reads and changes a global index's partitioning and read replicas (YDB's ALTER INDEX ... SET)",
 	},
+	ColumnFamilies: {
+		doc: "Ptah declares, reads and changes a row table's column families and the columns each holds (YDB's FAMILY)",
+	},
+	ColumnFamilyCacheMode: {
+		doc: "a column family takes CACHE_MODE, keeping its columns in memory (YDB 25.4 and later, behind a flag on 25.3)",
+	},
 	Changefeeds: {
 		doc: "Ptah declares, reads and plans a table's changefeeds and their topics' consumers (YDB's ADD CHANGEFEED)",
 	},
@@ -2133,6 +2183,7 @@ func MySQL84() Capabilities {
 		RowLevelSecurity:               false,
 		Hypertables:                    false,
 		ContinuousAggregates:           false,
+		CoordinationNodes:              false,
 		PostgresCatalogFunctions:       false,
 		CatalogRowStatistics:           false,
 		CatalogVectorInfo:              false,
@@ -2231,6 +2282,9 @@ func MySQL84() Capabilities {
 		// index partitioning is YDB's, so both index keys are false here.
 		IndexRename:       false,
 		IndexPartitioning: false,
+		// Column families are YDB's, so both family keys are false here.
+		ColumnFamilies:        false,
+		ColumnFamilyCacheMode: false,
 		// A changefeed, a standalone topic and the consumers either carries
 		// are YDB's, so the changefeed and topic keys are false here.
 		Changefeeds:                     false,
@@ -2362,6 +2416,7 @@ func MariaDB1011() Capabilities {
 		RowLevelSecurity:               false,
 		Hypertables:                    false,
 		ContinuousAggregates:           false,
+		CoordinationNodes:              false,
 		PostgresCatalogFunctions:       false,
 		CatalogRowStatistics:           false,
 		CatalogVectorInfo:              false,
@@ -2467,6 +2522,9 @@ func MariaDB1011() Capabilities {
 		// index partitioning is YDB's, so both index keys are false here.
 		IndexRename:       false,
 		IndexPartitioning: false,
+		// Column families are YDB's, so both family keys are false here.
+		ColumnFamilies:        false,
+		ColumnFamilyCacheMode: false,
 		// A changefeed, a standalone topic and the consumers either carries
 		// are YDB's, so the changefeed and topic keys are false here.
 		Changefeeds:                     false,
@@ -2553,6 +2611,7 @@ func Postgres16() Capabilities {
 		RowLevelSecurity:               true,
 		Hypertables:                    false,
 		ContinuousAggregates:           false,
+		CoordinationNodes:              false,
 		PostgresCatalogFunctions:       true,
 		CatalogRowStatistics:           true,
 		CatalogVectorInfo:              false,
@@ -2642,6 +2701,9 @@ func Postgres16() Capabilities {
 		// index partitioning is YDB's, so both index keys are false here.
 		IndexRename:       false,
 		IndexPartitioning: false,
+		// Column families are YDB's, so both family keys are false here.
+		ColumnFamilies:        false,
+		ColumnFamilyCacheMode: false,
 		// A changefeed, a standalone topic and the consumers either carries
 		// are YDB's, so the changefeed and topic keys are false here.
 		// CockroachDB's CREATE CHANGEFEED, inherited from this preset, is a
@@ -2841,6 +2903,7 @@ func ClickHouse24() Capabilities {
 		RowLevelSecurity:         true,
 		Hypertables:              false,
 		ContinuousAggregates:     false,
+		CoordinationNodes:        false,
 		PostgresCatalogFunctions: false,
 		CatalogRowStatistics:     false,
 		CatalogVectorInfo:        false,
@@ -2946,6 +3009,9 @@ func ClickHouse24() Capabilities {
 		// index partitioning is YDB's, so both index keys are false here.
 		IndexRename:       false,
 		IndexPartitioning: false,
+		// Column families are YDB's, so both family keys are false here.
+		ColumnFamilies:        false,
+		ColumnFamilyCacheMode: false,
 		// A changefeed, a standalone topic and the consumers either carries
 		// are YDB's, so the changefeed and topic keys are false here.
 		Changefeeds:                     false,
@@ -3037,6 +3103,7 @@ func SQLite3() Capabilities {
 		RowLevelSecurity:               false,
 		Hypertables:                    false,
 		ContinuousAggregates:           false,
+		CoordinationNodes:              false,
 		PostgresCatalogFunctions:       false,
 		CatalogRowStatistics:           false,
 		CatalogVectorInfo:              false,
@@ -3142,6 +3209,9 @@ func SQLite3() Capabilities {
 		// index partitioning is YDB's, so both index keys are false here.
 		IndexRename:       false,
 		IndexPartitioning: false,
+		// Column families are YDB's, so both family keys are false here.
+		ColumnFamilies:        false,
+		ColumnFamilyCacheMode: false,
 		// A changefeed, a standalone topic and the consumers either carries
 		// are YDB's, so the changefeed and topic keys are false here.
 		Changefeeds:                     false,
@@ -3275,6 +3345,7 @@ func SQLServer2022() Capabilities {
 		RowLevelSecurity:         true,
 		Hypertables:              false,
 		ContinuousAggregates:     false,
+		CoordinationNodes:        false,
 		PostgresCatalogFunctions: false,
 		CatalogRowStatistics:     false,
 		CatalogVectorInfo:        false,
@@ -3417,6 +3488,9 @@ func SQLServer2022() Capabilities {
 		// index partitioning is YDB's, so both index keys are false here.
 		IndexRename:       false,
 		IndexPartitioning: false,
+		// Column families are YDB's, so both family keys are false here.
+		ColumnFamilies:        false,
+		ColumnFamilyCacheMode: false,
 		// A changefeed, a standalone topic and the consumers either carries
 		// are YDB's, so the changefeed and topic keys are false here.
 		Changefeeds:                     false,
@@ -4000,6 +4074,7 @@ func Oracle23() Capabilities {
 		RowLevelSecurity:         false,
 		Hypertables:              false,
 		ContinuousAggregates:     false,
+		CoordinationNodes:        false,
 		PostgresCatalogFunctions: false,
 		CatalogRowStatistics:     false,
 		// ALL_TAB_COLS.VECTOR_INFO reports VECTOR(1536,FLOAT32,DENSE) for a
@@ -4130,6 +4205,9 @@ func Oracle23() Capabilities {
 		// index partitioning is YDB's, so both index keys are false here.
 		IndexRename:       false,
 		IndexPartitioning: false,
+		// Column families are YDB's, so both family keys are false here.
+		ColumnFamilies:        false,
+		ColumnFamilyCacheMode: false,
 		// A changefeed, a standalone topic and the consumers either carries
 		// are YDB's, so the changefeed and topic keys are false here.
 		Changefeeds:                     false,
@@ -4335,6 +4413,14 @@ func YDB262() Capabilities {
 		IndexRename:       true,
 		IndexPartitioning: true,
 
+		// Column families. CREATE TABLE takes FAMILY entries with DATA,
+		// COMPRESSION and CACHE_MODE, and ALTER TABLE takes ADD FAMILY, ALTER
+		// FAMILY ... SET and ALTER COLUMN ... SET FAMILY, each read back
+		// through DescribeTable, on 25.1.4.7 and 26.2.1.14 alike. CACHE_MODE is
+		// taken from 25.4.1.15 on; see [ColumnFamilyCacheMode].
+		ColumnFamilies:        true,
+		ColumnFamilyCacheMode: true,
+
 		// Changefeeds, measured on 26.2.1.14 and on every line down to
 		// 25.1.4.7 with the same statements: a changefeed is added with ALTER
 		// TABLE ... ADD CHANGEFEED, one per statement, on a table that exists
@@ -4452,6 +4538,12 @@ func YDB262() Capabilities {
 		// Extensions of other engines.
 		Hypertables:          false,
 		ContinuousAggregates: false,
+
+		// Coordination nodes. YQL has no statement for one, and the
+		// coordination service creates, changes, describes and drops one on
+		// 25.1.4.7 and 26.2.1.14 alike: Ptah's YDB connection runs Ptah's own
+		// statement through it, so every line between them carries the key.
+		CoordinationNodes: true,
 	}
 }
 
@@ -4480,20 +4572,23 @@ func YDB254() Capabilities {
 		With(RelativeGrantPaths, false)
 }
 
-// YDB253 is the preset for YDB 25.3. It differs from [YDB254] in two keys,
+// YDB253 is the preset for YDB 25.3. It differs from [YDB254] in three keys,
 // each measured on 25.3.1.25, where 25.4.1.15 takes the statement and reads
 // it back:
 //
 //   - a topic consumer's availability_period answers `AVAILABILITY_PERIOD:
 //     unknown option for consumer`;
 //   - an async replication's TOKEN_SECRET_PATH answers `Unknown replication
-//     setting: TOKEN_SECRET_PATH`.
+//     setting: TOKEN_SECRET_PATH`;
+//   - a column family's CACHE_MODE answers `Setting cache_mode is not
+//     allowed`, because the EnableTableCacheModes flag is off by default.
 //
 // Every other statement measured on the two lines answered alike.
 func YDB253() Capabilities {
 	return YDB254().
 		With(TopicConsumerAvailabilityPeriod, false).
-		With(ReplicationSecretPaths, false)
+		With(ReplicationSecretPaths, false).
+		With(ColumnFamilyCacheMode, false)
 }
 
 // YDB252 is the preset for YDB 25.2. It differs from [YDB253] in three keys,

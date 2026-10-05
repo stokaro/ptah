@@ -116,6 +116,7 @@ func excludeDatabase(
 	filtered.Topics = state.filterTopics(filtered.Topics)
 	filtered.AsyncReplications = state.filterAsyncReplications(filtered.AsyncReplications)
 	filtered.Transfers = state.filterTransfers(filtered.Transfers)
+	filtered.CoordinationNodes = state.filterCoordinationNodes(filtered.CoordinationNodes)
 	filtered.ExtendedProperties = state.filterExtendedProperties(filtered.ExtendedProperties)
 	filtered.ContinuousAggregates = state.filterContinuousAggregates(filtered.ContinuousAggregates)
 	filtered.Hypertables = state.filterHypertables(filtered.Hypertables)
@@ -220,6 +221,7 @@ func excludeGenerated(
 	filtered.Functions = state.filterGeneratedFunctions(filtered.Functions)
 	filtered.Views = state.filterGeneratedViews(filtered.Views)
 	filtered.MaterializedViews = state.filterGeneratedMaterializedViews(filtered.MaterializedViews)
+	filtered.CoordinationNodes = state.filterGeneratedCoordinationNodes(filtered.CoordinationNodes)
 	filtered.Triggers = state.filterGeneratedTriggers(tableByStruct, filtered.Triggers)
 	filtered.RLSPolicies = state.filterGeneratedRLSPolicies(tableByStruct, filtered.RLSPolicies)
 	filtered.RLSEnabledTables = state.filterGeneratedRLSEnabledTables(tableByStruct, filtered.RLSEnabledTables)
@@ -1153,6 +1155,27 @@ func (s *exclusionState) filterTransfers(transfers []catalog.Transfer) []catalog
 	return result
 }
 
+// filterCoordinationNodes drops the YDB coordination nodes an exclusion
+// selector names, and the ones whose directory is excluded.
+func (s *exclusionState) filterCoordinationNodes(nodes []catalog.CoordinationNode) []catalog.CoordinationNode {
+	return keep(nodes, func(node catalog.CoordinationNode) bool {
+		return !s.matches("coordination_node", s.nameCandidates(node.Schema, node.Name)...) &&
+			!s.schemaExcluded(node.Schema)
+	})
+}
+
+// filterGeneratedCoordinationNodes is [exclusionState.filterCoordinationNodes]
+// for the desired side, so a node a selector excludes leaves both sides and is
+// neither created nor dropped.
+func (s *exclusionState) filterGeneratedCoordinationNodes(
+	nodes []schemamodel.CoordinationNode,
+) []schemamodel.CoordinationNode {
+	return keep(nodes, func(node schemamodel.CoordinationNode) bool {
+		return !s.matches("coordination_node", s.nameCandidates(node.Schema, node.Name)...) &&
+			!s.schemaExcluded(node.Schema)
+	})
+}
+
 // filterExtendedProperties drops the extended properties an exclusion selector
 // names, and the ones whose owner is excluded.
 //
@@ -1894,6 +1917,7 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		Topics:               slices.Clone(schema.Topics),
 		AsyncReplications:    slices.Clone(schema.AsyncReplications),
 		Transfers:            slices.Clone(schema.Transfers),
+		CoordinationNodes:    slices.Clone(schema.CoordinationNodes),
 		ExtendedProperties:   slices.Clone(schema.ExtendedProperties),
 		ContinuousAggregates: slices.Clone(schema.ContinuousAggregates),
 		Hypertables:          slices.Clone(schema.Hypertables),
@@ -1953,6 +1977,7 @@ func cloneGenerated(schema *schemamodel.Database) *schemamodel.Database {
 	filtered.Topics = slices.Clone(schema.Topics)
 	filtered.AsyncReplications = slices.Clone(schema.AsyncReplications)
 	filtered.Transfers = slices.Clone(schema.Transfers)
+	filtered.CoordinationNodes = slices.Clone(schema.CoordinationNodes)
 	filtered.ExtendedProperties = slices.Clone(schema.ExtendedProperties)
 	filtered.MaterializedViews = slices.Clone(schema.MaterializedViews)
 	filtered.Triggers = slices.Clone(schema.Triggers)

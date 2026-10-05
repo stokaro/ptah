@@ -335,6 +335,7 @@ func compareReportingUndecidedAdditions(
 	desired = normalizeGeneratedColumnsForCompare(desired, opts)
 	desired = compare.AdoptUndescribedChangefeeds(desired, database, opts.Dialect, identifierSemantics)
 	desired = compare.AdoptTransferConsumers(desired, database, opts.Dialect, identifierSemantics)
+	desired = compare.AdoptHeldColumnFamilies(desired, database, opts.Dialect, identifierSemantics)
 	desired = compare.AdoptUndescribedRowDeletionPolicies(desired, database, opts.Dialect, identifierSemantics)
 
 	// What each side declined to describe travels with that side rather than
@@ -396,6 +397,9 @@ func compareReportingUndecidedAdditions(
 	compare.Synonyms(desired, database, diff, cov)
 	compare.Topics(desired, database, diff, cov)
 	compare.Replications(desired, database, diff, cov)
+
+	// Compare YDB coordination nodes
+	compare.CoordinationNodes(desired, database, diff, cov)
 
 	// Compare TimescaleDB hypertables (PostgreSQL with the extension)
 	compare.Hypertables(desired, database, diff, cov)

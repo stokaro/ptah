@@ -1291,6 +1291,20 @@ type SchemaDiff struct {
 	// declaration and database differ.
 	TransfersModified []TransferDiff `json:"transfers_modified,omitempty"`
 
+	// CoordinationNodesAdded are the YDB coordination nodes the target schema
+	// declares and the database does not hold, each carrying its
+	// configuration.
+	CoordinationNodesAdded []schemamodel.CoordinationNode `json:"coordination_nodes_added,omitempty"`
+
+	// CoordinationNodesRemoved are the YDB coordination nodes the database
+	// holds and the target schema does not declare, each carrying the
+	// configuration the database holds, which a rollback creates it with.
+	CoordinationNodesRemoved []schemamodel.CoordinationNode `json:"coordination_nodes_removed,omitempty"`
+
+	// CoordinationNodesModified are the YDB coordination nodes whose
+	// configuration, as the node runs with it, differs from the declared one.
+	CoordinationNodesModified []CoordinationNodeChange `json:"coordination_nodes_modified,omitempty"`
+
 	// ExtendedPropertiesAdded contains the SQL Server extended properties the
 	// target schema declares and the database does not have.
 	ExtendedPropertiesAdded []ExtendedPropertyRef `json:"extended_properties_added"`
@@ -1750,7 +1764,7 @@ func (d *SchemaDiff) HasChanges() bool {
 		d.hasUserTypeChanges() ||
 		d.hasViewChanges() ||
 		d.hasSynonymChanges() ||
-		d.hasYDBStreamChanges() ||
+		d.hasYDBObjectChanges() ||
 		d.hasHypertableChanges() ||
 		d.hasContinuousAggregateChanges() ||
 		d.hasExtendedPropertyChanges() ||
@@ -2007,17 +2021,23 @@ func (d *SchemaDiff) hasSynonymChanges() bool {
 		len(d.SynonymsModified) > 0
 }
 
-// hasYDBStreamChanges reports a change of a YDB topic, async replication or
-// transfer: the objects that carry data between tables, topics and
-// databases.
-func (d *SchemaDiff) hasYDBStreamChanges() bool {
-	return d.hasTopicChanges() || d.hasReplicationChanges()
+// hasYDBObjectChanges reports a change to the objects only YDB has outside a
+// table: topics, async replications and transfers, which carry data between
+// tables, topics and databases, and coordination nodes.
+func (d *SchemaDiff) hasYDBObjectChanges() bool {
+	return d.hasTopicChanges() || d.hasReplicationChanges() || d.hasCoordinationNodeChanges()
 }
 
 func (d *SchemaDiff) hasTopicChanges() bool {
 	return len(d.TopicsAdded) > 0 ||
 		len(d.TopicsRemoved) > 0 ||
 		len(d.TopicsModified) > 0
+}
+
+func (d *SchemaDiff) hasCoordinationNodeChanges() bool {
+	return len(d.CoordinationNodesAdded) > 0 ||
+		len(d.CoordinationNodesRemoved) > 0 ||
+		len(d.CoordinationNodesModified) > 0
 }
 
 func (d *SchemaDiff) hasHypertableChanges() bool {
@@ -2192,6 +2212,12 @@ type TableDiff struct {
 	// engines and no table carries both (stokaro/ptah#2236).
 	RowDeletionPolicyChange *RowDeletionPolicyChange `json:"row_deletion_policy_change,omitzero"`
 
+	// YDBColumnFamiliesChange is YDB's, and only the YDB planner plans it: a
+	// YDB row table's column families, with the columns each holds, when the
+	// declaration and the database disagree about them, nil when they agree.
+	// See [YDBColumnFamiliesChange].
+	YDBColumnFamiliesChange *YDBColumnFamiliesChange `json:"ydb_column_families_change,omitzero"`
+
 	// ChangefeedsChange carries the table's YDB changefeeds when the
 	// declaration and the database disagree about them, and is nil when
 	// they agree. See [ChangefeedsChange].
@@ -2215,6 +2241,23 @@ type TableDiff struct {
 	// not measured, and in a diff built by hand; a planner then writes the name
 	// the server tries first. It rides off the wire, like Desired.
 	ColumnKeyNames map[string]string `json:"-"`
+}
+
+// YDBColumnFamiliesChange is YDB's: one row table's column families on both
+// sides of the comparison, each list whole, the columns each family holds
+// included.
+//
+// Whole lists travel because the statement is their difference: a family only
+// Desired names is added, a setting that differs is set, and a column whose
+// family differs moves. A column the plan drops is still listed on the Current
+// side, and the planner leaves it out of what it moves. A rollback swaps the
+// sides, and the column a dropped column's re-addition puts back in its family
+// comes from there.
+type YDBColumnFamiliesChange struct {
+	// Desired is the families the declaration states.
+	Desired []ast.YDBColumnFamilySpec `json:"desired,omitempty"`
+	// Current is the families the database holds.
+	Current []ast.YDBColumnFamilySpec `json:"current,omitempty"`
 }
 
 // ChangefeedsChange is one table's YDB changefeeds on both sides of the
@@ -2833,6 +2876,28 @@ func NewTopicDiff(name string, desired, current ast.TopicSpec) (TopicDiff, bool)
 		Current:            current.Clone(),
 	}
 	return change, change.SettingsChanged || len(consumers.Consumers()) > 0
+}
+
+// CoordinationNodeChange is a YDB coordination node whose configuration
+// changes.
+type CoordinationNodeChange struct {
+	// Schema is the directory holding the node, relative to the database
+	// root, and Name the node's name in it.
+	Schema string `json:"schema,omitempty"`
+	Name   string `json:"name"`
+	// Changes names the settings the node runs with differently, each at its
+	// declared value, a setting the declaration leaves out at the server's
+	// default. A setting it leaves unset does not change.
+	Changes ast.CoordinationNodeSpec `json:"changes"`
+	// Previous is the configuration the node holds, as YDB stores it, which
+	// a rollback restores.
+	Previous ast.CoordinationNodeSpec `json:"previous"`
+}
+
+// QualifiedName returns the node's name qualified by its directory, as
+// [schemamodel.CoordinationNode.QualifiedName] spells it.
+func (c CoordinationNodeChange) QualifiedName() string {
+	return schemamodel.CoordinationNode{Schema: c.Schema, Name: c.Name}.QualifiedName()
 }
 
 // SynonymDiff describes a synonym whose target changed.

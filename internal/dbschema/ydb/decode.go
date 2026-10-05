@@ -62,6 +62,11 @@ func (r *Reader) table(
 		return fmt.Errorf("%s: %w", subject, err)
 	}
 	table.RowDeletionPolicy = policy
+	families, familiesRead := r.columnFamilies(described)
+	table.YDBColumnFamilies = families
+	if !familiesRead {
+		db.NotDescribed = db.NotDescribed.With(unmodeled(coverage.ColumnFamily, schema, name))
+	}
 	db.Tables = append(db.Tables, table)
 	db.NotDescribed = db.NotDescribed.With(unread...)
 
@@ -462,13 +467,13 @@ var epochUnits = map[Ydb_Table.ValueSinceUnixEpochModeSettings_Unit]string{
 }
 
 // unmodeledSettings records the table settings Ptah does not model yet. A
-// changefeed is read rather than recorded here; see [Reader.changefeeds]. A
-// setting is recorded where it differs from what a table created without one
-// carries, measured on local-ydb 26.2.1.14: no TTL run interval and no tiering
-// policy; one column family, `default`, uncompressed and with no pool of its
-// own; partitioning by size at 2048 MB, not by load, with at least one
-// partition; no read replicas, no key bloom filter, and external blobs off
-// with no storage pools named.
+// changefeed and the column families are read rather than recorded here; see
+// [Reader.changefeeds] and [Reader.columnFamilies]. A setting is recorded
+// where it differs from what a table created without one carries, measured on
+// local-ydb 26.2.1.14: no TTL run interval and no tiering policy;
+// partitioning by size at 2048 MB, not by load, with at least one partition;
+// no read replicas, no key bloom filter, and external blobs off with no
+// storage pools named.
 //
 // The TTL itself is the table's row deletion policy. What is recorded under
 // [coverage.TTL] is what YQL cannot write about it: the run interval, which
@@ -480,31 +485,10 @@ func unmodeledSettings(schema, name string, described *Ydb_Table.DescribeTableRe
 	if described.GetTtlSettings().GetRunIntervalSeconds() != 0 || described.GetTiering() != "" {
 		records = append(records, unmodeled(coverage.TTL, schema, name))
 	}
-	if hasColumnFamilies(described) {
-		records = append(records, unmodeled(coverage.ColumnFamily, schema, name))
-	}
 	if hasTableOptions(described) {
 		records = append(records, unmodeled(coverage.TableOption, schema, name))
 	}
 	return records
-}
-
-// hasColumnFamilies reports a family layout other than the default one. A
-// table lists every family its columns name, and family names are unique, so
-// any family but a plain `default` is enough to tell.
-func hasColumnFamilies(described *Ydb_Table.DescribeTableResult) bool {
-	for _, family := range described.GetColumnFamilies() {
-		if family.GetName() != "default" || family.GetData() != nil ||
-			family.GetKeepInMemory() == Ydb.FeatureFlag_ENABLED {
-			return true
-		}
-		switch family.GetCompression() {
-		case Ydb_Table.ColumnFamily_COMPRESSION_UNSPECIFIED, Ydb_Table.ColumnFamily_COMPRESSION_NONE:
-		default:
-			return true
-		}
-	}
-	return false
 }
 
 // hasTableOptions reports partitioning, read replica, key bloom filter or

@@ -16,8 +16,10 @@
 //     replication held;
 //  2. DROP VIEW for every view the plan removes or replaces, dependents first,
 //     so no table goes while a view the plan touches still reads it;
-//  3. DROP TOPIC for every removed topic, so a table created under its path
-//     finds the path free;
+//  3. DROP TOPIC for every removed topic, then the coordination nodes the
+//     plan drops, so a table created under one's path finds the path free.
+//     YQL has no statement for a coordination node, so the plan carries Ptah's
+//     own, which Ptah's YDB connection runs through the coordination service;
 //  4. CREATE TABLE for every added table, with the indexes it gains written
 //     inside the statement, because YDB has no CREATE INDEX
 //     ([capability.CreateIndexStatement]);
@@ -29,8 +31,10 @@
 //     then ALTER INDEX ... SET for every index whose partitioning changes in
 //     place, under the name it has once renamed;
 //  7. per table, ADD COLUMN, then the in-place column changes, then SET
-//     (TTL = ...) or RESET (TTL), then DROP COLUMN: a TTL may read a column
-//     the plan adds, and YDB refuses to drop the column a TTL reads;
+//     (TTL = ...) or RESET (TTL), then one ALTER TABLE for its column
+//     families, then DROP COLUMN: a TTL may read a column the plan adds, a
+//     column the plan adds may move into a family, and YDB refuses to drop
+//     the column a TTL reads;
 //  8. ADD INDEX for every index added to a table that already exists, one per
 //     statement (`Only one index can be added by one operation`), after the
 //     columns it names exist;
@@ -40,8 +44,9 @@
 //     YDB adds one only to a table that exists;
 //  10. DROP TABLE for every removed table, which drops its changefeeds;
 //  11. CREATE TOPIC for every added topic and ALTER TOPIC for every changed
-//     one, after the tables are dropped, so a topic created under a dropped
-//     table's path finds the path free;
+//     one, then the coordination nodes the plan creates and changes, after
+//     the tables are dropped, so an object created under a dropped table's
+//     path finds the path free;
 //  12. CREATE ASYNC REPLICATION and ALTER ASYNC REPLICATION, then CREATE
 //     TRANSFER and ALTER TRANSFER, once the tables, changefeeds, topics and
 //     consumers a transfer uses exist and the paths a replication creates its
@@ -158,6 +163,9 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := p.refuseObjects(scoped); err != nil {
 		return nil, err
 	}
+	if err := p.refuseCoordinationNodes(diff); err != nil {
+		return nil, err
+	}
 	for _, tableDiff := range diff.TablesModified {
 		if err := p.refuseModification(tableDiff, rebuilds, semantics, diff.CurrentNotDescribed); err != nil {
 			return nil, err
@@ -178,19 +186,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	for key := range rebuilds {
 		ownIndexes[key] = true
 	}
-	if err := p.refuseIndexAdditions(diff, ownIndexes, semantics); err != nil {
-		return nil, err
-	}
-	if err := p.refuseIndexChangesInPlace(diff); err != nil {
-		return nil, err
-	}
-	if err := p.refuseChangefeedChanges(diff); err != nil {
-		return nil, err
-	}
-	if err := p.refuseTopics(diff); err != nil {
-		return nil, err
-	}
-	if err := p.refuseReplications(diff); err != nil {
+	if err := p.refuseUnplannableObjectChanges(diff, ownIndexes, semantics); err != nil {
 		return nil, err
 	}
 	sequences, err := p.planSerialSequences(diff, rebuilds, semantics)
@@ -208,6 +204,8 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	result = append(result, p.dropViews(diff)...)
 	result = append(result, access.before...)
 	result = append(result, dropTopics(diff)...)
+	nodeChanges, nodeDrops := coordinationNodes(diff)
+	result = append(result, nodeDrops...)
 	result = append(result, p.createTables(diff, inlineIndexes, sequences.created, semantics)...)
 	result = append(result, dropIndexes(diff.IndexRemovals(), removedTables, rebuilds, semantics)...)
 	result = append(result, renameIndexes(diff.IndexesRenamed, rebuilds, semantics)...)
@@ -224,11 +222,36 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 		result = append(result, ast.NewDropTable(name))
 	}
 	result = append(result, changeTopics(diff)...)
+	result = append(result, nodeChanges...)
 	result = append(result, changeReplications(diff)...)
 	result = append(result, p.createViews(diff)...)
 	result = append(result, access.after...)
 	result = append(result, access.last...)
 	return result, nil
+}
+
+// refuseUnplannableObjectChanges refuses every index addition, in-place index
+// change, changefeed change, topic change and replication or transfer change
+// this planner does not plan, in the order [Planner.GenerateMigrationAST]
+// reports them.
+func (p *Planner) refuseUnplannableObjectChanges(
+	diff *difftypes.SchemaDiff,
+	ownIndexes map[string]bool,
+	semantics identifier.Semantics,
+) error {
+	if err := p.refuseIndexAdditions(diff, ownIndexes, semantics); err != nil {
+		return err
+	}
+	if err := p.refuseIndexChangesInPlace(diff); err != nil {
+		return err
+	}
+	if err := p.refuseChangefeedChanges(diff); err != nil {
+		return err
+	}
+	if err := p.refuseTopics(diff); err != nil {
+		return err
+	}
+	return p.refuseReplications(diff)
 }
 
 // refuseModification refuses what one table's modification asks that the
@@ -438,10 +461,11 @@ func addIndexes(changes difftypes.IndexChanges, inlineIndexes map[string]bool, s
 }
 
 // changeTable writes one table's changes: added columns, then in-place
-// changes, then the TTL, then dropped columns. The drops come after the index
-// drops the plan emitted before it, so an indexed or covered column is free by
-// then, and after the TTL, so the column the TTL read is free too; the TTL
-// comes after the additions, so a column it reads exists.
+// changes, then the TTL, then the column families, then dropped columns. The
+// drops come after the index drops the plan emitted before it, so an indexed
+// or covered column is free by then, and after the TTL, so the column the TTL
+// read is free too; the TTL and the families come after the additions, so a
+// column the TTL reads exists, and so does a column that moves into a family.
 func (p *Planner) changeTable(tableDiff difftypes.TableDiff, enums []schemamodel.Enum) []ast.Node {
 	var nodes []ast.Node
 	alter := func(operation ast.AlterOperation) {
@@ -462,6 +486,9 @@ func (p *Planner) changeTable(tableDiff difftypes.TableDiff, enums []schemamodel
 		})
 	}
 	if operation := ttlOperation(tableDiff.RowDeletionPolicyChange); operation != nil {
+		alter(operation)
+	}
+	if operation := familyOperation(tableDiff); operation != nil {
 		alter(operation)
 	}
 	for _, column := range tableDiff.ColumnsRemoved {
@@ -587,6 +614,9 @@ func indexKeyColumns(index schemamodel.Index) []string {
 func (p *Planner) refuseTableChanges(tableDiff difftypes.TableDiff) error {
 	subject := fmt.Sprintf("table %q", tableDiff.TableName)
 	if err := p.refuseTableSettings(tableDiff, subject); err != nil {
+		return err
+	}
+	if err := p.refuseFamilyChange(tableDiff); err != nil {
 		return err
 	}
 	if tableDiff.Desired.HasTable() && !declaresKey(tableDiff.Desired) {

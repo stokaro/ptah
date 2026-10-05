@@ -128,6 +128,7 @@ var includeSelectableTypes = map[string]struct{}{
 	"topic":             {},
 	"async_replication": {},
 	"transfer":          {},
+	"coordination_node": {},
 	"function":          {},
 	"enum":              {},
 	"extension":         {},

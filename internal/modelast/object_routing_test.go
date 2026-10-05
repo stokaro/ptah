@@ -44,6 +44,7 @@ var routedKinds = []routedKind{
 	{name: "topic", want: 1, count: countNodes[*ast.CreateTopicNode]},
 	{name: "async replication", want: 1, count: countNodes[*ast.CreateAsyncReplicationNode]},
 	{name: "transfer", want: 1, count: countNodes[*ast.CreateTransferNode]},
+	{name: "coordination node", want: 1, count: countNodes[*ast.CreateCoordinationNodeNode]},
 	{name: "hypertable", want: 1, count: countNodes[*ast.CreateHypertableNode]},
 	{name: "continuous aggregate", want: 1, count: countNodes[*ast.CreateContinuousAggregateNode]},
 	{name: "extended property", want: 1, count: countNodes[*ast.ExtendedPropertyNode]},
@@ -97,6 +98,7 @@ func routingFixture() schemamodel.Database {
 		Transfers: []schemamodel.Transfer{{StructName: "TF", Name: "transfer_probe", Spec: ast.TransferSpec{
 			Source: "table_probe/feed", Target: "table_probe", Lambda: "($msg) -> { return []; }",
 		}}},
+		CoordinationNodes: []schemamodel.CoordinationNode{{StructName: "CN", Name: "node_probe"}},
 		Hypertables: []schemamodel.Hypertable{{
 			StructName: "HY", Table: "table_probe", Column: "n",
 		}},

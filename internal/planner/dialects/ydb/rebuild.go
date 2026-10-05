@@ -20,11 +20,13 @@ import (
 // How a YDB plan rebuilds a table.
 //
 // YDB cannot change a table's key, a column's type or a column's nullability
-// toward NOT NULL in place. When the caller asks for it (planner option
-// AllowTableRebuild, the native --allow-table-rebuild flag), the planner makes
-// such a change by recreating the table:
+// toward NOT NULL in place. When the caller asks for it (planner option AllowTableRebuild, the
+// native --allow-table-rebuild flag), the planner makes such a change by
+// recreating the table:
 //
-//  1. CREATE TABLE a scratch table from the declaration, its indexes inside it;
+//  1. CREATE TABLE a scratch table from the declaration, its indexes and its
+//     column families inside it, each family with the settings the old table
+//     holds and the declaration does not state;
 //  2. INSERT INTO the scratch table SELECT the rows of the old one, converting
 //     each changed column;
 //  3. ALTER TABLE the old table DROP CHANGEFEED, for each changefeed it holds,
@@ -203,6 +205,9 @@ func (p *Planner) prepareRebuild(diff *difftypes.SchemaDiff, rebuild *tableRebui
 				"so no statement can move it past the copied rows", field.Name))
 		}
 	}
+	if err := p.refuseRebuiltFamilies(declaration, subject); err != nil {
+		return err
+	}
 	if settings := undescribedSettings(diff.CurrentNotDescribed, declaration.Table); len(settings) > 0 {
 		return refuseFact(subject, fmt.Sprintf("the table carries %s, which Ptah does not model and so cannot "+
 			"write on the new table: recreating it would drop them. Change the table by hand, or remove those "+
@@ -252,7 +257,7 @@ var settingKinds = []struct {
 }{
 	{coverage.TTL, "a TTL run interval or tiering policy"},
 	{coverage.Changefeed, "changefeeds with settings Ptah does not read"},
-	{coverage.ColumnFamily, "column families"},
+	{coverage.ColumnFamily, "column families with settings Ptah does not read"},
 	{coverage.TableOption, "partitioning, read replica or key bloom filter options"},
 }
 
@@ -294,8 +299,10 @@ func freeTableName(diff *difftypes.SchemaDiff, table schemamodel.Table, prefix s
 
 // refuseRebuiltTableChanges refuses what a rebuild cannot carry in a table's
 // modification. The new table is written from the declaration, so a column
-// added or dropped, a default, an index change and the TTL travel with it; a
-// comment and a constraint other than the key do not exist on YDB.
+// added or dropped, a default, an index change, the TTL and the column
+// families travel with it (prepareRebuild refuses families the new table
+// cannot take); a comment and a constraint other than the key do not exist
+// on YDB.
 func (p *Planner) refuseRebuiltTableChanges(tableDiff difftypes.TableDiff) error {
 	subject := fmt.Sprintf("table %q", tableDiff.TableName)
 	if err := p.refuseTableSettings(tableDiff, subject); err != nil {

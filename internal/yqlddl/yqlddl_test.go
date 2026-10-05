@@ -56,11 +56,28 @@ func TestRead_CreateTable(t *testing.T) {
 				Name:      "t",
 				IfExists:  true,
 				Columns:   []yqlddl.Column{{Name: "id", Type: "Uint64"}, {Name: "ts", Type: "Timestamp"}},
+				Families:  []string{"cold"},
 				TTLColumn: "ts",
 				Settings: []yqlddl.Setting{
 					{Name: "STORE", Value: "COLUMN"},
 					{Name: "TTL", Value: "INTERVAL", Column: "ts"},
 				},
+			},
+		},
+		{
+			name: "columns in families, the family before NOT NULL as YDB 25.1 takes it",
+			sql: "CREATE TABLE t (id Uint64 NOT NULL, a Utf8 FAMILY `cold`, c Int32 FAMILY cold NOT NULL DEFAULT 7, " +
+				"PRIMARY KEY (id), FAMILY `cold` (COMPRESSION = 'lz4'), FAMILY default (DATA = 'hdd'))",
+			want: yqlddl.Statement{
+				Kind: yqlddl.CreateTable,
+				Name: "t",
+				Columns: []yqlddl.Column{
+					{Name: "id", Type: "Uint64", NotNull: true},
+					{Name: "a", Type: "Utf8", Family: "cold"},
+					{Name: "c", Type: "Int32", NotNull: true, Default: true, Family: "cold"},
+				},
+				PrimaryKey: true,
+				Families:   []string{"cold", "default"},
 			},
 		},
 		{
@@ -177,14 +194,25 @@ func TestRead_AlterTable(t *testing.T) {
 		},
 		{
 			name: "renames, changefeeds and actions read as other",
-			sql: "ALTER TABLE t RENAME TO `dir/u`, ALTER COLUMN v DROP NOT NULL, ADD FAMILY f (DATA = \"ssd\"), " +
+			sql: "ALTER TABLE t RENAME TO `dir/u`, ALTER COLUMN v DROP NOT NULL, " +
 				"ADD CHANGEFEED cf WITH (MODE = 'KEYS_ONLY', FORMAT = 'JSON'), DROP CHANGEFEED old, DROP FAMILY f",
 			want: []yqlddl.Action{
 				{Kind: yqlddl.RenameTable, NewName: "dir/u"},
-				{}, {},
+				{},
 				{Kind: yqlddl.AddChangefeed, Changefeed: "cf"},
 				{Kind: yqlddl.DropChangefeed, Changefeed: "old"},
 				{},
+			},
+		},
+		{
+			name: "column families",
+			sql: "ALTER TABLE t ADD FAMILY `cold` (DATA = \"ssd\"), ALTER FAMILY default SET COMPRESSION 'lz4', " +
+				"ALTER COLUMN `v` SET FAMILY cold, ADD COLUMN w Int32 FAMILY `cold` NOT NULL DEFAULT 1",
+			want: []yqlddl.Action{
+				{Kind: yqlddl.AddFamily, Family: "cold"},
+				{Kind: yqlddl.AlterFamily, Family: "default"},
+				{Kind: yqlddl.SetColumnFamily, Column: yqlddl.Column{Name: "v"}, Family: "cold"},
+				{Kind: yqlddl.AddColumn, Column: yqlddl.Column{Name: "w", Type: "Int32", NotNull: true, Default: true, Family: "cold"}},
 			},
 		},
 	}

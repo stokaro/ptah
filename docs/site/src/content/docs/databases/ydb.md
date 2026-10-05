@@ -33,7 +33,7 @@ against live YDB 26.2 and 25.1 servers. The nightly capability matrix runs the
 same suite on each YDB line it probes.
 
 `ptah-compat` takes a YDB URL on every verb; see [ptah-compat](#ptah-compat).
-Inference and the YDB object families such as column families and vector
+Inference and the YDB object families such as table partitioning and vector
 indexes are not supported yet. See
 [What is not supported yet](#what-is-not-supported-yet).
 
@@ -795,6 +795,208 @@ lambda under the pragmas `CREATE TRANSFER` ran under, and a transfer created
 after the realm's `PRAGMA TablePathPrefix` stops at once (`Invalid table name
 "/local/app/Input": prefix must be "Input"`).
 
+## Column families
+
+A column family is a group of a row table's columns that YDB stores together,
+with a storage pool, a compression and a cache mode of their own. Every row
+table has the family `default`, which holds the key and every column no other
+family names. A table declares its families with `//ptah:schema:columnfamily`,
+on its struct or on a holder field naming the table with `table` in the same
+file:
+
+```go
+//ptah:schema:table name="documents"
+//ptah:schema:columnfamily name="default" compression="lz4"
+//ptah:schema:columnfamily name="cold" data="hdd" compression="lz4" fields="body,attachment"
+type Document struct {
+	//ptah:schema:field name="id" type="BIGINT UNSIGNED" primary="true"
+	ID uint64
+	//ptah:schema:field name="title" type="TEXT"
+	Title string
+	//ptah:schema:field name="body" type="TEXT"
+	Body string
+	//ptah:schema:field name="attachment" type="BYTEA"
+	Attachment []byte
+}
+```
+
+renders as:
+
+```sql
+CREATE TABLE `documents` (
+    `id` Uint64 NOT NULL,
+    `title` Utf8,
+    `body` Utf8 FAMILY `cold`,
+    `attachment` String FAMILY `cold`,
+    PRIMARY KEY (`id`),
+    FAMILY `cold` (DATA = 'hdd', COMPRESSION = 'lz4'),
+    FAMILY `default` (COMPRESSION = 'lz4')
+);
+```
+
+| Attribute | Value |
+| --- | --- |
+| `name` | the family's name; `default` sets the default family |
+| `data` | the kind of storage pool, such as `ssd` or `hdd` |
+| `compression` | `off` or `lz4` |
+| `cache_mode` | `regular` or `in_memory` |
+| `fields` | the columns the family holds |
+
+A YAML table takes the same keys under its `column_families` map, with `fields`
+as a list. A column names its family right after its type, the only place 25.1
+takes it. Measured on 25.1 and 26.2:
+
+- Which pool kinds exist is the database's own configuration, so Ptah cannot
+  check one before the statement runs. local-ydb has only `hdd`, and answers
+  any other kind with `database doesn't have required storage pools`.
+- A row table compresses with `off` or `lz4`. `zstd` and a compression level are
+  for column-oriented tables (`Unsupported compression value 3`, `Field
+  COMPRESSION_LEVEL is not supported for OLTP tables`), and Ptah refuses them
+  where they are written.
+- A key column stays in the default family (`Key column 'id' must belong to the
+  default family`), and the default family lists no columns.
+- `cache_mode` needs the key `column_family_cache_mode`: 25.4 and later take
+  it, 25.3 takes it with the `EnableTableCacheModes` flag on, and older lines
+  answer `Unknown table setting: CACHE_MODE`.
+- A row table has no compression or encoding per column: 26.2 answers `Column
+  Compression is not supported in row tables. Use COLUMN FAMILY.` and `Column
+  encoding is supported only for column tables`, and 25.1 does not parse
+  either. A family is how a row table compresses.
+
+### Settings a declaration leaves out
+
+A new table's families take settings from the cluster's table profile too, so
+YDB's documented defaults are not what every cluster gives. Measured on 25.1 and
+26.2 with a dynamic configuration whose default storage policy names families:
+a codec on family 0 compresses the default family of every new table,
+`column_cache: ColumnCacheEver` turns its `keep_in_memory` on, and
+`column_cache_mode` gives it a cache mode on 26.2. A family with an id and a
+name in the policy is added to every new table, holding no column. A setting
+the statement names wins over the profile, and `ALTER TABLE` keeps what the
+profile set.
+
+So a setting the declaration leaves out means "keep what the table holds",
+never YDB's documented default:
+
+- A family setting the declaration does not state is neither compared nor
+  written. State `compression="off"` or `cache_mode="regular"` to hold a family
+  to that value.
+- A family the table holds and the declaration does not name stays, with its
+  settings. YQL could not drop it anyway, and a profile would give it back to
+  a new table.
+- Where a statement has to name the whole table, the `CREATE TABLE` of a
+  [rebuild](#table-rebuilds), each setting the declaration leaves out takes the
+  value the table holds, and each family the table holds is written.
+
+Where each column sits is the declaration's own: a profile places no column,
+and a column the declaration puts in no family moves to the default family. A
+read reports every setting at the value the table holds, YDB's own included,
+and DescribeTable names the family of every column outside the default one,
+which is how a read lists each family's columns.
+
+### Changing column families
+
+On a table that exists, one `ALTER TABLE` per table adds the families the
+declaration names and the table lacks (`ADD FAMILY`), sets each setting the
+declaration states and the table holds otherwise (`ALTER FAMILY ... SET DATA`,
+`SET COMPRESSION`, `SET CACHE_MODE`), and moves each column whose family
+differs (`ALTER COLUMN ... SET FAMILY`). It runs after the columns the plan
+adds, so a new column can move into its family, and before the columns it
+drops. Setting one family setting resets no other.
+
+YQL has no `DROP FAMILY` and resets no family setting, and no family change
+needs a rebuild, since what the declaration leaves out stays. A rollback of a
+change that added a family or gave one a storage pool moves the columns back
+and keeps the family and the pool.
+
+YDB does not refuse a statement that names a family the table does not have: it
+creates the family with its own settings. Ptah adds a family before it moves a
+column into it, and `ptah migrations lint` reports a hand-written statement
+that names a family the directory never declared (`YD119`).
+
+HCL and DBML have no spelling for a column family. `schema inspect` warns about
+each table whose families it leaves out of an HCL document, and a desired state
+read from either format keeps the families the database holds, through a
+rebuild too.
+
+`keep_in_memory` has no YQL spelling, and with default flags YDB refuses it
+through the table service too (`Setting keep_in_memory to ENABLED is not
+allowed`), but a table profile's `column_cache` sets it. A read reports it, no
+statement Ptah writes changes it, and a [rebuild](#table-rebuilds) of a table
+holding it is refused, since the new table's `CREATE TABLE` cannot say it.
+
+Other dialects refuse a table that declares a column family. CockroachDB's
+`FAMILY` clause groups columns with no settings of their own, and Ptah models
+none.
+
+## Coordination nodes
+
+A coordination node holds an application's semaphores, which serve as
+distributed locks, and its rate limiter resources. Ptah declares, reads,
+creates, changes and drops a node and its configuration. The semaphores and the
+resources inside a node belong to the application. A Go annotation declares one:
+
+```go
+//ptah:schema:coordinationnode name="locks" schema="app" self_check_period="PT2S" read_consistency_mode="strict"
+type Locks struct{}
+```
+
+So does the `coordination_nodes` key of a YAML schema, with the same settings:
+
+```yaml
+coordination_nodes:
+  locks:
+    schema: app
+    self_check_period: PT2S
+    read_consistency_mode: strict
+```
+
+| Setting | Value | YDB's default |
+| --- | --- | --- |
+| `self_check_period` | how often the node checks that it is alive, from `PT0.5S` to `PT10S` | `PT1S` |
+| `session_grace_period` | how long a session keeps its semaphores while the node changes its leader, from the self-check period plus `PT1S` to `PT30S` | `PT10S` |
+| `read_consistency_mode` | `strict` or `relaxed` | `relaxed` |
+| `attach_consistency_mode` | `strict` or `relaxed` | `strict` |
+| `rate_limiter_counters_mode` | `aggregated` or `detailed` | `aggregated` |
+
+A setting left out takes YDB's default. YDB stores only the settings a node was
+given, so the comparison fills in the defaults on both sides: a declaration that
+names a default and a node that never had the setting are the same node. YDB
+stores a period outside its range and runs the node with the period moved into
+the range, so Ptah refuses such a period where it is written.
+
+YQL has no statement for a coordination node: `CREATE COORDINATION NODE` is a
+parse error, and YDB creates, changes and drops one through its coordination
+service. So Ptah writes a statement of its own, and Ptah's YDB connection runs
+it through that service instead of sending it to the server:
+
+```sql
+CREATE COORDINATION NODE `app/locks` WITH (self_check_period = Interval('PT2S'), read_consistency_mode = 'strict');
+ALTER COORDINATION NODE `app/locks` SET (read_consistency_mode = 'relaxed');
+DROP COORDINATION NODE `app/locks`;
+```
+
+A plan, a plan file and a migration file carry these statements as text, and
+`ptah migrations up` runs and records them like any other schema statement.
+Only Ptah runs them: another client, `ydb sql` included, answers with a parse
+error. The connection refuses one inside a transaction, beside another
+statement in one query, and for a node that already exists, because the
+service answers a second creation with success and keeps the node as it was.
+In a [dev realm](#dev-shadow-and-scratch-databases) a relative path names a node
+under the realm, as it names a table there.
+
+A change names only the settings that differ, and YDB keeps every setting a
+change leaves out. A node the declaration does not name is dropped with its
+semaphores and rate limiter resources, and YDB drops it even while a session
+holds a lock on it. The safety report counts such a drop as destructive, and
+`DS107` in `ptah migrations lint` reports it, as it reports a dropped topic, so
+`ptah migrations up` stops before it by default. A schema that leaves the nodes
+to the application declares
+`//ptah:schema:notdescribed kind="coordination_node"`.
+
+The node `ptah_locks` at the database root is Ptah's own lock. A declaration
+that names it is refused, and so is a statement that does.
+
 ## Planning changes
 
 YDB changes a table in place less than the SQL engines do, and runs a schema
@@ -809,7 +1011,8 @@ statement needs one that has not run yet:
    reads.
 3. Revoke the permissions and remove the memberships the plan takes away, then
    create and change users and groups.
-4. Drop the removed topics, so a table created at a topic's path finds it free.
+4. Drop the removed topics, then the removed coordination nodes, so an object
+   created at one's path finds it free.
 5. Create the added tables, with their indexes and changefeeds, each followed
    by the `ALTER SEQUENCE` that gives a Serial column its declared start and
    increment.
@@ -818,15 +1021,17 @@ statement needs one that has not run yet:
 7. Rename the indexes the declaration renames, then change the partitioning of
    the indexes that keep their definition.
 8. Per table: add columns, then change columns in place, then set or reset
-   the TTL, then drop columns. YDB refuses to drop the column a TTL reads.
+   the TTL, then change the column families, then drop columns. YDB refuses to
+   drop the column a TTL reads.
 9. Change the start and the increment of the Serial columns of existing tables.
 10. Add the new indexes of existing tables.
 11. Per table: drop changefeeds, then add changefeeds with their consumers,
     then change topics in place. Drops come first, so a table that swaps one
     changefeed for another stays within YDB's limit.
 12. Drop the removed tables.
-13. Create the added topics, then change the changed ones, so a topic created
-    at a dropped table's path finds it free.
+13. Create the added topics, then change the changed ones, then create and
+    change coordination nodes, so an object created at a dropped table's path
+    finds it free.
 14. Create the added async replications and change the changed ones, then
     the transfers, once the tables, changefeeds and topics a transfer uses
     exist.
@@ -857,7 +1062,9 @@ ask with the variable `PTAH_ALLOW_TABLE_REBUILD=1` instead (see
 [ptah-compat](#ptah-compat)). The rebuild is the same:
 
 1. `CREATE TABLE` a scratch table, `__ptah_rebuild_<table>`, from the
-   declaration, with its indexes and its TTL inside it.
+   declaration, with its indexes, its column families and its TTL inside it.
+   Each family the old table holds is written, with each setting the
+   declaration leaves out at the value the old table holds.
 2. `INSERT INTO` the scratch table `SELECT` the old rows, converting each
    changed column.
 3. `ALTER TABLE` the old table `DROP CHANGEFEED`, for each changefeed it
@@ -902,10 +1109,12 @@ Even with the flag, a rebuild is refused when it would damage the table:
 - a table with a Serial column. The new table's sequence would start at 1 while
   the copied rows keep their values, so the next insert would collide, and YDB's
   `ALTER SEQUENCE ... RESTART WITH` takes only a literal;
-- a table carrying a setting Ptah does not model yet: a TTL run interval,
-  column families, partitioning, read replica and key bloom filter options,
-  or a changefeed holding a setting Ptah does not read. Recreating the table
-  would drop them.
+- a table whose column family keeps its columns in memory with
+  `keep_in_memory`, which no `CREATE TABLE` can say;
+- a table carrying a setting Ptah does not model yet: a TTL run interval, a
+  column family holding a setting Ptah does not read, partitioning, read
+  replica and key bloom filter options, or a changefeed holding a setting Ptah
+  does not read. Recreating the table would drop them.
 
 ## What each release line does
 
@@ -918,7 +1127,7 @@ or `stable-25-4-1`:
 | `YDB262` | 26.2 | — |
 | `YDB261` | 26.1 | `SET DEFAULT` and `DROP DEFAULT` on an existing column |
 | `YDB254` | 25.4 | a column added with a default, a changefeed's `USER_SIDS`, a `GRANT` on a root object by its relative name |
-| `YDB253` | 25.3 | a consumer's `availability_period`, a replication or transfer secret named by its path |
+| `YDB253` | 25.3 | a consumer's `availability_period`, a replication or transfer secret named by its path, a family's `CACHE_MODE` |
 | `YDB252` | 25.2 | a `JsonDocument` or `DyNumber` default, `UPDATE ... RETURNING` on a table with a unique index, a changefeed's `SCHEMA_CHANGES` |
 | `YDB251` | 25.1 | the 64-bit date and time types, `Decimal` precision other than 22,9, an `Int16` or `Uint16` default, an auto-partitioned changefeed topic, a transfer |
 
@@ -952,6 +1161,7 @@ The flags decide these capabilities:
 | `EnableTopicAutopartitioningForCDC` | `changefeed_topic_auto_partitioning` |
 | `EnableTopicTransfer` | `transfers` |
 | `EnableReplication` | `async_replication` |
+| `EnableTableCacheModes` | `column_family_cache_mode` |
 
 `EnableAsyncIndexes` decides no capability: a cluster with the flag off still
 builds a `GLOBAL ASYNC` index, so `async_indexes` keeps the preset's answer.
@@ -985,20 +1195,21 @@ the [support matrix](../support-matrix/).
 `ptah db read --db-url ydb://...` and the commands that compare against a
 database read every row table under the database root, its columns, defaults,
 `Serial` columns with their sequence's start, increment and last restart,
-primary key, TTL and global indexes, with each index's partitioning and read
-replicas, its changefeeds, each with the retention and the consumers of its
-topic, every view with the query the server stores, every topic with its
-settings and consumers, every async replication and transfer with its state,
-and the users, groups and permissions; see
+primary key, TTL, column families with the columns each holds, and global
+indexes, with each index's partitioning and read replicas, its changefeeds,
+each with the retention and the consumers of its topic, every view with the
+query the server stores, every topic with its settings and consumers, every
+async replication and transfer with its state, every coordination node with
+its configuration, and the users, groups and permissions; see
 [Users, groups and permissions](#users-groups-and-permissions).
 
 What Ptah does not model yet is recorded rather than dropped:
 column-oriented tables, sequences other than a `Serial` column's, the settings
-of a table such as a TTL run interval, column families and partitioning
-options, a changefeed holding a setting Ptah does not read, such as
-attributes, an AWS region, trace identifiers or a shared consumer, and the
-replica tables an async replication writes. A command reports them, and a plan
-neither drops nor changes them.
+of a table such as a TTL run interval and partitioning options, a column family
+kept in memory with `keep_in_memory`, a changefeed holding a setting Ptah does
+not read, such as attributes, an AWS region, trace identifiers or a shared
+consumer, and the replica tables an async replication writes. A command
+reports them, and a plan neither drops nor changes them.
 
 An index kind Ptah cannot read, such as a vector or a full-text index, is
 refused by name rather than read as a plain index.
@@ -1052,17 +1263,19 @@ runs with an effect the statement does not state:
 - an async replication dropped without `CASCADE` before it was failed over,
   which leaves its replica tables read-only for good;
 - a password or a token written as a value in an async replication or a
-  transfer.
+  transfer;
+- a statement that names a column family the table does not have, which YDB
+  creates rather than refuses.
 
 `DS107` reports a dropped user or group as it reports a dropped role
-elsewhere, a dropped topic, a dropped transfer and an async replication
-dropped with `CASCADE`.
+elsewhere, a dropped topic or coordination node, a dropped transfer and an
+async replication dropped with `CASCADE`.
 [Lint rules](../../reference/lint-rules/#ydb) lists each rule with its
 meaning.
 
-`YD104`, `YD105`, `YD106` and `YD109` read the indexes, TTL, minimum
-partition count, views and changefeeds the directory's own earlier
-migrations declare; a table the directory never created is unknown to them.
+`YD104`, `YD105`, `YD106`, `YD109` and `YD119` read the indexes, TTL, minimum
+partition count, views, changefeeds and column families the directory's own
+earlier migrations declare; a table the directory never created is unknown to them.
 `YD105` stays silent where that history left the minimum at 1, and warns
 where it does not know it. With `--dev-url`, lint first replays the directory
 in a [dev realm](#dev-shadow-and-scratch-databases), so a statement YDB
@@ -1185,7 +1398,8 @@ effect it does not confine:
 - external data sources and tables, async replication, transfers and streaming
   queries, which reach outside the server.
 
-A read outside the realm is allowed, since it leaves nothing behind.
+A read outside the realm is allowed, since it leaves nothing behind. A
+coordination node is confined like a table, and the realm's reset drops it.
 
 `docker://ydb/<tag>[/local]` starts `ydbplatform/local-ydb:<tag>` for one
 command and removes it afterwards. The image serves the one database `local`,
@@ -1248,21 +1462,22 @@ table "orders" {
 }
 ```
 
-HCL and DBML have no block for a changefeed, so a document in either says
-nothing about one. Applying it leaves the database's changefeeds as they are,
-and a rebuild adds them to the new table. `schema inspect` and `ptah schema
-export` warn about each changefeed they leave out, and `--cleanup-go-annotations`
-refuses to delete one.
+HCL and DBML have no block for a changefeed or a column family, so a document
+in either says nothing about one. Applying it leaves the database's
+changefeeds and column families as they are, and a rebuild adds them to the new
+table. `schema inspect` and `ptah schema export` warn about each changefeed and
+each table's column families they leave out, and `--cleanup-go-annotations`
+refuses to delete them.
 
 The YDB driver reports a row count it did not measure, so a `script exec` or
 `script loop` step reports its count as not reported, and `expect_rows` is
 refused rather than judged against the number. A script spells parameters the
 way YQL reads them, `$p1`, `$p2` and so on; `?` is not YQL.
 
-A primary key change, a column type change and `SET NOT NULL` are refused
-unless `PTAH_ALLOW_TABLE_REBUILD=1` asks `schema apply`, `schema diff` or
-`schema plan new` for a [table rebuild](#table-rebuilds), and the refusal names
-the variable. `migrate diff` reads it too, and plans with it once YDB can be its
+A primary key change, a column type change and `SET NOT NULL` are refused unless
+`PTAH_ALLOW_TABLE_REBUILD=1` asks `schema apply`, `schema diff` or `schema plan
+new` for a [table rebuild](#table-rebuilds), and the refusal names the
+variable. `migrate diff` reads it too, and plans with it once YDB can be its
 dev database. A malformed value fails the run before it does anything, and
 strict mode refuses the variable.
 
@@ -1358,7 +1573,7 @@ These are refused with a message that names what is missing:
 <!-- BEGIN GENERATED YDB GAPS -->
 - a YQL file as the desired schema (Go structs and YAML schemas work);
 - comments on tables, columns and indexes;
-- a table's own settings: partitioning and column families;
+- a table's own settings: partitioning, read replicas and the key bloom filter;
 - vector, full-text, JSON and column-table indexes;
 - `ptah inference` and the inference tools of `ptah mcp`, which wait for the vector index family.
 <!-- END GENERATED YDB GAPS -->

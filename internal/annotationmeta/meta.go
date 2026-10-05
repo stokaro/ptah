@@ -10,6 +10,8 @@ import (
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/ydbchangefeed"
+	"ptah.run/internal/ydbcoordination"
+	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbreplication"
 	"ptah.run/internal/ydbtopic"
@@ -511,6 +513,24 @@ var directives = []Directive{
 		)...),
 	},
 	{
+		Name: "ptah:schema:columnfamily",
+		Description: "Declares a YDB column family: columns stored together, with a storage pool, compression " +
+			"and cache mode of their own. It belongs to the struct's table, or to the table it names.",
+		Scopes: []Scope{ScopeStruct, ScopeField},
+		Attributes: []Attribute{
+			attr(ydbfamily.AttributeName, "Family name; default is the family holding the key and every column "+
+				"no other family names.", valueString, true, false),
+			attr(ydbfamily.AttributeTable, "Table the family belongs to, when not the struct's own.",
+				valueString, false, false),
+			attr(ydbfamily.AttributeData, "Kind of storage pool the family's columns are kept in, such as ssd.",
+				valueString, false, false),
+			attr(ydbfamily.AttributeCompression, "Compression: off or lz4.", valueString, false, false),
+			attr(ydbfamily.AttributeCacheMode, "Cache mode: regular or in_memory.", valueString, false, false),
+			attr(ydbfamily.AttributeFields, "Columns the family holds. The default family lists none.",
+				valueList, false, false),
+		},
+	},
+	{
 		Name:          "ptah:schema:table",
 		Description:   "Maps a Go struct to a database table.",
 		Scopes:        []Scope{ScopeStruct},
@@ -792,6 +812,27 @@ var directives = []Directive{
 			attr("schema", "Schema the alias lives in.", valueString, false, false),
 			attr("target", "Object the alias stands for, as one to four dot-separated parts.", valueString, true, false),
 			attr("comment", "Synonym comment.", valueString, false, false),
+		},
+	},
+	{
+		Name: "ptah:schema:coordinationnode",
+		Description: "Declares a YDB coordination node, which holds an application's semaphores " +
+			"and rate limiter resources. A setting left out takes YDB's default.",
+		Scopes: []Scope{ScopeStruct},
+		Attributes: []Attribute{
+			attr("name", "Node name.", valueString, true, false),
+			attr("schema", "Directory holding the node, relative to the database root.", valueString, false, false),
+			attr(ydbcoordination.SettingSelfCheckPeriod, "How often the node checks it is alive, as an ISO 8601 "+
+				"duration from `PT0.5S` to `PT10S`. YDB's default is `PT1S`.", valueString, false, false),
+			attr(ydbcoordination.SettingSessionGracePeriod, "How long a session keeps its semaphores while the "+
+				"node changes its leader, as an ISO 8601 duration from the self-check period plus one second "+
+				"to `PT30S`. YDB's default is `PT10S`.", valueString, false, false),
+			attr(ydbcoordination.SettingReadConsistencyMode, "`strict` or `relaxed`. YDB's default is `relaxed`.",
+				valueString, false, false),
+			attr(ydbcoordination.SettingAttachConsistencyMode, "`strict` or `relaxed`. YDB's default is `strict`.",
+				valueString, false, false),
+			attr(ydbcoordination.SettingRateLimiterCountersMode, "`aggregated` or `detailed`. YDB's default is "+
+				"`aggregated`.", valueString, false, false),
 		},
 	},
 	{

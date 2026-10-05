@@ -16,6 +16,7 @@ import (
 	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
 	"github.com/ydb-platform/ydb-go-sdk/v3/table"
 
+	"ptah.run/core/ast"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/lint"
@@ -348,4 +349,52 @@ func minPartitions(c *qt.C, line ydbLine, name string) uint64 {
 	})
 	c.Assert(err, qt.IsNil)
 	return minimum
+}
+
+// YDB does not refuse an ALTER TABLE that names a column family the table does
+// not have: it creates the family with its own settings. YD119 reports each
+// such statement, and the server shows what it reports -- the family exists
+// after the statement. A statement naming a family the table has is the
+// control.
+func TestYDBLint_UndeclaredColumnFamilyIsCreated(t *testing.T) {
+	dir := lintDir + "/family"
+	setup := []string{"CREATE TABLE `" + dir + "/t` (id Uint64 NOT NULL, a Utf8 FAMILY cold, PRIMARY KEY (id), " +
+		"FAMILY cold (COMPRESSION = 'lz4'))"}
+	tests := []struct {
+		name      string
+		statement string
+		family    string
+		reported  bool
+	}{
+		{name: "a column moved", statement: "ALTER TABLE `" + dir + "/t` ALTER COLUMN a SET FAMILY clod", family: "clod", reported: true},
+		{name: "a family altered", statement: "ALTER TABLE `" + dir + "/t` ALTER FAMILY warm SET COMPRESSION 'lz4'", family: "warm", reported: true},
+		{name: "a column added", statement: "ALTER TABLE `" + dir + "/t` ADD COLUMN b Int32 FAMILY hot", family: "hot", reported: true},
+		{name: "a family the table has", statement: "ALTER TABLE `" + dir + "/t` ALTER FAMILY cold SET COMPRESSION 'off'", family: "cold"},
+	}
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			for _, test := range tests {
+				t.Run(test.name, func(t *testing.T) {
+					c := qt.New(t)
+					conn := openYDB(c, line)
+					c.Cleanup(func() { dropLintDir(c, conn) })
+					for _, step := range setup {
+						c.Assert(conn.Writer().ExecuteSQL(c.Context(), step), qt.IsNil, qt.Commentf("setup: %s", step))
+					}
+
+					reported := lintAgainst(c, conn, setup, test.statement)
+					runErr := conn.Writer().ExecuteSQL(c.Context(), test.statement)
+					live, readErr := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, []string{dir})
+
+					c.Assert(slices.Contains(reported, "YD119"), qt.Equals, test.reported)
+					c.Assert(runErr, qt.IsNil)
+					c.Assert(readErr, qt.IsNil)
+					c.Assert(live.Tables, qt.HasLen, 1)
+					c.Assert(slices.ContainsFunc(live.Tables[0].YDBColumnFamilies, func(family ast.YDBColumnFamilySpec) bool {
+						return family.Name == test.family
+					}), qt.IsTrue, qt.Commentf("families: %+v", live.Tables[0].YDBColumnFamilies))
+				})
+			}
+		})
+	}
 }

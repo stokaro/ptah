@@ -344,13 +344,20 @@ var yamlOnlyExtensions = []string{".yaml", ".yml"}
 //     produces one, so a document in those formats applied to a YDB database
 //     holding one would otherwise plan `DROP ASYNC REPLICATION ... CASCADE`,
 //     which drops the replica tables with it.
+//   - HCL and DBML have no spelling for a YDB column family either, so they
+//     cannot say where a column sits. Measured on YDB 26.2.1.14 and 25.1.4.7
+//     without this record, a table with a column in family cold, inspected
+//     through `ptah-compat schema inspect` and applied back from that HCL,
+//     planned `ALTER COLUMN body SET FAMILY default`, and a rebuild the same
+//     document asked for kept the family but moved the column out of it.
 func withFormatLimits(database *schemamodel.Database, resolved string) *schemamodel.Database {
 	if database == nil {
 		return nil
 	}
 	extension := strings.ToLower(filepath.Ext(resolved))
 	if extension == dirHCLExtension || extension == dbmlExtension {
-		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(coverage.Changefeed, coverage.TTL)...)
+		database.NotDescribed = database.NotDescribed.With(
+			unsupportedByFormat(coverage.Changefeed, coverage.ColumnFamily, coverage.TTL)...)
 	}
 	if extension != dirSQLExtension {
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(coverage.VirtualTable)...)
@@ -829,6 +836,7 @@ func appendDatabase(dst, src *schemamodel.Database) {
 	dst.Topics = append(dst.Topics, src.Topics...)
 	dst.AsyncReplications = append(dst.AsyncReplications, src.AsyncReplications...)
 	dst.Transfers = append(dst.Transfers, src.Transfers...)
+	dst.CoordinationNodes = append(dst.CoordinationNodes, src.CoordinationNodes...)
 	dst.ExtendedProperties = append(dst.ExtendedProperties, src.ExtendedProperties...)
 	dst.ManagedData = append(dst.ManagedData, src.ManagedData...)
 	// Several files loaded together are one description, and it describes only
