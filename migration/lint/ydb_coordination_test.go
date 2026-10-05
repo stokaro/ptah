@@ -64,6 +64,8 @@ func TestYDBRules_DS107LeavesTheOtherCoordinationNodeStatements(t *testing.T) {
 		{name: "a string naming the statement", files: map[string]string{
 			"0001_notes.up.sql": "CREATE TABLE notes (id Uint64 NOT NULL, body Utf8, PRIMARY KEY (id));\n" +
 				"UPSERT INTO notes (id, body) VALUES (1, 'DROP COORDINATION NODE locks'u);\n"}},
+		{name: "another object after COORDINATION", files: map[string]string{
+			"0001_nodes.up.sql": "DROP COORDINATION SEMAPHORE `app/locks`;\n"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

@@ -74,6 +74,10 @@ func TestValidateSchema_YDBRefusesACoordinationNodeOnAnotherObjectsPath(t *testi
 			name: "a view added beside the node the database holds", kind: "view",
 			declared: nodeBesideView("app.locks"), current: heldNode,
 		},
+		{
+			name: "a view whose name quotes its parts", kind: "view",
+			declared: nodeBesideView(`"app"."locks"`), current: &catalog.Database{},
+		},
 		{name: "a topic, neither held", kind: "topic", declared: nodeBesideTopic("app", "locks"), current: &catalog.Database{}},
 		{
 			name: "a node added beside the topic the database holds", kind: "topic",
