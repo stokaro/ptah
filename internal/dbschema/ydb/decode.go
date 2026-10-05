@@ -16,7 +16,9 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
+	"ptah.run/core/platform/capability"
 	"ptah.run/internal/sqlident"
+	"ptah.run/internal/ydbcomment"
 	"ptah.run/internal/ydbgap"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbttl"
@@ -41,15 +43,17 @@ func (r *Reader) table(
 	}
 
 	key := described.GetPrimaryKey()
+	comments := r.comments(described.GetAttributes())
 	// YDB keeps row counts in .sys/partition_stats, which the reader does not
 	// read, so the description has no row count to give.
-	table := catalog.Table{Name: name, Schema: schema, Type: "TABLE", RowStatsUnknown: true}
+	table := catalog.Table{Name: name, Schema: schema, Type: "TABLE", RowStatsUnknown: true, Comment: comments.Own}
 	for position, meta := range described.GetColumns() {
 		column, err := r.column(meta, position+1)
 		if err != nil {
 			return fmt.Errorf("%s: %w", subject, err)
 		}
 		column.IsPrimaryKey = slices.Contains(key, meta.GetName())
+		column.Comment = comments.Columns[meta.GetName()]
 		table.Columns = append(table.Columns, column)
 	}
 	changefeeds, unread, err := r.changefeeds(ctx, source, schema, name, described)
@@ -85,12 +89,27 @@ func (r *Reader) table(
 		if err != nil {
 			return fmt.Errorf("%s: %w", subject, err)
 		}
+		index.Comment = comments.Indexes[index.Name]
 		db.Indexes = append(db.Indexes, index)
 	}
 
 	db.NotDescribed = db.NotDescribed.With(unmodeledSettings(schema, name, described)...)
 	r.tableAccess(schema, name, described.GetSelf(), db)
 	return nil
+}
+
+// comments reads the comments a table's user attributes hold, on a target
+// with [capability.CommentAttributes]; see [ydbcomment.Read]. An attribute
+// under no key of Ptah's is not a comment and is left alone: a plan neither
+// reads nor removes it. A comment under the key of a column or an index the
+// table does not have is not read either, because no object in the
+// description could carry it; YDB keeps the attribute after the column or
+// the index is dropped, and a plan that drops one removes its comment.
+func (r *Reader) comments(attributes map[string]string) ydbcomment.Comments {
+	if !r.caps.Has(capability.CommentAttributes) {
+		return ydbcomment.Comments{}
+	}
+	return ydbcomment.Read(attributes)
 }
 
 // column decodes one column. A column whose type is not wrapped in Optional is

@@ -178,7 +178,7 @@ func (r *Reader) entry(
 		if err != nil {
 			return err
 		}
-		return r.view(schema, name, described, db)
+		return r.view(ctx, source, schema, name, described, db)
 	case Ydb_Scheme.Entry_TOPIC:
 		if !r.caps.Has(capability.Topics) || !r.inScope(schema) {
 			break
