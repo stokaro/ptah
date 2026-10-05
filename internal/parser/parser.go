@@ -22,7 +22,7 @@ import (
 	"ptah.run/internal/mysqlname"
 	"ptah.run/internal/nullsdistinct"
 	"ptah.run/internal/tableref"
-	"ptah.run/internal/ydbgap"
+	"ptah.run/internal/yqlparse"
 )
 
 // Parser converts SQL tokens into AST nodes.
@@ -88,7 +88,7 @@ type Parser struct {
 //
 //	parser := NewParser("CREATE TABLE users (id INTEGER PRIMARY KEY);")
 func NewParser(input string, opts ...Option) *Parser {
-	normalized := sqlutil.NormalizeClientDelimiters(input)
+	normalized := input
 	p := &Parser{
 		input:     normalized,
 		startTime: time.Now(),
@@ -96,6 +96,10 @@ func NewParser(input string, opts ...Option) *Parser {
 	}
 	for _, opt := range opts {
 		opt(p)
+	}
+	if platform.NormalizeDialect(p.dialect) != platform.YDB {
+		normalized = sqlutil.NormalizeClientDelimiters(input)
+		p.input = normalized
 	}
 	p.lexer = lexer.NewLexerWithOptions(normalized, lexerOptions(p.dialect))
 	p.advance() // Load the first token
@@ -134,12 +138,9 @@ func lexerOptions(dialect string) lexer.Options {
 // Returns an error if the SQL syntax is invalid or unsupported.
 func (p *Parser) Parse() (*ast.StatementList, error) {
 	if p.dialect == platform.YDB {
-		// The lexer reads YQL, and nothing here reads its statements: a YDB
-		// CREATE TABLE declares its key, indexes and options in clauses no
-		// other dialect has, and parsing it by the rules of one would build a
-		// model of a table YDB never declared.
-		return nil, errors.New(ydbgap.SchemaFiles.Message())
+		return yqlparse.Parse(p.input)
 	}
+
 	statements := &ast.StatementList{
 		Statements: make([]ast.Node, 0),
 	}

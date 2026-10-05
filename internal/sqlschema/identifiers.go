@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/lexer"
 	"ptah.run/internal/uniquename"
 )
 
@@ -34,6 +35,11 @@ import (
 // so a file mixing conventions can be read at all.
 func identifierPart(sourcePlatform, part string) string {
 	part = strings.TrimSpace(part)
+	if platform.NormalizeDialect(sourcePlatform) == platform.YDB {
+		if name, ok := lexer.YQLIdentifierValue(part); ok {
+			return name
+		}
+	}
 	if isQuotedSQLIdentifierPart(part) {
 		return unquoteSQLIdentifierPart(part)
 	}
@@ -124,6 +130,9 @@ func resolveDeclaredName(sourcePlatform, written string, declared []string) int 
 // [identifierPart]. The components are independent: `"App".ORDERS` names the
 // relation `orders` inside the schema `App` on PostgreSQL.
 func identifierParts(sourcePlatform, value string) []string {
+	if platform.NormalizeDialect(sourcePlatform) == platform.YDB {
+		return []string{identifierPart(sourcePlatform, value)}
+	}
 	parts := splitSQLIdentifier(value)
 	for index, part := range parts {
 		parts[index] = identifierPart(sourcePlatform, part)
@@ -136,6 +145,13 @@ func normalizeSQLIdentifier(sourcePlatform, value string) string {
 }
 
 func normalizeSQLTableIdentifier(sourcePlatform, value string) (schema, name string) {
+	if platform.NormalizeDialect(sourcePlatform) == platform.YDB {
+		name = identifierPart(sourcePlatform, value)
+		if slash := strings.LastIndex(name, "/"); slash >= 0 {
+			return name[:slash], name[slash+1:]
+		}
+		return "", name
+	}
 	parts := identifierParts(sourcePlatform, value)
 	if len(parts) == 1 {
 		return "", parts[0]
@@ -262,6 +278,9 @@ func uniqueStructName(databases []*schemamodel.Database, table schemamodel.Table
 }
 
 func normalizeSQLIdentifierReference(sourcePlatform, value string) string {
+	if platform.NormalizeDialect(sourcePlatform) == platform.YDB {
+		return identifierPart(sourcePlatform, value)
+	}
 	if !isSQLIdentifierReference(value) {
 		return value
 	}

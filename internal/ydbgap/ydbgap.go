@@ -36,14 +36,12 @@ type Layer int
 // The layers YDB does not reach yet. Each answers [Layer.Phase] with the phase
 // of [Plan] that implements it.
 const (
-	// SchemaFiles is reading a YQL file as a desired schema: a parser for
-	// YQL's CREATE TABLE, whose key, index and option clauses no other
-	// dialect has. It lands with the object families, because each family
-	// brings the clauses the parser has to read.
+	// SchemaFiles is the YQL declarations beyond the CREATE TABLE subset.
+	// The table frontend refuses other object families and preserves those
+	// held by a live database until their clauses can be represented.
 	SchemaFiles Layer = iota + 1
-	// IndexFamilies is the index kinds beyond a row table's global and
-	// vector and full-text indexes: JSON indexes, and a column table's local
-	// ones.
+	// IndexFamilies is JSON indexes, beyond the implemented global, vector,
+	// full-text and column-table local indexes.
 	IndexFamilies
 	// Inference is an embedding generation on YDB: `ptah inference` and the
 	// agent surface's inference tools. The run state and the vectors they
@@ -70,9 +68,9 @@ func Layers() []Layer {
 func (l Layer) work() string {
 	switch l {
 	case SchemaFiles:
-		return "reading a YDB schema file"
+		return "reading YDB schema declarations beyond the supported CREATE TABLE clauses"
 	case IndexFamilies:
-		return "reading or creating a YDB JSON or column-table index"
+		return "reading or creating a YDB JSON index"
 	case Inference:
 		return "running an embedding generation against YDB"
 	default:
@@ -105,9 +103,9 @@ func (l Layer) Message() string {
 func (l Layer) Unsupported() string {
 	switch l {
 	case SchemaFiles:
-		return "a YQL file as the desired schema (Go structs and YAML schemas work)"
+		return "YQL desired-schema declarations beyond the supported `CREATE TABLE` clauses; use Go or YAML for other object families"
 	case IndexFamilies:
-		return "JSON and column-table indexes"
+		return "JSON indexes"
 	case Inference:
 		return "`ptah inference` and the inference tools of `ptah mcp`, which store their vectors through pgvector"
 	default:

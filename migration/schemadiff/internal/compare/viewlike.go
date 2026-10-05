@@ -5,6 +5,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/coverage"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
@@ -24,6 +25,9 @@ import (
 type viewLikeFamily[LA ~[]D, LM ~[]M, D, C, M any] struct {
 	// Kind is the identity namespace the semantics-aware walk matches in.
 	Kind objectidentity.Kind
+
+	// CoverageKind is empty for families without a coverage vocabulary.
+	CoverageKind coverage.Kind
 
 	Desired  func(*schemamodel.Database) []D
 	Current  func(*catalog.Database) []C
@@ -50,12 +54,13 @@ var plainViewFamily = viewLikeFamily[
 	difftypes.ViewChanges, []difftypes.ViewDiff,
 	schemamodel.View, catalog.View, difftypes.ViewDiff,
 ]{
-	Kind:     objectidentity.KindView,
-	Desired:  func(desired *schemamodel.Database) []schemamodel.View { return desired.Views },
-	Current:  func(current *catalog.Database) []catalog.View { return current.Views },
-	Added:    func(diff *difftypes.SchemaDiff) *difftypes.ViewChanges { return &diff.ViewsAdded },
-	Modified: func(diff *difftypes.SchemaDiff) *[]difftypes.ViewDiff { return &diff.ViewsModified },
-	Removed:  func(diff *difftypes.SchemaDiff) *difftypes.ViewChanges { return &diff.ViewsRemoved },
+	Kind:         objectidentity.KindView,
+	CoverageKind: coverage.View,
+	Desired:      func(desired *schemamodel.Database) []schemamodel.View { return desired.Views },
+	Current:      func(current *catalog.Database) []catalog.View { return current.Views },
+	Added:        func(diff *difftypes.SchemaDiff) *difftypes.ViewChanges { return &diff.ViewsAdded },
+	Modified:     func(diff *difftypes.SchemaDiff) *[]difftypes.ViewDiff { return &diff.ViewsModified },
+	Removed:      func(diff *difftypes.SchemaDiff) *difftypes.ViewChanges { return &diff.ViewsRemoved },
 
 	DesiredName:          func(view schemamodel.View) string { return view.Name },
 	CurrentName:          func(view catalog.View) string { return view.Name },
@@ -236,6 +241,9 @@ func compareViewLikesByName[LA ~[]D, LM ~[]M, D, C, M any](
 		declaration := declarations[name]
 		row, exists := findViewLikeRow(name, byName, byQualifiedName)
 		if !exists {
+			if !current.NotDescribed.Describes(family.CoverageKind, name) {
+				continue
+			}
 			*family.Added(diff) = append(*family.Added(diff), declaration)
 			continue
 		}
@@ -246,7 +254,9 @@ func compareViewLikesByName[LA ~[]D, LM ~[]M, D, C, M any](
 		if _, ok := matched[family.CurrentQualifiedName(row)]; ok {
 			continue
 		}
-		*family.Removed(diff) = append(*family.Removed(diff), family.Carry(row))
+		if desired.NotDescribed.DescribesIn(family.CoverageKind, family.CurrentSchema(row), family.CurrentQualifiedName(row), family.CurrentName(row)) {
+			*family.Removed(diff) = append(*family.Removed(diff), family.Carry(row))
+		}
 	}
 
 	sortViewLikeAnswers(family, diff)
@@ -290,6 +300,9 @@ func compareViewLikesByIdentity[LA ~[]D, LM ~[]M, D, C, M any](
 	for identity, declaration := range declared {
 		row, exists := reported[identity]
 		if !exists {
+			if !database.NotDescribed.DescribesIn(family.CoverageKind, semantics.DefaultSchema, family.DesiredName(declaration)) {
+				continue
+			}
 			*family.Added(diff) = append(*family.Added(diff), declaration)
 			continue
 		}
@@ -297,7 +310,9 @@ func compareViewLikesByIdentity[LA ~[]D, LM ~[]M, D, C, M any](
 	}
 	for identity, row := range reported {
 		if _, exists := declared[identity]; !exists {
-			*family.Removed(diff) = append(*family.Removed(diff), family.Carry(row))
+			if desired.NotDescribed.DescribesIn(family.CoverageKind, family.CurrentSchema(row), family.CurrentQualifiedName(row), family.CurrentName(row)) {
+				*family.Removed(diff) = append(*family.Removed(diff), family.Carry(row))
+			}
 		}
 	}
 
