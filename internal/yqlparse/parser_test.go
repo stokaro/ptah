@@ -1,10 +1,11 @@
 package yqlparse_test
 
 import (
+	"testing"
+
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/yqlparse"
-	"testing"
 )
 
 func TestParseIncompleteDeclarations(t *testing.T) {

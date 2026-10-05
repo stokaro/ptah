@@ -26,6 +26,10 @@ func TestYDBDesiredYQL_AppliesAndSettles(t *testing.T) {
 			plan := planAgainst(c, conn, &desired, schemas)
 			c.Assert(plan, qt.Not(qt.HasLen), 0)
 			apply(c, conn, plan)
+			execute(c, conn, "CREATE VIEW `"+directory+"/summary` WITH (security_invoker = TRUE) AS SELECT id FROM `"+directory+"/items`")
+			c.Cleanup(func() { execute(c, conn, "DROP VIEW `"+directory+"/summary`") })
+			execute(c, conn, "CREATE TOPIC `"+directory+"/events`")
+			c.Cleanup(func() { execute(c, conn, "DROP TOPIC `"+directory+"/events`") })
 			c.Assert(planAgainst(c, conn, &desired, schemas), qt.HasLen, 0)
 		})
 	}
