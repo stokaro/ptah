@@ -46,10 +46,10 @@ func withMonitoring(c *qt.C, raw, endpoint string) string {
 
 // The connection reads the cluster's feature flags from the monitoring
 // endpoint. The servers the contour starts leave every flag that decides a
-// capability at its line's default, so the set the flags refine the preset
-// into is the preset itself; the unit tests pin what each flag does when it
-// is set. The 25.1 server turns EnableVectorIndex on, which decides no
-// capability.
+// capability at its line's default but EnableResourcePools, so the set the
+// flags refine the preset into is the preset with resource_pools on; the unit
+// tests pin what each flag does when it is set. The 25.1 server turns
+// EnableVectorIndex on too, which decides no capability.
 func TestYDBConnection_ReadsTheClusterFeatureFlags_HappyPath(t *testing.T) {
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
@@ -64,7 +64,8 @@ func TestYDBConnection_ReadsTheClusterFeatureFlags_HappyPath(t *testing.T) {
 			c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 
 			info := conn.Info()
-			c.Assert(info.Capabilities, qt.DeepEquals, capability.ForServerVersion(platform.YDB, info.Version))
+			c.Assert(info.Capabilities, qt.DeepEquals,
+				withContourFlags(capability.ForServerVersion(platform.YDB, info.Version)))
 			var session capability.Capabilities
 			c.Assert(conn.WithSession(ctx, func(scoped *dbschema.DatabaseConnection) error {
 				session = scoped.Info().Capabilities
@@ -157,7 +158,8 @@ func TestYDBConnection_ReadsTheFlagsAsTheConnectingUser_HappyPath(t *testing.T) 
 
 			c.Assert(err, qt.IsNil)
 			c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
-			c.Assert(conn.Info().Capabilities, qt.DeepEquals, capability.ForServerVersion(platform.YDB, conn.Info().Version))
+			c.Assert(conn.Info().Capabilities, qt.DeepEquals,
+				withContourFlags(capability.ForServerVersion(platform.YDB, conn.Info().Version)))
 		})
 	}
 }

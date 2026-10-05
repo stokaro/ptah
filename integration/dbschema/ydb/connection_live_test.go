@@ -29,7 +29,8 @@ var connectionSchemas = []string{connectionSchema}
 // The connection reports the server it reached: YDB, the version Version()
 // answers, the capabilities of the line that version is on, and the database
 // root as the schema an unqualified name means. The capabilities are the
-// line's preset, so a target that reaches a server on another line -- an
+// line's preset, refined by the flags the contour turns on, so a target that
+// reaches a server on another line -- an
 // address the server advertises through discovery that leads to the other
 // server, say -- fails here rather than letting the rest of the package
 // measure that line under this one's name.
@@ -47,7 +48,7 @@ func TestYDBConnection_DescribesTheServer(t *testing.T) {
 			c.Assert(info.Version, qt.Equals, version)
 			c.Assert(info.Schema, qt.Equals, "")
 			c.Assert(info.IdentifierSemantics.DefaultSchema, qt.Equals, "")
-			c.Assert(info.Capabilities, qt.DeepEquals, line.preset())
+			c.Assert(info.Capabilities, qt.DeepEquals, contourCapabilities(line))
 		})
 	}
 }

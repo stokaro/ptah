@@ -38,6 +38,21 @@ var ydbLines = []ydbLine{
 	{name: "25.1", engine: dbtarget.YDB251, preset: capability.YDB251},
 }
 
+// contourCapabilities is what a connection to the line's server in the
+// integration contour resolves to: the line's preset, refined by the feature
+// flags the contour turns on. Of those, EnableResourcePools is the one that
+// decides a capability (see .github/workflows/go-integration-tests.yml), so
+// the set is the preset with resource_pools on.
+func contourCapabilities(line ydbLine) capability.Capabilities {
+	return withContourFlags(line.preset())
+}
+
+// withContourFlags is preset on a server of the contour, whose feature flags
+// turn resource_pools on.
+func withContourFlags(preset capability.Capabilities) capability.Capabilities {
+	return preset.With(capability.ResourcePools, true)
+}
+
 // openYDB connects to the line's database.
 func openYDB(c *qt.C, line ydbLine) *dbschema.DatabaseConnection {
 	c.Helper()
