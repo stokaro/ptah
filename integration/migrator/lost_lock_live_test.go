@@ -42,8 +42,8 @@ func TestMigrator_StopsWhenItsLockSessionEnds(t *testing.T) {
 		running string
 		// kill ends the session whose id it is given.
 		kill string
-		// tryLock takes the lock from another session at once, given lockArg,
-		// and answers whether it did.
+		// tryLock takes the lock from another session without waiting, given
+		// lockArg, and answers whether it did.
 		tryLock string
 		// exists answers whether the table named by its argument exists.
 		exists string
@@ -96,7 +96,7 @@ func TestMigrator_StopsWhenItsLockSessionEnds(t *testing.T) {
 			waitForStatement(c, witness, test.running, test.sleep)
 			_, err = witness.ExecContext(c.Context(), fmt.Sprintf(test.kill, holder))
 			c.Assert(err, qt.IsNil)
-			taken := scalarInt(c, witness, test.tryLock, test.lockArg)
+			taken := takeLock(c, witness, test.tryLock, test.lockArg)
 			runErr := <-done
 
 			c.Assert(taken, qt.Equals, int64(1))
@@ -141,6 +141,28 @@ func lockHolder(c *qt.C, conn *dbschema.DatabaseConnection, query string, arg an
 	}
 	c.Fatalf("no session took the lock within ten seconds")
 	return 0
+}
+
+// takeLock asks for the lock until it is granted or ten seconds pass, and
+// returns the last answer.
+//
+// KILL and pg_terminate_backend return once the server has been told to end
+// the session, and the session gives its locks back when it has ended, a moment
+// later. In CI on MySQL 26.7, GET_LOCK(name, 0) straight after KILL once
+// answered 0. A lock nobody gives back is still not granted, so the answer is
+// still 0 when the ten seconds are up.
+func takeLock(c *qt.C, conn *dbschema.DatabaseConnection, query string, arg any) int64 {
+	c.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	var taken int64
+	for time.Now().Before(deadline) {
+		taken = scalarInt(c, conn, query, arg)
+		if taken == 1 {
+			return taken
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return taken
 }
 
 // scalarInt reads one integer.
