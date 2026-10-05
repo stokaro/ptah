@@ -320,6 +320,13 @@ type Table struct {
 	// RowDeletionPolicy is the row deletion policy this table carries, nil for
 	// a table with none (stokaro/ptah#2236).
 	RowDeletionPolicy *ast.RowDeletionPolicySpec `json:"row_deletion_policy,omitzero"`
+	// YDBColumnFamilies is YDB's, and no other target fills it: the column
+	// families of a YDB row table, each with its settings and the columns it
+	// holds, the default family only where its settings are not YDB's own.
+	// A table whose families hold a setting Ptah does not read lists none
+	// here; the reader records them as not described instead, so a plan
+	// neither changes nor drops them.
+	YDBColumnFamilies []ast.YDBColumnFamilySpec `json:"ydb_column_families,omitempty"`
 	// Changefeeds are the YDB changefeeds this table carries, each with the
 	// retention and the consumers of its topic. A changefeed holding a
 	// setting Ptah does not model is not listed here; the reader records it

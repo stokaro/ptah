@@ -77,6 +77,7 @@ import (
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/usertypescope"
+	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
 )
 
@@ -661,6 +662,10 @@ func prepareCreateTableNode(
 		}
 	}
 	cloned.Changefeeds = ast.CloneChangefeeds(node.Changefeeds)
+	if err := refuseColumnFamilies(dialect, caps, declaringFamilies(node.Name), node.YDBColumnFamilies); err != nil {
+		return nil, err
+	}
+	cloned.YDBColumnFamilies = ast.CloneYDBColumnFamilies(node.YDBColumnFamilies)
 	if err := validateCreateTableForeignKeyColumns(dialect, &cloned); err != nil {
 		return nil, err
 	}
@@ -674,6 +679,77 @@ func prepareCreateTableNode(
 		return nil, err
 	}
 	return &cloned, nil
+}
+
+// refuseColumnFamilies refuses a YDB row table's column families on a target
+// without the capability key each needs; see [ydbfamily.Requirements]. A
+// renderer that has no column families writes the table without them, and
+// every column then sits in one storage pool, uncompressed, with nothing
+// reporting the difference. A table declaring none passes, and so does one
+// declaring only the default family stating no setting. subject names what is
+// refused from the settings a requirement names.
+func refuseColumnFamilies(
+	dialect string,
+	caps capability.Capabilities,
+	subject func(settings string) string,
+	families []ast.YDBColumnFamilySpec,
+) error {
+	for _, requirement := range ydbfamily.Requirements(families) {
+		if caps.Has(requirement.Key) {
+			continue
+		}
+		normalized := platform.NormalizeDialect(dialect)
+		return &ptaherr.CapabilityError{
+			Dialect: normalized,
+			Feature: string(requirement.Key),
+			Err:     ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
+				subject(requirement.Settings), requirement.Key, normalized),
+		}
+	}
+	return nil
+}
+
+// refuseColumnFamilyChange refuses a change of a table's column families on a
+// target without the key what the change writes needs; see
+// [ydbfamily.ChangeRequirements].
+func refuseColumnFamilyChange(
+	dialect string,
+	caps capability.Capabilities,
+	table string,
+	change *ast.SetYDBColumnFamiliesOperation,
+) error {
+	for _, requirement := range ydbfamily.ChangeRequirements(change.Families, change.Previous) {
+		if caps.Has(requirement.Key) {
+			continue
+		}
+		normalized := platform.NormalizeDialect(dialect)
+		return &ptaherr.CapabilityError{
+			Dialect: normalized,
+			Feature: string(requirement.Key),
+			Err:     ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf("changing the %s of %s, which requires target capability %s, unavailable on this %s target",
+				requirement.Settings, tableref.Phrase(table), requirement.Key, normalized),
+		}
+	}
+	return nil
+}
+
+// declaringFamilies names a table's column families as the table declares
+// them, for [refuseColumnFamilies].
+func declaringFamilies(table string) func(string) string {
+	return func(settings string) string { return fmt.Sprintf("table %q declares %s", table, settings) }
+}
+
+// refuseDeclaredColumnFamilies refuses the first declared table whose column
+// families the target cannot carry; see [refuseColumnFamilies].
+func refuseDeclaredColumnFamilies(dialect string, caps capability.Capabilities, tables []schemamodel.Table) error {
+	for _, table := range tables {
+		if err := refuseColumnFamilies(dialect, caps, declaringFamilies(table.QualifiedName()), table.YDBColumnFamilies); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // refuseDeclaredRowDeletionPolicies refuses the first declared table whose row
@@ -890,7 +966,7 @@ func prepareAlterOperation(
 		}
 		return operation, nil
 	case *ast.AddChangefeedOperation, *ast.DropChangefeedOperation, *ast.AlterChangefeedTopicOperation,
-		*ast.SetRowDeletionPolicyOperation:
+		*ast.SetRowDeletionPolicyOperation, *ast.SetYDBColumnFamiliesOperation:
 		// One arm for a table's YDB settings, for the reason the column arm
 		// gives.
 		if err := validateTableSettingOperation(dialect, caps, table, operation); err != nil {
@@ -905,14 +981,17 @@ func prepareAlterOperation(
 	}
 }
 
-// validateTableSettingOperation refuses a change to a table's changefeeds or
-// row deletion policy on a target that has neither.
+// validateTableSettingOperation refuses a change to a table's changefeeds,
+// row deletion policy or YDB column families on a target that cannot carry it.
 func validateTableSettingOperation(
 	dialect string,
 	caps capability.Capabilities,
 	table string,
 	operation ast.AlterOperation,
 ) error {
+	if families, ok := operation.(*ast.SetYDBColumnFamiliesOperation); ok {
+		return refuseColumnFamilyChange(dialect, caps, table, families)
+	}
 	if policy, ok := operation.(*ast.SetRowDeletionPolicyOperation); ok {
 		spec := &ast.RowDeletionPolicySpec{Column: policy.Column, Interval: policy.Interval, Unit: policy.Unit}
 		return refuseRowDeletionPolicy(dialect, caps, table, spec)
@@ -978,6 +1057,9 @@ func refuseChangefeeds(dialect string, caps capability.Capabilities, subject str
 // or changefeeds on a target that cannot write them.
 func validateDeclaredTableSettings(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
 	if err := refuseDeclaredRowDeletionPolicies(dialect, caps, database.Tables); err != nil {
+		return err
+	}
+	if err := refuseDeclaredColumnFamilies(dialect, caps, database.Tables); err != nil {
 		return err
 	}
 	return validateDeclaredChangefeeds(dialect, caps, database)

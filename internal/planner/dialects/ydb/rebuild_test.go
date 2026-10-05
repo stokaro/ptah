@@ -292,8 +292,8 @@ func TestGenerateMigrationAST_TableRebuild_FailurePath(t *testing.T) {
 				Desired: appItems(field("label", "TEXT", true), field("n", "BIGINT", true)), ColumnsModified: typeChange}),
 				coverage.Object{Kind: coverage.ColumnFamily, Name: "app.items"},
 				coverage.Object{Kind: coverage.TableOption}),
-			wantErr: `rebuilding table "app.items": the table carries column families, partitioning, read replica or ` +
-				`key bloom filter options, which Ptah does not model .*`,
+			wantErr: `rebuilding table "app.items": the table carries column families with settings Ptah does not ` +
+				`read, partitioning, read replica or key bloom filter options, which Ptah does not model .*`,
 		},
 		{
 			name: "a target that cannot rename a table",

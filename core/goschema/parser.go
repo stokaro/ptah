@@ -726,6 +726,7 @@ type schemaParseState struct {
 	schemas               []schemamodel.Schema
 	notDescribed          []coverage.Object
 	changefeeds           []pendingChangefeed
+	columnFamilies        []pendingColumnFamily
 	consumers             []pendingConsumer
 	topics                []schemamodel.Topic
 	topicConsumers        []pendingTopicConsumer
@@ -852,6 +853,7 @@ var sharedDirectiveParsers = map[string]sharedDirectiveParser{
 	"ptah:schema:data":                (*schemaParseState).parseManagedDataComment,
 	"ptah:schema:notdescribed":        ignoringStruct((*schemaParseState).parseNotDescribedComment),
 	"ptah:schema:changefeed":          (*schemaParseState).parseChangefeedComment,
+	columnFamilyDirective:             (*schemaParseState).parseColumnFamilyComment,
 	"ptah:schema:changefeed:consumer": (*schemaParseState).parseChangefeedConsumerComment,
 	"ptah:schema:topic":               (*schemaParseState).parseTopicComment,
 	"ptah:schema:topic:consumer":      (*schemaParseState).parseTopicConsumerComment,
@@ -996,6 +998,9 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 		return schemamodel.Database{}, err
 	}
 	if err := state.attachTopicConsumers(); err != nil {
+		return schemamodel.Database{}, err
+	}
+	if err := state.attachColumnFamilies(); err != nil {
 		return schemamodel.Database{}, err
 	}
 

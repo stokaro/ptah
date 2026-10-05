@@ -214,9 +214,9 @@ except a hypertable, whose removal TimescaleDB has no statement for and which is
 refused instead. YAML has a key for none of the four.
 
 A table's row deletion policy, a Spanner or YDB TTL, has no HCL spelling
-either, and a YDB changefeed has no HCL or DBML spelling. This command warns
-about each one it leaves out, and a document read back keeps the table's
-policy and changefeeds.
+either, and a YDB changefeed or column family has no HCL or DBML spelling. This
+command warns about each one it leaves out, and a document read back keeps the
+table's policy, changefeeds and column families.
 
 Both commands write a `permission` block by the same three rules: a schema is
 declared whenever anything references one, a grantee is a `role.<name>`

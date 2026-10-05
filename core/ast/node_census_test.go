@@ -132,6 +132,7 @@ var nodeCensus = []censusRow{
 	{node: &ast.RenameIndexOperation{}},
 	{node: &ast.AlterIndexVisibilityOperation{}},
 	{node: &ast.SetIndexPartitioningOperation{}},
+	{node: &ast.SetYDBColumnFamiliesOperation{}},
 	{node: &ast.AddChangefeedOperation{}},
 	{node: &ast.DropChangefeedOperation{}},
 	{node: &ast.AlterChangefeedTopicOperation{}},

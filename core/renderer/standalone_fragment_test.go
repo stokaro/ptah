@@ -322,6 +322,11 @@ func alterOperationFixtures() map[string]func() ast.Node {
 				Partitioning: &ast.IndexPartitioningSpec{MinPartitions: 2},
 			}
 		},
+		"SetYDBColumnFamiliesOperation": func() ast.Node {
+			return &ast.SetYDBColumnFamiliesOperation{
+				Families: []ast.YDBColumnFamilySpec{{Name: "cold", Compression: "lz4", Columns: []string{"c"}}},
+			}
+		},
 		"SetRowDeletionPolicyOperation": func() ast.Node {
 			return &ast.SetRowDeletionPolicyOperation{Column: "created_at", Interval: "1 day"}
 		},

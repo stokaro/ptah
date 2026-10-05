@@ -10,6 +10,7 @@ import (
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/ydbchangefeed"
+	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbtopic"
 )
@@ -459,6 +460,24 @@ var directives = []Directive{
 				valueList, false, false),
 			attr(ydbchangefeed.AttributeAvailabilityPeriod, "How long the topic keeps a record this consumer has "+
 				"not read past the retention period, an ISO 8601 duration.", valueString, false, false),
+		},
+	},
+	{
+		Name: "ptah:schema:columnfamily",
+		Description: "Declares a YDB column family: columns stored together, with a storage pool, compression " +
+			"and cache mode of their own. It belongs to the struct's table, or to the table it names.",
+		Scopes: []Scope{ScopeStruct, ScopeField},
+		Attributes: []Attribute{
+			attr(ydbfamily.AttributeName, "Family name; default is the family holding the key and every column "+
+				"no other family names.", valueString, true, false),
+			attr(ydbfamily.AttributeTable, "Table the family belongs to, when not the struct's own.",
+				valueString, false, false),
+			attr(ydbfamily.AttributeData, "Kind of storage pool the family's columns are kept in, such as ssd.",
+				valueString, false, false),
+			attr(ydbfamily.AttributeCompression, "Compression: off or lz4.", valueString, false, false),
+			attr(ydbfamily.AttributeCacheMode, "Cache mode: regular or in_memory.", valueString, false, false),
+			attr(ydbfamily.AttributeFields, "Columns the family holds. The default family lists none.",
+				valueList, false, false),
 		},
 	},
 	{

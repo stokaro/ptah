@@ -364,7 +364,8 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 	settings.TtlSettings = dateTTL("ts", 86400)
 	settings.TtlSettings.RunIntervalSeconds = 1800
 	settings.Changefeeds = []*Ydb_Table.ChangefeedDescription{{Name: "feed"}}
-	settings.ColumnFamilies = append(settings.ColumnFamilies, &Ydb_Table.ColumnFamily{Name: "cold"})
+	settings.ColumnFamilies = append(settings.ColumnFamilies,
+		&Ydb_Table.ColumnFamily{Name: "cold", Compression: 3})
 	settings.KeyBloomFilter = Ydb.FeatureFlag_ENABLED
 	source := fakeSource{
 		directories: map[string][]*Ydb_Scheme.Entry{
@@ -523,48 +524,6 @@ func TestReader_RecordsEachTableOption(t *testing.T) {
 
 			c.Assert(db.NotDescribed.Describes(coverage.TableOption, "t"), qt.IsFalse)
 			c.Assert(db.NotDescribed.Describes(coverage.TTL, "t"), qt.IsTrue)
-		})
-	}
-}
-
-// A family layout is recorded where it differs from the one family, default,
-// uncompressed and on no pool of its own, that a table created without
-// families carries.
-func TestReader_RecordsEachColumnFamilyLayout(t *testing.T) {
-	tests := []struct {
-		name     string
-		families []*Ydb_Table.ColumnFamily
-	}{
-		{name: "a second family", families: []*Ydb_Table.ColumnFamily{
-			{Name: "default", Compression: Ydb_Table.ColumnFamily_COMPRESSION_NONE},
-			{Name: "cold", Compression: Ydb_Table.ColumnFamily_COMPRESSION_NONE},
-		}},
-		{name: "a compressed default family", families: []*Ydb_Table.ColumnFamily{
-			{Name: "default", Compression: Ydb_Table.ColumnFamily_COMPRESSION_LZ4},
-		}},
-		{name: "a default family on a named pool", families: []*Ydb_Table.ColumnFamily{
-			{Name: "default", Compression: Ydb_Table.ColumnFamily_COMPRESSION_NONE,
-				Data: &Ydb_Table.StoragePool{Media: "ssd"}},
-		}},
-		{name: "a default family kept in memory", families: []*Ydb_Table.ColumnFamily{
-			{Name: "default", Compression: Ydb_Table.ColumnFamily_COMPRESSION_NONE, KeepInMemory: Ydb.FeatureFlag_ENABLED},
-		}},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			described := plainTable()
-			described.ColumnFamilies = test.families
-			source := fakeSource{
-				directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("t", Ydb_Scheme.Entry_TABLE)}},
-				tables:      map[string]*Ydb_Table.DescribeTableResult{"/local/t": described},
-			}
-
-			db := readFrom(c, source)
-
-			c.Assert(db.NotDescribed.Describes(coverage.ColumnFamily, "t"), qt.IsFalse)
-			c.Assert(db.NotDescribed.Describes(coverage.TableOption, "t"), qt.IsTrue)
 		})
 	}
 }
