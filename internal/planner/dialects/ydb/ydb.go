@@ -187,10 +187,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := p.refuseChangefeedChanges(diff); err != nil {
 		return nil, err
 	}
-	if err := p.refuseTopics(diff); err != nil {
-		return nil, err
-	}
-	if err := p.refuseSecrets(diff); err != nil {
+	if err := p.refuseTopicsAndSecrets(diff); err != nil {
 		return nil, err
 	}
 	external, err := p.planExternal(diff)

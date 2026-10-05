@@ -62,16 +62,10 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := schemaprecondition.RefuseSerialSequenceChanges(DialectName, diff); err != nil {
 		return nil, err
 	}
-	if err := schemaprecondition.RefuseSecrets(DialectName, diff); err != nil {
-		return nil, err
-	}
-	if err := schemaprecondition.RefuseExternalObjects(DialectName, diff); err != nil {
+	if err := schemaprecondition.RefuseYDBObjects(DialectName, diff); err != nil {
 		return nil, err
 	}
 	if err := schemaprecondition.RefuseChangefeedChanges(DialectName, diff); err != nil {
-		return nil, err
-	}
-	if err := schemaprecondition.RefuseTopics(DialectName, diff); err != nil {
 		return nil, err
 	}
 	if err := schemaprecondition.RefuseRoleMemberships(DialectName, diff); err != nil {

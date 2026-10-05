@@ -189,6 +189,22 @@ func RefuseTopics(dialect string, diff *difftypes.SchemaDiff) error {
 	}
 }
 
+// RefuseYDBObjects refuses a diff that changes a YDB topic, secret, external
+// data source or external table, for a planner of dialect that plans none of
+// them, through [RefuseTopics], [RefuseSecrets] and [RefuseExternalObjects] in
+// that order. The families share one call because each planner refuses all of
+// them at the same point, before it emits anything.
+func RefuseYDBObjects(dialect string, diff *difftypes.SchemaDiff) error {
+	for _, refuse := range []func(string, *difftypes.SchemaDiff) error{
+		RefuseTopics, RefuseSecrets, RefuseExternalObjects,
+	} {
+		if err := refuse(dialect, diff); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // RefuseRoleMemberships refuses a diff that adds or removes the membership of
 // a role in another, for a planner of dialect that plans none. The comparison
 // records memberships only on a target with capability.RoleMembership, which
