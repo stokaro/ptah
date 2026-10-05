@@ -21,14 +21,18 @@ func withPools() capability.Capabilities {
 
 // TestGenerateMigrationAST_ResourcePools_HappyPath pins where pools and
 // classifiers sit in a plan: after the users the plan creates, since a
-// classifier names one, and before the ones it drops; drops before
-// creations, classifiers before the pools they name when dropped, and pools
-// before the classifiers that name them when created.
+// classifier names one, and after the grants, and before the users it drops;
+// drops before creations, classifiers before the pools they name when
+// dropped, and pools before the classifiers that name them when created.
 func TestGenerateMigrationAST_ResourcePools_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
 		RolesAdded:   difftypes.RoleChanges{{Name: "etl", Login: true}},
 		RolesRemoved: difftypes.RoleChanges{{Name: "olduser"}},
+		GrantsAdded: []difftypes.GrantRef{
+			{Role: "etl", Privilege: "YDB.DATABASE.CONNECT", ObjectType: "DATABASE"},
+		},
+		CurrentDatabasePath: "/local",
 		ResourcePoolsAdded: difftypes.ResourcePoolChanges{{Name: "batch",
 			Spec: ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(10))}}},
 		ResourcePoolsRemoved: difftypes.ResourcePoolChanges{{Name: "old"}},
@@ -46,6 +50,7 @@ func TestGenerateMigrationAST_ResourcePools_HappyPath(t *testing.T) {
 	got := render(c, withPools(), diff)
 
 	c.Assert(got, qt.Equals, "CREATE USER `etl`;\n"+
+		"GRANT 'ydb.database.connect' ON `/local` TO `etl`;\n"+
 		"DROP RESOURCE POOL CLASSIFIER `old_users`;\n"+
 		"DROP RESOURCE POOL `old`;\n"+
 		"CREATE RESOURCE POOL `batch` WITH (CONCURRENT_QUERY_LIMIT = 10);\n"+

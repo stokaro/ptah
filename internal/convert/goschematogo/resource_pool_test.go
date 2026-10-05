@@ -50,3 +50,44 @@ func TestRender_ResourcePool_RoundTrip(t *testing.T) {
 	c.Assert([]any{parsed.ResourcePoolClassifiers[1].Name, parsed.ResourcePoolClassifiers[1].Spec}, qt.DeepEquals,
 		[]any{"everyone", db.ResourcePoolClassifiers[0].Spec})
 }
+
+// A schema whose only global objects are pools, or only classifiers, still
+// gets the struct the annotations hang off: without it the comments attach
+// to nothing, and the parser reads no pool back.
+func TestRender_ResourcePool_AloneKeepsItsStruct(t *testing.T) {
+	tests := []struct {
+		name            string
+		db              *schemamodel.Database
+		pools           int
+		classifierCount int
+	}{
+		{
+			name:  "a pool alone",
+			db:    &schemamodel.Database{ResourcePools: []schemamodel.ResourcePool{{Name: "batch"}}},
+			pools: 1,
+		},
+		{
+			name: "a classifier alone",
+			db: &schemamodel.Database{ResourcePoolClassifiers: []schemamodel.ResourcePoolClassifier{
+				{Name: "everyone", Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "default", Rank: 1}},
+			}},
+			classifierCount: 1,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			files, err := goschematogo.Render(test.db, goschematogo.Options{
+				PackageName: "models", SingleFile: true, Dialect: "ydb",
+			})
+			c.Assert(err, qt.IsNil)
+			c.Assert(files, qt.HasLen, 1)
+
+			parsed, err := goschema.ParseSource(files[0].Name, files[0].Data)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(parsed.ResourcePools, qt.HasLen, test.pools)
+			c.Assert(parsed.ResourcePoolClassifiers, qt.HasLen, test.classifierCount)
+		})
+	}
+}

@@ -59,3 +59,32 @@ func TestLeftovers_AnAcceptedRemovalIsNot_HappyPath(t *testing.T) {
 		"the tables under /local/ptah_capprobe_00, which the server would not count",
 	})
 }
+
+// A resource pool and its classifier belong to the whole database, so the
+// directory removal does not take them: the teardown drops each by name,
+// the classifier before the pool it names, and confirms each gone in the
+// system view that lists it. Over SQLite every statement and every read is
+// refused, which is what makes each one visible here.
+func TestTeardown_DropsAndLooksUpTheResourcePools(t *testing.T) {
+	c := qt.New(t)
+	s := ydbSessionOverSQLite(c)
+	s.resourcePools = []string{"ptah_capprobe_00_rpk"}
+	s.resourcePoolClassifiers = []string{"ptah_capprobe_00_rpc"}
+
+	drops := s.dropResourcePools(context.Background())
+	_, remaining := s.leftovers(context.Background(), []Attempt{{Statement: "remove the directory", Accepted: true}})
+
+	statements := make([]string, 0, len(drops))
+	for _, drop := range drops {
+		statements = append(statements, drop.Statement)
+	}
+	c.Assert(statements, qt.DeepEquals, []string{
+		"DROP RESOURCE POOL CLASSIFIER `ptah_capprobe_00_rpc`;",
+		"DROP RESOURCE POOL `ptah_capprobe_00_rpk`;",
+	})
+	c.Assert(remaining, qt.DeepEquals, []string{
+		"the tables under /local/ptah_capprobe_00, which the server would not count",
+		"resource pool ptah_capprobe_00_rpk, which the server would not look up",
+		"resource pool classifier ptah_capprobe_00_rpc, which the server would not look up",
+	})
+}

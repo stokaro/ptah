@@ -367,6 +367,11 @@ func TestKindOf_HappyPath(t *testing.T) {
 		{name: "scheme statement with carried definitions", text: "--!syntax_v1\n$v = 1l;\nPRAGMA x;\nDROP TABLE a;\n", want: yqlquery.Scheme},
 		{name: "data statements", text: "$v = 1l;\nUPSERT INTO a (id) VALUES ($v);\nDELETE FROM b;\n", want: yqlquery.Data},
 		{name: "definitions alone", text: "$v = 1l;", want: yqlquery.Data},
+		// A migration runs each of these as a query of its own, outside a
+		// transaction, as it runs a schema statement; the YDB page says so.
+		{name: "ANALYZE", text: "ANALYZE `orders`", want: yqlquery.Scheme},
+		{name: "BACKUP", text: "BACKUP `nightly`", want: yqlquery.Scheme},
+		{name: "RESTORE", text: "RESTORE `nightly`", want: yqlquery.Scheme},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
