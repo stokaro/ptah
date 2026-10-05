@@ -2356,6 +2356,14 @@ Their intervals use `Interval('P1D')`; a consumer's `read_from` uses
 `Timestamp('2026-01-01T00:00:00Z')`. Topic settings and consumers use the same
 validation as Go and YAML declarations.
 
+Comments use Ptah's `COMMENT ON TABLE`, `COMMENT ON COLUMN`, `COMMENT ON INDEX
+... ON ...`, and `COMMENT ON VIEW` statements. The object must be declared in
+the same document or an earlier file in the source list. Names remain
+case-sensitive; an index comment names its table because index names are only
+unique within that table. `IS NULL` removes a comment, as does omitting a comment
+from a declared object. Ptah stores these comments as YDB user attributes; the
+statements are Ptah extensions, not native YQL.
+
 Coordination nodes use Ptah's `CREATE COORDINATION NODE` statement with the
 same configuration as Go and YAML. Periods use `Interval('PT1S')`. Resource
 pools and classifiers use `CREATE RESOURCE POOL` and `CREATE RESOURCE POOL
