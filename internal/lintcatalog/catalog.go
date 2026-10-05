@@ -300,10 +300,9 @@ var migrationRuleMeta = map[string]ruleMeta{
 		// Atlas one.
 		Summary: "dropping a schema, type, extension, function, procedure, trigger, role, policy, or YDB user, group, topic, transfer, async replication, coordination node, or streaming query removes behavior or data",
 		YDB:     YDBApplies,
-		YDBNote: "`DROP USER` and `DROP GROUP`, YDB's principals; `DROP TOPIC`, which drops every message and " +
-			"consumer position; `DROP TRANSFER` and `DROP ASYNC REPLICATION ... CASCADE`, which drops the " +
-			"replica tables; and `DROP COORDINATION NODE`, which drops its semaphores and rate limiter " +
-			"resources even under a lock; `DROP STREAMING QUERY` discards its checkpoint state",
+		YDBNote: "Drops YDB users, groups, topics, transfers, replication replica tables with CASCADE, " +
+			"coordination nodes and streaming queries. Topic positions, streaming checkpoints and " +
+			"coordination resources are lost with their objects",
 	},
 	"AC101": {
 		Summary: "the migration defines a routine whose body is not analyzed, so a clean result says nothing about what the body does",

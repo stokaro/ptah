@@ -377,7 +377,7 @@ A YDB run reads migrations as YQL. The `YD` family above is YDB's own, and every
 | `DS104` | applies | `ALTER TABLE ... ALTER COLUMN ... DROP NOT NULL` |
 | `DS105` | no such statement in YQL | YDB has no named constraint to drop |
 | `DS106` | no such statement in YQL | YDB has no enum type |
-| `DS107` | applies | `DROP USER` and `DROP GROUP`, YDB's principals; `DROP TOPIC`, which drops every message and consumer position; `DROP TRANSFER` and `DROP ASYNC REPLICATION ... CASCADE`, which drops the replica tables; and `DROP COORDINATION NODE`, which drops its semaphores and rate limiter resources even under a lock; `DROP STREAMING QUERY` discards its checkpoint state |
+| `DS107` | applies | Drops YDB users, groups, topics, transfers, replication replica tables with CASCADE, coordination nodes and streaming queries. Topic positions, streaming checkpoints and coordination resources are lost with their objects |
 | `DS108` | applies | `TRUNCATE TABLE`, on lines with `truncate_table` |
 | `DS109` | no such statement in YQL | YDB has no row-level security |
 | `DS110P` | needs a dev database | what reads a column comes from a dev database replay |
