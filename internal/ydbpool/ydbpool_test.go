@@ -114,6 +114,18 @@ func TestParsePool_FailurePath(t *testing.T) {
 			wantErr:       `invalid resource_weight "1000000": .*`,
 		},
 		{
+			name:          "a limit on the pool default, which YDB keeps unlimited",
+			values:        map[string]string{"name": "default", "concurrent_query_limit": "5", "queue_size": "5"},
+			wantAttribute: "concurrent_query_limit",
+			wantErr:       `invalid concurrent_query_limit "5": the pool default takes no concurrent_query_limit: YDB keeps it unlimited \(` + "`" + `Can not change property concurrent_query_limit for default pool` + "`" + `\)`,
+		},
+		{
+			name:          "a load threshold on the pool default",
+			values:        map[string]string{"name": "default", "database_load_cpu_threshold": "80"},
+			wantAttribute: "database_load_cpu_threshold",
+			wantErr:       `invalid database_load_cpu_threshold "80": the pool default takes no database_load_cpu_threshold: .*`,
+		},
+		{
 			name:          "a queue with nothing to wait for",
 			values:        map[string]string{"name": "p", "queue_size": "5"},
 			wantAttribute: "queue_size",
@@ -217,6 +229,10 @@ func TestCheckPool_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	c.Assert(ydbpool.CheckPool("batch", ast.ResourcePoolSpec{ConcurrentQueryLimit: new(int32(1))}, withPools()),
 		qt.IsNil)
+	c.Assert(ydbpool.CheckPool("default", ast.ResourcePoolSpec{
+		QueryMemoryLimitPercentPerNode: new(50.0), QueryCPULimitPercentPerNode: new(50.0),
+		TotalCPULimitPercentPerNode: new(50.0), ResourceWeight: new(30.0),
+	}, withPools()), qt.IsNil)
 	c.Assert(ydbpool.CheckPoolDrop("batch", withPools()), qt.IsNil)
 	c.Assert(ydbpool.CheckClassifier("c", ast.ResourcePoolClassifierSpec{ResourcePool: "batch"}, withPools()),
 		qt.IsNil)
@@ -253,6 +269,14 @@ func TestCheckPool_FailurePath(t *testing.T) {
 			name:    "a negative limit built by hand",
 			refusal: ydbpool.CheckPool("p", ast.ResourcePoolSpec{QueueSize: new(int32(-1))}, withPools()),
 			want:    ydbpool.Refusal{Subject: `resource pool "p"`, Reason: "QUEUE_SIZE takes a whole number from 0"},
+		},
+		{
+			name: "a limit on the pool default built by hand",
+			refusal: ydbpool.CheckPool("default",
+				ast.ResourcePoolSpec{DatabaseLoadCPUThreshold: new(80.0), ResourceWeight: new(30.0)}, withPools()),
+			want: ydbpool.Refusal{Subject: `resource pool "default"`, Reason: "the pool default takes no " +
+				"database_load_cpu_threshold: YDB keeps it unlimited (`Can not change property " +
+				"database_load_cpu_threshold for default pool`)"},
 		},
 		{
 			name:    "a queue built by hand with nothing to wait for",

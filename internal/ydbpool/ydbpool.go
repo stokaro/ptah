@@ -92,6 +92,8 @@ func (e *DeclarationError) Error() string {
 // needs a limit to wait for: YDB refuses `queue_size` without
 // `concurrent_query_limit` or `database_load_cpu_threshold` (`queue_size
 // unsupported without concurrent_query_limit or database_load_cpu_threshold`).
+// The pool `default` takes neither, so it takes no queue either; see
+// [CheckPool].
 func ParsePool(values map[string]string) (string, ast.ResourcePoolSpec, error) {
 	name := strings.TrimSpace(values[AttributeName])
 	if err := checkName("a resource pool", name); err != nil {
@@ -118,6 +120,11 @@ func ParsePool(values map[string]string) (string, ast.ResourcePoolSpec, error) {
 	for _, percentage := range percentages {
 		if *percentage.target, err = percent(values, percentage.attribute); err != nil {
 			return "", ast.ResourcePoolSpec{}, err
+		}
+	}
+	if attribute, reason := defaultPoolRefusal(name, spec); reason != "" {
+		return "", ast.ResourcePoolSpec{}, &DeclarationError{
+			Attribute: attribute, Value: values[attribute], Reason: reason,
 		}
 	}
 	if reason := poolShapeRefusal(spec); reason != "" {
@@ -213,6 +220,33 @@ func checkName(what, name string) error {
 	return nil
 }
 
+// defaultPoolRefusal names the setting the pool `default` cannot take and
+// says why, or returns "" for another pool and for a default that names
+// neither. YDB keeps every query of the database that no classifier sends
+// elsewhere in `default`, and will not let it limit them: on 25.1.4.7 and
+// 26.2.1.14 a SET or a RESET of either answers `Can not change property
+// concurrent_query_limit for default pool`, and the same for the threshold.
+// A queue needs one of the two, so `default` has no queue either; the shape
+// rule refuses that one.
+func defaultPoolRefusal(name string, spec ast.ResourcePoolSpec) (attribute, reason string) {
+	if name != DefaultPool {
+		return "", ""
+	}
+	for _, setting := range []struct {
+		attribute string
+		set       bool
+	}{
+		{AttributeConcurrentQueryLimit, spec.ConcurrentQueryLimit != nil},
+		{AttributeDatabaseLoadCPUThreshold, spec.DatabaseLoadCPUThreshold != nil},
+	} {
+		if setting.set {
+			return setting.attribute, fmt.Sprintf("the pool %s takes no %s: YDB keeps it unlimited "+
+				"(`Can not change property %s for default pool`)", DefaultPool, setting.attribute, setting.attribute)
+		}
+	}
+	return "", ""
+}
+
 // poolShapeRefusal says why YDB refuses a pool on every line, or "".
 func poolShapeRefusal(spec ast.ResourcePoolSpec) string {
 	if spec.QueueSize != nil && spec.ConcurrentQueryLimit == nil && spec.DatabaseLoadCPUThreshold == nil {
@@ -255,6 +289,9 @@ func CheckPool(name string, spec ast.ResourcePoolSpec, caps capability.Capabilit
 		return &Refusal{Subject: subject, Reason: err.Error()}
 	}
 	if reason := poolValueRefusal(spec); reason != "" {
+		return &Refusal{Subject: subject, Reason: reason}
+	}
+	if _, reason := defaultPoolRefusal(name, spec); reason != "" {
 		return &Refusal{Subject: subject, Reason: reason}
 	}
 	if reason := poolShapeRefusal(spec); reason != "" {

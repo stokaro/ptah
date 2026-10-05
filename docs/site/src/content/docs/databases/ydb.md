@@ -659,9 +659,12 @@ connection that read the flag write it.
 
 The pool `default` is YDB's own: every query no classifier sends elsewhere
 runs there. A declaration of `default` changes its settings and never creates
-or drops it. YDB takes `DROP RESOURCE POOL default`, and every later query of
-the database fails with `Resource pool default not found`; `ptah migrations
-lint` reports the statement as YD120.
+or drops it. YDB keeps it unlimited: it refuses `concurrent_query_limit` and
+`database_load_cpu_threshold` on `default` (`Can not change property
+concurrent_query_limit for default pool`), and so a queue too, and Ptah
+refuses a declaration that names one. YDB takes `DROP RESOURCE POOL default`,
+and every later query of the database fails with `Resource pool default not
+found`; `ptah migrations lint` reports the statement as YD120.
 
 A setting left out has no limit, which YDB keeps as -1. `concurrent_query_limit`
 and `queue_size` take whole numbers; the others are percentages from 0 to 100,
