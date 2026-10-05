@@ -194,6 +194,7 @@ Each entry under `tables` declares one table.
 | `rls_enabled` | Adds row-level security enablement for this table. |
 | `row_deletion_column`, `row_deletion_interval`, `row_deletion_unit` | The table's row deletion policy: the column a row's age is measured from, the interval after which a row is deleted, and for a YDB integer column the unit it counts. The values are the `//ptah:schema:table` attributes of the same names. Spanner and YDB have one; every other dialect refuses it. |
 | `platform` / `overrides` | Dialect-specific override map, for example `platform.mysql.type`. |
+| `auto_partitioning_by_size`, `auto_partitioning_partition_size_mb`, `auto_partitioning_by_load`, `auto_partitioning_min_partitions_count`, `auto_partitioning_max_partitions_count`, `read_replicas_settings`, `key_bloom_filter`, `uniform_partitions`, `partition_at_keys` | A YDB row table's partitioning, read replicas, key bloom filter and starting partitions, with the values the `//ptah:schema:table` attributes of the same names take. Every other dialect refuses them. |
 
 Table-local `columns`, `fields`, `indexes`, and `constraints` preserve YAML
 author order. Top-level maps render deterministically by sorted key.

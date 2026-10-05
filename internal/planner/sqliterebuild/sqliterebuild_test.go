@@ -137,6 +137,11 @@ func TestEveryTableDiffFieldIsClassified(t *testing.T) {
 		// (schemaprecondition.RefuseYDBColumnFamilyChanges), so there is
 		// nothing here to rebuild for.
 		"YDBColumnFamiliesChange": false,
+		// A YDB table's partitioning, read replicas and key bloom filter. The
+		// SQLite planner refuses a diff carrying one before it decides on a
+		// rebuild (schemaprecondition.RefuseYDBTablePartitioningChanges), so
+		// there is nothing here to rebuild for.
+		"YDBPartitioningChange": false,
 		// The name a column that gains its own UNIQUE takes, which goes with
 		// the change ColumnsAdded or ColumnsModified already carries rather than
 		// being a change of its own (stokaro/ptah#3859).

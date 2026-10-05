@@ -108,6 +108,8 @@ func (r *Renderer) alterStatement(table string, operation ast.AlterOperation) ([
 		return []string{ydbchangefeed.DropStatement(table, op.Name)}, nil
 	case *ast.AlterChangefeedTopicOperation:
 		return r.alterChangefeedTopic(table, op)
+	case *ast.SetYDBTablePartitioningOperation:
+		return r.setTablePartitioning(table, op)
 	case *ast.AddIndexOperation:
 		return r.addIndex(table, op.Index)
 	case *ast.ReplaceIndexOperation:

@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-465 fields are reachable from the desired schema, and each one carries
+475 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 401 | reaches rendered SQL on at least one target |
+| `ddl` | 411 | reaches rendered SQL on at least one target |
 | `comparison` | 8 | read when two schemas are compared, and written into no statement |
 | `planning` | 7 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -136,6 +136,15 @@ None.
 | `ast.YDBColumnFamilySpec.Data` | `ddl` | — |
 | `ast.YDBColumnFamilySpec.KeepInMemory` | `comparison` | keep_in_memory as a read finds it on a YDB family; no YQL statement writes it, and it decides whether a change or a rebuild is refused |
 | `ast.YDBColumnFamilySpec.Name` | `ddl` | — |
+| `ast.YDBTablePartitioningSpec.ByLoad` | `ddl` | — |
+| `ast.YDBTablePartitioningSpec.BySize` | `ddl` | — |
+| `ast.YDBTablePartitioningSpec.KeyBloomFilter` | `ddl` | — |
+| `ast.YDBTablePartitioningSpec.MaxPartitions` | `ddl` | — |
+| `ast.YDBTablePartitioningSpec.MinPartitions` | `ddl` | — |
+| `ast.YDBTablePartitioningSpec.PartitionAtKeys` | `ddl` | — |
+| `ast.YDBTablePartitioningSpec.PartitionSizeMB` | `ddl` | — |
+| `ast.YDBTablePartitioningSpec.ReadReplicas` | `ddl` | — |
+| `ast.YDBTablePartitioningSpec.UniformPartitions` | `ddl` | — |
 | `coverage.Object.Kind` | `comparison` | which kind the undescribed object is |
 | `coverage.Object.Name` | `comparison` | which object was not described |
 | `coverage.Object.Provenance` | `comparison` | how Ptah learned the object was not described |
@@ -502,6 +511,7 @@ None.
 | `schemamodel.Table.VirtualModule` | `ddl` | — |
 | `schemamodel.Table.WithoutRowID` | `ddl` | — |
 | `schemamodel.Table.YDBColumnFamilies` | `ddl` | — |
+| `schemamodel.Table.YDBPartitioning` | `ddl` | — |
 | `schemamodel.TargetNames.GraphQL` | `export` | the name one export format carries, overriding the general one |
 | `schemamodel.TargetNames.OpenAPI` | `export` | the name one export format carries, overriding the general one |
 | `schemamodel.TargetNames.Protobuf` | `export` | the name one export format carries, overriding the general one |

@@ -186,6 +186,7 @@ func (r *Renderer) VisitNode(node ast.Node) error { //nolint:gocyclo // one case
 		*ast.AddChangefeedOperation,
 		*ast.DropChangefeedOperation,
 		*ast.AlterChangefeedTopicOperation,
+		*ast.SetYDBTablePartitioningOperation,
 		*ast.ReplaceIndexOperation,
 		*ast.RenameTableOperation,
 		*ast.ResetRowTTLOperation,

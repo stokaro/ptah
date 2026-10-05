@@ -150,7 +150,7 @@ func TestYDBRules_ReportWhatTheServerRefuses(t *testing.T) {
 				"0001_t.down.sql": "ALTER TABLE t ADD COLUMN a Int64 NOT NULL;\nALTER TABLE t ADD INDEX t_a GLOBAL UNIQUE ON (a);\n" +
 					"ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = ENABLED);\n",
 			},
-			want: []string{"0001_t.down.sql:1:YD103", "0001_t.down.sql:2:YD101", "0001_t.down.sql:3:YD105"},
+			want: []string{"0001_t.down.sql:1:YD103", "0001_t.down.sql:2:YD101", "0001_t.down.sql:3:YD105", "0001_t.down.sql:3:YD118"},
 		},
 		{
 			// The first statement leaves the minimum at 1, so the second,
@@ -159,7 +159,7 @@ func TestYDBRules_ReportWhatTheServerRefuses(t *testing.T) {
 			files: map[string]string{
 				"0001_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = ENABLED);\nALTER TABLE t SET AUTO_PARTITIONING_BY_LOAD ENABLED;\n",
 			},
-			want: []string{"0001_t.up.sql:1:YD105"},
+			want: []string{"0001_t.up.sql:1:YD105", "0001_t.up.sql:1:YD118"},
 		},
 		{
 			name: "auto partitioning turned on for a table created with four uniform partitions",
@@ -194,6 +194,30 @@ func TestYDBRules_ReportWhatTheServerRefuses(t *testing.T) {
 				"0002_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = ENABLED);\n",
 			},
 			want: []string{"0002_t.up.sql:1:YD105"},
+		},
+		{
+			name: "auto partitioning by size turned on with the minimum and without the size",
+			files: map[string]string{
+				"0001_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 6, AUTO_PARTITIONING_BY_SIZE = ENABLED);\n",
+			},
+			want: []string{"0001_t.up.sql:1:YD118"},
+		},
+		{
+			name: "auto partitioning by size turned on for a table created at another size",
+			files: map[string]string{
+				"0001_t.up.sql": "CREATE TABLE t (id Uint64 NOT NULL, PRIMARY KEY (id)) WITH (AUTO_PARTITIONING_PARTITION_SIZE_MB = 100);\n",
+				"0002_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = ENABLED);\n",
+			},
+			want: []string{"0002_t.up.sql:1:YD118"},
+		},
+		{
+			name: "auto partitioning by size turned on after an earlier migration set another size",
+			files: map[string]string{
+				"0001_t.up.sql": "CREATE TABLE t (id Uint64 NOT NULL, PRIMARY KEY (id));\n" +
+					"ALTER TABLE t SET (AUTO_PARTITIONING_PARTITION_SIZE_MB = 512, AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 1);\n",
+				"0002_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = ENABLED, AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 1);\n",
+			},
+			want: []string{"0002_t.up.sql:1:YD118"},
 		},
 		{
 			name: "a table a view reads, dropped",
@@ -310,8 +334,9 @@ func TestYDBRules_LeaveWhatTheServerRuns(t *testing.T) {
 		{name: "a column of the same name in another table", files: map[string]string{
 			"0001_users.up.sql": usersTable,
 			"0002_drop.up.sql":  "ALTER TABLE users DROP COLUMN email;\n"}},
-		{name: "auto partitioning turned on with the minimum in the same SET", files: map[string]string{
-			"0001_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4, AUTO_PARTITIONING_BY_SIZE = ENABLED);\n"}},
+		{name: "auto partitioning turned on with the minimum and the size in the same SET", files: map[string]string{
+			"0001_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4, AUTO_PARTITIONING_BY_SIZE = ENABLED, " +
+				"AUTO_PARTITIONING_PARTITION_SIZE_MB = 100);\n"}},
 		{name: "auto partitioning turned on with the minimum in another SET of the statement", files: map[string]string{
 			"0001_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_LOAD = ENABLED), SET (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 4);\n"}},
 		{name: "auto partitioning turned on for a table created with the default minimum", files: map[string]string{
@@ -325,6 +350,13 @@ func TestYDBRules_LeaveWhatTheServerRuns(t *testing.T) {
 			"0001_t.up.sql": "CREATE TABLE t (id Uint64 NOT NULL, PRIMARY KEY (id)) WITH (UNIFORM_PARTITIONS = 4);\n" +
 				"ALTER TABLE t SET (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 1);\n",
 			"0002_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = ENABLED);\n"}},
+		{name: "auto partitioning by size turned on for a table created at the default size", files: map[string]string{
+			"0001_t.up.sql": "CREATE TABLE t (id Uint64 NOT NULL, PRIMARY KEY (id)) WITH (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 1);\n",
+			"0002_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = ENABLED, AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 1);\n"}},
+		{name: "auto partitioning by size turned on for a table that split by size no longer", files: map[string]string{
+			"0001_t.up.sql": "CREATE TABLE t (id Uint64 NOT NULL, PRIMARY KEY (id)) WITH (AUTO_PARTITIONING_PARTITION_SIZE_MB = 100);\n" +
+				"ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = DISABLED);\n",
+			"0002_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = ENABLED, AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 1);\n"}},
 		{name: "auto partitioning turned off", files: map[string]string{
 			"0001_t.up.sql": "ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = DISABLED, AUTO_PARTITIONING_PARTITION_SIZE_MB = 100);\n"}},
 		{name: "a view dropped before its table", files: map[string]string{

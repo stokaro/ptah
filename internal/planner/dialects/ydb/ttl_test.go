@@ -220,7 +220,8 @@ func TestGenerateMigrationAST_TableRebuild_CarriesTheTTL(t *testing.T) {
 
 	got := renderRebuild(c, capability.YDB251(), diff)
 
-	c.Assert(got, qt.Contains, "    INDEX `items_label` GLOBAL SYNC ON (`label`)\n) WITH (TTL = Interval(\"P30D\") ON `ts`);\n")
+	c.Assert(got, qt.Contains, "    INDEX `items_label` GLOBAL SYNC ON (`label`)\n) WITH (TTL = Interval(\"P30D\") ON `ts`, "+
+		heldDefaultSettings+");\n")
 	c.Assert(got, qt.Not(qt.Contains), "SET (TTL")
 	c.Assert(got, qt.Not(qt.Contains), "RESET (TTL)")
 }

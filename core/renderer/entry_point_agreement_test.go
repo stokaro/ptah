@@ -260,6 +260,7 @@ func nodeKindZeroValues() map[string]ast.Node {
 		"SetRowDeletionPolicyOperation":           &ast.SetRowDeletionPolicyOperation{},
 		"SetRowTTLOperation":                      &ast.SetRowTTLOperation{},
 		"SetYDBColumnFamiliesOperation":           &ast.SetYDBColumnFamiliesOperation{},
+		"SetYDBTablePartitioningOperation":        &ast.SetYDBTablePartitioningOperation{},
 		"StatementList":                           &ast.StatementList{},
 		"UpsertNode":                              &ast.UpsertNode{},
 		"ValidateConstraintOperation":             &ast.ValidateConstraintOperation{},

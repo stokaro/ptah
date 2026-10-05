@@ -1162,10 +1162,10 @@ func indexPayloadChanged(desired, database []string, dialect string, semantics i
 // The covered columns are compared in order, as the key columns are: YDB
 // reports `data_columns` in the order the COVER clause wrote them.
 //
-// The partitioning is a rebuild only where YDB cannot change it in place,
-// which is removing a maximum partition count ([ydbindex.ChangeRefusal]); any
-// other change of it is made by ALTER INDEX and recorded as
-// [difftypes.SchemaDiff.IndexPartitioningChanged].
+// The partitioning is never a rebuild: a change of it is made by ALTER INDEX
+// and recorded as [difftypes.SchemaDiff.IndexPartitioningChanged]. The one
+// change YDB cannot make in place, removing a maximum partition count, is one
+// no declaration asks for, because a maximum it leaves out keeps the held one.
 func ydbIndexDefinitionChanged(
 	desired schemamodel.Index,
 	database catalog.Index,
@@ -1176,27 +1176,21 @@ func ydbIndexDefinitionChanged(
 	return desired.Unique != database.IsUnique ||
 		desiredErr != nil || databaseErr != nil || desiredKind != databaseKind ||
 		indexKeyPartsChanged(desired, database, semantics) ||
-		postgresIncludeColumnsChanged(desired.IncludeColumns, database.IncludeColumns, semantics) ||
-		ydbPartitioningNeedsRebuild(desired, database)
+		postgresIncludeColumnsChanged(desired.IncludeColumns, database.IncludeColumns, semantics)
 }
 
 // ydbPartitioningChanged reports whether a YDB index's partitioning differs
-// between the declaration and the database. Both are read through
-// [ydbindex.Resolve], so a setting declared at its default and one left out are
-// the same. A side that does not resolve differs, so the plan reaches the
-// renderer, which refuses it with the reason.
+// between the declaration and the database. The declaration is read over what
+// the index holds ([ydbindex.Resolve]), so a setting it leaves out keeps the
+// held value and is never a difference. A side that does not resolve differs,
+// so the plan reaches the renderer, which refuses it with the reason.
 func ydbPartitioningChanged(desired schemamodel.Index, database catalog.Index) bool {
-	desiredSettings, desiredErr := ydbindex.Resolve(desired.Partitioning)
-	databaseSettings, databaseErr := ydbindex.Resolve(database.Partitioning)
-	return desiredErr != nil || databaseErr != nil || !desiredSettings.Equal(databaseSettings)
-}
-
-// ydbPartitioningNeedsRebuild reports whether a YDB index's partitioning moves
-// in a way only a rebuild reaches.
-func ydbPartitioningNeedsRebuild(desired schemamodel.Index, database catalog.Index) bool {
-	desiredSettings, desiredErr := ydbindex.Resolve(desired.Partitioning)
-	databaseSettings, databaseErr := ydbindex.Resolve(database.Partitioning)
-	return desiredErr == nil && databaseErr == nil && ydbindex.ChangeRefusal(desiredSettings, databaseSettings) != ""
+	held, heldErr := ydbindex.Held(database.Partitioning)
+	if heldErr != nil {
+		return true
+	}
+	desiredSettings, desiredErr := ydbindex.Resolve(desired.Partitioning, held)
+	return desiredErr != nil || !desiredSettings.Equal(held)
 }
 
 // mysqlIndexDefinitionChanged answers whether a MySQL or MariaDB index has to
