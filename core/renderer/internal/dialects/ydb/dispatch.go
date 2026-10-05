@@ -154,6 +154,8 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	// Topics and their consumers.
 	case *ast.CreateTopicNode:
 		return r.renderCreateTopic(n)
+	case *ast.AddTopicConsumerNode:
+		return r.renderAddTopicConsumer(n)
 	case *ast.AlterTopicNode:
 		return r.renderAlterTopic(n)
 	case *ast.DropTopicNode:

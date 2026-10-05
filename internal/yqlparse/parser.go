@@ -30,7 +30,7 @@ func Parse(text string) (*ast.StatementList, error) {
 			continue
 		}
 		if p.word("ALTER") {
-			result.Statements = append(result.Statements, p.defaultPool())
+			result.Statements = append(result.Statements, p.alterDeclaration())
 			if !p.done() && !p.accept(";") {
 				p.failf("expected ';' after the declaration")
 			}
