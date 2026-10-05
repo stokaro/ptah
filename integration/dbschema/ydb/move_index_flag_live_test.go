@@ -5,6 +5,7 @@ package ydb_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,15 +29,37 @@ const moveIndexSchema = "ptah_ydb_move_index_off"
 var moveIndexSchemas = []string{moveIndexSchema}
 
 // clusterFlagOff turns one feature flag off for the whole cluster through its
-// dynamic configuration, waits until the monitoring endpoint the line's URL
-// names reports it off, and drops the configuration again when the test ends.
+// dynamic configuration; see [setClusterFlags].
 //
 // YDB_FEATURE_FLAGS can only turn a flag on, so a flag that is on by default
-// is turned off the way an operator turns it off on a running cluster. The
-// configuration belongs to the cluster, so a cluster that already carries one
-// is refused rather than overwritten, and the tests of this package run one at
-// a time, so no other test sees the flag off.
+// is turned off the way an operator turns it off on a running cluster.
 func clusterFlagOff(c *qt.C, line ydbLine, yamlName, pageName string) {
+	c.Helper()
+	setClusterFlags(c, line, clusterFlag{yaml: yamlName, page: pageName})
+}
+
+// clusterFlag is one feature flag a test sets for the whole cluster: its name
+// in the configuration, its name on the monitoring page, and its value. The
+// test runs against a flag at the other value of its default, so the cleanup
+// waits for the page to list the opposite of on.
+type clusterFlag struct {
+	yaml string
+	page string
+	on   bool
+}
+
+// setClusterFlags sets each flag for the whole cluster through its dynamic
+// configuration, waits until the monitoring endpoint the line's URL names
+// reports them, and drops the configuration again when the test ends.
+//
+// The configuration's feature_flags section replaces the flags the server
+// started with: measured on 25.1.4.7 and 26.2.1.14, a cluster started with
+// YDB_FEATURE_FLAGS=enable_external_data_sources reports the flag off once a
+// configuration that names only another flag is in place. A test therefore
+// names every flag it needs. The configuration belongs to the cluster, so a
+// cluster that already carries one is refused rather than overwritten, and the
+// tests of this package run one at a time, so no other test sees the flags.
+func setClusterFlags(c *qt.C, line ydbLine, flags ...clusterFlag) {
 	c.Helper()
 	driver, err := ydbsdk.Open(c.Context(), dbtarget.DriverDSN(c, line.engine))
 	c.Assert(err, qt.IsNil)
@@ -46,9 +69,15 @@ func clusterFlagOff(c *qt.C, line ydbLine, yamlName, pageName string) {
 	before := dynamicConfig(c.Context(), c, client)
 	c.Assert(before.GetConfig(), qt.Equals, "",
 		qt.Commentf("the cluster carries a dynamic configuration of its own, which this test would replace"))
+	var section strings.Builder
+	set, restored := ydbflags.Flags{}, ydbflags.Flags{}
+	for _, flag := range flags {
+		fmt.Fprintf(&section, "    %s: %t\n", flag.yaml, flag.on)
+		set[flag.page], restored[flag.page] = flag.on, !flag.on
+	}
 	config := fmt.Sprintf("---\nmetadata:\n  kind: MainConfig\n  cluster: %q\n  version: %d\n"+
-		"config:\n  feature_flags:\n    %s: false\nallowed_labels: {}\nselector_config: []\n",
-		before.GetIdentity().GetCluster(), before.GetIdentity().GetVersion(), yamlName)
+		"config:\n  feature_flags:\n%sallowed_labels: {}\nselector_config: []\n",
+		before.GetIdentity().GetCluster(), before.GetIdentity().GetVersion(), section.String())
 	replaced, err := client.ReplaceConfig(c.Context(), &Ydb_DynamicConfig.ReplaceConfigRequest{Config: config})
 	c.Assert(err, qt.IsNil)
 	assertOperation(c, replaced.GetOperation())
@@ -60,9 +89,9 @@ func clusterFlagOff(c *qt.C, line ydbLine, yamlName, pageName string) {
 		})
 		c.Assert(err, qt.IsNil)
 		assertOperation(c, dropped.GetOperation())
-		awaitFlags(ctx, c, line, ydbflags.Flags{pageName: true})
+		awaitFlags(ctx, c, line, restored)
 	})
-	awaitFlags(c.Context(), c, line, ydbflags.Flags{pageName: false})
+	awaitFlags(c.Context(), c, line, set)
 }
 
 // dynamicConfig reads the cluster's dynamic configuration: empty, with the

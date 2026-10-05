@@ -1,6 +1,6 @@
 ---
 title: YDB
-description: YDB in Ptah - connecting with ydb:// URLs, what renders and plans for row tables, views, topics, async replications and transfers, type mappings, keys, defaults and indexes, users, groups and permissions, what each release line can do, linting YQL, seeds, declared rows and the query builder, and what is not supported yet.
+description: YDB in Ptah - connecting with ydb:// URLs, what renders and plans for row tables, views, topics, async replications, transfers, secrets and external data sources, type mappings, keys, defaults and indexes, users, groups and permissions, what each release line can do, linting YQL, seeds, declared rows and the query builder, and what is not supported yet.
 type: reference
 audience:
   - "database-engineer"
@@ -22,7 +22,7 @@ owns:
 ---
 
 Ptah renders YQL for YDB row tables, views, topics, async replications,
-transfers, resource pools, and the users, groups and permissions of a database.
+transfers, resource pools, secrets, external data sources and tables, and the users, groups and permissions of a database.
 It plans migrations, connects to a live database, reads its schema, applies
 DDL, runs versioned migrations and lints YQL. It also writes data: seeds,
 declared rows and the statements the query builder renders. The
@@ -1342,6 +1342,86 @@ writes a secret's value, in either form. HCL, DBML and SQL documents cannot
 name a secret, so their silence does not plan a drop, and `schema inspect`
 warns about each secret it leaves out of an HCL document.
 
+## External data sources and external tables
+
+An external data source names another system YDB reads from, such as an object
+storage bucket or a PostgreSQL database, and how YDB authenticates to it. An
+external table is a set of columns over files in an object storage source. YDB
+stores no row of either: a query that reads one fetches the rows from the other
+system. Both are declared with annotations of their own:
+
+```go
+//ptah:schema:externaldatasource name="warehouse" schema="ext" source_type="PostgreSQL" location="pg.example.test:5432" auth_method="BASIC" options="DATABASE_NAME=app;LOGIN=reader;PASSWORD_SECRET_PATH=ext/pg_password"
+//ptah:schema:externaldatasource name="events_bucket" schema="ext" source_type="ObjectStorage" location="https://storage.example.test/events/" auth_method="NONE"
+type Warehouse struct{}
+
+//ptah:schema:externaltable name="events" schema="ext" data_source="ext/events_bucket" location="2026/" columns="id Int64 NOT NULL, kind Utf8, amount Decimal(22,9)" options="FORMAT=json_each_row;COMPRESSION=gzip"
+type Event struct{}
+```
+
+A YAML schema takes the same keys under `external_data_sources` and
+`external_tables`, with `options` as a map and each column as a `name`, a
+`type` and `not_null`. `options` holds every option of the statement besides
+the ones with an attribute of their own, `NAME=value` separated by `;`; write
+`\;` for a semicolon inside a value, as `CSV_DELIMITER=\;` does. Ptah renders
+them in this shape:
+
+```sql
+CREATE EXTERNAL DATA SOURCE `ext/warehouse` WITH (
+    SOURCE_TYPE = 'PostgreSQL',
+    LOCATION = 'pg.example.test:5432',
+    AUTH_METHOD = 'BASIC',
+    DATABASE_NAME = 'app',
+    LOGIN = 'reader',
+    PASSWORD_SECRET_PATH = 'ext/pg_password'
+);
+```
+
+A credential is never an option's value. An option ending in `_SECRET_PATH`
+names a [secret](#secrets) by its path, which YDB 25.4 and later take; the
+server looks the secret up when it creates the data source, so a plan creates
+the secrets first. An option ending in `_SECRET_NAME` names a deprecated secret
+object, whose value the database administrator reads in clear, and lint rule
+`YD141` reports it. An external table takes no default, key or column family:
+the declaration refuses all three, since YDB drops a `DEFAULT` without a word
+and refuses the other two.
+
+The reader describes both by `DescribeExternalDataSource` and
+`DescribeExternalTable`. YDB keeps every value as written and every option name
+in upper case, stores a secret's path and a table's data source as absolute
+paths, and adds `REFERENCES` to a source, the list of tables over it. Ptah
+compares in that form, with the paths relative to the database root and
+`REFERENCES` left out, so a declaration applied once plans nothing the second
+time.
+
+YDB alters neither object, so a plan replaces one that changed. Where the
+`external_object_replace` key holds, it writes `CREATE OR REPLACE`, and the
+external tables over a replaced source stay. Without the key, and for a source
+whose type changes, the plan drops the source and creates it again, together
+with the declared external tables over it. Dropping either object loses no
+data YDB stores, so a plan reports it as a warning rather than as destructive.
+
+A plan drops an external table before the source it reads. YDB 25.4 and later
+refuse to drop a source a table still reads (`Other entities depend on this
+data source`). 25.1 to 25.3 drop it, and the table over it then cannot be
+dropped (`path hasn't been resolved`) until a source exists at that path again.
+A plan that would drop a source a declared external table reads is refused.
+
+The objects need the `external_data_sources` key, behind the
+`EnableExternalDataSources` flag, and `CREATE OR REPLACE` needs
+`external_object_replace`, behind `EnableReplaceIfExistsForExternalEntities`.
+Both flags are off by default on every release line. A secret's path needs
+`external_data_source_secret_paths`: YDB 25.4 and later take one, and 25.1 to
+25.3 read it as a missing name (`PASSWORD_SECRET_NAME requires key`).
+
+A [check](../../versioned/integrity-and-safety/) that reads an external table,
+or a view that reads one, is refused before it runs. YDB runs the check in a
+read-only transaction, and a read of an external table there still fetches the
+table's files from the object storage its source names, so Ptah describes each
+object an assertion reads first. A dev realm refuses both objects, as the
+[list below](#dev-shadow-and-scratch-databases) says. HCL, DBML and SQL
+documents cannot name either object, so their silence does not plan a drop.
+
 ## Planning changes
 
 YDB changes a table in place less than the SQL engines do, and runs a schema
@@ -1356,7 +1436,8 @@ statement needs one that has not run yet:
    reads.
 3. Revoke the permissions and remove the memberships the plan takes away, then
    create and change users and groups.
-4. Drop the removed topics and secrets, then the removed coordination nodes, so an object
+4. Drop removed or recreated external tables, then their data sources.
+   Drop the removed topics and secrets, then the removed coordination nodes, so an object
    created at one's path finds it free.
 5. Create the added tables, with their indexes and changefeeds, each followed
    by the `ALTER SEQUENCE` that gives a Serial column its declared start and
@@ -1377,7 +1458,8 @@ statement needs one that has not run yet:
 12. Drop the removed tables.
 13. Create the added topics, then change the changed ones, then create and
     change coordination nodes, create secrets and rotate the requested secrets, so an object created at a dropped table's path
-    finds it free.
+    finds it free. Create or replace the external data sources and tables
+    after their secrets.
 14. Create the added async replications and change the changed ones, then
     the transfers, once the tables, changefeeds and topics a transfer uses
     exist.
@@ -1485,7 +1567,7 @@ or `stable-25-4-1`:
 | `YDB262` | 26.2 | — |
 | `YDB261` | 26.1 | `SET DEFAULT` and `DROP DEFAULT` on an existing column |
 | `YDB254` | 25.4 | a column added with a default, a changefeed's `USER_SIDS`, a `GRANT` on a root object by its relative name, bit vectors in a vector index |
-| `YDB253` | 25.3 | a consumer's `availability_period`, a replication or transfer secret named by its path, a family's `CACHE_MODE`, secrets (behind a flag) |
+| `YDB253` | 25.3 | a consumer's `availability_period`, a replication or transfer secret named by its path, a family's `CACHE_MODE`, secrets (behind a flag), a data source naming a secret by its path |
 | `YDB252` | 25.2 | a `JsonDocument` or `DyNumber` default, `UPDATE ... RETURNING` on a table with a unique index, a changefeed's `SCHEMA_CHANGES`, a vector index that takes in the rows written after its build |
 | `YDB251` | 25.1 | the 64-bit date and time types, `Decimal` precision other than 22,9, an `Int16` or `Uint16` default, an auto-partitioned changefeed topic, vector indexes, a transfer |
 
@@ -1523,6 +1605,8 @@ The flags decide these capabilities:
 | `EnableReplication` | `async_replication` |
 | `EnableTableCacheModes` | `column_family_cache_mode` |
 | `EnableSchemaSecrets` | `secrets` |
+| `EnableExternalDataSources` | `external_data_sources` |
+| `EnableReplaceIfExistsForExternalEntities` | `external_object_replace` |
 
 `EnableAsyncIndexes` decides no capability: a cluster with the flag off still
 builds a `GLOBAL ASYNC` index, so `async_indexes` keeps the preset's answer.
@@ -1562,7 +1646,8 @@ with their settings, its changefeeds, each with the retention and the
 consumers of its topic, the table's own partitioning, read replicas and key
 bloom filter, every view with the query the server stores, every topic with
 its settings and consumers, every async replication and transfer with its
-state, every secret by its path, every coordination node with its configuration, and the users, groups
+state, every secret by its path, external data sources and tables on
+a server with the `external_data_sources` key, every coordination node with its configuration, and the users, groups
 and permissions.
 
 On a cluster with `EnableResourcePools` on, it also reads resource pools and their classifiers; see
@@ -1575,7 +1660,8 @@ flags Ptah did not read, sequences other than a `Serial` column's, the settings
 of a table such as a TTL run interval and storage settings, a column family
 kept in memory with `keep_in_memory`, a changefeed holding a setting Ptah does
 not read, such as attributes, an AWS region, trace identifiers or a shared
-consumer, and the replica tables an async replication writes. A command
+consumer, the replica tables an async replication writes, and external data sources
+and tables on a server without the `external_data_sources` key. A command
 reports them, and a plan neither drops nor changes them.
 
 An index kind Ptah cannot read, such as a full-text index, is refused by name
@@ -1617,6 +1703,7 @@ from, and the newest line is used without it.
 Migration lint reports, under the `YD` family, the statements YDB refuses or
 runs with an effect the statement does not state:
 
+- an external data source using a deprecated secret object;
 - a secret value written into a migration;
 - a unique index added to an existing table;
 - a block that mixes schema and data statements;

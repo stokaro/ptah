@@ -31,12 +31,13 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			// (stokaro/ptah#1031), so it records neither -- and it still cannot
 			// name a virtual table, a table's row deletion policy, a changefeed,
 			// a YDB topic, a column family, or a YDB async replication or
-			// transfer, secret, resource pool or classifier.
+			// transfer, secret, external object, resource pool or classifier.
 			name: "HCL cannot name a virtual table, a TTL, a changefeed, a topic, a column family, a " +
-				"replication, transfer, secret, resource pool or classifier",
+				"replication, transfer, secret, external object, resource pool or classifier",
 			file:     "schema.hcl",
 			contents: "schema \"main\" {\n}\n",
-			want: unsupportedRecords(coverage.Changefeed, coverage.ColumnFamily, coverage.Replication, coverage.ResourcePool, coverage.ResourcePoolClassifier, coverage.Secret, coverage.Topic,
+			want: unsupportedRecords(coverage.Changefeed, coverage.ColumnFamily, coverage.ExternalDataSource, coverage.ExternalTable,
+				coverage.Replication, coverage.ResourcePool, coverage.ResourcePoolClassifier, coverage.Secret, coverage.Topic,
 				coverage.Transfer, coverage.TTL, coverage.VirtualTable),
 		},
 		{
@@ -50,7 +51,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			file:     "schema.sql",
 			contents: "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
 			want: unsupportedRecords(
-				coverage.ContinuousAggregate, coverage.ExtendedProperty,
+				coverage.ContinuousAggregate, coverage.ExtendedProperty, coverage.ExternalDataSource, coverage.ExternalTable,
 				coverage.Hypertable, coverage.Replication, coverage.ResourcePool, coverage.ResourcePoolClassifier, coverage.Secret, coverage.Synonym, coverage.Topic, coverage.Transfer),
 		},
 		{
@@ -61,7 +62,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			// Spanner's policy clause, so both rows are the control on the TTL,
 			// changefeed and column family records HCL and DBML carry. It is
 			// also the control on the topic, the replication and the
-			// transfer and secret: YAML has a key for each, so a loader that recorded
+			// transfer, secret and external objects: YAML has a key for each, so a loader that recorded
 			// them for every format fails here.
 			name:     "YAML cannot name nine families",
 			file:     "schema.yaml",
@@ -79,12 +80,12 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			// what makes this one the exhaustive boundary #2065 asks for --
 			// and coverage.Schema is absent from it because DBML qualifies a
 			// name with a schema.
-			name:     "DBML cannot name twenty-one families",
+			name:     "DBML cannot name twenty-three families",
 			file:     "schema.dbml",
 			contents: "Table users {\n  id integer [pk]\n}\n",
 			want: unsupportedRecords(
 				coverage.Changefeed, coverage.ColumnFamily, coverage.Composite, coverage.ContinuousAggregate,
-				coverage.Domain, coverage.ExtendedProperty, coverage.Extension, coverage.Hypertable,
+				coverage.Domain, coverage.ExtendedProperty, coverage.Extension, coverage.ExternalDataSource, coverage.ExternalTable, coverage.Hypertable,
 				coverage.Policy, coverage.Range, coverage.Replication, coverage.ResourcePool, coverage.ResourcePoolClassifier, coverage.Role, coverage.Secret, coverage.Sequence,
 				coverage.Synonym, coverage.Topic, coverage.Transfer, coverage.TTL, coverage.VirtualTable),
 		},

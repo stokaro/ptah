@@ -57,6 +57,8 @@ type Database struct {
 	// that declares none as it is.
 	CoordinationNodes          []CoordinationNode             `json:",omitempty"`
 	Secrets                    []Secret                       `json:",omitempty"` // YDB secrets, by name; never their values
+	ExternalDataSources        []ExternalDataSource           `json:",omitempty"` // YDB external data sources
+	ExternalTables             []ExternalTable                `json:",omitempty"` // YDB external tables
 	ExtendedProperties         []ExtendedProperty             // SQL Server extended properties
 	MaterializedViews          []MaterializedView             // Database materialized views
 	Triggers                   []Trigger                      // Database triggers
@@ -1465,6 +1467,69 @@ type Secret struct {
 // name alone at the database root.
 func (s Secret) QualifiedName() string {
 	return tableref.Canonical(s.Schema, s.Name)
+}
+
+// ExternalDataSource is a YDB external data source: a scheme object that names
+// another system -- an object storage bucket, a PostgreSQL, ClickHouse, MySQL
+// or YDB database -- and how YDB authenticates to it, so a query or an
+// [ExternalTable] can read from it. It is YDB's alone, and every other target
+// refuses one.
+//
+// Options holds every option of CREATE EXTERNAL DATA SOURCE besides
+// SOURCE_TYPE, LOCATION and AUTH_METHOD, keyed by upper-case name, with its
+// value as written. A credential is never a value: an option ending in
+// _SECRET_PATH names a YDB [Secret] by its path, and one ending in
+// _SECRET_NAME names a deprecated secret object Ptah does not manage. Schema
+// is the directory that holds the data source, "" for the database root, as
+// it is for a YDB table.
+type ExternalDataSource struct {
+	StructName string            // Name of the Go struct this data source is associated with
+	Name       string            // Data source name, the last segment of its path
+	Schema     string            // Directory that holds the data source, relative to the database root
+	SourceType string            // SOURCE_TYPE, such as ObjectStorage or PostgreSQL
+	Location   string            // LOCATION, empty where the source type takes none
+	AuthMethod string            // AUTH_METHOD, such as NONE or BASIC
+	Options    map[string]string // Every other option, keyed by upper-case name
+}
+
+// QualifiedName returns the data source's canonical reference: schema.name,
+// or the name alone at the database root.
+func (s ExternalDataSource) QualifiedName() string {
+	return tableref.Canonical(s.Schema, s.Name)
+}
+
+// ExternalTable is a YDB external table: columns over files that an
+// [ExternalDataSource] of type ObjectStorage holds. YDB stores no row of it; a
+// read fetches the files. It is YDB's alone, and every other target refuses
+// one.
+//
+// DataSource is the data source's path as a query names it: relative to the
+// database root, or absolute. Options holds every option besides DATA_SOURCE
+// and LOCATION, such as FORMAT and COMPRESSION, keyed by upper-case name;
+// PARTITIONED_BY is a JSON array of column names.
+type ExternalTable struct {
+	StructName string            // Name of the Go struct this external table is associated with
+	Name       string            // External table name, the last segment of its path
+	Schema     string            // Directory that holds the external table, relative to the database root
+	DataSource string            // Path of the data source it reads
+	Location   string            // LOCATION, the files' path under the data source
+	Columns    []ExternalColumn  // Columns, in order
+	Options    map[string]string // Every other option, keyed by upper-case name
+}
+
+// QualifiedName returns the external table's canonical reference:
+// schema.name, or the name alone at the database root.
+func (t ExternalTable) QualifiedName() string {
+	return tableref.Canonical(t.Schema, t.Name)
+}
+
+// ExternalColumn is one column of a YDB [ExternalTable]: a name, a YQL type
+// and whether it is NOT NULL. An external column takes no default, key or
+// family.
+type ExternalColumn struct {
+	Name    string // Column name
+	Type    string // YQL type, such as Utf8 or Decimal(22,9)
+	NotNull bool   // Declared NOT NULL
 }
 
 // ExtendedProperty is a SQL Server extended property: a named value attached

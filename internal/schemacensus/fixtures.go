@@ -3,7 +3,10 @@ package schemacensus
 import (
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/capabilityprobe"
 )
 
 // Fixture is one named desired schema the census ablates fields out of.
@@ -16,6 +19,35 @@ import (
 type Fixture struct {
 	Name   string
 	Schema schemamodel.Database
+	// Flags are capabilities a YDB cluster turns on with a feature flag,
+	// off on every YDB preset, that the fixture's objects need. Every YDB
+	// cell renders the fixture with them on, as a cluster that turned the
+	// flags on would; a fixture without them would be refused on every cell,
+	// and no field of it could be measured.
+	Flags []capability.Capability
+}
+
+// Cells returns cells with the fixture's flags turned on in the preset of
+// every YDB cell. The other cells are returned as they are.
+func (f Fixture) Cells(cells []capabilityprobe.Cell) []capabilityprobe.Cell {
+	if len(f.Flags) == 0 {
+		return cells
+	}
+	flagged := make([]capabilityprobe.Cell, 0, len(cells))
+	for _, cell := range cells {
+		if cell.Dialect == platform.YDB && cell.Preset != nil {
+			preset := cell.Preset
+			cell.Preset = func() capability.Capabilities {
+				caps := preset()
+				for _, flag := range f.Flags {
+					caps = caps.With(flag, true)
+				}
+				return caps
+			}
+		}
+		flagged = append(flagged, cell)
+	}
+	return flagged
 }
 
 // oneTable is the smallest schema every target accepts: one table with a
@@ -130,6 +162,8 @@ func Fixtures() []Fixture {
 		{Name: "transfer", Schema: transferFixture()},
 		{Name: "coordination-node", Schema: coordinationNodeFixture()},
 		{Name: "secret", Schema: secretFixture()},
+		{Name: "external-objects", Schema: externalObjectsFixture(),
+			Flags: []capability.Capability{capability.ExternalDataSources}},
 		{Name: "extended-property", Schema: extendedPropertyFixture()},
 		{Name: "role", Schema: roleFixture()},
 		{Name: "ydb-group-membership", Schema: ydbGroupMembershipFixture()},
@@ -1519,6 +1553,26 @@ func secretFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
 	db.Secrets = []schemamodel.Secret{{
 		StructName: "SE", Name: "pg_password", Schema: "ext", ValueEnv: "PTAH_SECRET_PG_PASSWORD",
+	}}
+	return db
+}
+
+// externalObjectsFixture declares a YDB external data source whose password a
+// secret holds, an object storage source, and an external table over the
+// second with every part a declaration writes.
+func externalObjectsFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.ExternalDataSources = []schemamodel.ExternalDataSource{
+		{StructName: "ES", Name: "warehouse", Schema: "ext", SourceType: "PostgreSQL", Location: "pg:5432",
+			AuthMethod: "BASIC", Options: map[string]string{"DATABASE_NAME": "app", "LOGIN": "reader",
+				"PASSWORD_SECRET_PATH": "ext/pg_password"}},
+		{StructName: "ES", Name: "bucket", Schema: "ext", SourceType: "ObjectStorage",
+			Location: "https://s3.example.test/b/", AuthMethod: "NONE"},
+	}
+	db.ExternalTables = []schemamodel.ExternalTable{{
+		StructName: "ET", Name: "events", Schema: "ext", DataSource: "ext/bucket", Location: "events/",
+		Columns: []schemamodel.ExternalColumn{{Name: "id", Type: "Int64", NotNull: true}},
+		Options: map[string]string{"FORMAT": "json_each_row"},
 	}}
 	return db
 }

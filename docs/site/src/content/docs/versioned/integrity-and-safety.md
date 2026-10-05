@@ -694,7 +694,16 @@ because it advances a sequence.
 The read-only guarantee has two strengths depending on the target. PostgreSQL,
 CockroachDB, YugabyteDB, Spanner, MySQL and MariaDB run the assertion in a
 database-enforced read-only session. SQLite, SQL Server and ClickHouse get a
-plain session, so there the guarantee rests on the static shape check alone. Checks are rejected under `--tx-mode all` on a real apply (a
+plain session, so there the guarantee rests on the static shape check alone.
+
+On YDB the assertion runs in a read-only transaction, which does not stop a
+read from leaving the database: measured on 25.1 and 26.2, a `SELECT` over an
+external table, or over a view that reads one, fetches the table's files from
+the object storage its data source names. So before a YDB assertion runs, Ptah
+describes every object it reads, following views into the queries they store,
+and refuses one that reads an external table or an object it cannot follow.
+
+Checks are rejected under `--tx-mode all` on a real apply (a
 pooled read cannot see the batch's uncommitted state) -- see
 [what `--tx-mode all` cannot carry](../apply/#what---tx-mode-all-cannot-carry)
 for the whole interaction -- and

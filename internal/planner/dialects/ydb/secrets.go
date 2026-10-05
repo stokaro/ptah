@@ -6,6 +6,15 @@ import (
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
+// refuseTopicsAndSecrets refuses a topic or a secret the diff declares that
+// this server cannot take, before the plan emits anything.
+func (p *Planner) refuseTopicsAndSecrets(diff *difftypes.SchemaDiff) error {
+	if err := p.refuseTopics(diff); err != nil {
+		return err
+	}
+	return p.refuseSecrets(diff)
+}
+
 // refuseSecrets refuses a secret change the target cannot make, before any
 // node is returned: every change on a target without the secrets key, and a
 // created or rotated secret whose variable is not one a value may come from.

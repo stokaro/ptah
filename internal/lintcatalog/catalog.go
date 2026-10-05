@@ -665,6 +665,9 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"YD140": {
 		Summary: "a secret's value written into the migration: a `CREATE SECRET` or `ALTER SECRET` whose value is not a `$PTAH_SECRET_...` reference, or a statement on the deprecated `OBJECT ... (TYPE SECRET)`",
 	},
+	"YD141": {
+		Summary: "an external data source that names its credential by a deprecated secret object (`..._SECRET_NAME`), whose value the database administrator reads in clear",
+	},
 }
 
 // sqlRuleMeta declares the same facts for the standalone SQL linter, which

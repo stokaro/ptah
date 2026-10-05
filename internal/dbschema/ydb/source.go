@@ -32,7 +32,7 @@ import (
 // node, the description of a topic, which is how a standalone topic and a
 // changefeed's retention and consumers are read, the description of an async
 // replication or transfer, and the database's users, groups, memberships,
-// resource pools and classifiers. A path is absolute.
+// resource pools, classifiers, external data sources and external tables. A path is absolute.
 //
 // A directory's own entry and a table's description each carry the object's
 // owner and its permission entries, which is where the reader reads them from:
@@ -42,6 +42,8 @@ type Source interface {
 	DescribeTable(ctx context.Context, path string) (*Ydb_Table.DescribeTableResult, error)
 	DescribeView(ctx context.Context, path string) (*Ydb_View.DescribeViewResult, error)
 	DescribeTopic(ctx context.Context, path string) (*Ydb_Topic.DescribeTopicResult, error)
+	DescribeExternalDataSource(ctx context.Context, path string) (*Ydb_Table.DescribeExternalDataSourceResult, error)
+	DescribeExternalTable(ctx context.Context, path string) (*Ydb_Table.DescribeExternalTableResult, error)
 	Principals(ctx context.Context) (Principals, error)
 	ResourcePools(ctx context.Context) (ResourcePools, error)
 	DescribeReplication(ctx context.Context, path string) (*Ydb_Replication.DescribeReplicationResult, error)

@@ -106,6 +106,54 @@ func TestSchemaDiff_HasChanges(t *testing.T) {
 			},
 			expected: true,
 		},
+		{
+			name: "external data sources added",
+			diff: &difftypes.SchemaDiff{
+				ExternalDataSourcesAdded: difftypes.ExternalDataSourceChanges{{Name: "s3"}},
+			},
+			expected: true,
+		},
+		{
+			name: "external data sources removed",
+			diff: &difftypes.SchemaDiff{
+				ExternalDataSourcesRemoved: difftypes.ExternalDataSourceChanges{{Name: "s3"}},
+			},
+			expected: true,
+		},
+		{
+			name: "external data sources replaced",
+			diff: &difftypes.SchemaDiff{
+				ExternalDataSourcesChanged: []difftypes.ExternalDataSourceChange{{
+					Declared: schemamodel.ExternalDataSource{Name: "s3", Location: "https://a.example.test/"},
+					Current:  schemamodel.ExternalDataSource{Name: "s3", Location: "https://b.example.test/"},
+				}},
+			},
+			expected: true,
+		},
+		{
+			name: "external tables added",
+			diff: &difftypes.SchemaDiff{
+				ExternalTablesAdded: difftypes.ExternalTableChanges{{Name: "events"}},
+			},
+			expected: true,
+		},
+		{
+			name: "external tables removed",
+			diff: &difftypes.SchemaDiff{
+				ExternalTablesRemoved: difftypes.ExternalTableChanges{{Name: "events"}},
+			},
+			expected: true,
+		},
+		{
+			name: "external tables replaced",
+			diff: &difftypes.SchemaDiff{
+				ExternalTablesChanged: []difftypes.ExternalTableChange{{
+					Declared: schemamodel.ExternalTable{Name: "events", Location: "a/"},
+					Current:  schemamodel.ExternalTable{Name: "events", Location: "b/"},
+				}},
+			},
+			expected: true,
+		},
 	}
 
 	for _, tt := range tests {

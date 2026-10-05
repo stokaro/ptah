@@ -357,7 +357,8 @@ var yamlOnlyExtensions = []string{".yaml", ".yml"}
 //     does; HCL, DBML and SQL have no spelling for one. A document in any of
 //     them describes no secret, and applying it to a database that holds one
 //     would otherwise plan `DROP SECRET`, which loses a value nothing can read
-//     back.
+//     back. The same holds for a YDB external data source and an external
+//     table, which only YAML and a Go schema declare.
 func withFormatLimits(database *schemamodel.Database, resolved string) *schemamodel.Database {
 	if database == nil {
 		return nil
@@ -394,7 +395,7 @@ func withFormatLimits(database *schemamodel.Database, resolved string) *schemamo
 			coverage.Replication, coverage.Transfer)...)
 	}
 	if !slices.Contains(yamlOnlyExtensions, extension) {
-		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(coverage.Secret)...)
+		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(coverage.Secret, coverage.ExternalDataSource, coverage.ExternalTable)...)
 	}
 	return database
 }
@@ -855,6 +856,8 @@ func appendDatabase(dst, src *schemamodel.Database) {
 	dst.Transfers = append(dst.Transfers, src.Transfers...)
 	dst.CoordinationNodes = append(dst.CoordinationNodes, src.CoordinationNodes...)
 	dst.Secrets = append(dst.Secrets, src.Secrets...)
+	dst.ExternalDataSources = append(dst.ExternalDataSources, src.ExternalDataSources...)
+	dst.ExternalTables = append(dst.ExternalTables, src.ExternalTables...)
 	dst.ExtendedProperties = append(dst.ExtendedProperties, src.ExtendedProperties...)
 	dst.ManagedData = append(dst.ManagedData, src.ManagedData...)
 	// Several files loaded together are one description, and it describes only

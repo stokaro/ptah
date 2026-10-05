@@ -291,7 +291,8 @@ func (t *transaction) Rollback() error { return nil }
 // ydburl.RealmDirectory at the root, and a directory that was empty before is
 // left alone. A directory's views go before its tables; YDB would take either
 // order, since it records no dependency on a view or on the table a view
-// reads.
+// reads. External tables go before their sources across the whole tree,
+// and sources go before the secrets they reference.
 //
 // The transfers and the replications go first, in a walk of their own, before
 // anything they read or write: a replication with CASCADE, which drops the
@@ -334,14 +335,44 @@ func (w *Writer) DropAllTables(ctx context.Context) error {
 			return isReplica(described.GetAttributes()), nil
 		}
 	}
-	_, err = w.dropDirectory(ctx, "", drop)
-	return err
+	for _, phase := range []dropPhase{dropReaders, dropSources, dropRemaining} {
+		drop.phase = phase
+		if _, err = w.dropDirectory(ctx, "", drop); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// dropPhase orders dependent objects across the whole database tree.
+type dropPhase uint8
+
+const (
+	dropReaders dropPhase = iota
+	dropSources
+	dropRemaining
+)
+
+// phaseForEntry puts external readers before their sources, and sources before
+// the secrets they reference. Objects in different directories follow the same order.
+func phaseForEntry(kind Ydb_Scheme.Entry_Type) dropPhase {
+	switch kind {
+	case Ydb_Scheme.Entry_VIEW, Ydb_Scheme.Entry_EXTERNAL_TABLE:
+		return dropReaders
+	case Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE:
+		return dropSources
+	default:
+		return dropRemaining
+	}
 }
 
 // allTablesDrop is what the table pass of [Writer.DropAllTables] knows besides
 // the tree: which row tables are replicas it leaves where they are, and which
 // directories the pass before it dropped something in.
 type allTablesDrop struct {
+	// phase orders readers before sources and sources before secrets,
+	// across directories as well as within each directory.
+	phase dropPhase
 	// replica reports a table the pass leaves where it is, given its path
 	// relative to the root: a replica table, or one already gone.
 	replica func(context.Context, string) (bool, error)
@@ -425,7 +456,7 @@ func (w *Writer) dropDirectory(ctx context.Context, dir string, drop allTablesDr
 	})
 	changed := drop.emptied[dir]
 	for _, entry := range entries {
-		if entry.GetType() == Ydb_Scheme.Entry_TABLE {
+		if entry.GetType() == Ydb_Scheme.Entry_TABLE && drop.phase == dropRemaining {
 			dropped, err := w.dropTableUnlessReplica(ctx, path.Join(dir, entry.GetName()), drop)
 			if err != nil {
 				return changed, err
@@ -433,7 +464,7 @@ func (w *Writer) dropDirectory(ctx context.Context, dir string, drop allTablesDr
 			changed = changed || dropped
 			continue
 		}
-		if statement, droppable := w.describedDropStatement(dir, entry); droppable {
+		if statement, droppable := w.describedDropStatement(dir, entry, drop.phase); droppable {
 			if err := w.ExecuteSQL(ctx, statement); err != nil {
 				return changed, err
 			}
@@ -454,10 +485,14 @@ func (w *Writer) dropDirectory(ctx context.Context, dir string, drop allTablesDr
 			continue
 		}
 		changed = true
+		if drop.phase != dropRemaining {
+			continue
+		}
 		if err := w.removeIfEmpty(ctx, child); err != nil {
 			return changed, err
 		}
 	}
+	drop.emptied[dir] = changed
 	return changed, nil
 }
 
@@ -480,9 +515,13 @@ func (w *Writer) dropTableUnlessReplica(ctx context.Context, table string, drop 
 // [Writer.dropTableUnlessReplica] instead, since dropping one depends on
 // whether a replication keeps it read-only. It reports false for any other
 // entry, which the reader does not describe and the cleanup keeps.
-func (w *Writer) describedDropStatement(dir string, entry *Ydb_Scheme.Entry) (string, bool) {
+func (w *Writer) describedDropStatement(dir string, entry *Ydb_Scheme.Entry, phase dropPhase) (string, bool) {
+	if phaseForEntry(entry.GetType()) != phase {
+		return "", false
+	}
 	switch entry.GetType() {
-	case Ydb_Scheme.Entry_VIEW, Ydb_Scheme.Entry_TOPIC, Ydb_Scheme.Entry_SECRET:
+	case Ydb_Scheme.Entry_VIEW, Ydb_Scheme.Entry_TOPIC, Ydb_Scheme.Entry_SECRET,
+		Ydb_Scheme.Entry_EXTERNAL_TABLE, Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE:
 		return dropStatement(entry.GetType(), path.Join(dir, entry.GetName()))
 	case Ydb_Scheme.Entry_COORDINATION_NODE:
 		if w.leftAlone(dir, entry) {
@@ -514,7 +553,7 @@ func dropRank(entry *Ydb_Scheme.Entry) int {
 // starts with a dot -- `.`, `..`, or a server directory such as `.sys` -- is
 // refused, so no spelling of dir reaches the root or leaves it. The whole tree
 // is read and checked before anything is dropped. An entry of a kind there is
-// no measured statement for, such as an external table, and an entry whose
+// no measured statement for, such as a column store, and an entry whose
 // name starts with a dot, which belongs to the server, stop it with the entry
 // named and nothing dropped.
 func (w *Writer) DropDirectory(ctx context.Context, dir string) error {
@@ -563,26 +602,37 @@ func (w *Writer) droppableDirectory(dir string) (string, error) {
 // 26.2.1.14, YDB drops a replica table, read-only as it is, with DROP TABLE,
 // while CASCADE would drop it first and the step for it would then fail.
 var treeStatements = map[Ydb_Scheme.Entry_Type]string{
-	Ydb_Scheme.Entry_TABLE:        "DROP TABLE %s",
-	Ydb_Scheme.Entry_COLUMN_TABLE: "DROP TABLE %s",
-	Ydb_Scheme.Entry_VIEW:         "DROP VIEW %s",
-	Ydb_Scheme.Entry_TOPIC:        "DROP TOPIC %s",
-	Ydb_Scheme.Entry_SECRET:       "DROP SECRET %s",
-	Ydb_Scheme.Entry_TRANSFER:     "DROP TRANSFER %s",
-	Ydb_Scheme.Entry_REPLICATION:  "DROP ASYNC REPLICATION %s",
+	Ydb_Scheme.Entry_EXTERNAL_TABLE:       "DROP EXTERNAL TABLE %s",
+	Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE: "DROP EXTERNAL DATA SOURCE %s",
+	Ydb_Scheme.Entry_TABLE:                "DROP TABLE %s",
+	Ydb_Scheme.Entry_COLUMN_TABLE:         "DROP TABLE %s",
+	Ydb_Scheme.Entry_VIEW:                 "DROP VIEW %s",
+	Ydb_Scheme.Entry_TOPIC:                "DROP TOPIC %s",
+	Ydb_Scheme.Entry_SECRET:               "DROP SECRET %s",
+	Ydb_Scheme.Entry_TRANSFER:             "DROP TRANSFER %s",
+	Ydb_Scheme.Entry_REPLICATION:          "DROP ASYNC REPLICATION %s",
 }
 
 // teardownRank orders the steps of a teardown: transfers first and then
 // replications, before the tables and topics they read and write go, and
-// everything else in the order the walk met it.
+// external readers before their sources, then ordinary objects, secrets and
+// directories. Entries at the same rank keep the order the walk met them.
 func teardownRank(entryType Ydb_Scheme.Entry_Type) int {
 	switch entryType {
 	case Ydb_Scheme.Entry_TRANSFER:
 		return 0
 	case Ydb_Scheme.Entry_REPLICATION:
 		return 1
-	default:
+	case Ydb_Scheme.Entry_EXTERNAL_TABLE:
 		return 2
+	case Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE:
+		return 3
+	case Ydb_Scheme.Entry_SECRET:
+		return 5
+	case Ydb_Scheme.Entry_DIRECTORY:
+		return 6
+	default:
+		return 4
 	}
 }
 

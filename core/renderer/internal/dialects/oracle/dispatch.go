@@ -115,6 +115,9 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return nodedispatch.RefuseReplication(DialectName, n)
 	case *ast.CreateSecretNode, *ast.AlterSecretNode, *ast.DropSecretNode:
 		return nodedispatch.RefuseSecret(DialectName, n)
+	case *ast.CreateExternalDataSourceNode, *ast.DropExternalDataSourceNode,
+		*ast.CreateExternalTableNode, *ast.DropExternalTableNode:
+		return nodedispatch.RefuseExternal(DialectName, n)
 
 	// Roles and privileges. A role and a grant are Oracle objects; an ALTER
 	// ROLE describes attributes an Oracle role does not carry.

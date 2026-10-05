@@ -250,6 +250,9 @@ func measuredLines() map[string]measuredLine {
 				capability.ReadReplicas:                    tableSettingKeyCarried,
 				capability.KeyBloomFilter:                  tableSettingKeyCarried,
 				capability.Secrets:                         secretKeyCarried,
+				capability.ExternalDataSources:             externalKeyCarried,
+				capability.ExternalDataSourceSecretPaths:   externalKeyCarried,
+				capability.ExternalObjectReplace:           externalKeyCarried,
 				capability.SerialColumns:                   typeKeyCarried,
 				capability.SerialSequenceOptions:           serialKeyCarried,
 				capability.SerialSequenceKeepsRange:        serialKeyCarried,
@@ -425,6 +428,9 @@ func measuredLines() map[string]measuredLine {
 				capability.ReadReplicas:                    tableSettingKeyCarried,
 				capability.KeyBloomFilter:                  tableSettingKeyCarried,
 				capability.Secrets:                         secretKeyCarried,
+				capability.ExternalDataSources:             externalKeyCarried,
+				capability.ExternalDataSourceSecretPaths:   externalKeyCarried,
+				capability.ExternalObjectReplace:           externalKeyCarried,
 				capability.SerialColumns:                   typeKeyCarried,
 				capability.SerialSequenceOptions:           serialKeyCarried,
 				capability.SerialSequenceKeepsRange:        serialKeyCarried,
@@ -601,6 +607,9 @@ func measuredLines() map[string]measuredLine {
 				capability.ReadReplicas:                    tableSettingKeyCarried,
 				capability.KeyBloomFilter:                  tableSettingKeyCarried,
 				capability.Secrets:                         secretKeyCarried,
+				capability.ExternalDataSources:             externalKeyCarried,
+				capability.ExternalDataSourceSecretPaths:   externalKeyCarried,
+				capability.ExternalObjectReplace:           externalKeyCarried,
 				capability.SerialColumns:                   typeKeyCarried,
 				capability.SerialSequenceOptions:           serialKeyCarried,
 				capability.SerialSequenceKeepsRange:        serialKeyCarried,
@@ -839,5 +848,11 @@ const tableSettingKeyCarried = "this run predates the key and sent no table-sett
 
 // secretKeyCarried is why the secrets key is carried on every measured line:
 // the run named there predates it, and the value here is the preset's.
+// externalKeyCarried is why the external object keys are carried on every
+// measured line: the run named there predates them, and the value here is
+// the preset's.
+const externalKeyCarried = "this run predates the key and sent no external object experiment; the probe asks " +
+	"it on every run, and the value here is the preset's"
+
 const secretKeyCarried = "this run predates the key and sent no secret experiment; the probe asks it on " +
 	"every run, and the value here is the preset's"

@@ -86,10 +86,14 @@ type escapeRule struct {
 //
 // Coverage is deliberately partial and dialect-specific: SQLite, PostgreSQL,
 // MySQL/MariaDB, SQL Server, ClickHouse, Oracle and YDB constructs are
-// represented. A YDB external table is the known gap there: it is a catalog
-// object whose reads leave the database, and a statement names it exactly as
-// it names a table. The lint catches honest mistakes and known tricks. It
-// does not stop an author who is trying to get past it.
+// represented. A YDB external table is outside what any text rule can see: it
+// is a catalog object whose reads leave the database, and a statement names
+// it exactly as it names a table. [ReadYQLSources] names what a query reads,
+// and a caller that has the database asks its catalog what each name is, as
+// the migrator does before a check runs. A dev realm replay has no such
+// catalog question to ask, and its guard refuses every statement that names
+// an external table or data source instead. The lint catches honest mistakes
+// and known tricks. It does not stop an author who is trying to get past it.
 var escapeRules = []escapeRule{
 	{
 		construct: "ATTACH",

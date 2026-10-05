@@ -159,6 +159,15 @@ func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 	add(&findings, "secrets_added", len(diff.SecretsAdded), Safe)
 	add(&findings, "secrets_removed", len(diff.SecretsRemoved), Destructive)
 	add(&findings, "secrets_rotated", len(diff.SecretsRotated), Warning)
+	// A YDB external data source or table holds no data in YDB, so dropping
+	// or replacing one loses none; a query that reads one fails or reads
+	// something else afterwards.
+	add(&findings, "external_data_sources_added", len(diff.ExternalDataSourcesAdded), Safe)
+	add(&findings, "external_data_sources_removed", len(diff.ExternalDataSourcesRemoved), Warning)
+	add(&findings, "external_data_sources_changed", len(diff.ExternalDataSourcesChanged), Warning)
+	add(&findings, "external_tables_added", len(diff.ExternalTablesAdded), Safe)
+	add(&findings, "external_tables_removed", len(diff.ExternalTablesRemoved), Warning)
+	add(&findings, "external_tables_changed", len(diff.ExternalTablesChanged), Warning)
 
 	for _, table := range diff.TablesModified {
 		add(&findings, "columns_added", len(table.ColumnsAdded), Warning)
@@ -597,7 +606,8 @@ func assessNode(node ast.Node) StatementAssessment {
 	case *ast.DropTopicNode, *ast.AlterTopicNode, *ast.DropAsyncReplicationNode, *ast.DropTransferNode,
 		*ast.AlterAsyncReplicationNode, *ast.AlterTransferNode:
 		return assessYDBObjectNode(n, assessment)
-	case *ast.DropSecretNode, *ast.AlterSecretNode:
+	case *ast.DropSecretNode, *ast.AlterSecretNode, *ast.DropExternalDataSourceNode, *ast.DropExternalTableNode,
+		*ast.CreateExternalDataSourceNode, *ast.CreateExternalTableNode:
 		return assessYDBObject(n, assessment)
 	case *ast.RawSQLNode:
 		assessment.Statement = n.SQL
@@ -791,6 +801,15 @@ func assessRawSQL(sql string, assessment StatementAssessment, keepsNullability b
 		return assessment
 	}
 	switch {
+	case hasWordPrefix(words, "DROP", "EXTERNAL", "DATA", "SOURCE"):
+		assessment.Severity = Warning
+		assessment.Reason = dropExternalDataSourceReason
+	case hasWordPrefix(words, "DROP", "EXTERNAL", "TABLE"):
+		assessment.Severity = Warning
+		assessment.Reason = dropExternalTableReason
+	case hasWordPrefix(words, "CREATE", "OR", "REPLACE", "EXTERNAL"):
+		assessment.Severity = Warning
+		assessment.Reason = replaceExternalReason
 	case hasWordSequence(words, "DISABLE", "ROW", "LEVEL", "SECURITY"):
 		assessment.Severity = Destructive
 		assessment.Reason = "DISABLE ROW LEVEL SECURITY removes an access-control protection"
@@ -1100,10 +1119,11 @@ const dropCoordinationNodeReason = "DROP COORDINATION NODE removes the node with
 // AST and the SQL-text classifiers report.
 const dropSecretReason = "DROP SECRET removes a YDB secret whose value nothing can read back"
 
-// assessYDBObject judges a YDB topic or secret statement. A dropped topic
-// loses the messages it holds, and a dropped secret a value nothing can read
-// back; a rotated secret replaces the value every external data source naming
-// it uses.
+// assessYDBObject judges a YDB topic, secret or external object statement. A
+// dropped topic loses the messages it holds, and a dropped secret a value
+// nothing can read back; a rotated secret replaces the value every external
+// data source naming it uses; and no external object holds data in YDB, so
+// dropping or replacing one warns.
 func assessYDBObject(node ast.Node, assessment StatementAssessment) StatementAssessment {
 	switch n := node.(type) {
 	case *ast.DropTopicNode:
@@ -1116,9 +1136,32 @@ func assessYDBObject(node ast.Node, assessment StatementAssessment) StatementAss
 	case *ast.AlterSecretNode:
 		assessment.Subject, assessment.Severity = n.Name, Warning
 		assessment.Reason = "ALTER SECRET replaces the value every external data source naming the secret uses"
+	case *ast.DropExternalDataSourceNode:
+		assessment.Subject, assessment.Severity, assessment.Reason = n.Name, Warning, dropExternalDataSourceReason
+	case *ast.DropExternalTableNode:
+		assessment.Subject, assessment.Severity, assessment.Reason = n.Name, Warning, dropExternalTableReason
+	case *ast.CreateExternalDataSourceNode:
+		assessment.Subject = n.Name
+		if n.Replace {
+			assessment.Severity, assessment.Reason = Warning, replaceExternalReason
+		}
+	case *ast.CreateExternalTableNode:
+		assessment.Subject = n.Name
+		if n.Replace {
+			assessment.Severity, assessment.Reason = Warning, replaceExternalReason
+		}
 	}
 	return assessment
 }
+
+// The reasons a YDB external object's statements warn with, in the words both
+// classifiers report. Neither object holds data in YDB.
+const (
+	dropExternalDataSourceReason = "DROP EXTERNAL DATA SOURCE removes what YDB reads another system through; " +
+		"no data YDB stores is lost"
+	dropExternalTableReason = "DROP EXTERNAL TABLE removes the columns YDB reads files through; the files stay"
+	replaceExternalReason   = "CREATE OR REPLACE changes what queries reading the external object read"
+)
 
 // destructivePrefixReason returns the reason of the first [destructivePrefixes]
 // entry the statement's words start with.

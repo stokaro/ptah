@@ -33,6 +33,10 @@ type fakeDatabase struct {
 	// failures answers the statement at each position of the log with an
 	// error, where the slice holds one.
 	failures []error
+	// readers maps an external data source's absolute path to the external
+	// tables over it. A source is not dropped while one of them exists, as
+	// YDB refuses (`Other entities depend on this data source`).
+	readers map[string][]string
 }
 
 func (f *fakeDatabase) MakeDirectory(_ context.Context, dir string) error {
@@ -86,13 +90,22 @@ func (f *fakeDatabase) ExecContext(_ context.Context, query string, _ ...any) (s
 	if position < len(f.failures) && f.failures[position] != nil {
 		return nil, f.failures[position]
 	}
-	for _, verb := range []string{"DROP TABLE `", "DROP VIEW `", "DROP TOPIC `", "DROP TRANSFER `",
-		"DROP ASYNC REPLICATION `", "DROP COORDINATION NODE `", "DROP SECRET `"} {
-		if object, dropped := strings.CutPrefix(strings.TrimSuffix(query, " CASCADE"), verb); dropped {
-			full := path.Join("/local", strings.ReplaceAll(strings.TrimSuffix(object, "`"), "\\`", "`"))
-			parent, name := path.Split(full)
-			f.tree[strings.TrimSuffix(parent, "/")] = without(f.tree[strings.TrimSuffix(parent, "/")], name)
+	for _, verb := range []string{"DROP TABLE `", "DROP VIEW `", "DROP TOPIC `", "DROP SECRET `",
+		"DROP TRANSFER `", "DROP ASYNC REPLICATION `", "DROP COORDINATION NODE `",
+		"DROP EXTERNAL TABLE `", "DROP EXTERNAL DATA SOURCE `"} {
+		object, dropped := strings.CutPrefix(strings.TrimSuffix(query, " CASCADE"), verb)
+		if !dropped {
+			continue
 		}
+		full := path.Join("/local", strings.ReplaceAll(strings.TrimSuffix(object, "`"), "\\`", "`"))
+		for _, reader := range f.readers[full] {
+			if f.holds(reader) {
+				return nil, fmt.Errorf("Other entities depend on this data source, please remove them at the "+
+					"beginning: %s", reader)
+			}
+		}
+		parent, name := path.Split(full)
+		f.tree[strings.TrimSuffix(parent, "/")] = without(f.tree[strings.TrimSuffix(parent, "/")], name)
 	}
 	return driver.RowsAffected(0), nil
 }
@@ -103,6 +116,17 @@ func (f *fakeDatabase) QueryContext(context.Context, string, ...any) (*sql.Rows,
 func (f *fakeDatabase) QueryRow(string, ...any) *sql.Row { return nil }
 func (f *fakeDatabase) QueryRowContext(context.Context, string, ...any) *sql.Row {
 	return nil
+}
+
+// holds reports whether the tree holds an entry at the absolute path.
+func (f *fakeDatabase) holds(absolute string) bool {
+	parent, name := path.Split(absolute)
+	for _, held := range f.tree[strings.TrimSuffix(parent, "/")] {
+		if held.GetName() == name {
+			return true
+		}
+	}
+	return false
 }
 
 func newFake() *fakeDatabase {
@@ -286,7 +310,7 @@ func TestWriter_TransactionIsANoOp(t *testing.T) {
 	c.Assert(fake.executed, qt.DeepEquals, []string{"DROP TABLE `t`"})
 }
 
-// DropAllTables drops every view, row table, topic and coordination node, a
+// DropAllTables drops every view, row table, topic, secret, external object and coordination node, a
 // directory's views first, and removes the directories that left empty. What
 // the reader does not describe stays, and so does the directory that holds it:
 // Ptah's lock node at the root and a node whose name starts with a dot among
@@ -309,9 +333,11 @@ func TestWriter_DropAllTables(t *testing.T) {
 			entry("ptah_locks", Ydb_Scheme.Entry_COORDINATION_NODE),
 			entry("queues", Ydb_Scheme.Entry_DIRECTORY),
 			entry("v", Ydb_Scheme.Entry_VIEW),
+			entry("z", Ydb_Scheme.Entry_DIRECTORY),
 		},
 		"/local/app": {
 			entry("pw", Ydb_Scheme.Entry_SECRET),
+			entry("s3", Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE),
 			entry("sub", Ydb_Scheme.Entry_DIRECTORY),
 			entry("t2", Ydb_Scheme.Entry_TABLE),
 			entry("v2", Ydb_Scheme.Entry_VIEW),
@@ -321,7 +347,8 @@ func TestWriter_DropAllTables(t *testing.T) {
 		"/local/mixed":   {entry("t4", Ydb_Scheme.Entry_TABLE), entry("events", Ydb_Scheme.Entry_TOPIC)},
 		"/local/nodes":   {entry("ptah_locks", Ydb_Scheme.Entry_COORDINATION_NODE)},
 		"/local/queues":  {entry("events", Ydb_Scheme.Entry_TOPIC), entry("olap", Ydb_Scheme.Entry_COLUMN_TABLE)},
-	}}
+		"/local/z":       {entry("files", Ydb_Scheme.Entry_EXTERNAL_TABLE)},
+	}, readers: map[string][]string{"/local/app/s3": {"/local/z/files"}}}
 	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
 
 	err := writer.DropAllTables(context.Background())
@@ -330,6 +357,8 @@ func TestWriter_DropAllTables(t *testing.T) {
 	c.Assert(fake.executed, qt.DeepEquals, []string{
 		"DROP VIEW `v`",
 		"DROP VIEW `app/v2`",
+		"DROP EXTERNAL TABLE `z/files`",
+		"DROP EXTERNAL DATA SOURCE `app/s3`",
 		"DROP SECRET `app/pw`",
 		"DROP TABLE `app/sub/t\\`3`",
 		"DROP TABLE `app/t2`",
@@ -340,7 +369,7 @@ func TestWriter_DropAllTables(t *testing.T) {
 		"DROP TOPIC `queues/events`",
 		"DROP TABLE `t1`",
 	})
-	c.Assert(fake.removed, qt.DeepEquals, []string{"/local/app/sub", "/local/app", "/local/mixed", "/local/nodes"})
+	c.Assert(fake.removed, qt.DeepEquals, []string{"/local/app/sub", "/local/app", "/local/mixed", "/local/nodes", "/local/z"})
 	var left []string
 	for _, kept := range fake.tree["/local"] {
 		left = append(left, kept.GetName())
@@ -396,7 +425,7 @@ func TestWriter_DropAllTables_FailurePath(t *testing.T) {
 }
 
 // DropDirectory removes a directory a caller made for itself with everything
-// in it, deepest first: tables of both kinds, views, topics, coordination
+// in it, deepest first: tables of both kinds, views, topics, secrets, external objects, coordination
 // nodes, and the directories below.
 // What sits beside the directory is not touched.
 func TestWriter_DropDirectory(t *testing.T) {
@@ -410,25 +439,30 @@ func TestWriter_DropDirectory(t *testing.T) {
 			entry("locks", Ydb_Scheme.Entry_COORDINATION_NODE),
 			entry("sk", Ydb_Scheme.Entry_SECRET),
 			entry("rb", Ydb_Scheme.Entry_DIRECTORY),
+			entry("es", Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE),
+			entry("zz", Ydb_Scheme.Entry_DIRECTORY),
 		},
 		"/local/probe/rb": {entry("t`2", Ydb_Scheme.Entry_TABLE), entry("events", Ydb_Scheme.Entry_TOPIC)},
+		"/local/probe/zz": {entry("et", Ydb_Scheme.Entry_EXTERNAL_TABLE)},
 		"/local/app":      {entry("keep", Ydb_Scheme.Entry_TABLE)},
-	}}
+	}, readers: map[string][]string{"/local/probe/es": {"/local/probe/zz/et"}}}
 	writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
 
 	err := writer.DropDirectory(context.Background(), "/probe/")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(fake.executed, qt.DeepEquals, []string{
+		"DROP EXTERNAL TABLE `probe/zz/et`",
+		"DROP EXTERNAL DATA SOURCE `probe/es`",
 		"DROP COORDINATION NODE `probe/locks`",
 		"DROP TABLE `probe/olap`",
 		"DROP TOPIC `probe/rb/events`",
 		"DROP TABLE `probe/rb/t\\`2`",
-		"DROP SECRET `probe/sk`",
 		"DROP TABLE `probe/t`",
 		"DROP VIEW `probe/v`",
+		"DROP SECRET `probe/sk`",
 	})
-	c.Assert(fake.removed, qt.DeepEquals, []string{"/local/probe/rb", "/local/probe"})
+	c.Assert(fake.removed, qt.DeepEquals, []string{"/local/probe/rb", "/local/probe/zz", "/local/probe"})
 	c.Assert(fake.tree["/local/app"], qt.HasLen, 1)
 }
 
@@ -515,9 +549,9 @@ func TestWriter_DropDirectory_FailurePath(t *testing.T) {
 		{name: "a real directory and its parent", dir: "app/../", wantErr: fmt.Sprintf(dotSegment, "app/../", "..")},
 		{name: "a server directory", dir: ".sys", wantErr: fmt.Sprintf(dotSegment, ".sys", ".sys")},
 		{
-			name: "an external table below a table the walk meets first",
+			name: "a column store below a table the walk meets first",
 			dir:  "probe",
-			wantErr: "ydb: /local/probe/z holds sales, a EXTERNAL_TABLE, which Ptah has no statement to drop; " +
+			wantErr: "ydb: /local/probe/z holds sales, a COLUMN_STORE, which Ptah has no statement to drop; " +
 				"nothing was dropped",
 		},
 		{
@@ -540,7 +574,7 @@ func TestWriter_DropDirectory_FailurePath(t *testing.T) {
 				"/local/.sys":         nil,
 				"/local/app":          {entry("users", Ydb_Scheme.Entry_TABLE)},
 				"/local/probe":        {entry("a", Ydb_Scheme.Entry_TABLE), entry("z", Ydb_Scheme.Entry_DIRECTORY)},
-				"/local/probe/z":      {entry("sales", Ydb_Scheme.Entry_EXTERNAL_TABLE)},
+				"/local/probe/z":      {entry("sales", Ydb_Scheme.Entry_COLUMN_STORE)},
 				"/local/scratch":      {entry("t", Ydb_Scheme.Entry_TABLE), entry(".tmp", Ydb_Scheme.Entry_DIRECTORY)},
 				"/local/scratch/.tmp": {entry("x", Ydb_Scheme.Entry_TABLE)},
 			}}
@@ -698,16 +732,16 @@ func TestWriter_DropDatabaseRealm(t *testing.T) {
 // An object a reset has no statement for stops it before anything is dropped,
 // and so does an environment a YDB reset cannot keep.
 func TestWriter_DropDatabaseRealm_FailurePath(t *testing.T) {
-	t.Run("an external table", func(t *testing.T) {
+	t.Run("a column store", func(t *testing.T) {
 		c := qt.New(t)
 		tree := rootTree()
-		tree["/local/app"] = append(tree["/local/app"], entry("sales", Ydb_Scheme.Entry_EXTERNAL_TABLE))
+		tree["/local/app"] = append(tree["/local/app"], entry("sales", Ydb_Scheme.Entry_COLUMN_STORE))
 		fake := &fakeDatabase{tree: tree}
 		writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
 
 		err := writer.DropDatabaseRealm(context.Background())
 
-		c.Assert(err, qt.ErrorMatches, `ydb: /local holds external table "sales" in directory "app", `+
+		c.Assert(err, qt.ErrorMatches, `ydb: /local holds column store "sales" in directory "app", `+
 			`which Ptah has no statement to drop; nothing was dropped`)
 		c.Assert(fake.executed, qt.HasLen, 0)
 		c.Assert(fake.removed, qt.HasLen, 0)
@@ -791,9 +825,9 @@ func TestWriter_RemoveRealm_FailurePath(t *testing.T) {
 			wantErr: `the dev_realm parameter "../app" is not a realm name: use 1 to 64 lowercase letters, digits and underscores`,
 		},
 		{
-			name:  "an external table inside",
+			name:  "a column store inside",
 			realm: "r1",
-			wantErr: `ydb: the dev realm /local/ptah_dev/r1 holds external table "sales" in directory "app", ` +
+			wantErr: `ydb: the dev realm /local/ptah_dev/r1 holds column store "sales" in directory "app", ` +
 				`which Ptah has no statement to drop; nothing was dropped`,
 		},
 	}
@@ -804,7 +838,7 @@ func TestWriter_RemoveRealm_FailurePath(t *testing.T) {
 				"/local":                 {entry("ptah_dev", Ydb_Scheme.Entry_DIRECTORY)},
 				"/local/ptah_dev":        {entry("r1", Ydb_Scheme.Entry_DIRECTORY)},
 				"/local/ptah_dev/r1":     {entry("t", Ydb_Scheme.Entry_TABLE), entry("app", Ydb_Scheme.Entry_DIRECTORY)},
-				"/local/ptah_dev/r1/app": {entry("sales", Ydb_Scheme.Entry_EXTERNAL_TABLE)},
+				"/local/ptah_dev/r1/app": {entry("sales", Ydb_Scheme.Entry_COLUMN_STORE)},
 			}}
 			writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", test.in)
 
@@ -891,4 +925,42 @@ func TestWriter_TablesNamed(t *testing.T) {
 		{Kind: "table", Schema: "app/sub", Name: "schema_migrations"},
 		{Kind: "table", Name: "schema_migrations"},
 	})
+}
+
+// A source and its readers may be in different directories from its secret.
+// Every cleanup path drops the readers, then the source, then the credential.
+func TestWriter_ExternalDependencyOrderAcrossDirectories(t *testing.T) {
+	tests := []struct {
+		name string
+		root string
+		run  func(*ydbschema.Writer) error
+	}{
+		{name: "tables", root: "/local/probe", run: func(w *ydbschema.Writer) error { return w.DropAllTables(context.Background()) }},
+		{name: "directory", root: "/local/probe", run: func(w *ydbschema.Writer) error { return w.DropDirectory(context.Background(), "probe") }},
+		{name: "database", root: "/local/probe", run: func(w *ydbschema.Writer) error { return w.DropDatabaseRealm(context.Background()) }},
+		{name: "realm", root: "/local/ptah_dev/r1", run: func(w *ydbschema.Writer) error { return w.RemoveRealm(context.Background(), "r1") }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			root := test.root
+			fake := &fakeDatabase{tree: map[string][]*Ydb_Scheme.Entry{
+				"/local":    {entry("probe", Ydb_Scheme.Entry_DIRECTORY)},
+				root:        {entry("a", Ydb_Scheme.Entry_DIRECTORY), entry("m", Ydb_Scheme.Entry_DIRECTORY), entry("z", Ydb_Scheme.Entry_DIRECTORY)},
+				root + "/a": {entry("secret", Ydb_Scheme.Entry_SECRET)},
+				root + "/m": {entry("source", Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE)},
+				root + "/z": {entry("reader", Ydb_Scheme.Entry_EXTERNAL_TABLE)},
+			}, readers: map[string][]string{root + "/m/source": {root + "/z/reader"}}}
+			fake.tree[path.Dir(root)] = []*Ydb_Scheme.Entry{entry(path.Base(root), Ydb_Scheme.Entry_DIRECTORY)}
+			writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
+			err := test.run(writer)
+			c.Assert(err, qt.IsNil)
+			relative := strings.TrimPrefix(root, "/local/")
+			c.Assert(fake.executed, qt.DeepEquals, []string{
+				"DROP EXTERNAL TABLE `" + relative + "/z/reader`",
+				"DROP EXTERNAL DATA SOURCE `" + relative + "/m/source`",
+				"DROP SECRET `" + relative + "/a/secret`",
+			})
+		})
+	}
 }

@@ -23,7 +23,8 @@ import (
 // sdk is the driver the connections belong to, which [DriverOf] hands back;
 // it is nil for a connector [NewBindingConnector] built. prefix is written in
 // front of every query the connections run, and is empty unless the URL named
-// a dev realm.
+// a dev realm. root is the directory a relative name in those queries means:
+// the realm's, or the database's.
 type connector struct {
 	inner  driver.Connector
 	sdk    *ydbsdk.Driver

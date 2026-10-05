@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	ydbschema "ptah.run/internal/dbschema/ydb"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/ptahdirective"
@@ -273,10 +274,14 @@ func runCheckGroups(
 	if len(groups) == 0 {
 		return nil
 	}
+	reads, err := checkReadProof(ctx, conn, dialect)
+	if err != nil {
+		return err
+	}
 
 	return conn.WithIsolatedQuerySession(ctx, checkTransactionOptions(dialect), func(queryer dbschema.IsolatedQueryer) error {
 		for _, group := range groups {
-			if err := runCheckGroup(ctx, queryer, dialect, serverVersion, version, group); err != nil {
+			if err := runCheckGroup(ctx, queryer, reads, dialect, serverVersion, version, group); err != nil {
 				return err
 			}
 		}
@@ -284,9 +289,49 @@ func runCheckGroups(
 	})
 }
 
+// readProof proves what an assertion reads stays in the database, by asking
+// the database; see [checkReadProof].
+type readProof func(ctx context.Context, assertion string) error
+
+// checkReadProof returns what proves, before an assertion runs, that every
+// object it reads keeps its rows in the database the check is sent to.
+//
+// The text cannot say it on YDB. An external table is named exactly as a
+// table is, and measured on 25.1.4.7 and 26.2.1.14, a SELECT over one, or
+// over a view that reads one, fetches the table's files from the object
+// storage its data source names, inside the read-only transaction a check
+// runs in. So on YDB each name the assertion reads is described before it
+// runs, and one that is an external table, or that cannot be followed, is
+// refused (see [ydbschema.ProveLocalReads]). Every other dialect reaches
+// another server only through constructs the text names, which
+// [sqlreach.Scan] refuses, and gets nil.
+func checkReadProof(ctx context.Context, conn *dbschema.DatabaseConnection, dialect string) (readProof, error) {
+	if platform.NormalizeDialect(dialect) != platform.YDB {
+		return nil, nil
+	}
+	session, err := conn.Conn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("open a session to describe what checks read: %w", err)
+	}
+	catalog, root, err := ydbschema.SessionReadCatalog(session)
+	if closeErr := session.Close(); err == nil && closeErr != nil {
+		err = closeErr
+	}
+	if err != nil {
+		return nil, fmt.Errorf("describe what checks read: %w", err)
+	}
+	return func(ctx context.Context, assertion string) error {
+		if err := ydbschema.ProveLocalReads(ctx, catalog, root, assertion); err != nil {
+			return fmt.Errorf("check assertion cannot be proved read-only: %w", err)
+		}
+		return nil
+	}, nil
+}
+
 func runCheckGroup(
 	ctx context.Context,
 	queryer dbschema.IsolatedQueryer,
+	reads readProof,
 	dialect,
 	serverVersion string,
 	version int64,
@@ -294,7 +339,7 @@ func runCheckGroup(
 ) error {
 	onePassed := false
 	for _, check := range group.checks {
-		result, err := runCheckAssertion(ctx, queryer, dialect, serverVersion, check.Assert)
+		result, err := runCheckAssertion(ctx, queryer, reads, dialect, serverVersion, check.Assert)
 		if err != nil {
 			return &CheckFailedError{
 				Version: version, Name: check.Name, Assert: check.Assert, Phase: check.Phase, Err: err,
@@ -358,15 +403,23 @@ func checkTransactionOptions(dialect string) *sql.TxOptions {
 	}
 }
 
+// runCheckAssertion runs one assertion once its text is proved read-only and,
+// where reads is not nil, once what it reads is proved to stay in the database.
 func runCheckAssertion(
 	ctx context.Context,
 	queryer dbschema.IsolatedQueryer,
+	reads readProof,
 	dialect,
 	serverVersion,
 	assertion string,
 ) (any, error) {
 	if err := validateCheckAssertionStatically(assertion, dialect, serverVersion); err != nil {
 		return nil, err
+	}
+	if reads != nil {
+		if err := reads(ctx, assertion); err != nil {
+			return nil, err
+		}
 	}
 
 	rows, err := queryer.QueryContext(ctx, assertion)

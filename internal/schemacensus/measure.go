@@ -55,7 +55,7 @@ func measure(surface func(schemamodel.Database, capabilityprobe.Cell) string) []
 
 	baselines := make([]map[string]string, len(fixtures))
 	for index, fixture := range fixtures {
-		baselines[index] = everyCell(surface, fixture.Schema, cells)
+		baselines[index] = everyCell(surface, fixture.Schema, fixture.Cells(cells))
 	}
 
 	fields := Fields()
@@ -67,7 +67,7 @@ func measure(surface func(schemamodel.Database, capabilityprobe.Cell) string) []
 				continue
 			}
 			observation.Covered = append(observation.Covered, fixture.Name)
-			ablated := everyCell(surface, Ablate(fixture.Schema, field), cells)
+			ablated := everyCell(surface, Ablate(fixture.Schema, field), fixture.Cells(cells))
 			for name, rendered := range ablated {
 				if rendered != baselines[index][name] {
 					observation.Cells = append(observation.Cells, name)
