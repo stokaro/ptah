@@ -208,6 +208,7 @@ func TestWithin(t *testing.T) {
 		{name: "below", absolute: "/local/a/t", root: "/local", wantRelative: "a/t", wantInside: true},
 		{name: "below a realm", absolute: "/local/.ptah/r/t", root: "/local/.ptah/r", wantRelative: "t", wantInside: true},
 		{name: "the root", absolute: "/local", root: "/local"},
+		{name: "the root of everything", absolute: "/", root: "/"},
 		{name: "a sibling with the same prefix", absolute: "/localx/t", root: "/local"},
 		{name: "climbing out", absolute: "/local/r/../../etc/t", root: "/local/r"},
 		{name: "outside a realm", absolute: "/local/t", root: "/local/.ptah/r"},

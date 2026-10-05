@@ -733,11 +733,9 @@ func (s *ydbSchema) applyComment(sql string) {
 	if table.comments == nil {
 		table.comments = make(map[string]string)
 	}
-	if query.Comment == "" {
-		delete(table.comments, query.Key())
-	} else {
-		table.comments[query.Key()] = query.Comment
-	}
+	// An empty comment is a removal, and the rules read an empty comment as
+	// none.
+	table.comments[query.Key()] = query.Comment
 	s.tables[query.Path] = table
 }
 
