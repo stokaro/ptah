@@ -146,10 +146,10 @@ func checkCommentTarget(statement ydbcomment.Statement, absolute string, entryTy
 	if statement.Object == ydbcomment.View {
 		want = Ydb_Scheme.Entry_VIEW
 	}
-	switch {
-	case entryType == want:
+	switch entryType {
+	case want:
 		return nil
-	case entryType == Ydb_Scheme.Entry_COLUMN_TABLE:
+	case Ydb_Scheme.Entry_COLUMN_TABLE:
 		return fmt.Errorf("%w: %s is a column table, which takes an attribute and does not keep it, so YDB "+
 			"has nowhere to keep its comments", ydbcomment.ErrStatement, absolute)
 	default:

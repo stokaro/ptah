@@ -134,7 +134,7 @@ func setAttributes(c *qt.C, line ydbLine, relative string, attributes map[string
 // commentsOf lists every comment a read describes, keyed by what it belongs
 // to.
 func commentsOf(live *catalog.Database) map[string]string {
-	comments := map[string]string{}
+	comments := make(map[string]string)
 	for _, table := range live.Tables {
 		comments["table "+table.Name] = table.Comment
 		for _, column := range table.Columns {

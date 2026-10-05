@@ -229,9 +229,10 @@ func TestBindingConnector_FailurePath_CommentStatements(t *testing.T) {
 	_, err = db.ExecContext(ctx, "COMMENT ON TABLE t IS 5")
 	c.Assert(err, qt.ErrorIs, ydbcomment.ErrStatement)
 
-	rows, err := db.QueryContext(ctx, "COMMENT ON TABLE t IS 'x'")
+	var scanned string
+	err = db.QueryRowContext(ctx, "COMMENT ON TABLE t IS 'x'").Scan(&scanned)
 	c.Assert(err, qt.ErrorMatches, `invalid comment statement: a comment statement returns no rows; execute it`)
-	c.Assert(rows, qt.IsNil)
+	c.Assert(scanned, qt.Equals, "")
 
 	transaction, err := db.BeginTx(ctx, nil)
 	c.Assert(err, qt.IsNil)

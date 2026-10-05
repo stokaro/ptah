@@ -111,23 +111,23 @@ func TestLocate_FailurePath(t *testing.T) {
 // the escapes ydbtype.StringLiteral writes.
 func TestStringValue_HappyPath(t *testing.T) {
 	tests := []struct {
-		name  string
-		token string
-		want  string
+		name    string
+		literal string
+		want    string
 	}{
-		{name: "single quotes", token: `'abc'`, want: "abc"},
-		{name: "double quotes", token: `"abc"`, want: "abc"},
-		{name: "Utf8 suffix", token: `'abc'u`, want: "abc"},
-		{name: "empty", token: `''`, want: ""},
-		{name: "the other quote bare", token: `"it's"`, want: "it's"},
-		{name: "escapes", token: `'a\\b\'c\"d\ne\rf\tg'`, want: "a\\b'c\"d\ne\rf\tg"},
-		{name: "a byte", token: `'\x00\x7f'`, want: "\x00\x7f"},
-		{name: "non-ASCII", token: `'привет'`, want: "привет"},
+		{name: "single quotes", literal: `'abc'`, want: "abc"},
+		{name: "double quotes", literal: `"abc"`, want: "abc"},
+		{name: "Utf8 suffix", literal: `'abc'u`, want: "abc"},
+		{name: "empty", literal: `''`, want: ""},
+		{name: "the other quote bare", literal: `"it's"`, want: "it's"},
+		{name: "escapes", literal: `'a\\b\'c\"d\ne\rf\tg'`, want: "a\\b'c\"d\ne\rf\tg"},
+		{name: "a byte", literal: `'\x00\x7f'`, want: "\x00\x7f"},
+		{name: "non-ASCII", literal: `'привет'`, want: "привет"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			got, ok := yqlservice.StringValue(lexer.Token{Type: lexer.TokenString, Value: test.token})
+			got, ok := yqlservice.StringValue(lexer.Token{Type: lexer.TokenString, Value: test.literal})
 			c.Assert(ok, qt.IsTrue)
 			c.Assert(got, qt.Equals, test.want)
 		})

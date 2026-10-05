@@ -301,7 +301,7 @@ func ydbDescribedComments(table string) check {
 				return attempt, false, "was refused"
 			}
 			attempt.Accepted = true
-			read := map[string]string{}
+			read := make(map[string]string)
 			for _, found := range db.Tables {
 				if found.Name != table {
 					continue

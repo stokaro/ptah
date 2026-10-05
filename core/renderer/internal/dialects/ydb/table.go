@@ -101,11 +101,8 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 		}
 	}
 
-	changefeeds, err := r.changefeedStatements(node, slices.Collect(maps.Keys(named)), columnTypes[keyColumns[0]])
-	if err != nil {
-		return err
-	}
-	comments, err := r.tableComments(node, indexes)
+	following, err := r.followingStatements(node, partitioning, slices.Collect(maps.Keys(named)),
+		columnTypes[keyColumns[0]], indexes)
 	if err != nil {
 		return err
 	}
@@ -123,16 +120,33 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 		closing += " " + custom
 	}
 	r.w.WriteLine(closing + ";")
-	for _, statement := range partitioning {
-		r.w.WriteLine(statement)
-	}
-	for _, statement := range changefeeds {
-		r.w.WriteLine(statement)
-	}
-	for _, statement := range comments {
+	for _, statement := range following {
 		r.w.WriteLine(statement)
 	}
 	return nil
+}
+
+// followingStatements are the statements a new table takes after its CREATE
+// TABLE, in order: the partitioning of its indexes, its changefeeds, and the
+// comments of the table, its columns and its indexes. Each needs the table
+// to exist. indexNames are the names its indexes take, keyType is the YDB
+// type of its first key column, and indexes are the indexes the CREATE TABLE
+// writes.
+func (r *Renderer) followingStatements(
+	node *ast.CreateTableNode,
+	partitioning, indexNames []string,
+	keyType string,
+	indexes []*ast.IndexNode,
+) ([]string, error) {
+	changefeeds, err := r.changefeedStatements(node, indexNames, keyType)
+	if err != nil {
+		return nil, err
+	}
+	comments, err := r.tableComments(node, indexes)
+	if err != nil {
+		return nil, err
+	}
+	return slices.Concat(partitioning, changefeeds, comments), nil
 }
 
 // changefeedStatements writes the statements that give a new table its

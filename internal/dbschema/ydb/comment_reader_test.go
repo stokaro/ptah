@@ -56,7 +56,7 @@ func TestReader_ReadsComments(t *testing.T) {
 
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].Comment, qt.Equals, "People who sign in")
-	comments := map[string]string{}
+	comments := make(map[string]string)
 	for _, column := range db.Tables[0].Columns {
 		comments[column.Name] = column.Comment
 	}
