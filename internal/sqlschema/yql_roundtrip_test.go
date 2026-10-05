@@ -12,6 +12,10 @@ import (
 
 func TestParseRender(t *testing.T) {
 	for _, text := range []string{
+		`CREATE VIEW v WITH (security_invoker = TRUE) AS SELECT 1 AS id; CREATE TOPIC events;`,
+		`CREATE VIEW v WITH (security_invoker = TRUE) AS DO BEGIN $f = ($x) -> { RETURN $x + 1; }; SELECT $f(1) AS id; END DO;`,
+		`CREATE TOPIC events (CONSUMER worker WITH (important = true, read_from = Timestamp("2026-01-01T00:00:00Z"), supported_codecs = "raw,gzip")) WITH (min_active_partitions = 2, retention_period = Interval("P1D"), supported_codecs = "raw,gzip");`,
+		`CREATE TOPIC events (CONSUMER reader WITH (availability_period = Interval("PT1H"))) WITH (min_active_partitions = 2, max_active_partitions = 4, auto_partitioning_strategy = "scale_up", auto_partitioning_up_utilization_percent = 80, auto_partitioning_down_utilization_percent = 20, auto_partitioning_stabilization_window = Interval("PT1M"), partition_write_speed_bytes_per_second = 1024, partition_write_burst_bytes = 2048);`,
 		`CREATE TABLE t (id Uint64 NOT NULL, ts Timestamp, body Utf8 FAMILY payload, PRIMARY KEY (id), FAMILY payload (COMPRESSION = "lz4"), FAMILY empty ()) WITH (TTL = Interval("PT1H") ON ts);`,
 		`CREATE TABLE t (id Uint64 NOT NULL, ts Uint64, PRIMARY KEY (id)) WITH (TTL = Interval("PT1H") ON ts AS SECONDS);`,
 		`CREATE TABLE t (ts Timestamp NOT NULL, id Uint64, PRIMARY KEY (ts)) PARTITION BY HASH (ts) WITH (STORE = COLUMN, TTL = Interval("PT1H") DELETE ON ts);`,

@@ -34,12 +34,19 @@ func Parse(text string) (*ast.StatementList, error) {
 			break
 		}
 		p.pos++
-		if !p.word("TABLE") {
+		switch {
+		case p.word("TABLE"):
+			p.pos++
+			result.Statements = append(result.Statements, p.table())
+		case p.word("VIEW"):
+			p.pos++
+			result.Statements = append(result.Statements, p.view())
+		case p.word("TOPIC"):
+			p.pos++
+			result.Statements = append(result.Statements, p.topic())
+		default:
 			p.failf("this CREATE object kind is not supported in a desired YQL schema")
-			break
 		}
-		p.pos++
-		result.Statements = append(result.Statements, p.table())
 		if !p.done() && !p.accept(";") {
 			p.failf("expected ';' after the declaration")
 		}
