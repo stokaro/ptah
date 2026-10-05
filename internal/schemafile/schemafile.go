@@ -366,7 +366,7 @@ func withFormatLimits(database *schemamodel.Database, resolved string) *schemamo
 	extension := strings.ToLower(filepath.Ext(resolved))
 	if extension == dirHCLExtension || extension == dbmlExtension {
 		database.NotDescribed = database.NotDescribed.With(
-			unsupportedByFormat(coverage.Changefeed, coverage.ColumnFamily, coverage.TTL)...)
+			unsupportedByFormat(coverage.Changefeed, coverage.ColumnFamily, coverage.ColumnTable, coverage.TTL)...)
 	}
 	if extension != dirSQLExtension {
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(coverage.VirtualTable)...)

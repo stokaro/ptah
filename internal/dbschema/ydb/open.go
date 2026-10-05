@@ -39,6 +39,8 @@ type Connection struct {
 	Realm string
 	// authenticated reports a credential source in the URL; without one the
 	// connection is anonymous and has no ticket to hand out.
+	monitoring    *url.URL
+	secure        bool
 	authenticated bool
 }
 
@@ -132,6 +134,8 @@ func Open(ctx context.Context, rawURL string) (*Connection, error) {
 		Root:          parsed.Root(),
 		Realm:         parsed.Realm,
 		authenticated: credentials != nil,
+		monitoring:    parsed.Monitoring,
+		secure:        parsed.Secure,
 	}, nil
 }
 

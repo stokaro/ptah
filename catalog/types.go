@@ -368,6 +368,10 @@ type Table struct {
 	// layout, which YDB keeps no record of; a description converted from a
 	// declaration does.
 	YDBPartitioning *ast.YDBTablePartitioningSpec `json:"ydb_partitioning,omitzero"`
+	// YDBColumnTable selects column-oriented storage and its hash partitioning.
+	// Nil selects row storage. Other dialects refuse this declaration.
+	YDBColumnTable *ast.YDBColumnTableSpec `json:"ydb_column_table,omitzero"`
+
 	// VirtualModule is the SQLite module that owns this table, from the USING
 	// clause of the CREATE VIRTUAL TABLE statement that created it -- `fts5`,
 	// `rtree`, `geopoly`, or any other module a build registers. It is empty

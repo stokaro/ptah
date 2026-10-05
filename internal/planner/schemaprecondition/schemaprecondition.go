@@ -377,6 +377,9 @@ func RefuseYDBTablePartitioningChanges(dialect string, diff *difftypes.SchemaDif
 		return nil
 	}
 	for _, table := range diff.TablesModified {
+		if table.YDBColumnTableChange != nil {
+			return fmt.Errorf("%w: column-table changes require a YDB planner", ptaherr.ErrUnsupportedFeature)
+		}
 		if table.YDBPartitioningChange != nil {
 			return fmt.Errorf("%w: the diff changes the partitioning, read replicas or key bloom filter of table %q, "+
 				"which only a YDB plan does; the %s planner plans none", ptaherr.ErrUnsupportedFeature, table.TableName, dialect)

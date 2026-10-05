@@ -27,6 +27,7 @@ import (
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/ydbcolumn"
 	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
@@ -383,7 +384,7 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 	if err != nil {
 		return err
 	}
-	fullText, err := ydbindex.ParseFullTextDeclaration(kv)
+	fullText, err := ydbindex.ParseOptionsDeclaration(kv)
 	if err != nil {
 		return fmt.Errorf("index %q at %s: %w", kv["name"], structName, err)
 	}
@@ -669,6 +670,10 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 	if err != nil {
 		return err
 	}
+	columnTable, err := ydbcolumn.Parse(kv)
+	if err != nil {
+		return &ptaherr.ParseError{File: s.filename, Directive: "ptah:schema:table", Err: ptaherr.ErrInvalidAttributeValue, Message: err.Error()}
+	}
 	s.tableDirectives = append(s.tableDirectives, schemamodel.Table{
 		StructName:          structName,
 		Name:                tableName,
@@ -686,6 +691,7 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 		RowTTL:              rowTTL,
 		RowDeletionPolicy:   rowDeletionPolicy,
 		YDBPartitioning:     partitioning,
+		YDBColumnTable:      columnTable,
 		Overrides:           parseutils.ParsePlatformSpecific(kv),
 	})
 	return nil

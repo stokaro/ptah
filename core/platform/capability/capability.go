@@ -1362,6 +1362,21 @@ const (
 	// table rather than on the index.
 	IndexPartitioning Capability = "index_partitioning"
 
+	// ColumnStoreTables marks a target that supports YDB column-oriented tables with hash partitioning.
+	ColumnStoreTables Capability = "column_store_tables"
+
+	// LocalBloomIndexes marks a target that supports YDB column-table local Bloom indexes.
+	LocalBloomIndexes Capability = "local_bloom_indexes"
+
+	// LocalNgramIndexes marks a target that supports YDB column-table local n-gram Bloom indexes.
+	LocalNgramIndexes Capability = "local_ngram_indexes"
+
+	// LocalMinMaxIndexes marks a target that supports YDB column-table local min-max indexes.
+	LocalMinMaxIndexes Capability = "local_min_max_indexes"
+
+	// TieredTTL marks a target that supports YDB column-table TTL tiers that move data to external storage.
+	TieredTTL Capability = "tiered_ttl"
+
 	// FullTextIndexes marks a target on which Ptah declares, reads and plans
 	// YDB fulltext_plain and fulltext_relevance indexes. The server feature
 	// flag controls this key; an unknown cluster uses the release default.
@@ -2144,6 +2159,11 @@ var registry = map[Capability]spec{
 	IndexPartitioning: {
 		doc: "Ptah declares, reads and changes a global index's partitioning and read replicas (YDB's ALTER INDEX ... SET)",
 	},
+	ColumnStoreTables:  {doc: "Ptah declares, reads and plans YDB column-oriented tables with hash partitioning"},
+	LocalBloomIndexes:  {doc: "Ptah declares, reads and plans YDB column-table local Bloom indexes"},
+	LocalNgramIndexes:  {doc: "Ptah declares, reads and plans YDB column-table local n-gram Bloom indexes"},
+	LocalMinMaxIndexes: {doc: "Ptah declares, reads and plans YDB column-table local min-max indexes"},
+	TieredTTL:          {doc: "Ptah declares, reads and plans YDB column-table TTL tiers that move data to external storage"},
 	FullTextIndexes: {
 		doc: "Ptah declares, reads and plans YDB fulltext_plain and fulltext_relevance indexes (behind a feature flag)",
 	},
@@ -2530,6 +2550,11 @@ func MySQL84() Capabilities {
 		// as a method, an operator class and storage parameters instead.
 		VectorIndexes:                false,
 		FullTextIndexes:              false,
+		ColumnStoreTables:            false,
+		LocalBloomIndexes:            false,
+		LocalNgramIndexes:            false,
+		LocalMinMaxIndexes:           false,
+		TieredTTL:                    false,
 		VectorIndexMaintainedOnWrite: false,
 		VectorBitType:                false,
 		// Column families are YDB's, so both family keys are false here.
@@ -2793,6 +2818,11 @@ func MariaDB1011() Capabilities {
 		// as a method, an operator class and storage parameters instead.
 		VectorIndexes:                false,
 		FullTextIndexes:              false,
+		ColumnStoreTables:            false,
+		LocalBloomIndexes:            false,
+		LocalNgramIndexes:            false,
+		LocalMinMaxIndexes:           false,
+		TieredTTL:                    false,
 		VectorIndexMaintainedOnWrite: false,
 		VectorBitType:                false,
 		// Column families are YDB's, so both family keys are false here.
@@ -2995,6 +3025,11 @@ func Postgres16() Capabilities {
 		// as a method, an operator class and storage parameters instead.
 		VectorIndexes:                false,
 		FullTextIndexes:              false,
+		ColumnStoreTables:            false,
+		LocalBloomIndexes:            false,
+		LocalNgramIndexes:            false,
+		LocalMinMaxIndexes:           false,
+		TieredTTL:                    false,
 		VectorIndexMaintainedOnWrite: false,
 		VectorBitType:                false,
 		// Column families are YDB's, so both family keys are false here.
@@ -3326,6 +3361,11 @@ func ClickHouse24() Capabilities {
 		// as a method, an operator class and storage parameters instead.
 		VectorIndexes:                false,
 		FullTextIndexes:              false,
+		ColumnStoreTables:            false,
+		LocalBloomIndexes:            false,
+		LocalNgramIndexes:            false,
+		LocalMinMaxIndexes:           false,
+		TieredTTL:                    false,
 		VectorIndexMaintainedOnWrite: false,
 		VectorBitType:                false,
 		// Column families are YDB's, so both family keys are false here.
@@ -3549,6 +3589,11 @@ func SQLite3() Capabilities {
 		// as a method, an operator class and storage parameters instead.
 		VectorIndexes:                false,
 		FullTextIndexes:              false,
+		ColumnStoreTables:            false,
+		LocalBloomIndexes:            false,
+		LocalNgramIndexes:            false,
+		LocalMinMaxIndexes:           false,
+		TieredTTL:                    false,
 		VectorIndexMaintainedOnWrite: false,
 		VectorBitType:                false,
 		// Column families are YDB's, so both family keys are false here.
@@ -3851,6 +3896,11 @@ func SQLServer2022() Capabilities {
 		// as a method, an operator class and storage parameters instead.
 		VectorIndexes:                false,
 		FullTextIndexes:              false,
+		ColumnStoreTables:            false,
+		LocalBloomIndexes:            false,
+		LocalNgramIndexes:            false,
+		LocalMinMaxIndexes:           false,
+		TieredTTL:                    false,
 		VectorIndexMaintainedOnWrite: false,
 		VectorBitType:                false,
 		// Column families are YDB's, so both family keys are false here.
@@ -4591,6 +4641,11 @@ func Oracle23() Capabilities {
 		// as a method, an operator class and storage parameters instead.
 		VectorIndexes:                false,
 		FullTextIndexes:              false,
+		ColumnStoreTables:            false,
+		LocalBloomIndexes:            false,
+		LocalNgramIndexes:            false,
+		LocalMinMaxIndexes:           false,
+		TieredTTL:                    false,
 		VectorIndexMaintainedOnWrite: false,
 		VectorBitType:                false,
 		// Column families are YDB's, so both family keys are false here.
@@ -4834,6 +4889,11 @@ func YDB262() Capabilities {
 		// not change either (`Only index with one impl table is supported`).
 		VectorIndexes:                true,
 		FullTextIndexes:              true,
+		ColumnStoreTables:            true,
+		LocalBloomIndexes:            true,
+		LocalNgramIndexes:            true,
+		LocalMinMaxIndexes:           false,
+		TieredTTL:                    false,
 		VectorIndexMaintainedOnWrite: true,
 		VectorBitType:                true,
 
@@ -5008,7 +5068,7 @@ func YDB262() Capabilities {
 // `DROP DEFAULT` are both refused at type annotation, where 26.2.1.14 accepts
 // them.
 func YDB261() Capabilities {
-	return YDB262().With(AlterColumnDefault, false).With(FullTextIndexes, false)
+	return YDB262().With(AlterColumnDefault, false).With(FullTextIndexes, false).With(LocalBloomIndexes, false).With(LocalNgramIndexes, false)
 }
 
 // YDB254 is the preset for YDB 25.4. It differs from [YDB261] in four keys,

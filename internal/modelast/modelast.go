@@ -731,6 +731,7 @@ func fromTableWithFieldConverter(
 	createTable.YDBColumnFamilies = ast.CloneYDBColumnFamilies(newTable.YDBColumnFamilies)
 	createTable.Changefeeds = ast.CloneChangefeeds(newTable.Changefeeds)
 	createTable.YDBPartitioning = newTable.YDBPartitioning.Clone()
+	createTable.YDBColumnTable = newTable.YDBColumnTable.Clone()
 	// Raw SQL the author asked to be appended to CREATE TABLE. It is carried
 	// verbatim; see [ptah.run/core/ast.CreateTableNode.CustomSQL] for why
 	// it is not an Options entry (stokaro/ptah#2590).

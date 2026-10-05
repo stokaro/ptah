@@ -2494,6 +2494,8 @@ type TableDiff struct {
 	// read replicas and its key bloom filter -- nil when the declaration and
 	// the database hold the same settings.
 	YDBPartitioningChange *YDBTablePartitioningChange `json:"ydb_partitioning_change,omitzero"`
+	// YDBColumnTableChange distinguishes storage, hash layout and tiered TTL changes.
+	YDBColumnTableChange *YDBColumnTableChange `json:"ydb_column_table_change,omitzero"`
 
 	// ColumnKeyNames holds the name each column that gains its own UNIQUE
 	// takes on the target, keyed by column name: a column added with UNIQUE,

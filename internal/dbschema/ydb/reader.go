@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Scheme"
-	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
@@ -79,10 +78,16 @@ type Reader struct {
 // NewReader returns a reader that reads root, an absolute path in the database
 // driver is connected to, on a server with caps. root is the database itself,
 // or the directory of the dev realm a URL named; see [Connection.Root].
-func NewReader(driver *ydbsdk.Driver, root string, caps capability.Capabilities) *Reader {
+func NewReader(connection *Connection, caps capability.Capabilities) *Reader {
+	driver, root := connection.Driver, connection.Root
 	return &Reader{
 		open: func(ctx context.Context) (Source, func(), error) {
-			return newGRPCSource(ctx, driver)
+			source, end, err := newGRPCSource(ctx, driver)
+			if err != nil {
+				return nil, nil, err
+			}
+			source.connection = connection
+			return source, end, nil
 		},
 		database: "/" + strings.Trim(root, "/"),
 		realm:    strings.Trim(root, "/") != strings.Trim(driver.Name(), "/"),
@@ -194,6 +199,10 @@ func (r *Reader) entry(
 		return r.directory(ctx, source, schema, name, db)
 	case Ydb_Scheme.Entry_TABLE:
 		return r.tableEntry(ctx, source, schema, name, db)
+	case Ydb_Scheme.Entry_COLUMN_TABLE:
+		if r.caps.Has(capability.ColumnStoreTables) {
+			return r.columnTableEntry(ctx, source, schema, name, db)
+		}
 	case Ydb_Scheme.Entry_VIEW, Ydb_Scheme.Entry_TOPIC, Ydb_Scheme.Entry_REPLICATION, Ydb_Scheme.Entry_TRANSFER,
 		Ydb_Scheme.Entry_SECRET, Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE, Ydb_Scheme.Entry_EXTERNAL_TABLE, EntryStreamingQuery:
 		if described, err := r.keyedEntry(ctx, source, schema, entry, db); described || err != nil {
@@ -247,7 +256,7 @@ func (r *Reader) tableEntry(ctx context.Context, source Source, schema, name str
 		db.NotDescribed = db.NotDescribed.With(replicaTable(schema, name))
 		return nil
 	}
-	return r.table(ctx, source, schema, name, described, db)
+	return r.table(ctx, source, schema, name, described, nil, db)
 }
 
 // keyedEntries are the kinds of entry the reader describes on a target with

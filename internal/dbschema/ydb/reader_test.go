@@ -22,12 +22,14 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
 	ydbschema "ptah.run/internal/dbschema/ydb"
+	"ptah.run/internal/ydbcolumn"
 )
 
 // fakeSource answers from fixed listings and descriptions, keyed by absolute
 // path. A path it does not know is an error, so a reader that asks about a
 // directory it should skip fails the test.
 type fakeSource struct {
+	columnTables map[string]*ydbcolumn.Description
 	directories  map[string][]*Ydb_Scheme.Entry
 	tables       map[string]*Ydb_Table.DescribeTableResult
 	topics       map[string]*Ydb_Topic.DescribeTopicResult
@@ -52,6 +54,14 @@ type fakeSource struct {
 	pools    ydbschema.ResourcePools
 	poolsErr error
 	nodes    map[string]*Ydb_Coordination.DescribeNodeResult
+}
+
+func (f fakeSource) DescribeColumnTable(_ context.Context, path string) (*ydbcolumn.Description, error) {
+	description, ok := f.columnTables[path]
+	if !ok {
+		return nil, fmt.Errorf("column table %s has no monitoring description", path)
+	}
+	return description, nil
 }
 
 func (f fakeSource) DescribeCoordinationNode(_ context.Context, path string) (*Ydb_Coordination.DescribeNodeResult, error) {
@@ -446,7 +456,7 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 			"/local": {
 				entry("v", Ydb_Scheme.Entry_VIEW),
 				entry("legacy_queue", Ydb_Scheme.Entry_PERS_QUEUE_GROUP),
-				entry("olap", Ydb_Scheme.Entry_COLUMN_TABLE),
+				entry("olap", Ydb_Scheme.Entry_COLUMN_STORE),
 				entry("store", Ydb_Scheme.Entry_COLUMN_STORE),
 				entry("seq", Ydb_Scheme.Entry_SEQUENCE),
 				entry("repl", Ydb_Scheme.Entry_REPLICATION),
@@ -1493,4 +1503,26 @@ func TestReader_IndexPartitioning_FailurePath(t *testing.T) {
 			c.Assert(db, qt.IsNil)
 		})
 	}
+}
+
+// DescribeTable omits local indexes. The monitoring description must survive
+// the public read path along with the storage kind and hash key.
+func TestReader_ColumnTableMetadata(t *testing.T) {
+	c := qt.New(t)
+	described := plainTable(&Ydb_Table.ColumnMeta{Name: "body", Type: primitive(Ydb.Type_UTF8)})
+	described.StoreType = Ydb_Table.StoreType_STORE_TYPE_COLUMN
+	spec := &ast.YDBColumnTableSpec{HashColumns: []string{"id"}, Partitions: 8}
+	source := fakeSource{
+		directories:  map[string][]*Ydb_Scheme.Entry{"/local": {entry("events", Ydb_Scheme.Entry_COLUMN_TABLE)}},
+		tables:       map[string]*Ydb_Table.DescribeTableResult{"/local/events": described},
+		columnTables: map[string]*ydbcolumn.Description{"/local/events": {Spec: spec, PrimaryKey: []string{"id"}, Indexes: []ydbcolumn.LocalIndex{{Name: "body_bloom", Method: "bloom_filter", Columns: []string{"body"}, Options: map[string]string{"false_positive_probability": "0.01"}}}}},
+	}
+	db := readFrom(c, source)
+	c.Assert(db.Tables, qt.HasLen, 1)
+	c.Assert(db.Tables[0].YDBColumnTable, qt.DeepEquals, spec)
+	c.Assert(db.Indexes, qt.HasLen, 1)
+	c.Assert(db.Indexes[0].Type, qt.Equals, "bloom_filter")
+	c.Assert(db.Indexes[0].Method, qt.Equals, "bloom_filter")
+	c.Assert(db.Indexes[0].Columns, qt.DeepEquals, []string{"body"})
+	c.Assert(db.Indexes[0].StorageParams, qt.DeepEquals, map[string]string{"false_positive_probability": "0.01"})
 }

@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/sqlident"
+	"ptah.run/internal/ydbcolumn"
 	"ptah.run/internal/ydbcomment"
 	"ptah.run/internal/ydbgap"
 	"ptah.run/internal/ydbindex"
@@ -33,16 +34,20 @@ func (r *Reader) table(
 	source Source,
 	schema, name string,
 	described *Ydb_Table.DescribeTableResult,
+	columnTable *ydbcolumn.Description,
 	db *catalog.Database,
 ) error {
 	subject := fmt.Sprintf("YDB table %s", r.absolute(schema, name))
-	if described.GetStoreType() == Ydb_Table.StoreType_STORE_TYPE_COLUMN {
+	if described.GetStoreType() == Ydb_Table.StoreType_STORE_TYPE_COLUMN && columnTable == nil {
 		// The scheme service lists a column table as one, so a row table that
 		// describes itself as column-oriented is a server this reader does
 		// not understand.
 		return fmt.Errorf("%s is listed as a row table and describes itself as a column table", subject)
 	}
 
+	if columnTable != nil && (columnTable.Spec == nil || described.GetStoreType() != Ydb_Table.StoreType_STORE_TYPE_COLUMN || !slices.Equal(columnTable.PrimaryKey, described.GetPrimaryKey())) {
+		return fmt.Errorf("%s: monitoring and table-service descriptions disagree about column storage or the primary key; retry the read after concurrent schema changes finish", subject)
+	}
 	key := described.GetPrimaryKey()
 	comments := r.comments(described.GetAttributes())
 	// YDB keeps row counts in .sys/partition_stats, which the reader does not
@@ -62,21 +67,30 @@ func (r *Reader) table(
 		return fmt.Errorf("%s: %w", subject, err)
 	}
 	table.Changefeeds = changefeeds
-	policy, err := rowDeletionPolicy(described.GetTtlSettings())
-	if err != nil {
-		return fmt.Errorf("%s: %w", subject, err)
+	if columnTable == nil || columnTable.Spec.TTL == nil {
+		policy, err := rowDeletionPolicy(described.GetTtlSettings())
+		if err != nil {
+			return fmt.Errorf("%s: %w", subject, err)
+		}
+		table.RowDeletionPolicy = policy
 	}
-	table.RowDeletionPolicy = policy
-	families, familiesRead := r.columnFamilies(described)
-	table.YDBColumnFamilies = families
-	if !familiesRead {
-		db.NotDescribed = db.NotDescribed.With(unmodeled(coverage.ColumnFamily, schema, name))
+	if columnTable != nil {
+		table.YDBColumnTable = columnTable.Spec.Clone()
+		for _, index := range columnTable.Indexes {
+			db.Indexes = append(db.Indexes, catalog.Index{Name: index.Name, TableName: name, Schema: schema, Type: index.Method, Method: index.Method, Columns: index.Columns, StorageParams: index.Options, Comment: comments.Indexes[index.Name]})
+		}
+	} else {
+		families, familiesRead := r.columnFamilies(described)
+		table.YDBColumnFamilies = families
+		if !familiesRead {
+			db.NotDescribed = db.NotDescribed.With(unmodeled(coverage.ColumnFamily, schema, name))
+		}
+		settings, err := tableSettings(described)
+		if err != nil {
+			return fmt.Errorf("%s: %w", subject, err)
+		}
+		table.YDBPartitioning = ydbpartition.TableSpec(settings)
 	}
-	settings, err := tableSettings(described)
-	if err != nil {
-		return fmt.Errorf("%s: %w", subject, err)
-	}
-	table.YDBPartitioning = ydbpartition.TableSpec(settings)
 	db.Tables = append(db.Tables, table)
 	db.NotDescribed = db.NotDescribed.With(unread...)
 
@@ -560,7 +574,7 @@ func unmodeledSettings(schema, name string, described *Ydb_Table.DescribeTableRe
 // tablet's commit log pools, an external pool, external blobs, or partitioning
 // by columns, which only a column table has.
 func hasStorageSettings(described *Ydb_Table.DescribeTableResult) bool {
-	if len(described.GetPartitioningSettings().GetPartitionBy()) > 0 {
+	if described.GetStoreType() != Ydb_Table.StoreType_STORE_TYPE_COLUMN && len(described.GetPartitioningSettings().GetPartitionBy()) > 0 {
 		return true
 	}
 	storage := described.GetStorageSettings()

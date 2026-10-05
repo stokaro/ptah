@@ -142,6 +142,8 @@ func TestEveryTableDiffFieldIsClassified(t *testing.T) {
 		// rebuild (schemaprecondition.RefuseYDBTablePartitioningChanges), so
 		// there is nothing here to rebuild for.
 		"YDBPartitioningChange": false,
+		// Column storage is refused by the same YDB-only precondition.
+		"YDBColumnTableChange": false,
 		// The name a column that gains its own UNIQUE takes, which goes with
 		// the change ColumnsAdded or ColumnsModified already carries rather than
 		// being a change of its own (stokaro/ptah#3859).

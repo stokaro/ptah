@@ -105,6 +105,7 @@ func Fixtures() []Fixture {
 		{Name: "table-rowttl", Schema: tableRowTTLFixture()},
 		{Name: "table-row-deletion", Schema: tableRowDeletionFixture()},
 		{Name: "table-column-families", Schema: tableColumnFamiliesFixture()},
+		{Name: "table-column-store", Schema: tableColumnStoreFixture(), Flags: []capability.Capability{capability.TieredTTL}},
 		{Name: "table-changefeed", Schema: tableChangefeedFixture()},
 		{Name: "table-changefeed-disabled", Schema: tableChangefeedDisabledFixture()},
 		{Name: "table-row-deletion-epoch", Schema: tableRowDeletionEpochFixture()},
@@ -1924,5 +1925,12 @@ func streamingQueryFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
 	db.StreamingQueries = []schemamodel.StreamingQuery{{Name: "copy", Schema: "streams", StructName: "Streaming", AllowStateReset: true,
 		Spec: ast.StreamingQuerySpec{Text: "INSERT INTO output SELECT * FROM input;", Run: new(false), ResourcePool: "reporting"}}}
+	return db
+}
+
+func tableColumnStoreFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t", YDBColumnTable: &ast.YDBColumnTableSpec{HashColumns: []string{"id"}, Partitions: 8,
+		TTL: &ast.YDBTieredTTLSpec{Column: "id", Unit: "SECONDS", Tiers: []ast.YDBTTLTierSpec{{Interval: "P1D", ExternalSource: "/local/archive"}, {Interval: "P7D"}}}}})
+	db.Fields[0].Type = "BIGINT UNSIGNED"
 	return db
 }

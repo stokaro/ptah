@@ -19,16 +19,13 @@ package ydbflags
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"slices"
 	"strings"
-	"time"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/ydbmonitor"
 )
 
 // Gate is one capability a YDB feature flag decides.
@@ -127,6 +124,26 @@ var gates = []Gate{
 			"Resource pools are disabled",
 			"Resource pool classifiers are disabled",
 		},
+	},
+	{
+		// The 26.2 local Bloom index is enabled by default; 26.1 leaves it off.
+		Key: capability.LocalBloomIndexes, Flag: "EnableLocalBloomFilterIndex",
+		refusals: []string{"Local bloom filter index support is disabled"},
+	},
+	{
+		// The n-gram subtype has an independent server switch.
+		Key: capability.LocalNgramIndexes, Flag: "EnableLocalBloomNgramFilterIndex",
+		refusals: []string{"Local bloom ngram filter index support is disabled"},
+	},
+	{
+		// Measured on 26.2: MIN_MAX is refused until this switch is enabled.
+		Key: capability.LocalMinMaxIndexes, Flag: "EnableLocalMinMaxIndex",
+		refusals: []string{"Local min_max index is disabled"},
+	},
+	{
+		// Measured on 26.2: column TTL eviction requires this switch.
+		Key: capability.TieredTTL, Flag: "EnableTieringInColumnShard",
+		refusals: []string{"Tiering functionality is disabled for OLAP tables"},
 	},
 	{
 		// Off on 25.3 through 26.1 and on from 26.2, as the captured
@@ -232,97 +249,18 @@ func (f Flags) Refine(caps capability.Capabilities) capability.Capabilities {
 // Path is the monitoring page the flags are read from.
 const Path = "/viewer/json/feature_flags"
 
-// timeout bounds one read. The client applies it whatever the caller's
-// context says, and the earlier of the two ends the read.
-const timeout = 30 * time.Second
-
-// maxBody bounds the page Ptah reads. A database lists a few hundred flags,
-// about 15 KB measured.
-const maxBody = 4 << 20
-
-// maxEcho bounds how much of a refusing page an error repeats: enough for the
-// endpoint's own message, and not the whole of whatever answered.
-const maxEcho = 256
-
-// client follows no redirect. The page is read from the endpoint the operator
-// named, and a redirect to another host is answered as the status it is
-// rather than followed somewhere Ptah was not pointed at.
-var client = &http.Client{
-	Timeout: timeout,
-	CheckRedirect: func(*http.Request, []*http.Request) error {
-		return http.ErrUseLastResponse
-	},
-}
-
-// Read asks the monitoring endpoint for the flags of database, an absolute
-// path such as /local.
-//
-// ticket is the credential the database connection presents, and "" for an
-// anonymous one. It is sent as the Authorization header, bare: measured on
-// 26.2.1.14 and 25.1.4.7 with authentication enforced, the endpoint answers
-// `401 Unauthorized` with no credential, reads the page for the token a
-// static user's login returns, and answers `403 Forbidden` with `Token is not
-// supported` for the same token behind `Bearer `. The ticket appears in no
-// error Read returns, the endpoint's own answer included.
+// Read asks the configured monitoring endpoint for this database's flags.
+// The endpoint receives the database connection's credential; redirects are refused.
 func Read(ctx context.Context, monitoring *url.URL, database, ticket string) (Flags, error) {
-	if monitoring == nil {
-		return nil, errors.New("no monitoring endpoint to read feature flags from")
-	}
-	page := *monitoring
-	page.Path = Path
-	page.RawQuery = url.Values{"database": {database}}.Encode()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, page.String(), nil)
+	body, err := ydbmonitor.Read(ctx, monitoring, "feature flags", Path, database, ticket, url.Values{"database": {database}})
 	if err != nil {
-		return nil, fmt.Errorf("read YDB feature flags: %w", err)
-	}
-	request.Header.Set("Accept", "application/json")
-	if ticket != "" {
-		request.Header.Set("Authorization", ticket)
-	}
-	response, err := client.Do(request)
-	if err != nil {
-		return nil, fmt.Errorf("read YDB feature flags from %s: %w", page.Redacted(), err)
-	}
-	defer response.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(response.Body, maxBody))
-	if err != nil {
-		return nil, fmt.Errorf("read YDB feature flags from %s: %w", page.Redacted(), err)
-	}
-	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("read YDB feature flags from %s: %s: %s%s",
-			page.Redacted(), response.Status, echo(body, ticket), rightsHint(response.StatusCode, ticket, database))
+		return nil, err
 	}
 	flags, err := Decode(body, database)
 	if err != nil {
-		return nil, fmt.Errorf("read YDB feature flags from %s: %w", page.Redacted(), err)
+		return nil, fmt.Errorf("read YDB feature flags: %w", err)
 	}
 	return flags, nil
-}
-
-// echo is the start of a refusing page, as an error repeats it. An endpoint
-// that repeats the request's headers would repeat the ticket, so the ticket is
-// taken out before the page is cut.
-func echo(body []byte, ticket string) string {
-	text := strings.TrimSpace(string(body))
-	if ticket != "" {
-		text = strings.ReplaceAll(text, ticket, "<redacted>")
-	}
-	if len(text) <= maxEcho {
-		return text
-	}
-	return strings.ToValidUTF8(text[:maxEcho], "") + "..."
-}
-
-// rightsHint says what a 400 means when the page was read with a credential:
-// measured on 26.2.1.14, the endpoint answers `Failed to resolve database` to
-// a user without DESCRIBE SCHEMA on the database, the same user reads the
-// page once granted it, and anonymous reads on a cluster that does not
-// enforce authentication are not checked at all.
-func rightsHint(status int, ticket, database string) string {
-	if status != http.StatusBadRequest || ticket == "" {
-		return ""
-	}
-	return fmt.Sprintf("; the page is read as the connection's user, who needs DESCRIBE SCHEMA on %s", database)
 }
 
 // pageVersion is the only page layout Ptah reads; measured on 25.1.4.7
