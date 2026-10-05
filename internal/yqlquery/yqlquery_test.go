@@ -38,6 +38,19 @@ func TestSplit_HappyPath(t *testing.T) {
 			},
 		},
 		{
+			// Ptah's own COMMENT statement runs through the table service,
+			// which takes it alone, so it is a scheme query even beside the
+			// data statements YQL would otherwise group it with.
+			name: "a comment statement is a query of its own",
+			text: "UPSERT INTO a (id) VALUES (1l);\nCOMMENT ON TABLE `a` IS 'x';\nCOMMENT ON COLUMN `a`.`v` IS NULL;\nUPSERT INTO a (id) VALUES (2l);",
+			want: []shape{
+				{Kind: yqlquery.Data, Text: "UPSERT INTO a (id) VALUES (1l)"},
+				{Kind: yqlquery.Scheme, Text: "COMMENT ON TABLE `a` IS 'x'"},
+				{Kind: yqlquery.Scheme, Text: "COMMENT ON COLUMN `a`.`v` IS NULL"},
+				{Kind: yqlquery.Data, Text: "UPSERT INTO a (id) VALUES (2l)"},
+			},
+		},
+		{
 			name: "consecutive data statements are one query",
 			text: "UPSERT INTO a (id) VALUES (1l);\nUPDATE a SET v = 'x'u WHERE id = 1l;\nDELETE FROM b WHERE id = 2l;",
 			want: []shape{

@@ -1,6 +1,6 @@
 ---
 title: YDB
-description: YDB in Ptah - connecting with ydb:// URLs, what renders and plans for row tables, views, topics, async replications, transfers, secrets and external data sources, type mappings, keys, defaults and indexes, users, groups and permissions, what each release line can do, linting YQL, seeds, declared rows and the query builder, and what is not supported yet.
+description: YDB in Ptah - connecting with ydb:// URLs, what renders and plans for row tables, views, topics, async replications, transfers, secrets and external data sources, type mappings, keys, defaults and indexes, comments, users, groups and permissions, what each release line can do, linting YQL, seeds, declared rows and the query builder, and what is not supported yet.
 type: reference
 audience:
   - "database-engineer"
@@ -22,7 +22,9 @@ owns:
 ---
 
 Ptah renders YQL for YDB row tables, views, topics, async replications,
-transfers, resource pools, secrets, external data sources and tables, and the users, groups and permissions of a database.
+transfers, resource pools, secrets, external data sources and tables, and the
+users, groups and permissions of a database. It stores comments on tables,
+columns, indexes and views as object attributes.
 It plans migrations, connects to a live database, reads its schema, applies
 DDL, runs versioned migrations and lints YQL. It also writes data: seeds,
 declared rows and the statements the query builder renders. The
@@ -193,7 +195,8 @@ names them. A `UNIQUE` over the primary key columns needs no index, because the
 key holds those rows unique already. The comparison reads the declared
 constraint as that index, so a database holding the index plans nothing, and a
 `UNIQUE` added to a table that exists needs the same flag as any unique index.
-A deferrable, `NOT ENFORCED`, partial or commented `UNIQUE` is refused.
+A deferrable, `NOT ENFORCED` or partial `UNIQUE` is refused. A comment on a
+`UNIQUE` becomes the comment of its index.
 
 ### Index partitioning
 
@@ -440,12 +443,79 @@ created again, so for a moment the view does not exist.
 
 A view's `WITH CHECK OPTION` is refused: a YDB view cannot be written through,
 and YDB reads the words after the query as a table hint that checks nothing. A
-comment on a view waits for comment support.
+view keeps its comment as a table does; see [Comments](#comments).
 
 YDB records no dependency on a view. It drops a table or a view that another
 view reads, and the reading view fails from then on. A plan drops views before
 anything else and creates them after every table change, and lint rule `YD106`
 reports a migration that drops a table a view still reads.
+
+## Comments
+
+YQL has no `COMMENT` statement. A YDB row table and a view hold user
+attributes instead, and Ptah keeps comments there. A table's and a view's own
+comment is the attribute `ptah.comment`. A column's comment is
+`ptah.comment.column.<name>` and an index's is `ptah.comment.index.<name>`,
+both on the table, because an index holds no attribute of its own. Comments
+are declared with the `comment` attribute every engine reads, on a table, a
+field, an index, a `UNIQUE` constraint and a view.
+
+Ptah writes each comment as a `COMMENT ON` statement of its own, after the
+statement that creates the object:
+
+```sql
+COMMENT ON TABLE `shop/users` IS 'People who sign in';
+COMMENT ON COLUMN `shop/users`.`email` IS 'Login';
+COMMENT ON INDEX `users_by_email` ON `shop/users` IS 'Lookup by login';
+COMMENT ON VIEW `shop/active` IS 'Users who signed in';
+```
+
+Ptah's YDB connection runs each statement through the table service as a
+change of the object's attributes. Plans and migration files stay text, and
+every command that applies them runs them the same way. Another client, such
+as `ydb sql`, cannot run these statements: YDB answers them with a parse
+error. `IS NULL` removes a comment. Each statement runs alone, outside any
+transaction, and takes no arguments, and the connection refuses one inside a
+transaction.
+
+A plan changes a comment in place, without a rebuild. YDB keeps a column's or
+an index's attribute after the column or the index is dropped or renamed, so a
+plan removes the comment of a column or an index it drops, and moves a renamed
+index's comment to the new name. Lint rule `YD150` reports a hand-written
+migration that leaves one behind. A table rebuild and `ALTER TABLE ... RENAME
+TO` take the table's comments with the table. A view whose query changed is
+created again with its comment.
+
+YDB limits attributes in the same way on 25.1 and 26.2:
+
+- a key takes at most 100 bytes, so a commented column name takes at most 80
+  bytes and an index name at most 81;
+- a comment takes at most 4096 bytes;
+- the attributes of one table take at most 10240 bytes, keys included.
+
+Ptah refuses a comment that breaks the first two limits, and a new table
+whose comments break the third, before anything runs. Attributes another tool
+set count toward the 10240 bytes too, and the server then refuses the comment
+that passes them.
+
+The reader reads only Ptah's keys. A plan neither reads nor changes any other
+attribute, such as the `__async_replica` YDB sets on a replica table, or a key
+under `ptah.comment.` that names no column or index of the table. An async
+replication copies the source table's attributes to the replica, comments
+included. `SHOW CREATE TABLE` does not print attributes.
+
+YDB has nowhere to keep some comments:
+
+- a column table accepts an attribute and does not keep it, so a comment on
+  one is refused;
+- a primary key and the other constraints have no name in YDB, so their
+  comments are refused by `constraint_comments`;
+- a schema is a directory, which holds no attribute, so the render reports a
+  schema's comment as left out;
+- a topic refuses user attributes, so a topic has no comment.
+
+The `comment_attributes` key covers a table's, a column's and an index's
+comment, and `view_comments` covers a view's. Both hold on every YDB line.
 
 ## Users, groups and permissions
 
@@ -1703,6 +1773,7 @@ from, and the newest line is used without it.
 Migration lint reports, under the `YD` family, the statements YDB refuses or
 runs with an effect the statement does not state:
 
+- a dropped or renamed column or index whose comment stays behind;
 - an external data source using a deprecated secret object;
 - a secret value written into a migration;
 - a unique index added to an existing table;
@@ -1738,9 +1809,9 @@ async replication dropped with `CASCADE`.
 [Lint rules](../../reference/lint-rules/#ydb) lists each rule with its
 meaning.
 
-`YD104`, `YD105`, `YD106`, `YD109`, `YD118`, `YD119` and `YD131` read the
+`YD104`, `YD105`, `YD106`, `YD109`, `YD118`, `YD119`, `YD131` and `YD150` read the
 indexes, TTL, minimum partition count and partition size, views, changefeeds,
-column families and vector indexes the directory's own earlier migrations
+column families, vector indexes and comments the directory's own earlier migrations
 declare; a table the directory never created is unknown to them. `YD105`
 stays silent where that history left the minimum at 1, and `YD118` where it
 left the size at 2048 MB or splitting by size off; each warns where it does
@@ -2049,7 +2120,6 @@ These are refused with a message that names what is missing:
 
 <!-- BEGIN GENERATED YDB GAPS -->
 - a YQL file as the desired schema (Go structs and YAML schemas work);
-- comments on tables, columns and indexes;
 - full-text, JSON and column-table indexes;
 - `ptah inference` and the inference tools of `ptah mcp`, which store their vectors through pgvector.
 <!-- END GENERATED YDB GAPS -->

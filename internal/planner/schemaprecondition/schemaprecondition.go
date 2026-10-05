@@ -93,13 +93,13 @@ func RefuseServerSchemas(dialect string, diff *difftypes.SchemaDiff) error {
 		ptaherr.ErrUnsupportedFeature, dialect)
 }
 
-// RefuseIndexChangesInPlace refuses a diff that renames an index or changes an
-// index's partitioning in place, for a planner of dialect that plans neither.
-// The comparison records those changes only on a target with
-// capability.IndexRename or capability.IndexPartitioning, which only YDB has,
-// so another planner reaches one only through a diff built by hand, and
-// planning nothing would leave the index as it was and report the two sides
-// equal.
+// RefuseIndexChangesInPlace refuses a diff that renames an index, changes an
+// index's partitioning or writes an index's comment in place, for a planner of
+// dialect that plans none of them. The comparison records those changes only
+// on a target with capability.IndexRename, capability.IndexPartitioning or
+// capability.CommentAttributes, which only YDB has, so another planner reaches
+// one only through a diff built by hand, and planning nothing would leave the
+// index as it was and report the two sides equal.
 func RefuseIndexChangesInPlace(dialect string, diff *difftypes.SchemaDiff) error {
 	switch {
 	case diff == nil:
@@ -112,6 +112,10 @@ func RefuseIndexChangesInPlace(dialect string, diff *difftypes.SchemaDiff) error
 		change := diff.IndexPartitioningChanged[0]
 		return fmt.Errorf("%w: the diff changes the partitioning of index %q of table %q, which only a YDB plan does; "+
 			"the %s planner plans none", ptaherr.ErrUnsupportedFeature, change.Name, change.TableName, dialect)
+	case len(diff.IndexCommentsChanged) > 0:
+		change := diff.IndexCommentsChanged[0]
+		return fmt.Errorf("%w: the diff writes the comment of index %q of table %q apart from the index, which only "+
+			"a YDB plan does; the %s planner plans none", ptaherr.ErrUnsupportedFeature, change.Name, change.TableName, dialect)
 	default:
 		return nil
 	}

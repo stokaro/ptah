@@ -283,7 +283,7 @@ func (r *Reader) keyedEntry(
 		if err != nil {
 			return true, err
 		}
-		return true, r.view(schema, name, described, db)
+		return true, r.view(ctx, source, schema, name, described, db)
 	case Ydb_Scheme.Entry_TOPIC:
 		return true, r.topic(ctx, source, schema, name, db)
 	case Ydb_Scheme.Entry_SECRET:

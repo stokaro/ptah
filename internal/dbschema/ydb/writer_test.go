@@ -930,13 +930,20 @@ func TestWriter_TablesNamed(t *testing.T) {
 // A source and its readers may be in different directories from its secret.
 // Every cleanup path drops the readers, then the source, then the credential.
 func TestWriter_ExternalDependencyOrderAcrossDirectories(t *testing.T) {
-	for _, operation := range []string{"tables", "directory", "database", "realm"} {
-		t.Run(operation, func(t *testing.T) {
+	tests := []struct {
+		name string
+		root string
+		run  func(*ydbschema.Writer) error
+	}{
+		{name: "tables", root: "/local/probe", run: func(w *ydbschema.Writer) error { return w.DropAllTables(context.Background()) }},
+		{name: "directory", root: "/local/probe", run: func(w *ydbschema.Writer) error { return w.DropDirectory(context.Background(), "probe") }},
+		{name: "database", root: "/local/probe", run: func(w *ydbschema.Writer) error { return w.DropDatabaseRealm(context.Background()) }},
+		{name: "realm", root: "/local/ptah_dev/r1", run: func(w *ydbschema.Writer) error { return w.RemoveRealm(context.Background(), "r1") }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			root := "/local/probe"
-			if operation == "realm" {
-				root = "/local/ptah_dev/r1"
-			}
+			root := test.root
 			fake := &fakeDatabase{tree: map[string][]*Ydb_Scheme.Entry{
 				"/local":    {entry("probe", Ydb_Scheme.Entry_DIRECTORY)},
 				root:        {entry("a", Ydb_Scheme.Entry_DIRECTORY), entry("m", Ydb_Scheme.Entry_DIRECTORY), entry("z", Ydb_Scheme.Entry_DIRECTORY)},
@@ -944,22 +951,9 @@ func TestWriter_ExternalDependencyOrderAcrossDirectories(t *testing.T) {
 				root + "/m": {entry("source", Ydb_Scheme.Entry_EXTERNAL_DATA_SOURCE)},
 				root + "/z": {entry("reader", Ydb_Scheme.Entry_EXTERNAL_TABLE)},
 			}, readers: map[string][]string{root + "/m/source": {root + "/z/reader"}}}
-			if operation == "realm" {
-				fake.tree["/local"] = []*Ydb_Scheme.Entry{entry("ptah_dev", Ydb_Scheme.Entry_DIRECTORY)}
-				fake.tree["/local/ptah_dev"] = []*Ydb_Scheme.Entry{entry("r1", Ydb_Scheme.Entry_DIRECTORY)}
-			}
+			fake.tree[path.Dir(root)] = []*Ydb_Scheme.Entry{entry(path.Base(root), Ydb_Scheme.Entry_DIRECTORY)}
 			writer := ydbschema.NewWriterFromScheme(fake, fake, "/local", "")
-			var err error
-			switch operation {
-			case "tables":
-				err = writer.DropAllTables(context.Background())
-			case "directory":
-				err = writer.DropDirectory(context.Background(), "probe")
-			case "database":
-				err = writer.DropDatabaseRealm(context.Background())
-			case "realm":
-				err = writer.RemoveRealm(context.Background(), "r1")
-			}
+			err := test.run(writer)
 			c.Assert(err, qt.IsNil)
 			relative := strings.TrimPrefix(root, "/local/")
 			c.Assert(fake.executed, qt.DeepEquals, []string{

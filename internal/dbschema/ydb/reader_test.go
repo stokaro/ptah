@@ -464,6 +464,7 @@ func TestReader_RecordsWhatItDoesNotDescribe(t *testing.T) {
 		tables: map[string]*Ydb_Table.DescribeTableResult{
 			"/local/app/t":     settings,
 			"/local/app/plain": plainTable(),
+			"/local/v":         {},
 		},
 		views: map[string]*Ydb_View.DescribeViewResult{"/local/v": {QueryText: "SELECT 1 AS a"}},
 		// A cluster that does not serve the replication API, as local-ydb

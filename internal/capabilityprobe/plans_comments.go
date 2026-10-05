@@ -2,10 +2,14 @@ package capabilityprobe
 
 import (
 	"context"
+	"fmt"
 	"maps"
+	"path"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/dbschema"
+	"ptah.run/internal/ydbview"
 )
 
 // probeComment is the text every object-comment experiment writes and reads
@@ -29,8 +33,10 @@ func withObjectComments(p plan, dialect string) plan {
 	case platform.SQLite:
 		p.experiments = append(p.experiments, objectCommentRefusals("SQLite has no COMMENT ON statement at all")...)
 	case platform.YDB:
-		p.experiments = append(p.experiments, objectCommentRefusals("YQL has no COMMENT statement for any object; "+
-			"a comment on a YDB table is a table attribute, which this key does not name")...)
+		p.experiments = append(p.experiments, ydbViewComment(ydbSpelling))
+		p.experiments = append(p.experiments, objectCommentRefusalsBut(capability.ViewComments, "YQL has no "+
+			"COMMENT statement, and Ptah's own COMMENT ON names a table, a column, an index or a view: YDB "+
+			"answers this one with its parse error, and has no such object to keep a comment on")...)
 	case platform.MySQL, platform.MariaDB:
 		p.undecided = withObjectCommentsUndecided(p.undecided, "MySQL and MariaDB have no COMMENT ON statement; "+
 			"a comment lives in a table or column clause, and neither renderer writes one for these "+
@@ -224,11 +230,132 @@ var objectCommentStatements = []struct {
 // rather than values a preset asserted. The statement names no object that
 // exists because the grammar is what is refused, not the name.
 func objectCommentRefusals(note string) []experiment {
+	return objectCommentRefusalsBut("", note)
+}
+
+// objectCommentRefusalsBut is [objectCommentRefusals] without the question
+// of the key asked, which the dialect answers with an experiment of its own.
+func objectCommentRefusalsBut(asked capability.Capability, note string) []experiment {
 	experiments := make([]experiment, 0, len(objectCommentStatements))
 	for _, form := range objectCommentStatements {
+		if form.key == asked {
+			continue
+		}
 		experiments = append(experiments, acceptanceNote(form.key, nil, form.statement, note))
 	}
 	return experiments
+}
+
+// withCommentAttributes adds the question whether Ptah keeps comments as a
+// table's user attributes.
+//
+// On YDB it is asked in Ptah's own COMMENT ON statements, which Ptah's
+// connection runs through the table service: a table, a column and an index
+// of it are commented, a second column's comment is set and removed again,
+// and the table is read back through Ptah's reader, which is where a plan
+// reads comments. Every other engine declares the key: its comments live in a
+// catalog of its own, which no statement about attributes reaches, and Ptah's
+// COMMENT ON sent there would measure that engine's own statement instead.
+func withCommentAttributes(p plan, dialect string) plan {
+	if platform.NormalizeDialect(dialect) == platform.YDB {
+		p.experiments = append(p.experiments, ydbCommentAttributes(ydbSpelling))
+		return p
+	}
+	if p.undecided == nil {
+		p.undecided = make(map[capability.Capability]string)
+	}
+	p.undecided[capability.CommentAttributes] = "the key names whether Ptah keeps comments as YDB table " +
+		"attributes, which only YDB has; this engine keeps a comment in a catalog of its own, which Ptah " +
+		"writes with its own statement, so no statement asks it about attributes"
+	return p
+}
+
+// ydbCommentAttributes decides CommentAttributes on YDB.
+func ydbCommentAttributes(t tableSpelling) experiment {
+	return proven(capability.CommentAttributes, schemaChange{
+		setup: []string{t.table("cma", "id Int64 NOT NULL, note Utf8, INDEX cma_note GLOBAL ON (note)", "id")},
+		change: []string{
+			"COMMENT ON TABLE cma IS '" + probeComment + "'",
+			"COMMENT ON COLUMN cma.note IS '" + probeComment + "'",
+			"COMMENT ON INDEX cma_note ON cma IS '" + probeComment + "'",
+			"COMMENT ON COLUMN cma.id IS 'removed'",
+			"COMMENT ON COLUMN cma.id IS NULL",
+		},
+		after: []check{ydbDescribedComments("cma")},
+	})
+}
+
+// ydbDescribedComments reads table in the namespace back through Ptah's YDB
+// reader and holds when the table, its note column and its cma_note index
+// carry the probe's comment, and its id column none.
+func ydbDescribedComments(table string) check {
+	return check{
+		describes: fmt.Sprintf("table %s, its column note and its index cma_note commented %q, and column id not",
+			table, probeComment),
+		inspect: func(ctx context.Context, s *session) (Attempt, bool, string) {
+			attempt := Attempt{Statement: fmt.Sprintf("read the comments of table %s through Ptah's YDB reader",
+				path.Join(s.database, s.namespace, table))}
+			db, err := dbschema.ReadSchemaWithSchemasContext(ctx, s.conn, []string{s.namespace})
+			if err != nil {
+				attempt.ServerErr = err.Error()
+				return attempt, false, "was refused"
+			}
+			attempt.Accepted = true
+			read := make(map[string]string)
+			for _, found := range db.Tables {
+				if found.Name != table {
+					continue
+				}
+				read["table"] = found.Comment
+				for _, column := range found.Columns {
+					read["column "+column.Name] = column.Comment
+				}
+			}
+			for _, found := range db.Indexes {
+				if found.TableName == table {
+					read["index "+found.Name] = found.Comment
+				}
+			}
+			want := map[string]string{
+				"table": probeComment, "column note": probeComment, "column id": "", "index cma_note": probeComment,
+			}
+			return attempt, maps.Equal(read, want), fmt.Sprintf("read %v", read)
+		},
+	}
+}
+
+// ydbViewComment decides ViewComments on YDB: a view is commented through
+// Ptah's own COMMENT ON VIEW, and its comment read back through Ptah's
+// reader.
+func ydbViewComment(t tableSpelling) experiment {
+	decided := proven(capability.ViewComments, schemaChange{
+		setup: []string{
+			t.table("vcm_t", "n Int64 NOT NULL", "n"),
+			"CREATE VIEW vcm " + ydbview.SecurityClause + " AS SELECT n FROM vcm_t",
+		},
+		change: []string{"COMMENT ON VIEW vcm IS '" + probeComment + "'"},
+		after: []check{{
+			describes: fmt.Sprintf("view vcm commented %q", probeComment),
+			inspect: func(ctx context.Context, s *session) (Attempt, bool, string) {
+				attempt := Attempt{Statement: fmt.Sprintf("read the comment of view %s through Ptah's YDB reader",
+					path.Join(s.database, s.namespace, "vcm"))}
+				db, err := dbschema.ReadSchemaWithSchemasContext(ctx, s.conn, []string{s.namespace})
+				if err != nil {
+					attempt.ServerErr = err.Error()
+					return attempt, false, "was refused"
+				}
+				attempt.Accepted = true
+				for _, found := range db.Views {
+					if found.Name == "vcm" {
+						return attempt, found.Comment == probeComment, fmt.Sprintf("read the comment %q", found.Comment)
+					}
+				}
+				return attempt, false, "found no such view"
+			},
+		}},
+	})
+	decided.requires = []capability.Capability{capability.Views}
+	return decided
 }
 
 // withObjectCommentsUndecided returns a copy of undecided that also declares

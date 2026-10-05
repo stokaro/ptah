@@ -26,9 +26,10 @@ import (
 // renderer writes, and a UNIQUE over the table's key folds into the key
 // ([ydbindex.UniqueIsTheKey]) as the renderer folds it. A constraint the
 // renderer refuses -- deferrable, NOT ENFORCED, NOT VALID, partial, or carrying
-// an index method, a block size or a comment -- is left a constraint, so the
-// refusal that reaches the author is the renderer's, which names what YDB
-// cannot hold. database is not changed.
+// an index method or a block size -- is left a constraint, so the refusal that
+// reaches the author is the renderer's, which names what YDB cannot hold. A
+// constraint's comment becomes the index's, as the renderer writes it.
+// database is not changed.
 func UniqueConstraintsAsIndexesFor(
 	database *schemamodel.Database,
 	dialect string,
@@ -59,6 +60,7 @@ func UniqueConstraintsAsIndexesFor(
 			Unique:         true,
 			IncludeColumns: slices.Clone(constraint.IncludeColumns),
 			NullsDistinct:  constraint.NullsDistinct,
+			Comment:        constraint.Comment,
 		})
 	}
 
@@ -103,7 +105,7 @@ func constraintTable(tables []schemamodel.Table, constraint schemamodel.Constrai
 func lowersToIndex(constraint schemamodel.Constraint) bool {
 	return !constraint.Deferrable && constraint.Initially == "" && !constraint.NotEnforced && !constraint.NotValid &&
 		strings.TrimSpace(constraint.WhereCondition) == "" && constraint.UsingMethod == "" &&
-		constraint.KeyBlockSize == 0 && constraint.Comment == ""
+		constraint.KeyBlockSize == 0
 }
 
 // tableKey is a table's key columns, as the renderer reads them: its PRIMARY

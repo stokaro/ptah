@@ -25,6 +25,7 @@ func cloneSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 	clone.ConstraintBackedIndexRemovals = slices.Clone(diff.ConstraintBackedIndexRemovals)
 	clone.IndexesRenamed = slices.Clone(diff.IndexesRenamed)
 	clone.IndexPartitioningChanged = cloneIndexPartitioningChanges(diff.IndexPartitioningChanged)
+	clone.IndexCommentsChanged = slices.Clone(diff.IndexCommentsChanged)
 	clone.ExtensionsAdded = slices.Clone(diff.ExtensionsAdded)
 	clone.ExtensionsRemoved = slices.Clone(diff.ExtensionsRemoved)
 	clone.ExtensionsModified = slices.Clone(diff.ExtensionsModified)

@@ -260,6 +260,7 @@ func measuredLines() map[string]measuredLine {
 				capability.ResourcePools:                   workloadKeyCarried,
 				capability.BackupCollections:               workloadKeyCarried,
 				capability.StreamingQueries:                workloadKeyCarried,
+				capability.CommentAttributes:               commentAttributesCarried,
 				capability.SmallIntegerDefaults:            typeKeyCarried,
 				capability.DocumentTypeDefaults:            typeKeyCarried,
 				capability.ReturningClause:                 queryKeyCarried,
@@ -438,6 +439,7 @@ func measuredLines() map[string]measuredLine {
 				capability.ResourcePools:                   workloadKeyCarried,
 				capability.BackupCollections:               workloadKeyCarried,
 				capability.StreamingQueries:                workloadKeyCarried,
+				capability.CommentAttributes:               commentAttributesCarried,
 				capability.SmallIntegerDefaults:            typeKeyCarried,
 				capability.DocumentTypeDefaults:            typeKeyCarried,
 				capability.ReturningClause:                 queryKeyCarried,
@@ -617,6 +619,7 @@ func measuredLines() map[string]measuredLine {
 				capability.ResourcePools:                   workloadKeyCarried,
 				capability.BackupCollections:               workloadKeyCarried,
 				capability.StreamingQueries:                workloadKeyCarried,
+				capability.CommentAttributes:               commentAttributesCarried,
 				capability.SmallIntegerDefaults:            typeKeyCarried,
 				capability.DocumentTypeDefaults:            typeKeyCarried,
 				capability.ReturningClause:                 queryKeyCarried,
@@ -792,6 +795,12 @@ const viewKeyCarried = "this run predates the key and sent no view-replacement e
 // every run through its topic experiment, and the value here is the preset's.
 const topicKeyCarried = "this run predates the key and sent no topic experiment; the probe asks it " +
 	"on every run through that experiment, and the value here is the preset's"
+
+// commentAttributesCarried is why the key that keeps comments as YDB table
+// attributes is carried on every measured line: the run named there predates
+// it. The probe asks it on every run, and the value here is the preset's.
+const commentAttributesCarried = "this run predates the key and sent no comment-attribute experiment; the " +
+	"probe asks it on every run, and the value here is the preset's"
 
 // serialKeyCarried is why the keys about a Serial column's sequence are
 // carried on every measured line: the run named there predates them. The

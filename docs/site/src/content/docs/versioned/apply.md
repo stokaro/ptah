@@ -768,7 +768,9 @@ migration as a sequence of queries:
   `TRUNCATE` and the rest — is a query of its own, in file order. So is a block
   or an action call that runs one: `DO BEGIN ... END DO` holding a schema
   statement, or `DO $action()` and `EVALUATE FOR ... DO $action($x)` over an
-  action whose body holds one.
+  action whose body holds one. So is Ptah's own `COMMENT ON`, which the
+  connection runs through YDB's table service; see
+  [YDB comments](../../databases/ydb/#comments).
 - Each `BATCH UPDATE` and `BATCH DELETE` is a query of its own, outside any
   transaction, which is the only way YDB runs one. YDB applies it in batches
   rather than atomically, so an interrupted one leaves its outcome unknown, as

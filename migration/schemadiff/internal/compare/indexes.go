@@ -880,14 +880,17 @@ func appendIndexDifferences(
 				mysqlindex.KeepsBlockSize(dialect, databaseEntry.rowFormat) &&
 				generatedEntry.index.KeyBlockSize != databaseEntry.index.KeyBlockSize
 			appendIndexRemoval(diff, databaseEntry)
+			appendIndexCommentChange(diff, comparison, databaseEntry.ref, "", generatedEntry.index.Comment, databaseEntry.index.Comment)
 		case generatedEntry.index.Invisible != databaseEntry.index.Invisible:
 			diff.IndexVisibilityChanged = append(diff.IndexVisibilityChanged, difftypes.IndexVisibilityChange{
 				TableName: databaseEntry.ref.TableName,
 				Name:      databaseEntry.ref.Name,
 				Invisible: generatedEntry.index.Invisible,
 			})
+			appendIndexCommentChange(diff, comparison, databaseEntry.ref, "", generatedEntry.index.Comment, databaseEntry.index.Comment)
 		default:
 			appendPartitioningChange(diff, dialect, databaseEntry.ref, generatedEntry.index, databaseEntry.index)
+			appendIndexCommentChange(diff, comparison, databaseEntry.ref, "", generatedEntry.index.Comment, databaseEntry.index.Comment)
 		}
 	}
 	slices.SortFunc(diff.IndexVisibilityChanged, func(a, b difftypes.IndexVisibilityChange) int {
@@ -913,9 +916,46 @@ func appendIndexDifferences(
 	}
 	for _, entry := range removals {
 		appendIndexRemoval(diff, entry)
+		appendIndexCommentChange(diff, comparison, entry.ref, "", "", entry.index.Comment)
 	}
 	slices.SortFunc(diff.IndexPartitioningChanged, func(a, b difftypes.IndexPartitioningChange) int {
 		return cmp.Or(strings.Compare(a.TableName, b.TableName), strings.Compare(a.Name, b.Name))
+	})
+	slices.SortFunc(diff.IndexCommentsChanged, func(a, b difftypes.IndexCommentChange) int {
+		return cmp.Or(strings.Compare(a.TableName, b.TableName), strings.Compare(a.Name, b.Name))
+	})
+}
+
+// appendIndexCommentChange records the comment the index ref names has to
+// take, on a target that keeps an index's comment apart from its definition
+// ([capability.CommentAttributes]); on any other target an index's comment is
+// part of what creates it, or not compared. from is the name the database
+// holds for an index the plan renames, and empty otherwise.
+//
+// YDB keeps the comment as an attribute of the index's table under a key
+// that names the index, and keeps it after the index is dropped or renamed
+// (measured on 25.1.4.7 and 26.2.1.14). So a change is recorded where the
+// comments differ, where a renamed index has a comment to move, and where a
+// dropped index leaves one behind -- desired is empty for a dropped index.
+func appendIndexCommentChange(
+	diff *difftypes.SchemaDiff,
+	comparison indexComparison,
+	ref difftypes.IndexRef,
+	from, desired, current string,
+) {
+	if !comparison.caps.Has(capability.CommentAttributes) {
+		return
+	}
+	moves := from != "" && (desired != "" || current != "")
+	if desired == current && !moves {
+		return
+	}
+	diff.IndexCommentsChanged = append(diff.IndexCommentsChanged, difftypes.IndexCommentChange{
+		TableName: ref.TableName,
+		Name:      ref.Name,
+		From:      from,
+		Current:   current,
+		Desired:   desired,
 	})
 }
 
@@ -986,6 +1026,7 @@ func pairIndexRenames(
 		})
 		renamed := difftypes.IndexRef{TableName: removal.ref.TableName, Name: addition.ref.Name}
 		appendPartitioningChange(diff, comparison.dialect, renamed, addition.index, removal.index)
+		appendIndexCommentChange(diff, comparison, renamed, removal.ref.Name, addition.index.Comment, removal.index.Comment)
 	}
 	left := removals[:0:0]
 	for position, removal := range removals {

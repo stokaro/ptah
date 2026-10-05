@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"ptah.run/core/platform/capability"
-	"ptah.run/internal/ydbgap"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -22,7 +21,7 @@ type objectChange struct {
 //
 // The named families come first so a refusal says what it refused. The last
 // check is a catch-all over [difftypes.SchemaDiff.HasChanges]: with the tables,
-// indexes, views, topics, secrets, external objects, resource pools, async replications, transfers,
+// indexes, comments, views, topics, secrets, external objects, resource pools, async replications, transfers,
 // coordination nodes and access changes this planner handles taken out,
 // a diff that still reports a change carries an unhandled family. Planning
 // nothing for it would report the database synced.
@@ -35,7 +34,8 @@ func (p *Planner) refuseObjects(diff *difftypes.SchemaDiff) error {
 	rest := *diff
 	rest.TablesAdded, rest.TablesRemoved, rest.TablesModified = nil, nil, nil
 	rest.IndexesAdded, rest.IndexesRemoved = nil, nil
-	rest.IndexesRenamed, rest.IndexPartitioningChanged = nil, nil
+	rest.IndexesRenamed, rest.IndexPartitioningChanged, rest.IndexCommentsChanged = nil, nil, nil
+	rest.ObjectCommentsChanged = withoutPlannedComments(diff)
 	rest.ViewsAdded, rest.ViewsRemoved, rest.ViewsModified = nil, nil, nil
 	rest.TopicsAdded, rest.TopicsRemoved, rest.TopicsModified = nil, nil, nil
 	rest.RolesAdded, rest.RolesRemoved, rest.RolesModified = nil, nil, nil
@@ -62,9 +62,6 @@ func (p *Planner) refuseObjects(diff *difftypes.SchemaDiff) error {
 func (p *Planner) objectChanges(diff *difftypes.SchemaDiff) []objectChange {
 	keyed := func(key capability.Capability, feature, subject string) func() error {
 		return func() error { return p.keyed(key, feature, subject) }
-	}
-	gap := func(layer ydbgap.Layer, subject string) func() error {
-		return func() error { return refuseGap(layer, subject) }
 	}
 	return []objectChange{
 		{len(diff.EnumsAdded)+len(diff.EnumsRemoved)+len(diff.EnumsModified) > 0,
@@ -100,8 +97,6 @@ func (p *Planner) objectChanges(diff *difftypes.SchemaDiff) []objectChange {
 			func() error {
 				return refuseFact("the plan changes an extended property", "extended properties are SQL Server's")
 			}},
-		{len(diff.ObjectCommentsChanged)+len(diff.ConstraintCommentsChanged) > 0,
-			gap(ydbgap.Comments, "the plan changes a comment")},
 		{len(diff.IndexVisibilityChanged) > 0,
 			keyed(capability.InvisibleIndexes, "invisible index", "the plan changes whether an index is visible")},
 		{len(diff.ConstraintsValidated) > 0,

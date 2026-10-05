@@ -6,8 +6,8 @@
 // statements here follow it. Where YDB has no counterpart for a declaration,
 // the render is refused with a [ptaherr.CapabilityError] naming the key, never
 // rendered as something else and never answered with a comment that lets an
-// apply exit 0 without the object. An object family a later phase of
-// stokaro/ptah#4015 implements is refused through [ydbgap] with that phase.
+// apply exit 0 without the object. Unsupported object families are refused
+// before a statement is rendered.
 //
 // Every statement ends with a semicolon on a line of its own, so the YQL
 // splitter yields one statement per DDL. That is what YDB needs: a query is
@@ -27,7 +27,6 @@ import (
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableref"
-	"ptah.run/internal/ydbgap"
 )
 
 // DialectName is the dialect this renderer writes.
@@ -121,16 +120,6 @@ func refuseUnwritten(feature, subject string) error {
 		Feature: feature,
 		Err:     ptaherr.ErrUnsupportedFeature,
 		Message: fmt.Sprintf("%s: the %s renderer writes no %s", subject, DialectName, feature),
-	}
-}
-
-// refuseGap refuses a declaration whose family a later phase implements.
-func refuseGap(layer ydbgap.Layer, subject string) error {
-	return &ptaherr.CapabilityError{
-		Dialect: DialectName,
-		Feature: subject,
-		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf("%s: %s", subject, layer.Message()),
 	}
 }
 

@@ -29,8 +29,10 @@ func viewSource() fakeSource {
 			"/local/app": {entry("orders", Ydb_Scheme.Entry_TABLE), entry("big_orders", Ydb_Scheme.Entry_VIEW)},
 		},
 		tables: map[string]*Ydb_Table.DescribeTableResult{
-			"/local/users":      plainTable(),
-			"/local/app/orders": plainTable(),
+			"/local/users":          plainTable(),
+			"/local/app/orders":     plainTable(),
+			"/local/active_users":   {},
+			"/local/app/big_orders": {},
 		},
 		views: map[string]*Ydb_View.DescribeViewResult{
 			"/local/active_users":   {QueryText: "SELECT id FROM users"},
@@ -121,6 +123,7 @@ func TestReader_DescribesViews_FailurePath(t *testing.T) {
 			c := qt.New(t)
 			source := fakeSource{
 				directories: map[string][]*Ydb_Scheme.Entry{"/local": {entry("v", Ydb_Scheme.Entry_VIEW)}},
+				tables:      map[string]*Ydb_Table.DescribeTableResult{"/local/v": {}},
 				views:       test.views,
 			}
 
