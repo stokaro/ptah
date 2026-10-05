@@ -318,6 +318,7 @@ func convertIndexes(
 			IncludeColumns: slices.Clone(dbIndex.IncludeColumns),
 			StorageParams:  maps.Clone(dbIndex.StorageParams),
 			Partitioning:   dbIndex.Partitioning.Clone(),
+			Vector:         dbIndex.Vector.Clone(),
 			// Carried rather than recomputed: only the reader has the catalog,
 			// and an operator class the index's own DDL leaves implicit is
 			// reachable no other way.

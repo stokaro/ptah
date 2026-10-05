@@ -25,6 +25,20 @@ type ydbLine struct {
 	// TestYDBConnection_DescribesTheServer instead of measuring that line
 	// under this one's name.
 	preset func() capability.Capabilities
+	// flagged are the keys the contour's server holds beyond its line's
+	// defaults, through the feature flags go-integration-tests.yml starts it
+	// with, which the connection reads from the monitoring endpoint.
+	flagged []capability.Capability
+}
+
+// capabilities is the set a connection to the line's server reads: its
+// preset, with the keys its flags turn on.
+func (l ydbLine) capabilities() capability.Capabilities {
+	caps := l.preset()
+	for _, key := range l.flagged {
+		caps = caps.With(key, true)
+	}
+	return caps
 }
 
 // ydbLines are the lines whose capability cells are certified: 26.2, the
@@ -35,7 +49,8 @@ type ydbLine struct {
 // than at the commit.
 var ydbLines = []ydbLine{
 	{name: "26.2", engine: dbtarget.YDB, preset: capability.YDB262},
-	{name: "25.1", engine: dbtarget.YDB251, preset: capability.YDB251},
+	// Started with EnableVectorIndex, which 25.1 keeps off by default.
+	{name: "25.1", engine: dbtarget.YDB251, preset: capability.YDB251, flagged: []capability.Capability{capability.VectorIndexes}},
 }
 
 // openYDB connects to the line's database.

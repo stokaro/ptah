@@ -489,6 +489,13 @@ type Index struct {
 	// declares none, which is the settings YDB gives a new index. A renderer
 	// for another dialect drops it and reports the loss.
 	Partitioning *ast.IndexPartitioningSpec
+	// Vector is the settings of a YDB vector index, the one Type
+	// vector_kmeans_tree names: the metric, the element type, the
+	// dimension, and the depth and width of its k-means tree, as the
+	// `distance`, `similarity`, `vector_type`, `vector_dimension`, `levels`
+	// and `clusters` attributes of `//ptah:schema:index` declare them. Nil
+	// declares none. A target without a vector index refuses it.
+	Vector *ast.VectorIndexSpec
 	// TableName is the cross-table association (overrides StructName-based
 	// resolution when set).
 	TableName string

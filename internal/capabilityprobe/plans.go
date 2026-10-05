@@ -25,9 +25,10 @@ func planFor(dialect string) (plan, bool) {
 	withTypes := withTypeKeys(withSchemaChanges(withKeys, normalized), normalized)
 	withFamilies := withViewKeys(withSerialKeys(withIndexKeys(withQueryKeys(withTypes, normalized), normalized), normalized), normalized)
 	withColumnFamilies := withColumnFamilyKeys(withFamilies, normalized)
-	withFamilies = withTopicKeys(withAccessKeys(withChangefeedKeys(withColumnFamilies, normalized), normalized), normalized)
-	withObjects := withCoordinationNodes(withReplicationKeys(withFamilies, normalized), normalized)
-	return withTableSettingKeys(withObjects, normalized), true
+	withChangefeeds := withTopicKeys(withAccessKeys(withChangefeedKeys(withColumnFamilies, normalized), normalized), normalized)
+	withObjects := withCoordinationNodes(withReplicationKeys(withChangefeeds, normalized), normalized)
+	withTableSettings := withTableSettingKeys(withObjects, normalized)
+	return withVectorKeys(withTableSettings, normalized), true
 }
 
 // familyPlan returns the experiments a dialect's family answers, before the

@@ -25,6 +25,10 @@ func TestKindOf_HappyPath(t *testing.T) {
 		{name: "global sync with an underscore", method: "global_sync", want: ydbindex.Sync, wantClause: "GLOBAL SYNC", wantUnique: "GLOBAL UNIQUE SYNC"},
 		{name: "async", method: "async", want: ydbindex.Async, wantClause: "GLOBAL ASYNC", wantUnique: "GLOBAL ASYNC"},
 		{name: "global async in capitals", method: "GLOBAL  ASYNC", want: ydbindex.Async, wantClause: "GLOBAL ASYNC", wantUnique: "GLOBAL ASYNC"},
+		{name: "vector, as a declaration names it", method: "vector_kmeans_tree", want: ydbindex.Vector,
+			wantClause: "GLOBAL USING vector_kmeans_tree", wantUnique: "GLOBAL USING vector_kmeans_tree"},
+		{name: "vector, as the reader reports it", method: "GLOBAL USING vector_kmeans_tree", want: ydbindex.Vector,
+			wantClause: "GLOBAL USING vector_kmeans_tree", wantUnique: "GLOBAL USING vector_kmeans_tree"},
 	}
 
 	for _, test := range tests {
@@ -49,8 +53,12 @@ func TestKindOf_FailurePath(t *testing.T) {
 	}{
 		{name: "hash", method: "hash", wantErr: `index method "hash" has no YDB counterpart: .*`},
 		{name: "gin", method: "GIN", wantErr: `index method "GIN" has no YDB counterpart: .*`},
-		{name: "vector", method: "vector_kmeans_tree", wantErr: `index method "vector_kmeans_tree" has no YDB counterpart: .*`},
 		{name: "local", method: "LOCAL", wantErr: `index method "LOCAL" has no YDB counterpart: .*`},
+		{name: "fulltext", method: "fulltext_plain", wantErr: `index method "fulltext_plain" has no YDB counterpart: .*`},
+		{name: "pgvector hnsw", method: "hnsw",
+			wantErr: `index method "hnsw" is pgvector's and has no YDB counterpart: YDB's vector index is vector_kmeans_tree, .*`},
+		{name: "pgvector ivfflat", method: "IVFFLAT",
+			wantErr: `index method "IVFFLAT" is pgvector's and has no YDB counterpart: YDB's vector index is vector_kmeans_tree, .*`},
 	}
 
 	for _, test := range tests {

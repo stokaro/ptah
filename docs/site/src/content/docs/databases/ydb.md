@@ -33,7 +33,7 @@ against live YDB 26.2 and 25.1 servers. The nightly capability matrix runs the
 same suite on each YDB line it probes.
 
 `ptah-compat` takes a YDB URL on every verb; see [ptah-compat](#ptah-compat).
-Inference and the YDB object families such as table partitioning and vector
+Inference and the YDB object families such as full-text and JSON
 indexes are not supported yet. See
 [What is not supported yet](#what-is-not-supported-yet).
 
@@ -141,6 +141,7 @@ The type map:
 | `DATE`, `INTERVAL` | `Date32` and `Interval64`, or `Date` and `Interval` on 25.1 |
 | `JSON`, `JSONB` | `Json`, `JsonDocument` |
 | `UUID` | `Uuid` |
+| `VECTOR(n)` | `String`; see [Vector indexes](#vector-indexes) |
 
 A YDB type name such as `Utf8`, `Uint64` or `DyNumber`, or a
 `platform.ydb.type` override, passes through as written.
@@ -155,8 +156,9 @@ ydb: column "users.email": type modifier=VARCHAR(255): length 255 would be skipp
 ```
 
 A type YDB cannot store is refused with the reason: `TIME`, arrays, enums,
-`XML`, ranges, and a bare `DECIMAL` with no precision. Ptah never writes
-`Varchar`: YDB accepts the word and makes the column bytes rather than text.
+`XML`, ranges, `HALFVEC` and `SPARSEVEC`, and a bare `DECIMAL` with no
+precision. Ptah never writes `Varchar`: YDB accepts the word and makes the
+column bytes rather than text.
 
 ## Keys, defaults and indexes
 
@@ -267,6 +269,93 @@ A cluster that turns `EnableMoveIndex` off refuses the rename with
 endpoint, Ptah reads the flag and plans the renamed index as dropped and added
 again, under the rules for adding an index to an existing table (see
 [Feature flags](#feature-flags)).
+
+### Vector indexes
+
+A vector index finds the rows whose vectors are nearest a given one. YDB keeps
+a vector in a `String` column, as the bytes `Knn::ToBinaryStringFloat` writes,
+and builds the index with `vector_kmeans_tree`. An index declares that method
+as its type, and its settings with attributes named after YDB's:
+
+| Attribute | Value |
+| --- | --- |
+| `distance` | `cosine`, `euclidean` or `manhattan` |
+| `similarity` | `inner_product` or `cosine` |
+| `vector_type` | `float`, `uint8`, `int8` or `bit` |
+| `vector_dimension` | 1 to 16384 |
+| `levels` | the depth of the tree, 1 to 16 |
+| `clusters` | the clusters each level splits into, 2 to 2048 |
+
+An index names one of `distance` and `similarity`, and every other setting.
+`clusters` to the power of `levels` is at most 2^30. YDB 25.1 and 25.2 check
+none of these limits and take an index without `levels` and `clusters`; 25.3
+and later refuse such an index, so Ptah holds every line to their limits and an
+index that applies today applies after an upgrade. The same keys work on an
+index in a YAML schema. The columns before the vector column are a prefix,
+which a search names in its `WHERE`, and `include` columns become `COVER`.
+
+This field:
+
+```go
+//ptah:schema:field name="embedding" type="vector(1536)"
+//ptah:schema:index name="docs_embedding_ix" fields="tenant,embedding" type="vector_kmeans_tree" distance="cosine" vector_type="float" vector_dimension="1536" levels="2" clusters="128"
+Embedding []byte
+```
+
+renders inside its table's `CREATE TABLE` as:
+
+```sql
+INDEX `docs_embedding_ix` GLOBAL USING vector_kmeans_tree ON (`tenant`, `embedding`) WITH (distance=cosine, vector_type=float, vector_dimension=1536, levels=2, clusters=128)
+```
+
+`vector(n)` is the `String` column the index reads, and the index keeps the
+dimension: YDB stores none for the column, and a vector of another length is
+left out of the index without an error. So a column declared `vector(n)`
+under an index of another `vector_dimension` is refused, and the dimension is
+reported as dropped from the column, as a `VARCHAR` length is. The column
+reads back as `String`, and a comparison reads a declared `vector(n)` and a
+`String` as one type. A Utf8 or numeric column under a vector index is
+refused, as YDB refuses it.
+
+A declaration written for pgvector reads where it has a YDB meaning: the
+operator classes `vector_cosine_ops`, `vector_l2_ops`, `vector_l1_ops` and
+`vector_ip_ops` name the metric `distance=cosine`, `distance=euclidean`,
+`distance=manhattan` and `similarity=inner_product`. The methods `hnsw` and
+`ivfflat` are refused with `vector_kmeans_tree` named in their place, their
+storage parameters `m`, `ef_construction` and `lists` are refused by the method
+they belong to, and so are the other pgvector operator classes. A vector index
+is not unique, and it keeps the partitioning YDB gives it: `ALTER INDEX ...
+SET` on one answers `Only index with one impl table is supported`.
+
+No setting changes in place, so an index whose settings, columns or prefix
+change is dropped and added again, after the column it reads exists and
+before any column it reads is dropped. A renamed index keeps its settings and
+is renamed in place.
+
+What a line does with a vector index:
+
+| Line | Vector indexes |
+| --- | --- |
+| 26.1, 26.2 | built and kept current by every write; bit vectors |
+| 25.3, 25.4 | built and kept current by every write; no bit vectors |
+| 25.2 | built; a row written after the build is not found through the index |
+| 25.1 | behind `EnableVectorIndex`, off by default; as 25.2 with the flag on |
+
+The keys are `vector_indexes`, `vector_index_maintained_on_write` and
+`vector_bit_type`. On a line without `vector_index_maintained_on_write`, a
+search through the index answers as the table stood when the index was built,
+while a full scan sees every row; `YD131` warns about a migration that writes
+rows into such a table. A search through the index is approximate, and names
+it with `VIEW`:
+
+```sql
+SELECT id FROM docs VIEW docs_embedding_ix
+WHERE tenant = 1
+ORDER BY Knn::CosineDistance(embedding, $target)
+LIMIT 10;
+```
+
+Other dialects refuse an index that declares vector settings.
 
 ### Serial columns and their sequences
 
@@ -1217,10 +1306,10 @@ or `stable-25-4-1`:
 | --- | --- | --- |
 | `YDB262` | 26.2 | — |
 | `YDB261` | 26.1 | `SET DEFAULT` and `DROP DEFAULT` on an existing column |
-| `YDB254` | 25.4 | a column added with a default, a changefeed's `USER_SIDS`, a `GRANT` on a root object by its relative name |
+| `YDB254` | 25.4 | a column added with a default, a changefeed's `USER_SIDS`, a `GRANT` on a root object by its relative name, bit vectors in a vector index |
 | `YDB253` | 25.3 | a consumer's `availability_period`, a replication or transfer secret named by its path, a family's `CACHE_MODE` |
-| `YDB252` | 25.2 | a `JsonDocument` or `DyNumber` default, `UPDATE ... RETURNING` on a table with a unique index, a changefeed's `SCHEMA_CHANGES` |
-| `YDB251` | 25.1 | the 64-bit date and time types, `Decimal` precision other than 22,9, an `Int16` or `Uint16` default, an auto-partitioned changefeed topic, a transfer |
+| `YDB252` | 25.2 | a `JsonDocument` or `DyNumber` default, `UPDATE ... RETURNING` on a table with a unique index, a changefeed's `SCHEMA_CHANGES`, a vector index that takes in the rows written after its build |
+| `YDB251` | 25.1 | the 64-bit date and time types, `Decimal` precision other than 22,9, an `Int16` or `Uint16` default, an auto-partitioned changefeed topic, vector indexes, a transfer |
 
 `ptah schema render --dialect ydb --server-version 25.1.4.7` renders for a line
 without a server. The capability probe measures 26.2, the current release, and
@@ -1250,6 +1339,7 @@ The flags decide these capabilities:
 | `EnableParameterizedDecimal` | `parameterized_decimal` |
 | `EnableMoveIndex` | `index_rename` |
 | `EnableTopicAutopartitioningForCDC` | `changefeed_topic_auto_partitioning` |
+| `EnableVectorIndex` | `vector_indexes` |
 | `EnableTopicTransfer` | `transfers` |
 | `EnableReplication` | `async_replication` |
 | `EnableTableCacheModes` | `column_family_cache_mode` |
@@ -1287,12 +1377,13 @@ the [support matrix](../support-matrix/).
 database read every row table under the database root, its columns, defaults,
 `Serial` columns with their sequence's start, increment and last restart,
 primary key, TTL, column families with the columns each holds, and global
-indexes, with each index's partitioning and read replicas, its changefeeds,
-each with the retention and the consumers of its topic, the table's own
-partitioning, read replicas and key bloom filter, every view with the query
-the server stores, every topic with its settings and consumers, every async
-replication and transfer with its state, every coordination node with its
-configuration, and the users, groups and permissions; see
+indexes, with each index's partitioning and read replicas, its vector indexes
+with their settings, its changefeeds, each with the retention and the
+consumers of its topic, the table's own partitioning, read replicas and key
+bloom filter, every view with the query the server stores, every topic with
+its settings and consumers, every async replication and transfer with its
+state, every coordination node with its configuration, and the users, groups
+and permissions; see
 [Users, groups and permissions](#users-groups-and-permissions).
 
 What Ptah does not model yet is recorded rather than dropped:
@@ -1303,8 +1394,9 @@ not read, such as attributes, an AWS region, trace identifiers or a shared
 consumer, and the replica tables an async replication writes. A command
 reports them, and a plan neither drops nor changes them.
 
-An index kind Ptah cannot read, such as a vector or a full-text index, is
-refused by name rather than read as a plain index.
+An index kind Ptah cannot read, such as a full-text index, is refused by name
+rather than read as a plain index, and so is a vector index holding a setting
+Ptah does not model, such as the `overlap_clusters` 26.2 takes.
 
 ## Versioned migrations
 
@@ -1358,7 +1450,9 @@ runs with an effect the statement does not state:
 - a password or a token written as a value in an async replication or a
   transfer;
 - a statement that names a column family the table does not have, which YDB
-  creates rather than refuses.
+  creates rather than refuses;
+- a vector index the line does not build, and rows written into a table whose
+  vector index does not take them in.
 
 `DS107` reports a dropped user or group as it reports a dropped role
 elsewhere, a dropped topic or coordination node, a dropped transfer and an
@@ -1366,13 +1460,13 @@ async replication dropped with `CASCADE`.
 [Lint rules](../../reference/lint-rules/#ydb) lists each rule with its
 meaning.
 
-`YD104`, `YD105`, `YD106`, `YD109`, `YD118` and `YD119` read the indexes, TTL,
-minimum partition count and partition size, views, changefeeds and column
-families the directory's own earlier migrations declare; a table the directory
-never created is unknown to them. `YD105` stays silent where that history left
-the minimum at 1, and `YD118` where it left the size at 2048 MB or splitting by
-size off; each warns where it does not know. With `--dev-url`, lint first
-replays the directory
+`YD104`, `YD105`, `YD106`, `YD109`, `YD118`, `YD119` and `YD131` read the
+indexes, TTL, minimum partition count and partition size, views, changefeeds,
+column families and vector indexes the directory's own earlier migrations
+declare; a table the directory never created is unknown to them. `YD105`
+stays silent where that history left the minimum at 1, and `YD118` where it
+left the size at 2048 MB or splitting by size off; each warns where it does
+not know. With `--dev-url`, lint first replays the directory
 in a [dev realm](#dev-shadow-and-scratch-databases), so a statement YDB
 refuses fails the run, and the rules that read a baseline schema read it
 there. The rules for
@@ -1382,7 +1476,8 @@ say what each does on YDB.
 
 `ptah sql lint` reads YQL without the SQL parser, which has no YQL grammar. It
 reports a `CREATE TABLE` without a primary key, which YDB refuses, as `DDL001`,
-and a capability an `ALTER TABLE` needs that the line lacks as `CAP001`.
+and a capability a `CREATE TABLE` or an `ALTER TABLE` needs that the line lacks
+as `CAP001`.
 
 `ptah migrations up` blocks on the `DS` family on YDB as on every engine. A
 `.ptah-lint.yaml` with `gate: { families: [YD] }` refuses a pending migration
@@ -1531,7 +1626,9 @@ bounds how long they wait for it.
 `schema inspect` writes YDB's own type names in its HCL, which no Atlas binary
 reads; Ptah reads it back. A type is written bare, `Decimal(22,9)` included, a
 `Serial` column as its integer type with `auto_increment = true`, and an index's
-kind as its `type`, such as `"GLOBAL SYNC"` or `"GLOBAL ASYNC"`. A directory is a
+kind as its `type`, such as `"GLOBAL SYNC"` or `"GLOBAL ASYNC"`. A vector index
+carries its settings as attributes named as the annotation names them, such as
+`distance = "cosine"` and `vector_dimension = 1536`. A directory is a
 `schema` block, and a table at the database root, which has no name, carries no
 `schema` attribute:
 
@@ -1668,8 +1765,8 @@ These are refused with a message that names what is missing:
 <!-- BEGIN GENERATED YDB GAPS -->
 - a YQL file as the desired schema (Go structs and YAML schemas work);
 - comments on tables, columns and indexes;
-- vector, full-text, JSON and column-table indexes;
-- `ptah inference` and the inference tools of `ptah mcp`, which wait for the vector index family.
+- full-text, JSON and column-table indexes;
+- `ptah inference` and the inference tools of `ptah mcp`, which store their vectors through pgvector.
 <!-- END GENERATED YDB GAPS -->
 
 The work is planned in [#4015](https://github.com/stokaro/ptah/issues/4015).

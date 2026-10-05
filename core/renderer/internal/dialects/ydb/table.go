@@ -14,6 +14,7 @@ import (
 	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbgap"
+	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
 	"ptah.run/internal/ydbsequence"
 	"ptah.run/internal/ydbttl"
@@ -65,13 +66,15 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	}
 	lines := make([]string, 0, len(node.Columns)+len(node.Indexes)+len(families)+1)
 	columnTypes := make(map[string]string, len(node.Columns))
+	columns := make(map[string]ydbindex.Column, len(node.Columns))
 	for _, column := range node.Columns {
-		definition, ydbType, err := r.columnDefinition(node.Name, column, slices.Contains(keyColumns, column.Name),
+		definition, mapping, err := r.columnDefinition(node.Name, column, slices.Contains(keyColumns, column.Name),
 			ydbfamily.FamilyOf(node.YDBColumnFamilies, column.Name))
 		if err != nil {
 			return err
 		}
-		columnTypes[column.Name] = ydbType
+		columnTypes[column.Name] = mapping.Type
+		columns[column.Name] = ydbindex.Column{Type: mapping.Type, Dimension: mapping.Dimension}
 		lines = append(lines, definition)
 	}
 	if err := checkKeyTypes(node.Name, keyColumns, columnTypes); err != nil {
@@ -93,7 +96,7 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	var partitioning []string
 	named := make(map[string]bool, len(node.Indexes)+len(uniques))
 	for _, index := range append(slices.Clone(node.Indexes), uniques...) {
-		clause, err := r.inlineIndex(node.Name, index, keyColumns, columnTypes)
+		clause, err := r.inlineIndex(node.Name, index, keyColumns, columns)
 		if err != nil {
 			return err
 		}
@@ -527,21 +530,21 @@ func (r *Renderer) columnDefinition(
 	column *ast.ColumnNode,
 	key bool,
 	family string,
-) (definition, ydbType string, err error) {
+) (string, ydbtype.Mapping, error) {
 	subject := fmt.Sprintf("column %q", column.Name)
 	if table != "" {
 		subject = fmt.Sprintf("column %q of %s", column.Name, tableref.Phrase(table))
 	}
 	if err := r.refuseColumnDeclarations(subject, column); err != nil {
-		return "", "", err
+		return "", ydbtype.Mapping{}, err
 	}
 	mapping, err := r.columnType(subject, column)
 	if err != nil {
-		return "", "", err
+		return "", ydbtype.Mapping{}, err
 	}
 	if mapping.Serial {
 		if err := r.serialSequence(subject, table, column); err != nil {
-			return "", "", err
+			return "", ydbtype.Mapping{}, err
 		}
 	}
 	if mapping.Dropped != "" {
@@ -556,16 +559,16 @@ func (r *Renderer) columnDefinition(
 		parts = append(parts, "NOT NULL")
 	}
 	if notNull && nullDefault(column.Default) {
-		return "", "", refuseFact(subject, "the column is NOT NULL and its default is NULL")
+		return "", ydbtype.Mapping{}, refuseFact(subject, "the column is NOT NULL and its default is NULL")
 	}
 	defaultClause, err := r.defaultClause(subject, column.Default, mapping.Type)
 	if err != nil {
-		return "", "", err
+		return "", ydbtype.Mapping{}, err
 	}
 	if defaultClause != "" {
 		parts = append(parts, defaultClause)
 	}
-	return strings.Join(parts, " "), mapping.Type, nil
+	return strings.Join(parts, " "), mapping, nil
 }
 
 // nullDefault reports a default that is the literal NULL.

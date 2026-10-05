@@ -6,7 +6,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"regexp"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -18,7 +17,6 @@ import (
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasretry"
-	"ptah.run/internal/ydbgap"
 	"ptah.run/migration/migrator"
 )
 
@@ -29,7 +27,8 @@ var connectionSchemas = []string{connectionSchema}
 // The connection reports the server it reached: YDB, the version Version()
 // answers, the capabilities of the line that version is on, and the database
 // root as the schema an unqualified name means. The capabilities are the
-// line's preset, so a target that reaches a server on another line -- an
+// line's preset with the keys the contour's feature flags turn on, so a
+// target that reaches a server on another line -- an
 // address the server advertises through discovery that leads to the other
 // server, say -- fails here rather than letting the rest of the package
 // measure that line under this one's name.
@@ -47,7 +46,7 @@ func TestYDBConnection_DescribesTheServer(t *testing.T) {
 			c.Assert(info.Version, qt.Equals, version)
 			c.Assert(info.Schema, qt.Equals, "")
 			c.Assert(info.IdentifierSemantics.DefaultSchema, qt.Equals, "")
-			c.Assert(info.Capabilities, qt.DeepEquals, line.preset())
+			c.Assert(info.Capabilities, qt.DeepEquals, line.capabilities())
 		})
 	}
 }
@@ -326,14 +325,13 @@ func TestYDBReader_RecordsWhatItDoesNotModel(t *testing.T) {
 	}
 }
 
-// An index kind the reader does not read is refused by name rather than read
-// as a plain global index, which is how ydb-go-sdk's own description reads it.
-// The table has to hold a vector index for the refusal to be measured. 26.2
-// creates one by default; 25.1 keeps vector indexes behind the
-// EnableVectorIndex feature flag and answers `Vector index support is
-// disabled` without it, so go-integration-tests.yml starts the 25.1 server
-// with the flag on.
-func TestYDBReader_RefusesAVectorIndex(t *testing.T) {
+// A vector index is read as the kind it is, with the settings the server
+// built it with, rather than as a plain global index, which is how
+// ydb-go-sdk's own description reads it. 26.2 builds one by default; 25.1
+// keeps vector indexes behind the EnableVectorIndex feature flag and answers
+// `Vector index support is disabled` without it, so go-integration-tests.yml
+// starts the 25.1 server with the flag on.
+func TestYDBReader_ReadsAVectorIndex(t *testing.T) {
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -349,9 +347,10 @@ func TestYDBReader_RefusesAVectorIndex(t *testing.T) {
 
 			live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, connectionSchemas)
 
-			c.Assert(err, qt.ErrorMatches, `YDB table /\w+/ptah_ydb_connection/vectors: index "by_emb" is a vector_kmeans_tree index: `+
-				regexp.QuoteMeta(ydbgap.IndexFamilies.Message()))
-			c.Assert(live, qt.IsNil)
+			c.Assert(err, qt.IsNil)
+			c.Assert(indexNamed(c, live, "by_emb").Method, qt.Equals, "GLOBAL USING vector_kmeans_tree")
+			c.Assert(indexNamed(c, live, "by_emb").Vector, qt.DeepEquals,
+				&ast.VectorIndexSpec{Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 1, Clusters: 2})
 		})
 	}
 }

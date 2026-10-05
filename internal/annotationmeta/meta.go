@@ -12,6 +12,7 @@ import (
 	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbcoordination"
 	"ptah.run/internal/ydbfamily"
+	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
 	"ptah.run/internal/ydbreplication"
 	"ptah.run/internal/ydbtopic"
@@ -411,6 +412,17 @@ var directives = []Directive{
 			attr(ydbpartition.AttributeMinPartitions, "YDB: the fewest partitions the index's table keeps.", valueString, false, false),
 			attr(ydbpartition.AttributeMaxPartitions, "YDB: the most partitions the index's table splits into.", valueString, false, false),
 			attr(ydbpartition.AttributeReadReplicas, "YDB: the index's read replicas, PER_AZ:<n> or ANY_AZ:<n>.", valueString, false, false),
+			attr(ydbindex.AttributeDistance, "YDB vector index: the distance it orders by, cosine, euclidean or manhattan.",
+				valueString, false, false),
+			attr(ydbindex.AttributeSimilarity, "YDB vector index: the similarity it orders by, inner_product or cosine.",
+				valueString, false, false),
+			attr(ydbindex.AttributeVectorType, "YDB vector index: the element type, float, uint8, int8 or bit.",
+				valueString, false, false),
+			attr(ydbindex.AttributeVectorDimension, "YDB vector index: the number of elements in a vector, 1 to 16384.",
+				valueString, false, false),
+			attr(ydbindex.AttributeLevels, "YDB vector index: the depth of its k-means tree, 1 to 16.", valueString, false, false),
+			attr(ydbindex.AttributeClusters, "YDB vector index: the clusters each level splits into, 2 to 2048.",
+				valueString, false, false),
 		},
 	},
 	{

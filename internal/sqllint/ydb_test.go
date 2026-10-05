@@ -48,6 +48,33 @@ func TestLintSource_YDB_HappyPath(t *testing.T) {
 				"unavailable on this target"},
 		},
 		{
+			name: "a vector index on a line that keeps vector indexes behind a flag",
+			sql: "CREATE TABLE d (id Uint64 NOT NULL, emb String, PRIMARY KEY (id), INDEX d_e GLOBAL USING vector_kmeans_tree " +
+				"ON (emb) WITH (distance=cosine, vector_type=\"float\", vector_dimension=3, levels=1, clusters=2));\n" +
+				"ALTER TABLE d ADD INDEX d_f GLOBAL USING vector_kmeans_tree ON (emb) " +
+				"WITH (distance=cosine, vector_type=float, vector_dimension=3, levels=1, clusters=2);",
+			version: "25.1.4.7",
+			want: []string{
+				"1:1 CAP001 INDEX d_e, a vector index of table d, requires target capability vector_indexes, unavailable on this target",
+				"2:1 CAP001 ADD INDEX d_f, a vector index added to table d, requires target capability vector_indexes, " +
+					"unavailable on this target",
+			},
+		},
+		{
+			name: "bit vectors on a line that does not build them",
+			sql: "ALTER TABLE d ADD INDEX d_b GLOBAL USING vector_kmeans_tree ON (emb) " +
+				"WITH (distance=manhattan, vector_type=\"BIT\", vector_dimension=8, levels=1, clusters=2);",
+			version: "25.4.1.15",
+			want: []string{"1:1 CAP001 ADD INDEX d_b, a vector index added to table d, requires target capability vector_bit_type, " +
+				"unavailable on this target"},
+		},
+		{
+			name: "a vector index of bit vectors on the newest line",
+			sql: "CREATE TABLE d (id Uint64 NOT NULL, emb String, PRIMARY KEY (id), INDEX d_e GLOBAL USING vector_kmeans_tree " +
+				"ON (emb) WITH (distance=cosine, vector_type=bit, vector_dimension=8, levels=1, clusters=2));",
+			want: nil,
+		},
+		{
 			name: "a string holding a semicolon and a statement is one literal",
 			sql:  "CREATE TABLE t (id Uint64 NOT NULL, note Utf8 DEFAULT \"x\\\"; CREATE TABLE u (id Uint64);\"u, PRIMARY KEY (id));",
 			want: nil,

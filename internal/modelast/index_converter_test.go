@@ -33,6 +33,7 @@ func fullyDeclaredIndex() schemamodel.Index {
 		Granularity:    4,
 		Concurrently:   true,
 		Partitioning:   &ast.IndexPartitioningSpec{ByLoad: new(true), MinPartitions: 3},
+		Vector:         &ast.VectorIndexSpec{Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 1, Clusters: 2},
 	}
 }
 
@@ -52,6 +53,23 @@ func TestFromIndex_CarriesThePartitioning(t *testing.T) {
 	c.Assert(node.Partitioning, qt.DeepEquals, index.Partitioning)
 	*node.Partitioning.ByLoad = false
 	c.Assert(*index.Partitioning.ByLoad, qt.IsTrue)
+}
+
+// TestFromIndex_CarriesTheVectorSettings holds the hop from the schema model
+// to the renderer to a YDB vector index's settings: dropped here, the renderer
+// refuses the index as one that declares none. The node carries a copy, so a
+// renderer cannot change the declaration it came from.
+func TestFromIndex_CarriesTheVectorSettings(t *testing.T) {
+	c := qt.New(t)
+	index := schemamodel.Index{
+		StructName: "Doc", TableName: "docs", Name: "idx_docs_emb", Fields: []string{"emb"}, Type: "vector_kmeans_tree",
+		Vector: &ast.VectorIndexSpec{Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 1, Clusters: 2},
+	}
+
+	node := modelast.FromIndex(index)
+	c.Assert(node.Vector, qt.DeepEquals, index.Vector)
+	node.Vector.Levels = 2
+	c.Assert(index.Vector.Levels, qt.Equals, uint64(1))
 }
 
 // TestIndexConverters_CarryTheSameDeclaration is the guard the fix for

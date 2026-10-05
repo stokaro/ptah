@@ -572,16 +572,21 @@ func (p *Planner) refuseIndexAdditions(
 // table: its key from the table or from its key fields, and each column's
 // type through the map the renderer writes with. A column whose type the map
 // refuses is answered as orderable, because that refusal is the column's and
-// is reported where the column is written.
+// is reported where the column is written. An index whose kind does not read
+// is left to the renderer, which refuses it by name.
 func (p *Planner) indexShapeRefusal(index schemamodel.Index, declaration difftypes.TableDeclaration) string {
-	types := make(map[string]string, len(declaration.Fields))
+	kind, err := ydbindex.KindOf(index.Type)
+	if err != nil {
+		return ""
+	}
+	columns := make(map[string]ydbindex.Column, len(declaration.Fields))
 	var fieldKey []string
 	for _, field := range declaration.Fields {
 		mapping, err := ydbtype.Map(field.Type, p.caps)
 		if err != nil {
 			mapping = ydbtype.Mapping{}
 		}
-		types[field.Name] = mapping.Type
+		columns[field.Name] = ydbindex.Column{Type: mapping.Type, Dimension: mapping.Dimension}
 		if field.Primary {
 			fieldKey = append(fieldKey, field.Name)
 		}
@@ -590,11 +595,15 @@ func (p *Planner) indexShapeRefusal(index schemamodel.Index, declaration difftyp
 	if len(key) == 0 {
 		key = fieldKey
 	}
-	columnType := func(column string) (string, bool) {
-		ydbType, declared := types[column]
-		return ydbType, declared
+	column := func(name string) (ydbindex.Column, bool) {
+		declared, ok := columns[name]
+		return declared, ok
 	}
-	return ydbindex.ShapeRefusal(indexKeyColumns(index), index.IncludeColumns, key, columnType)
+	shape := ydbindex.Shape{Kind: kind, Columns: indexKeyColumns(index), Cover: index.IncludeColumns}
+	if index.Vector != nil {
+		shape.Dimension = index.Vector.Dimension
+	}
+	return ydbindex.ShapeRefusal(shape, key, column)
 }
 
 // indexKeyColumns are the columns an index is keyed on, from its structured

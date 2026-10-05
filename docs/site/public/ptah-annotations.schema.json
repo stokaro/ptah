@@ -1330,6 +1330,10 @@
               "description": "YDB: the size in MB at which the index's table splits a partition.",
               "type": "string"
             },
+            "clusters": {
+              "description": "YDB vector index: the clusters each level splits into, 2 to 2048.",
+              "type": "string"
+            },
             "columns": {
               "description": "Legacy synonym for fields.",
               "type": "string",
@@ -1341,6 +1345,10 @@
             },
             "condition": {
               "description": "Partial index condition.",
+              "type": "string"
+            },
+            "distance": {
+              "description": "YDB vector index: the distance it orders by, cosine, euclidean or manhattan.",
               "type": "string"
             },
             "fields": {
@@ -1368,6 +1376,10 @@
               "description": "MySQL and MariaDB index block-size hint; zero uses the engine default.",
               "type": "string"
             },
+            "levels": {
+              "description": "YDB vector index: the depth of its k-means tree, 1 to 16.",
+              "type": "string"
+            },
             "name": {
               "description": "Index name.",
               "type": "string"
@@ -1388,6 +1400,10 @@
               "description": "YDB: the index's read replicas, PER_AZ:<n> or ANY_AZ:<n>.",
               "type": "string"
             },
+            "similarity": {
+              "description": "YDB vector index: the similarity it orders by, inner_product or cosine.",
+              "type": "string"
+            },
             "table": {
               "description": "Explicit target table.",
               "type": "string"
@@ -1404,6 +1420,14 @@
               ],
               "type": "string",
               "x-ptah-bare-boolean": true
+            },
+            "vector_dimension": {
+              "description": "YDB vector index: the number of elements in a vector, 1 to 16384.",
+              "type": "string"
+            },
+            "vector_type": {
+              "description": "YDB vector index: the element type, float, uint8, int8 or bit.",
+              "type": "string"
             },
             "where": {
               "description": "Atlas-style partial index condition alias.",

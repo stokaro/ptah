@@ -58,6 +58,8 @@ func ydbRules() []Rule {
 		ydbPrincipalDropRule(),
 		ydbTopicResetRule(),
 		ydbTopicSettingIgnoredRule(),
+		ydbVectorIndexUnbuiltRule(),
+		ydbVectorIndexStaleRule(),
 		ydbReplicationDroppedWithoutFailoverRule(),
 		ydbSecretInClearRule(),
 		ydbUndeclaredColumnFamilyRule(),
@@ -527,7 +529,7 @@ func missingRequirement(read yqlddl.Statement, target Target, key capability.Cap
 		return yqlddl.Action{}, false
 	}
 	for _, requirement := range read.Requirements() {
-		if requirement.Capability == key {
+		if requirement.Capability == key && !requirement.Inline {
 			return read.Actions[requirement.Action], true
 		}
 	}
@@ -1356,6 +1358,125 @@ func unknownCodec(list string) string {
 		}
 	}
 	return ""
+}
+
+// ydbVectorIndexUnbuiltRule reports a vector index, inline in CREATE TABLE or
+// added by ALTER TABLE, on a target that does not build it: one without
+// [capability.VectorIndexes], or, for an index over bit vectors, one without
+// [capability.VectorBitType]. Measured on local-ydb:
+//
+//	25.1.4.7, flag off   Vector index support is disabled
+//	25.1.4.7, 25.2.1.24  bit vector type is not supported
+//	25.3.1.25, 25.4.1.15 Unsupported vector_type: VECTOR_TYPE_BIT
+//
+// 25.1.4.7 accepts a bit index on an empty table and refuses to build it over
+// rows, so a migration that creates the table applies and the first rebuild
+// fails. [yqlddl.Statement.Requirements] decides which statement needs which
+// key, as `ptah sql lint` reads it.
+func ydbVectorIndexUnbuiltRule() Rule {
+	return Rule{
+		Code:          "YD130",
+		Title:         "vector index the target does not build",
+		Severity:      SeverityError,
+		Dialects:      ydbOnly,
+		AppliesToDown: true,
+		CheckStatement: func(stmt *Statement) (bool, string) {
+			if !ydbRun(stmt.Target) {
+				return false, ""
+			}
+			read := yqlddl.Read(stmt.SQL)
+			for _, requirement := range read.Requirements() {
+				if stmt.Target.Capabilities.Has(requirement.Capability) {
+					continue
+				}
+				name := requiredIndex(read, requirement).Name
+				switch requirement.Capability {
+				case capability.VectorIndexes:
+					return true, fmt.Sprintf("vector index %s on %s needs target capability %s, unavailable on this %s "+
+						"target; YDB 25.1 keeps vector indexes behind the EnableVectorIndex feature flag (Vector index "+
+						"support is disabled), so turn the flag on for the cluster", name, read.Name, capability.VectorIndexes,
+						platform.YDB)
+				case capability.VectorBitType:
+					return true, fmt.Sprintf("vector index %s on %s stores bit vectors, which needs target capability %s, "+
+						"unavailable on this %s target, where the index is not built over rows; declare vector_type float, "+
+						"uint8 or int8", name, read.Name, capability.VectorBitType, platform.YDB)
+				}
+			}
+			return false, ""
+		},
+	}
+}
+
+// requiredIndex is the index a requirement of read belongs to: the one a
+// CREATE TABLE declares inline, or the one an ALTER TABLE action adds.
+func requiredIndex(read yqlddl.Statement, requirement yqlddl.Requirement) yqlddl.Index {
+	if requirement.Inline {
+		return read.Indexes[requirement.Action]
+	}
+	return read.Actions[requirement.Action].Index
+}
+
+// ydbVectorIndexStaleRule reports a statement that writes rows into a table
+// holding a vector index, on a target without
+// [capability.VectorIndexMaintainedOnWrite]. Measured on local-ydb 25.1.4.7
+// and 25.2.1.24, with a vector index built over five rows: an upsert, an
+// update and a delete afterwards are each accepted, a full scan sees them, and
+// a search through the index answers as the table stood when the index was
+// built. 25.3.1.25 and later answer each write through the index.
+//
+// The index is known from the directory itself, as YD104 knows a table's
+// indexes; a table created outside it reports nothing. The rule reads the up
+// migrations only: a down migration's writes meet the same index, and the
+// state before one is not the state the directory's own history builds.
+func ydbVectorIndexStaleRule() Rule {
+	return Rule{
+		Code:     "YD131",
+		Title:    "rows written past a vector index that does not take them",
+		Severity: SeverityWarning,
+		Dialects: ydbOnly,
+		CheckFile: func(file *File) []Finding {
+			caps := file.Target.Capabilities
+			if !ydbRun(file.Target) || !caps.Has(capability.VectorIndexes) || caps.Has(capability.VectorIndexMaintainedOnWrite) {
+				return nil
+			}
+			state := file.ydbBefore.clone()
+			var findings []Finding
+			for i := range file.Statements {
+				stmt := &file.Statements[i]
+				if table, writes := yqlddl.WrittenTable(stmt.SQL); writes {
+					if index, held := state.table(table).vectorIndex(); held {
+						findings = append(findings, Finding{
+							Rule:     "YD131",
+							Title:    "rows written past a vector index that does not take them",
+							Severity: SeverityWarning,
+							File:     file.Path,
+							Line:     stmt.Line,
+							Message: fmt.Sprintf("this statement writes rows into %s, whose vector index %s does not take "+
+								"them on this target (needs target capability %s): a search through the index answers as "+
+								"the table stood when the index was built; write the rows before the index is added, or "+
+								"drop and add the index after them. Rows the application writes later meet the same, and "+
+								"YDB 25.3 and later keep the index current",
+								table, index, capability.VectorIndexMaintainedOnWrite),
+							Context: statementFindingContext(i, Subject{Kind: SubjectTable, Name: table}),
+						})
+					}
+				}
+				state.apply(yqlddl.Read(stmt.SQL))
+			}
+			return findings
+		},
+	}
+}
+
+// vectorIndex returns the name of a vector index the table holds, and false
+// where it holds none.
+func (t ydbTable) vectorIndex() (string, bool) {
+	for _, index := range t.indexes {
+		if index.Vector() {
+			return index.Name, true
+		}
+	}
+	return "", false
 }
 
 // ydbReplicationDroppedWithoutFailoverRule reports a DROP ASYNC REPLICATION

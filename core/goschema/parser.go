@@ -379,6 +379,10 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 	if err != nil {
 		return err
 	}
+	vector, err := s.indexVector(kv, comment, structName)
+	if err != nil {
+		return err
+	}
 	s.schemaIndexes = append(s.schemaIndexes, schemamodel.Index{
 		StructName:     structName,
 		Name:           kv["name"],
@@ -395,6 +399,7 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 		TableName:      tableName,   // Target table name
 		Granularity:    granularity, // CH only: GRANULARITY n for data-skipping indexes
 		Partitioning:   partitioning,
+		Vector:         vector,
 	})
 	return nil
 }
@@ -411,6 +416,20 @@ func (s *schemaParseState) indexPartitioning(kv map[string]string, comment *ast.
 		}
 	}
 	return partitioning, err
+}
+
+// indexVector reads the settings of a YDB vector index from an index
+// directive; see [ydbindex.ParseVectorDeclaration].
+func (s *schemaParseState) indexVector(kv map[string]string, comment *ast.Comment, structName string) (*ptahast.VectorIndexSpec, error) {
+	vector, err := ydbindex.ParseVectorDeclaration(kv)
+	if declaration, ok := errors.AsType[*ydbpartition.DeclarationError](err); ok {
+		return nil, &ptaherr.ParseError{
+			File: s.filename, Line: s.annotationContext(comment, "//ptah:schema:index", structName).line,
+			Directive: "ptah:schema:index", Attribute: declaration.Attribute, Err: ptaherr.ErrInvalidAttributeValue,
+			Message: fmt.Sprintf("%s on //ptah:schema:index at %s", declaration.Error(), structName),
+		}
+	}
+	return vector, err
 }
 
 func firstNonEmpty(values ...string) string {

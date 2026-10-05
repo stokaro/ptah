@@ -228,6 +228,9 @@ func measuredLines() map[string]measuredLine {
 				capability.AsyncIndexes:                    typeKeyCarried,
 				capability.IndexRename:                     indexKeyCarried,
 				capability.IndexPartitioning:               indexKeyCarried,
+				capability.VectorIndexes:                   vectorKeyCarried,
+				capability.VectorIndexMaintainedOnWrite:    vectorKeyCarried,
+				capability.VectorBitType:                   vectorKeyCarried,
 				capability.RoleMembership:                  accessKeyCarried,
 				capability.GroupPrincipals:                 accessKeyCarried,
 				capability.DatabaseGrants:                  accessKeyCarried,
@@ -396,6 +399,9 @@ func measuredLines() map[string]measuredLine {
 				capability.AsyncIndexes:                    typeKeyCarried,
 				capability.IndexRename:                     indexKeyCarried,
 				capability.IndexPartitioning:               indexKeyCarried,
+				capability.VectorIndexes:                   vectorKeyCarried,
+				capability.VectorIndexMaintainedOnWrite:    vectorKeyCarried,
+				capability.VectorBitType:                   vectorKeyCarried,
 				capability.RoleMembership:                  accessKeyCarried,
 				capability.GroupPrincipals:                 accessKeyCarried,
 				capability.DatabaseGrants:                  accessKeyCarried,
@@ -565,6 +571,9 @@ func measuredLines() map[string]measuredLine {
 				capability.AsyncIndexes:                    typeKeyCarried,
 				capability.IndexRename:                     indexKeyCarried,
 				capability.IndexPartitioning:               indexKeyCarried,
+				capability.VectorIndexes:                   vectorKeyCarried,
+				capability.VectorIndexMaintainedOnWrite:    vectorKeyCarried,
+				capability.VectorBitType:                   vectorKeyCarried,
 				capability.RoleMembership:                  accessKeyCarried,
 				capability.GroupPrincipals:                 accessKeyCarried,
 				capability.DatabaseGrants:                  accessKeyCarried,
@@ -741,6 +750,13 @@ const queryKeyCarried = "this run predates the key and sent no query experiment;
 // predates them. The probe asks them on every run through its index
 // experiments, and the value here is the preset's.
 const indexKeyCarried = "this run predates the key and sent no index experiment; the probe asks it " +
+	"on every run through those experiments, and the value here is the preset's"
+
+// vectorKeyCarried is why the keys about YDB's vector index are carried on
+// every measured line: the run named there predates them. The probe asks them
+// on every run through its vector experiments, whose statements every engine
+// but YDB refuses, and the value here is the preset's.
+const vectorKeyCarried = "this run predates the key and sent no vector index experiment; the probe asks it " +
 	"on every run through those experiments, and the value here is the preset's"
 
 // viewKeyCarried is why the key about replacing a view in one statement is

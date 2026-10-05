@@ -489,6 +489,16 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps: capability.YDB262(),
 		want: registered - 15,
 	}, {
+		name: "ydb 25.1 owes two rows fewer than 26.2: the vector index's writes and its bit vectors, whose " +
+			"prerequisite the line keeps behind a flag that is off by default",
+		cell: Cell{
+			Dialect: platform.YDB, Line: "25.1",
+			Preset: capability.YDB251, PresetName: "YDB251",
+			Refinement: RefinedByVersion,
+		},
+		caps: capability.YDB251(),
+		want: registered - 17,
+	}, {
 		name: "a banner-refined line owes nothing because no observation can be credited to it",
 		cell: Cell{
 			Dialect: platform.YugabyteDB, Line: "2025.2",

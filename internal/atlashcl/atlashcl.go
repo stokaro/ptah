@@ -15,11 +15,13 @@ import (
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/convert"
 
+	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/pgindexstorage"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/ydbindex"
 )
 
 // Options configures HCL schema parsing.
@@ -923,6 +925,10 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 	if err != nil {
 		return schemamodel.Index{}, err
 	}
+	vector, err := p.indexVector(block)
+	if err != nil {
+		return schemamodel.Index{}, err
+	}
 	return schemamodel.Index{
 		StructName:     structName,
 		Name:           block.Labels[0],
@@ -938,8 +944,26 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 		IncludeColumns: include,
 		StorageParams:  storageParams,
 		Granularity:    granularity,
+		Vector:         vector,
 		TableName:      tableName,
 	}, nil
+}
+
+// indexVector reads a YDB vector index's settings: attributes of the index
+// block named as the index annotation names them, a Ptah extension the Atlas
+// grammar has no counterpart for, since Atlas has no YDB driver.
+func (p *parser) indexVector(block *hclsyntax.Block) (*ast.VectorIndexSpec, error) {
+	values := make(map[string]string)
+	for _, name := range ydbindex.VectorAttributes() {
+		if attr := block.Body.Attributes[name]; attr != nil {
+			values[name] = p.exprString(attr)
+		}
+	}
+	vector, err := ydbindex.ParseVectorDeclaration(values)
+	if err != nil {
+		return nil, p.blockError(block, "index %q: %v", block.Labels[0], err)
+	}
+	return vector, nil
 }
 
 func (p *parser) parseConstraint(table *schemamodel.Table, block *hclsyntax.Block) (schemamodel.Constraint, error) {
@@ -1912,6 +1936,13 @@ func (p *parser) rejectUnsupportedIndexAttrs(block *hclsyntax.Block) error {
 		"comment":         true,
 		"granularity":     true,
 		"ops":             true,
+		// A YDB vector index's settings; see [parser.indexVector].
+		ydbindex.AttributeDistance:        true,
+		ydbindex.AttributeSimilarity:      true,
+		ydbindex.AttributeVectorType:      true,
+		ydbindex.AttributeVectorDimension: true,
+		ydbindex.AttributeLevels:          true,
+		ydbindex.AttributeClusters:        true,
 	}, "index")
 }
 

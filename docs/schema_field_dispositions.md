@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-504 fields are reachable from the desired schema, and each one carries
+511 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 438 | reaches rendered SQL on at least one target |
+| `ddl` | 445 | reaches rendered SQL on at least one target |
 | `comparison` | 8 | read when two schemas are compared, and written into no statement |
 | `planning` | 7 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -149,6 +149,12 @@ None.
 | `ast.TransferSpec.Lambda` | `ddl` | — |
 | `ast.TransferSpec.Source` | `ddl` | — |
 | `ast.TransferSpec.Target` | `ddl` | — |
+| `ast.VectorIndexSpec.Clusters` | `ddl` | — |
+| `ast.VectorIndexSpec.Dimension` | `ddl` | — |
+| `ast.VectorIndexSpec.Distance` | `ddl` | — |
+| `ast.VectorIndexSpec.Levels` | `ddl` | — |
+| `ast.VectorIndexSpec.Similarity` | `ddl` | — |
+| `ast.VectorIndexSpec.VectorType` | `ddl` | — |
 | `ast.YDBColumnFamilySpec.CacheMode` | `ddl` | — |
 | `ast.YDBColumnFamilySpec.Columns` | `ddl` | — |
 | `ast.YDBColumnFamilySpec.Compression` | `ddl` | — |
@@ -404,6 +410,7 @@ None.
 | `schemamodel.Index.TableName` | `ddl` | — |
 | `schemamodel.Index.Type` | `ddl` | — |
 | `schemamodel.Index.Unique` | `ddl` | — |
+| `schemamodel.Index.Vector` | `ddl` | — |
 | `schemamodel.IndexPart.Desc` | `ddl` | — |
 | `schemamodel.IndexPart.Expr` | `ddl` | — |
 | `schemamodel.IndexPart.Name` | `ddl` | — |

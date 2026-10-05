@@ -55,7 +55,8 @@ type Source interface {
 // read as another kind. ydb-go-sdk maps every index type it does not know to a
 // plain global index, so a vector index described through it reads back as
 // one; the raw description leaves the type empty and the data in fields the
-// pinned protocol buffers do not know, and the reader refuses it.
+// pinned protocol buffers do not know, where the reader decodes a vector index
+// and refuses every other kind by name.
 type grpcSource struct {
 	scheme Ydb_Scheme_V1.SchemeServiceClient
 	table  Ydb_Table_V1.TableServiceClient

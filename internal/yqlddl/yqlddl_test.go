@@ -180,6 +180,13 @@ func TestRead_AlterTable(t *testing.T) {
 			},
 		},
 		{
+			name: "a vector index with a prefix, a cover and its settings",
+			sql: "ALTER TABLE t ADD INDEX t_e GLOBAL SYNC USING vector_kmeans_tree ON (g, e) COVER (b) " +
+				"WITH (similarity = inner_product, vector_type = Uint8, vector_dimension = 3, levels = 1, clusters = 2)",
+			want: []yqlddl.Action{{Kind: yqlddl.AddIndex, Index: yqlddl.Index{Name: "t_e", Method: "vector_kmeans_tree",
+				VectorType: "uint8", Columns: []string{"g", "e"}, Cover: []string{"b"}}}},
+		},
+		{
 			name: "settings",
 			sql: "ALTER TABLE t SET (AUTO_PARTITIONING_BY_SIZE = ENABLED, TTL = Interval(\"P1D\") ON `ts` AS SECONDS), " +
 				"SET AUTO_PARTITIONING_BY_LOAD DISABLED, RESET (TTL, KEY_BLOOM_FILTER)",
@@ -475,11 +482,72 @@ func TestStatement_Requirements(t *testing.T) {
 		},
 		{name: "a plain index and a nullable column", sql: "ALTER TABLE t ADD INDEX t_v GLOBAL ON (v), ADD COLUMN b Utf8", want: nil},
 		{name: "a unique index declared with its table", sql: "CREATE TABLE t (id Uint64 NOT NULL, v Utf8, PRIMARY KEY (id), INDEX t_v GLOBAL UNIQUE ON (v))", want: nil},
+		{
+			name: "vector indexes declared with their table, one over bit vectors",
+			sql: "CREATE TABLE t (id Uint64 NOT NULL, e String, PRIMARY KEY (id), INDEX t_g GLOBAL ON (id), " +
+				"INDEX t_e GLOBAL USING vector_kmeans_tree ON (e) WITH (distance=cosine, vector_type=float, vector_dimension=3, levels=1, clusters=2), " +
+				"INDEX t_b GLOBAL USING Vector_KMeans_Tree ON (e) WITH (similarity=cosine, vector_type='Bit', vector_dimension=8, levels=1, clusters=2))",
+			want: []yqlddl.Requirement{
+				{Capability: capability.VectorIndexes, Action: 1, Inline: true},
+				{Capability: capability.VectorIndexes, Action: 2, Inline: true},
+				{Capability: capability.VectorBitType, Action: 2, Inline: true},
+			},
+		},
+		{
+			name: "a vector index added, covering a column",
+			sql: "ALTER TABLE t ADD COLUMN b Utf8, ADD INDEX t_e GLOBAL USING vector_kmeans_tree ON (g, e) COVER (b) " +
+				"WITH (distance=cosine, vector_type=\"bit\", vector_dimension=8, levels=1, clusters=2)",
+			want: []yqlddl.Requirement{
+				{Capability: capability.VectorIndexes, Action: 1},
+				{Capability: capability.VectorBitType, Action: 1},
+			},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(yqlddl.Read(test.sql).Requirements(), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+func TestWrittenTable_HappyPath(t *testing.T) {
+	tests := []struct {
+		statement string
+		want      string
+	}{
+		{statement: "UPSERT INTO `docs/d` (id, emb) VALUES (1, \"x\")", want: "docs/d"},
+		{statement: "insert into d (id) values (1);", want: "d"},
+		{statement: "INSERT OR REVERT INTO d SELECT * FROM e", want: "d"},
+		{statement: "REPLACE INTO d (id) VALUES (1)", want: "d"},
+		{statement: "UPDATE d SET n = 1 WHERE id = 2", want: "d"},
+		{statement: "BATCH UPDATE d SET n = 1", want: "d"},
+		{statement: "DELETE FROM d WHERE id = 1", want: "d"},
+		{statement: "-- a comment\nBATCH DELETE FROM `d` WHERE id = 1", want: "d"},
+	}
+	for _, test := range tests {
+		t.Run(test.statement, func(t *testing.T) {
+			c := qt.New(t)
+			got, ok := yqlddl.WrittenTable(test.statement)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+func TestWrittenTable_FailurePath(t *testing.T) {
+	for _, statement := range []string{
+		"SELECT * FROM d",
+		"ALTER TABLE d ADD COLUMN n Int64",
+		"UPSERT INTO $target (id) VALUES (1)",
+		"DELETE d",
+		"",
+	} {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
+			got, ok := yqlddl.WrittenTable(statement)
+			c.Assert(ok, qt.IsFalse)
+			c.Assert(got, qt.Equals, "")
 		})
 	}
 }

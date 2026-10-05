@@ -34,6 +34,11 @@ func TestColumnsWithDialect_YDBTypes_HappyPath(t *testing.T) {
 		{name: "a native spelling in another case", declared: "uint64", catalog: "Uint64"},
 		{name: "two declarations of one type", declared: "VARCHAR(255)", catalog: "TEXT"},
 		{name: "a declared instant on both sides", declared: "TIMESTAMP", catalog: "DATETIME"},
+		// A vector is bytes in a String column, which reads back as a plain
+		// String; its dimension is the vector index's to keep.
+		{name: "a vector built as bytes", declared: "vector(1536)", catalog: "String"},
+		{name: "a vector without a dimension", declared: "VECTOR", catalog: "String"},
+		{name: "two vector declarations of different dimensions", declared: "vector(4)", catalog: "vector(3)"},
 	}
 
 	for _, test := range tests {
@@ -69,6 +74,7 @@ func TestColumnsWithDialect_YDBTypes_FailurePath(t *testing.T) {
 		{name: "bytes where text is declared", declared: "TEXT", catalog: "String", want: "String -> Utf8"},
 		{name: "a declared 64-bit integer against YDB's 8-bit one", declared: "INT8", catalog: "Int8", want: "Int8 -> Int64"},
 		{name: "two declarations of different types", declared: "BIGINT", catalog: "INTEGER", want: "Int32 -> Int64"},
+		{name: "a vector where text was built", declared: "vector(3)", catalog: "Utf8", want: "Utf8 -> String"},
 	}
 
 	for _, test := range tests {

@@ -647,6 +647,12 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"YD119": {
 		Summary: "an `ALTER TABLE` that names a column family the table does not have, which YDB creates with its own settings rather than refusing, and YQL cannot drop",
 	},
+	"YD130": {
+		Summary: "a vector index a YDB line does not build: any where `vector_indexes` is false, and one over bit vectors where `vector_bit_type` is false",
+	},
+	"YD131": {
+		Summary: "rows written into a table holding a vector index on a YDB line where `vector_index_maintained_on_write` is false, which the index does not find",
+	},
 }
 
 // sqlRuleMeta declares the same facts for the standalone SQL linter, which

@@ -14,6 +14,7 @@ import (
 	"github.com/hashicorp/hcl/v2/hclwrite"
 	"github.com/zclconf/go-cty/cty"
 
+	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
@@ -22,6 +23,7 @@ import (
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlitekey"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/ydbindex"
 	"ptah.run/migration/risk"
 )
 
@@ -1188,6 +1190,7 @@ func (r *renderer) renderIndex(index schemamodel.Index) {
 	if len(index.IncludeColumns) > 0 {
 		r.rawAttr(2, "include", columnRefs(index.IncludeColumns))
 	}
+	r.renderVectorSettings(index.Vector)
 	if pages, ok := index.StorageParams["pages_per_range"]; ok {
 		// `page_per_range`, singular, is the spelling the pinned Atlas community
 		// binary v1.3.0 both emits and honors. Measured on PostgreSQL 17.10
@@ -1707,6 +1710,28 @@ func (r *renderer) tableColumnRefs(table string, columns []string) string {
 		refs = append(refs, tableRef+".column"+objectRefPart(column))
 	}
 	return "[" + strings.Join(refs, ", ") + "]"
+}
+
+// renderVectorSettings writes a YDB vector index's settings as the index
+// block attributes the HCL parser reads them from, so an inspected vector
+// index applies back as the same index. They are a Ptah extension: Atlas has
+// no YDB driver and so no spelling for them.
+func (r *renderer) renderVectorSettings(vector *ast.VectorIndexSpec) {
+	if vector == nil {
+		return
+	}
+	count := func(n uint64) string {
+		if n == 0 {
+			return ""
+		}
+		return strconv.FormatUint(n, 10)
+	}
+	r.stringAttr(2, ydbindex.AttributeDistance, vector.Distance)
+	r.stringAttr(2, ydbindex.AttributeSimilarity, vector.Similarity)
+	r.stringAttr(2, ydbindex.AttributeVectorType, vector.VectorType)
+	r.rawAttr(2, ydbindex.AttributeVectorDimension, count(vector.Dimension))
+	r.rawAttr(2, ydbindex.AttributeLevels, count(vector.Levels))
+	r.rawAttr(2, ydbindex.AttributeClusters, count(vector.Clusters))
 }
 
 // renderIndexStorageParams writes the storage parameters that have no

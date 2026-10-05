@@ -21,8 +21,9 @@ import (
 //
 //   - DDL001, because YDB refuses a table without a primary key. Measured on
 //     26.2.1.14 and 25.1.4.7: `Primary key is required for ydb tables.`
-//   - CAP001, for the capabilities [yqlddl.Statement.Requirements] says an
-//     ALTER TABLE needs, against the target's capability set.
+//   - CAP001, for the capabilities [yqlddl.Statement.Requirements] says a
+//     CREATE TABLE or an ALTER TABLE needs, against the target's capability
+//     set.
 //
 // SQL002 reports a statement this linter does not lint, as it does on every
 // dialect, and SQL004 the CREATE, ALTER and DROP kinds no rule examined. No
@@ -48,6 +49,7 @@ func lintYQL(source Source, opts Options, caps capability.Capabilities) []Findin
 			if !read.PrimaryKey {
 				findings = append(findings, yqlMissingKeyFinding(source, opts, read, at))
 			}
+			findings = append(findings, yqlCapabilityFindings(source, opts, caps, read, at)...)
 		case yqlddl.AlterTable:
 			findings = append(findings, yqlCapabilityFindings(source, opts, caps, read, at)...)
 		default:
@@ -142,19 +144,26 @@ func yqlCapabilityFindings(source Source, opts Options, caps capability.Capabili
 			Column:   column,
 			Dialect:  opts.Dialect,
 			Message: fmt.Sprintf("%s requires target capability %s, unavailable on this target",
-				yqlActionSubject(read, read.Actions[requirement.Action]), requirement.Capability),
+				yqlRequirementSubject(read, requirement), requirement.Capability),
 			Rationale: "Capability-aware lint rules catch SQL that one YDB release line or cluster accepts and another refuses.",
 		})
 	}
 	return findings
 }
 
-// yqlActionSubject names the action a requirement belongs to, for a message.
-func yqlActionSubject(read yqlddl.Statement, action yqlddl.Action) string {
-	switch action.Kind {
-	case yqlddl.AddIndex:
+// yqlRequirementSubject names the index or the action a requirement belongs
+// to, for a message.
+func yqlRequirementSubject(read yqlddl.Statement, requirement yqlddl.Requirement) string {
+	if requirement.Inline {
+		return fmt.Sprintf("INDEX %s, a vector index of table %s,", read.Indexes[requirement.Action].Name, read.Name)
+	}
+	action := read.Actions[requirement.Action]
+	switch {
+	case action.Kind == yqlddl.AddIndex && action.Index.Vector():
+		return fmt.Sprintf("ADD INDEX %s, a vector index added to table %s,", action.Index.Name, read.Name)
+	case action.Kind == yqlddl.AddIndex:
 		return fmt.Sprintf("ADD INDEX %s, a unique index added to the existing table %s,", action.Index.Name, read.Name)
-	case yqlddl.AddColumn:
+	case action.Kind == yqlddl.AddColumn:
 		return fmt.Sprintf("ADD COLUMN %s with a default on table %s", action.Column.Name, read.Name)
 	default:
 		return "ALTER TABLE " + read.Name
