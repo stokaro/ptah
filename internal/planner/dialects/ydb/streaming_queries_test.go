@@ -1,12 +1,14 @@
 package ydb_test
 
 import (
+	"testing"
+
 	qt "github.com/frankban/quicktest"
+
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/migration/schemadiff/difftypes"
-	"testing"
 )
 
 func TestStreamingQueries_StopBeforeSourcesAndRestartAfterCreation(t *testing.T) {
