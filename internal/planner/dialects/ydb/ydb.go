@@ -25,11 +25,15 @@
 //     then ALTER INDEX ... SET for every index whose partitioning changes in
 //     place, under the name it has once renamed;
 //  6. per table, ADD COLUMN, then the in-place column changes, then SET
-//     (TTL = ...) or RESET (TTL), then DROP COLUMN: a TTL may read a column
-//     the plan adds, and YDB refuses to drop the column a TTL reads;
+//     (TTL = ...) or RESET (TTL), then DROP COLUMN, then the comments of the
+//     table and its columns: a TTL may read a column the plan adds, YDB
+//     refuses to drop the column a TTL reads, and a dropped column's comment
+//     is an attribute of the table that YDB keeps until the plan removes it;
 //  7. ADD INDEX for every index added to a table that already exists, one per
 //     statement (`Only one index can be added by one operation`), after the
-//     columns it names exist;
+//     columns it names exist, then the comments of the indexes the plan
+//     keeps, renames or drops, each a table attribute keyed by the index's
+//     name;
 //  8. per table, DROP CHANGEFEED, then ADD CHANGEFEED with the consumers of
 //     its topic, then ALTER TOPIC for a retention or a consumer changed in
 //     place; a new table's changefeeds follow its CREATE TABLE instead, since
@@ -40,7 +44,12 @@
 //     table's path finds the path free;
 //  11. CREATE VIEW for every view the plan adds or replaces, last, a view after
 //     the views it reads: YDB checks a view's query against the schema when
-//     the view is created, so the tables and columns it reads exist by then.
+//     the view is created, so the tables and columns it reads exist by then;
+//     then the comment of each view the plan keeps whose comment changed.
+//
+// A comment is a user attribute of its table or view, written by Ptah's own
+// COMMENT ON statement (internal/ydbcomment). An object the plan creates
+// writes its comment after the statement that creates it.
 //
 // An index a plan creates, in CREATE TABLE or by ADD INDEX, takes its declared
 // partitioning from an ALTER INDEX the renderer writes after it, because no
@@ -74,7 +83,6 @@ import (
 	"ptah.run/internal/planner/columnchange"
 	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/internal/schemaprep"
-	"ptah.run/internal/ydbgap"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbtype"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -147,6 +155,9 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 		return nil, err
 	}
 	scoped := withoutKeysOfRebuiltTables(withoutKeysOfDroppedTables(diff, removedTables, semantics), rebuilds, semantics)
+	if err := p.refuseComments(scoped); err != nil {
+		return nil, err
+	}
 	if err := p.refuseObjects(scoped); err != nil {
 		return nil, err
 	}
@@ -207,12 +218,14 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	result = append(result, rebuiltNodes...)
 	result = append(result, sequences.changed...)
 	result = append(result, addIndexes(diff.IndexesAdded, ownIndexes, semantics)...)
+	result = append(result, indexComments(diff, removedTables, rebuilds, semantics)...)
 	result = append(result, changeChangefeeds(diff, rebuilds, semantics)...)
 	for _, name := range diff.TablesRemoved {
 		result = append(result, ast.NewDropTable(name))
 	}
 	result = append(result, changeTopics(diff)...)
 	result = append(result, p.createViews(diff)...)
+	result = append(result, viewComments(diff)...)
 	result = append(result, access.after...)
 	result = append(result, access.last...)
 	return result, nil
@@ -454,6 +467,9 @@ func (p *Planner) changeTable(tableDiff difftypes.TableDiff, enums []schemamodel
 	for _, column := range tableDiff.ColumnsRemoved {
 		alter(&ast.DropColumnOperation{ColumnName: column.Name})
 	}
+	for _, operation := range tableComments(tableDiff) {
+		alter(operation)
+	}
 	return nodes
 }
 
@@ -596,8 +612,6 @@ func (p *Planner) refuseTableChanges(tableDiff difftypes.TableDiff) error {
 // in place nor through a rebuild.
 func (p *Planner) refuseTableSettings(tableDiff difftypes.TableDiff, subject string) error {
 	switch {
-	case tableDiff.CommentChange != nil:
-		return refuseGap(ydbgap.Comments, "the comment on "+subject)
 	case tableDiff.RowTTLChange != nil:
 		return p.keyed(capability.RowLevelTTL, "row-level TTL", "the row-level TTL of "+subject)
 	case len(tableDiff.ConstraintsAdded)+len(tableDiff.ConstraintsRemoved) > 0:
@@ -643,9 +657,6 @@ func (p *Planner) refuseColumnAddition(table string, column schemamodel.Field) e
 // synced while it is not.
 func (p *Planner) refuseColumnChange(table string, colDiff difftypes.ColumnDiff) error {
 	subject := fmt.Sprintf("column %q of table %q", colDiff.ColumnName, table)
-	if colDiff.CommentChange != nil {
-		return refuseGap(ydbgap.Comments, "the comment on "+subject)
-	}
 	if colDiff.NotNullConstraintNameChange != nil {
 		return p.keyed(capability.NamedNotNullConstraints, "named NOT NULL constraint", "the NOT NULL name of "+subject)
 	}
@@ -742,15 +753,6 @@ func refuseUnplanned(feature, subject string) error {
 		Feature: feature,
 		Err:     ptaherr.ErrUnsupportedFeature,
 		Message: fmt.Sprintf("%s: the %s planner plans no %s", subject, platform.YDB, feature),
-	}
-}
-
-func refuseGap(layer ydbgap.Layer, subject string) error {
-	return &ptaherr.CapabilityError{
-		Dialect: platform.YDB,
-		Feature: subject,
-		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf("%s: %s", subject, layer.Message()),
 	}
 }
 

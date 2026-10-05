@@ -12,9 +12,9 @@
 // The renderer, the planner, the connection, the schema reader, the schema
 // writer, the versioned migrator, both linters, the query builder, the data
 // layer -- the data diff, declared rows and seeds -- the dev databases, views,
-// a table's TTL and the access model -- users, groups, memberships and
-// permissions -- exist. The object families they do not carry yet -- comments,
-// the other table settings, the index kinds beyond global ones -- are layers
+// a table's TTL, comments and the access model -- users, groups, memberships
+// and permissions -- exist. The object families they do not carry yet -- the
+// other table settings, the index kinds beyond global ones -- are layers
 // here too, because a declaration of one reaches the renderer by name, and a
 // database holding one reaches the reader, and each has to be refused there
 // rather than handled as something else. So are the commands that connect and
@@ -40,10 +40,6 @@ const (
 	// dialect has. It lands with the object families, because each family
 	// brings the clauses the parser has to read.
 	SchemaFiles Layer = iota + 1
-	// Comments is storing a comment on a table, a column or an index. YQL has
-	// no COMMENT statement; the comments family stores them as table
-	// attributes through the scheme API.
-	Comments
 	// TableSettings is a table's YDB settings beyond its TTL, which is its
 	// row deletion policy, and its changefeeds: partitioning and column
 	// families.
@@ -76,8 +72,6 @@ func (l Layer) work() string {
 	switch l {
 	case SchemaFiles:
 		return "reading a YDB schema file"
-	case Comments:
-		return "storing a comment on a YDB object"
 	case TableSettings:
 		return "setting YDB table options (partitioning, column families)"
 	case IndexFamilies:
@@ -93,7 +87,7 @@ func (l Layer) work() string {
 // that names no layer.
 func (l Layer) Phase() int {
 	switch l {
-	case SchemaFiles, Comments, TableSettings, IndexFamilies:
+	case SchemaFiles, TableSettings, IndexFamilies:
 		return 10
 	case Inference:
 		return 12
@@ -115,8 +109,6 @@ func (l Layer) Unsupported() string {
 	switch l {
 	case SchemaFiles:
 		return "a YQL file as the desired schema (Go structs and YAML schemas work)"
-	case Comments:
-		return "comments on tables, columns and indexes"
 	case TableSettings:
 		return "a table's own settings: partitioning and column families"
 	case IndexFamilies:
