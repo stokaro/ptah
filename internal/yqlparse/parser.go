@@ -54,6 +54,14 @@ func Parse(text string) (*ast.StatementList, error) {
 		case p.word("COORDINATION"):
 			p.pos++
 			result.Statements = append(result.Statements, p.coordination())
+		case p.word("EXTERNAL"):
+			p.pos++
+			result.Statements = append(result.Statements, p.external(false))
+		case p.word("OR"):
+			p.pos++
+			p.wantWord("REPLACE")
+			p.wantWord("EXTERNAL")
+			result.Statements = append(result.Statements, p.external(true))
 		case p.word("RESOURCE"):
 			p.pos++
 			result.Statements = append(result.Statements, p.resourcePool())
