@@ -39,9 +39,7 @@ func clusterFlagOff(c *qt.C, line ydbLine, yamlName, pageName string) {
 }
 
 // clusterFlag is one feature flag a test sets for the whole cluster: its name
-// in the configuration, its name on the monitoring page, and its value. The
-// test runs against a flag at the other value of its default, so the cleanup
-// waits for the page to list the opposite of on.
+// in the configuration, its name on the monitoring page, and its value.
 type clusterFlag struct {
 	yaml string
 	page string
@@ -69,11 +67,14 @@ func setClusterFlags(c *qt.C, line ydbLine, flags ...clusterFlag) {
 	before := dynamicConfig(c.Context(), c, client)
 	c.Assert(before.GetConfig(), qt.Equals, "",
 		qt.Commentf("the cluster carries a dynamic configuration of its own, which this test would replace"))
+	_, target := monitoredTarget(c, line)
+	original, err := ydbflags.Read(c.Context(), target.Monitoring, target.Database, "")
+	c.Assert(err, qt.IsNil)
 	var section strings.Builder
 	set, restored := ydbflags.Flags{}, ydbflags.Flags{}
 	for _, flag := range flags {
 		fmt.Fprintf(&section, "    %s: %t\n", flag.yaml, flag.on)
-		set[flag.page], restored[flag.page] = flag.on, !flag.on
+		set[flag.page], restored[flag.page] = flag.on, original[flag.page]
 	}
 	config := fmt.Sprintf("---\nmetadata:\n  kind: MainConfig\n  cluster: %q\n  version: %d\n"+
 		"config:\n  feature_flags:\n%sallowed_labels: {}\nselector_config: []\n",
