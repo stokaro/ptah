@@ -630,6 +630,9 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"YD114": {
 		Summary: "a topic or consumer setting YDB accepts and keeps nothing of, such as a storage limit or a codec it does not know",
 	},
+	"YD150": {
+		Summary: "a dropped or renamed column or index whose comment stays on the YDB table as an attribute under its old name",
+	},
 }
 
 // sqlRuleMeta declares the same facts for the standalone SQL linter, which

@@ -10,6 +10,8 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/sqlident"
+	"ptah.run/internal/ydbcomment"
 	"ptah.run/internal/ydbsequence"
 	"ptah.run/internal/ydbtopic"
 	"ptah.run/internal/yqlddl"
@@ -55,6 +57,7 @@ func ydbRules() []Rule {
 		ydbPrincipalDropRule(),
 		ydbTopicResetRule(),
 		ydbTopicSettingIgnoredRule(),
+		ydbCommentLeftBehindRule(),
 	}
 }
 
@@ -614,6 +617,10 @@ type ydbTable struct {
 	restarts map[string]string
 	// changefeeds are the table's changefeeds, in the order they were added.
 	changefeeds []string
+	// comments are the comments Ptah's COMMENT ON statements left on the
+	// table, by the attribute that holds each (see internal/ydbcomment). YDB
+	// keeps a column's and an index's after the column or the index is gone.
+	comments map[string]string
 }
 
 func (s *ydbSchema) clone() *ydbSchema {
@@ -627,7 +634,7 @@ func (s *ydbSchema) clone() *ydbSchema {
 			columns: slices.Clone(table.columns), columnsKnown: table.columnsKnown,
 			minPartitions: table.minPartitions, minKnown: table.minKnown,
 			serials: maps.Clone(table.serials), restarts: maps.Clone(table.restarts),
-			changefeeds: slices.Clone(table.changefeeds),
+			changefeeds: slices.Clone(table.changefeeds), comments: maps.Clone(table.comments),
 		}
 	}
 	for name, reads := range s.views {
@@ -706,6 +713,135 @@ func (s *ydbSchema) apply(read yqlddl.Statement) {
 		table.restarts[column] = cmp.Or(read.RestartWith, "its start")
 		s.tables[name] = table
 	}
+}
+
+// applyComment records the comment one of Ptah's COMMENT ON statements sets
+// on a table the directory knows, or removes it. A statement that names its
+// table through a path prefix or an absolute path is not followed: the rules
+// that read comments stay silent about a table they cannot name.
+func (s *ydbSchema) applyComment(sql string) {
+	query, recognized, err := ydbcomment.Recognize(sql)
+	if !recognized || err != nil || query.PathPrefix != "" || strings.HasPrefix(query.Path, "/") ||
+		query.Object == ydbcomment.View {
+		return
+	}
+	table, known := s.tables[query.Path]
+	if !known {
+		return
+	}
+	table.comments = maps.Clone(table.comments)
+	if table.comments == nil {
+		table.comments = make(map[string]string)
+	}
+	if query.Comment == "" {
+		delete(table.comments, query.Key())
+	} else {
+		table.comments[query.Key()] = query.Comment
+	}
+	s.tables[query.Path] = table
+}
+
+// ydbCommentLeftBehindRule reports a DROP COLUMN, a DROP INDEX or a RENAME
+// INDEX of a column or an index that carries a comment, when no statement
+// after it in the file removes or moves the comment. YDB keeps a comment as a
+// table attribute keyed by the column's or the index's name (see
+// internal/ydbcomment), and keeps the attribute after the column or the index
+// is dropped or renamed, measured on 25.1.4.7 and 26.2.1.14: it then takes up
+// the table's 10240 bytes of attributes, and a column or an index created
+// later under the old name reads it as its own. Ptah's plans remove and move
+// it themselves; a hand-written migration has to.
+func ydbCommentLeftBehindRule() Rule {
+	return Rule{
+		Code:     "YD150",
+		Title:    "comment left behind by a drop or a rename",
+		Severity: SeverityWarning,
+		Dialects: ydbOnly,
+		CheckFile: func(file *File) []Finding {
+			if !ydbRun(file.Target) {
+				return nil
+			}
+			state := file.ydbBefore.clone()
+			type leftBehind struct {
+				finding Finding
+				table   string
+				key     string
+			}
+			var pending []leftBehind
+			for i := range file.Statements {
+				stmt := &file.Statements[i]
+				if query, recognized, err := ydbcomment.Recognize(stmt.SQL); recognized && err == nil {
+					pending = slices.DeleteFunc(pending, func(left leftBehind) bool {
+						return left.table == query.Path && left.key == query.Key()
+					})
+					state.applyComment(stmt.SQL)
+					continue
+				}
+				read := yqlddl.Read(stmt.SQL)
+				if read.Kind != yqlddl.AlterTable {
+					state.apply(read)
+					continue
+				}
+				table := state.table(read.Name)
+				for _, action := range read.Actions {
+					key, message := commentLeftBehind(read.Name, action, table.comments)
+					if key != "" {
+						pending = append(pending, leftBehind{table: read.Name, key: key, finding: Finding{
+							Rule:     "YD150",
+							Title:    "comment left behind by a drop or a rename",
+							Severity: SeverityWarning,
+							File:     file.Path,
+							Line:     stmt.Line,
+							Message:  message,
+							Context: statementFindingContext(i, Subject{
+								Kind: SubjectTable, Name: read.Name,
+							}),
+						}})
+					}
+					table = table.applyAction(action)
+				}
+				state.store(read, table)
+			}
+			findings := make([]Finding, 0, len(pending))
+			for _, left := range pending {
+				findings = append(findings, left.finding)
+			}
+			return findings
+		},
+	}
+}
+
+// commentLeftBehind returns the attribute a DROP COLUMN, a DROP INDEX or a
+// RENAME INDEX of table leaves behind, from the comments the table holds,
+// and what to do about it; it returns an empty key for any other action, and
+// for an object without a comment.
+func commentLeftBehind(table string, action yqlddl.Action, comments map[string]string) (key, message string) {
+	quotedTable := sqlident.Quote(platform.YDB, table)
+	switch action.Kind {
+	case yqlddl.DropColumn:
+		key = ydbcomment.Key(ydbcomment.Column, action.Column.Name)
+		message = fmt.Sprintf("DROP COLUMN %s leaves its comment on the table as the attribute %s, which YDB keeps "+
+			"after the column is gone and a column added later under the name reads as its own; remove it with "+
+			"COMMENT ON COLUMN %s.%s IS NULL", action.Column.Name, key, quotedTable,
+			sqlident.Quote(platform.YDB, action.Column.Name))
+	case yqlddl.DropIndex:
+		key = ydbcomment.Key(ydbcomment.Index, action.Index.Name)
+		message = fmt.Sprintf("DROP INDEX %s leaves its comment on the table as the attribute %s, which YDB keeps "+
+			"after the index is gone and an index added later under the name reads as its own; remove it with "+
+			"COMMENT ON INDEX %s ON %s IS NULL", action.Index.Name, key, sqlident.Quote(platform.YDB, action.Index.Name),
+			quotedTable)
+	case yqlddl.RenameIndex:
+		key = ydbcomment.Key(ydbcomment.Index, action.Index.Name)
+		message = fmt.Sprintf("RENAME INDEX %s TO %s leaves the index's comment under the old name, as the "+
+			"attribute %s; move it with COMMENT ON INDEX %s ON %s and COMMENT ON INDEX %s ON %s IS NULL",
+			action.Index.Name, action.NewName, key, sqlident.Quote(platform.YDB, action.NewName), quotedTable,
+			sqlident.Quote(platform.YDB, action.Index.Name), quotedTable)
+	default:
+		return "", ""
+	}
+	if comments[key] == "" {
+		return "", ""
+	}
+	return key, message
 }
 
 // serialTypes are the spellings YQL takes for a Serial column, by the type
@@ -951,6 +1087,7 @@ func ydbHistory(files []File) {
 		file.ydbBefore = state.clone()
 		for i := range file.Statements {
 			state.apply(yqlddl.Read(file.Statements[i].SQL))
+			state.applyComment(file.Statements[i].SQL)
 		}
 		after[file.Version] = state.clone()
 	}

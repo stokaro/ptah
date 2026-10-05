@@ -200,9 +200,11 @@ func TestYDBComments_RoundTrip_NothingLeftToPlan(t *testing.T) {
 // TestYDBComments_ChangesInPlace changes every kind of comment at once. The
 // plan writes each in place, moves a renamed index's comment to its new
 // name, and removes the comments a dropped column and a dropped index leave
-// on the table, which YDB would otherwise keep. Attributes another tool set
-// -- one under no key of Ptah's, and one under Ptah's prefix that names no
-// column or index -- are neither read nor removed. Nothing is left to plan.
+// on the table, which YDB would otherwise keep, so the migration it writes
+// passes the rule that reports one left behind (YD150). Attributes another
+// tool set -- one under no key of Ptah's, and one under Ptah's prefix that
+// names no column or index -- are neither read nor removed. Nothing is left
+// to plan.
 func TestYDBComments_ChangesInPlace(t *testing.T) {
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
@@ -210,7 +212,8 @@ func TestYDBComments_ChangesInPlace(t *testing.T) {
 			conn := openYDB(c, line)
 			dropViewsAndTables(c, conn, commentsSchemas)
 			c.Cleanup(func() { dropViewsAndTables(c, conn, commentsSchemas) })
-			apply(c, conn, planAgainst(c, conn, parseModels(c, commentedModels), commentsSchemas))
+			first := planAgainst(c, conn, parseModels(c, commentedModels), commentsSchemas)
+			apply(c, conn, first)
 			setAttributes(c, line, commentsSchema+"/users", map[string]string{"owner": "team", "ptah.comment.other": "kept"})
 			changed := parseModels(c, changedModels)
 
@@ -236,6 +239,7 @@ func TestYDBComments_ChangesInPlace(t *testing.T) {
 				"COMMENT ON VIEW `ptah_ydb_comments/active_users` IS 'Signed in lately'",
 			})
 			c.Assert(planAgainst(c, conn, changed, commentsSchemas), qt.HasLen, 0)
+			c.Assert(lintPlans(c, conn, first, planned), qt.Not(qt.Contains), "YD150")
 			c.Assert(attributesOf(c, line, commentsSchema+"/users"), qt.DeepEquals, map[string]string{
 				"ptah.comment":                       "Customers",
 				"ptah.comment.column.id":             "Key",
