@@ -91,6 +91,11 @@ directory `ptah_dev`.
 Names are case-sensitive: `Users` and `users` are two tables. Ptah always
 quotes a name with backticks and escapes a backtick or a backslash inside it.
 
+Tables, views, topics and coordination nodes share each scheme path. A schema
+that assigns the same path to more than one of these kinds is refused before
+rendering or planning. Different directories and case-distinct names remain
+different paths; a dot inside a quoted name remains part of that name.
+
 ## Tables and types
 
 This schema:
