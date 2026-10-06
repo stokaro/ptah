@@ -57,6 +57,12 @@ func (p *parser) declaration() ast.Node {
 	}
 	p.wantWord("CREATE")
 	switch {
+	case p.word("ASYNC"):
+		p.pos++
+		return p.createReplication()
+	case p.word("TRANSFER"):
+		p.pos++
+		return p.createTransfer()
 	case p.word("STREAMING"):
 		p.pos++
 		return p.streamingQuery(false)

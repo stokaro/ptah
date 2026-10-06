@@ -26,6 +26,10 @@ func (r *Renderer) renderCreateAsyncReplication(node *ast.CreateAsyncReplication
 // interval -- is refused rather than written, because the planner never asks
 // for one; the node arrives here only through a caller that built it by hand.
 func (r *Renderer) renderAlterAsyncReplication(node *ast.AlterAsyncReplicationNode) error {
+	if node.SourceSettings != nil {
+		return refuseFact("ALTER replication or transfer", "resolve the desired declaration before rendering its settings patch")
+	}
+
 	if err := replicationRefusal(ydbreplication.CheckReplication(node.Name, node.Spec, r.caps)); err != nil {
 		return err
 	}
@@ -66,6 +70,10 @@ func (r *Renderer) renderCreateTransfer(node *ast.CreateTransferNode) error {
 // target or a consumer that differs is refused, since YDB changes none of
 // them in place.
 func (r *Renderer) renderAlterTransfer(node *ast.AlterTransferNode) error {
+	if node.SourceSettings != nil {
+		return refuseFact("ALTER replication or transfer", "resolve the desired declaration before rendering its settings patch")
+	}
+
 	if err := replicationRefusal(ydbreplication.CheckTransfer(node.Name, node.Spec, r.caps)); err != nil {
 		return err
 	}
