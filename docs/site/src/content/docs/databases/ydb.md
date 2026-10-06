@@ -2113,6 +2113,11 @@ and resets only what is under it, so it works in an empty database of its own:
 ptah migrations validate --dir migrations --dev-url "ydb://localhost:2136/local"
 ```
 
+When reading a view inside a realm, Ptah removes the leading prefix it added
+for that realm. Relative paths in the schema description already resolve
+inside the realm, so repeated planning does not recreate the view. Other
+pragmas and prefixes remain part of the view body.
+
 A run that reads or changes a database leaves `ptah_dev` out, as it leaves out
 `ptah_locks`. So a `--dev-url` or `--shadow-db` may name the target database
 itself: a realm is never part of the target's schema, of a plan against it or
@@ -2356,6 +2361,14 @@ Their intervals use `Interval('P1D')`; a consumer's `read_from` uses
 `Timestamp('2026-01-01T00:00:00Z')`. Topic settings and consumers use the same
 validation as Go and YAML declarations.
 
+Comments use Ptah's `COMMENT ON TABLE`, `COMMENT ON COLUMN`, `COMMENT ON INDEX
+... ON ...`, and `COMMENT ON VIEW` statements. The object must be declared in
+the same document or an earlier file in the source list. Names remain
+case-sensitive; an index comment names its table because index names are only
+unique within that table. `IS NULL` removes a comment, as does omitting a comment
+from a declared object. Ptah stores these comments as YDB user attributes; the
+statements are Ptah extensions, not native YQL.
+
 Coordination nodes use Ptah's `CREATE COORDINATION NODE` statement with the
 same configuration as Go and YAML. Periods use `Interval('PT1S')`. Resource
 pools and classifiers use `CREATE RESOURCE POOL` and `CREATE RESOURCE POOL
@@ -2382,7 +2395,8 @@ These are refused with a message that names what is missing:
 - `ptah inference` and the inference tools of `ptah mcp`, which store their vectors through pgvector.
 <!-- END GENERATED YDB GAPS -->
 
-The work is planned in [#4015](https://github.com/stokaro/ptah/issues/4015).
+Schema and migration work is planned in [#4015](https://github.com/stokaro/ptah/issues/4015).
+Inference is a separate follow-up in [#4181](https://github.com/stokaro/ptah/issues/4181).
 
 ## Next steps
 
