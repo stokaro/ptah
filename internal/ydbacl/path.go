@@ -14,6 +14,9 @@ import (
 // so a grant on a directory is a SCHEMA grant, and the database root is the
 // directory every schema lives under.
 const (
+	// ObjectPath is an untyped YQL path. The source reader resolves its object
+	// kind before building the schema model; only YDB may render it directly.
+	ObjectPath = "PATH"
 	// ObjectTable is a row table.
 	ObjectTable = "TABLE"
 	// ObjectDirectory is a directory: a Ptah schema.
@@ -41,6 +44,11 @@ func RelativePath(objectType, objectName string) (string, error) {
 		return objectName, nil
 	}
 	switch strings.ToUpper(strings.TrimSpace(objectType)) {
+	case ObjectPath:
+		if objectName == "" {
+			return "", errors.New("a YDB permission names an empty path")
+		}
+		return objectName, nil
 	case ObjectDatabase:
 		if strings.TrimSpace(objectName) != "" {
 			return "", fmt.Errorf("a grant on the database names the database %q, "+

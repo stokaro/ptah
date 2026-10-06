@@ -246,6 +246,7 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 		desired = resolved.Database
 	} else {
 		loadOptions.Dialect = conn.Info().Dialect
+		loadOptions.DatabaseURL = conn.Info().URL
 		desired, err = schemaload.LoadContext(cmd.Context(), loadOptions)
 		if err != nil {
 			return atlasschema.PlanEvidence{}, err

@@ -1460,7 +1460,7 @@ func (s *exclusionState) filterGrants(grants []catalog.Grant) []catalog.Grant {
 		if strings.EqualFold(grant.ObjectType, "SCHEMA") {
 			return !named && !s.schemaExcluded(grant.ObjectName)
 		}
-		return !named && !s.schemaExcluded(grant.Schema)
+		return !named && (strings.EqualFold(grant.ObjectType, "DATABASE") || !s.schemaExcluded(grant.Schema))
 	})
 }
 

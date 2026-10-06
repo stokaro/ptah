@@ -4075,9 +4075,11 @@ type GrantPrivilegeNode struct {
 	// Privileges contains one or more privileges, e.g. SELECT, INSERT, USAGE.
 	Privileges []string
 	// ObjectType is the target kind, such as TABLE, SCHEMA, SEQUENCE, or one of
-	// the routine kinds FUNCTION, PROCEDURE and ROUTINE.
+	// the routine kinds FUNCTION, PROCEDURE and ROUTINE. PATH is an untyped
+	// YDB path; only YDB can render it, and schema loading resolves its kind.
 	ObjectType string
-	// ObjectName is the target table, schema or routine name.
+	// ObjectName is the target table, schema or routine name. For PATH it is
+	// the decoded YDB path, with no SQL identifier quotes or dot qualification.
 	ObjectName string
 	// Arguments are a routine target's argument types, comma-separated, as the
 	// statement wrote them between the parentheses. A routine's identity
@@ -4138,9 +4140,11 @@ type RevokePrivilegeNode struct {
 	// Privileges contains one or more privileges, e.g. SELECT, INSERT, USAGE.
 	Privileges []string
 	// ObjectType is the target kind, such as TABLE, SCHEMA, SEQUENCE, or one of
-	// the routine kinds FUNCTION, PROCEDURE and ROUTINE.
+	// the routine kinds FUNCTION, PROCEDURE and ROUTINE. PATH is an untyped
+	// YDB path; only YDB can render it, and schema loading resolves its kind.
 	ObjectType string
-	// ObjectName is the target table, schema or routine name.
+	// ObjectName is the target table, schema or routine name. For PATH it is
+	// the decoded YDB path, with no SQL identifier quotes or dot qualification.
 	ObjectName string
 	// Arguments are a routine target's argument types; see
 	// [GrantPrivilegeNode.Arguments].
