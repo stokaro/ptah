@@ -134,3 +134,10 @@ func RangeRefusal(serialType string, settings Settings, caps capability.Capabili
 		"declare the column as a 64-bit Serial (BIGSERIAL, or BIGINT with auto_increment) to give its sequence "+
 		"a start or an increment", serialType, limit, limit)
 }
+
+// DeclaresSerialColumn recognizes a column the YDB renderer treats as Serial.
+// Source ALTER binding and comparison must recognize the same declarations;
+// the renderer still validates the type and identity generation policy.
+func DeclaresSerialColumn(declared string, autoIncrement bool, generation string) bool {
+	return autoIncrement || generation != "" || ydbtype.DeclaresSerial(declared)
+}

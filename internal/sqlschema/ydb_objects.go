@@ -2,6 +2,7 @@ package sqlschema
 
 import (
 	"ptah.run/core/ast"
+	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbstream"
@@ -15,6 +16,11 @@ func appendYDBDeclaration(database *schemamodel.Database, document *Document, st
 		return true, nil
 	}
 	switch node := statement.(type) {
+	case *ast.AlterSequenceNode:
+		if platform.NormalizeDialect(sourcePlatform) != platform.YDB {
+			return false, nil
+		}
+		return true, alterYDBSequence(database, document, node)
 	case *ast.CreateSecretNode:
 		ref, _ := tableref.Parse(node.Name)
 		database.Secrets = append(database.Secrets, schemamodel.Secret{Name: ref.Name, Schema: ref.Schema, ValueEnv: node.ValueEnv})

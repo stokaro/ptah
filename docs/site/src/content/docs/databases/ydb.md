@@ -377,7 +377,7 @@ A Serial column fills itself from a sequence YDB creates with the column, at
 `<table>/_serial_column_<column>`. `SERIAL`, `BIGSERIAL` and `SMALLSERIAL` are
 Serial columns, and so is an integer column with `auto_increment`. The sequence
 starts at 1 and steps by 1 unless the column declares `identity_start` or
-`identity_increment`, in a Go annotation or a YAML schema:
+`identity_increment`, in Go, YAML or [desired YQL](#desired-yql-schema-files):
 
 ```go
 //ptah:schema:field name="id" type="BIGSERIAL" primary="true" identity_start="1000" identity_increment="10"
@@ -2357,6 +2357,23 @@ eviction tier names its external source by an absolute database path, such as
 `/local/archive/cold`. A `FAMILY` clause attaches a column to a declared family;
 family settings use the same validation as Go and YAML declarations. Omitting
 TTL requests removal of an existing deletion policy.
+
+A Serial column can declare its sequence settings with `ALTER SEQUENCE`
+after its table declaration:
+
+```sql
+CREATE TABLE `app/orders` (id BigSerial NOT NULL, PRIMARY KEY (id));
+ALTER SEQUENCE `/local/app/orders/_serial_column_id` START WITH 100 INCREMENT BY 5;
+```
+
+The sequence path must be absolute and belong to the explicit database URL's
+root. An absolute path without that context is refused, as is a sequence whose
+Serial column was not declared earlier. `START` and `INCREMENT` can appear
+independently, with optional `WITH` and `BY`. Later declarations or schema files
+keep an omitted setting. `RESTART` is refused in a desired schema: the planner
+sets the first value when creating the table and never resets an existing
+counter. The [Serial sequence safety rules](#serial-columns-and-their-sequences)
+still apply.
 
 Views use `CREATE VIEW` with the required `WITH (security_invoker = TRUE)`
 clause. The query body is retained, including semicolons inside lambdas and

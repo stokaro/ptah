@@ -11,6 +11,9 @@ import (
 func (p *parser) alterDeclaration() ast.Node {
 	p.wantWord("ALTER")
 	switch {
+	case p.word("SEQUENCE"):
+		p.pos++
+		return p.alterSerialSequence()
 	case p.word("ASYNC"):
 		p.pos++
 		return p.alterReplication()
