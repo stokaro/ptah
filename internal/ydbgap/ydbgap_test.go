@@ -9,68 +9,27 @@ import (
 	"ptah.run/internal/ydbgap"
 )
 
-// Each refusal names YDB and the issue that implements the layer,
-// which is what a reader needs to know whether to wait or to work around it.
-func TestLayer_Message_HappyPath(t *testing.T) {
-	tests := []struct {
-		name  string
-		layer ydbgap.Layer
-		want  string
-	}{
-		{name: "schema files", layer: ydbgap.SchemaFiles, want: "reading YDB schema declarations beyond the supported object families is not implemented yet (stokaro/ptah#4015, phase 10)"},
-		{name: "index families", layer: ydbgap.IndexFamilies, want: "reading or creating a YDB JSON index is not implemented yet (stokaro/ptah#4015, phase 10)"},
-		{name: "inference", layer: ydbgap.Inference, want: "running an embedding generation against YDB is not implemented yet (stokaro/ptah#4181)"},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			c.Assert(test.layer.Message(), qt.Equals, test.want)
-		})
-	}
-}
-
-// A value outside the declared layers names no phase rather than borrowing
-// another layer's.
-func TestLayer_Message_FailurePath(t *testing.T) {
+func TestLayer_Message(t *testing.T) {
 	c := qt.New(t)
-
-	c.Assert(ydbgap.Layer(0).Phase(), qt.Equals, 0)
-	c.Assert(ydbgap.Inference.Phase(), qt.Equals, 0)
-	c.Assert(ydbgap.Layer(0).Message(), qt.Equals, "this YDB operation is not implemented yet (stokaro/ptah#4015, phase 0)")
-}
-
-// Every declared layer names its issue and says what the YDB page lists for
-// it, so the page's generated list cannot leave a layer out.
-func TestLayers_EveryLayerNamesAnIssueAndAPageEntry(t *testing.T) {
-	c := qt.New(t)
-	layers := ydbgap.Layers()
-	c.Assert(layers, qt.Not(qt.HasLen), 0)
-	c.Assert(layers[0], qt.Equals, ydbgap.SchemaFiles)
-	c.Assert(layers[len(layers)-1], qt.Equals, ydbgap.Inference)
-	for _, layer := range layers {
-		t.Run(layer.Message(), func(t *testing.T) {
-			c := qt.New(t)
-			c.Assert(layer.Message(), qt.Contains, "stokaro/ptah#")
-			c.Assert(layer.Unsupported(), qt.Not(qt.Equals), "")
-		})
-	}
-}
-
-// A value outside the declared layers has no page entry.
-func TestLayer_Unsupported_FailurePath(t *testing.T) {
-	c := qt.New(t)
+	c.Assert(ydbgap.Inference.Message(), qt.Equals,
+		"running an embedding generation against YDB is not implemented yet (stokaro/ptah#4181)",
+	)
+	c.Assert(ydbgap.Layer(0).Message(), qt.Equals, "this YDB operation is not implemented yet")
 	c.Assert(ydbgap.Layer(0).Unsupported(), qt.Equals, "")
 }
 
-// The page's list carries one item per layer, in declaration order, as one
-// sentence: items end with a semicolon and the last with a period.
+// Completed schema and migration layers must not remain in the generated gap list.
+func TestLayers_OnlyDeferredInferenceRemains(t *testing.T) {
+	c := qt.New(t)
+	c.Assert(ydbgap.Layers(), qt.DeepEquals, []ydbgap.Layer{ydbgap.Inference})
+	c.Assert(ydbgap.Inference.Unsupported(), qt.Equals,
+		"`ptah inference` and the inference tools of `ptah mcp`, which store their vectors through pgvector",
+	)
+}
+
 func TestWriteUnsupportedMarkdown(t *testing.T) {
 	c := qt.New(t)
 	var out strings.Builder
 	ydbgap.WriteUnsupportedMarkdown(&out)
-	lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
-	c.Assert(lines, qt.HasLen, len(ydbgap.Layers()))
-	c.Assert(lines[0], qt.Equals, "- "+ydbgap.SchemaFiles.Unsupported()+";")
-	c.Assert(lines[len(lines)-1], qt.Equals, "- "+ydbgap.Inference.Unsupported()+".")
+	c.Assert(out.String(), qt.Equals, "- "+ydbgap.Inference.Unsupported()+".\n")
 }

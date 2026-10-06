@@ -2531,10 +2531,10 @@ removal under the [replication lifecycle rules](#async-replications-and-transfer
 Omitting a view, topic or coordination node requests its removal. Resource
 pools and classifiers remain when omitted, as they do for other schema sources,
 because they belong to the whole database. Other statements are refused,
-including standalone queries, unlisted `ALTER` statements and declarations of other object families.
-Use Go or YAML for those declarations. An unsupported statement rejects the
-whole document. Existing objects in unrepresented families are
-preserved when planning from a YQL file; their absence does not request removal.
+including standalone queries and unlisted `ALTER` statements. An unsupported
+statement rejects the whole document. YQL files describe the supported object
+families listed above; omitted objects follow the same removal and preservation
+rules as Go and YAML declarations.
 
 ## What is not supported yet
 
@@ -2542,16 +2542,16 @@ When a row table contains an unsupported index kind, inspection refuses the
 read and names that kind. It does not treat the index as an ordinary global
 index or omit it from the schema.
 
-These are refused with a message that names what is missing:
+JSON indexes are not modeled. The certified 25.1 and 26.2 lines refuse their
+creation, and a read that encounters an unmodeled index refuses the whole schema.
+
+The remaining unimplemented workflow is:
 
 <!-- BEGIN GENERATED YDB GAPS -->
-- YQL desired-schema declarations beyond the supported object families; use Go or YAML for other object families;
-- JSON indexes;
 - `ptah inference` and the inference tools of `ptah mcp`, which store their vectors through pgvector.
 <!-- END GENERATED YDB GAPS -->
 
-Schema and migration work is planned in [#4015](https://github.com/stokaro/ptah/issues/4015).
-Inference is a separate follow-up in [#4181](https://github.com/stokaro/ptah/issues/4181).
+Inference is tracked separately in [#4181](https://github.com/stokaro/ptah/issues/4181).
 
 ## Next steps
 

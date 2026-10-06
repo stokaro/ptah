@@ -131,8 +131,8 @@ func attachJSONTableLoss(
 	}
 }
 
-// Read default presence from the catalog: a literal default may become an
-// empty Field.Default without DefaultSet during model conversion.
+// Read default presence from the catalog, where an empty value and an absent
+// default remain distinct.
 func jsonColumnLoss(column catalog.Column) []string {
 	counts := make(map[string]int)
 	schemaexportloss.CountColumnIdentity(counts, schemamodel.Field{
