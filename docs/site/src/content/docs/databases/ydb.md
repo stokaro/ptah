@@ -2214,12 +2214,13 @@ table "orders" {
 HCL and DBML have no block for a changefeed or a column family, so a document
 in either says nothing about one. Applying it leaves the database's
 changefeeds and column families as they are, and a rebuild adds them to the new
-table. `schema inspect` and `ptah schema export` warn about each changefeed and
-each table's column families they leave out, and `--cleanup-go-annotations`
-refuses to delete them.
+table. `schema inspect` and `ptah schema export` warn about the changefeeds and
+column families they leave out, and `--cleanup-go-annotations` refuses to delete
+them. DBML warnings count omitted objects and table properties by kind, including
+TTL, column storage, partitioning, index settings and Serial sequence settings.
 
 Neither has a block for a secret either. Applying such a document drops no
-secret, and `schema inspect` warns about each secret it leaves out. A secret's
+secret, and `schema inspect` warns about secrets it leaves out. A secret's
 value reaches the server only from the environment, as on the native commands,
 and `ptah-compat` takes no flag that rotates one: `--rotate-secret` is a native
 request.
