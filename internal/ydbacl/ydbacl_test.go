@@ -149,3 +149,27 @@ func TestPasswordClause(t *testing.T) {
 		})
 	}
 }
+
+func TestLiteralPermission(t *testing.T) {
+	for _, test := range []struct {
+		literal, want string
+		accepted      bool
+	}{
+		{"ydb.generic.read", "ydb.generic.read", true},
+		{"SELECT", "ydb.generic.read", true},
+		{"Select", "ydb.generic.read", true},
+		{"select_row", "ydb.granular.select_row", true},
+		{"MODIFY_TABLES", "ydb.tables.modify", true},
+		{"FULL", "ydb.generic.full", true},
+		{"ALL", "", false}, {"ALL PRIVILEGES", "", false},
+		{"SELECT ROW", "", false}, {"YDB.GENERIC.READ", "", false},
+		{" select", "", false},
+	} {
+		t.Run(test.literal, func(t *testing.T) {
+			c := qt.New(t)
+			got, ok := ydbacl.LiteralPermission(test.literal)
+			c.Assert(ok, qt.Equals, test.accepted)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}

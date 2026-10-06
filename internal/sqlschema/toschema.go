@@ -739,7 +739,7 @@ func appendStatement(
 	if appendRoutine(database, stmt, sourcePlatform) {
 		return nil
 	}
-	if handled, err := appendPrivilegeDeclaration(database, stmt, sourcePlatform); handled {
+	if handled, err := appendPrivilegeDeclaration(database, document, stmt, sourcePlatform); handled {
 		return err
 	}
 	if handled, err := appendRowSecurity(database, stmt, sourcePlatform); handled {
@@ -897,7 +897,10 @@ func appendRoutine(database *schemamodel.Database, stmt ast.Node, sourcePlatform
 // neither function is refused by that switch's default, so nothing is dropped
 // by falling through; a node kind this package decides not to model says so
 // there, in a case of its own.
-func appendPrivilegeDeclaration(database *schemamodel.Database, stmt ast.Node, sourcePlatform string) (bool, error) {
+func appendPrivilegeDeclaration(database *schemamodel.Database, document *Document, stmt ast.Node, sourcePlatform string) (bool, error) {
+	if sqlplatform.NormalizeDialect(sourcePlatform) == sqlplatform.YDB {
+		return appendYDBPrivilege(database, document, stmt)
+	}
 	switch node := stmt.(type) {
 	case *ast.GrantPrivilegeNode:
 		appendGrant(database, node, sourcePlatform)

@@ -108,6 +108,19 @@ func Permission(privilege string) (string, bool) {
 	return "", false
 }
 
+// LiteralPermission reads a quoted YQL permission name. Full permission names
+// are case-sensitive; short aliases are case-insensitive and use underscores
+// where keyword spellings use spaces. ALL is a keyword, not a short alias.
+// This shares the keyword table because every alias names the same entry.
+func LiteralPermission(value string) (string, bool) {
+	for _, permission := range permissionKeywords {
+		if value == permission.name || strings.EqualFold(value, strings.ReplaceAll(permission.keyword, " ", "_")) {
+			return permission.name, true
+		}
+	}
+	return "", false
+}
+
 // errName is the reason a user or group name is refused.
 var errName = errors.New("YDB takes a user or group name of lower-case ASCII letters and digits only")
 

@@ -2446,7 +2446,41 @@ creation default, while `ALTER USER ... PASSWORD NULL` or an empty string is
 refused because the desired model cannot request a live password reset to empty.
 Errors in user declarations hide credential values. Omitted users and groups
 remain, as they do for Go and YAML sources. Memberships in declared groups are
-compared; permissions remain unrepresented until the reader supports `GRANT`.
+compared.
+
+`GRANT` and `REVOKE` declare permissions on tables, directories and the database.
+They accept multiple paths and subjects. A table or directory must already be
+represented by an earlier declaration. A directory can be the parent of a
+previously declared table, topic or other path-based object. Permissions on
+other object kinds are refused.
+
+```sql
+CREATE TABLE `shop/orders` (id Uint64 NOT NULL, PRIMARY KEY (id));
+CREATE GROUP readers;
+GRANT SELECT ROW, 'list' ON `shop/orders` TO readers WITH GRANT OPTION;
+GRANT LIST ON shop TO readers;
+```
+
+Keyword permissions and quoted short aliases identify the same permission.
+Quoted aliases use underscores, such as `'select_row'`. Full permission names,
+such as `'ydb.granular.select_row'`, are case-sensitive. `ALL` is a keyword;
+`'ALL'` is not a permission name. `WITH GRANT OPTION` adds the separate
+`ydb.access.grant` permission. `REVOKE GRANT OPTION FOR SELECT` removes both
+that permission and `ydb.generic.read`, matching YDB rather than PostgreSQL.
+Later grants and revokes override earlier statements about the same permission,
+including across files. Database permissions survive a `--schemas` directory
+selection. An `--include` selection of a principal keeps its database permissions;
+a table-only selection does not manage them. Omitting permissions for a declared
+principal requests revocation within the managed scope, as it does for Go and
+YAML declarations.
+
+Absolute permission paths need a database URL to identify the source root.
+Native apply, plan and migration generation use their target URL; inspection
+uses its dev URL, and a diff uses a live side's URL or its dev URL when both
+sides are files. The root comes from the database path or `database` URL
+parameter, excluding a temporary dev realm. A path outside that root is refused.
+Relative paths remain portable; rendering an offline file with no database URL
+cannot resolve an absolute permission path.
 
 Omitting a view, topic or coordination node requests its removal. Resource
 pools and classifiers remain when omitted, as they do for other schema sources,

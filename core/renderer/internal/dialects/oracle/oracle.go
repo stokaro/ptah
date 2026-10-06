@@ -849,6 +849,9 @@ func (r *Renderer) renderAlterRole(node *ast.AlterRoleNode) error {
 // Emitting it would render a statement the server refuses, which is worse than
 // refusing it here -- the plan would fail halfway through.
 func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
+	if err := grantrefusal.Path("oracle", "GRANT", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
 	if err := grantrefusal.Routine("oracle", "GRANT", node.ObjectType, node.ObjectName); err != nil {
 		return err
 	}
@@ -872,6 +875,9 @@ func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 
 // renderRevokePrivilege mirrors the grant, with the same two shapes.
 func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
+	if err := grantrefusal.Path("oracle", "REVOKE", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
 	if err := grantrefusal.Routine("oracle", "REVOKE", node.ObjectType, node.ObjectName); err != nil {
 		return err
 	}

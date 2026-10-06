@@ -207,6 +207,8 @@ func (s *scopeSelection) databaseGrantSelected(
 	grant catalog.Grant,
 ) bool {
 	switch {
+	case strings.EqualFold(grant.ObjectType, "DATABASE"):
+		return s.selectedNames(typeList("role"), grant.Role)
 	case strings.EqualFold(grant.ObjectType, "SCHEMA"):
 		if !s.schemaAllowed(grant.ObjectName) {
 			return false

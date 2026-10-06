@@ -318,6 +318,10 @@ func grantAllowed(
 	grant schemamodel.Grant,
 	defaultSchema string,
 ) bool {
+	// Database permissions have no owning schema, just like their principals.
+	if grant.OnDatabase {
+		return true
+	}
 	if grant.OnSchema != "" {
 		return schemaAllowed(allowed, effectiveSchema(grant.OnSchema, defaultSchema))
 	}
@@ -362,6 +366,9 @@ func dbGrantAllowed(
 	grant catalog.Grant,
 	defaultSchema string,
 ) bool {
+	if strings.EqualFold(grant.ObjectType, "DATABASE") {
+		return true
+	}
 	if strings.EqualFold(grant.ObjectType, "SCHEMA") {
 		return schemaAllowed(allowed, effectiveSchema(grant.ObjectName, defaultSchema))
 	}

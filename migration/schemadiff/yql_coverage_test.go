@@ -85,3 +85,20 @@ func TestCompare_YQLPrincipals(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(schemadiff.CompareWithDialect(&empty, held, "ydb").HasChanges(), qt.IsFalse)
 }
+
+func TestCompare_YQLPrivileges(t *testing.T) {
+	c := qt.New(t)
+	const objects = "CREATE TABLE `shop/orders` (id Int64 NOT NULL, PRIMARY KEY(id)); CREATE GROUP readers; CREATE USER app PASSWORD 'Secret1!'; ALTER GROUP readers ADD USER app; ALTER GROUP `DATA-READERS` ADD USER app;"
+	const grants = "GRANT SELECT ROW, LIST ON `shop/orders` TO readers; GRANT LIST ON shop TO readers; GRANT CONNECT ON `/local` TO app;"
+	document := sqlschema.NewDocument(nil)
+	document.YDBDatabasePath = "/local"
+	desired, _, err := sqlschema.ReadOnto([]byte(objects+grants), "ydb", document)
+	c.Assert(err, qt.IsNil)
+	held := ydbAccessCatalog()
+	c.Assert(schemadiff.CompareWithDialect(&desired, held, "ydb").HasChanges(), qt.IsFalse)
+	omitted, _, err := sqlschema.Read([]byte(objects), "ydb")
+	c.Assert(err, qt.IsNil)
+	diff := schemadiff.CompareWithDialect(&omitted, held, "ydb")
+	c.Assert(diff.GrantsRemoved, qt.HasLen, 4)
+	c.Assert(diff.RolesRemoved, qt.HasLen, 0)
+}
