@@ -43,3 +43,12 @@ func Columns(dialect, statement, objectName string, columns []string) error {
 		"%w: %s (%s) ON %s: column privileges are modeled for PostgreSQL only, not %s",
 		ptaherr.ErrUnsupportedFeature, statement, strings.Join(columns, ", "), objectName, dialect)
 }
+
+// Path refuses an untyped YDB path on a different dialect. Interpreting it as
+// a qualified table name would grant access on an object the source did not name.
+func Path(dialect, statement, objectType, objectName string) error {
+	if !strings.EqualFold(strings.TrimSpace(objectType), "PATH") {
+		return nil
+	}
+	return fmt.Errorf("%w: %s on path %q: untyped permission paths belong to YDB, not %s", ptaherr.ErrUnsupportedFeature, statement, objectName, dialect)
+}

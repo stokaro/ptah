@@ -168,6 +168,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 		return cmdutil.Fail(cmd, err)
 	}
 	loadOpts := schemaload.Options{
+		DatabaseURL:     dbURL,
 		RootDirs:        opts.rootDirs,
 		SchemaFiles:     opts.schemaFiles,
 		ProjectEnv:      schemaSourceEnv,

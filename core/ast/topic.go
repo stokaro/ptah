@@ -131,3 +131,20 @@ func NewDropTopic(name string) *DropTopicNode {
 
 // Accept implements the Node interface for DropTopicNode.
 func (n *DropTopicNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
+
+// AddTopicConsumerNode adds one consumer to a YDB topic, including a
+// changefeed's topic. It leaves the topic's settings and other consumers alone.
+type AddTopicConsumerNode struct {
+	// Name is the topic's canonical reference.
+	Name string
+	// Consumer is the consumer to add.
+	Consumer TopicConsumerSpec
+}
+
+// NewAddTopicConsumer creates an ADD CONSUMER node with an independent spec.
+func NewAddTopicConsumer(name string, consumer TopicConsumerSpec) *AddTopicConsumerNode {
+	return &AddTopicConsumerNode{Name: name, Consumer: consumer.Clone()}
+}
+
+// Accept implements the Node interface for AddTopicConsumerNode.
+func (n *AddTopicConsumerNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }

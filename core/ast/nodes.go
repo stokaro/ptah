@@ -1608,9 +1608,11 @@ func (n *CreateSequenceNode) SetComment(comment string) *CreateSequenceNode {
 // Accept implements the Node interface for CreateSequenceNode.
 func (n *CreateSequenceNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
-// AlterSequenceNode represents an ALTER SEQUENCE statement (PostgreSQL). Only
-// the set (non-nil / non-empty) options are emitted, so it can express either a
-// targeted change from a diff or a post-table OWNED BY association.
+// AlterSequenceNode represents an ALTER SEQUENCE statement. PostgreSQL emits
+// only the set (non-nil / non-empty) options, for a targeted change or a
+// post-table OWNED BY association. The desired-YQL reader folds START and
+// INCREMENT into a declared Serial column before planning; YDB rendering of
+// this unresolved node is refused.
 type AlterSequenceNode struct {
 	// Name is the sequence name.
 	Name string
@@ -4075,9 +4077,11 @@ type GrantPrivilegeNode struct {
 	// Privileges contains one or more privileges, e.g. SELECT, INSERT, USAGE.
 	Privileges []string
 	// ObjectType is the target kind, such as TABLE, SCHEMA, SEQUENCE, or one of
-	// the routine kinds FUNCTION, PROCEDURE and ROUTINE.
+	// the routine kinds FUNCTION, PROCEDURE and ROUTINE. PATH is an untyped
+	// YDB path; only YDB can render it, and schema loading resolves its kind.
 	ObjectType string
-	// ObjectName is the target table, schema or routine name.
+	// ObjectName is the target table, schema or routine name. For PATH it is
+	// the decoded YDB path, with no SQL identifier quotes or dot qualification.
 	ObjectName string
 	// Arguments are a routine target's argument types, comma-separated, as the
 	// statement wrote them between the parentheses. A routine's identity
@@ -4138,9 +4142,11 @@ type RevokePrivilegeNode struct {
 	// Privileges contains one or more privileges, e.g. SELECT, INSERT, USAGE.
 	Privileges []string
 	// ObjectType is the target kind, such as TABLE, SCHEMA, SEQUENCE, or one of
-	// the routine kinds FUNCTION, PROCEDURE and ROUTINE.
+	// the routine kinds FUNCTION, PROCEDURE and ROUTINE. PATH is an untyped
+	// YDB path; only YDB can render it, and schema loading resolves its kind.
 	ObjectType string
-	// ObjectName is the target table, schema or routine name.
+	// ObjectName is the target table, schema or routine name. For PATH it is
+	// the decoded YDB path, with no SQL identifier quotes or dot qualification.
 	ObjectName string
 	// Arguments are a routine target's argument types; see
 	// [GrantPrivilegeNode.Arguments].

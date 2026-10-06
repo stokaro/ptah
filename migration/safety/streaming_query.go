@@ -10,7 +10,7 @@ const streamingCheckpointLoss = "the operation removes or resets streaming-query
 
 func assessStreamingQuery(node *ydbstream.Node, assessment StatementAssessment) StatementAssessment {
 	assessment.Subject = node.Name
-	if node.Operation == ydbstream.DropOperation || (node.Operation == ydbstream.AlterOperation && !ydbstream.SameBody(node.Spec.Text, node.Previous.Text)) {
+	if (node.Operation == ydbstream.CreateOperation && node.Creation.ReplacesExisting()) || node.Operation == ydbstream.DropOperation || (node.Operation == ydbstream.AlterOperation && !ydbstream.SameBody(node.Spec.Text, node.Previous.Text)) {
 		assessment.Severity, assessment.Reason = Destructive, streamingCheckpointLoss
 	} else if node.Operation == ydbstream.AlterOperation {
 		assessment.Severity, assessment.Reason = Warning, streamingExecutionChange

@@ -40,21 +40,8 @@ func CheckReplication(name string, spec ast.AsyncReplicationSpec, caps capabilit
 	if _, err := ParseReplication(replicationValues(spec)); err != nil {
 		return &Refusal{Subject: subject, Reason: err.Error()}
 	}
-	if len(spec.Items) == 0 {
-		return &Refusal{Subject: subject, Reason: "it replicates no table; declare an item naming a source and a " +
-			"target, since YDB takes no replication without one (`expecting {',', WITH}`)"}
-	}
-	targets := make(map[string]bool, len(spec.Items))
-	for _, item := range spec.Items {
-		if _, err := ParseItem(map[string]string{AttributeSource: item.Source, AttributeTarget: item.Target}); err != nil {
-			return &Refusal{Subject: subject, Reason: err.Error()}
-		}
-		target := cleanRelative(item.Target)
-		if targets[target] {
-			return &Refusal{Subject: subject, Reason: fmt.Sprintf("two of its items create a replica at %q, "+
-				"where one table can stand", target)}
-		}
-		targets[target] = true
+	if err := ValidateReplicationItems(spec.Items); err != nil {
+		return &Refusal{Subject: subject, Reason: err.Error()}
 	}
 	if UsesSecretPath(spec.Connection) && !caps.Has(capability.ReplicationSecretPaths) {
 		return &Refusal{Subject: subject + " names a secret by its path", Key: capability.ReplicationSecretPaths}
@@ -214,4 +201,26 @@ func connectionValues(connection ast.ReplicationConnectionSpec) map[string]strin
 		}
 	}
 	return values
+}
+
+// ValidateReplicationItems checks source and target paths and rejects repeated
+// replica targets. The source reader and renderer use the same rule.
+func ValidateReplicationItems(items []ast.AsyncReplicationItem) error {
+	if len(items) == 0 {
+		return fmt.Errorf("it replicates no table; declare an item naming a source and a " +
+			"target, since YDB takes no replication without one (`expecting {',', WITH}`)")
+	}
+	targets := make(map[string]bool, len(items))
+	for _, item := range items {
+		if _, err := ParseItem(map[string]string{AttributeSource: item.Source, AttributeTarget: item.Target}); err != nil {
+			return err
+		}
+		target := cleanRelative(item.Target)
+		if targets[target] {
+			return fmt.Errorf("two of its items create a replica at %q, where one table can stand", target)
+		}
+		targets[target] = true
+	}
+
+	return nil
 }

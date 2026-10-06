@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer/internal/dialects/internal/bufwriter"
+	"ptah.run/core/renderer/internal/dialects/internal/grantrefusal"
 	"ptah.run/internal/defaultlit"
 	"ptah.run/internal/normalize"
 	"ptah.run/internal/renderdiag"
@@ -560,11 +561,17 @@ func (r *Renderer) renderAlterRole(node *ast.AlterRoleNode) error {
 }
 
 func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
+	if err := grantrefusal.Path("sqlite", "GRANT", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
 	r.notSupported("GRANT", node.Role)
 	return nil
 }
 
 func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
+	if err := grantrefusal.Path("sqlite", "REVOKE", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
 	r.notSupported("REVOKE", node.Role)
 	return nil
 }

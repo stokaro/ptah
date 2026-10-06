@@ -176,6 +176,8 @@ every key column is `NOT NULL` unless the model declares it nullable.
 A default is a literal, written as the typed YQL literal YDB reads back: `0`,
 `'x'u` for text, `Timestamp('2026-01-01T00:00:00Z')`. An expression default
 such as a function call is refused, because YDB takes literals only.
+Reading and exporting a schema preserves empty string defaults: `''u` for
+`Utf8` and `''` for `String`. An empty default is distinct from no default.
 
 Indexes are global. A plain index is `GLOBAL SYNC`, a unique one
 `GLOBAL UNIQUE SYNC`, an asynchronous one (`type="async"`) `GLOBAL ASYNC`, and
@@ -375,7 +377,7 @@ A Serial column fills itself from a sequence YDB creates with the column, at
 `<table>/_serial_column_<column>`. `SERIAL`, `BIGSERIAL` and `SMALLSERIAL` are
 Serial columns, and so is an integer column with `auto_increment`. The sequence
 starts at 1 and steps by 1 unless the column declares `identity_start` or
-`identity_increment`, in a Go annotation or a YAML schema:
+`identity_increment`, in Go, YAML or [desired YQL](#desired-yql-schema-files):
 
 ```go
 //ptah:schema:field name="id" type="BIGSERIAL" primary="true" identity_start="1000" identity_increment="10"
@@ -998,7 +1000,7 @@ either, and a document in one of them records both as not described.
 ### Streaming queries
 
 A streaming query runs continuously over topic messages. Declare its query body,
-execution state and resource pool in Go or YAML. YDB 26.2 requires both
+execution state and resource pool in Go, YAML or desired YQL. YDB 26.2 requires both
 `EnableStreamingQueries` and `EnableExternalDataSources`; name the monitoring
 endpoint in the connection URL so Ptah reads those flags. Default release-line
 presets leave `streaming_queries` disabled. YDB 25.1 has no such statement.
@@ -1035,7 +1037,8 @@ those formats preserves queries already in the database.
 
 Changing `run` or `resource_pool` uses `ALTER STREAMING QUERY`. A body change
 requires `allow_state_reset: true` in YAML, or `allow_state_reset="true"` in the
-Go annotation. Ptah then sends `FORCE = TRUE`: YDB resets aggregation state and
+Go annotation. In desired YQL, `CREATE OR REPLACE STREAMING QUERY` grants
+the same permission. Ptah then sends `FORCE = TRUE`: YDB resets aggregation state and
 retains topic offsets. A rollback restores the old declaration, not discarded
 state. Removing a query deletes its checkpoints and is classified as destructive.
 Migration lint reports a removal as `DS107` and a replacement or body change
@@ -2364,12 +2367,62 @@ eviction tier names its external source by an absolute database path, such as
 family settings use the same validation as Go and YAML declarations. Omitting
 TTL requests removal of an existing deletion policy.
 
+A Serial column can declare its sequence settings with `ALTER SEQUENCE`
+after its table declaration:
+
+```sql
+CREATE TABLE `app/orders` (id BigSerial NOT NULL, PRIMARY KEY (id));
+ALTER SEQUENCE `/local/app/orders/_serial_column_id` START WITH 100 INCREMENT BY 5;
+```
+
+The sequence path must be absolute and belong to the explicit database URL's
+root. An absolute path without that context is refused, as is a sequence whose
+Serial column was not declared earlier. `START` and `INCREMENT` can appear
+independently, with optional `WITH` and `BY`. Later declarations or schema files
+keep an omitted setting. `RESTART` is refused in a desired schema: the planner
+sets the first value when creating the table and never resets an existing
+counter. The [Serial sequence safety rules](#serial-columns-and-their-sequences)
+still apply.
+
 Views use `CREATE VIEW` with the required `WITH (security_invoker = TRUE)`
 clause. The query body is retained, including semicolons inside lambdas and
 inline actions. Topics use `CREATE TOPIC`, with optional consumers and settings.
 Their intervals use `Interval('P1D')`; a consumer's `read_from` uses
 `Timestamp('2026-01-01T00:00:00Z')`. Topic settings and consumers use the same
 validation as Go and YAML declarations.
+
+Comments use Ptah's `COMMENT ON TABLE`, `COMMENT ON COLUMN`, `COMMENT ON INDEX
+... ON ...`, and `COMMENT ON VIEW` statements. The object must be declared in
+the same document or an earlier file in the source list. Names remain
+case-sensitive; an index comment names its table because index names are only
+unique within that table. `IS NULL` removes a comment, as does omitting a comment
+from a declared object. Ptah stores these comments as YDB user attributes; the
+statements are Ptah extensions, not native YQL.
+
+Secrets use `CREATE SECRET` with an environment reference:
+
+```sql
+CREATE SECRET `app/password` WITH (value = $PTAH_SECRET_APP_PASSWORD);
+```
+
+Reading the file does not read the environment or reveal the value. The
+connection reads the variable when applying the statement. Literal values,
+expressions and extra secret options are refused without printing their
+contents. Omitting a secret requests its removal; changing an environment
+value alone does not request rotation. Lines without schema secrets refuse
+the declaration through the `secrets` capability.
+
+External sources and tables use `CREATE EXTERNAL DATA SOURCE` and `CREATE
+EXTERNAL TABLE`. `WITH` settings take string literals without type suffixes;
+option names are case-insensitive. Quoted values retain their contents, including a space used
+as `CSV_DELIMITER`. External columns accept types and `NOT NULL`; defaults,
+keys and column families are refused. Credentials are references to secrets,
+such as `PASSWORD_SECRET_PATH`.
+
+`CREATE OR REPLACE EXTERNAL` is accepted as a desired declaration. The planner
+chooses replacement or ordered drop and creation from the target's capabilities;
+the source spelling does not force a server operation. Omitting an external
+table or source requests its removal, with dependent tables dropped first.
 
 Coordination nodes use Ptah's `CREATE COORDINATION NODE` statement with the
 same configuration as Go and YAML. Periods use `Interval('PT1S')`. Resource
@@ -2379,15 +2432,115 @@ unset. A bare negative number is refused, as it is in YQL. The server-owned
 `default` pool also accepts the renderer's `ALTER RESOURCE POOL default SET (...)`
 declaration.
 
+Changefeeds use `ALTER TABLE <table> ADD CHANGEFEED <name> WITH (...)` after
+that table's declaration. `mode` and `format` are required. Retention and
+resolved timestamps use `Interval(...)`; topic auto-partitioning uses
+`'ENABLED'` or `'DISABLED'`. Add a consumer with
+`ALTER TOPIC <table>/<changefeed> ADD CONSUMER <name> WITH (...)`. This also
+works for a declared ordinary topic. A later schema file can add a changefeed
+or consumer to an earlier declaration. Duplicate names and undeclared targets
+are refused. Omitting a changefeed or its consumer requests removal.
+
+Streaming queries use `CREATE STREAMING QUERY`, optional `RUN` and
+`RESOURCE_POOL` settings, and `AS DO BEGIN ... END DO`. The reader preserves
+the body, including nested actions, lambdas and comments. `RUN` is a Boolean;
+a pool is an identifier or string literal. Omitting a query requests removal.
+Use `CREATE OR REPLACE STREAMING QUERY` to permit an existing query's body to
+change and reset aggregation state. Without it, a body change is refused.
+`IF NOT EXISTS` keeps an earlier declaration even with `OR REPLACE`, and does
+not grant permission to reset state.
+These rules also apply across files in a schema directory. Target capabilities
+still decide whether a server can manage streaming queries.
+
+Users use `CREATE USER` with optional `PASSWORD`, `HASH`, `LOGIN` and
+`NOLOGIN` settings. Names are identifiers, optionally in backticks. A user logs
+in by default. `CREATE GROUP` creates a group; `WITH USER` lists its initial
+members. `ALTER USER` changes a previously declared user's login or password.
+`ALTER GROUP ... ADD USER` and `DROP USER` change memberships. A member must
+be declared earlier, including in an earlier file of a schema directory.
+Adding a membership may name a cluster group such as `DATA-READERS` without
+declaring it. Removing a membership requires a declared group; memberships in
+undeclared groups are preserved by comparison.
+
+```sql
+CREATE USER worker PASSWORD 'Example1!';
+CREATE GROUP readers WITH USER worker;
+ALTER GROUP `DATA-READERS` ADD USER worker;
+ALTER USER worker WITH NOLOGIN;
+```
+
+Duplicate principal declarations and conflicting options are refused. An
+omitted password is unmanaged; `CREATE USER ... PASSWORD NULL` uses the empty
+creation default, while `ALTER USER ... PASSWORD NULL` or an empty string is
+refused because the desired model cannot request a live password reset to empty.
+Errors in user declarations hide credential values. Omitted users and groups
+remain, as they do for Go and YAML sources. Memberships in declared groups are
+compared.
+
+`GRANT` and `REVOKE` declare permissions on tables, directories and the database.
+They accept multiple paths and subjects. A table or directory must already be
+represented by an earlier declaration. A directory can be the parent of a
+previously declared table, topic or other path-based object. Permissions on
+other object kinds are refused.
+
+```sql
+CREATE TABLE `shop/orders` (id Uint64 NOT NULL, PRIMARY KEY (id));
+CREATE GROUP readers;
+GRANT SELECT ROW, 'list' ON `shop/orders` TO readers WITH GRANT OPTION;
+GRANT LIST ON shop TO readers;
+```
+
+Keyword permissions and quoted short aliases identify the same permission.
+Quoted aliases use underscores, such as `'select_row'`. Full permission names,
+such as `'ydb.granular.select_row'`, are case-sensitive. `ALL` is a keyword;
+`'ALL'` is not a permission name. `WITH GRANT OPTION` adds the separate
+`ydb.access.grant` permission. `REVOKE GRANT OPTION FOR SELECT` removes both
+that permission and `ydb.generic.read`, matching YDB rather than PostgreSQL.
+Later grants and revokes override earlier statements about the same permission,
+including across files. Database permissions survive a `--schemas` directory
+selection. An `--include` selection of a principal keeps its database permissions;
+a table-only selection does not manage them. Omitting permissions for a declared
+principal requests revocation within the managed scope, as it does for Go and
+YAML declarations.
+
+Absolute permission paths need a database URL to identify the source root.
+Native apply, plan and migration generation use their target URL; inspection
+uses its dev URL, and a diff uses a live side's URL or its dev URL when both
+sides are files. The root comes from the database path or `database` URL
+parameter, excluding a temporary dev realm. A path outside that root is refused.
+Relative paths remain portable; rendering an offline file with no database URL
+cannot resolve an absolute permission path.
+
+Async replications use `CREATE ASYNC REPLICATION ... FOR ... AS ... WITH (...)`.
+The connection can use `CONNECTION_STRING` or `ENDPOINT` with `DATABASE`.
+Credentials name secrets; raw passwords and tokens are refused. Replication
+items, consistency and commit intervals use the same rules as Go and YAML.
+Transfers use `CREATE TRANSFER ... FROM ... TO ... USING (...) -> { ... }`,
+with an inline lambda. Named lambda variables and their assignments are
+refused. Optional settings include the connection, consumer, batch size and
+flush interval.
+
+`ALTER ASYNC REPLICATION ... SET (...)` and `ALTER TRANSFER ... SET (...)`
+update an earlier declaration in the same document or an earlier schema file.
+A transfer also accepts `SET USING` with an inline lambda. Only settings the
+planner can change are accepted. Lifecycle commands such as `STATE = 'PAUSED'`
+remain operator actions; changing a live replication's connection still
+requires pausing it first. Omitting a replication or transfer requests its
+removal under the [replication lifecycle rules](#async-replications-and-transfers).
+
 Omitting a view, topic or coordination node requests its removal. Resource
 pools and classifiers remain when omitted, as they do for other schema sources,
 because they belong to the whole database. Other statements are refused,
-including standalone queries, other `ALTER` statements and declarations of other object families.
+including standalone queries, unlisted `ALTER` statements and declarations of other object families.
 Use Go or YAML for those declarations. An unsupported statement rejects the
-whole document. Existing changefeeds and other unrepresented families are
+whole document. Existing objects in unrepresented families are
 preserved when planning from a YQL file; their absence does not request removal.
 
 ## What is not supported yet
+
+When a row table contains an unsupported index kind, inspection refuses the
+read and names that kind. It does not treat the index as an ordinary global
+index or omit it from the schema.
 
 These are refused with a message that names what is missing:
 
@@ -2397,7 +2550,8 @@ These are refused with a message that names what is missing:
 - `ptah inference` and the inference tools of `ptah mcp`, which store their vectors through pgvector.
 <!-- END GENERATED YDB GAPS -->
 
-The work is planned in [#4015](https://github.com/stokaro/ptah/issues/4015).
+Schema and migration work is planned in [#4015](https://github.com/stokaro/ptah/issues/4015).
+Inference is a separate follow-up in [#4181](https://github.com/stokaro/ptah/issues/4181).
 
 ## Next steps
 

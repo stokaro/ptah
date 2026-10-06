@@ -245,6 +245,8 @@ func (s *scopeSelection) generatedGrantSelected(
 	grant schemamodel.Grant,
 ) bool {
 	switch {
+	case grant.OnDatabase:
+		return s.selectedNames(typeList("role"), grant.Role)
 	case grant.OnTable != "":
 		return generatedTableNameKept(out.Tables, grant.OnTable)
 	case grant.OnSequence != "":

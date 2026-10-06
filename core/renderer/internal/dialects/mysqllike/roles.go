@@ -90,6 +90,9 @@ func (r *Renderer) renderAlterRole(node *ast.AlterRoleNode) error {
 
 // renderGrantPrivilege renders GRANT.
 func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
+	if err := grantrefusal.Path(r.dialect, "GRANT", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
 	if err := grantrefusal.Routine(r.dialect, "GRANT", node.ObjectType, node.ObjectName); err != nil {
 		return err
 	}
@@ -144,6 +147,9 @@ func (r *Renderer) renderRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilege
 // privilege itself. The same form on a schema grant, `db`.*, leaves the schema
 // privilege in place too.
 func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
+	if err := grantrefusal.Path(r.dialect, "REVOKE", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
 	if err := grantrefusal.Routine(r.dialect, "REVOKE", node.ObjectType, node.ObjectName); err != nil {
 		return err
 	}
