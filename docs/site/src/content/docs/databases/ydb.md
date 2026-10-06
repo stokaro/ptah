@@ -2372,6 +2372,19 @@ unique within that table. `IS NULL` removes a comment, as does omitting a commen
 from a declared object. Ptah stores these comments as YDB user attributes; the
 statements are Ptah extensions, not native YQL.
 
+Secrets use `CREATE SECRET` with an environment reference:
+
+```sql
+CREATE SECRET `app/password` WITH (value = $PTAH_SECRET_APP_PASSWORD);
+```
+
+Reading the file does not read the environment or reveal the value. The
+connection reads the variable when applying the statement. Literal values,
+expressions and extra secret options are refused without printing their
+contents. Omitting a secret requests its removal; changing an environment
+value alone does not request rotation. Lines without schema secrets refuse
+the declaration through the `secrets` capability.
+
 Coordination nodes use Ptah's `CREATE COORDINATION NODE` statement with the
 same configuration as Go and YAML. Periods use `Interval('PT1S')`. Resource
 pools and classifiers use `CREATE RESOURCE POOL` and `CREATE RESOURCE POOL

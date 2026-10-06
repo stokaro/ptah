@@ -61,6 +61,9 @@ func (p *parser) declaration() ast.Node {
 	case p.word("COORDINATION"):
 		p.pos++
 		return p.coordination()
+	case p.word("SECRET"):
+		p.pos++
+		return p.secret()
 	case p.word("RESOURCE"):
 		p.pos++
 		return p.resourcePool()
