@@ -64,6 +64,14 @@ func (p *parser) declaration() ast.Node {
 	case p.word("SECRET"):
 		p.pos++
 		return p.secret()
+	case p.word("EXTERNAL"):
+		p.pos++
+		return p.external(false)
+	case p.word("OR"):
+		p.pos++
+		p.wantWord("REPLACE")
+		p.wantWord("EXTERNAL")
+		return p.external(true)
 	case p.word("RESOURCE"):
 		p.pos++
 		return p.resourcePool()

@@ -2382,6 +2382,18 @@ contents. Omitting a secret requests its removal; changing an environment
 value alone does not request rotation. Lines without schema secrets refuse
 the declaration through the `secrets` capability.
 
+External sources and tables use `CREATE EXTERNAL DATA SOURCE` and `CREATE
+EXTERNAL TABLE`. `WITH` settings take string literals without type suffixes;
+option names are case-insensitive. Quoted values retain their contents, including a space used
+as `CSV_DELIMITER`. External columns accept types and `NOT NULL`; defaults,
+keys and column families are refused. Credentials are references to secrets,
+such as `PASSWORD_SECRET_PATH`.
+
+`CREATE OR REPLACE EXTERNAL` is accepted as a desired declaration. The planner
+chooses replacement or ordered drop and creation from the target's capabilities;
+the source spelling does not force a server operation. Omitting an external
+table or source requests its removal, with dependent tables dropped first.
+
 Coordination nodes use Ptah's `CREATE COORDINATION NODE` statement with the
 same configuration as Go and YAML. Periods use `Interval('PT1S')`. Resource
 pools and classifiers use `CREATE RESOURCE POOL` and `CREATE RESOURCE POOL
