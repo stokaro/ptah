@@ -20,8 +20,8 @@ func (p *parser) resourcePool() ast.Node {
 }
 
 // defaultPool reads the declaration spelling emitted by the renderer for the
-// server-owned pool. Other ALTER statements depend on prior state and cannot
-// serve as standalone desired declarations.
+// server-owned pool. Unlike user and membership changes, this spelling is a
+// declaration by itself because the server owns the default pool.
 func (p *parser) defaultPool() *ast.CreateResourcePoolNode {
 	p.wantWord("ALTER")
 	p.wantWord("RESOURCE")

@@ -29,36 +29,11 @@ func Parse(text string) (*ast.StatementList, error) {
 		if p.accept(";") {
 			continue
 		}
-		if p.word("ALTER") {
-			result.Statements = append(result.Statements, p.defaultPool())
-			if !p.done() && !p.accept(";") {
-				p.failf("expected ';' after the declaration")
-			}
-			continue
-		}
-		if !p.word("CREATE") {
-			p.failf("expected a supported CREATE declaration")
-			break
-		}
-		p.pos++
-		switch {
-		case p.word("TABLE"):
-			p.pos++
-			result.Statements = append(result.Statements, p.table())
-		case p.word("VIEW"):
-			p.pos++
-			result.Statements = append(result.Statements, p.view())
-		case p.word("TOPIC"):
-			p.pos++
-			result.Statements = append(result.Statements, p.topic())
-		case p.word("COORDINATION"):
-			p.pos++
-			result.Statements = append(result.Statements, p.coordination())
-		case p.word("RESOURCE"):
-			p.pos++
-			result.Statements = append(result.Statements, p.resourcePool())
-		default:
-			p.failf("this CREATE object kind is not supported in a desired YQL schema")
+		node := p.declaration()
+		if list, ok := node.(*ast.StatementList); ok {
+			result.Statements = append(result.Statements, list.Statements...)
+		} else {
+			result.Statements = append(result.Statements, node)
 		}
 		if !p.done() && !p.accept(";") {
 			p.failf("expected ';' after the declaration")
@@ -68,6 +43,50 @@ func Parse(text string) (*ast.StatementList, error) {
 		return nil, p.err
 	}
 	return result, nil
+}
+
+func (p *parser) declaration() ast.Node {
+	if p.word("ALTER") {
+		p.pos++
+		switch {
+		case p.word("USER"):
+			p.pos++
+			return p.alterUser()
+		case p.word("GROUP"):
+			p.pos++
+			return p.alterGroup()
+		default:
+			p.pos--
+			return p.defaultPool()
+		}
+	}
+	p.wantWord("CREATE")
+	switch {
+	case p.word("TABLE"):
+		p.pos++
+		return p.table()
+	case p.word("VIEW"):
+		p.pos++
+		return p.view()
+	case p.word("TOPIC"):
+		p.pos++
+		return p.topic()
+	case p.word("COORDINATION"):
+		p.pos++
+		return p.coordination()
+	case p.word("RESOURCE"):
+		p.pos++
+		return p.resourcePool()
+	case p.word("USER"):
+		p.pos++
+		return p.createUser()
+	case p.word("GROUP"):
+		p.pos++
+		return p.createGroup()
+	default:
+		p.failf("this CREATE object kind is not supported in a desired YQL schema")
+		return nil
+	}
 }
 
 func (p *parser) done() bool { return p.err != nil || p.pos >= len(p.tokens) }
