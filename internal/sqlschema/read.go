@@ -2,7 +2,6 @@ package sqlschema
 
 import (
 	"ptah.run/core/ast"
-	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/parser"
 )
@@ -50,9 +49,6 @@ func ReadOnto(
 	database, err := toDatabase(statements, dialect, document)
 	if err != nil {
 		return schemamodel.Database{}, nil, err
-	}
-	if platform.NormalizeDialect(dialect) == platform.YDB {
-		markYQLLimits(&database)
 	}
 	schemamodel.Finalize(&database)
 	return database, statements, nil

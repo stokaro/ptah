@@ -4,11 +4,16 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/tableref"
+	"ptah.run/internal/ydbstream"
 )
 
 func appendYDBDeclaration(database *schemamodel.Database, document *Document, statement ast.Node, sourcePlatform string) (bool, error) {
 	if handled, err := appendYDBPrincipal(database, document, statement, sourcePlatform); handled {
 		return true, err
+	}
+	if appendYDBExternalDeclaration(database, statement) {
+		return true, nil
 	}
 	switch node := statement.(type) {
 	case *ast.AlterSequenceNode:
@@ -16,6 +21,11 @@ func appendYDBDeclaration(database *schemamodel.Database, document *Document, st
 			return false, nil
 		}
 		return true, alterYDBSequence(database, document, node)
+	case *ast.CreateSecretNode:
+		ref, _ := tableref.Parse(node.Name)
+		database.Secrets = append(database.Secrets, schemamodel.Secret{Name: ref.Name, Schema: ref.Schema, ValueEnv: node.ValueEnv})
+	case *ydbstream.Node:
+		return true, appendStreamingQuery(database, document.base, node)
 	case *ast.CreateTopicNode:
 		schema, name := normalizeSQLTableIdentifier(sourcePlatform, node.Name)
 		database.Topics = append(database.Topics, schemamodel.Topic{Name: name, Schema: schema, Spec: node.Spec.Clone()})
@@ -27,7 +37,7 @@ func appendYDBDeclaration(database *schemamodel.Database, document *Document, st
 	case *ast.CreateResourcePoolClassifierNode:
 		database.ResourcePoolClassifiers = append(database.ResourcePoolClassifiers, schemamodel.ResourcePoolClassifier{Name: node.Name, Spec: node.Spec})
 	default:
-		return false, nil
+		return appendYDBReplication(database, document, statement, sourcePlatform)
 	}
 	return true, nil
 }

@@ -50,24 +50,28 @@ func (p *parser) declaration() ast.Node {
 		return p.privilegeStatement()
 	}
 	if p.word("ALTER") {
-		p.pos++
-		switch {
-		case p.word("SEQUENCE"):
-			p.pos++
-			return p.alterSerialSequence()
-		case p.word("USER"):
-			p.pos++
-			return p.alterUser()
-		case p.word("GROUP"):
-			p.pos++
-			return p.alterGroup()
-		default:
-			p.pos--
-			return p.defaultPool()
-		}
+		return p.alterDeclaration()
+	}
+	if p.word("COMMENT") {
+		return p.comment()
 	}
 	p.wantWord("CREATE")
 	switch {
+	case p.word("ASYNC"):
+		p.pos++
+		return p.createReplication()
+	case p.word("TRANSFER"):
+		p.pos++
+		return p.createTransfer()
+	case p.word("STREAMING"):
+		p.pos++
+		return p.streamingQuery(false)
+	case p.word("USER"):
+		p.pos++
+		return p.createUser()
+	case p.word("GROUP"):
+		p.pos++
+		return p.createGroup()
 	case p.word("TABLE"):
 		p.pos++
 		return p.table()
@@ -80,19 +84,32 @@ func (p *parser) declaration() ast.Node {
 	case p.word("COORDINATION"):
 		p.pos++
 		return p.coordination()
+	case p.word("SECRET"):
+		p.pos++
+		return p.secret()
+	case p.word("EXTERNAL"):
+		p.pos++
+		return p.external(false)
+	case p.word("OR"):
+		p.pos++
+		return p.replacementDeclaration()
 	case p.word("RESOURCE"):
 		p.pos++
 		return p.resourcePool()
-	case p.word("USER"):
-		p.pos++
-		return p.createUser()
-	case p.word("GROUP"):
-		p.pos++
-		return p.createGroup()
 	default:
 		p.failf("this CREATE object kind is not supported in a desired YQL schema")
 		return nil
 	}
+}
+
+func (p *parser) replacementDeclaration() ast.Node {
+	p.wantWord("REPLACE")
+	if p.word("STREAMING") {
+		p.pos++
+		return p.streamingQuery(true)
+	}
+	p.wantWord("EXTERNAL")
+	return p.external(true)
 }
 
 func (p *parser) done() bool { return p.err != nil || p.pos >= len(p.tokens) }

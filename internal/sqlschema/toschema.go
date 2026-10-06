@@ -796,12 +796,14 @@ func appendStatement(
 
 // changeDeclared applies a statement that changes or removes an object an
 // earlier statement declared, rather than declaring one: ALTER TABLE, ALTER
-// INDEX, COMMENT ON, DROP TABLE and DROP INDEX. handled is false for any other
+// INDEX, ADD CONSUMER, COMMENT ON, DROP TABLE and DROP INDEX. handled is false for any other
 // statement.
 func changeDeclared(
 	database *schemamodel.Database, document *Document, stmt ast.Node, sourcePlatform string,
 ) (handled bool, err error) {
 	switch node := stmt.(type) {
+	case *ast.AddTopicConsumerNode:
+		return true, appendTopicConsumer(database, document.base, node)
 	case *ast.AlterTableNode:
 		return true, appendAlterTable(database, document, node, sourcePlatform)
 	case *ast.AlterIndexNode:
@@ -1116,6 +1118,8 @@ func applyAlterOperation(
 	database, base *schemamodel.Database, target alterTarget, op ast.AlterOperation, sourcePlatform string,
 ) error {
 	switch typed := op.(type) {
+	case *ast.AddChangefeedOperation:
+		return appendChangefeed(target, typed.Changefeed)
 	case *ast.AddColumnOperation:
 		added := len(database.Fields)
 		if err := applyAlterTableAddColumn(database, base, target, typed); err != nil {
@@ -1129,26 +1133,7 @@ func applyAlterOperation(
 	case *ast.AddConstraintOperation:
 		return applyAddConstraint(database, target, typed)
 	case *ast.AddIndexOperation:
-		// MySQL and MariaDB add a secondary index with ALTER TABLE, and the
-		// statement carries the whole index (stokaro/ptah#2778).
-		if typed.Index == nil {
-			return nil
-		}
-		index := ToIndex(typed.Index, sourcePlatform)
-		index.StructName = target.structName
-		index.TableName = target.qualified
-		if typed.Index.ForeignKeyIndex {
-			// The key the clause belongs to is the next operation, and the
-			// index is its own; see [alterTarget.buildKeyIndex].
-			target.statement.clause = &index
-		} else {
-			target.releaseKeyIndexes(indexCandidate(index))
-		}
-		if err := nameAddedIndex(&index, target); err != nil {
-			return err
-		}
-		database.Indexes = append(database.Indexes, index)
-		return nil
+		return applyAddIndex(database, target, typed, sourcePlatform)
 	case *ast.AddSkippingIndexOperation:
 		// ClickHouse's data-skipping index arrives as an ALTER because that
 		// is how the ClickHouse renderer writes one (stokaro/ptah#1574).
@@ -1193,6 +1178,29 @@ func applyAlterOperation(
 	}
 }
 
+func applyAddIndex(database *schemamodel.Database, target alterTarget, typed *ast.AddIndexOperation, sourcePlatform string) error {
+	// MySQL and MariaDB add a secondary index with ALTER TABLE, and the
+	// statement carries the whole index (stokaro/ptah#2778).
+	if typed.Index == nil {
+		return nil
+	}
+	index := ToIndex(typed.Index, sourcePlatform)
+	index.StructName = target.structName
+	index.TableName = target.qualified
+	if typed.Index.ForeignKeyIndex {
+		// The key the clause belongs to is the next operation, and the
+		// index is its own; see [alterTarget.buildKeyIndex].
+		target.statement.clause = &index
+	} else {
+		target.releaseKeyIndexes(indexCandidate(index))
+	}
+	if err := nameAddedIndex(&index, target); err != nil {
+		return err
+	}
+	database.Indexes = append(database.Indexes, index)
+	return nil
+}
+
 // applyAddConstraint adds a table constraint. A primary key lives on the
 // table rather than among the constraints.
 func applyAddConstraint(database *schemamodel.Database, target alterTarget, operation *ast.AddConstraintOperation) error {
@@ -1224,6 +1232,8 @@ func applyAddConstraint(database *schemamodel.Database, target alterTarget, oper
 // for a refusal.
 func describeAlterOperation(op ast.AlterOperation) string {
 	switch typed := op.(type) {
+	case *ast.AddChangefeedOperation:
+		return "ADD CHANGEFEED " + typed.Changefeed.Name
 	case *ast.AddColumnOperation:
 		if typed.Column != nil {
 			return "ADD COLUMN " + typed.Column.Name
