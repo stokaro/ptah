@@ -67,6 +67,7 @@ type SchemaInspectReportOptions struct {
 }
 
 type atlasSchemaInspectJSONRealm struct {
+	loss    *inspectJSONLoss
 	Schemas []atlasSchemaInspectJSONSchema `json:"schemas,omitempty"`
 }
 
@@ -87,6 +88,7 @@ type atlasSchemaInspectJSONSchema struct {
 }
 
 type atlasSchemaInspectJSONTable struct {
+	loss        *inspectJSONLoss
 	Name        string                             `json:"name"`
 	Columns     []atlasSchemaInspectJSONColumn     `json:"columns,omitempty"`
 	Indexes     []atlasSchemaInspectJSONIndex      `json:"indexes,omitempty"`
@@ -102,6 +104,7 @@ type atlasSchemaInspectJSONAttrs struct {
 }
 
 type atlasSchemaInspectJSONColumn struct {
+	loss *inspectJSONLoss
 	Name string `json:"name"`
 	Type string `json:"type,omitempty"`
 	Null bool   `json:"null,omitempty"`
@@ -109,6 +112,7 @@ type atlasSchemaInspectJSONColumn struct {
 }
 
 type atlasSchemaInspectJSONIndex struct {
+	loss   *inspectJSONLoss
 	Name   string                            `json:"name,omitempty"`
 	Unique bool                              `json:"unique,omitempty"`
 	Parts  []atlasSchemaInspectJSONIndexPart `json:"parts,omitempty"`
@@ -182,6 +186,7 @@ func NewSchemaInspectReport(
 	opts SchemaInspectReportOptions,
 ) *SchemaInspectReport {
 	realm := atlasSchemaInspectJSON(schema, info)
+	attachYDBJSONLoss(&realm, db, schema, info, diagnostics)
 	return &SchemaInspectReport{
 		db:                      db,
 		info:                    info,
