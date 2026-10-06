@@ -1302,7 +1302,7 @@ func writesYDBSerial(genCol schemamodel.Field, dialect string) bool {
 	if platform.NormalizeDialect(dialect) != platform.YDB {
 		return false
 	}
-	return genCol.AutoInc || genCol.IdentityGeneration != "" || ydbtype.DeclaresSerial(genCol.Type)
+	return ydbsequence.DeclaresSerialColumn(genCol.Type, genCol.AutoInc, genCol.IdentityGeneration)
 }
 
 // ydbComparableTypes reads both sides through the YDB type map, the one the
