@@ -19,6 +19,7 @@ func TestRefuseTopic(t *testing.T) {
 	}{
 		{node: ast.NewCreateTopic("events", ast.TopicSpec{}), want: "topic events: the mysql renderer writes no topic; a topic needs target capability topics, which only YDB has"},
 		{node: &ast.AlterTopicNode{Name: "events"}, want: "ALTER TOPIC events: the mysql renderer writes no topic; a topic needs target capability topics, which only YDB has"},
+		{node: ast.NewAddTopicConsumer("events", ast.TopicConsumerSpec{Name: "worker"}), want: "ALTER TOPIC events ADD CONSUMER worker: the mysql renderer writes no topic; a topic needs target capability topics, which only YDB has"},
 		{node: ast.NewDropTopic("events"), want: "DROP TOPIC events: the mysql renderer writes no topic; a topic needs target capability topics, which only YDB has"},
 	}
 	for _, test := range tests {

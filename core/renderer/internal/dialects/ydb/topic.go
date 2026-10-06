@@ -57,3 +57,14 @@ func topicRefusal(refusal *ydbtopic.Refusal) error {
 		return refuseFact(refusal.Subject, refusal.Reason)
 	}
 }
+
+func (r *Renderer) renderAddTopicConsumer(node *ast.AddTopicConsumerNode) error {
+	spec := ast.TopicSpec{Consumers: []ast.TopicConsumerSpec{node.Consumer}}
+	if err := topicRefusal(ydbtopic.Check(node.Name, spec, r.caps)); err != nil {
+		return err
+	}
+	for _, statement := range ydbtopic.AlterStatements(node.Name, spec, ast.TopicSpec{}) {
+		r.w.WriteLine(statement)
+	}
+	return nil
+}
