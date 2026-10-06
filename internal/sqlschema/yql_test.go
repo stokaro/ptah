@@ -90,7 +90,7 @@ func TestReadYQLLimits(t *testing.T) {
 	for _, kind := range []coverage.Kind{coverage.StreamingQuery, coverage.Changefeed, coverage.Grant} {
 		c.Assert(database.NotDescribed.Describes(kind), qt.IsFalse, qt.Commentf("%s", kind))
 	}
-	for _, kind := range []coverage.Kind{coverage.Secret, coverage.CoordinationNode, coverage.ResourcePool, coverage.ResourcePoolClassifier, coverage.View, coverage.Topic, coverage.ColumnTable, coverage.TTL, coverage.ColumnFamily} {
+	for _, kind := range []coverage.Kind{coverage.Secret, coverage.ExternalDataSource, coverage.ExternalTable, coverage.CoordinationNode, coverage.ResourcePool, coverage.ResourcePoolClassifier, coverage.View, coverage.Topic, coverage.ColumnTable, coverage.TTL, coverage.ColumnFamily} {
 		c.Assert(database.NotDescribed.Describes(kind), qt.IsTrue)
 	}
 }

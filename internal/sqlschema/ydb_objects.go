@@ -22,7 +22,7 @@ func appendYDBDeclaration(database *schemamodel.Database, statement ast.Node, so
 	case *ast.CreateResourcePoolClassifierNode:
 		database.ResourcePoolClassifiers = append(database.ResourcePoolClassifiers, schemamodel.ResourcePoolClassifier{Name: node.Name, Spec: node.Spec})
 	default:
-		return false
+		return appendYDBExternalDeclaration(database, statement)
 	}
 	return true
 }
