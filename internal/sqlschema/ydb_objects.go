@@ -5,7 +5,7 @@ import (
 	"ptah.run/core/schemamodel"
 )
 
-func appendYDBDeclaration(database *schemamodel.Database, statement ast.Node, sourcePlatform string) bool {
+func appendYDBDeclaration(database *schemamodel.Database, document *Document, statement ast.Node, sourcePlatform string) (bool, error) {
 	switch node := statement.(type) {
 	case *ast.CreateTopicNode:
 		schema, name := normalizeSQLTableIdentifier(sourcePlatform, node.Name)
@@ -18,7 +18,7 @@ func appendYDBDeclaration(database *schemamodel.Database, statement ast.Node, so
 	case *ast.CreateResourcePoolClassifierNode:
 		database.ResourcePoolClassifiers = append(database.ResourcePoolClassifiers, schemamodel.ResourcePoolClassifier{Name: node.Name, Spec: node.Spec})
 	default:
-		return false
+		return appendYDBReplication(database, document, statement, sourcePlatform)
 	}
-	return true
+	return true, nil
 }

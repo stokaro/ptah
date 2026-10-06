@@ -10,7 +10,7 @@ import (
 // and empty documents, rather than only at the schema-file adapter.
 func markYQLLimits(database *schemamodel.Database) {
 	for _, kind := range []schemacoverage.Kind{
-		schemacoverage.Replication, schemacoverage.Transfer, schemacoverage.Secret,
+		schemacoverage.Secret,
 		schemacoverage.ExternalDataSource, schemacoverage.ExternalTable, schemacoverage.StreamingQuery,
 		schemacoverage.Changefeed, schemacoverage.Role, schemacoverage.Grant,
 	} {

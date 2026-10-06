@@ -2369,6 +2369,23 @@ unset. A bare negative number is refused, as it is in YQL. The server-owned
 `default` pool also accepts the renderer's `ALTER RESOURCE POOL default SET (...)`
 declaration.
 
+Async replications use `CREATE ASYNC REPLICATION ... FOR ... AS ... WITH (...)`.
+The connection can use `CONNECTION_STRING` or `ENDPOINT` with `DATABASE`.
+Credentials name secrets; raw passwords and tokens are refused. Replication
+items, consistency and commit intervals use the same rules as Go and YAML.
+Transfers use `CREATE TRANSFER ... FROM ... TO ... USING (...) -> { ... }`,
+with an inline lambda. Named lambda variables and their assignments are
+refused. Optional settings include the connection, consumer, batch size and
+flush interval.
+
+`ALTER ASYNC REPLICATION ... SET (...)` and `ALTER TRANSFER ... SET (...)`
+update an earlier declaration in the same document or an earlier schema file.
+A transfer also accepts `SET USING` with an inline lambda. Only settings the
+planner can change are accepted. Lifecycle commands such as `STATE = 'PAUSED'`
+remain operator actions; changing a live replication's connection still
+requires pausing it first. Omitting a replication or transfer requests its
+removal under the [replication lifecycle rules](#async-replications-and-transfers).
+
 Omitting a view, topic or coordination node requests its removal. Resource
 pools and classifiers remain when omitted, as they do for other schema sources,
 because they belong to the whole database. Other statements are refused,

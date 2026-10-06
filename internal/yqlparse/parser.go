@@ -30,7 +30,7 @@ func Parse(text string) (*ast.StatementList, error) {
 			continue
 		}
 		if p.word("ALTER") {
-			result.Statements = append(result.Statements, p.defaultPool())
+			result.Statements = append(result.Statements, p.alterDeclaration())
 			if !p.done() && !p.accept(";") {
 				p.failf("expected ';' after the declaration")
 			}
@@ -42,6 +42,12 @@ func Parse(text string) (*ast.StatementList, error) {
 		}
 		p.pos++
 		switch {
+		case p.word("ASYNC"):
+			p.pos++
+			result.Statements = append(result.Statements, p.createReplication())
+		case p.word("TRANSFER"):
+			p.pos++
+			result.Statements = append(result.Statements, p.createTransfer())
 		case p.word("TABLE"):
 			p.pos++
 			result.Statements = append(result.Statements, p.table())
@@ -201,4 +207,19 @@ func newParser(text string) *parser {
 		}
 	}
 	return p
+}
+
+func (p *parser) alterDeclaration() ast.Node {
+	p.pos++
+	switch {
+	case p.word("ASYNC"):
+		p.pos++
+		return p.alterReplication()
+	case p.word("TRANSFER"):
+		p.pos++
+		return p.alterTransfer()
+	default:
+		p.pos--
+		return p.defaultPool()
+	}
 }
