@@ -11,9 +11,8 @@ import (
 	"ptah.run/migration/schemadiff"
 )
 
-// A desired file cannot request removal of families it has no syntax for.
-// Exercise the source-to-comparison boundary, including an empty document.
-func TestCompare_YQLPreservesUnrepresentedFamilies(t *testing.T) {
+// Once a family has desired YQL syntax, an empty document manages its absence.
+func TestCompare_YQLOmittedReplicationRequestsRemoval(t *testing.T) {
 	c := qt.New(t)
 	desired, _, err := sqlschema.Read(nil, "ydb")
 	c.Assert(err, qt.IsNil)
@@ -21,7 +20,7 @@ func TestCompare_YQLPreservesUnrepresentedFamilies(t *testing.T) {
 		AsyncReplications: []catalog.AsyncReplication{{Name: "copy"}},
 	}
 	diff := schemadiff.CompareWithDialect(&desired, held, "ydb")
-	c.Assert(diff.HasChanges(), qt.IsFalse)
+	c.Assert(diff.AsyncReplicationsRemoved, qt.HasLen, 1)
 }
 
 func TestCompare_YQLOmittedTTLRequestsRemoval(t *testing.T) {
