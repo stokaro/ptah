@@ -87,10 +87,10 @@ func TestReadYQLLimits(t *testing.T) {
 	c := qt.New(t)
 	database, _, err := sqlschema.Read(nil, "ydb")
 	c.Assert(err, qt.IsNil)
-	for _, kind := range []coverage.Kind{coverage.Secret, coverage.StreamingQuery, coverage.Changefeed} {
+	for _, kind := range []coverage.Kind{coverage.Replication} {
 		c.Assert(database.NotDescribed.Describes(kind), qt.IsFalse, qt.Commentf("%s", kind))
 	}
-	for _, kind := range []coverage.Kind{coverage.Grant, coverage.CoordinationNode, coverage.ResourcePool, coverage.ResourcePoolClassifier, coverage.View, coverage.Topic, coverage.ColumnTable, coverage.TTL, coverage.ColumnFamily} {
+	for _, kind := range []coverage.Kind{coverage.Grant, coverage.StreamingQuery, coverage.Changefeed, coverage.Secret, coverage.ExternalDataSource, coverage.ExternalTable, coverage.CoordinationNode, coverage.ResourcePool, coverage.ResourcePoolClassifier, coverage.View, coverage.Topic, coverage.ColumnTable, coverage.TTL, coverage.ColumnFamily} {
 		c.Assert(database.NotDescribed.Describes(kind), qt.IsTrue)
 	}
 }

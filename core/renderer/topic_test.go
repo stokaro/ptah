@@ -13,7 +13,7 @@ import (
 	"ptah.run/core/schemamodel"
 )
 
-// topicNodes are the three topic statements, as nodes, with the subject the
+// topicNodes are topic statements, as nodes, with the subject the
 // renderer's central check names each by.
 var topicNodes = []struct {
 	node    ast.Node
@@ -21,6 +21,7 @@ var topicNodes = []struct {
 }{
 	{node: ast.NewCreateTopic("app.events", ast.TopicSpec{}), subject: "topic app.events"},
 	{node: ast.NewAlterTopic("app.events", ast.TopicSpec{RetentionPeriod: "PT2H"}, ast.TopicSpec{}), subject: "ALTER TOPIC app.events"},
+	{node: ast.NewAddTopicConsumer("app.events", ast.TopicConsumerSpec{Name: "worker"}), subject: "ALTER TOPIC app.events ADD CONSUMER worker"},
 	{node: ast.NewDropTopic("app.events"), subject: "DROP TOPIC app.events"},
 }
 
@@ -168,4 +169,15 @@ func TestRender_Topic_HappyPath(t *testing.T) {
 		"CREATE TABLE `app/notes` (\n    `id` Int64 NOT NULL,\n    PRIMARY KEY (`id`)\n);\n",
 		"CREATE TOPIC `app/events` (CONSUMER `billing` WITH (important = TRUE)) WITH (retention_period = Interval('PT2H'));\n",
 	})
+}
+
+// Adding a consumer carries no previous topic state and must emit no resets.
+func TestRender_AddTopicConsumer(t *testing.T) {
+	c := qt.New(t)
+	consumer := ast.TopicConsumerSpec{Name: "worker", SupportedCodecs: []string{"gzip"}}
+	node := ast.NewAddTopicConsumer("app.events", consumer)
+	consumer.SupportedCodecs[0] = "raw"
+	sql, err := renderer.RenderSQLWithCapabilities(platform.YDB, capability.YDB262(), node)
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Equals, "ALTER TOPIC `app/events` ADD CONSUMER `worker` WITH (supported_codecs = 'gzip');\n")
 }

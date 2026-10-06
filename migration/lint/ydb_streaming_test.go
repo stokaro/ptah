@@ -14,6 +14,7 @@ func TestYDBStreamingCheckpointLint(t *testing.T) {
 		{"drop", "DROP STREAMING QUERY q;", []string{"0001_q.up.sql:1:DS107"}},
 		{"replace", "CREATE OR REPLACE STREAMING QUERY q AS DO BEGIN SELECT 1; END DO;", []string{"0001_q.up.sql:1:YD160"}},
 		{"change body", "ALTER STREAMING QUERY q SET (FORCE = TRUE) AS DO BEGIN SELECT 2; END DO;", []string{"0001_q.up.sql:1:YD160"}},
+		{"guarded replacement", "CREATE OR REPLACE STREAMING QUERY IF NOT EXISTS q AS DO BEGIN SELECT 1; END DO;", make([]string, 0)},
 		{"stop", "ALTER STREAMING QUERY q SET (RUN = FALSE);", make([]string, 0)},
 		{"create", "CREATE STREAMING QUERY q AS DO BEGIN SELECT 1; END DO;", make([]string, 0)},
 		{"literal", "SELECT 'DROP STREAMING QUERY q';", make([]string, 0)},

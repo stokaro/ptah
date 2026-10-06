@@ -23,12 +23,11 @@ func (p *parser) resourcePool() ast.Node {
 // server-owned pool. Unlike user and membership changes, this spelling is a
 // declaration by itself because the server owns the default pool.
 func (p *parser) defaultPool() *ast.CreateResourcePoolNode {
-	p.wantWord("ALTER")
 	p.wantWord("RESOURCE")
 	p.wantWord("POOL")
 	name := decodedName(p.identifier())
 	if name != ydbpool.DefaultPool {
-		p.failf("only the server-owned default pool uses ALTER in a desired schema")
+		p.failf("only the server-owned default pool uses ALTER RESOURCE POOL in a desired schema")
 	}
 	p.wantWord("SET")
 	return p.poolSettings(name)
