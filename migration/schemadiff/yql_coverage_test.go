@@ -18,7 +18,7 @@ func TestCompare_YQLPreservesUnrepresentedFamilies(t *testing.T) {
 	desired, _, err := sqlschema.Read(nil, "ydb")
 	c.Assert(err, qt.IsNil)
 	held := &catalog.Database{
-		Secrets: []catalog.Secret{{Name: "credential"}},
+		AsyncReplications: []catalog.AsyncReplication{{Name: "copy"}},
 	}
 	diff := schemadiff.CompareWithDialect(&desired, held, "ydb")
 	c.Assert(diff.HasChanges(), qt.IsFalse)
@@ -41,4 +41,26 @@ func TestCompare_YQLOmittedViewsAndTopicsRequestRemoval(t *testing.T) {
 	diff := schemadiff.CompareWithDialect(&desired, held, "ydb")
 	c.Assert(diff.ViewsRemoved, qt.HasLen, 1)
 	c.Assert(diff.TopicsRemoved, qt.HasLen, 1)
+}
+
+func TestCompare_YQLSecretsDeclaredAndOmitted(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		source  string
+		removed []string
+	}{
+		{name: "declared", source: "CREATE SECRET credential WITH (value = $PTAH_SECRET_TEST);"},
+		{name: "omitted", removed: []string{"credential"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired, _, err := sqlschema.Read([]byte(test.source), "ydb")
+			c.Assert(err, qt.IsNil)
+			held := &catalog.Database{Secrets: []catalog.Secret{{Name: "credential"}}}
+			diff := schemadiff.CompareWithDialect(&desired, held, "ydb")
+			c.Assert(diff.SecretsRemoved.Names(), qt.DeepEquals, test.removed)
+			c.Assert(diff.SecretsAdded, qt.HasLen, 0)
+			c.Assert(diff.SecretsRotated, qt.HasLen, 0)
+		})
+	}
 }

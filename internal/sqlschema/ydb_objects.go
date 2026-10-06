@@ -3,10 +3,14 @@ package sqlschema
 import (
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/tableref"
 )
 
 func appendYDBDeclaration(database *schemamodel.Database, statement ast.Node, sourcePlatform string) bool {
 	switch node := statement.(type) {
+	case *ast.CreateSecretNode:
+		ref, _ := tableref.Parse(node.Name)
+		database.Secrets = append(database.Secrets, schemamodel.Secret{Name: ref.Name, Schema: ref.Schema, ValueEnv: node.ValueEnv})
 	case *ast.CreateTopicNode:
 		schema, name := normalizeSQLTableIdentifier(sourcePlatform, node.Name)
 		database.Topics = append(database.Topics, schemamodel.Topic{Name: name, Schema: schema, Spec: node.Spec.Clone()})
