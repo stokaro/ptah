@@ -2423,10 +2423,35 @@ not grant permission to reset state.
 These rules also apply across files in a schema directory. Target capabilities
 still decide whether a server can manage streaming queries.
 
+Users use `CREATE USER` with optional `PASSWORD`, `HASH`, `LOGIN` and
+`NOLOGIN` settings. Names are identifiers, optionally in backticks. A user logs
+in by default. `CREATE GROUP` creates a group; `WITH USER` lists its initial
+members. `ALTER USER` changes a previously declared user's login or password.
+`ALTER GROUP ... ADD USER` and `DROP USER` change memberships. A member must
+be declared earlier, including in an earlier file of a schema directory.
+Adding a membership may name a cluster group such as `DATA-READERS` without
+declaring it. Removing a membership requires a declared group; memberships in
+undeclared groups are preserved by comparison.
+
+```sql
+CREATE USER worker PASSWORD 'Example1!';
+CREATE GROUP readers WITH USER worker;
+ALTER GROUP `DATA-READERS` ADD USER worker;
+ALTER USER worker WITH NOLOGIN;
+```
+
+Duplicate principal declarations and conflicting options are refused. An
+omitted password is unmanaged; `CREATE USER ... PASSWORD NULL` uses the empty
+creation default, while `ALTER USER ... PASSWORD NULL` or an empty string is
+refused because the desired model cannot request a live password reset to empty.
+Errors in user declarations hide credential values. Omitted users and groups
+remain, as they do for Go and YAML sources. Memberships in declared groups are
+compared; permissions remain unrepresented until the reader supports `GRANT`.
+
 Omitting a view, topic or coordination node requests its removal. Resource
 pools and classifiers remain when omitted, as they do for other schema sources,
 because they belong to the whole database. Other statements are refused,
-including standalone queries, other `ALTER` statements and declarations of other object families.
+including standalone queries, unlisted `ALTER` statements and declarations of other object families.
 Use Go or YAML for those declarations. An unsupported statement rejects the
 whole document. Existing objects in unrepresented families are
 preserved when planning from a YQL file; their absence does not request removal.

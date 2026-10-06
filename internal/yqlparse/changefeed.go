@@ -11,6 +11,12 @@ import (
 func (p *parser) alterDeclaration() ast.Node {
 	p.wantWord("ALTER")
 	switch {
+	case p.word("USER"):
+		p.pos++
+		return p.alterUser()
+	case p.word("GROUP"):
+		p.pos++
+		return p.alterGroup()
 	case p.word("TABLE"):
 		p.pos++
 		return p.changefeed()

@@ -7,13 +7,16 @@ import (
 	"ptah.run/internal/ydbstream"
 )
 
-func appendYDBDeclaration(database, base *schemamodel.Database, statement ast.Node, sourcePlatform string) (bool, error) {
+func appendYDBDeclaration(database *schemamodel.Database, document *Document, statement ast.Node, sourcePlatform string) (bool, error) {
+	if handled, err := appendYDBPrincipal(database, document, statement, sourcePlatform); handled {
+		return true, err
+	}
 	switch node := statement.(type) {
 	case *ast.CreateSecretNode:
 		ref, _ := tableref.Parse(node.Name)
 		database.Secrets = append(database.Secrets, schemamodel.Secret{Name: ref.Name, Schema: ref.Schema, ValueEnv: node.ValueEnv})
 	case *ydbstream.Node:
-		return true, appendStreamingQuery(database, base, node)
+		return true, appendStreamingQuery(database, document.base, node)
 	case *ast.CreateTopicNode:
 		schema, name := normalizeSQLTableIdentifier(sourcePlatform, node.Name)
 		database.Topics = append(database.Topics, schemamodel.Topic{Name: name, Schema: schema, Spec: node.Spec.Clone()})

@@ -29,7 +29,12 @@ func Parse(text string) (*ast.StatementList, error) {
 		if p.accept(";") {
 			continue
 		}
-		result.Statements = append(result.Statements, p.declaration())
+		node := p.declaration()
+		if list, ok := node.(*ast.StatementList); ok {
+			result.Statements = append(result.Statements, list.Statements...)
+		} else {
+			result.Statements = append(result.Statements, node)
+		}
 		if !p.done() && !p.accept(";") {
 			p.failf("expected ';' after the declaration")
 		}
@@ -52,6 +57,12 @@ func (p *parser) declaration() ast.Node {
 	case p.word("STREAMING"):
 		p.pos++
 		return p.streamingQuery(false)
+	case p.word("USER"):
+		p.pos++
+		return p.createUser()
+	case p.word("GROUP"):
+		p.pos++
+		return p.createGroup()
 	case p.word("TABLE"):
 		p.pos++
 		return p.table()

@@ -20,7 +20,8 @@ func (p *parser) resourcePool() ast.Node {
 }
 
 // defaultPool reads the declaration spelling emitted by the renderer for the
-// server-owned pool.
+// server-owned pool. Unlike user and membership changes, this spelling is a
+// declaration by itself because the server owns the default pool.
 func (p *parser) defaultPool() *ast.CreateResourcePoolNode {
 	p.wantWord("RESOURCE")
 	p.wantWord("POOL")
