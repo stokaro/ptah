@@ -9,7 +9,7 @@ import (
 	"ptah.run/internal/ydbgap"
 )
 
-// Each refusal names YDB, the plan and the phase that implements the layer,
+// Each refusal names YDB and the issue that implements the layer,
 // which is what a reader needs to know whether to wait or to work around it.
 func TestLayer_Message_HappyPath(t *testing.T) {
 	tests := []struct {
@@ -19,7 +19,7 @@ func TestLayer_Message_HappyPath(t *testing.T) {
 	}{
 		{name: "schema files", layer: ydbgap.SchemaFiles, want: "reading YDB schema declarations beyond the supported object families is not implemented yet (stokaro/ptah#4015, phase 10)"},
 		{name: "index families", layer: ydbgap.IndexFamilies, want: "reading or creating a YDB JSON index is not implemented yet (stokaro/ptah#4015, phase 10)"},
-		{name: "inference", layer: ydbgap.Inference, want: "running an embedding generation against YDB is not implemented yet (stokaro/ptah#4015, phase 12)"},
+		{name: "inference", layer: ydbgap.Inference, want: "running an embedding generation against YDB is not implemented yet (stokaro/ptah#4181)"},
 	}
 
 	for _, test := range tests {
@@ -36,12 +36,13 @@ func TestLayer_Message_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
 	c.Assert(ydbgap.Layer(0).Phase(), qt.Equals, 0)
+	c.Assert(ydbgap.Inference.Phase(), qt.Equals, 0)
 	c.Assert(ydbgap.Layer(0).Message(), qt.Equals, "this YDB operation is not implemented yet (stokaro/ptah#4015, phase 0)")
 }
 
-// Every declared layer names its phase and says what the YDB page lists for
+// Every declared layer names its issue and says what the YDB page lists for
 // it, so the page's generated list cannot leave a layer out.
-func TestLayers_EveryLayerNamesAPhaseAndAPageEntry(t *testing.T) {
+func TestLayers_EveryLayerNamesAnIssueAndAPageEntry(t *testing.T) {
 	c := qt.New(t)
 	layers := ydbgap.Layers()
 	c.Assert(layers, qt.Not(qt.HasLen), 0)
@@ -50,7 +51,7 @@ func TestLayers_EveryLayerNamesAPhaseAndAPageEntry(t *testing.T) {
 	for _, layer := range layers {
 		t.Run(layer.Message(), func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(layer.Phase(), qt.Not(qt.Equals), 0)
+			c.Assert(layer.Message(), qt.Contains, "stokaro/ptah#")
 			c.Assert(layer.Unsupported(), qt.Not(qt.Equals), "")
 		})
 	}

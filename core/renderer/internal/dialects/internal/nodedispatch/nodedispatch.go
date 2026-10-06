@@ -66,6 +66,8 @@ func RefuseTopic(dialect string, node ast.Node) error {
 	switch typed := node.(type) {
 	case *ast.CreateTopicNode:
 		subject = "topic " + typed.Name
+	case *ast.AddTopicConsumerNode:
+		subject = "ALTER TOPIC " + typed.Name + " ADD CONSUMER " + typed.Consumer.Name
 	case *ast.AlterTopicNode:
 		subject = "ALTER TOPIC " + typed.Name
 	case *ast.DropTopicNode:

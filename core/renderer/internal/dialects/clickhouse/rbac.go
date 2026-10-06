@@ -147,6 +147,9 @@ func (r *Renderer) renderAlterRole(node *ast.AlterRoleNode) error {
 // records one row per privilege and the order carries no meaning it could
 // change.
 func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
+	if err := grantrefusal.Path("clickhouse", "GRANT", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
 	if !r.capabilities().Has(capability.RoleManagement) {
 		r.notSupported("GRANT", node.Role)
 		return nil
@@ -174,6 +177,9 @@ func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 // no is_partial_revoke row behind, so the downgrade converges. Splitting it
 // would leave the target with no grant at all if the second statement failed.
 func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
+	if err := grantrefusal.Path("clickhouse", "REVOKE", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
 	if !r.capabilities().Has(capability.RoleManagement) {
 		r.notSupported("REVOKE", node.Role)
 		return nil

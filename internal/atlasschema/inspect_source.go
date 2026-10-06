@@ -343,6 +343,7 @@ func inspectOnDev(
 		// supplies is exit 0 there and was exit 1 here, `missing value for
 		// required variable "tenant"`.
 		desired, err = schemafile.LoadSources(set.SchemaFileSources(), schemafile.Options{
+			DatabaseURL:           devURL,
 			Dialect:               dialect,
 			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
 			ReportIgnored:         opts.Diagnostics,
@@ -362,6 +363,7 @@ func inspectOnDev(
 		// the file arm above loads them; the other two kinds read none of them.
 		schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(devURL, "", "")
 		state, err := set.Resolve(ctx, atlassource.ResolveOptions{
+			DatabaseURL:               devURL,
 			Dialect:                   dialect,
 			DialectFlag:               "--dev-url",
 			ValidateLocalSchemaSource: opts.ValidateLocalSchemaSource,

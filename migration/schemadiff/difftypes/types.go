@@ -1724,9 +1724,9 @@ type SchemaDiff struct {
 	// absolute path a YDB plan names an object by where a statement takes no
 	// other form -- a Serial column's sequence in ALTER SEQUENCE, the database
 	// itself in GRANT on every line, and an object at the database root in
-	// GRANT on a line without relative_grant_paths. Empty where the current
-	// side came from no live read, and a plan that would need it refuses
-	// instead.
+	// GRANT on a line without relative_grant_paths. A document comparison may
+	// supply it from its explicit database URL. Empty when neither a read nor
+	// that context supplies it; a plan that needs it then refuses.
 	//
 	// A reversal runs against the same database and carries the same path.
 	CurrentDatabasePath string `json:"-"`

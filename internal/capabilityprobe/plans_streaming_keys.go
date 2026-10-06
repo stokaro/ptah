@@ -20,7 +20,7 @@ func ydbStreamingQueries() experiment {
 		creates: []string{"stream_key"},
 		decide: func(ctx context.Context, s *session) (verdicts, []Attempt) {
 			spec := ast.StreamingQuerySpec{Run: new(false), Text: fmt.Sprintf("INSERT INTO `%s` SELECT * FROM `%s`;", path.Join(s.namespace, "stream_out"), path.Join(s.namespace, "stream_in"))}
-			statement := ydbstream.Create(path.Join(s.namespace, "stream_key"), spec)
+			statement := ydbstream.Create(path.Join(s.namespace, "stream_key"), spec, ydbstream.CreateOptions{})
 			created := s.execAtRoot(ctx, statement)
 			if !created.Accepted {
 				return verdicts{capability.StreamingQueries: decided(false)}, []Attempt{created}

@@ -588,7 +588,7 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderCreateSynonym(n)
 	case *ast.DropSynonymNode:
 		return r.renderDropSynonym(n)
-	case *ast.CreateTopicNode, *ast.AlterTopicNode, *ast.DropTopicNode:
+	case *ast.CreateTopicNode, *ast.AlterTopicNode, *ast.DropTopicNode, *ast.AddTopicConsumerNode:
 		return nodedispatch.RefuseTopic(r.dialect, n)
 	case *ast.CreateResourcePoolNode, *ast.AlterResourcePoolNode, *ast.DropResourcePoolNode,
 		*ast.CreateResourcePoolClassifierNode, *ast.AlterResourcePoolClassifierNode,
@@ -3639,6 +3639,9 @@ func (r *Renderer) renderDropRole(node *ast.DropRoleNode) error {
 
 // renderGrantPrivilege renders a GRANT statement for PostgreSQL.
 func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
+	if err := grantrefusal.Path(r.dialect, "GRANT", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
 	privileges := r.privilegeList(node.Privileges, node.Columns)
 	if privileges == "" {
 		return fmt.Errorf("GRANT requires at least one privilege")
@@ -3702,6 +3705,9 @@ func (r *Renderer) privilegeList(privileges, columns []string) string {
 
 // renderRevokePrivilege renders a REVOKE statement for PostgreSQL.
 func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
+	if err := grantrefusal.Path(r.dialect, "REVOKE", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
 	privileges := r.privilegeList(node.Privileges, node.Columns)
 	if privileges == "" {
 		return fmt.Errorf("REVOKE requires at least one privilege")

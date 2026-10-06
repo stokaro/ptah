@@ -76,6 +76,7 @@ var nodeCensus = []censusRow{
 	{node: &ast.CreateSynonymNode{}},
 	{node: &ast.CreateTopicNode{}},
 	{node: &ast.AlterTopicNode{}},
+	{node: &ast.AddTopicConsumerNode{}},
 	{node: &ast.CreateAsyncReplicationNode{}},
 	{node: &ast.AlterAsyncReplicationNode{}},
 	{node: &ast.CreateTransferNode{}},

@@ -162,7 +162,7 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderCreateSynonym(n)
 	case *ast.DropSynonymNode:
 		return r.renderDropSynonym(n)
-	case *ast.CreateTopicNode, *ast.AlterTopicNode, *ast.DropTopicNode:
+	case *ast.CreateTopicNode, *ast.AlterTopicNode, *ast.DropTopicNode, *ast.AddTopicConsumerNode:
 		return nodedispatch.RefuseTopic(DialectName, n)
 	case *ast.CreateResourcePoolNode, *ast.AlterResourcePoolNode, *ast.DropResourcePoolNode,
 		*ast.CreateResourcePoolClassifierNode, *ast.AlterResourcePoolClassifierNode,

@@ -12,6 +12,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/coverage"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
@@ -164,6 +165,7 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 	// limit the run to one schema.
 	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.DevURL, "", "")
 	resolveOpts := atlassource.ResolveOptions{
+		DatabaseURL: sourceDatabaseURL(opts.DevURL, fromSet, toSet),
 		Dialect:     dialect,
 		DialectFlag: prepared.dialectFlag,
 		DevURL:      opts.DevURL,
@@ -370,6 +372,10 @@ func diffResolvedStates(
 	// reporting a false synced result to CI.
 	if emptySelection(fromErr) && emptySelection(toErr) {
 		return atlasreport.SchemaDiff{}, nil, fromErr
+	}
+
+	if err := setYDBDiffRoot(dialect, opts.DevURL, fromSide.database); err != nil {
+		return atlasreport.SchemaDiff{}, nil, err
 	}
 	compareOpts := config.DefaultCompareOptions()
 	compareOpts.Dialect = dialect
@@ -1041,4 +1047,30 @@ func validateRowTTL(dialect string, to *schemamodel.Database) error {
 // whole MySQL or MariaDB server, a connection that selected no database.
 func comparesTwoServers(fromState, toState atlassource.State) bool {
 	return fromState.WholeServer && toState.WholeServer
+}
+
+// A live side identifies the database the other side describes. When both
+// sides are files, only an explicit dev URL supplies that context.
+func sourceDatabaseURL(devURL string, sets ...atlassource.Set) string {
+	for _, set := range sets {
+		if set.Kind == atlassource.KindDatabase && len(set.Sources) == 1 {
+			return set.Sources[0].Raw
+		}
+	}
+	return devURL
+}
+
+// Two file sources carry no live catalog root. The explicit dev URL still
+// supplies the path needed to render database permissions; retain it only
+// as comparison context, never as part of the portable desired schema.
+func setYDBDiffRoot(dialect, devURL string, current *catalog.Database) error {
+	if dialect != platform.YDB || current.DatabasePath != "" || devURL == "" {
+		return nil
+	}
+	root, err := schemafile.YDBSourceRoot(devURL)
+	if err != nil {
+		return fmt.Errorf("YDB diff requires a valid database or Docker dev URL")
+	}
+	current.DatabasePath = root
+	return nil
 }

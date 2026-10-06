@@ -475,6 +475,7 @@ func applySchema(
 
 	if desired == nil && (len(opts.rootDirs) > 0 || len(opts.schemaFiles) > 0) {
 		loadOptions.Dialect = conn.Info().Dialect
+		loadOptions.DatabaseURL = conn.Info().URL
 		desired, err = schemaload.LoadContext(cmd.Context(), loadOptions)
 		if err != nil {
 			return "", err

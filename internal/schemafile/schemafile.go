@@ -17,14 +17,21 @@ import (
 	"ptah.run/core/yamlschema"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/dbmlparse"
+	"ptah.run/internal/devdocker"
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/privilegefold"
 	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/sqlschema"
+	"ptah.run/internal/ydburl"
 )
 
 // Options configures schema file loading.
 type Options struct {
+	// DatabaseURL supplies the database root used to resolve absolute YDB source
+	// paths. Relative declarations remain portable. The URL is never stored in
+	// the desired model or included in source errors.
+	DatabaseURL string
+
 	Dialect string
 	// IgnoreUnknownHCLNames accepts and drops HCL names Ptah's schema HCL
 	// parser does not model instead of refusing the file.
@@ -787,6 +794,16 @@ func loadSQLFileWithStatements(
 		return nil, nil, fmt.Errorf("read SQL schema file: %w", err)
 	}
 
+	if platform.NormalizeDialect(opts.Dialect) == platform.YDB && opts.DatabaseURL != "" {
+		root, parseErr := YDBSourceRoot(opts.DatabaseURL)
+		if parseErr != nil {
+			return nil, nil, fmt.Errorf("YDB source context requires a valid YDB database or Docker dev URL")
+		}
+		if earlier == nil {
+			earlier = sqlschema.NewDocument(nil)
+		}
+		earlier.YDBDatabasePath = root
+	}
 	db, statements, err := sqlschema.ReadOnto(data, opts.Dialect, earlier)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read SQL schema file %s: %w", path, err)
@@ -901,4 +918,22 @@ func ignoredScopeClause(scope string) string {
 		return ""
 	}
 	return " in " + scope
+}
+
+// YDBSourceRoot returns the database root a YDB connection or Docker dev URL
+// names, excluding a temporary dev realm. Source validation precedes
+// provisioning: parsing the declaration starts no container.
+func YDBSourceRoot(raw string) (string, error) {
+	if devdocker.IsURL(raw) {
+		spec, err := devdocker.Parse(raw)
+		if err != nil {
+			return "", err
+		}
+		if spec.Dialect != platform.YDB {
+			return "", fmt.Errorf("source context is not YDB")
+		}
+		return "/" + strings.Trim(spec.Database, "/"), nil
+	}
+	parsed, err := ydburl.Parse(raw)
+	return parsed.Database, err
 }

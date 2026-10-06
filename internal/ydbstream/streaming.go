@@ -67,9 +67,31 @@ func Refuse(dialect string, caps capability.Capabilities, subject string) error 
 		Message: subject + ": requires target capability streaming_queries (YDB needs EnableStreamingQueries and EnableExternalDataSources on the cluster)"}
 }
 
+// CreateOptions carries conditional creation and explicit replacement intent.
+type CreateOptions struct {
+	// OrReplace permits replacing an existing query, resetting aggregation state
+	// while retaining topic offsets.
+	OrReplace bool
+	// IfNotExists preserves an existing query, including with OrReplace.
+	IfNotExists bool
+}
+
+// ReplacesExisting reports whether creation can reset an existing query's
+// aggregation state. Measured on YDB 26.2, IF NOT EXISTS takes precedence over
+// OR REPLACE. Parsing, rendering assessments, and SQL lint share this decision.
+func (o CreateOptions) ReplacesExisting() bool { return o.OrReplace && !o.IfNotExists }
+
 // Create renders one CREATE STREAMING QUERY, including explicit run and pool settings.
-func Create(name string, spec ast.StreamingQuerySpec) string {
-	return "CREATE STREAMING QUERY " + ydbexternal.Path(name) + " WITH (" + settings(spec) + ") AS DO BEGIN\n" + strings.TrimSpace(spec.Text) + "\nEND DO;"
+func Create(name string, spec ast.StreamingQuerySpec, options CreateOptions) string {
+	prefix := "CREATE "
+	if options.OrReplace {
+		prefix += "OR REPLACE "
+	}
+	prefix += "STREAMING QUERY "
+	if options.IfNotExists {
+		prefix += "IF NOT EXISTS "
+	}
+	return prefix + ydbexternal.Path(name) + " WITH (" + settings(spec) + ") AS DO BEGIN\n" + strings.TrimSpace(spec.Text) + "\nEND DO;"
 }
 
 // AlterOptions carries the explicit permission for a destructive body change.

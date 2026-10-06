@@ -18,7 +18,7 @@ func TestCompare_YQLPreservesUnrepresentedFamilies(t *testing.T) {
 	desired, _, err := sqlschema.Read(nil, "ydb")
 	c.Assert(err, qt.IsNil)
 	held := &catalog.Database{
-		Secrets: []catalog.Secret{{Name: "credential"}},
+		AsyncReplications: []catalog.AsyncReplication{{Name: "copy"}},
 	}
 	diff := schemadiff.CompareWithDialect(&desired, held, "ydb")
 	c.Assert(diff.HasChanges(), qt.IsFalse)
@@ -41,4 +41,64 @@ func TestCompare_YQLOmittedViewsAndTopicsRequestRemoval(t *testing.T) {
 	diff := schemadiff.CompareWithDialect(&desired, held, "ydb")
 	c.Assert(diff.ViewsRemoved, qt.HasLen, 1)
 	c.Assert(diff.TopicsRemoved, qt.HasLen, 1)
+}
+
+func TestCompare_YQLSecretsDeclaredAndOmitted(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		source  string
+		removed []string
+	}{
+		{name: "declared", source: "CREATE SECRET credential WITH (value = $PTAH_SECRET_TEST);"},
+		{name: "omitted", removed: []string{"credential"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired, _, err := sqlschema.Read([]byte(test.source), "ydb")
+			c.Assert(err, qt.IsNil)
+			held := &catalog.Database{Secrets: []catalog.Secret{{Name: "credential"}}}
+			diff := schemadiff.CompareWithDialect(&desired, held, "ydb")
+			c.Assert(diff.SecretsRemoved.Names(), qt.DeepEquals, test.removed)
+			c.Assert(diff.SecretsAdded, qt.HasLen, 0)
+			c.Assert(diff.SecretsRotated, qt.HasLen, 0)
+		})
+	}
+}
+
+// The source must carry both principal kind and membership through comparison.
+// Database-wide principals remain when omitted, including from an empty file.
+func TestCompare_YQLPrincipals(t *testing.T) {
+	c := qt.New(t)
+	desired, _, err := sqlschema.Read([]byte("CREATE USER app PASSWORD 'Secret1!'; CREATE GROUP readers WITH USER app; ALTER GROUP `DATA-READERS` ADD USER app;"), "ydb")
+	c.Assert(err, qt.IsNil)
+	held := ydbAccessCatalog()
+	held.Tables, held.Constraints, held.Grants = nil, nil, nil
+	c.Assert(schemadiff.CompareWithDialect(&desired, held, "ydb").HasChanges(), qt.IsFalse)
+	changed, _, err := sqlschema.Read([]byte("CREATE USER app NOLOGIN; CREATE GROUP readers;"), "ydb")
+	c.Assert(err, qt.IsNil)
+	diff := schemadiff.CompareWithDialect(&changed, held, "ydb")
+	c.Assert(diff.RolesModified, qt.HasLen, 1)
+	c.Assert(diff.RolesModified[0].RoleName, qt.Equals, "app")
+	c.Assert(diff.RoleMembershipsRemoved, qt.HasLen, 1)
+	c.Assert(diff.RoleMembershipsRemoved[0].Role, qt.Equals, "readers")
+	empty, _, err := sqlschema.Read(nil, "ydb")
+	c.Assert(err, qt.IsNil)
+	c.Assert(schemadiff.CompareWithDialect(&empty, held, "ydb").HasChanges(), qt.IsFalse)
+}
+
+func TestCompare_YQLPrivileges(t *testing.T) {
+	c := qt.New(t)
+	const objects = "CREATE TABLE `shop/orders` (id Int64 NOT NULL, PRIMARY KEY(id)); CREATE GROUP readers; CREATE USER app PASSWORD 'Secret1!'; ALTER GROUP readers ADD USER app; ALTER GROUP `DATA-READERS` ADD USER app;"
+	const grants = "GRANT SELECT ROW, LIST ON `shop/orders` TO readers; GRANT LIST ON shop TO readers; GRANT CONNECT ON `/local` TO app;"
+	document := sqlschema.NewDocument(nil)
+	document.YDBDatabasePath = "/local"
+	desired, _, err := sqlschema.ReadOnto([]byte(objects+grants), "ydb", document)
+	c.Assert(err, qt.IsNil)
+	held := ydbAccessCatalog()
+	c.Assert(schemadiff.CompareWithDialect(&desired, held, "ydb").HasChanges(), qt.IsFalse)
+	omitted, _, err := sqlschema.Read([]byte(objects), "ydb")
+	c.Assert(err, qt.IsNil)
+	diff := schemadiff.CompareWithDialect(&omitted, held, "ydb")
+	c.Assert(diff.GrantsRemoved, qt.HasLen, 4)
+	c.Assert(diff.RolesRemoved, qt.HasLen, 0)
 }
