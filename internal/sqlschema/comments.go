@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/routineargs"
 )
@@ -21,6 +22,9 @@ import (
 // is then set on base, in place, as an ALTER TABLE is. A kind the model keeps
 // no comment for, and an object the document does not declare, are refused.
 func applyComment(database, base *schemamodel.Database, node *ast.CommentNode, sourcePlatform string) error {
+	if platform.NormalizeDialect(sourcePlatform) == platform.YDB {
+		return applyYQLComment(database, base, node.Text)
+	}
 	statement, ok := parseCommentStatement(node.Text)
 	if !ok {
 		return fmt.Errorf("%w: %s", ErrUnmodeledStatement, node.Text)
