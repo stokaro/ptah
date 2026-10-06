@@ -39,3 +39,17 @@ func TestYQLSourceLimitsSurviveFileLoading(t *testing.T) {
 		})
 	}
 }
+
+func TestYQLPrincipalChangesAcrossFiles(t *testing.T) {
+	c := qt.New(t)
+	directory := c.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(directory, "01.sql"), []byte("CREATE USER app; CREATE GROUP readers;"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(directory, "02.sql"), []byte("ALTER USER app NOLOGIN; ALTER GROUP readers ADD USER app;"), 0o600), qt.IsNil)
+	database, err := schemafile.LoadPath(directory, schemafile.Options{Dialect: "ydb"})
+	c.Assert(err, qt.IsNil)
+	c.Assert(database.Roles, qt.HasLen, 2)
+	c.Assert(database.Roles[0].Name, qt.Equals, "app")
+	c.Assert(database.Roles[0].Login, qt.IsFalse)
+	c.Assert(database.Roles[0].MemberOf, qt.DeepEquals, []string{"readers"})
+	c.Assert(database.NotDescribed.Describes(coverage.Role), qt.IsTrue)
+}
