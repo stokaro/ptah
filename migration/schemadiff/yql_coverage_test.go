@@ -42,3 +42,24 @@ func TestCompare_YQLOmittedViewsAndTopicsRequestRemoval(t *testing.T) {
 	c.Assert(diff.ViewsRemoved, qt.HasLen, 1)
 	c.Assert(diff.TopicsRemoved, qt.HasLen, 1)
 }
+
+// The source must carry both principal kind and membership through comparison.
+// Database-wide principals remain when omitted, including from an empty file.
+func TestCompare_YQLPrincipals(t *testing.T) {
+	c := qt.New(t)
+	desired, _, err := sqlschema.Read([]byte("CREATE USER app PASSWORD 'Secret1!'; CREATE GROUP readers WITH USER app; ALTER GROUP `DATA-READERS` ADD USER app;"), "ydb")
+	c.Assert(err, qt.IsNil)
+	held := ydbAccessCatalog()
+	held.Tables, held.Constraints, held.Grants = nil, nil, nil
+	c.Assert(schemadiff.CompareWithDialect(&desired, held, "ydb").HasChanges(), qt.IsFalse)
+	changed, _, err := sqlschema.Read([]byte("CREATE USER app NOLOGIN; CREATE GROUP readers;"), "ydb")
+	c.Assert(err, qt.IsNil)
+	diff := schemadiff.CompareWithDialect(&changed, held, "ydb")
+	c.Assert(diff.RolesModified, qt.HasLen, 1)
+	c.Assert(diff.RolesModified[0].RoleName, qt.Equals, "app")
+	c.Assert(diff.RoleMembershipsRemoved, qt.HasLen, 1)
+	c.Assert(diff.RoleMembershipsRemoved[0].Role, qt.Equals, "readers")
+	empty, _, err := sqlschema.Read(nil, "ydb")
+	c.Assert(err, qt.IsNil)
+	c.Assert(schemadiff.CompareWithDialect(&empty, held, "ydb").HasChanges(), qt.IsFalse)
+}

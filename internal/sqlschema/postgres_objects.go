@@ -40,7 +40,7 @@ func toSequence(node *ast.CreateSequenceNode, sourcePlatform string) schemamodel
 // whether an earlier declaration was top-level or inside a selected DO branch.
 func appendCreateRole(database *schemamodel.Database, document *Document, node *ast.CreateRoleNode, dialect string) error {
 	role := toRole(node, dialect)
-	if platform.NormalizeDialect(dialect) == platform.Postgres || dialect == "" {
+	if platform.NormalizeDialect(dialect) == platform.Postgres || platform.NormalizeDialect(dialect) == platform.YDB || dialect == "" {
 		sources := []*schemamodel.Database{database, document.base}
 		for _, source := range sources {
 			if source == nil {
@@ -60,6 +60,7 @@ func appendCreateRole(database *schemamodel.Database, document *Document, node *
 func toRole(node *ast.CreateRoleNode, sourcePlatform string) schemamodel.Role {
 	return schemamodel.Role{
 		Name:        roleName(sourcePlatform, node.Name),
+		Group:       node.Group,
 		Login:       node.Login,
 		Password:    node.Password,
 		Superuser:   node.Superuser,
