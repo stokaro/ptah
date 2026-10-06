@@ -51,10 +51,13 @@ type omittedFamily struct {
 // triggers (1)" tells them exactly.
 func omittedFamilies(db *schemamodel.Database) []string {
 	families := []omittedFamily{
+		{"async replications", len(db.AsyncReplications)},
 		{"composite types", len(db.CompositeTypes)},
 		{"continuous aggregates", len(db.ContinuousAggregates)},
 		{"coordination nodes", len(db.CoordinationNodes)},
 		{"domains", len(db.Domains)},
+		{"external data sources", len(db.ExternalDataSources)},
+		{"external tables", len(db.ExternalTables)},
 		{"extended properties", len(db.ExtendedProperties)},
 		{"extensions", len(db.Extensions)},
 		{"functions", len(db.Functions)},
@@ -63,11 +66,17 @@ func omittedFamilies(db *schemamodel.Database) []string {
 		{"managed data", len(db.ManagedData)},
 		{"materialized views", len(db.MaterializedViews)},
 		{"ranges", len(db.Ranges)},
+		{"resource pools", len(db.ResourcePools)},
+		{"resource pool classifiers", len(db.ResourcePoolClassifiers)},
 		{"revoked grants", len(db.RevokedGrants)},
 		{"roles", len(db.Roles)},
 		{"row-level security policies", len(db.RLSPolicies)},
+		{"secrets", len(db.Secrets)},
 		{"sequences", len(db.Sequences)},
+		{"streaming queries", len(db.StreamingQueries)},
 		{"synonyms", len(db.Synonyms)},
+		{"topics", len(db.Topics)},
+		{"transfers", len(db.Transfers)},
 		{"triggers", len(db.Triggers)},
 		{"views", len(db.Views)},
 	}
