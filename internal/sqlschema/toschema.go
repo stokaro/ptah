@@ -745,7 +745,7 @@ func appendStatement(
 	if handled, err := appendRowSecurity(database, stmt, sourcePlatform); handled {
 		return err
 	}
-	if handled, err := appendYDBDeclaration(database, document.base, stmt, sourcePlatform); handled {
+	if handled, err := appendYDBDeclaration(database, document, stmt, sourcePlatform); handled {
 		return err
 	}
 	if appendView(database, stmt, sourcePlatform) {
