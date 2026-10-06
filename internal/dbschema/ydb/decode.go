@@ -20,7 +20,6 @@ import (
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/ydbcolumn"
 	"ptah.run/internal/ydbcomment"
-	"ptah.run/internal/ydbgap"
 	"ptah.run/internal/ydbindex"
 	"ptah.run/internal/ydbpartition"
 	"ptah.run/internal/ydbttl"
@@ -343,16 +342,16 @@ func (r *Reader) index(
 		case err != nil:
 			return catalog.Index{}, fmt.Errorf("index %q: %w", described.GetName(), err)
 		case !isVector:
-			return catalog.Index{}, fmt.Errorf("index %q is a %s: %s", described.GetName(),
-				unreadIndexKind(described), ydbgap.IndexFamilies.Message())
+			return catalog.Index{}, fmt.Errorf("index %q is a %s, which this build of Ptah does not read",
+				described.GetName(), unreadIndexKind(described))
 		}
 		index.Method = ydbindex.Vector.Clause(false)
 		index.Vector = vector
 		index.Definition = indexClause(index, ydbindex.Vector) + " " + ydbindex.VectorClause(*vector)
 		return index, nil
 	default:
-		return catalog.Index{}, fmt.Errorf("index %q is a %s: %s", described.GetName(),
-			unreadIndexKind(described), ydbgap.IndexFamilies.Message())
+		return catalog.Index{}, fmt.Errorf("index %q is a %s, which this build of Ptah does not read",
+			described.GetName(), unreadIndexKind(described))
 	}
 	implementation, err := source.DescribeTable(ctx, r.absolute(schema, path.Join(table, described.GetName(), indexImplTable)))
 	if err != nil {
