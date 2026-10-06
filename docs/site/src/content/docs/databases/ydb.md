@@ -2405,12 +2405,21 @@ unset. A bare negative number is refused, as it is in YQL. The server-owned
 `default` pool also accepts the renderer's `ALTER RESOURCE POOL default SET (...)`
 declaration.
 
+Changefeeds use `ALTER TABLE <table> ADD CHANGEFEED <name> WITH (...)` after
+that table's declaration. `mode` and `format` are required. Retention and
+resolved timestamps use `Interval(...)`; topic auto-partitioning uses
+`'ENABLED'` or `'DISABLED'`. Add a consumer with
+`ALTER TOPIC <table>/<changefeed> ADD CONSUMER <name> WITH (...)`. This also
+works for a declared ordinary topic. A later schema file can add a changefeed
+or consumer to an earlier declaration. Duplicate names and undeclared targets
+are refused. Omitting a changefeed or its consumer requests removal.
+
 Omitting a view, topic or coordination node requests its removal. Resource
 pools and classifiers remain when omitted, as they do for other schema sources,
 because they belong to the whole database. Other statements are refused,
 including standalone queries, other `ALTER` statements and declarations of other object families.
 Use Go or YAML for those declarations. An unsupported statement rejects the
-whole document. Existing changefeeds and other unrepresented families are
+whole document. Existing objects in unrepresented families are
 preserved when planning from a YQL file; their absence does not request removal.
 
 ## What is not supported yet

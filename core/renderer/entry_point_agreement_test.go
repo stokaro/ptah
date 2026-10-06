@@ -182,6 +182,7 @@ func nodeKindZeroValues() map[string]ast.Node {
 		"AlterTableEnableRLSNode":                 &ast.AlterTableEnableRLSNode{},
 		"AlterTableForceRLSNode":                  &ast.AlterTableForceRLSNode{},
 		"AlterTableNode":                          &ast.AlterTableNode{},
+		"AddTopicConsumerNode":                    &ast.AddTopicConsumerNode{},
 		"AlterTopicNode":                          &ast.AlterTopicNode{},
 		"AlterTransferNode":                       &ast.AlterTransferNode{},
 		"AlterTypeNode":                           &ast.AlterTypeNode{},

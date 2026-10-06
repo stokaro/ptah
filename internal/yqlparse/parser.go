@@ -42,7 +42,7 @@ func Parse(text string) (*ast.StatementList, error) {
 
 func (p *parser) declaration() ast.Node {
 	if p.word("ALTER") {
-		return p.defaultPool()
+		return p.alterDeclaration()
 	}
 	if p.word("COMMENT") {
 		return p.comment()
