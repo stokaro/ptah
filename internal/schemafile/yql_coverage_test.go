@@ -33,7 +33,7 @@ func TestYQLSourceLimitsSurviveFileLoading(t *testing.T) {
 			for _, kind := range []coverage.Kind{coverage.Replication} {
 				c.Assert(database.NotDescribed.Describes(kind), qt.IsFalse, qt.Commentf("%s", kind))
 			}
-			for _, kind := range []coverage.Kind{coverage.StreamingQuery, coverage.CoordinationNode, coverage.ResourcePool, coverage.ResourcePoolClassifier, coverage.ColumnTable, coverage.View, coverage.Topic} {
+			for _, kind := range []coverage.Kind{coverage.StreamingQuery, coverage.Changefeed, coverage.CoordinationNode, coverage.ResourcePool, coverage.ResourcePoolClassifier, coverage.ColumnTable, coverage.View, coverage.Topic} {
 				c.Assert(database.NotDescribed.Describes(kind), qt.IsTrue)
 			}
 		})

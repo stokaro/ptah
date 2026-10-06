@@ -254,6 +254,7 @@ func setDefault(field *schemamodel.Field, defaultSQL, dialect string) {
 	if platform.NormalizeDialect(dialect) == platform.YDB {
 		if value, isLiteral := ydbtype.LiteralValue(defaultSQL); isLiteral {
 			field.Default = value
+			field.DefaultSet = true
 			return
 		}
 	}

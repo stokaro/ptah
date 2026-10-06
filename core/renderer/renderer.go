@@ -404,12 +404,8 @@ func prepareNode(
 		return prepareExtensionNode(dialect, typed)
 	case *ast.CreateMaterializedViewNode:
 		return prepareCreateMaterializedViewNode(dialect, typed)
-	case *ast.CreateTopicNode:
-		return node, refuseTopic(dialect, caps, "topic "+typed.Name)
-	case *ast.AlterTopicNode:
-		return node, refuseTopic(dialect, caps, "ALTER TOPIC "+typed.Name)
-	case *ast.DropTopicNode:
-		return node, refuseTopic(dialect, caps, "DROP TOPIC "+typed.Name)
+	case *ast.CreateTopicNode, *ast.AddTopicConsumerNode, *ast.AlterTopicNode, *ast.DropTopicNode:
+		return node, refuseTopicNode(dialect, caps, node)
 	case *ast.CreateRoleNode, *ast.DropRoleNode, *ast.GrantPrivilegeNode, *ast.RevokePrivilegeNode:
 		return node, refuseAccessNode(dialect, caps, node)
 	case *ast.CreateResourcePoolNode, *ast.AlterResourcePoolNode, *ast.DropResourcePoolNode,
@@ -1466,6 +1462,21 @@ func validateDeclaredChangefeeds(dialect string, caps capability.Capabilities, d
 		}
 	}
 	return nil
+}
+
+func refuseTopicNode(dialect string, caps capability.Capabilities, node ast.Node) error {
+	subject := "a topic"
+	switch typed := node.(type) {
+	case *ast.CreateTopicNode:
+		subject = "topic " + typed.Name
+	case *ast.AddTopicConsumerNode:
+		subject = "ALTER TOPIC " + typed.Name + " ADD CONSUMER " + typed.Consumer.Name
+	case *ast.AlterTopicNode:
+		subject = "ALTER TOPIC " + typed.Name
+	case *ast.DropTopicNode:
+		subject = "DROP TOPIC " + typed.Name
+	}
+	return refuseTopic(dialect, caps, subject)
 }
 
 // refuseTopic refuses subject, a topic, on a target without
