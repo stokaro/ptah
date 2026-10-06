@@ -52,6 +52,9 @@ func (p *parser) declaration() ast.Node {
 	if p.word("ALTER") {
 		p.pos++
 		switch {
+		case p.word("SEQUENCE"):
+			p.pos++
+			return p.alterSerialSequence()
 		case p.word("USER"):
 			p.pos++
 			return p.alterUser()

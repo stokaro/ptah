@@ -2,6 +2,7 @@ package sqlschema
 
 import (
 	"ptah.run/core/ast"
+	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 )
 
@@ -10,6 +11,11 @@ func appendYDBDeclaration(database *schemamodel.Database, document *Document, st
 		return true, err
 	}
 	switch node := statement.(type) {
+	case *ast.AlterSequenceNode:
+		if platform.NormalizeDialect(sourcePlatform) != platform.YDB {
+			return false, nil
+		}
+		return true, alterYDBSequence(database, document, node)
 	case *ast.CreateTopicNode:
 		schema, name := normalizeSQLTableIdentifier(sourcePlatform, node.Name)
 		database.Topics = append(database.Topics, schemamodel.Topic{Name: name, Schema: schema, Spec: node.Spec.Clone()})

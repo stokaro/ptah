@@ -1608,9 +1608,11 @@ func (n *CreateSequenceNode) SetComment(comment string) *CreateSequenceNode {
 // Accept implements the Node interface for CreateSequenceNode.
 func (n *CreateSequenceNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
-// AlterSequenceNode represents an ALTER SEQUENCE statement (PostgreSQL). Only
-// the set (non-nil / non-empty) options are emitted, so it can express either a
-// targeted change from a diff or a post-table OWNED BY association.
+// AlterSequenceNode represents an ALTER SEQUENCE statement. PostgreSQL emits
+// only the set (non-nil / non-empty) options, for a targeted change or a
+// post-table OWNED BY association. The desired-YQL reader folds START and
+// INCREMENT into a declared Serial column before planning; YDB rendering of
+// this unresolved node is refused.
 type AlterSequenceNode struct {
 	// Name is the sequence name.
 	Name string
