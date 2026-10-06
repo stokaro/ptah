@@ -11,7 +11,6 @@ import (
 func markYQLLimits(database *schemamodel.Database) {
 	for _, kind := range []schemacoverage.Kind{
 		schemacoverage.Replication, schemacoverage.Transfer,
-		schemacoverage.Grant,
 	} {
 		database.NotDescribed = database.NotDescribed.With(schemacoverage.Object{
 			Kind: kind, Reason: schemacoverage.Unsupported, Provenance: schemacoverage.DerivedFromFact,

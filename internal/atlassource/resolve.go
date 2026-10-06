@@ -38,6 +38,11 @@ import (
 
 // ResolveOptions configures resolution of one classified desired-state set.
 type ResolveOptions struct {
+	// DatabaseURL supplies the database root used to resolve absolute YDB source
+	// paths. Relative declarations remain portable. The URL is never stored in
+	// the desired model or included in source errors.
+	DatabaseURL string
+
 	// Dialect pins the SQL dialect used to parse local schema files and to
 	// validate database-backed sources.
 	Dialect string
@@ -309,6 +314,7 @@ func (s Set) resolve(ctx context.Context, opts ResolveOptions, finish HoldFunc) 
 	switch s.Kind {
 	case KindLocalFile:
 		schema, err := schemafile.LoadSources(s.SchemaFileSources(), schemafile.Options{
+			DatabaseURL:           opts.DatabaseURL,
 			Dialect:               opts.Dialect,
 			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
 			ReportIgnored:         opts.ReportIgnored,

@@ -16,8 +16,11 @@ import (
 // than for a declaration, and a later statement needs that to name an index
 // and to know what `DROP FOREIGN KEY` leaves behind; see [keyIndex].
 type Document struct {
-	base *schemamodel.Database
-	keys keyIndexes
+	// YDBDatabasePath supplies the explicit database root for absolute source
+	// paths. It is source context, never persisted into the desired model.
+	YDBDatabasePath string
+	base            *schemamodel.Database
+	keys            keyIndexes
 }
 
 // NewDocument starts a document whose earlier files built base. base is the

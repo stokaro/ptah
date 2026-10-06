@@ -46,6 +46,9 @@ func Parse(text string) (*ast.StatementList, error) {
 }
 
 func (p *parser) declaration() ast.Node {
+	if p.word("GRANT") || p.word("REVOKE") {
+		return p.privilegeStatement()
+	}
 	if p.word("ALTER") {
 		return p.alterDeclaration()
 	}

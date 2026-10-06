@@ -43,7 +43,7 @@ func TestReadYQLPrincipals(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(database.Roles, qt.DeepEquals, test.want)
 			c.Assert(database.NotDescribed.Describes(coverage.Role), qt.IsTrue)
-			c.Assert(database.NotDescribed.Describes(coverage.Grant), qt.IsFalse)
+			c.Assert(database.NotDescribed.Describes(coverage.Grant), qt.IsTrue)
 		})
 	}
 }
