@@ -2379,6 +2379,10 @@ preserved when planning from a YQL file; their absence does not request removal.
 
 ## What is not supported yet
 
+When a row table contains an unsupported index kind, inspection refuses the
+read and names that kind. It does not treat the index as an ordinary global
+index or omit it from the schema.
+
 These are refused with a message that names what is missing:
 
 <!-- BEGIN GENERATED YDB GAPS -->
