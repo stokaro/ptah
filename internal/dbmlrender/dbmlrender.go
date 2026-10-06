@@ -76,6 +76,7 @@ func Render(db *schemamodel.Database, opts Options) (Result, error) {
 		return Result{}, exportMetadataError(metadata)
 	}
 	omitted := append(omittedFamilies(db), b.omittedKeys()...)
+	omitted = append(omitted, b.omittedStorage()...)
 	sort.Strings(omitted)
 	return Result{DBML: b.render(), Omitted: omitted}, nil
 }
