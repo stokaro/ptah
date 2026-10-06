@@ -1943,6 +1943,15 @@ An index kind Ptah cannot read is refused by name
 rather than read as a plain index, and so is a vector index holding a setting
 Ptah does not model, such as the `overlap_clusters` 26.2 takes.
 
+`ptah schema inspect --format json` writes a compact report and warns on standard
+error about YDB object families and table, column and index properties it
+leaves out. This includes replication, topics, access declarations, storage
+settings, column defaults and comments, and index kinds. Warning text stays
+outside the JSON document. The `ptah-compat` templates `{{ json . }}`,
+`{{ json .Realm }}` and `{{ json .Schema }}` report the same losses. A template exporting an
+individual table, column or index reports the properties omitted from that
+selected object.
+
 ## Versioned migrations
 
 `ptah migrations up`, `down`, `status`, `baseline`, `set`, `repair`, `tag`,
