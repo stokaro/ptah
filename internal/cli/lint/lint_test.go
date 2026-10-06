@@ -34,7 +34,10 @@ func writeLintTestFile(c *qt.C, dir, name, content string) {
 
 func runGit(c *qt.C, dir string, args ...string) {
 	c.Helper()
-	cmd := exec.Command("git", args...)
+	// Fixture commits must not start detached maintenance that writes into
+	// .git/objects while TempDir cleanup removes the repository.
+	gitArgs := append([]string{"-c", "maintenance.auto=false"}, args...)
+	cmd := exec.Command("git", gitArgs...)
 	cmd.Dir = dir
 	output, err := cmd.CombinedOutput()
 	c.Assert(err, qt.IsNil, qt.Commentf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(string(output))))
