@@ -48,7 +48,7 @@ func (p *parser) queryBody() string {
 			break
 		}
 		if token.Type == lexer.TokenUnknown {
-			p.failf("unrecognized token in view query")
+			p.failf("unrecognized token in query body")
 			break
 		}
 		if token.Type == lexer.TokenIdentifier {
@@ -61,7 +61,7 @@ func (p *parser) queryBody() string {
 			closers = append(closers, map[string]string{"(": ")", "[": "]", "{": "}"}[token.Value])
 		case ")", "]", "}":
 			if len(closers) == 0 || closers[len(closers)-1] != token.Value {
-				p.failf("unbalanced view query")
+				p.failf("unbalanced query body")
 			} else {
 				closers = closers[:len(closers)-1]
 			}
@@ -70,7 +70,7 @@ func (p *parser) queryBody() string {
 		p.pos++
 	}
 	if start == end || len(closers) != 0 || state.KeepSemicolonInsideStatement() {
-		p.failf("expected a complete view query")
+		p.failf("expected a complete query body")
 	}
 	return strings.TrimSpace(p.text[start:end])
 }

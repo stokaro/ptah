@@ -1000,7 +1000,7 @@ either, and a document in one of them records both as not described.
 ### Streaming queries
 
 A streaming query runs continuously over topic messages. Declare its query body,
-execution state and resource pool in Go or YAML. YDB 26.2 requires both
+execution state and resource pool in Go, YAML or desired YQL. YDB 26.2 requires both
 `EnableStreamingQueries` and `EnableExternalDataSources`; name the monitoring
 endpoint in the connection URL so Ptah reads those flags. Default release-line
 presets leave `streaming_queries` disabled. YDB 25.1 has no such statement.
@@ -1037,7 +1037,8 @@ those formats preserves queries already in the database.
 
 Changing `run` or `resource_pool` uses `ALTER STREAMING QUERY`. A body change
 requires `allow_state_reset: true` in YAML, or `allow_state_reset="true"` in the
-Go annotation. Ptah then sends `FORCE = TRUE`: YDB resets aggregation state and
+Go annotation. In desired YQL, `CREATE OR REPLACE STREAMING QUERY` grants
+the same permission. Ptah then sends `FORCE = TRUE`: YDB resets aggregation state and
 retains topic offsets. A rollback restores the old declaration, not discarded
 state. Removing a query deletes its checkpoints and is classified as destructive.
 Migration lint reports a removal as `DS107` and a replacement or body change
@@ -2413,6 +2414,17 @@ resolved timestamps use `Interval(...)`; topic auto-partitioning uses
 works for a declared ordinary topic. A later schema file can add a changefeed
 or consumer to an earlier declaration. Duplicate names and undeclared targets
 are refused. Omitting a changefeed or its consumer requests removal.
+
+Streaming queries use `CREATE STREAMING QUERY`, optional `RUN` and
+`RESOURCE_POOL` settings, and `AS DO BEGIN ... END DO`. The reader preserves
+the body, including nested actions, lambdas and comments. `RUN` is a Boolean;
+a pool is an identifier or string literal. Omitting a query requests removal.
+Use `CREATE OR REPLACE STREAMING QUERY` to permit an existing query's body to
+change and reset aggregation state. Without it, a body change is refused.
+`IF NOT EXISTS` keeps an earlier declaration even with `OR REPLACE`, and does
+not grant permission to reset state.
+These rules also apply across files in a schema directory. Target capabilities
+still decide whether a server can manage streaming queries.
 
 Omitting a view, topic or coordination node requests its removal. Resource
 pools and classifiers remain when omitted, as they do for other schema sources,

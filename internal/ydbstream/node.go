@@ -26,6 +26,8 @@ type Node struct {
 	Operation Operation
 	// Name is the directory-qualified reference.
 	Name string
+	// Creation holds CREATE guards and replacement intent.
+	Creation CreateOptions
 	// Spec is the desired persistent declaration.
 	Spec ast.StreamingQuerySpec
 	// Previous is the held declaration for an alteration.
@@ -49,7 +51,7 @@ func (n *Node) Statement(caps capability.Capabilities) (string, error) {
 	}
 	switch n.Operation {
 	case CreateOperation:
-		return Create(n.Name, n.Spec), nil
+		return Create(n.Name, n.Spec, n.Creation), nil
 	case AlterOperation:
 		return Alter(n.Name, n.Spec, n.Previous, AlterOptions{AllowStateReset: n.AllowStateReset})
 	case DropOperation:

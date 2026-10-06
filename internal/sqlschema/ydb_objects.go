@@ -4,13 +4,16 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/ydbstream"
 )
 
-func appendYDBDeclaration(database *schemamodel.Database, statement ast.Node, sourcePlatform string) bool {
+func appendYDBDeclaration(database, base *schemamodel.Database, statement ast.Node, sourcePlatform string) (bool, error) {
 	switch node := statement.(type) {
 	case *ast.CreateSecretNode:
 		ref, _ := tableref.Parse(node.Name)
 		database.Secrets = append(database.Secrets, schemamodel.Secret{Name: ref.Name, Schema: ref.Schema, ValueEnv: node.ValueEnv})
+	case *ydbstream.Node:
+		return true, appendStreamingQuery(database, base, node)
 	case *ast.CreateTopicNode:
 		schema, name := normalizeSQLTableIdentifier(sourcePlatform, node.Name)
 		database.Topics = append(database.Topics, schemamodel.Topic{Name: name, Schema: schema, Spec: node.Spec.Clone()})
@@ -22,7 +25,7 @@ func appendYDBDeclaration(database *schemamodel.Database, statement ast.Node, so
 	case *ast.CreateResourcePoolClassifierNode:
 		database.ResourcePoolClassifiers = append(database.ResourcePoolClassifiers, schemamodel.ResourcePoolClassifier{Name: node.Name, Spec: node.Spec})
 	default:
-		return appendYDBExternalDeclaration(database, statement)
+		return appendYDBExternalDeclaration(database, statement), nil
 	}
-	return true
+	return true, nil
 }

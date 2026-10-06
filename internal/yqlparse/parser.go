@@ -49,6 +49,9 @@ func (p *parser) declaration() ast.Node {
 	}
 	p.wantWord("CREATE")
 	switch {
+	case p.word("STREAMING"):
+		p.pos++
+		return p.streamingQuery(false)
 	case p.word("TABLE"):
 		p.pos++
 		return p.table()
@@ -69,9 +72,7 @@ func (p *parser) declaration() ast.Node {
 		return p.external(false)
 	case p.word("OR"):
 		p.pos++
-		p.wantWord("REPLACE")
-		p.wantWord("EXTERNAL")
-		return p.external(true)
+		return p.replacementDeclaration()
 	case p.word("RESOURCE"):
 		p.pos++
 		return p.resourcePool()
@@ -79,6 +80,16 @@ func (p *parser) declaration() ast.Node {
 		p.failf("this CREATE object kind is not supported in a desired YQL schema")
 		return nil
 	}
+}
+
+func (p *parser) replacementDeclaration() ast.Node {
+	p.wantWord("REPLACE")
+	if p.word("STREAMING") {
+		p.pos++
+		return p.streamingQuery(true)
+	}
+	p.wantWord("EXTERNAL")
+	return p.external(true)
 }
 
 func (p *parser) done() bool { return p.err != nil || p.pos >= len(p.tokens) }
