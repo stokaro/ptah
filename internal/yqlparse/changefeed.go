@@ -4,45 +4,8 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
-	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbchangefeed"
 )
-
-func (p *parser) alterDeclaration() ast.Node {
-	p.wantWord("ALTER")
-	switch {
-	case p.word("SEQUENCE"):
-		p.pos++
-		return p.alterSerialSequence()
-	case p.word("ASYNC"):
-		p.pos++
-		return p.alterReplication()
-	case p.word("TRANSFER"):
-		p.pos++
-		return p.alterTransfer()
-	case p.word("USER"):
-		p.pos++
-		return p.alterUser()
-	case p.word("GROUP"):
-		p.pos++
-		return p.alterGroup()
-	case p.word("TABLE"):
-		p.pos++
-		return p.changefeed()
-	case p.word("TOPIC"):
-		p.pos++
-		path := decodedName(p.path())
-		directory, name := "", path
-		if slash := strings.LastIndexByte(path, '/'); slash >= 0 {
-			directory, name = path[:slash], path[slash+1:]
-		}
-		p.wantWord("ADD")
-		p.wantWord("CONSUMER")
-		return ast.NewAddTopicConsumer(tableref.Canonical(directory, name), p.consumer())
-	default:
-		return p.defaultPool()
-	}
-}
 
 func (p *parser) changefeed() *ast.AlterTableNode {
 	table := p.path()

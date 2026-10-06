@@ -1,26 +1,7 @@
-// Package ydbgap names the parts of Ptah that accept YDB by name and do not
-// implement it yet, so that each one refuses with the same words and points
-// to the plan that adds it.
-//
-// YDB is a dialect name before every layer behind it exists: stokaro/ptah#4015
-// adds schema and migration support in phases. Inference is deferred to
-// stokaro/ptah#4181. A layer reached with the name and nothing behind it
-// would otherwise answer with its default arm, which is another dialect's
-// behavior or an error about an empty driver name. Each such layer refuses
-// through [Layer.Message] instead, and the phase that implements a layer
-// removes its constant together with every refusal that names it.
-//
-// The renderer, the planner, the connection, the schema reader, the schema
-// writer, the versioned migrator, both linters, the query builder, the data
-// layer -- the data diff, declared rows and seeds -- the dev databases, views,
-// a table's TTL, changefeeds, column families, partitioning settings and comments, and
-// the access model -- users, groups, memberships and permissions -- exist. The
-// object families they do not carry yet -- the index kinds beyond
-// global ones -- are layers here too, because a declaration of one reaches the
-// renderer by name, and a database holding one reaches the reader, and each
-// has to be refused there rather than handled as something else. So are the
-// commands that connect and then need a layer that does not exist yet:
-// inference.
+// Package ydbgap names unimplemented YDB workflows and shares their refusal
+// messages with the native CLI, agent surface, and generated documentation.
+// Schema and migration support is implemented. The inference lifecycle still
+// needs a YDB backend and is tracked separately in stokaro/ptah#4181.
 package ydbgap
 
 import (
@@ -28,97 +9,47 @@ import (
 	"io"
 )
 
-// Plan is the issue that plans YDB schema and migration support.
-const Plan = "stokaro/ptah#4015"
-
-// Layer is one part of Ptah that YDB does not reach yet.
+// Layer is a workflow that YDB does not reach yet.
 type Layer int
 
-// The layers YDB does not reach yet. Schema and migration layers name a phase
-// of [Plan]; inference has a separate follow-up issue.
 const (
-	// SchemaFiles is the YQL declarations outside the supported object families.
-	// The table frontend refuses other object families and preserves those
-	// held by a live database until their clauses can be represented.
-	SchemaFiles Layer = iota + 1
-	// IndexFamilies is JSON indexes, beyond the implemented global, vector,
-	// full-text and column-table local indexes.
-	IndexFamilies
-	// Inference is an embedding generation on YDB: `ptah inference` and the
-	// agent surface's inference tools. The run state and the vectors they
-	// work on are a PostgreSQL vertical built on pgvector, and a YDB one
-	// needs the commands to reach the store through an engine boundary
-	// first.
-	Inference
+	// Inference is an embedding generation on YDB. Its durable run state and
+	// vectors need a YDB backend behind the shared inference engine boundary.
+	Inference Layer = iota + 1
 
-	// endOfLayers is one past the last layer and names none. It keeps
-	// [Layers] derived from this block rather than from a second list.
+	// endOfLayers keeps Layers derived from the declarations.
 	endOfLayers
 )
 
-// Layers returns every layer YDB does not reach yet, in declaration order.
+// Layers returns every unimplemented workflow, in declaration order.
 func Layers() []Layer {
-	layers := make([]Layer, 0, int(endOfLayers)-int(SchemaFiles))
-	for layer := SchemaFiles; layer < endOfLayers; layer++ {
+	layers := make([]Layer, 0, int(endOfLayers)-int(Inference))
+	for layer := Inference; layer < endOfLayers; layer++ {
 		layers = append(layers, layer)
 	}
 	return layers
 }
 
-// work is what a layer does, as a refusal prints it.
-func (l Layer) work() string {
-	switch l {
-	case SchemaFiles:
-		return "reading YDB schema declarations beyond the supported object families"
-	case IndexFamilies:
-		return "reading or creating a YDB JSON index"
-	case Inference:
-		return "running an embedding generation against YDB"
-	default:
-		return "this YDB operation"
-	}
-}
-
-// Phase is the phase of [Plan] that implements the layer, or 0 for inference
-// and values that name no layer. Inference is outside that plan.
-func (l Layer) Phase() int {
-	switch l {
-	case SchemaFiles, IndexFamilies:
-		return 10
-	default:
-		return 0
-	}
-}
-
-// Message is the refusal a layer reports: what is not implemented, and where
-// the work is planned. It names YDB, so a caller does not repeat the dialect.
+// Message names the unimplemented workflow and its tracking issue. An unknown
+// value returns a generic refusal without borrowing another workflow's issue.
 func (l Layer) Message() string {
 	if l == Inference {
-		return fmt.Sprintf("%s is not implemented yet (stokaro/ptah#4181)", l.work())
+		return "running an embedding generation against YDB is not implemented yet (stokaro/ptah#4181)"
 	}
-	return fmt.Sprintf("%s is not implemented yet (%s, phase %d)", l.work(), Plan, l.Phase())
+	return "this YDB operation is not implemented yet"
 }
 
-// Unsupported says, in the words of the YDB page, what a reader cannot do
-// on YDB until the layer exists, and names the commands a layer refuses as a
-// whole. It is empty for a value that names no layer.
+// Unsupported describes the workflow for the YDB page. It is empty for an
+// unknown layer.
 func (l Layer) Unsupported() string {
-	switch l {
-	case SchemaFiles:
-		return "YQL desired-schema declarations beyond the supported object families; use Go or YAML for other object families"
-	case IndexFamilies:
-		return "JSON indexes"
-	case Inference:
+	if l == Inference {
 		return "`ptah inference` and the inference tools of `ptah mcp`, which store their vectors through pgvector"
-	default:
-		return ""
 	}
+	return ""
 }
 
-// WriteUnsupportedMarkdown writes the YDB page's list of what is not
-// supported yet: one item per layer, in declaration order. The page carries
-// it as a generated block, so a layer added here or removed with the phase
-// that implements it changes the page in the same change.
+// WriteUnsupportedMarkdown writes one item per unimplemented workflow for
+// the YDB page's generated block, ending the last item with a period.
 func WriteUnsupportedMarkdown(w io.Writer) {
 	layers := Layers()
 	for i, layer := range layers {
