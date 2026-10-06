@@ -176,6 +176,8 @@ every key column is `NOT NULL` unless the model declares it nullable.
 A default is a literal, written as the typed YQL literal YDB reads back: `0`,
 `'x'u` for text, `Timestamp('2026-01-01T00:00:00Z')`. An expression default
 such as a function call is refused, because YDB takes literals only.
+Reading and exporting a schema preserves empty string defaults: `''u` for
+`Utf8` and `''` for `String`. An empty default is distinct from no default.
 
 Indexes are global. A plain index is `GLOBAL SYNC`, a unique one
 `GLOBAL UNIQUE SYNC`, an asynchronous one (`type="async"`) `GLOBAL ASYNC`, and
@@ -998,7 +1000,7 @@ either, and a document in one of them records both as not described.
 ### Streaming queries
 
 A streaming query runs continuously over topic messages. Declare its query body,
-execution state and resource pool in Go or YAML. YDB 26.2 requires both
+execution state and resource pool in Go, YAML or desired YQL. YDB 26.2 requires both
 `EnableStreamingQueries` and `EnableExternalDataSources`; name the monitoring
 endpoint in the connection URL so Ptah reads those flags. Default release-line
 presets leave `streaming_queries` disabled. YDB 25.1 has no such statement.
@@ -1035,7 +1037,8 @@ those formats preserves queries already in the database.
 
 Changing `run` or `resource_pool` uses `ALTER STREAMING QUERY`. A body change
 requires `allow_state_reset: true` in YAML, or `allow_state_reset="true"` in the
-Go annotation. Ptah then sends `FORCE = TRUE`: YDB resets aggregation state and
+Go annotation. In desired YQL, `CREATE OR REPLACE STREAMING QUERY` grants
+the same permission. Ptah then sends `FORCE = TRUE`: YDB resets aggregation state and
 retains topic offsets. A rollback restores the old declaration, not discarded
 state. Removing a query deletes its checkpoints and is classified as destructive.
 Migration lint reports a removal as `DS107` and a replacement or body change
@@ -2214,12 +2217,13 @@ table "orders" {
 HCL and DBML have no block for a changefeed or a column family, so a document
 in either says nothing about one. Applying it leaves the database's
 changefeeds and column families as they are, and a rebuild adds them to the new
-table. `schema inspect` and `ptah schema export` warn about each changefeed and
-each table's column families they leave out, and `--cleanup-go-annotations`
-refuses to delete them.
+table. `schema inspect` and `ptah schema export` warn about the changefeeds and
+column families they leave out, and `--cleanup-go-annotations` refuses to delete
+them. DBML warnings count omitted objects and table properties by kind, including
+TTL, column storage, partitioning, index settings and Serial sequence settings.
 
 Neither has a block for a secret either. Applying such a document drops no
-secret, and `schema inspect` warns about each secret it leaves out. A secret's
+secret, and `schema inspect` warns about secrets it leaves out. A secret's
 value reaches the server only from the environment, as on the native commands,
 and `ptah-compat` takes no flag that rotates one: `--rotate-secret` is a native
 request.
@@ -2361,6 +2365,39 @@ Their intervals use `Interval('P1D')`; a consumer's `read_from` uses
 `Timestamp('2026-01-01T00:00:00Z')`. Topic settings and consumers use the same
 validation as Go and YAML declarations.
 
+Comments use Ptah's `COMMENT ON TABLE`, `COMMENT ON COLUMN`, `COMMENT ON INDEX
+... ON ...`, and `COMMENT ON VIEW` statements. The object must be declared in
+the same document or an earlier file in the source list. Names remain
+case-sensitive; an index comment names its table because index names are only
+unique within that table. `IS NULL` removes a comment, as does omitting a comment
+from a declared object. Ptah stores these comments as YDB user attributes; the
+statements are Ptah extensions, not native YQL.
+
+Secrets use `CREATE SECRET` with an environment reference:
+
+```sql
+CREATE SECRET `app/password` WITH (value = $PTAH_SECRET_APP_PASSWORD);
+```
+
+Reading the file does not read the environment or reveal the value. The
+connection reads the variable when applying the statement. Literal values,
+expressions and extra secret options are refused without printing their
+contents. Omitting a secret requests its removal; changing an environment
+value alone does not request rotation. Lines without schema secrets refuse
+the declaration through the `secrets` capability.
+
+External sources and tables use `CREATE EXTERNAL DATA SOURCE` and `CREATE
+EXTERNAL TABLE`. `WITH` settings take string literals without type suffixes;
+option names are case-insensitive. Quoted values retain their contents, including a space used
+as `CSV_DELIMITER`. External columns accept types and `NOT NULL`; defaults,
+keys and column families are refused. Credentials are references to secrets,
+such as `PASSWORD_SECRET_PATH`.
+
+`CREATE OR REPLACE EXTERNAL` is accepted as a desired declaration. The planner
+chooses replacement or ordered drop and creation from the target's capabilities;
+the source spelling does not force a server operation. Omitting an external
+table or source requests its removal, with dependent tables dropped first.
+
 Coordination nodes use Ptah's `CREATE COORDINATION NODE` statement with the
 same configuration as Go and YAML. Periods use `Interval('PT1S')`. Resource
 pools and classifiers use `CREATE RESOURCE POOL` and `CREATE RESOURCE POOL
@@ -2368,6 +2405,26 @@ CLASSIFIER`; a classifier must declare its rank. A pool limit of `'-1'` means
 unset. A bare negative number is refused, as it is in YQL. The server-owned
 `default` pool also accepts the renderer's `ALTER RESOURCE POOL default SET (...)`
 declaration.
+
+Changefeeds use `ALTER TABLE <table> ADD CHANGEFEED <name> WITH (...)` after
+that table's declaration. `mode` and `format` are required. Retention and
+resolved timestamps use `Interval(...)`; topic auto-partitioning uses
+`'ENABLED'` or `'DISABLED'`. Add a consumer with
+`ALTER TOPIC <table>/<changefeed> ADD CONSUMER <name> WITH (...)`. This also
+works for a declared ordinary topic. A later schema file can add a changefeed
+or consumer to an earlier declaration. Duplicate names and undeclared targets
+are refused. Omitting a changefeed or its consumer requests removal.
+
+Streaming queries use `CREATE STREAMING QUERY`, optional `RUN` and
+`RESOURCE_POOL` settings, and `AS DO BEGIN ... END DO`. The reader preserves
+the body, including nested actions, lambdas and comments. `RUN` is a Boolean;
+a pool is an identifier or string literal. Omitting a query requests removal.
+Use `CREATE OR REPLACE STREAMING QUERY` to permit an existing query's body to
+change and reset aggregation state. Without it, a body change is refused.
+`IF NOT EXISTS` keeps an earlier declaration even with `OR REPLACE`, and does
+not grant permission to reset state.
+These rules also apply across files in a schema directory. Target capabilities
+still decide whether a server can manage streaming queries.
 
 Users use `CREATE USER` with optional `PASSWORD`, `HASH`, `LOGIN` and
 `NOLOGIN` settings. Names are identifiers, optionally in backticks. A user logs
@@ -2399,10 +2456,14 @@ pools and classifiers remain when omitted, as they do for other schema sources,
 because they belong to the whole database. Other statements are refused,
 including standalone queries, unlisted `ALTER` statements and declarations of other object families.
 Use Go or YAML for those declarations. An unsupported statement rejects the
-whole document. Existing changefeeds and other unrepresented families are
+whole document. Existing objects in unrepresented families are
 preserved when planning from a YQL file; their absence does not request removal.
 
 ## What is not supported yet
+
+When a row table contains an unsupported index kind, inspection refuses the
+read and names that kind. It does not treat the index as an ordinary global
+index or omit it from the schema.
 
 These are refused with a message that names what is missing:
 
@@ -2412,7 +2473,8 @@ These are refused with a message that names what is missing:
 - `ptah inference` and the inference tools of `ptah mcp`, which store their vectors through pgvector.
 <!-- END GENERATED YDB GAPS -->
 
-The work is planned in [#4015](https://github.com/stokaro/ptah/issues/4015).
+Schema and migration work is planned in [#4015](https://github.com/stokaro/ptah/issues/4015).
+Inference is a separate follow-up in [#4181](https://github.com/stokaro/ptah/issues/4181).
 
 ## Next steps
 

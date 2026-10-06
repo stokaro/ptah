@@ -12,6 +12,9 @@ import (
 
 func TestParseRender(t *testing.T) {
 	for _, text := range []string{
+		feedTable + feedDeclaration + "ALTER TOPIC `events/updates` ADD CONSUMER worker WITH (read_from=Timestamp('2026-01-01T00:00:00Z'), availability_period=Interval('PT1H'));",
+		feedTable + "ALTER TABLE events ADD CHANGEFEED updates WITH (mode='UPDATES', format='JSON', virtual_timestamps=TRUE, resolved_timestamps=Interval('PT1S'), retention_period=Interval('PT12H'), initial_scan=TRUE);",
+		"CREATE TOPIC events; ALTER TOPIC events ADD CONSUMER worker;",
 		`CREATE COORDINATION NODE locks;`,
 		`CREATE COORDINATION NODE locks WITH (self_check_period = Interval('PT1S'), session_grace_period = Interval('PT2S'), read_consistency_mode = 'strict', attach_consistency_mode = 'relaxed', rate_limiter_counters_mode = 'detailed');`,
 		`CREATE VIEW v WITH (security_invoker = TRUE) AS SELECT 1 AS id; CREATE TOPIC events;`,

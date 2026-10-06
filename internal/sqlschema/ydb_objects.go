@@ -3,6 +3,8 @@ package sqlschema
 import (
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/tableref"
+	"ptah.run/internal/ydbstream"
 )
 
 func appendYDBDeclaration(database *schemamodel.Database, document *Document, statement ast.Node, sourcePlatform string) (bool, error) {
@@ -10,6 +12,11 @@ func appendYDBDeclaration(database *schemamodel.Database, document *Document, st
 		return true, err
 	}
 	switch node := statement.(type) {
+	case *ast.CreateSecretNode:
+		ref, _ := tableref.Parse(node.Name)
+		database.Secrets = append(database.Secrets, schemamodel.Secret{Name: ref.Name, Schema: ref.Schema, ValueEnv: node.ValueEnv})
+	case *ydbstream.Node:
+		return true, appendStreamingQuery(database, document.base, node)
 	case *ast.CreateTopicNode:
 		schema, name := normalizeSQLTableIdentifier(sourcePlatform, node.Name)
 		database.Topics = append(database.Topics, schemamodel.Topic{Name: name, Schema: schema, Spec: node.Spec.Clone()})
@@ -21,7 +28,7 @@ func appendYDBDeclaration(database *schemamodel.Database, document *Document, st
 	case *ast.CreateResourcePoolClassifierNode:
 		database.ResourcePoolClassifiers = append(database.ResourcePoolClassifiers, schemamodel.ResourcePoolClassifier{Name: node.Name, Spec: node.Spec})
 	default:
-		return false, nil
+		return appendYDBExternalDeclaration(database, statement), nil
 	}
 	return true, nil
 }
