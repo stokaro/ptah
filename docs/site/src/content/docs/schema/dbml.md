@@ -89,6 +89,14 @@ NULLS NOT DISTINCT. A UNIQUE constraint over columns is written as a unique
 index, the only way DBML says a rule over more than one column is unique, so it
 reads back as an index.
 
+For YDB, exports also report omitted topics, resource pools and classifiers,
+replications, transfers, coordination nodes, secrets, external data sources
+and tables, and streaming queries. Table warnings cover TTL, changefeeds,
+column families, column storage and partitioning. Index warnings cover
+covering columns, vector settings, analyzer settings and partitioning. Serial
+start and increment values are reported as omitted identity sequence settings.
+Warnings about table properties follow the export's table filters.
+
 DBML also has no lossless spelling for Ptah API export metadata: `api_name`,
 `openapi_name`, `graphql_name`, `proto_name`, `api_type`, and `api_expose` are
 not DBML settings. Ptah deliberately does not hide them in `note:` text or

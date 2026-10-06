@@ -176,6 +176,8 @@ every key column is `NOT NULL` unless the model declares it nullable.
 A default is a literal, written as the typed YQL literal YDB reads back: `0`,
 `'x'u` for text, `Timestamp('2026-01-01T00:00:00Z')`. An expression default
 such as a function call is refused, because YDB takes literals only.
+Reading and exporting a schema preserves empty string defaults: `''u` for
+`Utf8` and `''` for `String`. An empty default is distinct from no default.
 
 Indexes are global. A plain index is `GLOBAL SYNC`, a unique one
 `GLOBAL UNIQUE SYNC`, an asynchronous one (`type="async"`) `GLOBAL ASYNC`, and
@@ -2214,12 +2216,13 @@ table "orders" {
 HCL and DBML have no block for a changefeed or a column family, so a document
 in either says nothing about one. Applying it leaves the database's
 changefeeds and column families as they are, and a rebuild adds them to the new
-table. `schema inspect` and `ptah schema export` warn about each changefeed and
-each table's column families they leave out, and `--cleanup-go-annotations`
-refuses to delete them.
+table. `schema inspect` and `ptah schema export` warn about the changefeeds and
+column families they leave out, and `--cleanup-go-annotations` refuses to delete
+them. DBML warnings count omitted objects and table properties by kind, including
+TTL, column storage, partitioning, index settings and Serial sequence settings.
 
 Neither has a block for a secret either. Applying such a document drops no
-secret, and `schema inspect` warns about each secret it leaves out. A secret's
+secret, and `schema inspect` warns about secrets it leaves out. A secret's
 value reaches the server only from the environment, as on the native commands,
 and `ptah-compat` takes no flag that rotates one: `--rotate-secret` is a native
 request.
@@ -2361,6 +2364,14 @@ Their intervals use `Interval('P1D')`; a consumer's `read_from` uses
 `Timestamp('2026-01-01T00:00:00Z')`. Topic settings and consumers use the same
 validation as Go and YAML declarations.
 
+Comments use Ptah's `COMMENT ON TABLE`, `COMMENT ON COLUMN`, `COMMENT ON INDEX
+... ON ...`, and `COMMENT ON VIEW` statements. The object must be declared in
+the same document or an earlier file in the source list. Names remain
+case-sensitive; an index comment names its table because index names are only
+unique within that table. `IS NULL` removes a comment, as does omitting a comment
+from a declared object. Ptah stores these comments as YDB user attributes; the
+statements are Ptah extensions, not native YQL.
+
 Secrets use `CREATE SECRET` with an environment reference:
 
 ```sql
@@ -2392,6 +2403,10 @@ preserved when planning from a YQL file; their absence does not request removal.
 
 ## What is not supported yet
 
+When a row table contains an unsupported index kind, inspection refuses the
+read and names that kind. It does not treat the index as an ordinary global
+index or omit it from the schema.
+
 These are refused with a message that names what is missing:
 
 <!-- BEGIN GENERATED YDB GAPS -->
@@ -2400,7 +2415,8 @@ These are refused with a message that names what is missing:
 - `ptah inference` and the inference tools of `ptah mcp`, which store their vectors through pgvector.
 <!-- END GENERATED YDB GAPS -->
 
-The work is planned in [#4015](https://github.com/stokaro/ptah/issues/4015).
+Schema and migration work is planned in [#4015](https://github.com/stokaro/ptah/issues/4015).
+Inference is a separate follow-up in [#4181](https://github.com/stokaro/ptah/issues/4181).
 
 ## Next steps
 

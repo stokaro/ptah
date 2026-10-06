@@ -46,12 +46,12 @@ The PostgreSQL family is refused too. CockroachDB, YugabyteDB and Spanner speak
 the wire protocol pgvector's driver connects with and have no pgvector.
 
 YDB is refused with a different message, because a generation on YDB's own
-vector indexes is planned in [#4015](https://github.com/stokaro/ptah/issues/4015):
+vector indexes is planned in [#4181](https://github.com/stokaro/ptah/issues/4181):
 
 ```console
 $ ptah inference plan --spec spec.yaml --db-url "ydb://localhost:2136/local"
 error: "ydb://" names a YDB database: running an embedding generation against
-YDB is not implemented yet (stokaro/ptah#4015, phase 12)
+YDB is not implemented yet (stokaro/ptah#4181)
 ```
 
 The `inference_plan` and `inference_status` tools of `ptah mcp` give the same
