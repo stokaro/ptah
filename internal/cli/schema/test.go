@@ -325,11 +325,7 @@ func runSchemaTest(ctx context.Context, out, diag io.Writer, opts testOptions) e
 func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOptions) (*schemamodel.Database, error) {
 	selection := schemascope.SplitNames(opts.schemas)
 	if len(opts.schemaFiles) > 0 {
-		database, err := schemaload.LoadContext(ctx, schemaload.Options{
-			SchemaFiles: opts.schemaFiles,
-			Vars:        opts.vars,
-			PlainHTTP:   opts.plainHTTP,
-		})
+		database, err := loadTestSchemaFiles(ctx, opts, opts.schemaFiles)
 		if err != nil {
 			return nil, fmt.Errorf("load desired schema from %s: %w",
 				strings.Join(opts.schemaFiles, ", "), err)
@@ -368,11 +364,7 @@ func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOpti
 	if err := noteRootDirShape(diag, testSchemaFileFlag, opts.rootDir); err != nil {
 		return nil, err
 	}
-	database, err := schemaload.LoadContext(ctx, schemaload.Options{
-		SchemaFiles: []string{opts.rootDir},
-		Vars:        opts.vars,
-		PlainHTTP:   opts.plainHTTP,
-	})
+	database, err := loadTestSchemaFiles(ctx, opts, []string{opts.rootDir})
 	if err != nil {
 		return nil, fmt.Errorf("load desired schema from %s: %w", opts.rootDir, err)
 	}
@@ -449,6 +441,7 @@ func resolveTestDesiredDatabase(
 		return nil, err
 	}
 	state, err := set.Resolve(ctx, atlassource.ResolveOptions{
+		DatabaseURL: opts.dbURL,
 		Dialect:     devDialect,
 		DialectFlag: "--" + testDBURLFlag,
 	})
@@ -535,4 +528,17 @@ func countedNoun(count int, noun string) string {
 		return "1 " + noun
 	}
 	return fmt.Sprintf("%d %ss", count, noun)
+}
+
+// File sources use the throwaway database's dialect and explicit root just as
+// a live source does. The URL is context; loading the file opens no connection.
+func loadTestSchemaFiles(ctx context.Context, opts testOptions, files []string) (*schemamodel.Database, error) {
+	dialect, err := ensureTestDevDialect(atlassource.Set{}, opts.dbURL, "--"+testSchemaFileFlag)
+	if err != nil {
+		return nil, err
+	}
+	return schemaload.LoadContext(ctx, schemaload.Options{
+		SchemaFiles: files, Vars: opts.vars, PlainHTTP: opts.plainHTTP,
+		Dialect: dialect, DatabaseURL: opts.dbURL,
+	})
 }

@@ -540,6 +540,7 @@ func resolveDesiredState(
 	// limit the run to one schema.
 	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(devURL, "", "")
 	state, err := opts.Desired.Resolve(ctx, atlassource.ResolveOptions{
+		DatabaseURL:       conn.Info().URL,
 		Dialect:           conn.Info().Dialect,
 		DialectFlag:       "--dev-url",
 		DialectFromServer: true,

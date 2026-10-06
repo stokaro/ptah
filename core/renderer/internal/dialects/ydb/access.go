@@ -243,7 +243,8 @@ func (r *Renderer) grantParts(
 	if strings.TrimSpace(role) == "" {
 		return grantStatement{}, refuseFact(subject, "it names no user or group")
 	}
-	if strings.EqualFold(strings.TrimSpace(objectType), ydbacl.ObjectDatabase) &&
+	if (strings.EqualFold(strings.TrimSpace(objectType), ydbacl.ObjectDatabase) ||
+		strings.EqualFold(strings.TrimSpace(objectType), ydbacl.ObjectPath)) &&
 		!r.caps.Has(capability.DatabaseGrants) {
 		return grantStatement{}, refuseKey(capability.DatabaseGrants, subject)
 	}

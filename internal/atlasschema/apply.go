@@ -643,6 +643,7 @@ func loadDesiredApplySchema(
 	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.DevURL, conn.Info().URL, "url")
 	if opts.LocalFilesOnly {
 		desired, err := schemafile.LoadSources(localApplySources(opts), schemafile.Options{
+			DatabaseURL:           conn.Info().URL,
 			Dialect:               conn.Info().Dialect,
 			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
 			ReportIgnored:         opts.Diagnostics,
@@ -671,6 +672,7 @@ func loadDesiredApplySchema(
 		return nil, err
 	}
 	state, err := set.Resolve(ctx, atlassource.ResolveOptions{
+		DatabaseURL:       conn.Info().URL,
 		Dialect:           conn.Info().Dialect,
 		DialectFlag:       "--url",
 		DialectFromServer: true,

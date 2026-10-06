@@ -159,6 +159,8 @@ func TestRender_AccessStatements_RefusedWithoutTheKeys(t *testing.T) {
 			node: ast.NewCreateRole("readers").SetGroup(true), wantKey: capability.GroupPrincipals},
 		{name: "a membership", caps: capability.YDB262().With(capability.RoleMembership, false),
 			node: ast.NewGrantRoleMembership("readers", "app"), wantKey: capability.RoleMembership},
+		{name: "an untyped path cannot bypass database grant restrictions", caps: capability.YDB262().With(capability.DatabaseGrants, false),
+			node: ast.NewGrantPrivilege("app", "PATH", "/local", []string{"CONNECT"}), wantKey: capability.DatabaseGrants},
 		{name: "a grant on the database", caps: capability.YDB262().With(capability.DatabaseGrants, false),
 			node: ast.NewGrantPrivilege("app", "DATABASE", "/local", []string{"CONNECT"}), wantKey: capability.DatabaseGrants},
 	}

@@ -255,7 +255,7 @@ type generateReplayOptions struct {
 	policy         migrationintegrity.Policy
 	// loadDesired reads the desired schema in the dialect the dev server
 	// reports.
-	loadDesired func(dialect string) (*schemamodel.Database, error)
+	loadDesired func(dialect, databaseURL string) (*schemamodel.Database, error)
 }
 
 // generateAgainstTarget plans and writes the next migration from the target
@@ -271,7 +271,7 @@ func generateAgainstTarget(
 	generateOpts generator.GenerateMigrationOptions,
 	targetURL string,
 	connectTimeout time.Duration,
-	loadDesired func(dialect string) (*schemamodel.Database, error),
+	loadDesired func(dialect, databaseURL string) (*schemamodel.Database, error),
 ) (*generator.MigrationFiles, error) {
 	connectCtx, cancelConnect := dbcli.ConnectContext(ctx, connectTimeout)
 	conn, err := dbschema.ConnectToDatabase(connectCtx, targetURL)
@@ -280,7 +280,7 @@ func generateAgainstTarget(
 		return nil, fmt.Errorf("error connecting to database: %w", err)
 	}
 	defer dbschema.CloseAndWarn(conn)
-	generateOpts.Generated, err = loadDesired(conn.Info().Dialect)
+	generateOpts.Generated, err = loadDesired(conn.Info().Dialect, conn.Info().URL)
 	if err != nil {
 		return nil, err
 	}
@@ -342,7 +342,7 @@ func planGeneratedMigrationByReplay(
 				func(replayConn *dbschema.DatabaseConnection, baseline devclean.Baseline) error {
 					replayOpts := generateOpts
 					replayOpts.EnvironmentExtensions = baseline.Extensions()
-					desired, err := opts.loadDesired(replayConn.Info().Dialect)
+					desired, err := opts.loadDesired(replayConn.Info().Dialect, replayConn.Info().URL)
 					if err != nil {
 						return err
 					}
@@ -618,8 +618,8 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	// The desired schema is read once a connection says which dialect the
 	// server speaks, and after the integrity gate, which refuses a drifted
 	// directory before any database is reached (stokaro/ptah#3952).
-	loadDesired := func(dialect string) (*schemamodel.Database, error) {
-		return loadGenerateSchema(cmd, rootDirs, schemaFiles, commands, dialect)
+	loadDesired := func(dialect, databaseURL string) (*schemamodel.Database, error) {
+		return loadGenerateSchema(cmd, rootDirs, schemaFiles, commands, dialect, databaseURL)
 	}
 
 	ignoreExtensions, err := cmd.Flags().GetStringArray(dbcli.IgnoreExtensionFlagName)
@@ -752,13 +752,14 @@ func loadGenerateSchema(
 	cmd *cobra.Command,
 	rootDirs, schemaFiles []string,
 	commands []schemasource.Command,
-	dialect string,
+	dialect, databaseURL string,
 ) (*schemamodel.Database, error) {
 	plainHTTP, err := cmd.Flags().GetBool(dbcli.PlainHTTPFlagName)
 	if err != nil {
 		return nil, err
 	}
 	return schemaload.LoadContext(cmd.Context(), schemaload.Options{
+		DatabaseURL: databaseURL,
 		RootDirs:    rootDirs,
 		SchemaFiles: schemaFiles,
 		Commands:    commands,

@@ -28,6 +28,11 @@ import (
 
 // Options selects the desired-schema sources and how loading is reported.
 type Options struct {
+	// DatabaseURL supplies the database root used to resolve absolute YDB source
+	// paths. Relative declarations remain portable. The URL is never stored in
+	// the desired model or included in source errors.
+	DatabaseURL string
+
 	// RootDirs are Go entity roots scanned for migrator directives (repeatable).
 	RootDirs []string
 	// SchemaFiles are SQL, YAML, HCL, DBML, or OCI desired-schema sources (repeatable).
@@ -475,9 +480,10 @@ func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*schema
 	// extension-check convenience above; it must not become the value the guard
 	// judges.
 	result, err := schemafile.LoadPath(schemaFile, schemafile.Options{
-		Dialect:   o.Dialect,
-		Vars:      o.Vars,
-		VarValues: o.VarValues,
+		DatabaseURL: o.DatabaseURL,
+		Dialect:     o.Dialect,
+		Vars:        o.Vars,
+		VarValues:   o.VarValues,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error parsing schema file: %w", err)
