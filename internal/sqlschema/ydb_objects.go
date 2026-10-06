@@ -11,6 +11,9 @@ func appendYDBDeclaration(database *schemamodel.Database, document *Document, st
 	if handled, err := appendYDBPrincipal(database, document, statement, sourcePlatform); handled {
 		return true, err
 	}
+	if appendYDBExternalDeclaration(database, statement) {
+		return true, nil
+	}
 	switch node := statement.(type) {
 	case *ast.CreateSecretNode:
 		ref, _ := tableref.Parse(node.Name)
@@ -28,7 +31,7 @@ func appendYDBDeclaration(database *schemamodel.Database, document *Document, st
 	case *ast.CreateResourcePoolClassifierNode:
 		database.ResourcePoolClassifiers = append(database.ResourcePoolClassifiers, schemamodel.ResourcePoolClassifier{Name: node.Name, Spec: node.Spec})
 	default:
-		return appendYDBExternalDeclaration(database, statement), nil
+		return appendYDBReplication(database, document, statement, sourcePlatform)
 	}
 	return true, nil
 }

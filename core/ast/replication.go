@@ -120,6 +120,10 @@ type AlterAsyncReplicationNode struct {
 	Spec AsyncReplicationSpec
 	// Previous is the replication as the database holds it.
 	Previous AsyncReplicationSpec
+	// SourceSettings is an unresolved desired-YQL ALTER patch. The schema
+	// reader folds it into an earlier declaration before rendering. Renderers
+	// refuse a non-nil patch rather than treating it as a complete Spec.
+	SourceSettings map[string]string
 }
 
 // NewAlterAsyncReplication creates an ALTER ASYNC REPLICATION node.
@@ -178,6 +182,10 @@ type AlterTransferNode struct {
 	Spec TransferSpec
 	// Previous is the transfer as the database holds it.
 	Previous TransferSpec
+	// SourceSettings is an unresolved desired-YQL ALTER patch, including an
+	// optional "using" lambda. It must be folded into an earlier declaration
+	// before rendering, just as an async replication's source patch must.
+	SourceSettings map[string]string
 }
 
 // NewAlterTransfer creates an ALTER TRANSFER node.
