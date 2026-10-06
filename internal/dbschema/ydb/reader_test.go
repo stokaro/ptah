@@ -920,8 +920,7 @@ func TestReader_FailurePath(t *testing.T) {
 					return described
 				}()},
 			},
-			wantErr: `YDB table /local/t: index "body_idx" is a bloom_filter index: reading or creating ` +
-				`a YDB JSON index is not implemented yet \(stokaro/ptah#4015, phase 10\)`,
+			wantErr: `YDB table /local/t: index "body_idx" is a bloom_filter index, which this build of Ptah does not read`,
 		},
 		{
 			// The scheme service lists it as a row table, so a description that
