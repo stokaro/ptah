@@ -176,6 +176,8 @@ every key column is `NOT NULL` unless the model declares it nullable.
 A default is a literal, written as the typed YQL literal YDB reads back: `0`,
 `'x'u` for text, `Timestamp('2026-01-01T00:00:00Z')`. An expression default
 such as a function call is refused, because YDB takes literals only.
+Reading and exporting a schema preserves empty string defaults: `''u` for
+`Utf8` and `''` for `String`. An empty default is distinct from no default.
 
 Indexes are global. A plain index is `GLOBAL SYNC`, a unique one
 `GLOBAL UNIQUE SYNC`, an asynchronous one (`type="async"`) `GLOBAL ASYNC`, and
