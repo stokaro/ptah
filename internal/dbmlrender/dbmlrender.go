@@ -32,6 +32,7 @@ import (
 	"strings"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemaexportloss"
 )
 
 // Options selects what is rendered.
@@ -75,7 +76,7 @@ func Render(db *schemamodel.Database, opts Options) (Result, error) {
 	if metadata := b.selectedExportMetadata(); len(metadata) > 0 {
 		return Result{}, exportMetadataError(metadata)
 	}
-	omitted := append(omittedFamilies(db), b.omittedKeys()...)
+	omitted := append(schemaexportloss.CommonFamilies(db), b.omittedKeys()...)
 	omitted = append(omitted, b.omittedStorage()...)
 	sort.Strings(omitted)
 	return Result{DBML: b.render(), Omitted: omitted}, nil
