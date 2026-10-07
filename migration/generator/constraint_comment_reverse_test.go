@@ -8,8 +8,8 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -26,7 +26,7 @@ func planConstraintCommentRollback(c *qt.C, diff *difftypes.SchemaDiff, current 
 		Capabilities:  capability.Postgres18(),
 	})
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL(platform.Postgres, plan.Reverse.Nodes...)
+	sql, err := builtin.RenderSQL(platform.Postgres, plan.Reverse.Nodes...)
 	c.Assert(err, qt.IsNil)
 	return plan.Reverse.Diff, sql
 }

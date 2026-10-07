@@ -658,6 +658,12 @@
       "claimed_by": "docs/site/src/content/docs/schema/go-annotations.md"
     },
     {
+      "id": "gopkg-core-objectidentity",
+      "kind": "public-package",
+      "surface": "ptah.run/core/objectidentity",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-core-platform",
       "kind": "public-package",
       "surface": "ptah.run/core/platform",
@@ -727,6 +733,18 @@
       "id": "gopkg-docs",
       "kind": "public-package",
       "surface": "ptah.run/docs",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-engine",
+      "kind": "public-package",
+      "surface": "ptah.run/engine",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-engine-builtin",
+      "kind": "public-package",
+      "surface": "ptah.run/engine/builtin",
       "claimed_by": null
     },
     {

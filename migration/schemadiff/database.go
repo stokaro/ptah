@@ -12,9 +12,9 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbexprprobe"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/modelast"
@@ -414,11 +414,11 @@ func routineArgumentsProbe(
 		declared.Language = function.Language
 		declared.Body = function.Body
 	}
-	statement, err := renderer.RenderSQL(dialect, modelast.FromFunction(declared))
+	statement, err := builtin.RenderSQL(dialect, modelast.FromFunction(declared))
 	if err != nil {
 		return dbexprprobe.RoutineArgumentsProbe{}, false
 	}
-	drop, err := renderer.RenderSQL(dialect, ast.NewDropFunction(declared.Name).SetKind(function.Kind))
+	drop, err := builtin.RenderSQL(dialect, ast.NewDropFunction(declared.Name).SetKind(function.Kind))
 	if err != nil {
 		return dbexprprobe.RoutineArgumentsProbe{}, false
 	}
@@ -556,7 +556,7 @@ func columnSpellingProbe(
 		column := modelast.FromFieldWithoutForeignKeys(typeAndDefaultOnly(field), desired.Enums, dialect)
 		tableNode.AddColumn(column)
 		columnTable := fmt.Sprintf("%s_%d", probe.Table, position)
-		statement, err := renderer.RenderSQL(dialect, &ast.CreateTableNode{Name: columnTable, Columns: []*ast.ColumnNode{column}})
+		statement, err := builtin.RenderSQL(dialect, &ast.CreateTableNode{Name: columnTable, Columns: []*ast.ColumnNode{column}})
 		if err != nil {
 			continue
 		}
@@ -567,7 +567,7 @@ func columnSpellingProbe(
 			Statement: statement,
 		})
 	}
-	statement, err := renderer.RenderSQL(dialect, tableNode)
+	statement, err := builtin.RenderSQL(dialect, tableNode)
 	if err != nil || len(probe.Columns) == 0 {
 		return dbexprprobe.ColumnSpellingProbe{}, false
 	}

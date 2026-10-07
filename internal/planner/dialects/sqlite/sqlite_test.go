@@ -9,8 +9,8 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -1073,7 +1073,7 @@ func TestPlannerInlineConstraintsComeFromTheCreation(t *testing.T) {
 		nodes, err := planner.GenerateSchemaDiffAST(diff, platform.SQLite)
 
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL(platform.SQLite, nodes...)
+		sql, err := builtin.RenderSQL(platform.SQLite, nodes...)
 		c.Assert(err, qt.IsNil)
 		c.Assert(sql, qt.Contains, `CONSTRAINT "uq_bookings_code" UNIQUE ("code")`)
 	})
@@ -1097,7 +1097,7 @@ func TestPlannerInlineConstraintsComeFromTheCreation(t *testing.T) {
 		nodes, err := planner.GenerateSchemaDiffAST(diff, platform.SQLite)
 
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL(platform.SQLite, nodes...)
+		sql, err := builtin.RenderSQL(platform.SQLite, nodes...)
 		c.Assert(err, qt.IsNil)
 		c.Assert(sql, qt.Contains, `CREATE TABLE "bookings"`)
 		c.Assert(sql, qt.Not(qt.Contains), "uq_bookings_code")

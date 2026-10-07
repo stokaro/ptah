@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 )
 
 // queryBuilderPage is the page whose dialect table this test holds to
@@ -33,7 +33,7 @@ func TestDialectCoverageDoc_ListsEverySupportedDialect(t *testing.T) {
 
 	documented := documentedDialects(c)
 
-	c.Assert(documented, qt.DeepEquals, slices.Sorted(slices.Values(renderer.SupportedDialects())),
+	c.Assert(documented, qt.DeepEquals, slices.Sorted(slices.Values(builtin.SupportedDialects())),
 		qt.Commentf("the dialect table and SupportedDialects disagree; update %s", queryBuilderPage))
 }
 
@@ -69,7 +69,7 @@ func documentedDialects(c *qt.C) []string {
 	// failure here rather than a silent pass on rows read from elsewhere.
 	section, _, _ := strings.Cut(after, "\n## ")
 
-	names := make([]string, 0, len(renderer.SupportedDialects()))
+	names := make([]string, 0, len(builtin.SupportedDialects()))
 	for line := range strings.SplitSeq(section, "\n") {
 		row := strings.TrimSpace(line)
 		if !strings.HasPrefix(row, "|") {

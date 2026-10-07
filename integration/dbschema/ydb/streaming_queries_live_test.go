@@ -10,8 +10,8 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -69,9 +69,9 @@ func TestYDBStreamingQueries_RoundTripAndRollback(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{Diff: diff, DesiredSchema: declared, CurrentSchema: current, Dialect: "ydb", Capabilities: conn.Info().Capabilities})
 	c.Assert(err, qt.IsNil)
-	forward, err := renderer.RenderSQLWithCapabilities("ydb", conn.Info().Capabilities, plan.Forward.Nodes...)
+	forward, err := builtin.RenderSQLWithCapabilities("ydb", conn.Info().Capabilities, plan.Forward.Nodes...)
 	c.Assert(err, qt.IsNil)
-	reverse, err := renderer.RenderSQLWithCapabilities("ydb", conn.Info().Capabilities, plan.Reverse.Nodes...)
+	reverse, err := builtin.RenderSQLWithCapabilities("ydb", conn.Info().Capabilities, plan.Reverse.Nodes...)
 	c.Assert(err, qt.IsNil)
 	applyScript(c, conn, forward)
 	c.Assert(planAgainst(c, conn, declared, schemas), qt.HasLen, 0)

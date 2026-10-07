@@ -10,8 +10,8 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"ptah.run/core/query"
-	"ptah.run/core/renderer"
 	"ptah.run/core/sqlutil"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlident"
 )
 
@@ -348,7 +348,7 @@ func TestDMLDialectMatrix(t *testing.T) {
 		for _, row := range rows {
 			names = append(names, row.dialect)
 		}
-		c.Assert(names, qt.DeepEquals, renderer.SupportedDialects())
+		c.Assert(names, qt.DeepEquals, builtin.SupportedDialects())
 	})
 
 	for _, row := range rows {
@@ -378,7 +378,7 @@ func TestDMLGenericRefusalCensus(t *testing.T) {
 	c := qt.New(t)
 
 	var observed []string
-	for _, dialect := range renderer.SupportedDialects() {
+	for _, dialect := range builtin.SupportedDialects() {
 		for _, verb := range dmlVerbs() {
 			_, _, err := verb.render(dialect)
 			observed = append(observed, genericRefusalLabel(dialect, verb.name, err)...)
@@ -533,7 +533,7 @@ func TestDMLPlaceholderAgreesWithRebind(t *testing.T) {
 	for _, row := range rows {
 		names = append(names, row.dialect)
 	}
-	c.Assert(names, qt.DeepEquals, renderer.SupportedDialects())
+	c.Assert(names, qt.DeepEquals, builtin.SupportedDialects())
 
 	for _, dialect := range taughtDialects(rows) {
 		t.Run(dialect, func(t *testing.T) {

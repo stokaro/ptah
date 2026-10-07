@@ -8,7 +8,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlschema"
 	"ptah.run/internal/ydbstream"
 )
@@ -64,7 +64,7 @@ func TestReadYQLStreamingQueryRoundTrip(t *testing.T) {
 			database, _, err := sqlschema.Read([]byte(source), "ydb")
 			c.Assert(err, qt.IsNil)
 			caps := capability.YDB262().With(capability.StreamingQueries, true)
-			rendered, err := renderer.GetOrderedCreateStatementsWithCapabilities(&database, "ydb", caps)
+			rendered, err := builtin.GetOrderedCreateStatementsWithCapabilities(&database, "ydb", caps)
 			c.Assert(err, qt.IsNil)
 			again, _, err := sqlschema.Read([]byte(strings.Join(rendered, "\n")), "ydb")
 			c.Assert(err, qt.IsNil)

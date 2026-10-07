@@ -14,9 +14,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/jackc/pgx/v5"
 
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
@@ -144,7 +144,7 @@ func (f tableIdentityFixture) assertNothingPlannedForTheTables(c *qt.C) {
 func TestTableIdentity_LiveRenderedFileCreatesEachTable(t *testing.T) {
 	c := qt.New(t)
 	f := newTableIdentityFixture(c)
-	statements, err := renderer.GetOrderedCreateStatements(f.load(c), f.dialect)
+	statements, err := builtin.GetOrderedCreateStatements(f.load(c), f.dialect)
 	c.Assert(err, qt.IsNil)
 
 	f.execute(c, statements)

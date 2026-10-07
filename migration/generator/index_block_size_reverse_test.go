@@ -7,7 +7,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/sqlschema"
 	"ptah.run/migration/generator"
@@ -28,7 +28,7 @@ func TestPlanBidirectionalSchemaDiff_IndexBlockSize(t *testing.T) {
 	diff := schemadiff.CompareWithDialect(&after, current, "mysql")
 	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{Diff: diff, DesiredSchema: &after, CurrentSchema: current, Dialect: "mysql", Capabilities: capability.MySQL84()})
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQLWithCapabilities("mysql", capability.MySQL84(), plan.Reverse.Nodes...)
+	sql, err := builtin.RenderSQLWithCapabilities("mysql", capability.MySQL84(), plan.Reverse.Nodes...)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "ADD INDEX `k` (`a`) KEY_BLOCK_SIZE=8, ALGORITHM=COPY")
 	c.Assert(sql, qt.Contains, "ADD UNIQUE INDEX `u` (`b`) KEY_BLOCK_SIZE=8, ALGORITHM=COPY")
@@ -49,7 +49,7 @@ func TestPlanBidirectionalSchemaDiff_PrimaryKeyMethodAndComment(t *testing.T) {
 	diff := schemadiff.CompareWithDialect(&after, current, "mysql")
 	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{Diff: diff, DesiredSchema: &after, CurrentSchema: current, Dialect: "mysql", Capabilities: capability.MySQL84()})
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQLWithCapabilities("mysql", capability.MySQL84(), plan.Reverse.Nodes...)
+	sql, err := builtin.RenderSQLWithCapabilities("mysql", capability.MySQL84(), plan.Reverse.Nodes...)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "PRIMARY KEY (`id`) USING HASH COMMENT 'old'")
 }

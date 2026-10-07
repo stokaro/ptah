@@ -13,9 +13,9 @@ import (
 	"ptah.run/config"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
 )
@@ -179,7 +179,7 @@ func applyOracleVectorDeclaration(
 ) {
 	c.Helper()
 
-	statements, err := renderer.RenderSQLWithCapabilities(
+	statements, err := builtin.RenderSQLWithCapabilities(
 		platform.Oracle,
 		capability.ForServerVersion(platform.Oracle, conn.Info().Version),
 		oracleConvergenceNodes(declared)...,

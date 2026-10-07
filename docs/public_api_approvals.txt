@@ -388,3 +388,10 @@ v0.7.0 ptah.run/migration/importer
 # say what YDB does, so the old one goes rather than staying as an alias that
 # would read false on a target that takes a statement timeout.
 v0.12.0 ptah.run/core/platform/capability
+
+# Provider isolation puts concrete rendering factories in engine/builtin and
+# leaves neutral rendering contracts in core/renderer. Callers use the new
+# ownership directly. This changes behavior; pre-v1, so no compatibility is
+# owed. The clean-break policy for #4140 and #4204 excludes compatibility
+# facades and aliases for the former factory surface.
+v0.13.0 ptah.run/core/renderer

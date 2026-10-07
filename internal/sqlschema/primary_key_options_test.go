@@ -7,7 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/goschema"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/goschematogo"
 	"ptah.run/internal/sqlschema"
 )
@@ -24,7 +24,7 @@ func TestRead_PrimaryKeyOptions_HappyPath(t *testing.T) {
 				c.Assert(err, qt.IsNil)
 				c.Assert(db.Tables[0].PrimaryKeyBlockSize, qt.Equals, uint64(8))
 				c.Assert(db.Tables[0].PrimaryKeyComment, qt.Equals, "lookup")
-				ddl, err := renderer.GetOrderedCreateStatements(&db, dialect)
+				ddl, err := builtin.GetOrderedCreateStatements(&db, dialect)
 				c.Assert(err, qt.IsNil)
 				c.Assert(strings.Join(ddl, "\n"), qt.Contains, "PRIMARY KEY (`a`) KEY_BLOCK_SIZE=8 COMMENT 'lookup'")
 				files, err := goschematogo.Render(&db, goschematogo.Options{SingleFile: true})

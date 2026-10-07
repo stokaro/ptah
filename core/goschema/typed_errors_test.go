@@ -12,7 +12,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -127,7 +127,7 @@ func runEmbedPath(root string) error {
 	if err != nil {
 		return err
 	}
-	_, err = renderer.RenderSQL("postgres", nodes...)
+	_, err = builtin.RenderSQL("postgres", nodes...)
 	return err
 }
 

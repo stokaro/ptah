@@ -184,7 +184,7 @@ func (cb *ColumnBuilder) Check(expression string) *ColumnBuilder {
 //
 // kind is the storage form, "VIRTUAL" or "STORED", and travels to the AST as
 // [ast.ColumnNode.GeneratedKind]. Which forms a target actually has is a
-// question for [ptah.run/core/renderer], not for this package: nothing
+// question for [ptah.run/engine/builtin], not for this package: nothing
 // here validates the pair.
 //
 // Example:
@@ -449,7 +449,7 @@ func (scb *SchemaColumnBuilder) Check(expression string) *SchemaColumnBuilder {
 //
 // kind is the storage form, "VIRTUAL" or "STORED", and travels to the AST as
 // [ast.ColumnNode.GeneratedKind]. Which forms a target actually has is a
-// question for [ptah.run/core/renderer], not for this package: nothing
+// question for [ptah.run/engine/builtin], not for this package: nothing
 // here validates the pair.
 //
 // Example:

@@ -8,7 +8,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/parser"
 	"ptah.run/internal/sqlschema"
 )
@@ -22,14 +22,14 @@ func renderClickHouseSchema(c *qt.C, sqlText string) string {
 	database, _, err := sqlschema.Read([]byte(sqlText), platform.ClickHouse)
 	c.Assert(err, qt.IsNil)
 
-	rendered, err := renderer.GetOrderedCreateStatements(&database, platform.ClickHouse)
+	rendered, err := builtin.GetOrderedCreateStatements(&database, platform.ClickHouse)
 	c.Assert(err, qt.IsNil)
 	return strings.Join(rendered, "\n") + "\n"
 }
 
 // The ClickHouse renderer writes a data-skipping index as
 // `ALTER TABLE t ADD INDEX name expression TYPE type GRANULARITY n`
-// (VisitIndex, core/renderer/internal/dialects/clickhouse). The parser read
+// (VisitIndex, engine/builtin/internal/dialects/clickhouse). The parser read
 // that as an ADD COLUMN, taking the indexed expression for a type and TYPE for
 // a column attribute, so Ptah refused a statement Ptah wrote
 // (stokaro/ptah#1574).

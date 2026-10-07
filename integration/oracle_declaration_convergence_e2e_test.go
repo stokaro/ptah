@@ -17,9 +17,9 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbexprprobe"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/genexprprobe"
@@ -73,7 +73,7 @@ func TestOracleDeclarationConvergesE2E(t *testing.T) {
 
 	declared := oracleConvergenceDeclaration()
 
-	statements, err := renderer.RenderSQLWithCapabilities(
+	statements, err := builtin.RenderSQLWithCapabilities(
 		platform.Oracle,
 		capability.ForServerVersion(platform.Oracle, conn.Info().Version),
 		oracleConvergenceNodes(declared)...,
@@ -181,7 +181,7 @@ func TestOracleGeneratedExpressionChangeIsStillReportedE2E(t *testing.T) {
 	}()
 
 	applied := oracleConvergenceDeclaration()
-	statements, err := renderer.RenderSQLWithCapabilities(
+	statements, err := builtin.RenderSQLWithCapabilities(
 		platform.Oracle,
 		capability.ForServerVersion(platform.Oracle, conn.Info().Version),
 		oracleConvergenceNodes(applied)...,

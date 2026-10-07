@@ -15,9 +15,9 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbschema/mysql"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -343,7 +343,7 @@ func TestFunctionOrderedCreateStatements_ExecuteOneByOne_Integration(t *testing.
 				Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN a + 1",
 			})
 
-			statements, err := renderer.GetOrderedCreateStatements(desired, target.dialect)
+			statements, err := builtin.GetOrderedCreateStatements(desired, target.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements, qt.Not(qt.HasLen), 0)
 

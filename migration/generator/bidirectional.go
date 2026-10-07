@@ -8,8 +8,8 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/concurrentindex"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/schemaprep"
@@ -438,5 +438,5 @@ func validateRollbackTarget(
 	); err != nil {
 		return err
 	}
-	return renderer.ValidateSchemaWithCapabilities(prepared, dialect, caps)
+	return builtin.ValidateSchemaWithCapabilities(prepared, dialect, caps)
 }

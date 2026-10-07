@@ -8,10 +8,10 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 )
 
 const sqlServerAcceptanceSchema = "ptah_mssql_acceptance"
@@ -65,7 +65,7 @@ func testDynamicSQLServerIdentitySchemaBracketReservedWords(
 			}},
 		}
 
-		statements, err := renderer.GetOrderedCreateStatements(&database, platform.SQLServer)
+		statements, err := builtin.GetOrderedCreateStatements(&database, platform.SQLServer)
 		if err != nil {
 			return fmt.Errorf("render SQL Server acceptance schema: %w", err)
 		}

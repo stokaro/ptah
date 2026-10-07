@@ -10,8 +10,8 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -21,7 +21,7 @@ func renderRebuild(c *qt.C, caps capability.Capabilities, diff *difftypes.Schema
 	c.Helper()
 	nodes, err := ydb.NewWithCapabilities(caps).WithTableRebuild(true).GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQLWithCapabilities("ydb", caps, nodes...)
+	sql, err := builtin.RenderSQLWithCapabilities("ydb", caps, nodes...)
 	c.Assert(err, qt.IsNil)
 	return sql
 }

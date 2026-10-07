@@ -9,8 +9,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -163,7 +163,7 @@ func TestExcludeConstraints_EndToEnd_PostgreSQL(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 
 			// Step 4: Render AST to SQL
-			sql, err := renderer.RenderSQL("postgres", nodes...)
+			sql, err := builtin.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
 
 			// Step 5: Extract and verify SQL statements
@@ -234,7 +234,7 @@ func TestExcludeConstraints_EndToEnd_MySQL(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	// Step 3: Render AST to SQL
-	sql, err := renderer.RenderSQL("mysql", nodes...)
+	sql, err := builtin.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
 
 	// Step 4: Verify that a warning is generated for EXCLUDE constraints

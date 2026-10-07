@@ -8,8 +8,8 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -131,7 +131,7 @@ func planStatements(c *qt.C, diff *difftypes.SchemaDiff, desired *schemamodel.Da
 }
 
 func renderStatements(c *qt.C, desired *schemamodel.Database, dialect string) []string {
-	statements, err := renderer.GetOrderedCreateStatements(desired, dialect)
+	statements, err := builtin.GetOrderedCreateStatements(desired, dialect)
 	c.Assert(err, qt.IsNil)
 	return statements
 }

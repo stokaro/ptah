@@ -8,8 +8,8 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -30,7 +30,7 @@ func TestGetPlanner_CapabilityWiring(t *testing.T) {
 
 		nodes, err := planner.GenerateSchemaDiffAST(diff, "mariadb")
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("mariadb", nodes...)
+		sql, err := builtin.RenderSQL("mariadb", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 		c.Assert(sql, qt.Contains, "ALTER TABLE posts DROP FOREIGN KEY IF EXISTS fk_posts_user;",
@@ -42,7 +42,7 @@ func TestGetPlanner_CapabilityWiring(t *testing.T) {
 
 		nodes, err := planner.GenerateSchemaDiffAST(diff, "mysql")
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("mysql", nodes...)
+		sql, err := builtin.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 		c.Assert(sql, qt.Contains, "ALTER TABLE posts DROP FOREIGN KEY fk_posts_user;",
@@ -100,7 +100,7 @@ func TestGetPlanner_DistributedSQLCapabilityWiring(t *testing.T) {
 	diff := &difftypes.SchemaDiff{IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_users_email", Fields: []string{"email"}}, TableName: "users"}}}
 	nodes, err := planner.GenerateSchemaDiffAST(diff, platform.CockroachDB)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL(platform.CockroachDB, nodes...)
+	sql, err := builtin.RenderSQL(platform.CockroachDB, nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);",

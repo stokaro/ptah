@@ -7,7 +7,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/parser"
 	"ptah.run/internal/sqlschema"
 )
@@ -179,7 +179,7 @@ func renderClickHouse(c *qt.C, sqlText string) string {
 	database, _, err := sqlschema.Read([]byte(sqlText), platform.ClickHouse)
 	c.Assert(err, qt.IsNil)
 
-	rendered, err := renderer.GetOrderedCreateStatements(&database, platform.ClickHouse)
+	rendered, err := builtin.GetOrderedCreateStatements(&database, platform.ClickHouse)
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered, qt.HasLen, 1)
 	return rendered[0]

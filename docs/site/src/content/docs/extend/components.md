@@ -36,12 +36,12 @@ uses them internally.
 
 | Need | Stable package(s) | What it gives you |
 | --- | --- | --- |
-| Build SQL DDL programmatically | `core/ast`, `core/astbuilder`, `core/renderer` | Dialect-aware SQL from structured AST nodes, written as struct literals or as builder chains. |
+| Build SQL DDL programmatically | `core/ast`, `core/astbuilder`, `engine/builtin` | Dialect-aware SQL from structured AST nodes, written as struct literals or as builder chains. |
 | Build parameterized DML statements | `core/query` | Fluent, dialect-aware SELECT, INSERT, UPDATE, DELETE and YDB's UPSERT with bound parameters. See [Query builder](../query-builder/). |
 | Parse Go schema annotations | `core/goschema` | Go source comments to Ptah's schema IR. |
 | Parse Atlas HCL schema files | `atlascompat` | Atlas-style HCL schema files to Ptah's schema IR through a stable compatibility wrapper. |
 | Parse YAML schema files | `core/yamlschema` | Ptah's YAML authoring format to the schema IR, from bytes or from a path. |
-| Render SQL from schema IR | `core/renderer`, `atlascompat` | Ordered DDL statements for supported dialects. |
+| Render SQL from schema IR | `engine/builtin`, `atlascompat` | Ordered DDL statements for supported dialects. |
 | Introspect live databases | `dbschema`, `catalog` | Database schema snapshots from live connections. |
 | Compare desired vs. live schemas | `migration/schemadiff`, `migration/schemadiff/difftypes` | Structured schema diffs for planning and reporting. |
 | Plan SQL migrations | `migration/planner` | Ordered AST or SQL statements for schema changes. |
@@ -110,7 +110,7 @@ import (
 	"log"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 )
 
 func main() {
@@ -118,7 +118,7 @@ func main() {
 		AddColumn(ast.NewColumn("id", "SERIAL").SetPrimary()).
 		AddColumn(ast.NewColumn("email", "TEXT").SetNotNull().SetUnique())
 
-	sql, err := renderer.RenderSQL("postgres", table)
+	sql, err := builtin.RenderSQL("postgres", table)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -150,7 +150,7 @@ table := astbuilder.NewTable("users").
 `NewSchema` builds a whole `*ast.StatementList` in one chain — enums, tables,
 indexes, and comments in the order they were added — where `NewTable` and
 `NewIndex` build a single statement. The builders do not validate; an unknown
-type or an unresolved foreign key is reported by `core/renderer` or by the
+type or an unresolved foreign key is reported by `engine/builtin` or by the
 database.
 
 ## End-to-end reuse examples
@@ -190,7 +190,7 @@ db, err := goschema.ParseFS(fsys, "models")
 if err != nil {
 	return err
 }
-statements, err := renderer.GetOrderedCreateStatements(db, "sqlite")
+statements, err := builtin.GetOrderedCreateStatements(db, "sqlite")
 if err != nil {
 	return err
 }
@@ -226,7 +226,7 @@ if err != nil {
 }
 
 list := atlascompat.SchemaToAST(*db, "postgres")
-sql, err := renderer.RenderSQL("postgres", list.Statements...)
+sql, err := builtin.RenderSQL("postgres", list.Statements...)
 if err != nil {
 	return err
 }
@@ -248,7 +248,7 @@ import (
 	"fmt"
 	"log"
 
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/core/yamlschema"
 )
 
@@ -258,7 +258,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	statements, err := renderer.GetOrderedCreateStatements(db, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(db, "postgres")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -562,7 +562,7 @@ table := ast.NewCreateTable("accounts").
 		SetIdentity("BY_DEFAULT", "1", "1").
 		SetPrimary())
 
-sql, err := renderer.RenderSQLWithCapabilities("postgres", caps, table)
+sql, err := builtin.RenderSQLWithCapabilities("postgres", caps, table)
 if err != nil {
 	return err
 }
@@ -600,12 +600,12 @@ internal renderers.
 
 **Atlas-compatible transition** — start from
 [Embed the migrator](#embed-the-migrator).
-Stable packages: `atlascompat`, `migration/migrator`, `core/renderer`.
+Stable packages: `atlascompat`, `migration/migrator`, `engine/builtin`.
 The host tool keeps parity expectations; use the conformance reports for
 measured compatibility.
 
 **Dialect extension research** — start from [Use capabilities](#use-capabilities).
-Stable packages: `core/platform/capability`, `core/ast`, `core/renderer`,
+Stable packages: `core/platform/capability`, `core/ast`, `engine/builtin`,
 `migration/planner`, `migration/safety`.
 The host tool keeps unsupported-feature handling; create a design issue before
 relying on out-of-tree extension points.

@@ -8,8 +8,8 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasmigrate"
 )
 
@@ -139,7 +139,7 @@ func mustParseQualifier(c *qt.C, raw string) atlasmigrate.Qualifier {
 
 func renderQualified(c *qt.C, dialect string, nodes ...ast.Node) string {
 	c.Helper()
-	output, err := renderer.RenderSQLWithCapabilities(dialect, capability.ForDialect(dialect), nodes...)
+	output, err := builtin.RenderSQLWithCapabilities(dialect, capability.ForDialect(dialect), nodes...)
 	c.Assert(err, qt.IsNil)
 	return output
 }

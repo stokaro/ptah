@@ -9,8 +9,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/schemafile"
 )
 
@@ -135,7 +135,7 @@ func writeSchemaFile(c *qt.C, dir, name, body string) string {
 }
 
 func renderPostgres(c *qt.C, db *schemamodel.Database) []string {
-	statements, err := renderer.GetOrderedCreateStatements(db, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(db, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	return statements
 }

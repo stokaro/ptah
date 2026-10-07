@@ -184,7 +184,7 @@
 //   - ptah/migration/schemadiff/difftypes: Consumes schema difference data
 //   - ptah/core/goschema: Uses generated schema information
 //   - ptah/core/ast: Generates AST nodes for SQL representation
-//   - ptah/core/renderer: Converts AST nodes to dialect-specific SQL
+//   - ptah/engine/builtin: Converts AST nodes to dialect-specific SQL
 //   - ptah/core/sqlutil: Uses SQL parsing utilities for statement handling
 //   - ptah/migration/generator: Used in migration file generation
 //

@@ -15,8 +15,8 @@ import (
 	"ptah.run/core/goschema"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -126,14 +126,14 @@ func pinnedOutput(c *qt.C, dialect string) string {
 		out.WriteString("\n")
 	}
 
-	statements, err := renderer.GetOrderedCreateStatements(parsePinSchema(c, "desired"), dialect)
+	statements, err := builtin.GetOrderedCreateStatements(parsePinSchema(c, "desired"), dialect)
 	section("render: the desired schema", strings.Join(statements, "\n"), err)
 
 	diff := schemadiff.CompareSchemas(parsePinSchema(c, "desired"), parsePinSchema(c, "current"), dialect)
 	planned, err := planner.GenerateSchemaDiffSQL(diff, dialect)
 	section("plan: the current schema to the desired one", planned, err)
 
-	statements, err = renderer.GetOrderedCreateStatements(parsePinSchema(c, "covering"), dialect)
+	statements, err = builtin.GetOrderedCreateStatements(parsePinSchema(c, "covering"), dialect)
 	section("render: a covering index", strings.Join(statements, "\n"), err)
 
 	diff = schemadiff.CompareSchemas(parsePinSchema(c, "covering"), parsePinSchema(c, "current"), dialect)

@@ -9,8 +9,8 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/schemaprep"
 )
@@ -881,7 +881,7 @@ func TestFromTablePreservesSQLiteVirtualTableIdentifierWhitespace(t *testing.T) 
 
 	c.Assert(result.Name, qt.Equals, `" aux "." docs "`)
 	c.Assert(result.Options[ast.SQLiteVirtualModuleOption], qt.Equals, "fts5")
-	sql, err := renderer.RenderSQL(platform.SQLite, result)
+	sql, err := builtin.RenderSQL(platform.SQLite, result)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, "CREATE VIRTUAL TABLE \" aux \".\" docs \" USING fts5(body);\n")
 }

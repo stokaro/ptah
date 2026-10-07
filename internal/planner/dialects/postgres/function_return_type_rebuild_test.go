@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -24,7 +24,7 @@ func renderFunctionModification(c *qt.C, change difftypes.FunctionDiff) string {
 		FunctionsModified: []difftypes.FunctionDiff{change},
 	})
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	return sql
 }

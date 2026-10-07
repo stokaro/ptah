@@ -31,7 +31,7 @@ const (
 	ClickHouse263 = "26.3"
 	// ClickHouse267 is the measured ClickHouse 26.7 release line, and the one
 	// the dialect's statement-level findings are recorded against:
-	// core/renderer/internal/dialects/clickhouse pins them to a live 26.7.3.19
+	// engine/builtin/internal/dialects/clickhouse pins them to a live 26.7.3.19
 	// throughout.
 	ClickHouse267 = "26.7"
 	// ClickHouse268 is the newest measured ClickHouse release line.

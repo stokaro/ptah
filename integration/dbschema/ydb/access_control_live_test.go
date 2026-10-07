@@ -13,9 +13,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff"
@@ -212,9 +212,9 @@ func TestYDBAccessControl_Rollback(t *testing.T) {
 				Dialect: info.Dialect, Capabilities: info.Capabilities,
 			})
 			c.Assert(err, qt.IsNil)
-			forward, err := renderer.RenderSQLWithCapabilities(info.Dialect, info.Capabilities, plan.Forward.Nodes...)
+			forward, err := builtin.RenderSQLWithCapabilities(info.Dialect, info.Capabilities, plan.Forward.Nodes...)
 			c.Assert(err, qt.IsNil)
-			reverse, err := renderer.RenderSQLWithCapabilities(info.Dialect, info.Capabilities, plan.Reverse.Nodes...)
+			reverse, err := builtin.RenderSQLWithCapabilities(info.Dialect, info.Capabilities, plan.Reverse.Nodes...)
 			c.Assert(err, qt.IsNil)
 
 			applyScript(c, conn, forward)

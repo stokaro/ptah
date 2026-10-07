@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -33,7 +33,7 @@ func TestPlanner_GenerateMigrationAST_MultiSchemaTablesAndFKs(t *testing.T) {
 
 	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 
@@ -66,7 +66,7 @@ func TestPlanner_GenerateMigrationAST_TrimsSchemaPreconditions(t *testing.T) {
 
 	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 
@@ -99,7 +99,7 @@ func TestPlanner_GenerateMigrationAST_DoesNotQualifyAmbiguousLeafFK(t *testing.T
 
 	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 
@@ -156,7 +156,7 @@ func TestPlanner_SchemaPreconditionsSkipTheNamesATargetOwns(t *testing.T) {
 			nodes, err := postgres.NewForDialect(test.dialect, nil).
 				GenerateMigrationAST(withDeclaredObjects(diff, desired))
 			c.Assert(err, qt.IsNil)
-			sql, err := renderer.RenderSQL(test.dialect, nodes...)
+			sql, err := builtin.RenderSQL(test.dialect, nodes...)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(strings.Contains(sql, "CREATE SCHEMA"), qt.Equals, test.wantsPre,

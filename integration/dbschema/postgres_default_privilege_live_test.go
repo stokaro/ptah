@@ -13,9 +13,9 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
 )
@@ -86,7 +86,7 @@ func TestPostgresLiveDefaultPrivilegeConverges(t *testing.T) {
 	description := defaultPrivilegeSchema(schemaName, owner, reader)
 
 	// 1. The rendered statements are the ones the server is given.
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	joined := strings.Join(statements, "\n")
 	c.Assert(joined, qt.Contains, "ALTER DEFAULT PRIVILEGES")
@@ -138,7 +138,7 @@ func TestPostgresLiveDefaultPrivilegeTakesEffectOnACreatedTable(t *testing.T) {
 	defer dropDefaultPrivilegeFixture(conn, schemaName, owner, reader)
 
 	description := defaultPrivilegeSchema(schemaName, owner, reader)
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	for _, statement := range statements {
 		_, execErr := conn.ExecContext(ctx, statement)

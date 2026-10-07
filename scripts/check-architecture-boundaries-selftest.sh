@@ -114,4 +114,25 @@ GO
 require_acceptance "a doc comment that merely names the type"
 rm -f "$target"
 
-echo "check-architecture-boundaries-selftest: OK (4 refusals, 1 false-positive control)"
+# Provider isolation is transitive. A compilable helper must not smuggle a
+# concrete feature into the public contract's dependency graph.
+mkdir -p "$tree/feature/boundaryfixture" "$tree/internal/boundaryfixture"
+cat >"$tree/feature/boundaryfixture/feature.go" <<'GO'
+package boundaryfixture
+GO
+cat >"$tree/internal/boundaryfixture/bridge.go" <<'GO'
+package boundaryfixture
+
+import _ "ptah.run/feature/boundaryfixture"
+GO
+cat >"$tree/engine/boundaries_selftest_defect.go" <<'GO'
+package engine
+
+import _ "ptah.run/internal/boundaryfixture"
+GO
+(cd "$tree" && go build ./engine)
+require_refusal "a provider contract transitively linking a concrete feature"
+rm -f "$tree/engine/boundaries_selftest_defect.go"
+require_acceptance "the repaired provider contract"
+
+echo "check-architecture-boundaries-selftest: OK (5 refusals, 1 false-positive control)"

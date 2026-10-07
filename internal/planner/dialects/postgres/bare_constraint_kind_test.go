@@ -8,7 +8,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -79,7 +79,7 @@ func TestPlannerOrdersAForeignKeyAfterTheOtherKinds(t *testing.T) {
 // error the caller would have to check.
 func renderPostgresNodes(c *qt.C, nodes []ast.Node) string {
 	c.Helper()
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	return sql
 }

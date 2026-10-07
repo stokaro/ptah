@@ -7,8 +7,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -70,7 +70,7 @@ func TestTableChecks_RenderAndCompareAgree(t *testing.T) {
 
 	desired := checksDesired("price > 0", "stock >= 0")
 
-	statements, err := renderer.GetOrderedCreateStatements(desired, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(desired, "postgres")
 	c.Assert(err, qt.IsNil)
 	sql := strings.Join(statements, "\n")
 	c.Assert(sql, qt.Contains, `CONSTRAINT "products_check" CHECK (price > 0)`)

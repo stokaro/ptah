@@ -13,8 +13,8 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/modelast"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -161,7 +161,7 @@ func objectKindFixture() schemamodel.Database {
 // offline converter's AST for the whole desired schema, rendered.
 func renderedSchema(c *qt.C, database schemamodel.Database, dialect string) string {
 	nodes := modelast.CollectDatabase(database, dialect)
-	sql, err := renderer.RenderSQL(dialect, nodes.Statements...)
+	sql, err := builtin.RenderSQL(dialect, nodes.Statements...)
 	c.Assert(err, qt.IsNil, qt.Commentf("render path failed for %s", dialect))
 	return sql
 }
@@ -183,7 +183,7 @@ func plannedSchema(c *qt.C, database schemamodel.Database, dialect string) strin
 // other, so a refusal is a legitimate answer as long as it is the same answer.
 func renderedOrRefusal(database schemamodel.Database, dialect string) string {
 	nodes := modelast.CollectDatabase(database, dialect)
-	sql, err := renderer.RenderSQL(dialect, nodes.Statements...)
+	sql, err := builtin.RenderSQL(dialect, nodes.Statements...)
 	return fmt.Sprintf("%s | err=%v", sql, err)
 }
 

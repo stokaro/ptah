@@ -8,8 +8,8 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/modelast"
 )
 
@@ -52,7 +52,7 @@ func TestFromTable_DeclaredChecksReachTheDDL(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			statements, err := renderer.GetOrderedCreateStatements(tableWithChecks("price > 0"), test.dialect)
+			statements, err := builtin.GetOrderedCreateStatements(tableWithChecks("price > 0"), test.dialect)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements, qt.HasLen, 1)
@@ -69,7 +69,7 @@ func TestFromTable_DeclaredChecksReachTheDDL(t *testing.T) {
 func TestFromTable_EveryDeclaredCheckReachesTheDDL(t *testing.T) {
 	c := qt.New(t)
 
-	statements, err := renderer.GetOrderedCreateStatements(
+	statements, err := builtin.GetOrderedCreateStatements(
 		tableWithChecks("price > 0", "id > 0"), platform.Postgres)
 
 	c.Assert(err, qt.IsNil)
@@ -85,12 +85,12 @@ func TestFromTable_EveryDeclaredCheckReachesTheDDL(t *testing.T) {
 func TestFromTable_NoDeclaredChecksAddsNothing(t *testing.T) {
 	c := qt.New(t)
 
-	statements, err := renderer.GetOrderedCreateStatements(tableWithChecks(), platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(tableWithChecks(), platform.Postgres)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements[0], qt.Not(qt.Contains), "CHECK")
 
-	blank, err := renderer.GetOrderedCreateStatements(tableWithChecks("  "), platform.Postgres)
+	blank, err := builtin.GetOrderedCreateStatements(tableWithChecks("  "), platform.Postgres)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(blank[0], qt.Not(qt.Contains), "CHECK")
@@ -126,7 +126,7 @@ func tableWithChecksAndDeclaredConstraint(checkName string) *schemamodel.Databas
 func TestFromTable_ADeclaredCheckRendersOnce(t *testing.T) {
 	c := qt.New(t)
 
-	statements, err := renderer.GetOrderedCreateStatements(tableWithChecks("price > 0"), platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(tableWithChecks("price > 0"), platform.Postgres)
 
 	c.Assert(err, qt.IsNil)
 	sql := strings.Join(statements, "\n")
@@ -144,7 +144,7 @@ func TestFromTable_ADeclaredCheckRendersOnce(t *testing.T) {
 func TestFromTable_AGeneratedCheckNameSkipsADeclaredOne(t *testing.T) {
 	c := qt.New(t)
 
-	statements, err := renderer.GetOrderedCreateStatements(
+	statements, err := builtin.GetOrderedCreateStatements(
 		tableWithChecksAndDeclaredConstraint("products_check"), platform.Postgres)
 
 	c.Assert(err, qt.IsNil)
@@ -160,7 +160,7 @@ func TestFromTable_AGeneratedCheckNameSkipsADeclaredOne(t *testing.T) {
 func TestFromTable_AGeneratedCheckNameIsUnchangedWithoutACollision(t *testing.T) {
 	c := qt.New(t)
 
-	statements, err := renderer.GetOrderedCreateStatements(
+	statements, err := builtin.GetOrderedCreateStatements(
 		tableWithChecksAndDeclaredConstraint("products_stock_positive"), platform.Postgres)
 
 	c.Assert(err, qt.IsNil)

@@ -13,9 +13,9 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/migrator"
@@ -68,7 +68,7 @@ func TestSpannerLiveSchemaRoundTrip(t *testing.T) {
 
 	// 1. The renderer's statements are what the server is given. Spanner
 	// refuses DDL inside an explicit transaction, so each runs on its own.
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.Spanner)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.Spanner)
 	c.Assert(err, qt.IsNil)
 	for _, statement := range statements {
 		_, execErr := conn.ExecContext(ctx, statement)
@@ -195,7 +195,7 @@ func TestSpannerLiveSequenceRoundTrip(t *testing.T) {
 		_, _ = conn.ExecContext(context.Background(), `DROP SEQUENCE IF EXISTS "`+name+`"`)
 	}()
 
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.Spanner)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.Spanner)
 	c.Assert(err, qt.IsNil)
 	c.Assert(spannerLiveJoined(statements), qt.Contains, "CREATE SEQUENCE",
 		qt.Commentf("a claimed capability has to reach an executable statement"))
@@ -235,7 +235,7 @@ func TestSpannerLiveRefusesTheSequenceOptionClauses(t *testing.T) {
 		Sequences: []schemamodel.Sequence{{Name: name, Increment: &increment}},
 	}
 
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.Spanner)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.Spanner)
 	c.Assert(err, qt.IsNil)
 	rendered := spannerLiveJoined(statements)
 	c.Assert(rendered, qt.Contains, "INCREMENT BY",

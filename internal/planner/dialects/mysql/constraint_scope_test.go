@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/planner/dialects/mysql"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -39,7 +39,7 @@ func renderMySQLFamily(c *qt.C, dialect string, diff *difftypes.SchemaDiff, desi
 	diff = withDeclaredObjects(diff, desired)
 	nodes, err := mysql.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL(dialect, nodes...)
+	sql, err := builtin.RenderSQL(dialect, nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 	return sql
@@ -873,7 +873,7 @@ func TestPlanner_ModifiedPrimaryKeyIsDroppedThenReadded(t *testing.T) {
 	nodes, err := mysql.New().GenerateMigrationAST(diff)
 
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("mysql", nodes...)
+	sql, err := builtin.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "ALTER TABLE `users` DROP PRIMARY KEY, ADD PRIMARY KEY (`id`, `tenant`);")
 	c.Assert(strings.Count(sql, "DROP PRIMARY KEY"), qt.Equals, 1)

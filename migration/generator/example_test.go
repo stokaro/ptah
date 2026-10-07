@@ -13,7 +13,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/goschema"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/schemadiff"
@@ -260,7 +260,7 @@ func ExamplePlanBidirectionalSchemaDiff() {
 		Dialect:       "postgres",
 	}))
 
-	r := must.Must(renderer.NewRenderer("postgres"))
+	r := must.Must(builtin.NewRenderer("postgres"))
 	fmt.Println("-- forward, no-transaction:", plan.Forward.RequiresNoTransaction)
 	for _, node := range plan.Forward.Nodes {
 		fmt.Print(must.Must(r.Render(node)))

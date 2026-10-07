@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 )
 
 // keyedTable is a table `ex` with an integer primary key `id` and a column `r`,
@@ -77,7 +77,7 @@ func TestGetOrderedCreateStatements_FoldedIndexConstraintFollowsItsTable(t *test
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			statements, err := renderer.GetOrderedCreateStatements(test.database, platform.Postgres)
+			statements, err := builtin.GetOrderedCreateStatements(test.database, platform.Postgres)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements, qt.DeepEquals, test.want)
@@ -118,7 +118,7 @@ func TestGetOrderedCreateStatements_IndexConstraintsTheServerKeepsStayInTheTable
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			statements, err := renderer.GetOrderedCreateStatements(test.database, test.dialect)
+			statements, err := builtin.GetOrderedCreateStatements(test.database, test.dialect)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements, qt.DeepEquals, []string{test.want})
@@ -191,7 +191,7 @@ func TestGetOrderedCreateStatements_FoldingColumnKeyFollowsItsTable(t *testing.T
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			statements, err := renderer.GetOrderedCreateStatements(test.database, platform.Postgres)
+			statements, err := builtin.GetOrderedCreateStatements(test.database, platform.Postgres)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements, qt.DeepEquals, test.want)
@@ -205,7 +205,7 @@ func TestGetOrderedCreateStatements_FoldingColumnKeyFollowsItsTable(t *testing.T
 func TestGetOrderedCreateStatements_ColumnKeyTheServerKeepsStaysInTheTable(t *testing.T) {
 	c := qt.New(t)
 
-	statements, err := renderer.GetOrderedCreateStatements(
+	statements, err := builtin.GetOrderedCreateStatements(
 		keyedTableWithColumnKey("r", uniqueOn("uq_r_id", "r", "id")), platform.Postgres)
 
 	c.Assert(err, qt.IsNil)

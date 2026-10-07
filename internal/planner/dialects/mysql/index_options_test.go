@@ -7,7 +7,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mysql"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -23,7 +23,7 @@ func TestPlanner_ChangesIndexVisibilityInPlace(t *testing.T) {
 
 	nodes, err := mysql.NewForDialect(platform.MySQL, capability.MySQL84()).GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQLWithCapabilities(platform.MySQL, capability.MySQL84(), nodes...)
+	sql, err := builtin.RenderSQLWithCapabilities(platform.MySQL, capability.MySQL84(), nodes...)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "ALTER TABLE `orders` ALTER INDEX `k_total` INVISIBLE;")

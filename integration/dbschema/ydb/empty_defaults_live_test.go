@@ -9,7 +9,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -36,7 +36,7 @@ func TestYDBEmptyDefaults_ExportRecreatesTheStoredDefaults(t *testing.T) {
 			model := dbschematogo.ConvertDBSchemaToGoSchema(
 				&catalog.Database{Tables: []catalog.Table{before}}, platform.YDB,
 			)
-			statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(model, platform.YDB, conn.Info().Capabilities)
+			statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(model, platform.YDB, conn.Info().Capabilities)
 			c.Assert(err, qt.IsNil)
 			c.Assert(planAgainst(c, conn, model, schemas), qt.HasLen, 0)
 			dropTables(c, conn, schemas)

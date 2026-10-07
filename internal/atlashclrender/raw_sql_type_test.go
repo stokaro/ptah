@@ -7,8 +7,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/modelast"
@@ -119,7 +119,7 @@ table "t" {
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 
-	sql, err := renderer.RenderSQL(platform.SQLite, modelast.CollectDatabase(*parsed, platform.SQLite))
+	sql, err := builtin.RenderSQL(platform.SQLite, modelast.CollectDatabase(*parsed, platform.SQLite))
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "USER_DEFINED")
 	c.Assert(sql, qt.Not(qt.Contains), "sql(")

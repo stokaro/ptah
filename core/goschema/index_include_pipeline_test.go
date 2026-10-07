@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 )
 
 func TestIndexIncludeAnnotationRendersPostgreSQLCoveringIndex(t *testing.T) {
@@ -30,7 +30,7 @@ type Account struct {
 }
 `)
 
-	statements, err := renderer.GetOrderedCreateStatements(&database, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(&database, "postgres")
 	c.Assert(err, qt.IsNil)
 	c.Assert(
 		strings.Join(statements, "\n"),

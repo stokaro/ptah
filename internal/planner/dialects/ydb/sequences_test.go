@@ -7,8 +7,8 @@ import (
 
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -195,7 +195,7 @@ func TestGenerateMigrationAST_SerialSequenceReportsNothingDropped(t *testing.T) 
 		GenerateMigrationAST(createdOrders(serialField("BIGSERIAL", "100", "5")))
 	c.Assert(err, qt.IsNil)
 
-	sql, omissions, err := renderer.RenderSQLReportingOmissions("ydb", capability.YDB262(), nodes...)
+	sql, omissions, err := builtin.RenderSQLReportingOmissions("ydb", capability.YDB262(), nodes...)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "START WITH 100 INCREMENT BY 5 RESTART WITH 100")

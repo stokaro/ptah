@@ -7,7 +7,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/parser"
 )
 
@@ -261,7 +261,7 @@ func TestParser_ParseDropIndexRoundTrip(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements.Statements, qt.HasLen, 1)
 
-			rendered, err := renderer.RenderSQL(test.dialect, statements.Statements[0])
+			rendered, err := builtin.RenderSQL(test.dialect, statements.Statements[0])
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(rendered, qt.Equals, test.want)

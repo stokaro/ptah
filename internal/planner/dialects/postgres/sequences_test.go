@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -36,7 +36,7 @@ func TestPlanner_SequencesAdded_OrderedBeforeTablesWithOwnershipAfter(t *testing
 
 	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 
 	createIdx := strings.Index(sql, "CREATE SEQUENCE")
@@ -71,7 +71,7 @@ func TestPlanner_SequencesModified_EmitsAlterForChangedOptionsOnly(t *testing.T)
 
 	nodes, err := postgres.New().GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 

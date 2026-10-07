@@ -9,8 +9,8 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/sqlite"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -198,9 +198,9 @@ func TestPlanner_IndexRefs_CaseInsensitiveReplacementExecutesOnSQLite(t *testing
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
 
-	dropSQL, err := renderer.RenderSQL(platform.SQLite, nodes[0])
+	dropSQL, err := builtin.RenderSQL(platform.SQLite, nodes[0])
 	c.Assert(err, qt.IsNil)
-	createSQL, err := renderer.RenderSQL(platform.SQLite, nodes[1])
+	createSQL, err := builtin.RenderSQL(platform.SQLite, nodes[1])
 	c.Assert(err, qt.IsNil)
 	_, err = db.Exec(dropSQL)
 	c.Assert(err, qt.IsNil, qt.Commentf("execute replacement drop: %s", dropSQL))

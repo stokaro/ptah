@@ -29,8 +29,8 @@ import (
 	"strings"
 
 	"ptah.run/core/goschema"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 )
 
 func main() {
@@ -101,7 +101,7 @@ func generateDDLForDialects(database *schemamodel.Database) {
 	for _, dialect := range supportedDialects {
 		fmt.Printf("\n=== %s ===\n", strings.ToUpper(dialect))
 
-		statements, err := renderer.GetOrderedCreateStatements(database, dialect)
+		statements, err := builtin.GetOrderedCreateStatements(database, dialect)
 		if err != nil {
 			fmt.Printf("Error generating %s DDL: %v\n", dialect, err)
 			continue

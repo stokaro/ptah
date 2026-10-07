@@ -8,8 +8,8 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -26,7 +26,7 @@ func postgres18Rollback(c *qt.C, diff *difftypes.SchemaDiff, current *catalog.Da
 		Capabilities:  capability.Postgres18(),
 	})
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQLWithCapabilities(platform.Postgres, capability.Postgres18(), plan.Reverse.Nodes...)
+	sql, err := builtin.RenderSQLWithCapabilities(platform.Postgres, capability.Postgres18(), plan.Reverse.Nodes...)
 	c.Assert(err, qt.IsNil)
 	return sql
 }

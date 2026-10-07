@@ -6,8 +6,8 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/capabilityprobe"
 	"ptah.run/internal/ydbflags"
 )
@@ -146,7 +146,7 @@ func RenderStatements(
 ) ([]string, error) {
 	finalized := deepCopyDatabase(schema)
 	schemamodel.Finalize(&finalized)
-	return renderer.GetOrderedCreateStatementsWithCapabilities(
+	return builtin.GetOrderedCreateStatementsWithCapabilities(
 		&finalized,
 		cell.Dialect,
 		cell.Preset(),

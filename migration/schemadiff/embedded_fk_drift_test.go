@@ -7,8 +7,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mysql"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/internal/schemaprep"
@@ -138,7 +138,7 @@ func TestEmbeddedInlineMixinFK_NeverTargetsStructName(t *testing.T) {
 
 		nodes, err := postgres.New().GenerateMigrationAST(diff)
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("postgres", nodes...)
+		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -165,7 +165,7 @@ func TestEmbeddedInlineMixinFK_NeverTargetsStructName(t *testing.T) {
 		downDiff := reverseConstraintDiff(diff)
 		nodes, err := postgres.New().GenerateMigrationAST(downDiff)
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("postgres", nodes...)
+		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -213,7 +213,7 @@ func TestEmbeddedInlineMixinFK_MultiHostActionDrift(t *testing.T) {
 
 		nodes, err := postgres.New().GenerateMigrationAST(diff)
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("postgres", nodes...)
+		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -238,7 +238,7 @@ func TestEmbeddedInlineMixinFK_MultiHostActionDrift(t *testing.T) {
 		converged := schemadiff.Compare(gen, ownableMixinConvergedTenantOnDelete("CASCADE", hosts...))
 		noopNodes, err := postgres.New().GenerateMigrationAST(converged)
 		c.Assert(err, qt.IsNil)
-		noopSQL, err := renderer.RenderSQL("postgres", noopNodes...)
+		noopSQL, err := builtin.RenderSQL("postgres", noopNodes...)
 		c.Assert(err, qt.IsNil)
 		noopSQL = legacyRenderedSQL(noopSQL)
 		c.Assert(noopSQL, qt.Not(qt.Contains), "fk_entity_tenant",
@@ -255,7 +255,7 @@ func TestEmbeddedInlineMixinFK_MultiHostActionDrift(t *testing.T) {
 
 		nodes, err := mysql.New().GenerateMigrationAST(diff)
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("mysql", nodes...)
+		sql, err := builtin.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -342,7 +342,7 @@ func TestEmbeddedInlineMixinFK_MixedModifyAndAdd_NoPhantomDrop(t *testing.T) {
 
 	nodes, err := postgres.New().GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 

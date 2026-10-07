@@ -8,8 +8,8 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -29,7 +29,7 @@ func planPostgres18(c *qt.C, diff *difftypes.SchemaDiff, desired *schemamodel.Da
 	nodes, err := postgres.NewForDialect(platform.Postgres, capability.Postgres18()).
 		GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQLWithCapabilities(platform.Postgres, capability.Postgres18(), nodes...)
+	sql, err := builtin.RenderSQLWithCapabilities(platform.Postgres, capability.Postgres18(), nodes...)
 	c.Assert(err, qt.IsNil)
 	return sql
 }

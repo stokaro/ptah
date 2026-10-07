@@ -6,8 +6,8 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/sqlutil"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasmigrateimport"
 	"ptah.run/internal/sqlscript"
 	"ptah.run/internal/txrequire"
@@ -336,7 +336,7 @@ func renderMigrationStatements(dialect string, caps capability.Capabilities, nod
 	if len(nodes) == 0 {
 		return nil, nil
 	}
-	output, err := renderer.RenderSQLWithCapabilities(dialect, caps, nodes...)
+	output, err := builtin.RenderSQLWithCapabilities(dialect, caps, nodes...)
 	if err != nil {
 		return nil, err
 	}

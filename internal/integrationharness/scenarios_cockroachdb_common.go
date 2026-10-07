@@ -9,8 +9,8 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 )
 
 // testCockroachDBCommonSubset validates a PostgreSQL-family subset that
@@ -101,7 +101,7 @@ func testPostgresDistributedCommonSubset(
 				"%s connection claims %v, which this common-subset scenario is defined by the absence of",
 				label, claimed)
 		}
-		sqlText, err = renderer.RenderSQLWithCapabilities(info.Dialect, info.Capabilities, createUsers, createEmailIndex)
+		sqlText, err = builtin.RenderSQLWithCapabilities(info.Dialect, info.Capabilities, createUsers, createEmailIndex)
 		if err != nil {
 			return fmt.Errorf("render %s SQL: %w", label, err)
 		}

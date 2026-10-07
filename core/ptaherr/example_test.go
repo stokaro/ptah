@@ -6,7 +6,7 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 )
 
 // Example shows the package's two-layer branching contract on one returned
@@ -17,7 +17,7 @@ import (
 // and read the fields: the message text is a diagnostic for a person, not a
 // value to match on.
 func Example() {
-	_, err := renderer.NewRenderer("dbase")
+	_, err := builtin.NewRenderer("dbase")
 
 	if errors.Is(err, ptaherr.ErrUnsupportedDialect) {
 		fmt.Println("branch: unsupported dialect")

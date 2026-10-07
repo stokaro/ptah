@@ -84,7 +84,7 @@ func (l IdentifierLimit) Unlimited() bool {
 //
 // This is where the rule is DEFINED, and an earlier version of this comment
 // claimed it was already the only place it is APPLIED. It was not. Two copies
-// existed; core/renderer's and dbschema's now consume this method, and ONE
+// existed; engine/builtin's and dbschema's now consume this method, and ONE
 // remains:
 //
 //   - internal/schemaprep (foreignKeyNameFits, foreignKeyNameWithSuffix)
@@ -162,7 +162,7 @@ const (
 // identifierLimits is static engine knowledge, keyed on the normalized dialect.
 //
 // The numbers were already in this repository, inline in
-// core/renderer's foreign-key name validation, as a dialect switch three arms
+// engine/builtin's foreign-key name validation, as a dialect switch three arms
 // wide. Moving them here is what lets a second caller ask the same question
 // without copying the switch, which is how the answers drift apart.
 //

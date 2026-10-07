@@ -7,8 +7,8 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mysql"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -78,7 +78,7 @@ func TestPlanner_OracleUserTypesPlanWhateverSchemaTheyName(t *testing.T) {
 			c.Assert(nodes, qt.Not(qt.HasLen), 0,
 				qt.Commentf("the declaration travels with the change; nothing is left to look up"))
 
-			sql, err := renderer.RenderSQL(platform.Oracle, nodes...)
+			sql, err := builtin.RenderSQL(platform.Oracle, nodes...)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, test.wantIn, qt.Commentf("plan:\n%s", sql))
 		})

@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -35,11 +35,11 @@ func TestParseRender(t *testing.T) {
 			c := qt.New(t)
 			database, _, err := sqlschema.Read([]byte(text), "ydb")
 			c.Assert(err, qt.IsNil)
-			rendered, err := renderer.GetOrderedCreateStatements(&database, "ydb")
+			rendered, err := builtin.GetOrderedCreateStatements(&database, "ydb")
 			c.Assert(err, qt.IsNil)
 			again, _, err := sqlschema.Read([]byte(strings.Join(rendered, "\n")), "ydb")
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", rendered))
-			second, err := renderer.GetOrderedCreateStatements(&again, "ydb")
+			second, err := builtin.GetOrderedCreateStatements(&again, "ydb")
 			c.Assert(err, qt.IsNil)
 			c.Assert(second, qt.DeepEquals, rendered)
 		})

@@ -13,8 +13,8 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbschema/postgres"
 	"ptah.run/internal/modelast"
 	"ptah.run/migration/planner"
@@ -37,7 +37,7 @@ func TestGeneratedColumnAndPartialIndex_RoundTrip_Postgres(t *testing.T) {
 
 	target := generatedPartialIndexSchema(schemaName, "lower(email)")
 	createAST := modelast.CollectDatabase(*target, platform.Postgres)
-	createSQL, err := renderer.RenderSQL(platform.Postgres, createAST.Statements...)
+	createSQL, err := builtin.RenderSQL(platform.Postgres, createAST.Statements...)
 	c.Assert(err, qt.IsNil)
 	c.Assert(createSQL, qt.Contains, "GENERATED ALWAYS AS (lower(email)) STORED")
 	c.Assert(createSQL, qt.Contains, "WHERE deleted_at IS NULL")

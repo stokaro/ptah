@@ -6,9 +6,9 @@ import (
 	"io/fs"
 	"strings"
 
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 )
 
@@ -78,7 +78,7 @@ func testClickHouseMergeTreeEngine(ctx context.Context, conn *dbschema.DatabaseC
 	}
 
 	if err := recorder.RecordStep("Generate + Apply CREATE TABLE", "Render MergeTree DDL from annotations and apply", func() error {
-		statements, err := renderer.GetOrderedCreateStatements(schema, "clickhouse")
+		statements, err := builtin.GetOrderedCreateStatements(schema, "clickhouse")
 		if err != nil {
 			return fmt.Errorf("render ClickHouse DDL: %w", err)
 		}

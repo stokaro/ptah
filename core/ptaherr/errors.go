@@ -151,7 +151,7 @@ func (e *PlanError) Unwrap() error {
 	return e.Err
 }
 
-// RenderError reports a SQL rendering failure. The core/renderer package
+// RenderError reports a SQL rendering failure. The engine/builtin package
 // returns it, and errors.As(err, &renderErr) retrieves it. Err wraps
 // [ErrUnsupportedDialect] for a dialect Ptah cannot render,
 // [ErrInvalidSchemaDiff] for a schema or node that is malformed, and

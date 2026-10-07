@@ -15,9 +15,9 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"ptah.run/catalog"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
@@ -107,7 +107,7 @@ CREATE POLICY docs_tenant ON %[1]s.docs %[2]s USING (true);
 
 func (f policyRoleFixture) apply(c *qt.C, desired *schemamodel.Database) {
 	c.Helper()
-	statements, err := renderer.GetOrderedCreateStatements(desired, f.dialect)
+	statements, err := builtin.GetOrderedCreateStatements(desired, f.dialect)
 	c.Assert(err, qt.IsNil)
 	for _, statement := range statements {
 		_, err := f.conn.ExecContext(c.Context(), statement)

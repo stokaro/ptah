@@ -9,7 +9,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/dbmlrender"
 )
@@ -24,7 +24,7 @@ func TestConvertDBSchemaToGoSchema_YDBEmptyDefaultsSurviveExport(t *testing.T) {
 	}}}}
 
 	model := dbschematogo.ConvertDBSchemaToGoSchema(db, platform.YDB)
-	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(model, platform.YDB, capability.YDB251())
+	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(model, platform.YDB, capability.YDB251())
 	c.Assert(err, qt.IsNil)
 	sql := strings.Join(statements, "\n")
 	c.Assert(sql, qt.Contains, "`text_value` Utf8 DEFAULT ''u")

@@ -10,9 +10,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/schemaload"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -538,9 +538,9 @@ tables:
 	})
 	c.Assert(err, qt.IsNil)
 
-	compositeRender, err := renderer.GetOrderedCreateStatements(composite, "postgres")
+	compositeRender, err := builtin.GetOrderedCreateStatements(composite, "postgres")
 	c.Assert(err, qt.IsNil)
-	handMergedRender, err := renderer.GetOrderedCreateStatements(handMerged, "postgres")
+	handMergedRender, err := builtin.GetOrderedCreateStatements(handMerged, "postgres")
 	c.Assert(err, qt.IsNil)
 	c.Assert(compositeRender, qt.DeepEquals, handMergedRender)
 

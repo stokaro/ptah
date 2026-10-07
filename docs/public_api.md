@@ -18,6 +18,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/core/astbuilder`
 - `ptah.run/core/coverage`
 - `ptah.run/core/goschema`
+- `ptah.run/core/objectidentity`
 - `ptah.run/core/schemamodel`
 - `ptah.run/core/platform`
 - `ptah.run/core/platform/capability`
@@ -25,6 +26,8 @@ These packages are intended for application and tool embedders:
 - `ptah.run/core/ptaherr`
 - `ptah.run/core/query`
 - `ptah.run/core/renderer`
+- `ptah.run/engine`
+- `ptah.run/engine/builtin`
 - `ptah.run/core/schemasource`
 - `ptah.run/core/sqlutil`
 - `ptah.run/core/yamlschema`
@@ -86,7 +89,18 @@ Atlas CE accepts without acting on, with kind and source location. `Merge`
 preserves this diagnostic metadata from both inputs. Ptah's command layer warns
 for each entry; embedders can choose their own reporting policy.
 
-`core/renderer.GetOrderedCreateStatements` and its capability-aware variant
+`core/objectidentity` provides the structured identity and reference rules used
+by comparison and planning. Source spelling stays separate from normalized
+identity. Custom feature kinds use the same contract as common objects.
+
+`core/renderer.Service` renders a complete batch with a context and explicit
+capabilities. `engine.New` freezes the caller's provider selection and rejects
+conflicting target names or aliases. An empty runtime has no built-ins.
+`Runtime.Render` propagates service failures and cancellation without partial
+SQL. Providers may implement this service in process without serialization.
+`engine/builtin.New` assembles the bundled implementations explicitly.
+
+`engine/builtin.GetOrderedCreateStatements` and its capability-aware variant
 render complete schema DDL fail-closed. Non-SQLite targets return all table
 creation statements before phase-two foreign keys; SQLite keeps foreign keys
 inline. Invalid or unsupported foreign keys return typed errors and no partial
@@ -127,7 +141,7 @@ on the AST that both entry points converge on and `RenderSQL` refuses the same
 nodes. A blank column name counts as no column, because a structured key part
 carrying only a direction or a prefix length converts to one.
 
-`core/ast` and `core/renderer` carry the DDL language: the visitor node tree
+`core/ast` and `engine/builtin` carry the DDL language: the visitor node tree
 and the dialect engines that turn it into schema SQL. `core/query` carries the
 whole DML language: the SELECT / INSERT / UPDATE / DELETE statement and
 expression tree, the fluent builders that produce it, and `RenderSelect`,
@@ -145,7 +159,7 @@ node the builders do not model stays reachable through `core/ast` directly. The
 schema-scoped types — `SchemaTableBuilder` and its siblings — carry the same
 configuration methods as the standalone ones and differ in where `End` returns.
 Nothing here validates: an unknown type, an unresolved foreign key, or an
-unparsable default reaches the AST and is reported by `core/renderer` or by the
+unparsable default reaches the AST and is reported by `engine/builtin` or by the
 database.
 
 `core/yamlschema` reads a desired schema written in Ptah's YAML format. `Parse`

@@ -14,8 +14,8 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbexprprobe"
 	"ptah.run/internal/modelast"
 )
@@ -98,7 +98,7 @@ func generatedColumnNames(fields []schemamodel.Field) []string {
 // renderCreateTable renders one node and strips the statement terminator, which
 // the Oracle driver refuses on a single statement.
 func renderCreateTable(dialect string, caps capability.Capabilities, node *ast.CreateTableNode) (string, error) {
-	rendered, err := renderer.RenderSQLWithCapabilities(dialect, caps, node)
+	rendered, err := builtin.RenderSQLWithCapabilities(dialect, caps, node)
 	if err != nil {
 		return "", fmt.Errorf("render generated-expression probe for %s: %w", node.Name, err)
 	}

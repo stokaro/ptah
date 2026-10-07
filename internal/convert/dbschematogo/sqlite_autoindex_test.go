@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -94,7 +94,7 @@ func TestConvert_SQLiteDescriptionReplaysIntoAFreshDatabase(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	model := dbschematogo.ConvertDBSchemaToGoSchema(live, source.Info().Dialect)
-	statements, err := renderer.GetOrderedCreateStatements(model, source.Info().Dialect)
+	statements, err := builtin.GetOrderedCreateStatements(model, source.Info().Dialect)
 	c.Assert(err, qt.IsNil)
 	c.Assert(len(statements) > 0, qt.IsTrue)
 

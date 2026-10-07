@@ -12,9 +12,9 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -50,7 +50,7 @@ func TestSQLServerLiveRoleAndGrantRoundTrip(t *testing.T) {
 
 	// 1. The renderer's statements are the ones the server is given. Nothing is
 	// hand-written, so a statement this engine refuses fails the test.
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.SQLServer)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.SQLServer)
 	c.Assert(err, qt.IsNil)
 	rendered := strings.Join(statements, "\n")
 	c.Assert(rendered, qt.Contains, "CREATE ROLE")

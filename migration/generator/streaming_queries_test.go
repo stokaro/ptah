@@ -8,8 +8,8 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff"
 )
@@ -28,9 +28,9 @@ func TestStreamingQueries_ReverseBodyChangeRequiresTheSamePermission(t *testing.
 	c.Assert(err, qt.IsNil)
 	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{Diff: diff, DesiredSchema: desired, CurrentSchema: current, Dialect: "ydb", Capabilities: caps})
 	c.Assert(err, qt.IsNil)
-	forward, err := renderer.RenderSQLWithCapabilities("ydb", caps, plan.Forward.Nodes...)
+	forward, err := builtin.RenderSQLWithCapabilities("ydb", caps, plan.Forward.Nodes...)
 	c.Assert(err, qt.IsNil)
-	reverse, err := renderer.RenderSQLWithCapabilities("ydb", caps, plan.Reverse.Nodes...)
+	reverse, err := builtin.RenderSQLWithCapabilities("ydb", caps, plan.Reverse.Nodes...)
 	c.Assert(err, qt.IsNil)
 	c.Assert(forward, qt.Contains, "FORCE = TRUE")
 	c.Assert(forward, qt.Contains, "WHERE TRUE")

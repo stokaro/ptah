@@ -36,9 +36,9 @@ import (
 	"strconv"
 	"strings"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/objectidentity"
 )
 
 // Check is the key for a table CHECK whose table arrives as one possibly

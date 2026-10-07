@@ -12,9 +12,9 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
 )
@@ -71,7 +71,7 @@ func TestSQLServerLiveRLSRoundTrip(t *testing.T) {
 	// 1. The renderer's statements are the ones the server is given, so a
 	// statement this engine refuses fails here rather than being corrected by
 	// hand.
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.SQLServer)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.SQLServer)
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(statements, "\n"), qt.Contains, "CREATE SECURITY POLICY")
 	for _, statement := range statements {

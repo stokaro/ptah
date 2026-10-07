@@ -11,8 +11,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/sqlschema"
 	"ptah.run/migration/schemadiff"
@@ -64,7 +64,7 @@ func TestPostgresLiveTriggerClausesConverge(t *testing.T) {
 
 	declared, _, err := sqlschema.Read([]byte(triggerClausesDocument(schemaName)), platform.Postgres)
 	c.Assert(err, qt.IsNil)
-	statements, err := renderer.GetOrderedCreateStatements(&declared, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(&declared, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	for _, statement := range statements {
 		_, execErr := conn.ExecContext(ctx, statement)

@@ -7,8 +7,8 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -39,7 +39,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 
 		nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("postgres", nodes...)
+		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -53,7 +53,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 
 		nodes, err := postgres.New().WithConcurrentIndexes().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("postgres", nodes...)
+		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -67,7 +67,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 		caps := capability.Postgres16().With(capability.CreateIndexConcurrently, false)
 		nodes, err := postgres.NewWithCapabilities(caps).WithConcurrentIndexes().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("postgres", nodes...)
+		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -90,7 +90,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 		}
 		nodes, err := postgres.New().WithConcurrentIndexes().GenerateMigrationAST(withDeclaredObjects(uniqueDiff, uniqueGenerated))
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("postgres", nodes...)
+		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -106,7 +106,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 
 		nodes, err := base.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("postgres", nodes...)
+		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 		c.Assert(sql, qt.Not(qt.Contains), "CONCURRENTLY",
@@ -137,7 +137,7 @@ func TestPlanner_ConcurrentIndexRefs(t *testing.T) {
 			difftypes.IndexRef{Name: "idx_users_email", TableName: "users"},
 		).GenerateMigrationAST(withDeclaredObjects(diff, desired))
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("postgres", nodes...)
+		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -153,7 +153,7 @@ func TestPlanner_ConcurrentIndexRefs(t *testing.T) {
 			difftypes.IndexRef{Name: "idx_users_email", TableName: "users"},
 		).GenerateMigrationAST(withDeclaredObjects(diff, desired))
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("postgres", nodes...)
+		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -167,7 +167,7 @@ func TestPlanner_ConcurrentIndexRefs(t *testing.T) {
 		_ = base.WithConcurrentIndexRefs(difftypes.IndexRef{Name: "idx_users_email", TableName: "users"})
 		nodes, err := base.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("postgres", nodes...)
+		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 

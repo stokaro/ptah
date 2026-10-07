@@ -8,8 +8,8 @@ import (
 
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mysql"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -566,7 +566,7 @@ func TestPlanner_ColumnTypeChange_MariaDBGuardsDrop(t *testing.T) {
 
 	nodes, err := mysql.NewWithCapabilities(capability.MariaDB1011()).GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQLWithCapabilities("mariadb", capability.MariaDB1011(), nodes...)
+	sql, err := builtin.RenderSQLWithCapabilities("mariadb", capability.MariaDB1011(), nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 
@@ -600,7 +600,7 @@ func TestPlanner_ColumnTypeChange_ForeignKeysComeFromTheDiff(t *testing.T) {
 		nodes, err := mysql.New().GenerateMigrationAST(diff)
 
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("mysql", nodes...)
+		sql, err := builtin.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
 		c.Assert(sql, qt.Contains, "ALTER TABLE `posts` DROP FOREIGN KEY `fk_posts_user_id`")
 		c.Assert(sql, qt.Contains, "MODIFY COLUMN `user_id`")
@@ -627,7 +627,7 @@ func TestPlanner_ColumnTypeChange_ForeignKeysComeFromTheDiff(t *testing.T) {
 		nodes, err := mysql.New().GenerateMigrationAST(diff)
 
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("mysql", nodes...)
+		sql, err := builtin.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
 		c.Assert(sql, qt.Not(qt.Contains), "DROP FOREIGN KEY")
 		c.Assert(sql, qt.Contains, "MODIFY COLUMN `user_id`")

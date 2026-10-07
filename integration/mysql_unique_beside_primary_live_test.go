@@ -14,7 +14,7 @@ import (
 	_ "github.com/go-sql-driver/mysql" // registers the MySQL driver for database/sql
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/sqlschema"
 )
@@ -95,7 +95,7 @@ func assertUniqueBesidePrimaryConverges(
 
 	database, _, err := sqlschema.Read([]byte(source), dialect)
 	c.Assert(err, qt.IsNil)
-	rendered, err := renderer.GetOrderedCreateStatements(&database, dialect)
+	rendered, err := builtin.GetOrderedCreateStatements(&database, dialect)
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered, qt.HasLen, 1)
 

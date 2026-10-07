@@ -8,8 +8,8 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -30,7 +30,7 @@ func TestPlanBidirectionalSchemaDiff_IndexVisibilityRollsBack(t *testing.T) {
 		Capabilities:  capability.MySQL84(),
 	})
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQLWithCapabilities(platform.MySQL, capability.MySQL84(), plan.Reverse.Nodes...)
+	sql, err := builtin.RenderSQLWithCapabilities(platform.MySQL, capability.MySQL84(), plan.Reverse.Nodes...)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.Reverse.Diff.IndexVisibilityChanged, qt.DeepEquals, []difftypes.IndexVisibilityChange{

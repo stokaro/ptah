@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -30,11 +30,11 @@ func TestReadYQLComments(t *testing.T) {
 	c.Assert(database.Indexes[1].Comment, qt.Equals, "nested index")
 	c.Assert(database.Views[0].Comment, qt.Equals, "")
 	c.Assert(database.Views[1].Comment, qt.Equals, "nested view")
-	statements, err := renderer.GetOrderedCreateStatements(&database, "ydb")
+	statements, err := builtin.GetOrderedCreateStatements(&database, "ydb")
 	c.Assert(err, qt.IsNil)
 	again, _, err := sqlschema.Read([]byte(strings.Join(statements, "\n")), "ydb")
 	c.Assert(err, qt.IsNil)
-	rendered, err := renderer.GetOrderedCreateStatements(&again, "ydb")
+	rendered, err := builtin.GetOrderedCreateStatements(&again, "ydb")
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered, qt.DeepEquals, statements)
 }

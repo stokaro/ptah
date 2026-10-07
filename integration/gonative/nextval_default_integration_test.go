@@ -11,7 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/goschema"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbschema/postgres"
 	"ptah.run/migration/schemadiff"
 )
@@ -50,7 +50,7 @@ type Order struct {
 	desired, err := goschema.ParseDir(dir)
 	c.Assert(err, qt.IsNil)
 
-	stmts, err := renderer.GetOrderedCreateStatements(desired, "postgres")
+	stmts, err := builtin.GetOrderedCreateStatements(desired, "postgres")
 	c.Assert(err, qt.IsNil)
 	for _, stmt := range stmts {
 		_, err = db.Exec(stmt)

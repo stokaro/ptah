@@ -62,7 +62,7 @@ and guessing a frame would change results.
 ## Dialect coverage
 
 `RenderSelect`, `RenderInsert`, `RenderUpdate`, and `RenderDelete` render for
-every dialect `renderer.SupportedDialects()` returns. What differs between them
+every dialect `builtin.SupportedDialects()` returns. What differs between them
 is the placeholder, the identifier quoting, and how a row limit is written. The
 first column holds the strings you pass as the dialect, so the table is also
 that list of names:
@@ -123,7 +123,7 @@ cannot declare; use ALTER TABLE … UPDATE, or enable enable_block_number_column
 on the table
 ```
 
-Every dialect name `renderer.SupportedDialects()` returns is pinned against all
+Every dialect name `builtin.SupportedDialects()` returns is pinned against all
 four render functions — one cell per (dialect, verb) pair, each pinned to an
 exact SQL string or an exact error — in `core/query/dialect_matrix_test.go`, so
 the builder cannot acquire or lose a dialect without that table saying so. What
@@ -178,7 +178,6 @@ manage indices by hand.
 import (
 	"ptah.run/core/platform"
 	"ptah.run/core/query"
-	"ptah.run/core/renderer"
 )
 
 stmt := query.Select("id", "name").
@@ -196,7 +195,7 @@ stmt := query.Select("id", "name").
 	Offset(0).
 	Build()
 
-sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+sql, args, err := query.RenderSelect(stmt, platform.Postgres)
 ```
 
 The PostgreSQL output is:
@@ -258,7 +257,7 @@ stmt := query.Select().
 	Limit(20).
 	Build()
 
-sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+sql, args, err := query.RenderSelect(stmt, platform.Postgres)
 ```
 
 The PostgreSQL output is:
@@ -342,7 +341,7 @@ stmt := query.Select("status").
 	Limit(10).
 	Build()
 
-sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+sql, args, err := query.RenderSelect(stmt, platform.Postgres)
 ```
 
 The PostgreSQL output is:
@@ -386,9 +385,9 @@ passed to `Values` and `Set` are bound exactly like `WHERE` values — never
 concatenated into SQL — and table and column names are quoted. Each statement has
 its own renderer entry point, all returning `(sql string, args []any, err error)`:
 
-- `renderer.RenderInsert(stmt, dialect)`
-- `renderer.RenderUpdate(stmt, dialect)`
-- `renderer.RenderDelete(stmt, dialect)`
+- `query.RenderInsert(stmt, dialect)`
+- `query.RenderUpdate(stmt, dialect)`
+- `query.RenderDelete(stmt, dialect)`
 
 Validation of degenerate input happens at render time (as with `SELECT`), so a
 builder call never fails and `Build` never returns an error.
@@ -435,7 +434,7 @@ stmt := query.InsertInto("users").
 	Returning("id").
 	Build()
 
-sql, args, err := renderer.RenderInsert(stmt, platform.Postgres)
+sql, args, err := query.RenderInsert(stmt, platform.Postgres)
 ```
 
 The PostgreSQL output is:
@@ -461,7 +460,7 @@ stmt := query.Update("users").
 	Where(query.Eq("id", int64(7))).
 	Build()
 
-sql, args, err := renderer.RenderUpdate(stmt, platform.Postgres)
+sql, args, err := query.RenderUpdate(stmt, platform.Postgres)
 ```
 
 The PostgreSQL output is:
@@ -478,7 +477,7 @@ list is rejected.
 ```go
 stmt := query.DeleteFrom("users").Where(query.Eq("id", int64(7))).Build()
 
-sql, args, err := renderer.RenderDelete(stmt, platform.Postgres)
+sql, args, err := query.RenderDelete(stmt, platform.Postgres)
 // DELETE FROM "users" WHERE "id" = $1   args: []any{int64(7)}
 ```
 
@@ -586,7 +585,7 @@ Qualified columns: `Col(table, name)`, with `.Eq`/`.Ne`/`.Lt`/`.Le`/`.Gt`/`.Ge`,
 `.EqCol` (column-to-column, for `ON`), `.IsNull`/`.IsNotNull`, `.Asc`/`.Desc`, and
 the aggregate methods `.Count`/`.CountDistinct`/`.Sum`/`.Avg`/`.Min`/`.Max`.
 
-`renderer.RenderSelect(stmt, dialect)` returns `(sql string, args []any, err error)`.
+`query.RenderSelect(stmt, dialect)` returns `(sql string, args []any, err error)`.
 It returns an error for an unsupported dialect, a missing `FROM` table, an empty
 `IN` list, or a malformed statement.
 

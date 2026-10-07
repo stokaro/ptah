@@ -8,8 +8,8 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -105,7 +105,7 @@ func TestColumnCheck_RenderAndPlanNameTheChecksEntryPastIt(t *testing.T) {
 	c := qt.New(t)
 	desired := columnCheckDesired()
 
-	statements, err := renderer.GetOrderedCreateStatements(desired, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(desired, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	plan, err := planner.GenerateSchemaDiffSQLStatements(
 		schemadiff.CompareWithDialect(desired, &catalog.Database{}, platform.Postgres), platform.Postgres)

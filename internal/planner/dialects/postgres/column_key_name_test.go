@@ -7,8 +7,8 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -52,7 +52,7 @@ func TestPlanner_AColumnTakesItsKeyUnderTheComparisonsName(t *testing.T) {
 
 			nodes, err := postgres.NewForDialect(platform.Postgres, caps).GenerateMigrationAST(diff)
 			c.Assert(err, qt.IsNil)
-			sql, err := renderer.RenderSQLWithCapabilities(platform.Postgres, caps, nodes...)
+			sql, err := builtin.RenderSQLWithCapabilities(platform.Postgres, caps, nodes...)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, test.want)

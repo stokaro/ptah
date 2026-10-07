@@ -13,9 +13,9 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
 )
@@ -195,7 +195,7 @@ func TestSQLServerLiveRenderedUpsertMerge(t *testing.T) {
 		SetInsert([]string{"id", "email"}, []string{"@p1", "@p2"}).
 		SetMatchColumns("id").
 		AddUpdateAssignment("email", "source.[email]")
-	upsertSQL, err := renderer.RenderSQL("sqlserver", upsert)
+	upsertSQL, err := builtin.RenderSQL("sqlserver", upsert)
 	c.Assert(err, qt.IsNil)
 	c.Assert(upsertSQL, qt.Contains, "WITH (HOLDLOCK)")
 

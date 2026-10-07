@@ -7,8 +7,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mysql"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -160,7 +160,7 @@ func TestPlanner_GenerateMigrationAST_TablesAdded(t *testing.T) {
 				},
 			},
 			expected: func(nodes []ast.Node) bool {
-				sql, err := renderer.RenderSQL("mysql", nodes...)
+				sql, err := builtin.RenderSQL("mysql", nodes...)
 				if err != nil {
 					return false
 				}
@@ -449,7 +449,7 @@ func TestPlanner_AddNewTables_WithEmbeddedFields(t *testing.T) {
 	c.Assert(result, qt.HasLen, 1)
 
 	// Convert AST to SQL to verify content
-	sql, err := renderer.RenderSQL("mysql", result[0])
+	sql, err := builtin.RenderSQL("mysql", result[0])
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 

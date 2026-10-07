@@ -11,8 +11,8 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/catalog"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbschema/postgres"
 	"ptah.run/internal/modelast"
 	"ptah.run/migration/planner"
@@ -66,7 +66,7 @@ func TestFieldLevelCheckConstraint_RoundTrip_Integration(t *testing.T) {
 
 	// Render the CREATE TABLE statement and apply it.
 	stmts := modelast.CollectDatabase(*target, "postgres")
-	sqlText, err := renderer.RenderSQL("postgres", stmts.Statements...)
+	sqlText, err := builtin.RenderSQL("postgres", stmts.Statements...)
 	c.Assert(err, qt.IsNil)
 	sqlForAssert := legacyRenderedSQL(sqlText)
 	c.Assert(sqlForAssert, qt.Contains, "CHECK (category IN")
@@ -132,7 +132,7 @@ func TestFieldLevelCheckConstraint_Removal_Integration(t *testing.T) {
 		},
 	}
 	stmts := modelast.CollectDatabase(*withCheck, "postgres")
-	createSQL, err := renderer.RenderSQL("postgres", stmts.Statements...)
+	createSQL, err := builtin.RenderSQL("postgres", stmts.Statements...)
 	c.Assert(err, qt.IsNil)
 	_, err = db.Exec(createSQL)
 	c.Assert(err, qt.IsNil)

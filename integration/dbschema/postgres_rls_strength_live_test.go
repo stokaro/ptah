@@ -13,9 +13,9 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
 )
@@ -89,7 +89,7 @@ func TestPostgresLiveRLSStrengthConverges(t *testing.T) {
 	description := rlsStrengthSchema(schemaName, true, true)
 
 	// 1. The rendered statements are the ones the server is given.
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	joined := strings.Join(statements, "\n")
 	c.Assert(joined, qt.Contains, "FORCE ROW LEVEL SECURITY")
@@ -141,7 +141,7 @@ func TestPostgresLiveRLSStrengthReadsBackTheWeakerHalf(t *testing.T) {
 
 	description := rlsStrengthSchema(schemaName, false, false)
 
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	joined := strings.Join(statements, "\n")
 	c.Assert(joined, qt.Not(qt.Contains), "FORCE ROW LEVEL SECURITY")
@@ -186,7 +186,7 @@ func TestPostgresLiveRLSStrengthDifferenceIsPlanned(t *testing.T) {
 	}()
 
 	// The server is given the permissive, unforced schema.
-	statements, err := renderer.GetOrderedCreateStatements(
+	statements, err := builtin.GetOrderedCreateStatements(
 		rlsStrengthSchema(schemaName, false, false), platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	for _, statement := range statements {

@@ -31,9 +31,9 @@ import (
 	"context"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/agentdiag"
 	"ptah.run/internal/agenttarget"
 	"ptah.run/internal/docsembed"
@@ -246,7 +246,7 @@ type RenderSchemaResponse struct {
 // RenderSchema returns the DDL a declared schema renders to, in dependency
 // order.
 //
-// Owner: core/renderer.
+// Owner: engine/builtin.
 func renderSchema(ctx context.Context, req RenderSchemaRequest) (*RenderSchemaResponse, error) {
 	dialect, err := normalizedDialect(req.Dialect)
 	if err != nil {
@@ -256,7 +256,7 @@ func renderSchema(ctx context.Context, req RenderSchemaRequest) (*RenderSchemaRe
 	if err != nil {
 		return nil, err
 	}
-	statements, err := renderer.GetOrderedCreateStatements(database, dialect)
+	statements, err := builtin.GetOrderedCreateStatements(database, dialect)
 	if err != nil {
 		return nil, agentdiag.Errorf(agentdiag.CodeRenderFailed, "render %s: %w", dialect, err)
 	}

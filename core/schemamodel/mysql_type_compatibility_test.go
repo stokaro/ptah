@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/planner/dialects/mysql"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -122,7 +122,7 @@ func TestMySQLMigrationGeneratesCompatibleTypes(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	// Render to SQL
-	r, err := renderer.NewRenderer("mysql")
+	r, err := builtin.NewRenderer("mysql")
 	c.Assert(err, qt.IsNil)
 	var sqlStatements []string
 	for _, node := range nodes {

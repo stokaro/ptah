@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/schemaprep"
 )
@@ -287,7 +287,7 @@ func TestCollectDatabaseQualifiesDeclaredUserTypes(t *testing.T) {
 
 	c.Assert(statements, qt.IsNotNil)
 
-	sql, err := renderer.RenderSQL(platform.Postgres, statements.Statements...)
+	sql, err := builtin.RenderSQL(platform.Postgres, statements.Statements...)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "\"c\" app.mood[]")

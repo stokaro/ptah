@@ -11,9 +11,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemasource"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -218,7 +218,7 @@ func TestRun_SQLiteRoundTripConverges(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
 
-	statements, err := renderer.GetOrderedCreateStatements(desired, "sqlite")
+	statements, err := builtin.GetOrderedCreateStatements(desired, "sqlite")
 	c.Assert(err, qt.IsNil)
 	for _, statement := range statements {
 		_, err = conn.ExecContext(ctx, statement)

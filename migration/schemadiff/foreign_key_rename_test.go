@@ -8,8 +8,8 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -223,7 +223,7 @@ func TestCompare_AColumnForeignKeyUnderAnotherNameMigrationSQL(t *testing.T) {
 
 	nodes, err := postgres.New().GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL(platform.Postgres, nodes...)
+	sql, err := builtin.RenderSQL(platform.Postgres, nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 

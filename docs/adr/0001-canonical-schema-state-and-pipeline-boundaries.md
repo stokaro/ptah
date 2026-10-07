@@ -51,7 +51,7 @@ the code instead. Where a decision depends on a fact one of those issues would
 have supplied, this ADR says so and states the assumption.
 
 The one input that did land is [#1345](https://github.com/stokaro/ptah/issues/1345):
-the identity and reference model in `internal/objectidentity`, documented in
+the identity and reference model in `core/objectidentity`, documented in
 [object identity and references](../object_identity.md). This ADR treats that
 model as decided and builds on it rather than reopening it.
 
@@ -116,7 +116,7 @@ groups do not name layers. `internal/` holds both leaf utilities that sit below
 sits above `migration/` (`internal/atlasschema`, `internal/atlasmigrate`). Two
 edges are worth naming individually:
 
-- `core/renderer` → `internal/convert/fromschema` and
+- `engine/builtin` → `internal/convert/fromschema` and
   `internal/planner/tablelookup`: the renderer reaches into conversion and
   planning.
 - `core/schemasource` → `internal/convert/toschema`: a second package under
@@ -139,7 +139,7 @@ ones the canonical model adopts rather than replaces:
   version ladders, and a probe that measures each key against a live server.
 - `core/coverage.Set` — "what this description does not claim to describe",
   with kind and object granularity, already merged across sources.
-- `internal/objectidentity` — the identity and reference model from #1345.
+- `core/objectidentity` — the identity and reference model from #1345.
 - `migration/schemadiff/internal/normalize` — target-aware normalization of
   types, defaults and expressions, currently reachable only from comparison.
 
@@ -175,7 +175,7 @@ flowchart LR
   DIFF --> PLAN["migration/planner<br/>internal/planner/dialects/*"]
   DESIRED -- "second parameter" --> PLAN
   PLAN --> AST["core/ast"]
-  AST --> REN["core/renderer"]
+  AST --> REN["engine/builtin"]
   REN --> SQL["DDL statements"]
   SQL --> EXEC["migration/migrator<br/>files, hashes, revisions, locks"]
 ```
@@ -255,7 +255,7 @@ flowchart TD
 Forbidden directions, in the order they matter:
 
 1. **L1 must not import L2.** The canonical model cannot depend on comparison,
-   planning or rendering. The current `core/renderer` → `internal/modelast`
+   planning or rendering. The current `engine/builtin` → `internal/modelast`
    edge remains recorded debt; the baseline edge into
    `internal/planner/tablelookup` has been removed.
 2. **L2 must not construct source descriptions.** A planner that builds a

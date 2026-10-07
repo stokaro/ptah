@@ -12,7 +12,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/liquibaserun"
 )
 
@@ -847,7 +847,7 @@ func (c *liquibaseConverter) addForeignKeyConstraint(change liquibaseChange) (li
 // render writes one node for the target, refusing a render that left out
 // something the node declared.
 func (c *liquibaseConverter) render(node ast.Node) (string, error) {
-	sql, omissions, err := renderer.RenderSQLReportingOmissions(c.dialect, c.caps, node)
+	sql, omissions, err := builtin.RenderSQLReportingOmissions(c.dialect, c.caps, node)
 	if err != nil {
 		return "", err
 	}

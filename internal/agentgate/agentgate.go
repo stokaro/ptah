@@ -32,7 +32,7 @@ import (
 	"strings"
 
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/agentpolicy"
 	"ptah.run/internal/agentworkspace"
 	"ptah.run/internal/migrationvalidate"
@@ -413,7 +413,7 @@ func (r *Runner) runSchema(ctx context.Context, scope *agentworkspace.Scope) (Re
 	}
 
 	render := pass(GateSchemaRender)
-	if _, renderErr := renderer.GetOrderedCreateStatements(database, r.opts.Dialect); renderErr != nil {
+	if _, renderErr := builtin.GetOrderedCreateStatements(database, r.opts.Dialect); renderErr != nil {
 		render = failure(GateSchemaRender, []Diagnostic{{
 			Gate: GateSchemaRender, Severity: SeverityError, Message: renderErr.Error(),
 		}})

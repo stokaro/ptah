@@ -7,8 +7,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff"
 )
@@ -144,7 +144,7 @@ func TestCompare_FieldLevelForeignKeyActionMigrationSQL(t *testing.T) {
 
 	nodes, err := postgres.New().GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 
@@ -176,7 +176,7 @@ func TestCompare_FieldLevelForeignKeyActionMigrationSQL(t *testing.T) {
 	converged := schemadiff.Compare(exportsSchema("SET NULL"), exportsDBSchema("SET NULL"))
 	noopNodes, err := postgres.New().GenerateMigrationAST(converged)
 	c.Assert(err, qt.IsNil)
-	noopSQL, err := renderer.RenderSQL("postgres", noopNodes...)
+	noopSQL, err := builtin.RenderSQL("postgres", noopNodes...)
 	c.Assert(err, qt.IsNil)
 	noopSQL = legacyRenderedSQL(noopSQL)
 	c.Assert(strings.TrimSpace(noopSQL), qt.Equals, "",

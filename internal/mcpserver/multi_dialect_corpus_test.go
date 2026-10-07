@@ -67,7 +67,7 @@ var corpusRows = []corpusRow{
 	{dialect: "clickhouse", refusedBecause: "does not support foreign keys"},
 	// The four the surface accepts that this corpus did not ask about.
 	// agentapi.normalizedDialect delegates to platform.NormalizeDialect, which
-	// knows all four, and core/renderer has a renderer for each -- so a corpus
+	// knows all four, and engine/builtin has a renderer for each -- so a corpus
 	// stopping at six left four targets able to answer and never asked
 	// (stokaro/ptah#1490).
 	{dialect: "cockroachdb"},

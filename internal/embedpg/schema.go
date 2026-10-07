@@ -10,8 +10,8 @@ import (
 	"fmt"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/embedstore"
 )
 
@@ -51,7 +51,7 @@ func SchemaSQL() ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		rendered, err := renderer.RenderSQL(Dialect, node)
+		rendered, err := builtin.RenderSQL(Dialect, node)
 		if err != nil {
 			return nil, fmt.Errorf("render %s: %w", table.Name, err)
 		}
@@ -60,7 +60,7 @@ func SchemaSQL() ([]string, error) {
 	for _, index := range embedstore.Indexes() {
 		node := ast.NewIndex(index.Name, index.StructName, index.Fields...)
 		node.IfNotExists = true
-		rendered, err := renderer.RenderSQL(Dialect, node)
+		rendered, err := builtin.RenderSQL(Dialect, node)
 		if err != nil {
 			return nil, fmt.Errorf("render index %s: %w", index.Name, err)
 		}

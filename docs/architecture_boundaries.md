@@ -22,17 +22,19 @@ comment showing a caller how to build a schema looks exactly like a caller
 building one. The true figure is four. The gate's own self-test carries that
 case as a control: a doc comment naming the type must **not** be a finding.
 
-## The four boundaries
+## Dependency boundaries
 
-ADR 0001 section 3.2 forbids four dependency directions. Three hold today and
-one does not, which is why the remaining gate is a ratchet rather than a wall.
+ADR 0001 section 3.2 defines the pipeline boundaries. Provider contracts add
+a transitive isolation rule: their dependency graph contains no concrete
+features, database implementations, or external modules.
 
 | Rule | Property | Recorded |
 | --- | --- | --- |
-| `model-imports-pipeline` | The canonical model (`core/`) must not import comparison, planning or conversion. | 2 |
+| `model-imports-pipeline` | The canonical model (`core/`) must not import comparison, planning or conversion. | 1 |
 | `pipeline-builds-source-description` | A planner or comparator must not construct a source schema description. | 0 |
 | `pipeline-imports-execution` | Planning must not import versioned execution. | 0 |
 | `renderer-imports-comparator` | A renderer must not import a comparator. | 0 |
+| `provider-contracts-import-implementation` | Public provider contracts must not link concrete implementations. | 0 |
 
 A count may fall and may never rise. A rule at zero is therefore enforced
 outright: the first violation fails the build.
@@ -44,17 +46,15 @@ number would let the debt return to it with the gate green the whole way.
 
 ### What the recorded debt is
 
-The two `model-imports-pipeline` edges:
+The remaining `model-imports-pipeline` edge is
+`core/schemasource` → `internal/sqlschema`.
 
-- `core/renderer` → `internal/modelast`
-- `core/schemasource` → `internal/sqlschema`
-
-The renderer edge is an abstract syntax tree (AST) lowering boundary, not a
-whole-schema conversion. Model-to-model preparation lives in
-`internal/schemaprep` and `core/schemamodel`. `internal/modelast.WalkDatabase`
-then visits one AST node at a time, and `core/renderer` renders each node before
-the next one is lowered. The stable `atlascompat.SchemaToAST` API is the one
-caller that uses `internal/modelast.CollectDatabase` to retain a complete AST.
+Renderer assembly lives in `engine/builtin`, above the neutral contracts in
+`core/renderer`. It consumes `internal/modelast` for AST lowering.
+`core/objectidentity`, `core/renderer`, and `engine` are the roots of the
+provider-contract isolation check. The check follows their complete import
+graph and refuses a missing root. Its mutation test verifies that an indirect
+import through a helper is still refused.
 
 The SQL schema-source path still parses into AST before `internal/sqlschema`
 constructs the model, and that edge is still recorded.
@@ -82,7 +82,7 @@ issue that owns each.
 | `difftypes.SchemaDiff` per-family name lists | Closed: a change carries its own operands, so the planner takes the change set alone — `GenerateSchemaDiffAST(diff, dialect)`. One `[]string` remains, `TablesRemoved`, because `DROP TABLE` is written from the name. The whole-target validation the second parameter fed is `schemadiff.ValidateDesiredSchema`, made where the whole target is supplied. | closed |
 | Converted foreign migration layouts | The rebuilt directory carries no integrity file, so source checksums are dropped. Carried out of band ([#1209](https://github.com/stokaro/ptah/issues/1209)). | closed |
 | Routine overload identity | Closed: comparison pairs overloads on a signature normalized to agree with the catalog, consulted only where a name is overloaded. | closed |
-| Single-column uniqueness | Closed: `renderer.tableHasUniqueKey` accepts a primary key, a unique field, a unique constraint or a unique index, each compared as a whole column list, so a composite key is a key. The credit previously went to `schemastate.UniqueKey`, which never shipped. | closed |
+| Single-column uniqueness | Closed: `builtin.tableHasUniqueKey` accepts a primary key, a unique field, a unique constraint or a unique index, each compared as a whole column list, so a composite key is a key. The credit previously went to `schemastate.UniqueKey`, which never shipped. | closed |
 
 ## The invariant set
 
@@ -100,7 +100,7 @@ test and the control that make it evidence.
 
 | Property | Held by | Evidence |
 | --- | --- | --- |
-| Identity: distinct objects never collapse under adversarial names | `internal/objectidentity` defect fixtures | 12 mutants killed, 0 survived ([#1345](https://github.com/stokaro/ptah/issues/1345)) |
+| Identity: distinct objects never collapse under adversarial names | `core/objectidentity` defect fixtures | 12 mutants killed, 0 survived ([#1345](https://github.com/stokaro/ptah/issues/1345)) |
 | Identifier provenance: quoted and unquoted components round-trip; insufficient provenance fails closed | `objectidentity.Part`, `Builder` equivalence tests | same sweep; folding is asserted equal to `identifier.Semantics` |
 | References: dangling, ambiguous and normalized-collision references are rejected | `objectidentity.Resolve` refusal classes | same sweep |
 | Coverage: not-inspected never becomes absent | `TestCompare_NotInspectedNeverBecomesAbsent`, on `schemadiff.Compare` | 9 kinds, each row carrying its own inverse: the same fixture with no limit recorded must plan the removal ([#2315](https://github.com/stokaro/ptah/issues/2315)) |

@@ -11,9 +11,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -83,7 +83,7 @@ func TestPostgresLiveDomainCheckConverges(t *testing.T) {
 	const originalCheck = "VALUE IN ('a','b')"
 	const replacedCheck = "VALUE IN ('a','b','c')"
 
-	statements, err := renderer.GetOrderedCreateStatements(declared(originalCheck), platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(declared(originalCheck), platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	for _, statement := range statements {
 		_, execErr := conn.ExecContext(ctx, statement)

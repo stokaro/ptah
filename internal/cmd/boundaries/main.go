@@ -130,7 +130,7 @@ func summarize(reports []ruleReport) string {
 	return strings.Join(parts, " ")
 }
 
-// rules are the four forbidden directions, in the order ADR 0001 states them.
+// rules preserve the pipeline directions and isolate public provider contracts.
 func rules() []rule {
 	return []rule{
 		{
@@ -167,8 +167,15 @@ func rules() []rule {
 			ID:      "renderer-imports-comparator",
 			Summary: "a renderer must not import a comparator",
 			violations: func(pkg *packages.Package) []finding {
-				return importEdges(pkg, contains("renderer"), contains("schemadiff"))
+				return importEdges(pkg, func(rel string) bool {
+					return contains("renderer")(rel) || under("engine/builtin")(rel)
+				}, contains("schemadiff"))
 			},
+		},
+		{
+			ID:         "provider-contracts-import-implementation",
+			Summary:    "public provider contracts must not link concrete features, database implementations, or external modules",
+			violations: providerContractImports,
 		},
 	}
 }
@@ -285,7 +292,7 @@ func relative(path string) string {
 func measure(root string) ([]ruleReport, error) {
 	config := &packages.Config{
 		Mode: packages.NeedName | packages.NeedImports | packages.NeedDeps |
-			packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo,
+			packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedModule,
 		Dir: root,
 		// Tests are excluded on purpose. A test may legitimately build a source
 		// description to feed the stage under test; the rule is about what the
@@ -298,6 +305,12 @@ func measure(root string) ([]ruleReport, error) {
 	}
 	if packages.PrintErrors(loaded) > 0 {
 		return nil, fmt.Errorf("packages failed to load")
+	}
+
+	for _, required := range providerContractRoots {
+		if !slices.ContainsFunc(loaded, func(pkg *packages.Package) bool { return relative(pkg.PkgPath) == required }) {
+			return nil, fmt.Errorf("provider contract root %q was not loaded", required)
+		}
 	}
 
 	reports := make([]ruleReport, 0, len(rules()))

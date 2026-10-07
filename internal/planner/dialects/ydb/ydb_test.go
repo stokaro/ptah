@@ -9,8 +9,8 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -39,7 +39,7 @@ func render(c *qt.C, caps capability.Capabilities, diff *difftypes.SchemaDiff) s
 	c.Helper()
 	nodes, err := ydb.NewWithCapabilities(caps).GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQLWithCapabilities("ydb", caps, nodes...)
+	sql, err := builtin.RenderSQLWithCapabilities("ydb", caps, nodes...)
 	c.Assert(err, qt.IsNil)
 	return sql
 }
@@ -355,7 +355,7 @@ func TestGenerateMigrationAST_EveryNodeRendersAlone(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 4)
 	for _, node := range nodes {
-		sql, err := renderer.RenderSQL("ydb", node)
+		sql, err := builtin.RenderSQL("ydb", node)
 		c.Assert(err, qt.IsNil)
 		c.Assert(strings.Count(sql, ";\n"), qt.Equals, 1, qt.Commentf("%T renders %q", node, sql))
 	}

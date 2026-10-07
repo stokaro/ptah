@@ -15,14 +15,14 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 )
 
 // TestRendersAsSQLiteIntegerMatchesTheRenderer renders a one-column table for
 // each declared type and asserts that rendersAsSQLiteInteger agrees with whether
 // the SQLite renderer wrote the type as `INTEGER`.
 //
-// Change mapColumnType in core/renderer/internal/dialects/sqlite -- add a type
+// Change mapColumnType in engine/builtin/internal/dialects/sqlite -- add a type
 // that now renders as INTEGER, or stop mapping one -- and the row for that type
 // reddens here rather than quietly turning a rowid alias into a NOT NULL key
 // column, or the reverse.
@@ -55,7 +55,7 @@ func TestRendersAsSQLiteIntegerMatchesTheRenderer(t *testing.T) {
 				Name:    "t",
 				Columns: []*ast.ColumnNode{ast.NewColumn("id", test.rawType)},
 			}
-			sql, err := renderer.RenderSQL("sqlite", table)
+			sql, err := builtin.RenderSQL("sqlite", table)
 			c.Assert(err, qt.IsNil)
 
 			renderedType := renderedColumnType(sql, `"id"`)

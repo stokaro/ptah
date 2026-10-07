@@ -9,8 +9,8 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/constraintscope"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff"
@@ -496,7 +496,7 @@ func TestReverseSchemaDiff_GrantOptionUpgradeDownRevokesOnlyOption(t *testing.T)
 	downDiff := reverseSchemaDiff(upDiff)
 	nodes, err := postgres.New().GenerateMigrationAST(downDiff)
 	c.Assert(err, qt.IsNil)
-	downSQL, err := renderer.RenderSQL("postgres", nodes...)
+	downSQL, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	downSQL = legacyRenderedSQL(downSQL)
 	c.Assert(downSQL, qt.Contains, "REVOKE GRANT OPTION FOR SELECT ON TABLE users FROM app_role;")

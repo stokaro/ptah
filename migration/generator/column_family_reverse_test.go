@@ -9,8 +9,8 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -47,9 +47,9 @@ func TestPlanBidirectionalSchemaDiff_ColumnFamiliesRollBack(t *testing.T) {
 		Capabilities:  capability.YDB262(),
 	})
 	c.Assert(err, qt.IsNil)
-	forward, err := renderer.RenderSQLWithCapabilities(platform.YDB, capability.YDB262(), plan.Forward.Nodes...)
+	forward, err := builtin.RenderSQLWithCapabilities(platform.YDB, capability.YDB262(), plan.Forward.Nodes...)
 	c.Assert(err, qt.IsNil)
-	reverse, err := renderer.RenderSQLWithCapabilities(platform.YDB, capability.YDB262(), plan.Reverse.Nodes...)
+	reverse, err := builtin.RenderSQLWithCapabilities(platform.YDB, capability.YDB262(), plan.Reverse.Nodes...)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(forward, qt.Equals, "ALTER TABLE `items` ADD FAMILY `cold` (DATA = 'hdd', COMPRESSION = 'lz4'), "+

@@ -7,8 +7,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashcl"
 )
 
@@ -116,7 +116,7 @@ extension "plpgsql" {
 		{Name: "PG_CATALOG"},
 	})
 
-	statements, err := renderer.GetOrderedCreateStatements(db, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(db, "postgres")
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(err, qt.ErrorMatches, `.*declares server-owned PostgreSQL schema "pg_catalog".*`)
 	c.Assert(statements, qt.IsNil)
@@ -153,7 +153,7 @@ schema "pg_catalog" {}
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Schemas, qt.DeepEquals, []schemamodel.Schema{{Name: "pg_catalog"}})
 
-	statements, err := renderer.GetOrderedCreateStatements(db, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(db, "postgres")
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(err, qt.ErrorMatches, `.*declares server-owned PostgreSQL schema "pg_catalog".*`)
 	c.Assert(statements, qt.IsNil)
@@ -180,7 +180,7 @@ table "blocked" {
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Schemas, qt.DeepEquals, []schemamodel.Schema{{Name: "pg_catalog"}})
 
-	statements, err := renderer.GetOrderedCreateStatements(db, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(db, "postgres")
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(err, qt.ErrorMatches, `.*declares server-owned PostgreSQL schema "pg_catalog".*`)
 	c.Assert(statements, qt.IsNil)
@@ -196,7 +196,7 @@ extension "pg_catalog" "plpgsql" {}
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Schemas, qt.DeepEquals, []schemamodel.Schema{{Name: "pg_catalog"}})
 
-	statements, err := renderer.GetOrderedCreateStatements(db, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(db, "postgres")
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(err, qt.ErrorMatches, `.*declares server-owned PostgreSQL schema "pg_catalog".*`)
 	c.Assert(statements, qt.IsNil)
@@ -230,7 +230,7 @@ permission {
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Schemas, qt.DeepEquals, []schemamodel.Schema{{Name: "pg_catalog"}})
 
-			statements, err := renderer.GetOrderedCreateStatements(db, "postgres")
+			statements, err := builtin.GetOrderedCreateStatements(db, "postgres")
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(err, qt.ErrorMatches, `.*declares server-owned PostgreSQL schema "pg_catalog".*`)
 			c.Assert(statements, qt.IsNil)

@@ -10,8 +10,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -235,7 +235,7 @@ func TestSchemaRenderCreatesRoutinesInAnOrderPostgreSQLAcceptsLive(t *testing.T)
 			target, _ := scratchReplayDatabase(c)
 			database, _, err := sqlschema.Read([]byte(test.sql), platform.Postgres)
 			c.Assert(err, qt.IsNil)
-			statements, err := renderer.GetOrderedCreateStatements(&database, platform.Postgres)
+			statements, err := builtin.GetOrderedCreateStatements(&database, platform.Postgres)
 			c.Assert(err, qt.IsNil)
 			conn, err := dbschema.ConnectToDatabase(c.Context(), target)
 			c.Assert(err, qt.IsNil)

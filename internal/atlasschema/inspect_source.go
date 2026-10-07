@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"ptah.run/catalog"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/convert/goschematodb"
@@ -590,7 +590,7 @@ func materializeOnDev(
 	if err != nil {
 		return err
 	}
-	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(desired, info.Dialect, info.Capabilities)
+	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(desired, info.Dialect, info.Capabilities)
 	if err != nil {
 		return fmt.Errorf("render schema DDL for dev database: %w", err)
 	}

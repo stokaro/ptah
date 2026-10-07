@@ -14,9 +14,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/jackc/pgx/v5"
 
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
@@ -147,7 +147,7 @@ func TestTableCase_LiveRenderedFileApplies(t *testing.T) {
 			c := qt.New(t)
 			f := newTableCaseFixture(c, row.engine, row.quote)
 			desired := f.load(c)
-			statements, err := renderer.GetOrderedCreateStatements(desired, f.dialect)
+			statements, err := builtin.GetOrderedCreateStatements(desired, f.dialect)
 			c.Assert(err, qt.IsNil)
 			f.execute(c, statements)
 

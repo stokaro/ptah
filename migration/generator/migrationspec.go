@@ -11,9 +11,9 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/txrequire"
@@ -275,7 +275,7 @@ func renderGeneratedDownMigrationSQL(
 	if err := qualifier.ApplyToPlan(plan.Dialect, priorSchema, nodes); err != nil {
 		return "", err
 	}
-	output, err := renderer.RenderSQLWithCapabilities(plan.Dialect, plan.Capabilities, nodes...)
+	output, err := builtin.RenderSQLWithCapabilities(plan.Dialect, plan.Capabilities, nodes...)
 	if err != nil {
 		return "", err
 	}
@@ -305,7 +305,7 @@ func renderGeneratedMigrationSQL(
 	direction string,
 	directiveOpts generatedDirectiveOptions,
 ) (string, error) {
-	rawSQL, err := renderer.RenderSQLWithCapabilities(dialect, caps, nodes...)
+	rawSQL, err := builtin.RenderSQLWithCapabilities(dialect, caps, nodes...)
 	if err != nil {
 		return "", err
 	}

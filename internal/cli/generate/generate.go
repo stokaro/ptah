@@ -13,8 +13,8 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/serverversion"
@@ -71,7 +71,7 @@ programs require --allow-external-schema.`,
 //
 // The list is discovered rather than written out. capability.DefaultDialects
 // returns the names capability.ForDialect has a preset for, which is the same
-// set core/renderer builds a renderer for, so a dialect Ptah gains is named
+// set engine/builtin builds a renderer for, so a dialect Ptah gains is named
 // here by the act of gaining a preset. internal/ddltx already treats that
 // function as the authority for "a dialect Ptah has".
 //
@@ -164,7 +164,7 @@ func generateCommand(cmd *cobra.Command, opts *options) error {
 	var rendered bytes.Buffer
 	for _, d := range dialects {
 		reportDialectScopeOmissions(stderr, result, d)
-		statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(result, d, renderCapabilities(d, target))
+		statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(result, d, renderCapabilities(d, target))
 		if err != nil {
 			return fmt.Errorf("error rendering %s schema: %w", d, err)
 		}

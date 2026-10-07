@@ -11,8 +11,8 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/core/ast"
-	"ptah.run/core/renderer"
 	"ptah.run/core/sqlutil"
+	"ptah.run/engine/builtin"
 )
 
 func TestPostgreSQLPartitionedTableExecuteIntegration(t *testing.T) {
@@ -37,7 +37,7 @@ func TestPostgreSQLPartitionedTableExecuteIntegration(t *testing.T) {
 		},
 	}
 
-	sqlText, err := renderer.RenderSQL("postgres", table)
+	sqlText, err := builtin.RenderSQL("postgres", table)
 	c.Assert(err, qt.IsNil)
 	c.Assert(legacyRenderedSQL(sqlText), qt.Contains, "PARTITION BY RANGE (x, (y * 2))")
 

@@ -7,7 +7,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -39,7 +39,7 @@ func planNotNullName(c *qt.C, current, desired string, named bool) string {
 	nodes, err := postgres.NewForDialect(platform.Postgres, caps).
 		GenerateMigrationAST(notNullNameDiff(current, desired))
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQLWithCapabilities(platform.Postgres, caps, nodes...)
+	sql, err := builtin.RenderSQLWithCapabilities(platform.Postgres, caps, nodes...)
 	c.Assert(err, qt.IsNil)
 	return sql
 }

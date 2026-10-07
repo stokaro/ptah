@@ -11,8 +11,8 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/schemaload"
 	"ptah.run/migration/schemadiff"
 )
@@ -69,7 +69,7 @@ func TestComposite_BareAndDefaultSchemaTable_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	database := loadSpellingComposite(c)
 
-	statements, err := renderer.GetOrderedCreateStatements(database, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(database, platform.Postgres)
 
 	c.Assert(err, qt.ErrorMatches, `(?s).*table "accounts" is declared twice, once without a schema and once as "public\.accounts".*`)
 	c.Assert(statements, qt.IsNil)
@@ -114,7 +114,7 @@ func TestComposite_BareAndQualifiedTableOnMySQL_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	database := loadSpellingComposite(c)
 
-	statements, err := renderer.GetOrderedCreateStatements(database, platform.MySQL)
+	statements, err := builtin.GetOrderedCreateStatements(database, platform.MySQL)
 
 	c.Assert(err, qt.IsNil)
 	rendered := strings.Join(statements, "")

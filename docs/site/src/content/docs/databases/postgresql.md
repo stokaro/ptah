@@ -9,7 +9,7 @@ goal: "Identify the PostgreSQL objects and release lines Ptah manages."
 sourceOfTruth:
   - "internal/capabilityprobe/cells.go"
   - "internal/dbschema"
-  - "core/renderer"
+  - "engine/builtin"
   - "migration/schemadiff"
   - "internal/routineargs"
 generated: false

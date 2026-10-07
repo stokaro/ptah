@@ -12,8 +12,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
@@ -94,7 +94,7 @@ func TestPostgresLiveTriggerExecuteConverges(t *testing.T) {
 	description, err := atlashcl.Parse(triggerExecuteDocument(schemaName), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	joined := strings.Join(statements, "\n")
 	// Qualified, which is the half a local run against `public` cannot see: an

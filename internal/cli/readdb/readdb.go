@@ -8,8 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/convert/dbschematogo"
@@ -125,7 +125,7 @@ func readDBCommand(cmd *cobra.Command, opts *options) error {
 	// Format and display the schema
 	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema, conn.Info().Dialect)
 	info := conn.Info()
-	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(dbsch, info.Dialect, info.Capabilities)
+	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(dbsch, info.Dialect, info.Capabilities)
 	if err != nil {
 		return fmt.Errorf("error rendering schema: %w", err)
 	}

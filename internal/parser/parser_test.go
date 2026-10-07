@@ -8,7 +8,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/parser"
 )
 
@@ -501,7 +501,7 @@ CREATE INDEX idx_users_name ON users (name);`
 		ast.PostgresRoutineStatementIf,
 		ast.PostgresRoutineStatementException,
 	})
-	rendered, err := renderer.RenderSQL(platform.Postgres, block)
+	rendered, err := builtin.RenderSQL(platform.Postgres, block)
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered, qt.Contains, "DO $do$")
 	c.Assert(rendered, qt.Contains, "RAISE NOTICE 'missing';")
@@ -1189,7 +1189,7 @@ CREATE TABLE after_proc (id int);`
 	c.Assert(postgresRoutineStatementKinds(routine.Body.Statements), qt.DeepEquals, []ast.PostgresRoutineStatementKind{
 		ast.PostgresRoutineStatementPerform,
 	})
-	rendered, err := renderer.RenderSQL(platform.Postgres, routine)
+	rendered, err := builtin.RenderSQL(platform.Postgres, routine)
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered, qt.Contains, "CREATE PROCEDURE public.touch_user")
 	c.Assert(rendered, qt.Contains, "PERFORM user_id;")
@@ -2921,7 +2921,7 @@ func TestParser_ParseDropTable(t *testing.T) {
 			c.Assert(dropTable.IfExists, qt.Equals, tt.ifExists)
 			c.Assert(dropTable.Cascade, qt.Equals, tt.cascade)
 
-			rendered, err := renderer.RenderSQL("postgres", dropTable)
+			rendered, err := builtin.RenderSQL("postgres", dropTable)
 			c.Assert(err, qt.IsNil)
 			rendered = legacyRenderedSQL(rendered)
 			c.Assert(rendered, qt.Equals, tt.rendered)

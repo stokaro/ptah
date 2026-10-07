@@ -8,8 +8,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/goschema"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/modelast"
 )
 
@@ -166,7 +166,7 @@ type BlogPost struct {
 	// Find the BlogPost CREATE TABLE and FK ALTER TABLE statements
 	var blogPostSQL, blogPostFKSQL string
 	for _, stmt := range statements.Statements {
-		sql, err := renderer.RenderSQL("postgresql", stmt)
+		sql, err := builtin.RenderSQL("postgresql", stmt)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 		if containsSubstr(sql, "CREATE TABLE blog_posts") {

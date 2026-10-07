@@ -9,8 +9,8 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -67,7 +67,7 @@ func TestPlanBidirectionalSchemaDiff_ReplicationsRollBack(t *testing.T) {
 		Capabilities:  capability.YDB262(),
 	})
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQLWithCapabilities(platform.YDB, capability.YDB262(), plan.Reverse.Nodes...)
+	sql, err := builtin.RenderSQLWithCapabilities(platform.YDB, capability.YDB262(), plan.Reverse.Nodes...)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, "DROP ASYNC REPLICATION `mirror` CASCADE;\n"+

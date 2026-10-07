@@ -13,9 +13,9 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/core/goschema"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
+	"ptah.run/engine/builtin"
 )
 
 func TestPostgreSQLGenerateMutualForeignKeysApplyIntegration(t *testing.T) {
@@ -43,7 +43,7 @@ func TestPostgreSQLGenerateMutualForeignKeysApplyIntegration(t *testing.T) {
 	database, err := goschema.ParseDir(fixtureDir)
 	c.Assert(err, qt.IsNil)
 
-	statements, err := renderer.GetOrderedCreateStatements(database, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(database, "postgres")
 	c.Assert(err, qt.IsNil)
 	sqlText := strings.Join(statements, "\n")
 	c.Assert(sqlText, qt.Contains, `ALTER TABLE "left_nodes" ADD CONSTRAINT "fk_left_nodes_right_id"`)
@@ -107,7 +107,7 @@ func TestPostgreSQLForeignKeyReferencingUniqueIndexApplyIntegration(t *testing.T
 		},
 	}
 
-	statements, err := renderer.GetOrderedCreateStatements(database, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(database, "postgres")
 	c.Assert(err, qt.IsNil)
 	uniqueIndexPos := statementIndexContaining(statements, "CREATE UNIQUE INDEX", "uq_ptah_fk_unique_parents_code")
 	foreignKeyPos := statementIndexContaining(statements, "ALTER TABLE", "fk_ptah_fk_unique_children_parent_code")

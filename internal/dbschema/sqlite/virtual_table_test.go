@@ -8,7 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/dbschema/sqlite"
 )
@@ -300,7 +300,7 @@ func readAndRenderSQLite(t *testing.T, db *sql.DB) []string {
 	if err != nil {
 		t.Fatalf("read schema: %v", err)
 	}
-	statements, err := renderer.GetOrderedCreateStatements(dbschematogo.ConvertDBSchemaToGoSchema(schema, "sqlite"), "sqlite")
+	statements, err := builtin.GetOrderedCreateStatements(dbschematogo.ConvertDBSchemaToGoSchema(schema, "sqlite"), "sqlite")
 	if err != nil {
 		t.Fatalf("render schema: %v", err)
 	}

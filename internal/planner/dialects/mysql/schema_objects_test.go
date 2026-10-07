@@ -9,8 +9,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mysql"
 	migrationplanner "ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -46,7 +46,7 @@ func TestPlanner_GenerateMigrationAST_ViewsAndTriggersModified(t *testing.T) {
 
 	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("mysql", nodes...)
+	sql, err := builtin.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "CREATE OR REPLACE VIEW active_users")
@@ -214,7 +214,7 @@ func TestPlanner_GenerateMigrationAST_RoutesEveryRoleChangeToItsStatement(t *tes
 			for _, dialect := range []string{"mysql", "mariadb"} {
 				t.Run(dialect, func(t *testing.T) {
 					c := qt.New(t)
-					sql, err := renderer.RenderSQL(dialect, nodes...)
+					sql, err := builtin.RenderSQL(dialect, nodes...)
 					c.Assert(err == nil, qt.Equals, test.wantRefus == "",
 						qt.Commentf("err: %v", err))
 					c.Check(renderedOrRefusal(sql, err), qt.Matches,

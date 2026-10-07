@@ -33,7 +33,7 @@
 go test -C core/ast -v
 
 # Core renderer unit tests - test new visitor methods
-go test -C core/renderer -run "TestNewVisitorMethods_UnitTests" -v
+go test -C engine/builtin -run "TestNewVisitorMethods_UnitTests" -v
 ```
 
 ### **Integration Tests** (With Database)

@@ -5,7 +5,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/astbuilder"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 )
 
 // DemonstrateASTApproach shows how to use the new AST-based SQL generation
@@ -25,7 +25,7 @@ func DemonstrateASTApproach() {
 		Build()
 
 	// Render for PostgreSQL
-	pgRenderer, err := renderer.NewRenderer("postgresql")
+	pgRenderer, err := builtin.NewRenderer("postgresql")
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return
@@ -40,7 +40,7 @@ func DemonstrateASTApproach() {
 	fmt.Println(pgSQL)
 
 	// Render for MySQL
-	mysqlRenderer, err := renderer.NewRenderer("mysql")
+	mysqlRenderer, err := builtin.NewRenderer("mysql")
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return
@@ -86,7 +86,7 @@ func DemonstrateASTApproach() {
 		Build()
 
 	// Render complete schema for PostgreSQL
-	pgSchemaSQL, err := renderer.RenderSQL("postgresql", schema)
+	pgSchemaSQL, err := builtin.RenderSQL("postgresql", schema)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return
@@ -113,7 +113,7 @@ func DemonstrateASTApproach() {
 		},
 	}
 
-	alterSQL, err := renderer.RenderSQL("postgresql", alterTable)
+	alterSQL, err := builtin.RenderSQL("postgresql", alterTable)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return
@@ -139,7 +139,7 @@ func DemonstrateASTApproach() {
 			ast.NewUniqueConstraint("uk_products_name", "name"),
 		)
 
-	directSQL, err := renderer.RenderSQL("postgresql", directTable)
+	directSQL, err := builtin.RenderSQL("postgresql", directTable)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return
@@ -226,7 +226,7 @@ func ShowAdvancedFeatures() {
 	transformer := &AuditTransformer{}
 	transformedSchema := transformer.Transform(schema)
 
-	sql, _ := renderer.RenderSQL("postgresql", transformedSchema)
+	sql, _ := builtin.RenderSQL("postgresql", transformedSchema)
 	fmt.Println("Transformed schema with audit columns:")
 	fmt.Println(sql)
 }

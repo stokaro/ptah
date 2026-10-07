@@ -8,8 +8,8 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -168,7 +168,7 @@ func TestGenerateSchemaDiffSQL_PostgreSQLRawDottedIndexNameIsOneIdentifier(t *te
 	}
 	nodes, err := planner.GenerateSchemaDiffAST(diff, platform.Postgres)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL(platform.Postgres, nodes...)
+	sql, err := builtin.RenderSQL(platform.Postgres, nodes...)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `DROP INDEX IF EXISTS "public"."idx.users.email";`)
@@ -185,7 +185,7 @@ func TestGenerateSchemaDiffSQL_SQLiteRawDottedIndexNameIsOneIdentifier(t *testin
 	}
 	nodes, err := planner.GenerateSchemaDiffAST(diff, platform.SQLite)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL(platform.SQLite, nodes...)
+	sql, err := builtin.RenderSQL(platform.SQLite, nodes...)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `DROP INDEX IF EXISTS "main"."idx.users.email";`)
@@ -206,7 +206,7 @@ func TestGenerateSchemaDiffSQL_ClickHouseIndexIdentifiersAreInjectionSafe(t *tes
 	}
 	nodes, err := planner.GenerateSchemaDiffAST(diff, platform.ClickHouse)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL(platform.ClickHouse, nodes...)
+	sql, err := builtin.RenderSQL(platform.ClickHouse, nodes...)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains,

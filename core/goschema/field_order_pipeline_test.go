@@ -9,7 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/goschema"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -68,7 +68,7 @@ type User struct {
 		c.Assert(astNodes, qt.HasLen, 1)
 
 		// Render to SQL
-		sql, err := renderer.RenderSQL("postgresql", astNodes[0])
+		sql, err := builtin.RenderSQL("postgresql", astNodes[0])
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -177,7 +177,7 @@ type Post struct {
 		c.Assert(astNodes, qt.HasLen, 1)
 
 		// Render to SQL
-		sql, err := renderer.RenderSQL("postgresql", astNodes[0])
+		sql, err := builtin.RenderSQL("postgresql", astNodes[0])
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -280,7 +280,7 @@ type Post struct {
 		// Render to SQL
 		var sqlStatements []string
 		for _, node := range astNodes {
-			sql, err := renderer.RenderSQL("postgresql", node)
+			sql, err := builtin.RenderSQL("postgresql", node)
 			c.Assert(err, qt.IsNil)
 			sql = legacyRenderedSQL(sql)
 			sqlStatements = append(sqlStatements, sql)

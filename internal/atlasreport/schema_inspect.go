@@ -11,8 +11,8 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/dbmlrender"
 	"ptah.run/internal/schemaviz"
@@ -390,7 +390,7 @@ func (r *SchemaInspectReport) MarshalSQL(indent ...string) (string, error) {
 	if len(indent) > 1 {
 		return "", fmt.Errorf("unexpected number of arguments: %d", len(indent))
 	}
-	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(
+	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(
 		r.sqlSource(),
 		r.info.Dialect,
 		r.info.Capabilities,

@@ -13,9 +13,9 @@ import (
 
 	"ptah.run/config"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/schemafile"
@@ -238,7 +238,7 @@ func TestSQLiteDeclaredTypesSurviveTheDocumentE2E(t *testing.T) {
 	replayConn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+replayPath)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(replayConn)
-	statements, err := renderer.GetOrderedCreateStatements(loaded, platform.SQLite)
+	statements, err := builtin.GetOrderedCreateStatements(loaded, platform.SQLite)
 	c.Assert(err, qt.IsNil)
 	c.Assert(atlasschema.ApplySQL(context.Background(), replayConn,
 		migrator.MigrationTxModeAll, strings.Join(statements, "\n")), qt.IsNil)

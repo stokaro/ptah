@@ -13,9 +13,9 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/goschema"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematogo"
 	"ptah.run/internal/dbtarget"
@@ -143,7 +143,7 @@ func TestLiveTableIdentity_DescriptionReplays(t *testing.T) {
 	c := qt.New(t)
 	f := newLiveTableIdentityFixture(c)
 	description := dbschematogo.ConvertDBSchemaToGoSchema(f.read(c), f.dialect)
-	statements, err := renderer.GetOrderedCreateStatements(description, f.dialect)
+	statements, err := builtin.GetOrderedCreateStatements(description, f.dialect)
 	c.Assert(err, qt.IsNil)
 	f.execute(c, []string{"DROP SCHEMA " + f.quotedSchema() + " CASCADE", "CREATE SCHEMA " + f.quotedSchema()})
 

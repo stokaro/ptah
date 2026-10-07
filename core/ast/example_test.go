@@ -6,7 +6,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 )
 
 // ExampleNewCreateTable builds one CREATE TABLE with the fluent node API and
@@ -35,7 +35,7 @@ func ExampleNewCreateTable() {
 		AddConstraint(ast.NewUniqueConstraint("uk_users_email", "email"))
 
 	for _, dialect := range []string{"postgresql", "mysql"} {
-		r := must.Must(renderer.NewRenderer(dialect))
+		r := must.Must(builtin.NewRenderer(dialect))
 		fmt.Print(must.Must(r.Render(table)))
 	}
 
@@ -77,7 +77,7 @@ func ExampleAlterTableNode() {
 	}
 
 	for _, dialect := range []string{"postgresql", "mysql"} {
-		r := must.Must(renderer.NewRenderer(dialect))
+		r := must.Must(builtin.NewRenderer(dialect))
 		fmt.Print(must.Must(r.Render(alter)))
 	}
 
@@ -102,7 +102,7 @@ func ExampleNewCreateType() {
 	alterType := ast.NewAlterType("status").
 		AddOperation(ast.NewAddEnumValueOperation("archived").SetAfter("inactive"))
 
-	r := must.Must(renderer.NewRenderer("postgresql"))
+	r := must.Must(builtin.NewRenderer("postgresql"))
 	fmt.Print(must.Must(r.Render(createType)))
 	fmt.Print(must.Must(r.Render(alterType)))
 

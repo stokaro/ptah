@@ -10,8 +10,8 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -253,7 +253,7 @@ func TestPlanner_GenerateMigrationSQL_TablesAdded(t *testing.T) {
 				},
 			},
 			expected: func(nodes []ast.Node) bool {
-				sql, err := renderer.RenderSQL("postgres", nodes...)
+				sql, err := builtin.RenderSQL("postgres", nodes...)
 				return err == nil && strings.Contains(sql, `PRIMARY KEY ("org_id", "user_id")`)
 			},
 		},
@@ -633,7 +633,7 @@ func TestPlanner_ForeignKeyDependencyOrdering_SQLOutput(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	// Render to SQL to verify the actual output
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 
@@ -868,7 +868,7 @@ func TestPlanner_RecreatesGeneratedColumnOnExpressionChange(t *testing.T) {
 
 	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `ALTER TABLE "users" ALTER COLUMN "slug" SET EXPRESSION AS (lower(name));`)
 	c.Assert(sql, qt.Not(qt.Contains), `DROP COLUMN "slug"`)
@@ -911,7 +911,7 @@ func TestPlanner_GeneratedColumnExpressionChangeOnPostgres16RequiresManualMigrat
 
 	nodes, err := postgres.NewWithCapabilities(capability.Postgres16()).GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQLWithCapabilities("postgres", capability.Postgres16(), nodes...)
+	sql, err := builtin.RenderSQLWithCapabilities("postgres", capability.Postgres16(), nodes...)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "WARNING: Generated column users.slug changed, but ALTER COLUMN SET EXPRESSION requires target capability "+
 		string(capability.AlterGeneratedColumnExpression)+
@@ -969,7 +969,7 @@ func TestPlanner_RecreatesEmbeddedGeneratedColumnOnExpressionChange(t *testing.T
 
 	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `ALTER TABLE "users" ALTER COLUMN "slug" SET EXPRESSION AS (lower(name));`)
 	c.Assert(sql, qt.Not(qt.Contains), "carries no column definition")
@@ -1436,7 +1436,7 @@ func TestPlanner_GenerateMigrationAST_ExtensionChanges(t *testing.T) {
 			nodes, err := postgres.New().GenerateMigrationAST(&difftypes.SchemaDiff{ExtensionsModified: []difftypes.ExtensionDiff{test.change}})
 			c.Assert(err, qt.IsNil)
 
-			rendered, renderErr := renderer.RenderSQL(platform.Postgres, nodes...)
+			rendered, renderErr := builtin.RenderSQL(platform.Postgres, nodes...)
 			c.Assert(renderErr, qt.IsNil)
 			c.Assert(rendered, qt.Contains, test.want)
 		})
@@ -1642,7 +1642,7 @@ func TestPlanner_ExtensionSQL_Generation(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 
 			// Render nodes to SQL
-			sql, err := renderer.RenderSQL("postgres", nodes...)
+			sql, err := builtin.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
 			sql = legacyRenderedSQL(sql)
 
@@ -1697,7 +1697,7 @@ func TestPlanner_AddNewTables_WithEmbeddedFields(t *testing.T) {
 	c.Assert(result, qt.HasLen, 1)
 
 	// Convert AST to SQL to verify content
-	sql, err := renderer.RenderSQL("postgresql", result[0])
+	sql, err := builtin.RenderSQL("postgresql", result[0])
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 

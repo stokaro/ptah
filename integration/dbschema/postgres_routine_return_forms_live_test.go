@@ -13,8 +13,8 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
@@ -85,7 +85,7 @@ func TestPostgresLiveRoutineReturnFormsConverge(t *testing.T) {
 	description, err := atlashcl.Parse(returnFormsDocument(schemaName), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	joined := strings.Join(statements, "\n")
 	c.Assert(joined, qt.Contains, "RETURNS SETOF integer")

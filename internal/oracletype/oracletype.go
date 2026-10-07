@@ -9,7 +9,7 @@
 // `number(10) -> integer`, `number(1) -> boolean` -- on a schema that matched.
 //
 // The comparison cannot import the renderer's own copy, which lives under
-// core/renderer/internal. Copying the table into the comparison is what SQLite
+// engine/builtin/internal. Copying the table into the comparison is what SQLite
 // does today in migration/schemadiff, and a copy is exactly what drifts
 // (stokaro/ptah#1875).
 package oracletype

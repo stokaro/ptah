@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -113,7 +113,7 @@ func TestPlanner_ConcurrentIndexDrops(t *testing.T) {
 
 			nodes, err := tt.planner().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 			c.Assert(err, qt.IsNil)
-			sql, err := renderer.RenderSQL("postgres", nodes...)
+			sql, err := builtin.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(legacyRenderedSQL(sql), qt.Contains, tt.want, qt.Commentf("got:\n%s", sql))

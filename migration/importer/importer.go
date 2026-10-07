@@ -115,7 +115,7 @@ func WithDialect(parser Parser, dialect string) (Parser, error) {
 }
 
 // WithDialectCapabilities is [WithDialect] for a concrete server capability
-// set, the way core/renderer.NewRendererWithCapabilities is NewRenderer for
+// set, the way engine/builtin.NewRendererWithCapabilities is NewRenderer for
 // one. Use it when the release line the migrations will run on is known: a
 // statement one release line accepts and another does not is rendered the way
 // caps says.

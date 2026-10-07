@@ -8,8 +8,8 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/renderer"
 	"ptah.run/core/yamlschema"
+	"ptah.run/engine/builtin"
 )
 
 // ExampleParse reads a YAML document into the schema model and reports what the
@@ -70,7 +70,7 @@ tables:
 `)
 
 	db := must.Must(yamlschema.Parse(document))
-	for _, statement := range must.Must(renderer.GetOrderedCreateStatements(db, "postgres")) {
+	for _, statement := range must.Must(builtin.GetOrderedCreateStatements(db, "postgres")) {
 		fmt.Println(statement)
 	}
 

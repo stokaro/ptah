@@ -8,8 +8,8 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -79,7 +79,7 @@ func TestPlanner_TableLevelConstraintWithoutAnExplicitTable(t *testing.T) {
 			nodes, err := postgres.New().GenerateMigrationAST(diff)
 
 			c.Assert(err, qt.IsNil)
-			sql, err := renderer.RenderSQL("postgres", nodes...)
+			sql, err := builtin.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, test.wantSQL)
 		})
@@ -110,7 +110,7 @@ func TestPlanner_TableLevelConstraintNamesItsOwnTable(t *testing.T) {
 	nodes, err := postgres.New().GenerateMigrationAST(diff)
 
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `ALTER TABLE "archived_bookings" ADD CONSTRAINT "positive_price" CHECK (price > 0);`)
 }

@@ -12,10 +12,10 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/migrator"
 )
 
@@ -1316,7 +1316,7 @@ func testDynamicCircularDependencies(
 			},
 		}
 		info := conn.Info()
-		statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(database, info.Dialect, info.Capabilities)
+		statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(database, info.Dialect, info.Capabilities)
 		if err != nil {
 			return fmt.Errorf("render circular foreign keys: %w", err)
 		}

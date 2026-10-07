@@ -16,10 +16,10 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/goschema"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/readdb"
 	"ptah.run/internal/dbschema/postgres"
@@ -45,7 +45,7 @@ func TestPostgreSQLRolesGrantsRoundTripAndBehaviorIntegration(t *testing.T) {
 
 	nodes, err := planner.GenerateSchemaDiffAST(diff, "postgres")
 	c.Assert(err, qt.IsNil)
-	migrationSQL, err := renderer.RenderSQL("postgres", nodes...)
+	migrationSQL, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	for _, stmt := range sqlutil.SplitStatements(migrationSQL) {
 		_, err = db.Exec(stmt)
@@ -546,7 +546,7 @@ func TestPostgreSQLRoleOutOfScopeIsPresentNotAbsentIntegration(t *testing.T) {
 	// CREATE ROLE "ptah_scope_outside_137" and died on it.
 	nodes, err := planner.GenerateSchemaDiffAST(diff, "postgres")
 	c.Assert(err, qt.IsNil)
-	migrationSQL, err := renderer.RenderSQL("postgres", nodes...)
+	migrationSQL, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	c.Assert(migrationSQL, qt.Not(qt.Contains), "ptah_scope_outside_137")
 	for _, statement := range sqlutil.SplitStatements(migrationSQL) {

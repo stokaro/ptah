@@ -8,8 +8,8 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/clickhouse"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -50,7 +50,7 @@ func TestPlanner_IndexRefs_RendersDuplicateNamesOnExactTables(t *testing.T) {
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(archiveDrop.Table, qt.Equals, "archive")
 
-	sql, err := renderer.RenderSQL(platform.ClickHouse, nodes...)
+	sql, err := builtin.RenderSQL(platform.ClickHouse, nodes...)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "ALTER TABLE `metrics` ADD INDEX `idx_shared`")
 	c.Assert(sql, qt.Contains, "ALTER TABLE `archive` DROP INDEX `idx_shared`;")

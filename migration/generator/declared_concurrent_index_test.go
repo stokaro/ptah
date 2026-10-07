@@ -8,8 +8,8 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -106,7 +106,7 @@ func TestPlanBidirectionalSchemaDiff_DeclaredConcurrentIndex(t *testing.T) {
 			})
 
 			c.Assert(err, qt.IsNil)
-			up, renderErr := renderer.RenderSQLWithCapabilities(
+			up, renderErr := builtin.RenderSQLWithCapabilities(
 				platform.Postgres, test.capabilities, plan.Forward.Nodes...)
 			c.Assert(renderErr, qt.IsNil)
 			c.Assert(up, qt.Equals, test.wantUp)

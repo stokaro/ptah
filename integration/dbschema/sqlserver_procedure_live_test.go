@@ -11,9 +11,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
 )
@@ -50,7 +50,7 @@ func TestSQLServerLiveProcedureRoundTrip(t *testing.T) {
 	// 1. The renderer's statements are what the server is given. A procedure
 	// takes its parameters without parentheses and has no RETURNS, so borrowing
 	// the function spelling fails here rather than being corrected by hand.
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.SQLServer)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.SQLServer)
 	c.Assert(err, qt.IsNil)
 	joined := strings.Join(statements, "\n")
 	c.Assert(joined, qt.Contains, "CREATE OR ALTER PROCEDURE")
@@ -110,7 +110,7 @@ func TestSQLServerLiveProcedureReplacementUsesTheMatchingVerb(t *testing.T) {
 	}()
 
 	before := sqlServerProcedureSchema(schemaName)
-	statements, err := renderer.GetOrderedCreateStatements(before, platform.SQLServer)
+	statements, err := builtin.GetOrderedCreateStatements(before, platform.SQLServer)
 	c.Assert(err, qt.IsNil)
 	for _, statement := range statements {
 		_, execErr := conn.ExecContext(ctx, statement)
@@ -119,7 +119,7 @@ func TestSQLServerLiveProcedureReplacementUsesTheMatchingVerb(t *testing.T) {
 
 	after := sqlServerProcedureSchema(schemaName)
 	after.Functions[0].Body = "BEGIN SET NOCOUNT ON; SELECT @id AS id, 1 AS extra; END"
-	afterStatements, err := renderer.GetOrderedCreateStatements(after, platform.SQLServer)
+	afterStatements, err := builtin.GetOrderedCreateStatements(after, platform.SQLServer)
 	c.Assert(err, qt.IsNil)
 	for _, statement := range afterStatements {
 		_, execErr := conn.ExecContext(ctx, statement)

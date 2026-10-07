@@ -7,8 +7,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -34,7 +34,7 @@ func TestPlanner_GenerateMigrationAST_CompositeForeignKeyAddition(t *testing.T) 
 
 	nodes, err := postgres.New().GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 
@@ -195,7 +195,7 @@ func TestPlanner_GenerateMigrationAST_ConstraintsAdded(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 
 			// Convert AST nodes to SQL for verification
-			sql, err := renderer.RenderSQL("postgres", nodes...)
+			sql, err := builtin.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
 			sql = legacyRenderedSQL(sql)
 
@@ -253,7 +253,7 @@ func TestPlanner_GenerateMigrationAST_ModifiedFK_ScopesDropToHostTable(t *testin
 
 		nodes, err := postgres.New().GenerateMigrationAST(diff)
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("postgres", nodes...)
+		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -305,7 +305,7 @@ func TestPlanner_GenerateMigrationAST_ModifiedFK_ScopesDropToHostTable(t *testin
 
 		nodes, err := postgres.New().GenerateMigrationAST(diff)
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("postgres", nodes...)
+		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -351,7 +351,7 @@ func TestPlanner_GenerateMigrationAST_ModifiedNonFKConstraint_ScopesDropToHostTa
 
 		nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("postgres", nodes...)
+		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -435,7 +435,7 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 
 		nodes, err := postgres.New().GenerateMigrationAST(diff)
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("postgres", nodes...)
+		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -490,7 +490,7 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 
 		nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("postgres", nodes...)
+		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -545,7 +545,7 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_ScopesToTheRecordedHost(t *test
 
 	nodes, err := postgres.New().GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 
@@ -580,7 +580,7 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved(t *testing.T) {
 	// leaves no temporary functions behind.
 	c.Assert(nodes, qt.HasLen, 1)
 
-	sql, err := renderer.RenderSQL("postgres", nodes[0])
+	sql, err := builtin.RenderSQL("postgres", nodes[0])
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "DO $ptah$")
@@ -631,7 +631,7 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_EscapesSingleQuoteInNam
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
 
-	sql, err := renderer.RenderSQL("postgres", nodes[0])
+	sql, err := builtin.RenderSQL("postgres", nodes[0])
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "'don''t_drop'", qt.Commentf("single quote in constraint name must be SQL-escaped"))
@@ -674,7 +674,7 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_RejectsUnsafeName(t *te
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)
 
-			sql, err := renderer.RenderSQL("postgres", nodes[0])
+			sql, err := builtin.RenderSQL("postgres", nodes[0])
 			c.Assert(err, qt.IsNil)
 			sql = legacyRenderedSQL(sql)
 			c.Assert(sql, qt.Contains, "RAISE EXCEPTION",

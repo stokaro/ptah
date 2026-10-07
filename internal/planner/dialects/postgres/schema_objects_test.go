@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -67,7 +67,7 @@ func TestPlanner_GenerateMigrationAST_SchemaObjectsModified(t *testing.T) {
 
 	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "CREATE OR REPLACE VIEW active_users")
@@ -177,7 +177,7 @@ func TestPlanner_GenerateMigrationAST_ModifiedViewDropsWhenReplaceWouldBeRefused
 
 			nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 			c.Assert(err, qt.IsNil)
-			sql, err := renderer.RenderSQL("postgres", nodes...)
+			sql, err := builtin.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
 			sql = legacyRenderedSQL(sql)
 
@@ -327,7 +327,7 @@ func TestPlanner_GenerateMigrationAST_UndecidableViewBodyFollowsTheDirection(t *
 
 			nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 			c.Assert(err, qt.IsNil)
-			sql, err := renderer.RenderSQL("postgres", nodes...)
+			sql, err := builtin.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
 			sql = legacyRenderedSQL(sql)
 
@@ -420,7 +420,7 @@ func TestPlanner_GenerateMigrationAST_SameStarOverSameRelationsKeepsTheReplace(t
 
 			nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 			c.Assert(err, qt.IsNil)
-			sql, err := renderer.RenderSQL("postgres", nodes...)
+			sql, err := builtin.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
 			sql = legacyRenderedSQL(sql)
 
@@ -457,7 +457,7 @@ func TestPlanner_GenerateMigrationAST_ModifiedViewsDropInDependencyOrder(t *test
 
 	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 
@@ -503,7 +503,7 @@ func TestPlanner_GenerateMigrationAST_DroppedViewRebuildsDeclaredDependents(t *t
 
 	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 
@@ -563,7 +563,7 @@ func TestPlanner_GenerateMigrationAST_CascadeRebuildReadsCodeNotText(t *testing.
 
 	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 
@@ -653,7 +653,7 @@ func TestPlanner_GenerateMigrationAST_QuotedRelationCaseIsNotFolded(t *testing.T
 
 			nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 			c.Assert(err, qt.IsNil)
-			sql, err := renderer.RenderSQL("postgres", nodes...)
+			sql, err := builtin.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
 			sql = legacyRenderedSQL(sql)
 
@@ -696,7 +696,7 @@ func TestPlanner_GenerateMigrationAST_DuplicateTriggerNamesUseDistinctFunctions(
 
 	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "CREATE FUNCTION ptah_trigger_users_set__updated__at()")
@@ -728,7 +728,7 @@ func TestPlanner_GenerateMigrationAST_MaterializedViewPlansNoRefresh(t *testing.
 
 	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "CREATE MATERIALIZED VIEW")
 	c.Assert(sql, qt.Not(qt.Contains), "REFRESH MATERIALIZED VIEW")
@@ -765,7 +765,7 @@ func TestPlanner_GenerateMigrationAST_OrdersFunctionsByDependencies(t *testing.T
 
 	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 
@@ -795,7 +795,7 @@ func TestPlanner_GenerateMigrationAST_OrdersViewLikeObjectsByDependencies(t *tes
 
 	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 
@@ -826,7 +826,7 @@ func TestPlanner_GenerateMigrationAST_ModifiesRLSPolicies(t *testing.T) {
 
 	nodes, err := planner.GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 
@@ -867,7 +867,7 @@ func TestPlanner_GenerateMigrationAST_FunctionsWithoutAnOrderingAreStillCreated(
 	nodes, err := postgres.New().GenerateMigrationAST(diff)
 
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `FUNCTION "second"`)
 	c.Assert(sql, qt.Contains, `FUNCTION "first"`)

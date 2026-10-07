@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
-	"ptah.run/internal/objectidentity"
+	"ptah.run/core/objectidentity"
 )
 
 // projectDatabase applies the schema universe and include selectors to the

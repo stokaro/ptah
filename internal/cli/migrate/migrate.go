@@ -13,9 +13,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
-	"ptah.run/core/renderer"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
@@ -301,7 +301,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	fmt.Fprintln(out, "=== MIGRATION SQL ===")
 	fmt.Fprintln(out)
 
-	migrationSQL, err := renderer.RenderSQLWithCapabilities(info.Dialect, info.Capabilities, astNodes...)
+	migrationSQL, err := builtin.RenderSQLWithCapabilities(info.Dialect, info.Capabilities, astNodes...)
 	if err != nil {
 		return fmt.Errorf("error rendering SQL: %w", err)
 	}

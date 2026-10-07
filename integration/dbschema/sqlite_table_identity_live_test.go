@@ -10,9 +10,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
 )
@@ -106,7 +106,7 @@ func (f sqliteTableIdentityFixture) assertNothingPlanned(c *qt.C) {
 func TestSQLiteTableIdentity_LiveRenderedFileCreatesEachColumn(t *testing.T) {
 	c := qt.New(t)
 	f := newSQLiteTableIdentityFixture(c)
-	statements, err := renderer.GetOrderedCreateStatements(f.load(c), "sqlite")
+	statements, err := builtin.GetOrderedCreateStatements(f.load(c), "sqlite")
 	c.Assert(err, qt.IsNil)
 
 	f.execute(c, statements)

@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mysql"
 	"ptah.run/migration/schemadiff"
 )
@@ -34,7 +34,7 @@ func TestCompare_FieldLevelForeignKeyActionDrift_MySQL(t *testing.T) {
 
 	nodes, err := mysql.New().GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("mysql", nodes...)
+	sql, err := builtin.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 

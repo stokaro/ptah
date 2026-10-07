@@ -7,8 +7,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/parser"
 	"ptah.run/internal/sqlschema"
 )
@@ -73,7 +73,7 @@ func TestToDatabase_PostgresTriggerClausesRenderAndReadBack(t *testing.T) {
 	c := qt.New(t)
 
 	database := postgresTriggerClausesDatabase(c)
-	statements, err := renderer.GetOrderedCreateStatements(&database, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(&database, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	rendered := strings.Join(statements, "\n")
 

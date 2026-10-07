@@ -12,8 +12,8 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/modelast"
 )
 
@@ -60,7 +60,7 @@ func convertedStatements(database schemamodel.Database, dialect string) []string
 	nodes := modelast.CollectDatabase(database, dialect)
 	rendered := make([]string, 0, len(nodes.Statements))
 	for _, node := range nodes.Statements {
-		sql, err := renderer.RenderSQL(dialect, node)
+		sql, err := builtin.RenderSQL(dialect, node)
 		rendered = append(rendered, fmt.Sprintf("%s | err=%v", sql, err))
 	}
 	return rendered

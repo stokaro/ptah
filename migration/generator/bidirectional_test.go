@@ -10,8 +10,8 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -721,9 +721,9 @@ func TestPlanBidirectionalSchemaDiff_ConcurrentCreateUsesBlockingRollbackWithout
 	})
 
 	c.Assert(err, qt.IsNil)
-	up, renderErr := renderer.RenderSQLWithCapabilities(platform.Postgres, caps, plan.Forward.Nodes...)
+	up, renderErr := builtin.RenderSQLWithCapabilities(platform.Postgres, caps, plan.Forward.Nodes...)
 	c.Assert(renderErr, qt.IsNil)
-	down, renderErr := renderer.RenderSQLWithCapabilities(platform.Postgres, caps, plan.Reverse.Nodes...)
+	down, renderErr := builtin.RenderSQLWithCapabilities(platform.Postgres, caps, plan.Reverse.Nodes...)
 	c.Assert(renderErr, qt.IsNil)
 	c.Assert(up, qt.Equals, "CREATE INDEX CONCURRENTLY IF NOT EXISTS \"idx_users_reference\" ON \"users\" (\"reference\");\n")
 	c.Assert(down, qt.Equals, "DROP INDEX IF EXISTS \"idx_users_reference\";\n")
@@ -809,13 +809,13 @@ func TestPlanBidirectionalSchemaDiff_YugabyteExplicitConcurrentCreateKeepsBlocki
 	})
 
 	c.Assert(err, qt.IsNil)
-	up, renderErr := renderer.RenderSQLWithCapabilities(
+	up, renderErr := builtin.RenderSQLWithCapabilities(
 		platform.YugabyteDB,
 		capability.YugabyteDB25(),
 		plan.Forward.Nodes...,
 	)
 	c.Assert(renderErr, qt.IsNil)
-	down, renderErr := renderer.RenderSQLWithCapabilities(
+	down, renderErr := builtin.RenderSQLWithCapabilities(
 		platform.YugabyteDB,
 		capability.YugabyteDB25(),
 		plan.Reverse.Nodes...,
@@ -931,9 +931,9 @@ func TestPlanBidirectionalSchemaDiff_ConcurrentDropUsesBlockingReverseCreateWith
 	})
 
 	c.Assert(err, qt.IsNil)
-	up, renderErr := renderer.RenderSQLWithCapabilities(platform.Postgres, caps, plan.Forward.Nodes...)
+	up, renderErr := builtin.RenderSQLWithCapabilities(platform.Postgres, caps, plan.Forward.Nodes...)
 	c.Assert(renderErr, qt.IsNil)
-	down, renderErr := renderer.RenderSQLWithCapabilities(platform.Postgres, caps, plan.Reverse.Nodes...)
+	down, renderErr := builtin.RenderSQLWithCapabilities(platform.Postgres, caps, plan.Reverse.Nodes...)
 	c.Assert(renderErr, qt.IsNil)
 	c.Assert(up, qt.Equals, "DROP INDEX CONCURRENTLY IF EXISTS \"idx_users_reference\";\n")
 	c.Assert(down, qt.Equals, "CREATE INDEX IF NOT EXISTS \"idx_users_reference\" ON \"users\" (\"reference\");\n")

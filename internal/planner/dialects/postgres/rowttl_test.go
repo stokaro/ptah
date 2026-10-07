@@ -9,7 +9,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -168,7 +168,7 @@ func renderedStatements(
 
 	var statements []string
 	for _, node := range nodes {
-		sql, err := renderer.RenderSQLWithCapabilities(dialect, caps, node)
+		sql, err := builtin.RenderSQLWithCapabilities(dialect, caps, node)
 		c.Assert(err, qt.IsNil)
 		for line := range strings.SplitSeq(sql, "\n") {
 			line = strings.TrimSpace(line)

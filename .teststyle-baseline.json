@@ -1,12 +1,6 @@
 {
   "test_conditionals": [
     {
-      "path": "internal/cli/internal/migrateflags/migrateflags_test.go",
-      "function": "TestParseMigrationLockTimeout",
-      "kind": "if",
-      "count": 1
-    },
-    {
       "path": "core/goschema/embedded_bug_reproduction_test.go",
       "function": "TestEmbeddedEntityIDBugReproduction",
       "kind": "if",
@@ -139,36 +133,6 @@
       "count": 3
     },
     {
-      "path": "core/renderer/renderer_test.go",
-      "function": "TestEmbeddedFieldsInPackageParser",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "core/renderer/renderer_test.go",
-      "function": "TestGenerateSchema_Deterministic",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "core/renderer/renderer_test.go",
-      "function": "TestGetOrderedCreateStatements",
-      "kind": "switch",
-      "count": 1
-    },
-    {
-      "path": "core/renderer/renderer_test.go",
-      "function": "TestNewVisitorMethods_UnitTests",
-      "kind": "if",
-      "count": 3
-    },
-    {
-      "path": "core/renderer/renderer_test.go",
-      "function": "TestPlatformSpecificOverrides",
-      "kind": "if",
-      "count": 3
-    },
-    {
       "path": "core/schemamodel/dependency_fix_test.go",
       "function": "TestDependencyOrderingWithEmbeddedFields",
       "kind": "if",
@@ -209,6 +173,36 @@
       "function": "TestDeduplicate_MultipleStructsFieldOrder",
       "kind": "switch",
       "count": 1
+    },
+    {
+      "path": "engine/builtin/renderer_test.go",
+      "function": "TestEmbeddedFieldsInPackageParser",
+      "kind": "if",
+      "count": 1
+    },
+    {
+      "path": "engine/builtin/renderer_test.go",
+      "function": "TestGenerateSchema_Deterministic",
+      "kind": "if",
+      "count": 1
+    },
+    {
+      "path": "engine/builtin/renderer_test.go",
+      "function": "TestGetOrderedCreateStatements",
+      "kind": "switch",
+      "count": 1
+    },
+    {
+      "path": "engine/builtin/renderer_test.go",
+      "function": "TestNewVisitorMethods_UnitTests",
+      "kind": "if",
+      "count": 3
+    },
+    {
+      "path": "engine/builtin/renderer_test.go",
+      "function": "TestPlatformSpecificOverrides",
+      "kind": "if",
+      "count": 3
     },
     {
       "path": "integration/gonative/check_constraint_integration_test.go",
@@ -309,6 +303,12 @@
     {
       "path": "internal/annotationmeta/meta_test.go",
       "function": "TestDetachedFileScopesMatchParserSupport",
+      "kind": "if",
+      "count": 1
+    },
+    {
+      "path": "internal/cli/internal/migrateflags/migrateflags_test.go",
+      "function": "TestParseMigrationLockTimeout",
       "kind": "if",
       "count": 1
     },
@@ -783,28 +783,28 @@
   ],
   "white_box_files": [
     {
-      "path": "internal/cli/atlas/atlas_test.go",
-      "package": "atlas",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
       "path": "cmd/integration-test/main_test.go",
       "package": "main",
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
-      "path": "internal/cli/migrateup/migrateup_test.go",
-      "package": "migrateup",
+      "path": "dbschema/schema_scope_test.go",
+      "package": "dbschema",
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
-      "path": "core/renderer/internal/dialects/mssql/mssql_test.go",
+      "path": "engine/builtin/internal/dialects/mssql/mssql_test.go",
       "package": "mssql",
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
-      "path": "dbschema/schema_scope_test.go",
-      "package": "dbschema",
+      "path": "internal/cli/atlas/atlas_test.go",
+      "package": "atlas",
+      "reason": "same-package test file is not named *_internal_test.go"
+    },
+    {
+      "path": "internal/cli/migrateup/migrateup_test.go",
+      "package": "migrateup",
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {

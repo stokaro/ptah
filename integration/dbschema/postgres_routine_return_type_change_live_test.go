@@ -12,9 +12,9 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/generator"
@@ -84,7 +84,7 @@ func returnTypeSchema(c *qt.C, conn *dbschema.DatabaseConnection, prefix string)
 // applyDeclaration renders a declaration and executes every statement.
 func applyDeclaration(c *qt.C, conn *dbschema.DatabaseConnection, description *schemamodel.Database) {
 	c.Helper()
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	applyStatements(c, conn, statements)
 }

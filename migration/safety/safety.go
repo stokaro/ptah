@@ -19,8 +19,8 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/sqlutil"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/htmlstyle"
 	"ptah.run/internal/notnullfill"
 	"ptah.run/internal/typechange"
@@ -272,7 +272,7 @@ func AssessRenderedWithCapabilities(
 	for _, whole := range nodes {
 		for _, node := range assessmentUnits(whole, dialect) {
 			nodeAssessment := assessNode(node)
-			rendered, err := renderer.RenderSQLWithCapabilities(dialect, caps, node)
+			rendered, err := builtin.RenderSQLWithCapabilities(dialect, caps, node)
 			if err != nil {
 				return nil, err
 			}

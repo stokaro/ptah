@@ -33,6 +33,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `core/ast` | Typed schema DDL AST nodes. |
 | `core/astbuilder` | Fluent builders that construct `core/ast` DDL nodes without hand-written struct literals. |
 | `core/coverage` | Schema description scope facts, so an absent object is not read as a removed one. |
+| `core/objectidentity` | Structured object identities, target-aware name comparison, and reference resolution. |
 | `core/goschema` | Go annotation parser. Produces a `schemamodel.Database`. |
 | `core/schemamodel` | The desired-schema model every authoring source produces: Go annotations, HCL, YAML, SQL, DBML and live-catalog conversion. |
 | `core/platform` | Dialect and platform constants. |
@@ -40,7 +41,9 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `core/platform/identifier` | Catalog identifier comparison and namespace semantics. |
 | `core/ptaherr` | Typed public errors and sentinel errors. |
 | `core/query` | Fluent builder for parameterized, dialect-aware SELECT, INSERT, UPDATE, DELETE and YDB UPSERT statements. |
-| `core/renderer` | Dialect-aware SQL rendering from AST/schema IR, including fail-closed two-phase foreign key ordering. |
+| `core/renderer` | Provider rendering contracts for local visitors and cancellable batches. |
+| `engine` | Explicit provider registration and rendering dispatch without built-in implementations. |
+| `engine/builtin` | Dialect-aware SQL rendering from AST/schema IR, including fail-closed two-phase foreign key ordering. |
 | `core/schemasource` | Runs an external desired-schema program and parses its output into schema IR. |
 | `core/sqlutil` | SQL utility helpers used by public paths. |
 | `core/yamlschema` | Reads Ptah's YAML authoring format into the schema IR, strictly. |
@@ -66,8 +69,13 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 Import paths use the module prefix:
 
 ```go
-import "ptah.run/core/renderer"
+import "ptah.run/engine/builtin"
 ```
+
+`engine.New` assembles only the providers the caller supplies. Registration
+rejects duplicate target ownership and aliases. `Runtime.Render` sends each
+batch to one owner, propagates errors and cancellation, and returns no partial
+SQL on failure. `builtin.New` explicitly selects the bundled rendering providers.
 
 The `migration/dbtest` package is the embeddable engine behind the native test
 commands, including regular-expression case selection through `FilterCases`.
@@ -101,7 +109,7 @@ no-op name with its kind and source location, and `projectconfig.Merge`
 preserves the collection. Ptah's CLI reports each entry; embedders decide how
 to expose the same metadata.
 
-`renderer.ValidateSchema` and `renderer.ValidateSchemaWithCapabilities` check
+`builtin.ValidateSchema` and `builtin.ValidateSchemaWithCapabilities` check
 a complete `schemamodel.Database` without rendering SQL. They use the same
 foreign-key and capability validation as ordered schema rendering and migration
 planning.
@@ -111,7 +119,7 @@ planning.
 declaration order. The builders return AST types and nothing of their own, so a
 chain and a hand-written literal mix freely. They validate nothing — an unknown
 type or an unresolved foreign key reaches the AST and is reported by
-`core/renderer` or by the database.
+`engine/builtin` or by the database.
 
 `core/yamlschema` reads Ptah's YAML authoring format: `Parse` from bytes,
 `ParseFile` from a path, both returning the `*schemamodel.Database` that Go

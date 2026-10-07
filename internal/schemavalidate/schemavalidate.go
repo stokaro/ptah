@@ -17,8 +17,8 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 )
 
 // Problem is one structural fault found in a desired schema.
@@ -104,7 +104,7 @@ func CollectWithOptions(
 	// state, so faulting it here would refuse what the operator excluded.
 	scoped := schemamodel.ScopeToDialect(database, dialect)
 	problems := collectIndexProblems(scoped, dialect)
-	if err := renderer.ValidateSchemaWithCapabilities(scoped, dialect, caps); err != nil {
+	if err := builtin.ValidateSchemaWithCapabilities(scoped, dialect, caps); err != nil {
 		problems = append(problems, Problem{
 			Dialect: dialect,
 			Kind:    "schema",
@@ -133,7 +133,7 @@ func collectSkippedDeclarations(
 	dialect string,
 	caps capability.Capabilities,
 ) []Problem {
-	_, omissions, err := renderer.GetOrderedCreateStatementsReportingOmissions(database, dialect, caps)
+	_, omissions, err := builtin.GetOrderedCreateStatementsReportingOmissions(database, dialect, caps)
 	if err != nil {
 		return []Problem{{
 			Dialect: dialect,
@@ -163,7 +163,7 @@ func collectSkippedDeclarations(
 // A remedy that does not work on the target it is printed for costs the reader
 // more than silence, so the renderer decides whether there is one and this
 // function only formats what it was given.
-func skippedMessage(omission renderer.Omission) string {
+func skippedMessage(omission builtin.Omission) string {
 	message := "would be skipped"
 	if omission.Property != "" {
 		message = omission.Message()

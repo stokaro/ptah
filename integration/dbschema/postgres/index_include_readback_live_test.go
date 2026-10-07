@@ -14,8 +14,8 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"ptah.run/catalog"
-	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/dbtarget"
 )
@@ -156,7 +156,7 @@ func TestReadDescribesCoveringIndex_Live(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			info := conn.Info()
 
-			statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(
+			statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(
 				dbschematogo.ConvertDBSchemaToGoSchema(schema, "postgres"),
 				info.Dialect,
 				info.Capabilities,

@@ -11,8 +11,8 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
 	"ptah.run/core/sqlutil"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/clickhouse"
 	"ptah.run/internal/planner/dialects/mssql"
 	"ptah.run/internal/planner/dialects/mysql"
@@ -742,7 +742,7 @@ func GenerateSchemaDiffSQLWithOptions(
 	if err != nil {
 		return "", err
 	}
-	output, err := renderer.RenderSQLWithCapabilities(dialect, caps, astNodes...)
+	output, err := builtin.RenderSQLWithCapabilities(dialect, caps, astNodes...)
 	if err != nil {
 		return "", wrapRenderError(dialect, err)
 	}

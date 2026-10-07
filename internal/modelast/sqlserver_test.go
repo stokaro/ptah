@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/modelast"
 )
 
@@ -78,7 +78,7 @@ func TestCollectDatabase_SQLServerIncludesViewsAndTriggers(t *testing.T) {
 	}
 
 	statements := modelast.CollectDatabase(database, platform.SQLServer)
-	sql, err := renderer.RenderSQL(platform.SQLServer, statements)
+	sql, err := builtin.RenderSQL(platform.SQLServer, statements)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "CREATE VIEW [dbo].[active_users] AS")

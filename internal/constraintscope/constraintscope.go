@@ -14,8 +14,8 @@
 package constraintscope
 
 import (
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
-	"ptah.run/internal/objectidentity"
 	"ptah.run/internal/tableref"
 	"ptah.run/migration/schemadiff/difftypes"
 )

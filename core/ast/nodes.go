@@ -939,7 +939,7 @@ func (n *ColumnNode) Accept(visitor Visitor) error { return visitor.VisitNode(n)
 // this flag, and PostgreSQL refuses `ALTER COLUMN ... DROP NOT NULL` on a key
 // column outright (SQLSTATE 42P16), so leaving the flag set there made every
 // modification of a single-column key column unappliable. Both now take the
-// primary-key branch as well; see the guards in core/renderer, pinned by
+// primary-key branch as well; see the guards in engine/builtin, pinned by
 // TestModifyColumn_KeyColumnNeverRendersNullable across every supported
 // dialect. Any new consumer of this flag owes the same decision.
 //

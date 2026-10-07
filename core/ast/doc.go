@@ -94,7 +94,7 @@
 // This package integrates with other Ptah components:
 //
 //   - ptah/core/goschema: Converts parsed Go structs to AST nodes
-//   - ptah/core/renderer: Provides dialect-specific SQL rendering
+//   - ptah/engine/builtin: Provides dialect-specific SQL rendering
 //   - ptah/migration/schemadiff: Compares AST representations for migration generation
 //   - internal builder helpers: Provide fluent APIs for building AST nodes
 //   - internal parser helpers: Parse SQL DDL into AST nodes

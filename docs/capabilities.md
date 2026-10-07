@@ -276,13 +276,13 @@ would need one key per length, and the unit would have nowhere to live at all.
 `IdentifierLimit.Exceeds` is where the byte-versus-character rule is **defined**,
 so a caller can ask the question instead of enforcing the limit by rune count.
 
-Those numbers were a dialect switch inside `core/renderer`'s foreign-key name
+Those numbers were a dialect switch inside `engine/builtin`'s foreign-key name
 validation. The renderer now reads the limit from the capability model, which is
 what makes the model load-bearing rather than decorative: it asks the question
 instead of carrying its own copy of the switch.
 
 `Exceeds` is not yet the only place the rule is **applied**. Two copies existed
-when the model was introduced. `core/renderer` and
+when the model was introduced. `engine/builtin` and
 `dbschema.validateSQLServerIdentifierNames` now both consume it. One copy
 remains in `internal/schemaprep`: `foreignKeyNameFits` and
 `foreignKeyNameWithSuffix` keep a three-arm switch because they *truncate* a
@@ -835,7 +835,7 @@ so a PostgreSQL 13 connection refuses that syntax before emitting SQL.
   session.
 
 Offline SQL generation has no server banner to inspect. Factories such as
-`planner.GetPlanner`, `renderer.NewRenderer`, and
+`planner.GetPlanner`, `builtin.NewRenderer`, and
 `planner.GenerateSchemaDiffSQLStatements` therefore use `ForDialect`, which is
 the current-version default for the normalized dialect. Use the
 `...WithCapabilities` variants when a caller has a live `DBInfo.Capabilities`

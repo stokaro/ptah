@@ -12,9 +12,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/planner"
@@ -122,7 +122,7 @@ func TestPostgresLiveTriggerDropTakesOnlyTheGeneratedFunction(t *testing.T) {
 	c := qt.New(t)
 	conn, schemaName := triggerDropConnection(c, dbURL)
 
-	created, err := renderer.GetOrderedCreateStatements(triggerDropDeclaration(triggerDropTriggers()...), platform.Postgres)
+	created, err := builtin.GetOrderedCreateStatements(triggerDropDeclaration(triggerDropTriggers()...), platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	for _, statement := range created {
 		_, err := conn.ExecContext(c.Context(), statement)

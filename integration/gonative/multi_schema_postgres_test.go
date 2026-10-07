@@ -9,10 +9,10 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -67,7 +67,7 @@ func TestPostgreSQLMultiSchemaGenerateApplyReadDiffIntegration(t *testing.T) {
 	}
 	nodes, err := planner.GenerateSchemaDiffAST(diff, "postgres")
 	c.Assert(err, qt.IsNil)
-	migrationSQL, err := renderer.RenderSQL("postgres", nodes...)
+	migrationSQL, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	migrationSQLForAssert := legacyRenderedSQL(migrationSQL)
 	c.Assert(migrationSQLForAssert, qt.Contains, "CREATE SCHEMA IF NOT EXISTS ptah_ms_auth;")

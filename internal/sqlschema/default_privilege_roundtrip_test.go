@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/modelast"
 )
 
@@ -161,7 +161,7 @@ func TestDefaultPrivilege_RenderedStatementReadsBackAsTheSameDeclaration(t *test
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			rendered, err := renderer.RenderSQL("postgres", modelast.FromDefaultPrivilege(test.declared))
+			rendered, err := builtin.RenderSQL("postgres", modelast.FromDefaultPrivilege(test.declared))
 			c.Assert(err, qt.IsNil)
 
 			read := parseToDatabase(c, rendered)

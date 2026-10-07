@@ -12,8 +12,8 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/clickhouserbac"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/crdbttl"
@@ -834,7 +834,7 @@ func ValidateDesiredSchema(desired *schemamodel.Database, info catalog.ServerInf
 	}
 	// A column does not carry the schema of the user type it names, only the
 	// declaration does (stokaro/ptah#1138).
-	return renderer.ValidateSchemaWithCapabilities(
+	return builtin.ValidateSchemaWithCapabilities(
 		schemaprep.QualifyDeclaredUserTypes(scoped, info.Dialect),
 		info.Dialect,
 		caps,

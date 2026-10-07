@@ -12,7 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/goschema"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/modelast"
 )
 
@@ -49,7 +49,7 @@ func TestGenerateCreateTableFromStubs(t *testing.T) {
 
 					// Generate PostgreSQL SQL using the AST approach
 					createTableNode := modelast.FromTable(table, database.Fields, database.Enums, "postgres")
-					pgSQL, err := renderer.RenderSQL("postgres", createTableNode)
+					pgSQL, err := builtin.RenderSQL("postgres", createTableNode)
 					c.Assert(err, qt.IsNil)
 					pgSQL = legacyRenderedSQL(pgSQL)
 
@@ -60,7 +60,7 @@ func TestGenerateCreateTableFromStubs(t *testing.T) {
 					// For PostgreSQL, enums are created separately, so generate them if they exist
 					for _, enum := range database.Enums {
 						enumNode := modelast.FromEnum(enum)
-						enumSQL, err := renderer.RenderSQL("postgres", enumNode)
+						enumSQL, err := builtin.RenderSQL("postgres", enumNode)
 						c.Assert(err, qt.IsNil)
 						enumSQL = legacyRenderedSQL(enumSQL)
 						c.Assert(enumSQL, qt.Contains, fmt.Sprintf("CREATE TYPE %s AS ENUM", enum.Name))
@@ -68,7 +68,7 @@ func TestGenerateCreateTableFromStubs(t *testing.T) {
 
 					// Generate MySQL SQL
 					createTableNodeMySQL := modelast.FromTable(table, database.Fields, database.Enums, "mysql")
-					mySQL, err := renderer.RenderSQL("mysql", createTableNodeMySQL)
+					mySQL, err := builtin.RenderSQL("mysql", createTableNodeMySQL)
 					c.Assert(err, qt.IsNil)
 					mySQL = legacyRenderedSQL(mySQL)
 
@@ -97,7 +97,7 @@ func TestGenerateCreateTableFromStubs(t *testing.T) {
 
 					// Generate MariaDB SQL (may differ from MySQL due to platform-specific overrides)
 					createTableNodeMariaDB := modelast.FromTable(table, database.Fields, database.Enums, "mariadb")
-					mariaSQL, err := renderer.RenderSQL("mariadb", createTableNodeMariaDB)
+					mariaSQL, err := builtin.RenderSQL("mariadb", createTableNodeMariaDB)
 					c.Assert(err, qt.IsNil)
 					mariaSQL = legacyRenderedSQL(mariaSQL)
 

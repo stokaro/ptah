@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -95,7 +95,7 @@ func TestIssue51ExactReproduction(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	// Render to SQL
-	r, err := renderer.NewRenderer("postgresql")
+	r, err := builtin.NewRenderer("postgresql")
 	c.Assert(err, qt.IsNil)
 	var sqlStatements []string
 	for _, node := range nodes {

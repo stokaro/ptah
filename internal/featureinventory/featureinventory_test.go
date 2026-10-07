@@ -49,8 +49,8 @@ func TestParseLedger_HappyPath(t *testing.T) {
 	}{
 		{
 			name:   "a list item is a listing",
-			ledger: stableSection("- `ptah.run/core/renderer`\n"),
-			want:   []string{"ptah.run/core/renderer"},
+			ledger: stableSection("- `ptah.run/engine/builtin`\n"),
+			want:   []string{"ptah.run/engine/builtin"},
 		},
 		{
 			name:   "trailing prose after the closing backtick is not part of the path",
@@ -181,16 +181,16 @@ func TestParseLedger_UnclassifiedListing(t *testing.T) {
 	}{
 		{
 			name:   "no heading at all",
-			ledger: "- `ptah.run/core/renderer`\n",
+			ledger: "- `ptah.run/engine/builtin`\n",
 		},
 		{
 			name:   "a heading that classifies nothing",
-			ledger: "## Provisional Surface\n\n- `ptah.run/core/renderer`\n",
+			ledger: "## Provisional Surface\n\n- `ptah.run/engine/builtin`\n",
 		},
 		{
 			name: "after a classifying section has ended",
 			ledger: "## Stable Embedder API\n\n- `ptah.run/catalog`\n\n" +
-				"## Compatibility Guard\n\n- `ptah.run/core/renderer`\n",
+				"## Compatibility Guard\n\n- `ptah.run/engine/builtin`\n",
 		},
 	}
 
@@ -200,7 +200,7 @@ func TestParseLedger_UnclassifiedListing(t *testing.T) {
 
 			_, err := featureinventory.ParseLedger([]byte(test.ledger), modulePath)
 			c.Assert(err, qt.ErrorMatches,
-				`ptah\.run/core/renderer is listed under no classifying heading; move it under .*`)
+				`ptah\.run/engine/builtin is listed under no classifying heading; move it under .*`)
 		})
 	}
 }
@@ -305,7 +305,7 @@ func TestDerive_HappyPath(t *testing.T) {
 		// would be credited to the same page; here it stays unclaimed, because
 		// the join is equality and there is no search step.
 		NativeLeaves: []agentsurface.Leaf{{Name: "schema apply"}, {Name: "schema apply-plan"}},
-		Ledger:       []byte(stableSection("- `ptah.run/core/renderer`\n")),
+		Ledger:       []byte(stableSection("- `ptah.run/engine/builtin`\n")),
 		Release:      []byte("builds:\n  - binary: ptah\n"),
 		Pages:        []featureinventory.PageClaim{{Path: page, Owns: []string{"cli-ptah-schema-apply"}}},
 		Examples:     []featureinventory.Example{runnableExample("docs/site/src/content/docs/start/q.mdx")},
@@ -316,7 +316,7 @@ func TestDerive_HappyPath(t *testing.T) {
 	c.Assert(rowClaimant(c, doc, "cli-ptah-schema-apply"), qt.Equals, page)
 	c.Assert(rowSurface(c, doc, "cli-ptah-schema-apply"), qt.Equals, "ptah schema apply")
 	c.Assert(rowByID(c, doc, "cli-ptah-schema-apply-plan").ClaimedBy, qt.IsNil)
-	c.Assert(unclaimed(doc), qt.DeepEquals, []string{"cli-ptah-schema-apply-plan", "gopkg-core-renderer"})
+	c.Assert(unclaimed(doc), qt.DeepEquals, []string{"cli-ptah-schema-apply-plan", "gopkg-engine-builtin"})
 }
 
 // The identifiers a page may claim are the ones the derivation produces, and a
@@ -328,7 +328,7 @@ func TestDerive_FailurePath(t *testing.T) {
 	_, problems := featureinventory.Derive(featureinventory.Sources{
 		ModulePath:   modulePath,
 		NativeLeaves: []agentsurface.Leaf{{Name: "schema apply"}},
-		Ledger:       []byte(stableSection("- `ptah.run/core/renderer`\n")),
+		Ledger:       []byte(stableSection("- `ptah.run/engine/builtin`\n")),
 		Release:      []byte("builds:\n  - binary: ptah\n"),
 		Pages:        []featureinventory.PageClaim{{Path: "a.md", Owns: []string{"cli-ptah-schema-aplly"}}},
 		Examples:     []featureinventory.Example{runnableExample("q.mdx")},
@@ -345,7 +345,7 @@ func TestRender_HappyPath(t *testing.T) {
 	doc, _ := featureinventory.Derive(featureinventory.Sources{
 		ModulePath:   modulePath,
 		NativeLeaves: []agentsurface.Leaf{{Name: "db read"}},
-		Ledger:       []byte(stableSection("- `ptah.run/core/renderer`\n")),
+		Ledger:       []byte(stableSection("- `ptah.run/engine/builtin`\n")),
 		Release:      []byte("builds:\n  - binary: ptah\n"),
 		Examples:     []featureinventory.Example{runnableExample("q.mdx")},
 	})
@@ -403,7 +403,7 @@ func unclaimed(doc *featureinventory.Document) []string {
 func TestParseLedger_ForeignModule(t *testing.T) {
 	c := qt.New(t)
 
-	source := []byte(stableSection("- `apiguardfixture/pkg`\n- `ptah.run/core/renderer`\n"))
+	source := []byte(stableSection("- `apiguardfixture/pkg`\n- `ptah.run/engine/builtin`\n"))
 
 	foreign, err := featureinventory.ParseLedger(source, "apiguardfixture")
 	c.Assert(err, qt.IsNil)
@@ -411,7 +411,7 @@ func TestParseLedger_ForeignModule(t *testing.T) {
 
 	own, err := featureinventory.ParseLedger(source, modulePath)
 	c.Assert(err, qt.IsNil)
-	c.Assert(own.Stable, qt.DeepEquals, []string{"ptah.run/core/renderer"})
+	c.Assert(own.Stable, qt.DeepEquals, []string{"ptah.run/engine/builtin"})
 }
 
 // An empty module path recognizes nothing rather than every backticked list
@@ -421,7 +421,7 @@ func TestParseLedger_ForeignModule(t *testing.T) {
 func TestParseLedger_NoModulePath(t *testing.T) {
 	c := qt.New(t)
 
-	source := []byte(stableSection("- `ptah.run/core/renderer`\n- `github.com/spf13/cobra`\n"))
+	source := []byte(stableSection("- `ptah.run/engine/builtin`\n- `github.com/spf13/cobra`\n"))
 
 	ledger, err := featureinventory.ParseLedger(source, "")
 	c.Assert(err, qt.IsNil)
@@ -518,7 +518,7 @@ func TestDerive_ExampleRunsNothing(t *testing.T) {
 			_, problems := featureinventory.Derive(featureinventory.Sources{
 				ModulePath:   modulePath,
 				NativeLeaves: []agentsurface.Leaf{{Name: "db read"}},
-				Ledger:       []byte(stableSection("- `ptah.run/core/renderer`\n")),
+				Ledger:       []byte(stableSection("- `ptah.run/engine/builtin`\n")),
 				Release:      []byte("builds:\n  - binary: ptah\n"),
 				Examples:     []featureinventory.Example{test.example},
 			})

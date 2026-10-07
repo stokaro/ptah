@@ -11,9 +11,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -68,7 +68,7 @@ func TestPostgresLiveCompositeAttributeConverges(t *testing.T) {
 	city := schemamodel.CompositeField{Name: "city", Type: "text"}
 	zip := schemamodel.CompositeField{Name: "zip", Type: "text"}
 
-	statements, err := renderer.GetOrderedCreateStatements(declared(street, city), platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(declared(street, city), platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	for _, statement := range statements {
 		_, execErr := conn.ExecContext(ctx, statement)

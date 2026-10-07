@@ -12,8 +12,8 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 )
 
@@ -35,7 +35,7 @@ func TestSpannerLiveAddColumnIfNotExists(t *testing.T) {
 
 	add := func(column string) string {
 		c.Helper()
-		sql, err := renderer.RenderSQL(platform.Spanner, &ast.AlterTableNode{Name: table, Operations: []ast.AlterOperation{
+		sql, err := builtin.RenderSQL(platform.Spanner, &ast.AlterTableNode{Name: table, Operations: []ast.AlterOperation{
 			&ast.AddColumnOperation{Column: ast.NewColumn(column, "text"), IfNotExists: true},
 		}})
 		c.Assert(err, qt.IsNil)

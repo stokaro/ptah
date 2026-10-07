@@ -15,9 +15,9 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/sqlscript"
@@ -260,7 +260,7 @@ func planDownMigrationStatements(
 	if err := qualifier.ApplyToPlan(dialect, dbAsGoSchema, nodes); err != nil {
 		return nil, err
 	}
-	output, err := renderer.RenderSQLWithCapabilities(dialect, plannerOpts.CapabilitiesFor(dialect), nodes...)
+	output, err := builtin.RenderSQLWithCapabilities(dialect, plannerOpts.CapabilitiesFor(dialect), nodes...)
 	if err != nil {
 		return nil, fmt.Errorf("error generating down migration SQL: %w", err)
 	}

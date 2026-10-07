@@ -9,15 +9,15 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/modelast"
 )
 
 func renderConformanceSQL(c *qt.C, target *schemamodel.Database, dialect string) string {
 	createAST := modelast.CollectDatabase(*target, dialect)
-	createSQL, err := renderer.RenderSQL(dialect, createAST.Statements...)
+	createSQL, err := builtin.RenderSQL(dialect, createAST.Statements...)
 	c.Assert(err, qt.IsNil)
 	return strings.TrimSpace(createSQL)
 }

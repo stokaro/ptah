@@ -12,8 +12,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
@@ -70,7 +70,7 @@ func TestPostgresLiveRoutinePlannerPropertiesConverge(t *testing.T) {
   parallel  = SAFE`), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	joined := strings.Join(statements, "\n")
 	c.Assert(joined, qt.Contains, "LEAKPROOF")
@@ -119,7 +119,7 @@ func TestPostgresLiveRoutineWithoutPlannerPropertiesConverges(t *testing.T) {
 	description, err := atlashcl.Parse(plannerPropertiesDocument(schemaName, `volatility = STABLE`), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	joined := strings.Join(statements, "\n")
 	c.Assert(joined, qt.Not(qt.Contains), "LEAKPROOF")
@@ -164,7 +164,7 @@ func TestPostgresLiveRoutinePlannerPropertyDifferenceIsPlanned(t *testing.T) {
 
 	plain, err := atlashcl.Parse(plannerPropertiesDocument(schemaName, `volatility = STABLE`), "schema.hcl")
 	c.Assert(err, qt.IsNil)
-	statements, err := renderer.GetOrderedCreateStatements(plain, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(plain, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	for _, statement := range statements {
 		_, execErr := conn.ExecContext(ctx, statement)

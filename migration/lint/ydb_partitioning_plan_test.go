@@ -8,8 +8,8 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	ydbplanner "ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -55,7 +55,7 @@ func TestYDBRules_LeavePtahsPartitioningPlans(t *testing.T) {
 			}
 			nodes, err := ydbplanner.NewWithCapabilities(caps).GenerateMigrationAST(diff)
 			c.Assert(err, qt.IsNil)
-			sql, err := renderer.RenderSQLWithCapabilities("ydb", caps, nodes...)
+			sql, err := builtin.RenderSQLWithCapabilities("ydb", caps, nodes...)
 			c.Assert(err, qt.IsNil)
 			c.Assert(strings.Count(sql, " SET ("), qt.Equals, 2, qt.Commentf("the plan:\n%s", sql))
 

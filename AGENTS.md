@@ -89,7 +89,7 @@ snapshot of exported declarations to make them show up twice in a diff
 that reason).
 
 Core packages a reader meets first: `core/ast`, `core/astbuilder`,
-`core/goschema` (annotation parser in `parser.go`), `core/renderer` (dialects
+`core/goschema` (annotation parser in `parser.go`), `engine/builtin` (dialects
 under `internal/dialects/`), `core/platform`, `core/yamlschema`, `dbschema`,
 `migration/generator`, `migration/migrationfile`, `migration/shadow`,
 `migration/migrator`, `migration/planner`, `migration/schemadiff`.

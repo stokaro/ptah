@@ -13,9 +13,9 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -58,7 +58,7 @@ func TestSQLServerLiveSequenceRoundTrip(t *testing.T) {
 	// 1. The renderer's statements are the ones the server is given. Nothing is
 	// hand-written here, so a statement this engine refuses fails the test
 	// rather than being quietly corrected.
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.SQLServer)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.SQLServer)
 	c.Assert(err, qt.IsNil)
 	rendered := strings.Join(statements, "\n")
 	c.Assert(rendered, qt.Contains, "CREATE SEQUENCE")
@@ -123,7 +123,7 @@ func renderedStatementsNaming(c *qt.C, nodes []ast.Node, keyword string) []strin
 	c.Helper()
 	kept := make([]string, 0, len(nodes))
 	for _, node := range nodes {
-		sql, err := renderer.RenderSQL(platform.SQLServer, node)
+		sql, err := builtin.RenderSQL(platform.SQLServer, node)
 		c.Assert(err, qt.IsNil)
 		if strings.Contains(sql, keyword) {
 			kept = append(kept, sql)

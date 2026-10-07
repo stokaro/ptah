@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -30,7 +30,7 @@ func TestRead_IndexBlockSize_HappyPath(t *testing.T) {
 				c.Assert(err, qt.IsNil)
 				c.Assert(db.Indexes, qt.HasLen, 1)
 				c.Assert(db.Indexes[0].KeyBlockSize, qt.Equals, test.size)
-				statements, err := renderer.GetOrderedCreateStatements(&db, dialect)
+				statements, err := builtin.GetOrderedCreateStatements(&db, dialect)
 				c.Assert(err, qt.IsNil)
 				again, _, err := sqlschema.Read([]byte(strings.Join(statements, "\n")), dialect)
 				c.Assert(err, qt.IsNil)

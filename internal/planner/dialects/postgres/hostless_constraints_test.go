@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -64,7 +64,7 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedCheckAndUniqueAdditions(t *t
 
 			nodes, err := postgres.New().GenerateMigrationAST(tt.diff)
 			c.Assert(err, qt.IsNil)
-			sql, err := renderer.RenderSQL("postgres", nodes...)
+			sql, err := builtin.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
 			sql = legacyRenderedSQL(sql)
 
@@ -113,7 +113,7 @@ func TestPlanner_GenerateMigrationAST_HostlessReAdd_DropsExactlyOnce(t *testing.
 
 		nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("postgres", nodes...)
+		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -156,7 +156,7 @@ func TestPlanner_GenerateMigrationAST_HostlessReAdd_DropsExactlyOnce(t *testing.
 
 		nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("postgres", nodes...)
+		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -212,7 +212,7 @@ func TestPlanner_GenerateMigrationAST_EmptyTableNameAdditionTreatedAsHostless(t 
 
 	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 
@@ -246,7 +246,7 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedPrimaryKeyAddition(t *testin
 
 	nodes, err := postgres.New().GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "ALTER TABLE memberships ADD PRIMARY KEY (org_id, user_id);")

@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mssql"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -32,7 +32,7 @@ func planModifiedPolicy(c *qt.C, policyFor, withCheck string) string {
 
 	nodes, err := mssql.New().GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("sqlserver", nodes...)
+	sql, err := builtin.RenderSQL("sqlserver", nodes...)
 	c.Assert(err, qt.IsNil)
 	return sql
 }

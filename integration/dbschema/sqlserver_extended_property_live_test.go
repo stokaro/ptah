@@ -12,9 +12,9 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -58,7 +58,7 @@ func TestSQLServerLiveExtendedPropertyRoundTrip(t *testing.T) {
 
 	// 1. The statements the server is given are the renderer's own. A
 	// statement this engine refuses fails the test rather than being adapted.
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.SQLServer)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.SQLServer)
 	c.Assert(err, qt.IsNil)
 	rendered := strings.Join(statements, "\n")
 	c.Assert(rendered, qt.Contains, "sp_addextendedproperty")
@@ -272,7 +272,7 @@ func TestSQLServerLiveDatabaseScopedExtendedPropertyRoundTrip(t *testing.T) {
 		},
 	}
 
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.SQLServer)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.SQLServer)
 	c.Assert(err, qt.IsNil)
 	rendered := strings.Join(statements, "\n")
 	// The database property passes no level; the schema one passes level 0.

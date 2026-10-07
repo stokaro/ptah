@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -21,7 +21,7 @@ func droppedRoutineSQL(c *qt.C, diff *difftypes.SchemaDiff) string {
 
 	var statements []string
 	for _, node := range nodes {
-		rendered, err := renderer.RenderSQL("postgres", node)
+		rendered, err := builtin.RenderSQL("postgres", node)
 		c.Assert(err, qt.IsNil)
 		statements = append(statements, rendered)
 	}
