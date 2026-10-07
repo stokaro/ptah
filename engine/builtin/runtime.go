@@ -6,9 +6,10 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/renderer"
 	"ptah.run/engine"
+	"ptah.run/internal/ydbextensions"
 )
 
-// New assembles a runtime with the bundled rendering providers. It returns a
+// New assembles a runtime with the bundled providers and their codecs. It returns a
 // fresh registry on every call and installs no process-global handlers. The
 // provider services create their own visitor for each batch, so the runtime
 // can render concurrently without sharing output buffers.
@@ -27,14 +28,18 @@ func New() (*engine.Runtime, error) {
 	}
 	providers := make([]engine.Provider, 0, len(names))
 	for _, name := range names {
-		providers = append(providers, engine.Provider{
-			ID: "ptah.run/builtin/" + name,
+		provider := engine.Provider{
+			ID: "ptah.run/" + name,
 			Targets: []engine.Target{{
 				Name:      name,
 				Aliases:   aliases[name],
 				Rendering: renderingService{},
 			}},
-		})
+		}
+		if name == platform.YDB {
+			provider.Codecs = ydbextensions.Codecs()
+		}
+		providers = append(providers, provider)
 	}
 	return engine.New(providers...)
 }

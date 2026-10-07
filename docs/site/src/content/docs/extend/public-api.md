@@ -42,8 +42,8 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `core/ptaherr` | Typed public errors and sentinel errors. |
 | `core/query` | Fluent builder for parameterized, dialect-aware SELECT, INSERT, UPDATE, DELETE and YDB UPSERT statements. |
 | `core/renderer` | Provider rendering contracts for local visitors, typed extension dispatch, and cancellable batches. |
-| `core/schemaext` | Namespaced feature identities and conservative operation effects. |
-| `engine` | Explicit provider registration and rendering dispatch without built-in implementations. |
+| `core/schemaext` | Typed immutable feature values, positive source coverage, versioned codecs, and conservative operation effects. |
+| `engine` | Explicit provider and codec registration and rendering dispatch without built-in implementations. |
 | `engine/builtin` | Dialect-aware SQL rendering from AST/schema IR, including fail-closed two-phase foreign key ordering. |
 | `core/schemasource` | Runs an external desired-schema program and parses its output into schema IR. |
 | `core/sqlutil` | SQL utility helpers used by public paths. |
@@ -78,6 +78,24 @@ import "ptah.run/engine/builtin"
 rejects duplicate target ownership and aliases. `Runtime.Render` sends each
 batch to one owner, propagates errors and cancellation, and returns no partial
 SQL on failure. `builtin.New` explicitly selects the bundled rendering providers.
+
+Feature providers register their local model codecs through `Provider.Codecs`.
+`Runtime.Codecs` exposes context-aware batch encoding, decoding, and canonical
+fingerprints. A document records its provider, kind, representation, version,
+and model-definition hash. Unknown or incompatible definitions are errors;
+registering a codec alone does not grant a target support for that feature.
+
+`schemaext.Facets` captures one typed value per kind. `schemaext.Objects` captures
+individually named objects with structured references, including parentage.
+Both clone inputs and returned values and refuse duplicates. Use the registry
+to serialize them: ordinary JSON encoding refuses interface payloads.
+
+`schemaext.Coverage` records only definitions the source explicitly enrolled.
+Its empty value is uninspected, so a newly installed provider cannot turn an
+older document's omission into a removal request. Subject claims distinguish
+absence, defaults, complete inspection, and state the source cannot represent.
+Local `Value.Equal` and canonical fingerprints have separate purposes from a
+provider's target-aware comparison of desired and observed state.
 
 The `migration/dbtest` package is the embeddable engine behind the native test
 commands, including regular-expression case selection through `FilterCases`.

@@ -17,7 +17,9 @@ const (
 )
 
 // AddChangefeed declares a new table-owned stream and its topic consumers.
-type AddChangefeed struct{ Changefeed ast.ChangefeedSpec }
+type AddChangefeed struct {
+	Changefeed ast.ChangefeedSpec `json:"changefeed"`
+}
 
 // Kind returns the stable semantic operation identity.
 func (*AddChangefeed) Kind() schemaext.Kind { return AddChangefeedKind }
@@ -33,7 +35,9 @@ func (*AddChangefeed) Effect() schemaext.Effect {
 }
 
 // DropChangefeed removes a stream, its retained records, and consumer positions.
-type DropChangefeed struct{ Name string }
+type DropChangefeed struct {
+	Name string `json:"name"`
+}
 
 // Kind returns the stable semantic operation identity.
 func (*DropChangefeed) Kind() schemaext.Kind { return DropChangefeedKind }
@@ -49,7 +53,10 @@ func (*DropChangefeed) Effect() schemaext.Effect {
 
 // AlterChangefeedTopic changes retention and consumers without recreating the
 // stream. Both operands travel so removed consumers and reset defaults survive.
-type AlterChangefeedTopic struct{ Changefeed, Previous ast.ChangefeedSpec }
+type AlterChangefeedTopic struct {
+	Changefeed ast.ChangefeedSpec `json:"changefeed"`
+	Previous   ast.ChangefeedSpec `json:"previous"`
+}
 
 // Kind returns the stable semantic operation identity.
 func (*AlterChangefeedTopic) Kind() schemaext.Kind { return AlterChangefeedTopicKind }

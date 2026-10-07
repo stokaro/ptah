@@ -1,0 +1,54 @@
+{
+  "$id": "ptah.run/ydb/changefeed-operations/v1",
+  "$defs": {
+    "consumer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {"type": "string"},
+        "important": {"type": "boolean"},
+        "read_from": {"type": "string"},
+        "supported_codecs": {"type": "array", "items": {"type": "string"}, "ordering": "set"},
+        "availability_period": {"type": "string"}
+      }
+    },
+    "changefeed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "mode", "format"],
+      "properties": {
+        "name": {"type": "string"},
+        "mode": {"type": "string"},
+        "format": {"type": "string"},
+        "virtual_timestamps": {"type": "boolean"},
+        "resolved_timestamps": {"type": "string"},
+        "initial_scan": {"type": "boolean"},
+        "user_sids": {"type": "boolean"},
+        "schema_changes": {"type": "boolean"},
+        "topic_min_active_partitions": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615},
+        "topic_auto_partitioning": {"type": "boolean"},
+        "retention_period": {"type": "string"},
+        "consumers": {"type": "array", "items": {"$ref": "#/$defs/consumer"}, "ordering": "set-by-name"},
+        "disabled": {"type": "boolean"}
+      }
+    }
+  },
+  "operations": {
+    "ptah.run/ydb/add-changefeed": {
+      "type": "object", "additionalProperties": false, "required": ["changefeed"],
+      "properties": {"changefeed": {"$ref": "#/$defs/changefeed"}}
+    },
+    "ptah.run/ydb/drop-changefeed": {
+      "type": "object", "additionalProperties": false, "required": ["name"],
+      "properties": {"name": {"type": "string"}}
+    },
+    "ptah.run/ydb/alter-changefeed-topic": {
+      "type": "object", "additionalProperties": false, "required": ["changefeed", "previous"],
+      "properties": {
+        "changefeed": {"$ref": "#/$defs/changefeed"},
+        "previous": {"$ref": "#/$defs/changefeed"}
+      }
+    }
+  }
+}

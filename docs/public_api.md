@@ -102,7 +102,29 @@ conflicting target names or aliases. An empty runtime has no built-ins.
 SQL. Providers may implement this service in process without serialization.
 `engine/builtin.New` assembles the bundled implementations explicitly.
 
-`core/schemaext` defines namespaced feature identities and operation effects.
+`core/schemaext` defines namespaced feature identities, immutable data
+collections, positive source coverage, explicit codecs, and operation effects.
+`Facets` holds one typed value per kind; `Objects` holds individually named
+values with structured references. Insertions and lookups clone values.
+Duplicate kinds or object identities and nil payloads are errors. `Value.Equal`
+compares local representations; target-aware comparison resolves defaults and
+inspection limits separately.
+
+`Coverage` records the model definitions a source actually describes. Its zero
+value is uninspected. Registering another provider cannot make an older source
+authoritative over that provider's objects. Subject claims distinguish explicit
+absence, requested defaults, complete inspection, and unrepresentable state.
+
+Providers supply versioned `Codec` descriptors through `Provider.Codecs`.
+`Runtime.Codecs` returns the frozen registry. Its context-aware batch methods
+refuse unknown kinds, changed definitions, and incompatible versions without
+partial results. Wire identity uses the provider, semantic kind, representation,
+version, and definition hash; Go package names are absent. A codec registration
+does not establish target support. Owner callbacks are pure local operations.
+`Fingerprint` uses owner-defined canonical ordering, retaining ordered lists;
+it does not decide semantic equality. Default JSON serialization of feature
+collections is refused so callers cannot lose concrete payload types.
+
 `core/ast.ExtensionStatement` and `ExtensionAlterOperation` carry typed,
 cloneable owner payloads. The ALTER interface stays sealed. YDB changefeed
 operations live in `dialect/ydb/ydbast`: `AddChangefeed`, `DropChangefeed`, and

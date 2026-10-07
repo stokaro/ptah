@@ -1,5 +1,6 @@
-// Package schemaext defines feature identities and conservative operation
-// effects without importing database implementations or pipeline stages.
+// Package schemaext defines immutable feature values, positive source coverage,
+// versioned codecs, and conservative operation effects without importing database
+// implementations or pipeline stages.
 package schemaext
 
 import (

@@ -1,5 +1,5 @@
 // Package engine assembles explicit providers for the schema pipeline. It
-// imports rendering contracts, but no built-in database implementations.
+// imports model and rendering contracts, but no built-in database implementations.
 package engine
 
 import (
@@ -12,6 +12,7 @@ import (
 
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
 )
 
 // ErrInvalidRegistration identifies a malformed provider descriptor or
@@ -27,6 +28,9 @@ type Provider struct {
 	ID string
 	// Targets lists the target names and services owned by this provider.
 	Targets []Target
+	// Codecs declares understood model representations. Registration alone does
+	// not grant any target permission or capability to use those models.
+	Codecs []schemaext.Codec
 }
 
 // Target declares a canonical target name, accepted aliases, and its optional
@@ -47,6 +51,7 @@ type Target struct {
 // it refuses every target and never falls back to a built-in implementation.
 type Runtime struct {
 	targets map[string]target
+	codecs  schemaext.Registry
 }
 
 type target struct {
@@ -61,21 +66,39 @@ type target struct {
 func New(providers ...Provider) (*Runtime, error) {
 	runtime := &Runtime{targets: make(map[string]target)}
 	owners := make(map[string]struct{}, len(providers))
+	var codecs []schemaext.OwnedCodec
 	for _, provider := range providers {
-		if !validOwner(provider.ID) {
+		if !schemaext.Kind(provider.ID).Valid() {
 			return nil, fmt.Errorf("%w: invalid provider identity %q", ErrInvalidRegistration, provider.ID)
 		}
 		if _, found := owners[provider.ID]; found {
 			return nil, fmt.Errorf("%w: duplicate provider %q", ErrInvalidRegistration, provider.ID)
 		}
 		owners[provider.ID] = struct{}{}
+		for _, codec := range provider.Codecs {
+			codecs = append(codecs, schemaext.OwnedCodec{Owner: provider.ID, Codec: codec})
+		}
 		for _, declared := range provider.Targets {
 			if err := runtime.register(provider.ID, declared); err != nil {
 				return nil, err
 			}
 		}
 	}
+	registry, err := schemaext.NewRegistry(codecs...)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidRegistration, err)
+	}
+	runtime.codecs = registry
 	return runtime, nil
+}
+
+// Codecs returns the runtime's immutable model registry. A nil runtime knows
+// no codecs. Callers use its context-aware batch operations at artifact boundaries.
+func (r *Runtime) Codecs() schemaext.Registry {
+	if r == nil {
+		return schemaext.Registry{}
+	}
+	return r.codecs
 }
 
 func (r *Runtime) register(owner string, declared Target) error {
@@ -172,19 +195,6 @@ func validName(name string) bool {
 	}
 	for _, char := range name {
 		if (char < 'a' || char > 'z') && (char < '0' || char > '9') && char != '-' && char != '_' {
-			return false
-		}
-	}
-	return true
-}
-
-func validOwner(owner string) bool {
-	parts := strings.Split(owner, "/")
-	if len(parts) < 2 || !strings.Contains(parts[0], ".") {
-		return false
-	}
-	for _, part := range parts {
-		if part == "" || part == "." || part == ".." || strings.ContainsAny(part, " \t\r\n\\") {
 			return false
 		}
 	}
