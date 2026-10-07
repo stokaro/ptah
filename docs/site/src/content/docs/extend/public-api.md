@@ -41,13 +41,15 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `core/platform/identifier` | Catalog identifier comparison and namespace semantics. |
 | `core/ptaherr` | Typed public errors and sentinel errors. |
 | `core/query` | Fluent builder for parameterized, dialect-aware SELECT, INSERT, UPDATE, DELETE and YDB UPSERT statements. |
-| `core/renderer` | Provider rendering contracts for local visitors and cancellable batches. |
+| `core/renderer` | Provider rendering contracts for local visitors, typed extension dispatch, and cancellable batches. |
+| `core/schemaext` | Namespaced feature identities and conservative operation effects. |
 | `engine` | Explicit provider registration and rendering dispatch without built-in implementations. |
 | `engine/builtin` | Dialect-aware SQL rendering from AST/schema IR, including fail-closed two-phase foreign key ordering. |
 | `core/schemasource` | Runs an external desired-schema program and parses its output into schema IR. |
 | `core/sqlutil` | SQL utility helpers used by public paths. |
 | `core/yamlschema` | Reads Ptah's YAML authoring format into the schema IR, strictly. |
 | `dbschema` | Live database schema introspection connection layer. |
+| `dialect/ydb/ydbast` | Typed YDB changefeed operations carried by AST extension envelopes. |
 | `catalog` | Shared database schema types. |
 | `docs` | Ptah's own documentation embedded in the binary as an `embed.FS`. |
 | `migration/datadiff` | Row-level diffing between declared managed data and live table rows. |

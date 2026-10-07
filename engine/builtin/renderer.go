@@ -356,6 +356,10 @@ func prepareNode(
 		return nil, nilNodeError(dialect, fmt.Sprintf("%T", node))
 	}
 	switch typed := node.(type) {
+	case *ast.ExtensionStatement:
+		return prepareExtensionStatement(dialect, caps, typed)
+	case *ast.ExtensionAlterOperation:
+		return prepareExtensionAlter(dialect, caps, nil, typed)
 	case *ast.StatementList:
 		return prepareStatementListNode(dialect, caps, typed)
 	case *ast.CreateTableNode:
@@ -958,7 +962,7 @@ func prepareAlterTableNode(
 	cloned := *node
 	cloned.Operations = slices.Clone(node.Operations)
 	for i, operation := range cloned.Operations {
-		prepared, err := prepareAlterOperation(dialect, caps, node.Name, operation)
+		prepared, err := prepareAlterOperation(dialect, caps, node, operation)
 		if err != nil {
 			return nil, err
 		}
@@ -970,24 +974,16 @@ func prepareAlterTableNode(
 func prepareAlterOperation(
 	dialect string,
 	caps capability.Capabilities,
-	table string,
+	parent *ast.AlterTableNode,
 	operation ast.AlterOperation,
 ) (ast.AlterOperation, error) {
+	table := parent.Name
 	if operation == nil {
 		return nil, nilNodeError(dialect, "alter-table operation")
 	}
 	switch typed := operation.(type) {
 	case *ast.AddConstraintOperation:
-		if typed == nil {
-			return nil, nilNodeError(dialect, "add-constraint operation")
-		}
-		cloned := *typed
-		constraint, err := prepareConstraintNode(dialect, caps, typed.Constraint)
-		if err != nil {
-			return nil, err
-		}
-		cloned.Constraint = constraint
-		return &cloned, nil
+		return prepareAddConstraintOperation(dialect, caps, typed)
 	case *ast.AddColumnOperation:
 		if typed == nil {
 			return nil, nilNodeError(dialect, "add-column operation")
@@ -1027,8 +1023,9 @@ func prepareAlterOperation(
 			return nil, err
 		}
 		return operation, nil
-	case *ast.AddChangefeedOperation, *ast.DropChangefeedOperation, *ast.AlterChangefeedTopicOperation,
-		*ast.SetRowDeletionPolicyOperation, *ast.SetYDBColumnFamiliesOperation, *ast.SetYDBTablePartitioningOperation:
+	case *ast.ExtensionAlterOperation:
+		return prepareExtensionAlter(dialect, caps, parent, typed)
+	case *ast.SetRowDeletionPolicyOperation, *ast.SetYDBColumnFamiliesOperation, *ast.SetYDBTablePartitioningOperation:
 		// One arm for a table's YDB settings, for the reason the column arm
 		// gives.
 		if err := validateTableSettingOperation(dialect, caps, table, operation); err != nil {
@@ -1043,9 +1040,22 @@ func prepareAlterOperation(
 	}
 }
 
-// validateTableSettingOperation refuses a change to a table's changefeeds, its
-// row deletion policy, its YDB column families, or its YDB partitioning, read
-// replicas or key bloom filter, on a target that cannot carry it.
+func prepareAddConstraintOperation(dialect string, caps capability.Capabilities, operation *ast.AddConstraintOperation) (ast.AlterOperation, error) {
+	if operation == nil {
+		return nil, nilNodeError(dialect, "add-constraint operation")
+	}
+	constraint, err := prepareConstraintNode(dialect, caps, operation.Constraint)
+	if err != nil {
+		return nil, err
+	}
+	cloned := *operation
+	cloned.Constraint = constraint
+	return &cloned, nil
+}
+
+// validateTableSettingOperation refuses a table's row deletion policy, YDB
+// column families, partitioning, read replicas, or key bloom filter when the
+// target cannot carry the setting.
 func validateTableSettingOperation(
 	dialect string,
 	caps capability.Capabilities,
@@ -1062,7 +1072,7 @@ func validateTableSettingOperation(
 	case *ast.SetYDBTablePartitioningOperation:
 		return refuseTablePartitioningChange(dialect, caps, table, typed)
 	default:
-		return refuseChangefeeds(dialect, caps, "changing the changefeeds of "+tableref.Phrase(table))
+		return fmt.Errorf("%w: unexpected table setting operation %T", ptaherr.ErrInvalidSchemaDiff, operation)
 	}
 }
 

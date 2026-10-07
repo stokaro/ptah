@@ -158,14 +158,14 @@ func TestEntryPoints_CoverEveryNodeKind(t *testing.T) {
 // name.
 func nodeKindZeroValues() map[string]ast.Node {
 	return map[string]ast.Node{
-		"AddChangefeedOperation":                  &ast.AddChangefeedOperation{},
+		"ExtensionStatement":                      &ast.ExtensionStatement{},
+		"ExtensionAlterOperation":                 &ast.ExtensionAlterOperation{},
 		"AddColumnOperation":                      &ast.AddColumnOperation{},
 		"AddConstraintOperation":                  &ast.AddConstraintOperation{},
 		"AddEnumValueOperation":                   &ast.AddEnumValueOperation{},
 		"AddIndexOperation":                       &ast.AddIndexOperation{},
 		"AddSkippingIndexOperation":               &ast.AddSkippingIndexOperation{},
 		"AlterAsyncReplicationNode":               &ast.AlterAsyncReplicationNode{},
-		"AlterChangefeedTopicOperation":           &ast.AlterChangefeedTopicOperation{},
 		"AlterColumnOperation":                    &ast.AlterColumnOperation{},
 		"AlterCoordinationNodeNode":               &ast.AlterCoordinationNodeNode{},
 		"AlterGeneratedColumnExpressionOperation": &ast.AlterGeneratedColumnExpressionOperation{},
@@ -220,7 +220,6 @@ func nodeKindZeroValues() map[string]ast.Node {
 		"DomainNotNullOperation":                  &ast.DomainNotNullOperation{},
 		"DomainTypeDef":                           &ast.DomainTypeDef{},
 		"DropAsyncReplicationNode":                &ast.DropAsyncReplicationNode{},
-		"DropChangefeedOperation":                 &ast.DropChangefeedOperation{},
 		"DropColumnOperation":                     &ast.DropColumnOperation{},
 		"DropConstraintOperation":                 &ast.DropConstraintOperation{},
 		"DropContinuousAggregateNode":             &ast.DropContinuousAggregateNode{},

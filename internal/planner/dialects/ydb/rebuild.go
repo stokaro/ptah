@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/ydbindex"
@@ -493,7 +494,7 @@ func (p *Planner) rebuildNodes(rebuild *tableRebuild) ([]ast.Node, error) {
 	nodes = append(nodes, create, ast.NewRawSQL(copyStatement))
 	for _, changefeed := range current {
 		nodes = append(nodes, &ast.AlterTableNode{Name: rebuild.name,
-			Operations: []ast.AlterOperation{&ast.DropChangefeedOperation{Name: changefeed.Name}}})
+			Operations: []ast.AlterOperation{&ast.ExtensionAlterOperation{Payload: &ydbast.DropChangefeed{Name: changefeed.Name}}}})
 	}
 	nodes = append(nodes,
 		ast.NewRawSQL("ALTER TABLE "+oldPath+" RENAME TO "+sqlident.Qualified(platform.YDB, table.Schema, rebuild.replaced)),
@@ -501,7 +502,7 @@ func (p *Planner) rebuildNodes(rebuild *tableRebuild) ([]ast.Node, error) {
 	)
 	for _, changefeed := range desired {
 		nodes = append(nodes, &ast.AlterTableNode{Name: rebuild.name,
-			Operations: []ast.AlterOperation{&ast.AddChangefeedOperation{Changefeed: changefeed.Clone()}}})
+			Operations: []ast.AlterOperation{&ast.ExtensionAlterOperation{Payload: &ydbast.AddChangefeed{Changefeed: changefeed.Clone()}}}})
 	}
 	return append(nodes, ast.NewDropTable(replacedName)), nil
 }

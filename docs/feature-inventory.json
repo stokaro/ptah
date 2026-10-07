@@ -700,6 +700,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-core-schemaext",
+      "kind": "public-package",
+      "surface": "ptah.run/core/schemaext",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-core-schemamodel",
       "kind": "public-package",
       "surface": "ptah.run/core/schemamodel",
@@ -727,6 +733,12 @@
       "id": "gopkg-dbschema",
       "kind": "public-package",
       "surface": "ptah.run/dbschema",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-ydb-ydbast",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/ydb/ydbast",
       "claimed_by": null
     },
     {

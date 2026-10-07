@@ -269,13 +269,13 @@ func receiverTypeName(expression ast.Expr) (string, bool) {
 // `--others --exclude-standard` is what lets a brand-new node kind count before
 // it is staged; without it a gate reads the index and cannot see the file the
 // change adds.
-func trackedFiles(root, pattern string) ([]string, error) {
-	command := exec.Command("git", "-c", "core.quotePath=false",
-		"ls-files", "--cached", "--others", "--exclude-standard", "--", pattern)
+func trackedFiles(root string, patterns ...string) ([]string, error) {
+	command := exec.Command("git", "-c", "core.quotePath=false", "ls-files", "--cached", "--others", "--exclude-standard", "--")
+	command.Args = append(command.Args, patterns...)
 	command.Dir = root
 	output, err := command.Output()
 	if err != nil {
-		return nil, fmt.Errorf("astrouteguard: listing %s: %w", pattern, err)
+		return nil, fmt.Errorf("astrouteguard: listing %s: %w", strings.Join(patterns, ", "), err)
 	}
 	var files []string
 	for line := range strings.SplitSeq(strings.TrimSpace(string(output)), "\n") {

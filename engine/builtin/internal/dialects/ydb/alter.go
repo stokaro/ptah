@@ -6,8 +6,9 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/renderer"
 	"ptah.run/internal/tableref"
-	"ptah.run/internal/ydbchangefeed"
+	"ptah.run/internal/ydbextensions"
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/internal/ydbtype"
 )
@@ -30,7 +31,7 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 	}
 	statements := make([]string, 0, len(node.Operations))
 	for _, operation := range node.Operations {
-		statement, err := r.alterStatement(node.Name, operation)
+		statement, err := r.alterStatement(node, operation)
 		if err != nil {
 			return err
 		}
@@ -46,7 +47,8 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 // except for a column modification that changes two properties.
 //
 //nolint:gocyclo // one arm per operation kind; splitting the table hides which kinds it answers
-func (r *Renderer) alterStatement(table string, operation ast.AlterOperation) ([]string, error) {
+func (r *Renderer) alterStatement(parent *ast.AlterTableNode, operation ast.AlterOperation) ([]string, error) {
+	table := parent.Name
 	prefix := "ALTER TABLE " + tablePath(table) + " "
 	subject := tableref.Phrase(table)
 	switch op := operation.(type) {
@@ -102,18 +104,12 @@ func (r *Renderer) alterStatement(table string, operation ast.AlterOperation) ([
 		return r.setIndexPartitioning(table, op)
 	case *ast.SetYDBColumnFamiliesOperation:
 		return r.setColumnFamilies(prefix, subject, op)
-	case *ast.AddChangefeedOperation:
-		if err := r.checkChangefeed(table, op.Changefeed); err != nil {
+	case *ast.ExtensionAlterOperation:
+		registry, err := ydbextensions.Registry()
+		if err != nil {
 			return nil, err
 		}
-		return ydbchangefeed.AddStatements(table, op.Changefeed), nil
-	case *ast.DropChangefeedOperation:
-		if !r.caps.Has(capability.Changefeeds) {
-			return nil, refuseKey(capability.Changefeeds, fmt.Sprintf("dropping changefeed %q of %s", op.Name, subject))
-		}
-		return []string{ydbchangefeed.DropStatement(table, op.Name)}, nil
-	case *ast.AlterChangefeedTopicOperation:
-		return r.alterChangefeedTopic(table, op)
+		return registry.Render(renderer.ExtensionContext{Target: DialectName, Capabilities: r.caps, Parent: parent}, ast.AlterExtension, op.Payload)
 	case *ast.SetYDBTablePartitioningOperation:
 		return r.setTablePartitioning(table, op)
 	case *ast.AddIndexOperation:
@@ -406,22 +402,4 @@ func (r *Renderer) renderDropTable(node *ast.DropTableNode) error {
 		r.w.WriteLinef("DROP TABLE%s %s;", guard, tablePath(name))
 	}
 	return nil
-}
-
-// alterChangefeedTopic writes the ALTER TOPIC statements that change a
-// changefeed's retention and consumers in place. It refuses a change that
-// needs the changefeed dropped and added, which the planner writes as an
-// AddChangefeedOperation after a DropChangefeedOperation, so an operation
-// built by hand cannot report an option changed while it is not.
-func (r *Renderer) alterChangefeedTopic(table string, op *ast.AlterChangefeedTopicOperation) ([]string, error) {
-	subject := fmt.Sprintf("changefeed %q of %s", op.Changefeed.Name, tableref.Phrase(table))
-	if err := r.checkChangefeed(table, op.Changefeed); err != nil {
-		return nil, err
-	}
-	if op.Previous.Name != op.Changefeed.Name || ydbchangefeed.Recreated(op.Changefeed, op.Previous) {
-		return nil, refuseFact(subject, "YDB changes no option of a changefeed in place (`MODE alter is not "+
-			"supported`), so the change drops the changefeed and adds it again")
-	}
-	statements, _ := ydbchangefeed.TopicStatements(table, op.Changefeed, op.Previous)
-	return statements, nil
 }

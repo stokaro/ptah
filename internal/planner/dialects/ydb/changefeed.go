@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbtype"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -126,20 +127,20 @@ func changefeedNodes(table string, change difftypes.ChangefeedsChange) []ast.Nod
 		desired, kept := changefeedNamed(change.Desired, current.Name)
 		switch {
 		case !kept:
-			drops = append(drops, ast.NewComment(droppedNote(table, current)), alter(&ast.DropChangefeedOperation{Name: current.Name}))
+			drops = append(drops, ast.NewComment(droppedNote(table, current)), alter(&ast.ExtensionAlterOperation{Payload: &ydbast.DropChangefeed{Name: current.Name}}))
 		case ydbchangefeed.Recreated(desired, current):
-			drops = append(drops, ast.NewComment(recreatedNote(table, current)), alter(&ast.DropChangefeedOperation{Name: current.Name}))
-			adds = append(adds, alter(&ast.AddChangefeedOperation{Changefeed: desired.Clone()}))
+			drops = append(drops, ast.NewComment(recreatedNote(table, current)), alter(&ast.ExtensionAlterOperation{Payload: &ydbast.DropChangefeed{Name: current.Name}}))
+			adds = append(adds, alter(&ast.ExtensionAlterOperation{Payload: &ydbast.AddChangefeed{Changefeed: desired.Clone()}}))
 		case ydbchangefeed.TopicChanged(desired, current):
 			if _, restarted := ydbchangefeed.TopicStatements(table, desired, current); len(restarted) > 0 {
 				topics = append(topics, ast.NewComment(restartedConsumersNote(table, current.Name, restarted)))
 			}
-			topics = append(topics, alter(&ast.AlterChangefeedTopicOperation{Changefeed: desired.Clone(), Previous: current.Clone()}))
+			topics = append(topics, alter(&ast.ExtensionAlterOperation{Payload: &ydbast.AlterChangefeedTopic{Changefeed: desired.Clone(), Previous: current.Clone()}}))
 		}
 	}
 	for _, desired := range change.Desired {
 		if _, held := changefeedNamed(change.Current, desired.Name); !held {
-			adds = append(adds, alter(&ast.AddChangefeedOperation{Changefeed: desired.Clone()}))
+			adds = append(adds, alter(&ast.ExtensionAlterOperation{Payload: &ydbast.AddChangefeed{Changefeed: desired.Clone()}}))
 		}
 	}
 	return slices.Concat(drops, adds, topics)

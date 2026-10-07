@@ -1,6 +1,8 @@
 package builtin_test
 
 import (
+	"fmt"
+	"regexp"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -9,7 +11,9 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/engine/builtin"
 )
 
@@ -25,21 +29,22 @@ func TestRender_Changefeed_FailurePath(t *testing.T) {
 		Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "int", Primary: true}},
 	}
 	tests := []struct {
-		dialect string
-		caps    capability.Capabilities
+		dialect      string
+		caps         capability.Capabilities
+		wantOpErrors []string
 	}{
-		{dialect: platform.Postgres, caps: capability.Postgres18()},
-		{dialect: platform.CockroachDB, caps: capability.CockroachDB26()},
-		{dialect: platform.MySQL, caps: capability.MySQL84()},
-		{dialect: platform.SQLite, caps: capability.SQLite3()},
-		{dialect: platform.ClickHouse, caps: capability.ClickHouse24()},
-		{dialect: platform.YDB, caps: capability.YDB262().With(capability.Changefeeds, false)},
+		{dialect: platform.Postgres, caps: capability.Postgres18(), wantOpErrors: unsupportedChangefeedErrors(platform.Postgres)},
+		{dialect: platform.CockroachDB, caps: capability.CockroachDB26(), wantOpErrors: unsupportedChangefeedErrors(platform.CockroachDB)},
+		{dialect: platform.MySQL, caps: capability.MySQL84(), wantOpErrors: unsupportedChangefeedErrors(platform.MySQL)},
+		{dialect: platform.SQLite, caps: capability.SQLite3(), wantOpErrors: unsupportedChangefeedErrors(platform.SQLite)},
+		{dialect: platform.ClickHouse, caps: capability.ClickHouse24(), wantOpErrors: unsupportedChangefeedErrors(platform.ClickHouse)},
+		{dialect: platform.YDB, caps: capability.YDB262().With(capability.Changefeeds, false), wantOpErrors: []string{
+			`changing the changefeeds of table "t", which requires target capability changefeeds, unavailable on this ydb target`,
+			`dropping changefeed "updates" of table "t", which requires target capability changefeeds, unavailable on this ydb target`,
+			`changing the changefeeds of table "t", which requires target capability changefeeds, unavailable on this ydb target`,
+		}},
 	}
-	operations := []ast.AlterOperation{
-		&ast.AddChangefeedOperation{Changefeed: feed},
-		&ast.DropChangefeedOperation{Name: "updates"},
-		&ast.AlterChangefeedTopicOperation{Changefeed: feed, Previous: feed},
-	}
+	operations := []ast.AlterOperation{&ast.ExtensionAlterOperation{Payload: &ydbast.AddChangefeed{Changefeed: feed}}, &ast.ExtensionAlterOperation{Payload: &ydbast.DropChangefeed{Name: "updates"}}, &ast.ExtensionAlterOperation{Payload: &ydbast.AlterChangefeedTopic{Changefeed: feed, Previous: feed}}}
 
 	for _, test := range tests {
 		t.Run(test.dialect, func(t *testing.T) {
@@ -56,10 +61,11 @@ func TestRender_Changefeed_FailurePath(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, `.*table "t" declares changefeed "updates", which requires target capability changefeeds, .*`)
 			c.Assert(sql, qt.Equals, "")
 
-			for _, operation := range operations {
+			for i, operation := range operations {
 				change := &ast.AlterTableNode{Name: "t", Operations: []ast.AlterOperation{operation}}
 				sql, err = builtin.RenderSQLWithCapabilities(test.dialect, test.caps, change)
-				c.Assert(err, qt.ErrorMatches, `.*changing the changefeeds of table "t", which requires target capability changefeeds, .*`)
+				c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(test.wantOpErrors[i]))
+				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 				c.Assert(sql, qt.Equals, "")
 			}
 		})
@@ -83,4 +89,12 @@ func TestRender_Changefeed_HappyPath(t *testing.T) {
 		"CREATE TABLE `t` (\n    `id` Int32 NOT NULL,\n    PRIMARY KEY (`id`)\n);\n" +
 			"ALTER TABLE `t` ADD CHANGEFEED `updates` WITH (MODE = 'UPDATES', FORMAT = 'JSON');\n",
 	})
+}
+
+func unsupportedChangefeedErrors(dialect string) []string {
+	var messages []string
+	for _, kind := range []schemaext.Kind{ydbast.AddChangefeedKind, ydbast.DropChangefeedKind, ydbast.AlterChangefeedTopicKind} {
+		messages = append(messages, fmt.Sprintf("target %q does not support extension %q in role %q", dialect, kind, ast.AlterExtension))
+	}
+	return messages
 }

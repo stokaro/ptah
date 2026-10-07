@@ -29,6 +29,8 @@ func (r *Renderer) VisitNode(node ast.Node) error { //nolint:gocyclo // one case
 	// each statement decides its own output. The wrapper above this renderer
 	// prepares a whole list before any of it renders; a list reaching here has
 	// already been through that.
+	case *ast.ExtensionStatement, *ast.ExtensionAlterOperation:
+		return nodedispatch.RefuseExtension(r.GetDialect(), node)
 	case *ast.StatementList:
 		return r.renderStatementList(n)
 
@@ -39,6 +41,9 @@ func (r *Renderer) VisitNode(node ast.Node) error { //nolint:gocyclo // one case
 	case *ast.CreateDatabaseNode:
 		return r.renderCreateDatabase(n)
 	case *ast.AlterTableNode:
+		if err := nodedispatch.RefuseAlterExtensions(r.GetDialect(), n); err != nil {
+			return err
+		}
 		return r.renderAlterTable(n)
 	case *ast.ColumnNode:
 		return r.renderColumn(n)
@@ -195,9 +200,6 @@ func (r *Renderer) VisitNode(node ast.Node) error { //nolint:gocyclo // one case
 		*ast.AlterIndexVisibilityOperation,
 		*ast.SetIndexPartitioningOperation,
 		*ast.SetYDBColumnFamiliesOperation,
-		*ast.AddChangefeedOperation,
-		*ast.DropChangefeedOperation,
-		*ast.AlterChangefeedTopicOperation,
 		*ast.SetYDBTablePartitioningOperation,
 		*ast.ReplaceIndexOperation,
 		*ast.RenameTableOperation,

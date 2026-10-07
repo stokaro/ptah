@@ -26,12 +26,14 @@ These packages are intended for application and tool embedders:
 - `ptah.run/core/ptaherr`
 - `ptah.run/core/query`
 - `ptah.run/core/renderer`
+- `ptah.run/core/schemaext`
 - `ptah.run/engine`
 - `ptah.run/engine/builtin`
 - `ptah.run/core/schemasource`
 - `ptah.run/core/sqlutil`
 - `ptah.run/core/yamlschema`
 - `ptah.run/dbschema`
+- `ptah.run/dialect/ydb/ydbast`
 - `ptah.run/catalog`
 - `ptah.run/docs`
 - `ptah.run/migration/datadiff`
@@ -99,6 +101,24 @@ conflicting target names or aliases. An empty runtime has no built-ins.
 `Runtime.Render` propagates service failures and cancellation without partial
 SQL. Providers may implement this service in process without serialization.
 `engine/builtin.New` assembles the bundled implementations explicitly.
+
+`core/schemaext` defines namespaced feature identities and operation effects.
+`core/ast.ExtensionStatement` and `ExtensionAlterOperation` carry typed,
+cloneable owner payloads. The ALTER interface stays sealed. YDB changefeed
+operations live in `dialect/ydb/ydbast`: `AddChangefeed`, `DropChangefeed`, and
+`AlterChangefeedTopic` each travel inside an `ExtensionAlterOperation`.
+
+`core/renderer.Extensions` freezes local handlers by kind, payload type, and
+statement role. It refuses unknown kinds, incorrect types, and unsupported
+roles before rendering. A supported standalone ALTER payload requires its real
+parent; validation never invents a table. Non-owning targets refuse the
+extension even when the caller supplies another target's capabilities.
+Handlers run inside the provider's batched rendering service.
+
+Payloads may supply local `schemaext.EffectSource` metadata for safety reports.
+Missing, invalid, or unexplained effects require manual review at the
+`Destructive` severity. Schema reversal cannot restore records or consumer
+positions lost when a changefeed is dropped.
 
 `engine/builtin.GetOrderedCreateStatements` and its capability-aware variant
 render complete schema DDL fail-closed. Non-SQLite targets return all table

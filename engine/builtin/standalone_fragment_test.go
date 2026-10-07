@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/astrouteguard"
 )
@@ -95,8 +96,8 @@ func TestStandaloneFragment_ReadsWithoutAName(t *testing.T) {
 		{
 			name:     "a changefeed on PostgreSQL",
 			dialect:  platform.Postgres,
-			fragment: &ast.AddChangefeedOperation{Changefeed: ast.ChangefeedSpec{Name: "cf", Mode: "UPDATES", Format: "JSON"}},
-			want:     `changing the changefeeds of a table, which requires target capability changefeeds, unavailable on this postgres target`,
+			fragment: &ast.ExtensionAlterOperation{Payload: &ydbast.AddChangefeed{Changefeed: ast.ChangefeedSpec{Name: "cf", Mode: "UPDATES", Format: "JSON"}}},
+			want:     `target "postgres" does not support extension "ptah.run/ydb/add-changefeed" in role "alter-table"`,
 		},
 		{
 			name:     "an enum on YDB",
@@ -245,8 +246,8 @@ func fragmentFixture(c *qt.C, family fragmentFamily, kind string) ast.Node {
 func alterOperationFixtures() map[string]func() ast.Node {
 	changefeed := ast.ChangefeedSpec{Name: "cf", Mode: "UPDATES", Format: "JSON"}
 	return map[string]func() ast.Node{
-		"AddChangefeedOperation": func() ast.Node {
-			return &ast.AddChangefeedOperation{Changefeed: changefeed}
+		"ExtensionAlterOperation": func() ast.Node {
+			return &ast.ExtensionAlterOperation{Payload: &ydbast.AddChangefeed{Changefeed: changefeed}}
 		},
 		"AddColumnOperation": func() ast.Node {
 			return &ast.AddColumnOperation{Column: ast.NewColumn("c", "INTEGER")}
@@ -260,11 +261,6 @@ func alterOperationFixtures() map[string]func() ast.Node {
 		"AddSkippingIndexOperation": func() ast.Node {
 			return &ast.AddSkippingIndexOperation{Name: "ix_c", Expression: "c", IndexType: "minmax", Granularity: 1}
 		},
-		"AlterChangefeedTopicOperation": func() ast.Node {
-			grown := changefeed
-			grown.TopicMinActivePartitions = 2
-			return &ast.AlterChangefeedTopicOperation{Changefeed: grown, Previous: changefeed}
-		},
 		"AlterColumnOperation": func() ast.Node {
 			return &ast.AlterColumnOperation{ColumnName: "c", Action: ast.AlterColumnDropDefault}
 		},
@@ -273,9 +269,6 @@ func alterOperationFixtures() map[string]func() ast.Node {
 		},
 		"AlterIndexVisibilityOperation": func() ast.Node {
 			return &ast.AlterIndexVisibilityOperation{IndexName: "ix_c", Invisible: true}
-		},
-		"DropChangefeedOperation": func() ast.Node {
-			return &ast.DropChangefeedOperation{Name: "cf"}
 		},
 		"DropColumnOperation": func() ast.Node {
 			return &ast.DropColumnOperation{ColumnName: "c"}
@@ -391,6 +384,9 @@ func needsParent(err error, fragment ast.Node) bool {
 // claimsItsParent reports whether message is the needs-parent answer about
 // node itself, rather than about a statement node holds.
 func claimsItsParent(message string, node ast.Node) bool {
+	if _, ok := node.(*ast.ExtensionAlterOperation); ok {
+		return strings.Contains(message, "requires an ALTER TABLE parent")
+	}
 	return strings.Contains(message, fmt.Sprintf("%T", node)) && strings.HasSuffix(message, needsParentSuffix)
 }
 

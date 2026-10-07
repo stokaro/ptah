@@ -563,6 +563,8 @@ func assessNode(node ast.Node) StatementAssessment {
 	}
 
 	switch n := node.(type) {
+	case *ast.ExtensionStatement, *ast.ExtensionAlterOperation:
+		assessment.Severity, assessment.Reason = classifyExtensionNode(node)
 	case *ast.AlterTableNode:
 		assessment.Subject = n.Name
 		return assessAlterTable(n, assessment)
@@ -696,10 +698,11 @@ func classifyAlterOperation(op ast.AlterOperation) (Severity, string) {
 		return classifyReplaceIndex(o)
 	case *ast.AlterIndexVisibilityOperation:
 		return Warning, "ALTER INDEX changes which index the optimizer can use, and so query plans"
-	case *ast.DropChangefeedOperation:
-		return Destructive, "DROP CHANGEFEED removes the change stream with every record nobody read, and its consumers"
-	case *ast.AlterChangefeedTopicOperation:
-		return Warning, "ALTER TOPIC can drop a consumer's position or shorten how long the stream keeps records"
+	case *ast.ExtensionAlterOperation:
+		if o == nil {
+			return classifyExtension(nil)
+		}
+		return classifyExtension(o.Payload)
 	default:
 		return Safe, "does not remove data or tighten constraints"
 	}

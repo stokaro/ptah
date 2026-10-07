@@ -395,3 +395,10 @@ v0.12.0 ptah.run/core/platform/capability
 # owed. The clean-break policy for #4140 and #4204 excludes compatibility
 # facades and aliases for the former factory surface.
 v0.13.0 ptah.run/core/renderer
+
+# #4140 moves YDB changefeed operations out of core/ast into dialect/ydb/ydbast.
+# Callers wrap the owner payload in ExtensionAlterOperation. The common ALTER
+# interface remains sealed. This changes the Go API; pre-v1, so no compatibility
+# is owed. No aliases or legacy reader remain. The implementation follows the
+# user-authorized extraction and #4204's clean-break policy.
+v0.13.0 ptah.run/core/ast

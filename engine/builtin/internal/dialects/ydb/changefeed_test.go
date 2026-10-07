@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/engine/builtin/internal/dialects/ydb"
 )
 
@@ -57,26 +58,26 @@ func TestRender_Changefeed_HappyPath(t *testing.T) {
 		{
 			name: "a changefeed added to a table that exists",
 			caps: capability.YDB262(),
-			node: alter(&ast.AddChangefeedOperation{Changefeed: ast.ChangefeedSpec{Name: "f", Mode: "NEW_IMAGE",
-				Format: "JSON", UserSIDs: true, SchemaChanges: true, TopicAutoPartitioning: true}}),
+			node: alter(&ast.ExtensionAlterOperation{Payload: &ydbast.AddChangefeed{Changefeed: ast.ChangefeedSpec{Name: "f", Mode: "NEW_IMAGE",
+				Format: "JSON", UserSIDs: true, SchemaChanges: true, TopicAutoPartitioning: true}}}),
 			want: "ALTER TABLE `t` ADD CHANGEFEED `f` WITH (MODE = 'NEW_IMAGE', FORMAT = 'JSON', " +
 				"USER_SIDS = TRUE, SCHEMA_CHANGES = TRUE, TOPIC_AUTO_PARTITIONING = 'ENABLED');\n",
 		},
 		{
 			name: "a changefeed dropped",
 			caps: capability.YDB251(),
-			node: alter(&ast.DropChangefeedOperation{Name: "f"}),
+			node: alter(&ast.ExtensionAlterOperation{Payload: &ydbast.DropChangefeed{Name: "f"}}),
 			want: "ALTER TABLE `t` DROP CHANGEFEED `f`;\n",
 		},
 		{
 			name: "a topic changed in place",
 			caps: capability.YDB262(),
-			node: alter(&ast.AlterChangefeedTopicOperation{
+			node: alter(&ast.ExtensionAlterOperation{Payload: &ydbast.AlterChangefeedTopic{
 				Changefeed: ast.ChangefeedSpec{Name: "f", Mode: "UPDATES", Format: "JSON",
 					Consumers: []ast.TopicConsumerSpec{{Name: "late", AvailabilityPeriod: "PT1H"}}},
 				Previous: ast.ChangefeedSpec{Name: "f", Mode: "UPDATES", Format: "JSON", RetentionPeriod: "PT6H",
 					Consumers: []ast.TopicConsumerSpec{{Name: "old"}}},
-			}),
+			}}),
 			want: "ALTER TOPIC `t/f` SET (retention_period = Interval('P1D'));\n" +
 				"ALTER TOPIC `t/f` DROP CONSUMER `old`;\n" +
 				"ALTER TOPIC `t/f` ADD CONSUMER `late` WITH (availability_period = Interval('PT1H'));\n",
@@ -121,23 +122,23 @@ func TestRender_Changefeed_RefusesByCapability(t *testing.T) {
 		},
 		{
 			name: "an auto-partitioned topic added on 25.1", caps: capability.YDB251(),
-			node:    alter(&ast.AddChangefeedOperation{Changefeed: ast.ChangefeedSpec{Name: "f", Mode: "UPDATES", Format: "JSON", TopicAutoPartitioning: true}}),
+			node:    alter(&ast.ExtensionAlterOperation{Payload: &ydbast.AddChangefeed{Changefeed: ast.ChangefeedSpec{Name: "f", Mode: "UPDATES", Format: "JSON", TopicAutoPartitioning: true}}}),
 			wantKey: capability.ChangefeedTopicAutoPartitioning,
 			wantErr: `changefeed "f" of table "t" takes TOPIC_AUTO_PARTITIONING, which requires .*`,
 		},
 		{
 			name: "an availability period on 25.3", caps: capability.YDB253(),
-			node: alter(&ast.AlterChangefeedTopicOperation{
+			node: alter(&ast.ExtensionAlterOperation{Payload: &ydbast.AlterChangefeedTopic{
 				Changefeed: ast.ChangefeedSpec{Name: "f", Mode: "UPDATES", Format: "JSON",
 					Consumers: []ast.TopicConsumerSpec{{Name: "c", AvailabilityPeriod: "PT1H"}}},
 				Previous: ast.ChangefeedSpec{Name: "f", Mode: "UPDATES", Format: "JSON"},
-			}),
+			}}),
 			wantKey: capability.TopicConsumerAvailabilityPeriod,
 			wantErr: `consumer "c" of changefeed "f" of table "t" takes availability_period, which requires .*`,
 		},
 		{
 			name: "a drop without the key", caps: capability.YDB262().With(capability.Changefeeds, false),
-			node:    alter(&ast.DropChangefeedOperation{Name: "f"}),
+			node:    alter(&ast.ExtensionAlterOperation{Payload: &ydbast.DropChangefeed{Name: "f"}}),
 			wantKey: capability.Changefeeds,
 			wantErr: `dropping changefeed "f" of table "t", which requires target capability changefeeds, .*`,
 		},
@@ -182,8 +183,8 @@ func TestRender_Changefeed_FailurePath(t *testing.T) {
 		},
 		{
 			name: "an option changed in place",
-			node: alter(&ast.AlterChangefeedTopicOperation{Changefeed: plain,
-				Previous: ast.ChangefeedSpec{Name: "f", Mode: "KEYS_ONLY", Format: "JSON"}}),
+			node: alter(&ast.ExtensionAlterOperation{Payload: &ydbast.AlterChangefeedTopic{Changefeed: plain,
+				Previous: ast.ChangefeedSpec{Name: "f", Mode: "KEYS_ONLY", Format: "JSON"}}}),
 			wantErr: `changefeed "f" of table "t": YDB changes no option of a changefeed in place .*`,
 		},
 	}

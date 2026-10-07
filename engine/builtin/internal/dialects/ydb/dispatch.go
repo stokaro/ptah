@@ -244,13 +244,10 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.SQLServerRoutineNode:
 		return r.keyed(capability.Functions, "routine", "a SQL Server routine")
 
+	case *ast.ExtensionStatement, *ast.ExtensionAlterOperation:
+		return r.renderExtensionNode(node)
 	case *ast.StatementList:
-		for _, statement := range n.Statements {
-			if err := r.VisitNode(statement); err != nil {
-				return err
-			}
-		}
-		return nil
+		return r.renderStatementList(n)
 
 	// An operation and a type definition are parts of a statement. Each is
 	// read out of the ALTER or the CREATE TYPE that carries it, so one
@@ -269,9 +266,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.AlterIndexVisibilityOperation,
 		*ast.SetIndexPartitioningOperation,
 		*ast.SetYDBColumnFamiliesOperation,
-		*ast.AddChangefeedOperation,
-		*ast.DropChangefeedOperation,
-		*ast.AlterChangefeedTopicOperation,
 		*ast.SetYDBTablePartitioningOperation,
 		*ast.ReplaceIndexOperation,
 		*ast.AddIndexOperation,
@@ -386,4 +380,13 @@ func (r *Renderer) renderTableStatement(node ast.Node) error {
 	default:
 		return fmt.Errorf("unexpected YDB table statement %T", node)
 	}
+}
+
+func (r *Renderer) renderStatementList(node *ast.StatementList) error {
+	for _, statement := range node.Statements {
+		if err := r.VisitNode(statement); err != nil {
+			return err
+		}
+	}
+	return nil
 }

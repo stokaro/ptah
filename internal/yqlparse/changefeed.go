@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/internal/ydbchangefeed"
 )
 
@@ -31,7 +32,7 @@ func (p *parser) changefeed() *ast.AlterTableNode {
 	if spec.Name != name {
 		p.failf("changefeed name %q cannot be represented exactly", name)
 	}
-	return &ast.AlterTableNode{Name: table, Operations: []ast.AlterOperation{&ast.AddChangefeedOperation{Changefeed: spec}}}
+	return &ast.AlterTableNode{Name: table, Operations: []ast.AlterOperation{&ast.ExtensionAlterOperation{Payload: &ydbast.AddChangefeed{Changefeed: spec}}}}
 }
 
 func changefeedSetting(key string) string {

@@ -466,6 +466,9 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.CreateTableNode:
 		return r.renderCreateTable(n)
 	case *ast.AlterTableNode:
+		if err := nodedispatch.RefuseAlterExtensions(r.GetDialect(), n); err != nil {
+			return err
+		}
 		return r.renderAlterTable(n)
 	case *ast.DropTableNode:
 		return r.renderDropTable(n)
@@ -622,6 +625,8 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderUpsert(n)
 
 	// A list of statements.
+	case *ast.ExtensionStatement, *ast.ExtensionAlterOperation:
+		return nodedispatch.RefuseExtension(r.GetDialect(), node)
 	case *ast.StatementList:
 		return r.renderStatementList(n)
 
@@ -656,9 +661,6 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.AlterIndexVisibilityOperation,
 		*ast.SetIndexPartitioningOperation,
 		*ast.SetYDBColumnFamiliesOperation,
-		*ast.AddChangefeedOperation,
-		*ast.DropChangefeedOperation,
-		*ast.AlterChangefeedTopicOperation,
 		*ast.SetYDBTablePartitioningOperation,
 		*ast.ReplaceIndexOperation,
 		*ast.RenameEnumValueOperation,
