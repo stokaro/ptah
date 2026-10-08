@@ -1054,6 +1054,12 @@ that every conditional create's statement-local schema, target table, and index
 name still describe a usable result. Equal raw names under different
 `search_path` values remain distinct checks.
 
+`ALTER TABLE ... ADD CONSTRAINT name UNIQUE USING INDEX index` and
+`PRIMARY KEY USING INDEX index` rename the index to the constraint name.
+Ptah follows that name on the same target table when checking the result,
+including after a retry. Removing the constraint and its index still fails
+the check.
+
 Repair that cannot reconstruct an
 explicit original path checks every same-named target in PostgreSQL user
 schemas, so the repair session's current path cannot hide another candidate.

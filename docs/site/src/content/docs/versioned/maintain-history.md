@@ -326,6 +326,12 @@ repair and an unconditional create retains PostgreSQL's normal error semantics.
 Other dialects have no concurrent index build to leave half-finished and are
 unaffected.
 
+When the migration attaches the index with
+`ALTER TABLE ... ADD CONSTRAINT name UNIQUE USING INDEX index` or
+`PRIMARY KEY USING INDEX index`, PostgreSQL renames it to the constraint name.
+Repair reconstructs that attachment and checks the resulting index on the
+original target table. A missing index still blocks repair.
+
 `ptah migrations up` refuses on the same grounds, so `--allow-dirty` cannot be
 used to walk past it either. Ordinary rollback also checks conditional creates
 in its down body before deleting the revision. A failed transactional check
