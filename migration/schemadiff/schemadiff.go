@@ -643,7 +643,7 @@ func ValidateDesiredSchema(ctx context.Context, service schemavalidation.Runtime
 		info.Dialect,
 		info.IdentifierSemantics.Normalize(info.Dialect),
 	); err != nil {
-		return err
+		return &RefusalError{cause: err}
 	}
 	caps := info.Capabilities
 	if len(caps) == 0 {

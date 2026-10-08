@@ -214,7 +214,7 @@ func (r Registry) encodeOne(representation Representation, payload Payload, enco
 	kind := payload.Kind()
 	codec, found := r.codecs[codecKey{kind: kind, representation: representation}]
 	if !found {
-		return Envelope{}, fmt.Errorf("%w: %q/%s", ErrUnknownCodec, kind, representation)
+		return Envelope{}, &UnknownCodecError{Kind: kind, Representation: representation}
 	}
 	cloned, err := codec.snapshot(payload)
 	if err != nil {
@@ -277,7 +277,7 @@ func (r Registry) Decode(ctx context.Context, envelopes []Envelope) ([]Payload, 
 func (r Registry) decodeOne(envelope Envelope) (Payload, error) {
 	codec, found := r.codecs[codecKey{kind: envelope.Kind, representation: envelope.Representation}]
 	if !found {
-		return nil, fmt.Errorf("%w: %q/%s", ErrUnknownCodec, envelope.Kind, envelope.Representation)
+		return nil, &UnknownCodecError{Kind: envelope.Kind, Representation: envelope.Representation}
 	}
 	if envelope.Format != envelopeFormat || envelope.Owner != codec.owner || envelope.Version != codec.version || envelope.Definition != codec.definition {
 		return nil, fmt.Errorf("%w: %q/%s; decode with the recorded definition or regenerate the artifact",

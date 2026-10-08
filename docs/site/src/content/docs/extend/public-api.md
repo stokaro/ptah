@@ -97,6 +97,14 @@ statements. `Result.SQL()` joins them without adding separators.
 `renderer.Render` validates this contract when calling a service directly.
 `builtin.New` explicitly selects the bundled rendering providers.
 
+Completed validation diagnostics become `schemavalidation.RefusalError` through
+`Result.Err`. The error retains a snapshot of the report and exposes its schema
+and capability causes through `errors.Is` and `errors.As`. A service error or
+invalid completion receipt supplies no completed refusal. Common declaration
+checks before comparison use `schemadiff.RefusalError` with the original cause.
+The schema census discards its measurement when any selected service fails,
+including after earlier cells completed.
+
 `Provider.Conversions` registers a batched conversion service for explicit target
 and feature-kind pairs. `Runtime.ConvertFeatures` validates each ordered batch,
 propagates cancellation and service errors, and returns no partial result.

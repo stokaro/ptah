@@ -50,7 +50,7 @@ func (r Registry) SnapshotValues(ctx context.Context, representation Representat
 		}
 		codec, found := r.codecs[codecKey{kind: value.Kind(), representation: representation}]
 		if !found {
-			return nil, fmt.Errorf("%w: %q/%s", ErrUnknownCodec, value.Kind(), representation)
+			return nil, &UnknownCodecError{Kind: value.Kind(), Representation: representation}
 		}
 		cloned, err := codec.snapshot(value)
 		if err != nil {
@@ -84,7 +84,7 @@ func (r Registry) ConvertCoverage(ctx context.Context, from, to Representation, 
 	for i, record := range document.Kinds {
 		codec, found := r.codecs[codecKey{kind: record.Model.Kind, representation: to}]
 		if !found {
-			return Coverage{}, fmt.Errorf("%w: %q/%s", ErrUnknownCodec, record.Model.Kind, to)
+			return Coverage{}, &UnknownCodecError{Kind: record.Model.Kind, Representation: to}
 		}
 		if codec.owner != record.Model.Owner {
 			return Coverage{}, fmt.Errorf("%w: conversion changes model owner", ErrIncompatibleCodec)

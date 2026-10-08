@@ -98,6 +98,7 @@ import (
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemavalidation"
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/planner/columnchange"
@@ -821,7 +822,7 @@ func (p *Planner) refuseChangeKey(subject, key string, colDiff difftypes.ColumnD
 // gives, and it says how to ask for the rebuild.
 func (p *Planner) rebuildable(key capability.Capability, feature, subject string) error {
 	err := p.keyed(key, feature, subject)
-	refusal, ok := errors.AsType[*ptaherr.CapabilityError](err)
+	refusal, ok := errors.AsType[*schemavalidation.RefusalError](err)
 	if !ok || p.caps.Has(key) {
 		return err
 	}
@@ -829,8 +830,9 @@ func (p *Planner) rebuildable(key capability.Capability, feature, subject string
 	if request == "" {
 		request = TableRebuildFlag
 	}
-	refusal.Message += "; YDB makes it by rebuilding the table, which Ptah plans when asked with " + request
-	return refusal
+	diagnostics := refusal.Diagnostics()
+	diagnostics[0].Message += "; YDB makes it by rebuilding the table, which Ptah plans when asked with " + request
+	return (schemavalidation.Result{Complete: true, Diagnostics: diagnostics}).Err(platform.YDB)
 }
 
 // rebuildableFact refuses a change YDB makes only by rebuilding the table and
@@ -859,29 +861,20 @@ func (p *Planner) keyed(key capability.Capability, feature, subject string) erro
 }
 
 func refuseKey(key capability.Capability, subject string) error {
-	return &ptaherr.CapabilityError{
-		Dialect: platform.YDB,
-		Feature: string(key),
-		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
-			subject, key, platform.YDB),
-	}
+	return planningRefusal(string(key), fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
+		subject, key, platform.YDB))
 }
 
 func refuseUnplanned(feature, subject string) error {
-	return &ptaherr.CapabilityError{
-		Dialect: platform.YDB,
-		Feature: feature,
-		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf("%s: the %s planner plans no %s", subject, platform.YDB, feature),
-	}
+	return planningRefusal(feature, fmt.Sprintf("%s: the %s planner plans no %s", subject, platform.YDB, feature))
 }
 
 func refuseFact(subject, reason string) error {
-	return &ptaherr.CapabilityError{
-		Dialect: platform.YDB,
-		Feature: subject,
-		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf("%s: %s", subject, reason),
-	}
+	return planningRefusal(subject, fmt.Sprintf("%s: %s", subject, reason))
+}
+
+func planningRefusal(feature, message string) error {
+	return (schemavalidation.Result{Complete: true, Diagnostics: []schemavalidation.Diagnostic{{
+		Code: schemavalidation.UnsupportedFeature, Kind: "schema", Feature: feature, Message: message,
+	}}}).Err(platform.YDB)
 }

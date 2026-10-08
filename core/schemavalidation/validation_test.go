@@ -132,6 +132,14 @@ func TestValidationDiagnosticsRetainTypedRefusals(t *testing.T) {
 		{Code: schemavalidation.InvalidSchema, Kind: "table", Object: "items", Message: "table is invalid"},
 	}}
 	err := result.Err("custom")
+	var refusal *schemavalidation.RefusalError
+	c.Assert(err, qt.ErrorAs, &refusal)
+	c.Assert(refusal.Target(), qt.Equals, "custom")
+	c.Assert(refusal.Diagnostics(), qt.DeepEquals, result.Diagnostics)
+	result.Diagnostics[0].Message = "mutated result"
+	copyOfDiagnostics := refusal.Diagnostics()
+	copyOfDiagnostics[0].Message = "mutated accessor"
+	c.Assert(refusal.Diagnostics()[0].Message, qt.Equals, "index mode is unavailable")
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	var unsupported *ptaherr.CapabilityError
@@ -140,4 +148,5 @@ func TestValidationDiagnosticsRetainTypedRefusals(t *testing.T) {
 	c.Assert(unsupported.Dialect, qt.Equals, "custom")
 	c.Assert((schemavalidation.Result{Complete: true}).Err("custom"), qt.IsNil)
 	c.Assert((schemavalidation.Result{}).Err("custom"), qt.ErrorIs, schemavalidation.ErrInvalidResult)
+	c.Assert((schemavalidation.Result{}).Err("custom"), qt.Not(qt.ErrorAs), &refusal)
 }

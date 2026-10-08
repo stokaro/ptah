@@ -229,9 +229,12 @@ do not yet expose custom-target registration.
 
 Native rendering, inspection reports, dev-schema materialization, agent schema
 gates, and the schema census use this selection. An agent gate reports completed
-schema refusals as findings and service failures as errors. The census accepts
-an explicit runtime and stops on operational failure. Unknown model codecs count
-as declared-schema refusals because they reject captured input before dispatch.
+schema refusals as findings and service failures as errors. Both census surfaces
+accept an explicit runtime and discard the measurement on operational failure,
+including a failure after earlier cells completed. A registry's
+`schemaext.UnknownCodecError` counts as a declaration refusal because the registry
+cannot dispatch that model. A callback error wrapping `ErrUnknownCodec` alone
+does not establish this receipt and stops the measurement.
 
 `core/schemavalidation.Service` validates a whole captured schema in one
 contextual call. `Target.Validation` selects the service explicitly. Requests
@@ -243,9 +246,12 @@ Nested schema values remain read-only under the service contract.
 
 A completed reply sets `Complete` even when there are no findings. Diagnostics
 classify invalid schemas, unsupported features, and omitted declarations.
-`Result.Err(target)` converts them to typed planning errors. An absent completion
-receipt or malformed diagnostic returns `ErrInvalidResult`; a service failure
-remains an error. The runtime checks selected model codecs before dispatch.
+`Result.Err(target)` returns `schemavalidation.RefusalError` for a nonempty
+completed report. Its accessors retain an independent diagnostic snapshot;
+`errors.Is` and `errors.As` still expose the schema and capability causes.
+An absent completion receipt or malformed diagnostic returns `ErrInvalidResult`
+without a refusal receipt. A service failure remains an error, even when it wraps
+a schema or capability sentinel. The runtime checks selected model codecs before dispatch.
 A missing validator never selects built-in validation implicitly.
 
 `migration/safety.AssessRendered` and `AssessRenderedWithCapabilities` require
@@ -559,6 +565,12 @@ Callers presenting partial results must also report those limits. Non-reporting
 entry points refuse an incomplete comparison with `ErrIncompleteComparison`
 and return no diff; `errors.As` exposes the diagnostics through
 `IncompleteComparisonError`.
+
+`schemadiff.RefusalError` identifies a completed common declaration check and
+preserves its original error. Selected validation diagnostics use
+`schemavalidation.RefusalError`. Service failures and malformed provider replies
+remain errors without either receipt; an error's message or sentinel alone
+does not establish that comparison completed its checks.
 
 `generator.GenerateMigrationOptions.Runtime` requires a `generator.Runtime`,
 which combines comparison, conversion, validation, planning, rendering, and

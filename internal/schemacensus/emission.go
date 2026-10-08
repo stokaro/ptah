@@ -336,7 +336,7 @@ func MeasureEmissions(ctx context.Context, service renderer.SchemaService) (Corp
 		for _, cell := range fixture.Cells(capabilityprobe.Cells) {
 			statements, err := RenderStatements(ctx, service, fixture.Schema, cell)
 			if err != nil {
-				if !schemaRenderRefusal(err) {
+				if !completedSchemaRefusal(err) {
 					return CorpusEmissions{}, err
 				}
 				byFixture[fixture.Name]++

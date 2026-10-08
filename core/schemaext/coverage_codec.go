@@ -60,7 +60,7 @@ func (r Registry) DecodeCoverage(ctx context.Context, document CoverageDocument)
 func (r Registry) requireModel(model CodecIdentity) error {
 	codec, found := r.codecs[codecKey{kind: model.Kind, representation: model.Representation}]
 	if !found {
-		return fmt.Errorf("%w: %q/%s", ErrUnknownCodec, model.Kind, model.Representation)
+		return &UnknownCodecError{Kind: model.Kind, Representation: model.Representation}
 	}
 	if codec.owner != model.Owner || codec.version != model.Version || codec.definition != model.Definition {
 		return fmt.Errorf("%w: coverage model %q/%s", ErrIncompatibleCodec, model.Kind, model.Representation)

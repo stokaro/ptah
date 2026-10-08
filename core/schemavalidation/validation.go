@@ -83,22 +83,55 @@ func (r Result) Validate() error {
 }
 
 // Err converts validated diagnostics into the public schema and capability
-// errors consumed by planning callers. An incomplete result remains an error.
+// errors consumed by planning callers. A nonempty completed result returns a
+// RefusalError; an incomplete or malformed result never does.
 // Report consumers can present Diagnostics directly without making this conversion.
 func (r Result) Err(target string) error {
 	if err := r.Validate(); err != nil {
 		return err
 	}
-	failures := make([]error, 0, len(r.Diagnostics))
-	for _, diagnostic := range r.Diagnostics {
+	if len(r.Diagnostics) == 0 {
+		return nil
+	}
+	return &RefusalError{target: target, diagnostics: slices.Clone(r.Diagnostics)}
+}
+
+// RefusalError records completed schema diagnostics, distinct from failure to
+// perform validation. Result.Err creates it only after validating the receipt.
+// Wire adapters carry the diagnostic data, not this Go error value.
+type RefusalError struct {
+	target      string
+	diagnostics []Diagnostic
+}
+
+// Target returns the target whose schema validation completed.
+func (e *RefusalError) Target() string { return e.target }
+
+// Diagnostics returns an independent copy in the provider's report order.
+func (e *RefusalError) Diagnostics() []Diagnostic { return slices.Clone(e.diagnostics) }
+
+// Error reports the completed schema diagnostics. The zero value has no
+// diagnostics and reports only that validation refused the schema.
+func (e *RefusalError) Error() string {
+	if err := e.Unwrap(); err != nil {
+		return err.Error()
+	}
+	return "schema validation refused"
+}
+
+// Unwrap retains the schema and capability error identities for errors.Is and
+// errors.As. The zero value unwraps to nil.
+func (e *RefusalError) Unwrap() error {
+	failures := make([]error, 0, len(e.diagnostics))
+	for _, diagnostic := range e.diagnostics {
 		if diagnostic.Code == UnsupportedFeature {
 			failures = append(failures, &ptaherr.CapabilityError{
-				Dialect: target, Feature: diagnostic.Feature, Err: ptaherr.ErrUnsupportedFeature, Message: diagnostic.Message,
+				Dialect: e.target, Feature: diagnostic.Feature, Err: ptaherr.ErrUnsupportedFeature, Message: diagnostic.Message,
 			})
 			continue
 		}
 		failures = append(failures, &ptaherr.RenderError{
-			Dialect: target, Err: ptaherr.ErrInvalidSchemaDiff, Message: diagnostic.Message,
+			Dialect: e.target, Err: ptaherr.ErrInvalidSchemaDiff, Message: diagnostic.Message,
 		})
 	}
 	return errors.Join(failures...)

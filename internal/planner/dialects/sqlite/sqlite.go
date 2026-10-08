@@ -14,10 +14,10 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
-	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemavalidation"
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/planner/objectlookup"
@@ -1117,12 +1117,9 @@ func (p *Planner) removeTriggers(diff *difftypes.SchemaDiff) []ast.Node {
 
 func unsupportedFeaturef(format string, args ...any) error {
 	message := fmt.Sprintf("sqlite: "+format, args...)
-	return &ptaherr.CapabilityError{
-		Dialect: DialectName,
-		Feature: message,
-		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: message,
-	}
+	return (schemavalidation.Result{Complete: true, Diagnostics: []schemavalidation.Diagnostic{{
+		Code: schemavalidation.UnsupportedFeature, Kind: "schema", Feature: message, Message: message,
+	}}}).Err(DialectName)
 }
 
 // addedColumnsFor returns the columns tableName gains in this diff, or nil.

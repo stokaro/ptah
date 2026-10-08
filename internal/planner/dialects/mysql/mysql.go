@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemavalidation"
 	"ptah.run/internal/constraintscope"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/indexscope"
@@ -1639,12 +1640,9 @@ func (p *Planner) rejectMaterializedViews(diff *difftypes.SchemaDiff) error {
 	message := fmt.Sprintf(
 		"materialized views are not supported by %s; remove matview definitions for this target: %s",
 		engine, strings.Join(changedMaterializedViewNames(diff), ", "))
-	return &ptaherr.CapabilityError{
-		Dialect: p.targetDialect(),
-		Feature: "materialized views",
-		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: message,
-	}
+	return (schemavalidation.Result{Complete: true, Diagnostics: []schemavalidation.Diagnostic{{
+		Code: schemavalidation.UnsupportedFeature, Kind: "materialized view", Feature: "materialized views", Message: message,
+	}}}).Err(p.targetDialect())
 }
 
 func (p *Planner) addNewViews(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
@@ -2044,11 +2042,14 @@ func (p *Planner) addNamedConstraintsByKind(
 		if constraintRecordIsForeignKey(diff.ConstraintsAdded, constraintName) != wantForeignKey {
 			continue
 		}
-		return nil, fmt.Errorf(
-			"%w: constraint %q is added without a definition the planner can render; "+
+		message := fmt.Sprintf(
+			"%s: constraint %q is added without a definition the planner can render; "+
 				"a diff has to describe the constraints it names",
 			ptaherr.ErrInvalidSchemaDiff, constraintName,
 		)
+		return nil, (schemavalidation.Result{Complete: true, Diagnostics: []schemavalidation.Diagnostic{{
+			Code: schemavalidation.InvalidSchema, Kind: "constraint", Object: constraintName, Message: message,
+		}}}).Err(p.targetDialect())
 	}
 	return result, nil
 }

@@ -117,7 +117,7 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	// plan a CREATE ROLE the server always refuses. Refuse the declaration
 	// here instead, before anything is compared (stokaro/ptah#1312).
 	if err := validateDeclaredBeforeComparison(desired, database, info); err != nil {
-		return nil, Diagnostics{}, err
+		return nil, Diagnostics{}, &RefusalError{cause: err}
 	}
 	// A SQLite virtual table cannot appear on the desired side of any
 	// comparison, so its absence there is not deletion intent and its presence

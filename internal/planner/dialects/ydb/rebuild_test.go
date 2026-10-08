@@ -274,8 +274,8 @@ func TestGenerateMigrationAST_TableRebuild_NotAskedFor(t *testing.T) {
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			refusal, ok := err.(*ptaherr.CapabilityError)
-			c.Assert(ok, qt.IsTrue)
+			var refusal *ptaherr.CapabilityError
+			c.Assert(err, qt.ErrorAs, &refusal)
 			c.Assert(refusal.Feature, qt.Equals, string(test.wantKey))
 			c.Assert(nodes, qt.IsNil)
 		})

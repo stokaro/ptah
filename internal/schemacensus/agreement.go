@@ -34,9 +34,12 @@ func MeasurePlan(ctx context.Context, runtime engine.SchemaRuntime) ([]Observati
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return nil, err
 	}
-	result := measure(func(schema schemamodel.Database, cell capabilityprobe.Cell) string {
+	result, err := measure(func(schema schemamodel.Database, cell capabilityprobe.Cell) (string, error) {
 		return planOne(ctx, runtime, schema, cell)
 	})
+	if err != nil {
+		return nil, err
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -45,7 +48,7 @@ func MeasurePlan(ctx context.Context, runtime engine.SchemaRuntime) ([]Observati
 
 // planOne is the shipping plan path for one cell: compare against nothing, plan,
 // render.
-func planOne(ctx context.Context, runtime engine.SchemaRuntime, schema schemamodel.Database, cell capabilityprobe.Cell) string {
+func planOne(ctx context.Context, runtime engine.SchemaRuntime, schema schemamodel.Database, cell capabilityprobe.Cell) (string, error) {
 	finalized := deepCopyDatabase(schema)
 	schemamodel.Finalize(&finalized)
 
@@ -56,7 +59,7 @@ func planOne(ctx context.Context, runtime engine.SchemaRuntime, schema schemamod
 		nil, runtime,
 	)
 	if err != nil {
-		return "refused: " + err.Error()
+		return measuredRefusal(err)
 	}
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		ctx, runtime,
@@ -65,9 +68,9 @@ func planOne(ctx context.Context, runtime engine.SchemaRuntime, schema schemamod
 		planner.Options{Capabilities: cell.Preset()},
 	)
 	if err != nil {
-		return "refused: " + err.Error()
+		return measuredRefusal(err)
 	}
-	return strings.Join(statements, "\n")
+	return strings.Join(statements, "\n"), nil
 }
 
 // SurfaceDifference is one field the two surfaces do not agree about, and the

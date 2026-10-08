@@ -81,7 +81,7 @@ func (r Registry) snapshotObjectProjections(ctx context.Context, projections []O
 		}
 		seen[ref.Key()] = true
 		if _, found := r.codecs[codecKey{kind: kind, representation: Observed}]; !found {
-			return nil, fmt.Errorf("%w: projected model %q", ErrUnknownCodec, kind)
+			return nil, &UnknownCodecError{Kind: kind, Representation: Observed}
 		}
 		result[i] = projection
 		if projection.Value == nil {

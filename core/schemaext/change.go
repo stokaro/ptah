@@ -57,7 +57,7 @@ func (r Registry) SnapshotChanges(ctx context.Context, changes []ChangeRecord) (
 		}
 		codec, found := r.codecs[codecKey{kind: cloned.Value.Kind(), representation: Change}]
 		if !found {
-			return nil, fmt.Errorf("%w: change %q", ErrUnknownCodec, cloned.Value.Kind())
+			return nil, &UnknownCodecError{Kind: cloned.Value.Kind(), Representation: Change}
 		}
 		payload, err := codec.snapshot(cloned.Value)
 		if err != nil {

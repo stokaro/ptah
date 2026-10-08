@@ -2,7 +2,7 @@ package schemacensus
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -12,8 +12,10 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemavalidation"
 	"ptah.run/internal/capabilityprobe"
 	"ptah.run/internal/ydbflags"
+	"ptah.run/migration/schemadiff"
 )
 
 // Observation is what the census established about one field.
@@ -48,17 +50,11 @@ func Measure(ctx context.Context, service renderer.SchemaService) ([]Observation
 	if err := schemaext.RequireRuntime(ctx, service); err != nil {
 		return nil, err
 	}
-	var failure error
-	measured := measure(func(schema schemamodel.Database, cell capabilityprobe.Cell) string {
-		if failure != nil {
-			return ""
-		}
-		var rendered string
-		rendered, failure = renderOne(ctx, service, schema, cell)
-		return rendered
+	measured, err := measure(func(schema schemamodel.Database, cell capabilityprobe.Cell) (string, error) {
+		return renderOne(ctx, service, schema, cell)
 	})
-	if failure != nil {
-		return nil, failure
+	if err != nil {
+		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -71,13 +67,17 @@ func Measure(ctx context.Context, service renderer.SchemaService) ([]Observation
 // The two surfaces are measured by one function on purpose: an agreement test
 // comparing two loops that had drifted apart would report the drift as a
 // disagreement between the surfaces.
-func measure(surface func(schemamodel.Database, capabilityprobe.Cell) string) []Observation {
+func measure(surface func(schemamodel.Database, capabilityprobe.Cell) (string, error)) ([]Observation, error) {
 	fixtures := Fixtures()
 	cells := measuredCells()
 
 	baselines := make([]map[string]string, len(fixtures))
 	for index, fixture := range fixtures {
-		baselines[index] = everyCell(surface, fixture.Schema, fixture.Cells(cells))
+		baseline, err := everyCell(surface, fixture.Schema, fixture.Cells(cells))
+		if err != nil {
+			return nil, fmt.Errorf("baseline %s: %w", fixture.Name, err)
+		}
+		baselines[index] = baseline
 	}
 
 	fields := Fields()
@@ -89,7 +89,10 @@ func measure(surface func(schemamodel.Database, capabilityprobe.Cell) string) []
 				continue
 			}
 			observation.Covered = append(observation.Covered, fixture.Name)
-			ablated := everyCell(surface, Ablate(fixture.Schema, field), fixture.Cells(cells))
+			ablated, err := everyCell(surface, Ablate(fixture.Schema, field), fixture.Cells(cells))
+			if err != nil {
+				return nil, fmt.Errorf("ablate %s from %s: %w", field, fixture.Name, err)
+			}
 			for name, rendered := range ablated {
 				if rendered != baselines[index][name] {
 					observation.Cells = append(observation.Cells, name)
@@ -100,7 +103,7 @@ func measure(surface func(schemamodel.Database, capabilityprobe.Cell) string) []
 		observation.Cells = slices.Compact(observation.Cells)
 		observations = append(observations, observation)
 	}
-	return observations
+	return observations, nil
 }
 
 // measuredCells are the declared release lines, and each YDB line again with
@@ -136,25 +139,26 @@ func measuredCells() []capabilityprobe.Cell {
 // line, keyed by cell name. A refusal is kept as its own text so an ablation
 // that changes WHICH refusal answers still counts as a change.
 func everyCell(
-	surface func(schemamodel.Database, capabilityprobe.Cell) string,
+	surface func(schemamodel.Database, capabilityprobe.Cell) (string, error),
 	schema schemamodel.Database,
 	cells []capabilityprobe.Cell,
-) map[string]string {
+) (map[string]string, error) {
 	answers := make(map[string]string, len(cells))
 	for _, cell := range cells {
-		answers[CellName(cell)] = surface(schema, cell)
+		answer, err := surface(schema, cell)
+		if err != nil {
+			return nil, fmt.Errorf("cell %s: %w", CellName(cell), err)
+		}
+		answers[CellName(cell)] = answer
 	}
-	return answers
+	return answers, nil
 }
 
 // renderOne is the shipping render path for one cell.
 func renderOne(ctx context.Context, service renderer.SchemaService, schema schemamodel.Database, cell capabilityprobe.Cell) (string, error) {
 	statements, err := RenderStatements(ctx, service, schema, cell)
 	if err != nil {
-		if !schemaRenderRefusal(err) {
-			return "", err
-		}
-		return "refused: " + err.Error(), nil
+		return measuredRefusal(err)
 	}
 	return strings.Join(statements, "\n"), nil
 }
@@ -182,12 +186,41 @@ func RenderStatements(
 // CellName is how an observation names one declared release line.
 func CellName(cell capabilityprobe.Cell) string { return cell.Dialect + "-" + cell.Line }
 
-// schemaRenderRefusal separates a declaration the selected implementation cannot
+// completedSchemaRefusal separates a declaration the selected implementation cannot
 // interpret from a failed measurement. Unknown model codecs are an intentional
 // fixture: the host refuses them before it dispatches to a rendering provider.
 // Both census surfaces use this predicate so an operational failure cannot count
 // as a render-or-refuse observation on only one of them.
-func schemaRenderRefusal(err error) bool {
-	_, refused := errors.AsType[*renderer.SchemaRefusalError](err)
-	return refused || errors.Is(err, schemaext.ErrUnknownCodec)
+func completedSchemaRefusal(err error) bool {
+	// An errors.As search accepts a receipt anywhere in a joined error, even
+	// when a sibling is a provider failure. Every joined cause must complete.
+	switch refusal := err.(type) {
+	case *schemavalidation.RefusalError:
+		return refusal != nil && len(refusal.Diagnostics()) != 0
+	case *schemadiff.RefusalError:
+		return refusal != nil && refusal.Unwrap() != nil
+	case *schemaext.UnknownCodecError:
+		if refusal == nil || !refusal.Kind.Valid() {
+			return false
+		}
+		switch refusal.Representation {
+		case schemaext.Desired, schemaext.Observed, schemaext.Change, schemaext.Operation:
+			return true
+		}
+	case interface{ Unwrap() []error }:
+		causes := refusal.Unwrap()
+		return len(causes) != 0 && !slices.ContainsFunc(causes, func(cause error) bool {
+			return !completedSchemaRefusal(cause)
+		})
+	case interface{ Unwrap() error }:
+		return completedSchemaRefusal(refusal.Unwrap())
+	}
+	return false
+}
+
+func measuredRefusal(err error) (string, error) {
+	if !completedSchemaRefusal(err) {
+		return "", err
+	}
+	return "refused: " + err.Error(), nil
 }

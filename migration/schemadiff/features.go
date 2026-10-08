@@ -68,6 +68,9 @@ func featureParents(desired *schemamodel.Database, current *catalog.Database, ta
 	parents := make(map[objectidentity.Key]schemaext.ParentState)
 	for _, table := range desired.Tables {
 		ref := compare.TableSubject(table.Schema, table.Name, target, semantics)
+		if ref.Name.Source == "" || ref.Name.Normalized == "" {
+			return nil, &RefusalError{cause: fmt.Errorf("%w: desired table requires a name", ptaherr.ErrInvalidSchemaDiff)}
+		}
 		if parents[ref.Key()].Desired {
 			return nil, fmt.Errorf("%w: duplicate desired table identity %s", ptaherr.ErrInvalidSchemaDiff, ref)
 		}

@@ -42,7 +42,7 @@ func (r Registry) codecFor(representation Representation, payload Payload) (regi
 	}
 	codec, found := r.codecs[codecKey{kind: payload.Kind(), representation: representation}]
 	if !found {
-		return registeredCodec{}, fmt.Errorf("%w: %q/%s", ErrUnknownCodec, payload.Kind(), representation)
+		return registeredCodec{}, &UnknownCodecError{Kind: payload.Kind(), Representation: representation}
 	}
 	return codec, nil
 }
