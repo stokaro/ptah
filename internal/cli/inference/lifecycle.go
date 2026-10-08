@@ -9,6 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/core/platform/capability"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/embedcatchup"
 	"ptah.run/internal/embedcutover"
@@ -67,7 +69,12 @@ func runPrepare(
 	}
 	defer opened.close()
 
-	if err := opened.store.EnsureSchema(ctx); err != nil {
+	runtime, err := builtin.New()
+	if err != nil {
+		return err
+	}
+	// Internal store DDL uses the explicit PostgreSQL baseline profile.
+	if err := opened.store.EnsureSchema(ctx, runtime, capability.ForDialect(embedpg.Dialect)); err != nil {
 		return err
 	}
 	spec := opened.loaded.Spec

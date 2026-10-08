@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -36,7 +38,7 @@ func onlyRange(c *qt.C, database *schemamodel.Database) schemamodel.Range {
 func TestConvert_CarriesEveryRangeAttribute(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(rangeSchema(catalog.Range{
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), rangeSchema(catalog.Range{
 		Name:           "fancy",
 		Schema:         "public",
 		Subtype:        "double precision",
@@ -44,7 +46,7 @@ func TestConvert_CarriesEveryRangeAttribute(t *testing.T) {
 		Collation:      "en_US",
 		Canonical:      "fancy_canonical",
 		SubtypeDiff:    "f8diff",
-	}), "")
+	}), "postgres", must.Must(builtin.New())))
 
 	converted := onlyRange(c, database)
 	c.Assert(converted.Name, qt.Equals, "fancy")
@@ -65,11 +67,11 @@ func TestConvert_CarriesEveryRangeAttribute(t *testing.T) {
 func TestConvert_LeavesARangeWithNoAttributesBare(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(rangeSchema(catalog.Range{
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), rangeSchema(catalog.Range{
 		Name:    "plainrange",
 		Schema:  "public",
 		Subtype: "double precision",
-	}), "")
+	}), "postgres", must.Must(builtin.New())))
 
 	converted := onlyRange(c, database)
 	c.Assert(converted.Subtype, qt.Equals, "double precision")

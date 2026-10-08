@@ -10,9 +10,11 @@ import (
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/yamlschema"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
@@ -91,7 +93,7 @@ tables:
 			DownSQL: "DROP TABLE posts;",
 		}},
 		Generated: desired,
-	})
+		Runtime:   must.Must(builtin.New())})
 }
 
 // verifyBaselineWithShadow is `migrations baseline --shadow-db`.
@@ -107,7 +109,7 @@ func verifyBaselineWithShadow(ctx context.Context, dir, shadowURL string) error 
 		MigrationsFS:      shadowClaimHistory,
 		Version:           2,
 		Dialect:           "sqlite",
-	})
+		Runtime:           must.Must(builtin.New())})
 }
 
 // verifyRollbackWithShadow is `migrations down --shadow-db`.
@@ -144,7 +146,7 @@ func planDynamicRollbackWithDev(ctx context.Context, dir, devURL string) error {
 		ProviderOptions: []migrator.FSProviderOption{
 			migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		},
-	})
+		Runtime: must.Must(builtin.New())})
 	if err != nil {
 		return err
 	}
@@ -157,6 +159,7 @@ func planDynamicRollbackWithDev(ctx context.Context, dir, devURL string) error {
 // generateCheckpointWithShadow is `migrations checkpoint --shadow-db`.
 func generateCheckpointWithShadow(ctx context.Context, _, shadowURL string) error {
 	_, _, err := generator.GenerateCheckpointFromShadow(ctx, generator.CheckpointFromShadowOptions{
+		Runtime:           must.Must(builtin.New()),
 		ShadowDatabaseURL: shadowURL,
 		MigrationsDir:     "migrations",
 		MigrationsFS:      shadowClaimHistory,
@@ -290,7 +293,7 @@ func TestVerifyBaseline_FailedReplayHandsTheShadowBackEmpty_FailurePath(t *testi
 		},
 		Version: 2,
 		Dialect: "sqlite",
-	})
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.ErrorMatches, `(?s)baseline shadow check failed: replay migrations: failed to apply migration 2: .*`)
 	shadowConn, err := dbschema.ConnectToDatabase(c.Context(), shadowURL)

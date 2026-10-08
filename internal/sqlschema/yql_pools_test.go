@@ -8,8 +8,8 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -66,7 +66,7 @@ func TestReadYQLResourcePoolsRoundTrip(t *testing.T) {
 	database, _, err := sqlschema.Read([]byte(source), "ydb")
 	c.Assert(err, qt.IsNil)
 	for _, caps := range []capability.Capabilities{capability.YDB251(), capability.YDB262()} {
-		statements, renderErr := renderer.GetOrderedCreateStatementsWithCapabilities(&database, "ydb", caps.With(capability.ResourcePools, true))
+		statements, renderErr := builtin.GetOrderedCreateStatementsWithCapabilities(&database, "ydb", caps.With(capability.ResourcePools, true))
 		c.Assert(renderErr, qt.IsNil)
 		again, _, readErr := sqlschema.Read([]byte(strings.Join(statements, "\n")), "ydb")
 		c.Assert(readErr, qt.IsNil)

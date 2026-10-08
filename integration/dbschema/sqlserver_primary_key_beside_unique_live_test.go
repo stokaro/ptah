@@ -12,8 +12,8 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/sqlschema"
 )
@@ -104,7 +104,7 @@ func renderSQLServer(c *qt.C, sql string) (string, error) {
 	c.Helper()
 	database, _, err := sqlschema.Read([]byte(sql), platform.SQLServer)
 	c.Assert(err, qt.IsNil)
-	ordered, err := renderer.GetOrderedCreateStatements(&database, platform.SQLServer)
+	ordered, err := builtin.GetOrderedCreateStatements(&database, platform.SQLServer)
 	if err != nil {
 		return "", err
 	}

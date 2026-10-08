@@ -4,11 +4,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -100,8 +102,8 @@ func TestCompare_RowTTLTransitions(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(
-				declaredTTL(test.desired), liveTTL(test.current), platform.CockroachDB)
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), declaredTTL(test.desired), liveTTL(test.current), platform.CockroachDB, must.Must(builtin.New())))
 
 			change := rowTTLChangeOf(diff)
 
@@ -151,7 +153,7 @@ func TestCompare_ATTLOnlyDifferenceStillReachesTablesModified(t *testing.T) {
 	current := liveTTL(nil)
 	current.Tables[0].Columns = columnsMatching(desired)
 
-	diff := schemadiff.CompareWithDialect(desired, current, platform.CockroachDB)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, current, platform.CockroachDB, must.Must(builtin.New())))
 
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsAdded, qt.HasLen, 0)
@@ -176,11 +178,11 @@ func columnsMatching(_ *schemamodel.Database) []catalog.Column {
 func TestCompare_RowTTLChangeCarriesBothSides(t *testing.T) {
 	c := qt.New(t)
 
-	diff := schemadiff.CompareWithDialect(
-		declaredTTL(&ast.RowTTLSpec{ExpirationExpression: "expires_at"}),
+	diff := must.Must(schemadiff.CompareWithDialect(
+		t.Context(), declaredTTL(&ast.RowTTLSpec{ExpirationExpression: "expires_at"}),
 		liveTTL(&ast.RowTTLSpec{ExpirationExpression: "expires_at", JobCron: "@daily"}),
-		platform.CockroachDB,
-	)
+		platform.CockroachDB, must.Must(builtin.New()),
+	))
 
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	change := diff.TablesModified[0].RowTTLChange
@@ -196,7 +198,7 @@ func TestCompare_RowTTLChangeIsIndependentOfTheSchemaItCameFrom(t *testing.T) {
 	c := qt.New(t)
 
 	desired := &ast.RowTTLSpec{ExpirationExpression: "expires_at"}
-	diff := schemadiff.CompareWithDialect(declaredTTL(desired), liveTTL(nil), platform.CockroachDB)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), declaredTTL(desired), liveTTL(nil), platform.CockroachDB, must.Must(builtin.New())))
 
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	change := diff.TablesModified[0].RowTTLChange

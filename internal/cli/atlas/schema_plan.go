@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlassource"
@@ -206,7 +207,12 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	runtime, err := builtin.New()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	plan, err := atlasschema.PreparePlanFile(cmd.Context(), conn, atlasschema.PlanFileOptions{
+		Runtime:   runtime,
 		Name:      opts.name,
 		DevURL:    opts.devURL,
 		ToURLs:    opts.toURLs,

@@ -5,12 +5,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -31,10 +33,10 @@ func TestCompareWithDatabaseInfo_SQLServerCaseInsensitiveIdentity(t *testing.T) 
 		{Name: "idx_email", Schema: "dbo", TableName: "USERS", Columns: []string{"email"}},
 	}}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(desired, database, catalog.ServerInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, database, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		IdentifierSemantics: semantics,
-	}, nil)
+	}, nil, must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
@@ -67,10 +69,10 @@ func TestCompareWithDatabaseInfo_SQLServerCaseOnlyRenamePreservesSpelling(t *tes
 		},
 	}}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(desired, database, catalog.ServerInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, database, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		IdentifierSemantics: semantics,
-	}, nil)
+	}, nil, must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
@@ -103,10 +105,10 @@ func TestCompareWithDatabaseInfo_SQLServerDefinitionReplacement(t *testing.T) {
 		},
 	}}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(desired, database, catalog.ServerInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, database, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		IdentifierSemantics: semantics,
-	}, nil)
+	}, nil, must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
@@ -143,10 +145,10 @@ func TestCompareWithDatabaseInfo_SQLServerUniqueReplacement(t *testing.T) {
 		},
 	}}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(desired, database, catalog.ServerInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, database, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		IdentifierSemantics: semantics,
-	}, nil)
+	}, nil, must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
@@ -191,10 +193,10 @@ func TestCompareWithDatabaseInfo_SQLServerIndexPartDirectionIdentity(t *testing.
 		},
 	}}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(desired, database, catalog.ServerInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, database, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		IdentifierSemantics: semantics,
-	}, nil)
+	}, nil, must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
@@ -235,10 +237,10 @@ func TestCompareWithDatabaseInfo_SQLServerIndexPartDirectionReplacement(t *testi
 		},
 	}}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(desired, database, catalog.ServerInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, database, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		IdentifierSemantics: semantics,
-	}, nil)
+	}, nil, must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	want := []difftypes.IndexRef{
@@ -265,10 +267,10 @@ func TestCompareWithDatabaseInfo_SQLServerCaseSensitiveVariantsRemainDistinct(t 
 		{Name: "idx_email", Schema: "dbo", TableName: "users", Columns: []string{"email"}},
 	}}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(desired, database, catalog.ServerInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, database, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		IdentifierSemantics: semantics,
-	}, nil)
+	}, nil, must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
@@ -298,10 +300,10 @@ func TestCompareWithDatabaseInfo_SQLServerCatalogTableIdentity(t *testing.T) {
 			[]string{"dbo"},
 			[]string{"users", "Users"},
 		)
-		diff, err := schemadiff.CompareWithDatabaseInfo(desired, database, catalog.ServerInfo{
+		diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, database, catalog.ServerInfo{
 			Dialect:             "sqlserver",
 			IdentifierSemantics: semantics,
-		}, nil)
+		}, nil, must.Must(builtin.New()))
 		c.Assert(err, qt.IsNil)
 		c.Assert(diff.HasChanges(), qt.IsFalse)
 	})
@@ -314,13 +316,13 @@ func TestCompareWithDatabaseInfo_SQLServerCatalogTableIdentity(t *testing.T) {
 			[]string{"users"},
 			[]string{"Users"},
 		)
-		diff, err := schemadiff.CompareWithDatabaseInfo(desired, database, catalog.ServerInfo{
+		diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, database, catalog.ServerInfo{
 			Dialect:             "sqlserver",
 			IdentifierSemantics: semantics,
-		}, nil)
+		}, nil, must.Must(builtin.New()))
 		c.Assert(err, qt.IsNil)
 		c.Assert(diff.TablesAdded.Names(), qt.DeepEquals, []string{"dbo.users"})
-		c.Assert(diff.TablesRemoved, qt.DeepEquals, []string{"dbo.Users"})
+		c.Assert(diff.TablesRemoved.Names(), qt.DeepEquals, []string{"dbo.Users"})
 	})
 }
 
@@ -352,10 +354,10 @@ func TestCompareWithDatabaseInfo_SQLServerCatalogColumnIdentity(t *testing.T) {
 		},
 	}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(desired, database, catalog.ServerInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, database, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		IdentifierSemantics: semantics,
-	}, nil)
+	}, nil, must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.HasChanges(), qt.IsFalse)
@@ -384,10 +386,10 @@ func TestCompareWithDatabaseInfo_SQLServerCaseInsensitiveTargetCollision_Failure
 		},
 	}}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(desired, database, catalog.ServerInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, database, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		IdentifierSemantics: semantics,
-	}, nil)
+	}, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(
 		err,
@@ -410,10 +412,10 @@ func TestCompareWithDatabaseInfo_SQLServerIncompleteSnapshot_FailurePath(t *test
 		{Schema: "dbo", Name: "Orders"},
 	}}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(desired, database, catalog.ServerInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, database, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		IdentifierSemantics: semantics,
-	}, nil)
+	}, nil, must.Must(builtin.New()))
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(err, qt.ErrorMatches, `.*snapshot does not resolve "Users".*`)
@@ -427,13 +429,13 @@ func TestCompareWithDatabaseInfo_SQLServerInvalidSnapshot_FailurePath(t *testing
 	)
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(
-		&schemamodel.Database{},
+		t.Context(), &schemamodel.Database{},
 		&catalog.Database{},
 		catalog.ServerInfo{
 			Dialect:             "sqlserver",
 			IdentifierSemantics: semantics,
 		},
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -441,7 +443,7 @@ func TestCompareWithDatabaseInfo_SQLServerInvalidSnapshot_FailurePath(t *testing
 	c.Assert(diff, qt.IsNil)
 }
 
-func TestCompareWithOptions_SQLServerIncompleteSnapshotFallsBackConservatively(t *testing.T) {
+func TestCompareWithOptions_SQLServerIncompleteSnapshotIsRefused(t *testing.T) {
 	c := qt.New(t)
 	semantics := resolvedSQLServerSemantics(
 		"SQL_Latin1_General_CP1_CI_AS",
@@ -457,16 +459,10 @@ func TestCompareWithOptions_SQLServerIncompleteSnapshotFallsBackConservatively(t
 	opts.Dialect = "sqlserver"
 	opts.IdentifierSemantics = &semantics
 
-	diff := schemadiff.CompareWithOptions(desired, database, opts)
-
-	c.Assert(diff.TablesAdded.Names(), qt.DeepEquals, []string{"dbo.Users"})
-	c.Assert(diff.TablesRemoved, qt.DeepEquals, []string{"dbo.Orders"})
-	c.Assert(diff.IdentifierSemantics, qt.IsNotNil)
-	c.Assert(
-		diff.IdentifierSemantics.TableNames,
-		qt.Equals,
-		identifier.ComparisonCatalogUnknown,
-	)
+	diff, err := schemadiff.CompareWithOptions(t.Context(), desired, database, opts, must.Must(builtin.New()))
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+	c.Assert(err, qt.ErrorMatches, `.*identifier semantics snapshot does not resolve "Users".*`)
+	c.Assert(diff, qt.IsNil)
 }
 
 func TestCompareWithDatabaseInfo_SQLServerTableCollision_FailurePath(t *testing.T) {
@@ -482,13 +478,13 @@ func TestCompareWithDatabaseInfo_SQLServerTableCollision_FailurePath(t *testing.
 	}}
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(
-		desired,
+		t.Context(), desired,
 		&catalog.Database{},
 		catalog.ServerInfo{
 			Dialect:             "sqlserver",
 			IdentifierSemantics: semantics,
 		},
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -515,13 +511,13 @@ func TestCompareWithDatabaseInfo_SQLServerColumnCollision_FailurePath(t *testing
 	}
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(
-		desired,
+		t.Context(), desired,
 		&catalog.Database{},
 		catalog.ServerInfo{
 			Dialect:             "sqlserver",
 			IdentifierSemantics: semantics,
 		},
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -559,10 +555,10 @@ func TestCompareWithDatabaseInfo_SQLServerExplicitUniqueIndexNamedAfterColumn(t 
 		},
 	}}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(desired, database, catalog.ServerInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, database, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		IdentifierSemantics: semantics,
-	}, nil)
+	}, nil, must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
@@ -604,10 +600,10 @@ func TestCompareWithDatabaseInfo_SQLServerExplicitIndexNamedAfterForeignKey(t *t
 		},
 	}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(desired, database, catalog.ServerInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, database, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		IdentifierSemantics: semantics,
-	}, nil)
+	}, nil, must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.IndexAdditions(), qt.HasLen, 0)

@@ -1,10 +1,13 @@
 package postgres_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -42,7 +45,10 @@ func TestPlanner_RefusesWhatTimescaleDBCannotUndo(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := postgres.New().GenerateMigrationAST(test.diff)
+			_, err := postgres.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				test.diff,
+			)
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Contains, test.want)
@@ -58,7 +64,10 @@ func TestPlanner_RefusesWhatTimescaleDBCannotUndo(t *testing.T) {
 func TestPlanner_PlansAnAddedHypertable(t *testing.T) {
 	c := qt.New(t)
 
-	nodes, err := postgres.New().GenerateMigrationAST(&difftypes.SchemaDiff{HypertablesAdded: difftypes.HypertableChanges{{Table: "public.readings"}}})
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		&difftypes.SchemaDiff{HypertablesAdded: difftypes.HypertableChanges{{Table: "public.readings"}}},
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.Not(qt.HasLen), 0)

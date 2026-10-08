@@ -48,7 +48,7 @@ generated SQL shape, public API, or Atlas parity claim changes.
 `docs/feature-inventory.json` is generated and carries no authored column.
 Adding a verb, a ledger package, a released binary or a dialect is not an edit
 here at all: the register is derived from the command tree, `docs/public_api.md`,
-`.goreleaser.yaml` and `renderer.SupportedDialects`, so the row appears when the
+`.goreleaser.yaml` and `builtin.SupportedDialects`, so the row appears when the
 declaration does.
 
 The one thing a person writes is a page claiming what it documents:

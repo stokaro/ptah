@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -21,7 +23,7 @@ func TestConvertDBSchemaToGoSchema_ColumnSequenceGrantNamesTheReplayedSequence(t
 	c := qt.New(t)
 	defaultValue := "nextval('items_id_seq'::regclass)"
 
-	converted := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{
+	converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), &catalog.Database{
 		Tables: []catalog.Table{
 			{Name: "products", Columns: []catalog.Column{
 				{
@@ -44,7 +46,7 @@ func TestConvertDBSchemaToGoSchema_ColumnSequenceGrantNamesTheReplayedSequence(t
 			{Role: "app", Privilege: "USAGE", ObjectType: "SEQUENCE", Schema: "app", ObjectName: "orders_id_seq"},
 			{Role: "app", Privilege: "USAGE", ObjectType: "SEQUENCE", ObjectName: "order_seq"},
 		},
-	}, "postgres")
+	}, "postgres", must.Must(builtin.New())))
 
 	c.Assert(sequenceGrantTargets(converted.Grants), qt.DeepEquals, []string{
 		"products_id_seq", "products_code_seq", "app.orders_id_seq", "order_seq",

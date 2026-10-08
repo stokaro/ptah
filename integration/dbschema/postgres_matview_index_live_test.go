@@ -11,9 +11,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 )
 
@@ -61,7 +61,7 @@ func TestPostgresLiveMaterializedViewIndexApplies(t *testing.T) {
 
 	// The renderer's own statements, in the renderer's own order. A wrong
 	// target or a wrong order fails here rather than being corrected.
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	for _, statement := range statements {
 		_, execErr := conn.ExecContext(ctx, statement)

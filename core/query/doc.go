@@ -4,7 +4,7 @@
 // SQL.
 //
 // It is the DML counterpart to the DDL story split across core/ast (the node
-// tree), core/astbuilder (the fluent constructors) and core/renderer (the
+// tree), core/astbuilder (the fluent constructors) and engine/builtin (the
 // visitor engine): where those model CREATE TABLE and friends, this package
 // models data statements. A builder produces a *SelectStatement, which
 // RenderSelect turns into a SQL string plus its arguments for the PostgreSQL

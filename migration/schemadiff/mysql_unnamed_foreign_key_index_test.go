@@ -1,14 +1,17 @@
 package schemadiff_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -62,7 +65,7 @@ func indexOn(name string, columns ...string) catalog.Index {
 func removedIndexes(dialect string, desired *schemamodel.Database, current *catalog.Database) []string {
 	opts := config.DefaultCompareOptions()
 	opts.Dialect = dialect
-	return removedIndexNames(schemadiff.CompareWithOptions(desired, current, opts))
+	return removedIndexNames(must.Must(schemadiff.CompareWithOptions(context.Background(), desired, current, opts, must.Must(builtin.New()))))
 }
 
 // TestCompare_TheIndexMySQLBuildsForAnUnnamedKeyIsTheKeys covers the

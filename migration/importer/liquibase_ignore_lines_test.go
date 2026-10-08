@@ -55,7 +55,7 @@ func TestLiquibaseIgnoreLines_HappyPath(t *testing.T) {
 			parser, err := importer.ParserByName("liquibase")
 			c.Assert(err, qt.IsNil)
 
-			parsed, err := parser.Parse(fstest.MapFS{"changelog.sql": {Data: []byte(test.content)}})
+			parsed, err := parser.Parse(c.Context(), fstest.MapFS{"changelog.sql": {Data: []byte(test.content)}})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(parsed.Migrations, qt.DeepEquals, test.want)
@@ -72,7 +72,7 @@ func TestLiquibaseIgnoreLines_FailurePath(t *testing.T) {
 	content := "--liquibase formatted sql\n--changeset s:1\nCREATE TABLE d1 (id int);\n--ignoreLines:START\n" +
 		"CREATE TABLE d2 (id int);\n--ignoreLines:END\n"
 
-	parsed, err := parser.Parse(fstest.MapFS{"changelog.sql": {Data: []byte(content)}})
+	parsed, err := parser.Parse(c.Context(), fstest.MapFS{"changelog.sql": {Data: []byte(content)}})
 
 	c.Assert(err, qt.ErrorMatches, `liquibase changelog "changelog.sql" line 4: "--ignoreLines:START" names neither `+
 		`start nor a number of lines, so Liquibase refuses it`)
@@ -157,7 +157,7 @@ func TestLiquibasePropertyReference_FailurePath(t *testing.T) {
 			parser, err := importer.ParserByName("liquibase")
 			c.Assert(err, qt.IsNil)
 
-			parsed, err := parser.Parse(test.files)
+			parsed, err := parser.Parse(c.Context(), test.files)
 
 			c.Assert(err, qt.ErrorMatches, test.message)
 			c.Assert(parsed, qt.IsNil)

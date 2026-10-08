@@ -1,6 +1,6 @@
 package generator
 
-// White-box testing required: reverseSchemaDiffWithSchemaForDialect is the
+// White-box testing required: reverseSchemaDiffWithPrior is the
 // function that rebuilds these records, and the invariant is about what it
 // produces rather than about any statement rendered from it. Reaching it
 // through an exported entry point would test the planner too, and a planner
@@ -43,7 +43,7 @@ func TestReverseSchemaDiff_EveryConstraintRecordCarriesAnIdentity(t *testing.T) 
 		}},
 	}
 
-	reversed := reverseSchemaDiffWithSchemaForDialect(
+	reversed := reverseForTest(t,
 		forward, widgetSchemaForReversal(), widgetCatalogForReversal(), "postgres")
 
 	c.Assert(reversed.ConstraintsAdded, qt.Not(qt.HasLen), 0)

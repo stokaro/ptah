@@ -60,7 +60,7 @@ func TestRenderSchemaInspect_JSONForeignKeyReference(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			report := atlasreport.NewSchemaInspectReport(
+			report := newInspectReport(c,
 				&schemamodel.Database{}, test.schema, catalog.ServerInfo{Dialect: "mysql"}, nil,
 				atlasreport.SchemaInspectReportOptions{DescribeSchemas: true},
 			)

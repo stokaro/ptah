@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/goschematodb"
 )
 
@@ -35,7 +37,7 @@ func TestToDBSchema_CarriesEnforcementAndMatch(t *testing.T) {
 		}},
 	}
 
-	got := goschematodb.ToDBSchema(desired, "postgres")
+	got := must.Must(goschematodb.ToDBSchema(t.Context(), desired, "postgres", must.Must(builtin.New())))
 
 	described := make(map[string]catalog.Constraint)
 	for _, constraint := range got.Constraints {

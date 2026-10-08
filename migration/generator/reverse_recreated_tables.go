@@ -3,9 +3,7 @@ package generator
 import (
 	"strings"
 
-	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/tablelookup"
@@ -64,13 +62,12 @@ import (
 func dropReverseConstraintsRestoredByTableCreation(
 	reversed *difftypes.SchemaDiff,
 	removedWithTables difftypes.ConstraintRemovals,
-	dbSchema *catalog.Database,
-	dialect string,
+	prior *schemamodel.Database,
 ) {
-	if reversed == nil || dbSchema == nil || len(reversed.TablesAdded) == 0 {
+	if reversed == nil || prior == nil || len(reversed.TablesAdded) == 0 {
 		return
 	}
-	restored := tableCreationRestores(dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, dialect), reversed.TablesAdded.Names())
+	restored := tableCreationRestores(prior, reversed.TablesAdded.Names())
 	if len(restored) == 0 {
 		return
 	}
@@ -110,7 +107,7 @@ func dropReverseConstraintsRestoredByTableCreation(
 	}
 	if len(kept) != len(reversed.ConstraintsAdded) {
 		// Freshly allocated on purpose: ConstraintsAdded is derived from the
-		// caller's ConstraintsRemoved, and reverseSchemaDiffWithSchema promises
+		// caller's ConstraintsRemoved, and reverseSchemaDiffWithPrior promises
 		// to leave the forward diff untouched.
 		reversed.ConstraintsAdded = kept
 	}

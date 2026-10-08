@@ -16,7 +16,7 @@ func TestImportWritesPtahPairsAndSum(t *testing.T) {
 	c := qt.New(t)
 	out := t.TempDir()
 
-	result, err := importer.Import(golangMigrateFS(), nil, out, importer.Options{})
+	result, err := importer.Import(c.Context(), golangMigrateFS(), nil, out, importer.Options{})
 	c.Assert(err, qt.IsNil)
 
 	// Integer versions become zero-padded Ptah file names.
@@ -44,7 +44,7 @@ func TestImportDryRunWritesNothing(t *testing.T) {
 	c := qt.New(t)
 	out := t.TempDir()
 
-	result, err := importer.Import(golangMigrateFS(), nil, out, importer.Options{DryRun: true})
+	result, err := importer.Import(c.Context(), golangMigrateFS(), nil, out, importer.Options{DryRun: true})
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Files, qt.Contains, "0000000001_init.up.sql")
 
@@ -59,7 +59,7 @@ func TestImportRefusesToOverwrite(t *testing.T) {
 	// Pre-existing target file.
 	c.Assert(os.WriteFile(filepath.Join(out, "0000000001_init.up.sql"), []byte("old"), 0o600), qt.IsNil)
 
-	_, err := importer.Import(golangMigrateFS(), nil, out, importer.Options{})
+	_, err := importer.Import(c.Context(), golangMigrateFS(), nil, out, importer.Options{})
 	c.Assert(err, qt.ErrorMatches, `.*refusing to overwrite existing migration file .*`)
 }
 
@@ -75,7 +75,7 @@ func TestImportRemapsWideTimestampVersions(t *testing.T) {
 		"20230102030405_init.down.sql": {Data: []byte("DROP TABLE t;\n")},
 		"20230103040506_add.up.sql":    {Data: []byte("ALTER TABLE t ADD c text;\n")},
 	}
-	result, err := importer.Import(src, nil, out, importer.Options{})
+	result, err := importer.Import(c.Context(), src, nil, out, importer.Options{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Remapped, qt.IsTrue)
 	// Sequential Ptah versions in source order, original version in the name.
@@ -99,7 +99,7 @@ func TestImportFallsBackForEmptySanitizedName(t *testing.T) {
 		"1_日本語.up.sql":   {Data: []byte("SELECT 1;")},
 		"1_日本語.down.sql": {Data: []byte("SELECT 2;")},
 	}
-	result, err := importer.Import(src, nil, out, importer.Options{})
+	result, err := importer.Import(c.Context(), src, nil, out, importer.Options{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Files, qt.Contains, "0000000001_migration.up.sql")
 	_, err = os.Stat(filepath.Join(out, "0000000001_migration.up.sql"))
@@ -131,7 +131,7 @@ func TestEmitRepeatableImportedAsOneTime(t *testing.T) {
 
 func TestImportUnknownToolViaDetect(t *testing.T) {
 	c := qt.New(t)
-	_, err := importer.Import(fstest.MapFS{"x.txt": {Data: []byte("hi")}}, nil, t.TempDir(), importer.Options{DryRun: true})
+	_, err := importer.Import(c.Context(), fstest.MapFS{"x.txt": {Data: []byte("hi")}}, nil, t.TempDir(), importer.Options{DryRun: true})
 	c.Assert(err, qt.ErrorMatches, `could not detect the source migration tool.*`)
 }
 
@@ -173,7 +173,7 @@ func TestImportTerminatesEveryWrittenFileWithANewline(t *testing.T) {
 			c := qt.New(t)
 
 			out := t.TempDir()
-			result, err := importer.Import(
+			result, err := importer.Import(c.Context(),
 				fstest.MapFS{test.file: {Data: []byte(test.source)}}, nil, out, importer.Options{})
 			c.Assert(err, qt.IsNil)
 			c.Assert(len(result.Files) > 0, qt.IsTrue,

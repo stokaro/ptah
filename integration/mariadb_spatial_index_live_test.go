@@ -10,11 +10,13 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/go-sql-driver/mysql" // registers the MySQL driver for database/sql
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
 )
@@ -83,7 +85,7 @@ func TestMariaDBSpatialIndexIsNotSatisfiedByBTreeLive(t *testing.T) {
 
 	// The comparison half, over the schema the reader just produced.
 	desired := mariaDBSpatialDesired()
-	c.Assert(schemadiff.CompareWithDialect(desired, plain, "mariadb").HasChanges(), qt.IsTrue,
+	c.Assert(must.Must(schemadiff.CompareWithDialect(t.Context(), desired, plain, "mariadb", must.Must(builtin.New()))).HasChanges(), qt.IsTrue,
 		qt.Commentf("a BTREE index does not satisfy a requested SPATIAL index"))
 
 	// The repair, and the convergence after it. An access-method change is a
@@ -100,7 +102,7 @@ func TestMariaDBSpatialIndexIsNotSatisfiedByBTreeLive(t *testing.T) {
 	repaired, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Assert(spatialIndexOf(c, repaired).Method, qt.Equals, "SPATIAL")
-	c.Assert(schemadiff.CompareWithDialect(desired, repaired, "mariadb").HasChanges(), qt.IsFalse,
+	c.Assert(must.Must(schemadiff.CompareWithDialect(t.Context(), desired, repaired, "mariadb", must.Must(builtin.New()))).HasChanges(), qt.IsFalse,
 		qt.Commentf("the requested spatial index is what the server now has"))
 }
 
@@ -213,6 +215,6 @@ func TestMySQLPromotedSpatialIndexStaysSyncedLive(t *testing.T) {
 	desired := mariaDBSpatialDesired()
 	desired.Indexes[0].Type = ""
 
-	c.Assert(schemadiff.CompareWithDialect(desired, read, "mysql").HasChanges(), qt.IsFalse,
+	c.Assert(must.Must(schemadiff.CompareWithDialect(t.Context(), desired, read, "mysql", must.Must(builtin.New()))).HasChanges(), qt.IsFalse,
 		qt.Commentf("an index declaring no method accepts the one the engine chose"))
 }

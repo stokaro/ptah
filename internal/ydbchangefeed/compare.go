@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"ptah.run/core/ast"
+	"ptah.run/dialect/ydb/ydbschema"
 )
 
 // Equal reports whether two descriptions of a changefeed describe the one YDB
@@ -20,18 +21,18 @@ import (
 // starting partition count compares only where both sides name one, since a
 // changefeed that declares none starts with as many partitions as the table
 // has, which no declaration can know.
-func Equal(desired, current ast.ChangefeedSpec) bool {
+func Equal(desired, current ydbschema.ChangefeedSpec) bool {
 	return !Recreated(desired, current) && !TopicChanged(desired, current)
 }
 
 // ListsEqual reports whether two lists hold the same changefeeds by name,
 // each [Equal] to its namesake, in any order.
-func ListsEqual(desired, current []ast.ChangefeedSpec) bool {
+func ListsEqual(desired, current []ydbschema.ChangefeedSpec) bool {
 	if len(desired) != len(current) {
 		return false
 	}
 	for _, want := range desired {
-		index := slices.IndexFunc(current, func(have ast.ChangefeedSpec) bool { return have.Name == want.Name })
+		index := slices.IndexFunc(current, func(have ydbschema.ChangefeedSpec) bool { return have.Name == want.Name })
 		if index < 0 || !Equal(want, current[index]) {
 			return false
 		}
@@ -43,7 +44,7 @@ func ListsEqual(desired, current []ast.ChangefeedSpec) bool {
 // drops it and adds it again: an option of `ADD CHANGEFEED` differs, which YDB
 // changes in no other way, or current is disabled, which no statement
 // reverses.
-func Recreated(desired, current ast.ChangefeedSpec) bool {
+func Recreated(desired, current ydbschema.ChangefeedSpec) bool {
 	switch {
 	case !strings.EqualFold(desired.Mode, current.Mode),
 		!strings.EqualFold(desired.Format, current.Format),
@@ -62,7 +63,7 @@ func Recreated(desired, current ast.ChangefeedSpec) bool {
 
 // TopicChanged reports whether the changefeed's topic holds another retention
 // or other consumers than desired says, which `ALTER TOPIC` changes in place.
-func TopicChanged(desired, current ast.ChangefeedSpec) bool {
+func TopicChanged(desired, current ydbschema.ChangefeedSpec) bool {
 	if retentionSeconds(desired) != retentionSeconds(current) {
 		return true
 	}
@@ -80,7 +81,7 @@ func TopicChanged(desired, current ast.ChangefeedSpec) bool {
 
 // retentionSeconds is a changefeed's retention in seconds, YDB's default where
 // it names none.
-func retentionSeconds(spec ast.ChangefeedSpec) uint64 {
+func retentionSeconds(spec ydbschema.ChangefeedSpec) uint64 {
 	return intervalSeconds(spec.RetentionPeriod, DefaultRetentionSeconds)
 }
 
@@ -142,4 +143,31 @@ func codecSet(codecs []string) []string {
 	}
 	slices.Sort(set)
 	return slices.Compact(set)
+}
+
+// RetentionChanged reports an effective retention change, resolving omitted
+// values through the same target default used by comparison and rendering.
+func RetentionChanged(desired, current ydbschema.ChangefeedSpec) bool {
+	return retentionSeconds(desired) != retentionSeconds(current)
+}
+
+// ConsumerPositionsLost names consumers whose positions a transition discards.
+// A missing consumer is dropped; resetting a populated codec list also drops and
+// recreates it. These are the same decisions the topic statement writer makes.
+func ConsumerPositionsLost(desired, current ydbschema.ChangefeedSpec) []string {
+	var names []string
+	for _, have := range current.Consumers {
+		want, found := consumerNamed(desired.Consumers, have.Name)
+		if !found || consumerRecreated(want, have) {
+			names = append(names, have.Name)
+		}
+	}
+	slices.Sort(names)
+	return names
+}
+
+// consumerRecreated is shared by statement generation and reversal assessment:
+// neither may report preserved consumer state while the other emits a drop.
+func consumerRecreated(desired, current ast.TopicConsumerSpec) bool {
+	return len(desired.SupportedCodecs) == 0 && len(current.SupportedCodecs) > 0
 }

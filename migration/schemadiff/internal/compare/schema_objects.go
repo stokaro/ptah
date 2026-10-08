@@ -11,6 +11,7 @@ import (
 	"ptah.run/config"
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
@@ -18,7 +19,6 @@ import (
 	"ptah.run/internal/chrefresh"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/mysqlroutine"
-	"ptah.run/internal/objectidentity"
 	"ptah.run/internal/oracleroutine"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routineparallel"
@@ -128,7 +128,7 @@ func Functions(desired *schemamodel.Database, current *catalog.Database, diff *d
 func routineIdentityKey(name, dialect string) string {
 	if isMySQLFamily(dialect) || isOracle(dialect) {
 		// The rule itself is mysqlroutine.IdentityKey, not a ToLower written
-		// here, because the declaration validator in core/renderer has to reach
+		// here, because the declaration validator in engine/builtin has to reach
 		// the same answer: a pair this folds together is a pair that target
 		// cannot host, and it must be refused rather than silently reduced to
 		// one by this map.

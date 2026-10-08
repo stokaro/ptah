@@ -4,10 +4,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/config"
 	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -70,7 +73,7 @@ func coverageCases() []coverageCase {
 			},
 			notDescribed: coverage.Set{}.WithKind(coverage.VirtualTable),
 			onDesired:    true,
-			read:         func(diff *difftypes.SchemaDiff) []string { return diff.TablesRemoved },
+			read:         func(diff *difftypes.SchemaDiff) []string { return diff.TablesRemoved.Names() },
 			wantWithout:  []string{"docs"},
 		},
 		{
@@ -125,7 +128,10 @@ func TestCoverageSuppressesOnlyWhatWasNotDescribed(t *testing.T) {
 			desired.NotDescribed = pickDesired(test.onDesired, test.notDescribed)
 			database.NotDescribed = pickCurrent(test.onDesired, test.notDescribed)
 
-			c.Assert(test.read(schemadiff.Compare(desired, database)), qt.HasLen, 0)
+			diff, diagnostics, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), desired, database, &config.CompareOptions{}, must.Must(builtin.New()))
+			c.Assert(err, qt.IsNil)
+			c.Assert(test.read(diff), qt.HasLen, 0)
+			c.Assert(len(diagnostics.Common) > 0, qt.Equals, !test.onDesired)
 		})
 	}
 }
@@ -139,7 +145,7 @@ func TestNoCoverageStillPlansTheChange(t *testing.T) {
 			c := qt.New(t)
 			desired, database := test.desired(), test.database()
 
-			c.Assert(test.read(schemadiff.Compare(desired, database)), qt.DeepEquals, test.wantWithout)
+			c.Assert(test.read(must.Must(schemadiff.Compare(t.Context(), desired, database, must.Must(builtin.New())))), qt.DeepEquals, test.wantWithout)
 		})
 	}
 }
@@ -155,7 +161,7 @@ func TestCoverageOnTheWrongSideSuppressesNothing(t *testing.T) {
 		desired := &schemamodel.Database{Extensions: []schemamodel.Extension{{Name: "pgcrypto"}}}
 		desired.NotDescribed = coverage.Set{}.WithKind(coverage.Extension)
 
-		diff := schemadiff.Compare(desired, &catalog.Database{})
+		diff := must.Must(schemadiff.Compare(t.Context(), desired, &catalog.Database{}, must.Must(builtin.New())))
 
 		c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"pgcrypto"})
 	})
@@ -165,7 +171,7 @@ func TestCoverageOnTheWrongSideSuppressesNothing(t *testing.T) {
 		database := &catalog.Database{Extensions: []catalog.Extension{{Name: "pgcrypto", Schema: "public"}}}
 		database.NotDescribed = coverage.Set{}.WithKind(coverage.Extension)
 
-		diff := schemadiff.Compare(&schemamodel.Database{}, database)
+		diff := must.Must(schemadiff.Compare(t.Context(), &schemamodel.Database{}, database, must.Must(builtin.New())))
 
 		c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, []string{"pgcrypto"})
 	})
@@ -185,7 +191,7 @@ func TestCoverageNamesOneObjectOnly(t *testing.T) {
 		{Name: "postgis", Schema: "public"},
 	}}
 
-	diff := schemadiff.Compare(desired, database)
+	diff := must.Must(schemadiff.Compare(t.Context(), desired, database, must.Must(builtin.New())))
 
 	c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, []string{"postgis"})
 }
@@ -205,12 +211,12 @@ func TestUndescribedPolicyIsNotADroppedPolicy(t *testing.T) {
 		desired := &schemamodel.Database{}
 		desired.NotDescribed = coverage.Set{}.WithKind(coverage.Policy)
 
-		c.Assert(schemadiff.Compare(desired, database()).RLSPoliciesRemoved, qt.HasLen, 0)
+		c.Assert(must.Must(schemadiff.Compare(t.Context(), desired, database(), must.Must(builtin.New()))).RLSPoliciesRemoved, qt.HasLen, 0)
 	})
 
 	t.Run("control: undeclared, the drop is still planned", func(t *testing.T) {
 		c := qt.New(t)
-		diff := schemadiff.Compare(&schemamodel.Database{}, database())
+		diff := must.Must(schemadiff.Compare(t.Context(), &schemamodel.Database{}, database(), must.Must(builtin.New())))
 
 		c.Assert(diff.RLSPoliciesRemoved, qt.DeepEquals, []difftypes.RLSPolicyRef{
 			{PolicyName: "p", TableName: "public.guarded"},

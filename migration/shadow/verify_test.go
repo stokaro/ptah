@@ -7,15 +7,17 @@ import (
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/shadow"
 )
 
 func TestVerifyBaseline_MissingTargetReturnsStructuredError(t *testing.T) {
 	c := qt.New(t)
 
-	err := shadow.VerifyBaseline(t.Context(), shadow.BaselineVerifyOptions{})
+	err := shadow.VerifyBaseline(t.Context(), shadow.BaselineVerifyOptions{Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.ErrorMatches, `baseline shadow check failed: target database connection is required`)
 	var shadowErr *shadow.VerificationError
@@ -35,7 +37,7 @@ func TestVerifyBaselineRejectsMalformedSQLiteToggleBeforeMissingTarget(t *testin
 
 	err := shadow.VerifyBaseline(t.Context(), shadow.BaselineVerifyOptions{
 		Dialect: "sqlite",
-	})
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.ErrorMatches,
 		`baseline shadow check failed: validate SQLite virtual-table drop toggle: invalid boolean value "not-a-boolean" for PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`)
@@ -55,7 +57,7 @@ func TestVerifyBaselineRejectsMalformedSQLiteVirtualDropToggleBeforeReplay(t *te
 	err = shadow.VerifyBaseline(t.Context(), shadow.BaselineVerifyOptions{
 		ShadowDatabaseURL: "sqlite://" + filepath.Join(t.TempDir(), "missing", "shadow.db"),
 		TargetConn:        target,
-	})
+		Runtime:           must.Must(builtin.New())})
 
 	c.Assert(err, qt.ErrorMatches,
 		`baseline shadow check failed: validate SQLite virtual-table drop toggle: invalid boolean value "not-a-boolean" for PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`)
@@ -73,7 +75,7 @@ func TestVerifyBaseline_ConnectFailureReturnsStructuredError(t *testing.T) {
 		ShadowDatabaseURL: "unsupported://shadow",
 		TargetConn:        target,
 		Dialect:           "sqlite",
-	})
+		Runtime:           must.Must(builtin.New())})
 
 	c.Assert(err, qt.ErrorMatches, `baseline shadow check failed: connect to shadow database: .*`)
 	var shadowErr *shadow.VerificationError
@@ -122,7 +124,7 @@ func TestVerifyBaseline_UsesProvidedSnapshotInsteadOfPath(t *testing.T) {
 		MigrationsFS:      authorized,
 		Version:           1,
 		Dialect:           "sqlite",
-	})
+		Runtime:           must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 }
@@ -158,7 +160,7 @@ func TestVerifyBaseline_SchemaMismatchReturnsAllStructuredDifferences(t *testing
 		Version:           1,
 		Dialect:           "sqlite",
 		Capabilities:      target.Info().Capabilities,
-	})
+		Runtime:           must.Must(builtin.New())})
 
 	c.Assert(err, qt.ErrorMatches, `baseline shadow check failed: missing column users\.legacy`)
 	var shadowErr *shadow.VerificationError
@@ -203,7 +205,7 @@ func TestVerifyBaseline_RejectsTargetDatabaseAsShadow(t *testing.T) {
 		MigrationsDir:     migrationsDir,
 		Version:           1,
 		Dialect:           target.Info().Dialect,
-	})
+		Runtime:           must.Must(builtin.New())})
 
 	assertBaselineShadowRealmRejected(c, target, err)
 }
@@ -232,7 +234,7 @@ func TestVerifyBaseline_RejectsEquivalentTargetDatabaseAlias(t *testing.T) {
 		MigrationsDir:     migrationsDir,
 		Version:           1,
 		Dialect:           target.Info().Dialect,
-	})
+		Runtime:           must.Must(builtin.New())})
 
 	assertBaselineShadowRealmRejected(c, target, err)
 }

@@ -1,14 +1,17 @@
 package schemadiff_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -78,11 +81,11 @@ func TestCompare_KeyDeferral_Synced(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(
-				deferralDesired(test.deferrable, test.desiredInitially),
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), deferralDesired(test.deferrable, test.desiredInitially),
 				deferralCurrent(test.deferrable, test.databaseInitially),
-				platform.Postgres,
-			)
+				platform.Postgres, must.Must(builtin.New()),
+			))
 
 			c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
 			c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
@@ -129,13 +132,16 @@ func TestCompare_KeyDeferral_Changed(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(
-				deferralDesired(test.desiredDeferrable, test.desiredInitially),
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), deferralDesired(test.desiredDeferrable, test.desiredInitially),
 				deferralCurrent(test.dbDeferrable, test.dbInitially),
-				platform.Postgres,
-			)
+				platform.Postgres, must.Must(builtin.New()),
+			))
 
-			plan, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.Postgres)
+			plan, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				diff, platform.Postgres,
+			)
 
 			c.Assert(err, qt.IsNil)
 			for _, want := range test.wantPlan {
@@ -159,7 +165,9 @@ func TestCompare_AColumnPrimaryKeyAgainstADeferrableLiveKey(t *testing.T) {
 	current.Tables[0].Columns[1].IsUnique = false
 
 	plan, err := planner.GenerateSchemaDiffSQLStatements(
-		schemadiff.CompareWithDialect(desired, current, platform.Postgres), platform.Postgres)
+		context.Background(), must.Must(builtin.New()),
+		must.Must(schemadiff.CompareWithDialect(t.Context(), desired, current, platform.Postgres, must.Must(builtin.New()))), platform.Postgres,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan, qt.DeepEquals, []string{
@@ -173,7 +181,7 @@ func TestCompare_AColumnPrimaryKeyAgainstADeferrableLiveKey(t *testing.T) {
 func TestCompareSchemas_KeyDeferralPairsWithItself(t *testing.T) {
 	c := qt.New(t)
 
-	diff := schemadiff.CompareSchemas(deferralDesired(true, "deferred"), deferralDesired(true, "deferred"), platform.Postgres)
+	diff := must.Must(schemadiff.CompareSchemas(t.Context(), deferralDesired(true, "deferred"), deferralDesired(true, "deferred"), platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
 	c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)

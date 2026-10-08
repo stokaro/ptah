@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 )
 
@@ -160,14 +162,14 @@ func scopedKinds() []scopedKind {
 	}
 }
 
-// TestScopeToDialect_EveryScopableKindIsProjected walks every object kind that
+// TestScopeToTarget_EveryScopableKindIsProjected walks every object kind that
 // accepts a scope and proves the projection both ways for each one: present on
 // the dialect the declaration names, absent on the dialect it does not.
 //
 // Both directions are asserted per kind on purpose. A projection that dropped
 // everything would pass a test that only checked absence, and one that dropped
 // nothing would pass a test that only checked presence.
-func TestScopeToDialect_EveryScopableKindIsProjected(t *testing.T) {
+func TestScopeToTarget_EveryScopableKindIsProjected(t *testing.T) {
 	for _, kind := range scopedKinds() {
 		t.Run(kind.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -175,14 +177,14 @@ func TestScopeToDialect_EveryScopableKindIsProjected(t *testing.T) {
 			db := &schemamodel.Database{}
 			kind.declare(db, []string{"postgres"})
 
-			c.Assert(kind.count(schemamodel.ScopeToDialect(db, "postgres")), qt.Equals, 1)
-			c.Assert(kind.count(schemamodel.ScopeToDialect(db, "mysql")), qt.Equals, 0)
-			c.Assert(kind.count(schemamodel.ScopeToDialect(db, "postgresql")), qt.Equals, 1)
+			c.Assert(kind.count(must.Must(schemamodel.ScopeToTarget(db, scopeTarget("postgres")))), qt.Equals, 1)
+			c.Assert(kind.count(must.Must(schemamodel.ScopeToTarget(db, scopeTarget("mysql")))), qt.Equals, 0)
+			c.Assert(kind.count(must.Must(schemamodel.ScopeToTarget(db, scopeTarget("postgresql")))), qt.Equals, 1)
 		})
 	}
 }
 
-// TestScopeToDialect_ScopableKindsCoverEveryDeclaredScopeField is the guard
+// TestScopeToTarget_ScopableKindsCoverEveryDeclaredScopeField is the guard
 // against the next kind being added to the type and forgotten in the
 // projection.
 //
@@ -193,7 +195,7 @@ func TestScopeToDialect_EveryScopableKindIsProjected(t *testing.T) {
 // exists to remove, reintroduced one object kind at a time. Reflection is what
 // makes that impossible to do by accident: the table above must name every
 // Database field whose element type declares the promise.
-func TestScopeToDialect_ScopableKindsCoverEveryDeclaredScopeField(t *testing.T) {
+func TestScopeToTarget_ScopableKindsCoverEveryDeclaredScopeField(t *testing.T) {
 	c := qt.New(t)
 
 	covered := make([]string, 0, len(scopedKinds()))
@@ -204,10 +206,10 @@ func TestScopeToDialect_ScopableKindsCoverEveryDeclaredScopeField(t *testing.T) 
 	c.Assert(databaseFieldsDeclaringScope(), qt.DeepEquals, covered)
 }
 
-// TestScopeToDialect_AnUnscopedSchemaIsUnchanged holds the compatibility half:
+// TestScopeToTarget_AnUnscopedSchemaIsUnchanged holds the compatibility half:
 // a schema written before the attribute existed reaches every target exactly as
 // it did, so the projection can only narrow and never widen.
-func TestScopeToDialect_AnUnscopedSchemaIsUnchanged(t *testing.T) {
+func TestScopeToTarget_AnUnscopedSchemaIsUnchanged(t *testing.T) {
 	for _, kind := range scopedKinds() {
 		t.Run(kind.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -216,16 +218,16 @@ func TestScopeToDialect_AnUnscopedSchemaIsUnchanged(t *testing.T) {
 			kind.declare(db, nil)
 
 			for _, dialect := range []string{"postgres", "mysql", "mariadb", "sqlite", "clickhouse", "sqlserver"} {
-				c.Assert(kind.count(schemamodel.ScopeToDialect(db, dialect)), qt.Equals, 1)
+				c.Assert(kind.count(must.Must(schemamodel.ScopeToTarget(db, scopeTarget(dialect)))), qt.Equals, 1)
 			}
 		})
 	}
 }
 
-// TestScopeToDialect_KeepsWhatTheScopeDoesNotName proves the projection is
+// TestScopeToTarget_KeepsWhatTheScopeDoesNotName proves the projection is
 // surgical: a scoped object leaving does not take an unscoped neighbor or the
 // table structure with it.
-func TestScopeToDialect_KeepsWhatTheScopeDoesNotName(t *testing.T) {
+func TestScopeToTarget_KeepsWhatTheScopeDoesNotName(t *testing.T) {
 	c := qt.New(t)
 
 	db := &schemamodel.Database{
@@ -237,7 +239,7 @@ func TestScopeToDialect_KeepsWhatTheScopeDoesNotName(t *testing.T) {
 		},
 	}
 
-	projected := schemamodel.ScopeToDialect(db, "mysql")
+	projected := must.Must(schemamodel.ScopeToTarget(db, scopeTarget("mysql")))
 
 	c.Assert(projected.Tables, qt.HasLen, 1)
 	c.Assert(projected.Fields, qt.HasLen, 1)
@@ -245,12 +247,12 @@ func TestScopeToDialect_KeepsWhatTheScopeDoesNotName(t *testing.T) {
 	c.Assert(projected.Functions[0].Name, qt.Equals, "everywhere")
 }
 
-// TestScopeToDialect_DoesNotMutateTheCallersSchema pins that the projection is
+// TestScopeToTarget_DoesNotMutateTheCallersSchema pins that the projection is
 // a copy. Both seams project the same desired state -- the renderer and the
 // comparator -- and `ptah schema render` with no --dialect projects it nine
 // times in a row. A projection that filtered in place would leave the second
 // target rendering what the first one had left of the schema.
-func TestScopeToDialect_DoesNotMutateTheCallersSchema(t *testing.T) {
+func TestScopeToTarget_DoesNotMutateTheCallersSchema(t *testing.T) {
 	c := qt.New(t)
 
 	db := &schemamodel.Database{
@@ -260,15 +262,15 @@ func TestScopeToDialect_DoesNotMutateTheCallersSchema(t *testing.T) {
 		}},
 	}
 
-	c.Assert(schemamodel.ScopeToDialect(db, "mysql").Functions, qt.HasLen, 0)
+	c.Assert(must.Must(schemamodel.ScopeToTarget(db, scopeTarget("mysql"))).Functions, qt.HasLen, 0)
 	c.Assert(db.Functions, qt.HasLen, 1)
-	c.Assert(schemamodel.ScopeToDialect(db, "postgres").Functions, qt.HasLen, 1)
+	c.Assert(must.Must(schemamodel.ScopeToTarget(db, scopeTarget("postgres"))).Functions, qt.HasLen, 1)
 }
 
-// TestOmissionsForDialect_NamesWhatLeftAndWhyItLeft covers the report the
+// TestOmissionsForTarget_NamesWhatLeftAndWhyItLeft covers the report the
 // commands print. An absent object is indistinguishable from one that was never
 // declared, so the projection alone cannot tell an operator anything.
-func TestOmissionsForDialect_NamesWhatLeftAndWhyItLeft(t *testing.T) {
+func TestOmissionsForTarget_NamesWhatLeftAndWhyItLeft(t *testing.T) {
 	db := &schemamodel.Database{
 		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Dialects: []string{"postgres"}}},
 		Functions: []schemamodel.Function{
@@ -303,9 +305,12 @@ func TestOmissionsForDialect_NamesWhatLeftAndWhyItLeft(t *testing.T) {
 			},
 		},
 		{
-			name:    "a target that names no platform hears nothing, because nothing is projected",
-			dialect: "not-a-database",
-			want:    nil,
+			name:    "an explicitly selected custom target excludes other targets",
+			dialect: "custom",
+			want: []schemamodel.ScopedObject{
+				{Kind: "extension", Name: "pgcrypto", Dialects: []string{"postgres"}},
+				{Kind: "function", Name: "pg_only", Dialects: []string{"cockroachdb", "postgres"}},
+			},
 		},
 	}
 
@@ -313,7 +318,7 @@ func TestOmissionsForDialect_NamesWhatLeftAndWhyItLeft(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(schemamodel.OmissionsForDialect(db, test.dialect), qt.DeepEquals, test.want)
+			c.Assert(must.Must(schemamodel.OmissionsForTarget(db, scopeTarget(test.dialect))), qt.DeepEquals, test.want)
 		})
 	}
 }
@@ -358,4 +363,23 @@ func declaresScope(fieldType reflect.Type) bool {
 		false: func() bool { return false },
 	}
 	return probe[sliceOfStruct]()
+}
+
+// scopeTarget supplies explicit target metadata to the model-only tests.
+func scopeTarget(name string) schemaext.TargetSelection {
+	if name == "postgresql" || name == "postgres" {
+		return must.Must(schemaext.NewTargetSelection("postgres", "postgresql"))
+	}
+	return must.Must(schemaext.NewTargetSelection(name))
+}
+
+func TestScopeToTargetRejectsUnresolvedSelection(t *testing.T) {
+	c := qt.New(t)
+	schema := &schemamodel.Database{}
+	projected, err := schemamodel.ScopeToTarget(schema, schemaext.TargetSelection{})
+	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(projected, qt.IsNil)
+	omitted, err := schemamodel.OmissionsForTarget(schema, schemaext.TargetSelection{})
+	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(omitted, qt.IsNil)
 }

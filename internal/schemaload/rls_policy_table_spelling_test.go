@@ -10,8 +10,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/schemaload"
 )
 
@@ -49,7 +49,7 @@ func TestLoad_SQLSchemaFileFoldsTwoSpellingsOfOnePolicysTable(t *testing.T) {
 	c.Assert(database.RLSPolicies[0].Table, qt.Equals, "orders")
 	c.Assert(database.RLSPolicies[0].UsingExpression, qt.Equals, "tenant_id = 1")
 
-	statements, err := renderer.GetOrderedCreateStatements(database, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(database, "postgres")
 	c.Assert(err, qt.IsNil)
 	c.Assert(createPolicyStatements(statements), qt.DeepEquals, []string{
 		"CREATE POLICY \"p\" ON \"orders\" FOR ALL TO PUBLIC\n    USING (tenant_id = 1)\n;",
@@ -90,7 +90,7 @@ func TestLoad_SQLSchemaFileFoldsACaseVariantOfOnePolicysTable(t *testing.T) {
 	c.Assert(database.RLSEnabledTables, qt.HasLen, 1)
 	c.Assert(database.RLSEnabledTables[0].Table, qt.Equals, "orders")
 
-	statements, err := renderer.GetOrderedCreateStatements(database, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(database, "postgres")
 	c.Assert(err, qt.IsNil)
 	c.Assert(createPolicyStatements(statements), qt.DeepEquals, []string{
 		"CREATE POLICY \"p\" ON \"orders\" FOR ALL TO PUBLIC\n    USING (tenant_id = 1)\n;",
@@ -118,7 +118,7 @@ CREATE POLICY p ON orders FOR ALL TO PUBLIC USING (tenant_id = 1);
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.RLSPolicies, qt.HasLen, 1)
 
-	statements, err := renderer.GetOrderedCreateStatements(database, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(database, "postgres")
 	c.Assert(err, qt.IsNil)
 	c.Assert(createPolicyStatements(statements), qt.DeepEquals, []string{
 		"CREATE POLICY \"p\" ON \"orders\" FOR ALL TO PUBLIC\n    USING (tenant_id = 2)\n;",
@@ -151,7 +151,7 @@ CREATE POLICY p ON orders FOR ALL TO PUBLIC USING (tenant_id = 1);
 	c.Assert(database.RLSEnabledTables, qt.HasLen, 1)
 	c.Assert(database.RLSEnabledTables[0].Table, qt.Equals, "orders")
 
-	statements, err := renderer.GetOrderedCreateStatements(database, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(database, "postgres")
 	c.Assert(err, qt.IsNil)
 	c.Assert(createPolicyStatements(statements), qt.DeepEquals, []string{
 		"CREATE POLICY \"p\" ON \"orders\" FOR ALL TO PUBLIC\n    USING (tenant_id = 1)\n;",
@@ -182,7 +182,7 @@ CREATE POLICY p ON ORDERS FOR ALL TO PUBLIC USING (tenant_id = 1);
 	c.Assert(database.RLSEnabledTables, qt.HasLen, 1)
 	c.Assert(database.RLSEnabledTables[0].Table, qt.Equals, "orders")
 
-	statements, err := renderer.GetOrderedCreateStatements(database, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(database, "postgres")
 	c.Assert(err, qt.IsNil)
 	c.Assert(createPolicyStatements(statements), qt.DeepEquals, []string{
 		"CREATE POLICY \"p\" ON \"orders\" FOR ALL TO PUBLIC\n    USING (tenant_id = 1)\n;",
@@ -210,7 +210,7 @@ CREATE POLICY p ON orders FOR ALL TO PUBLIC USING (tenant_id = 1);
 	c.Assert(err, qt.IsNil)
 	c.Assert(tableNames(database.Tables), qt.DeepEquals, []string{"orders"})
 
-	statements, err := renderer.GetOrderedCreateStatements(database, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(database, "postgres")
 	c.Assert(err, qt.IsNil)
 	c.Assert(rowLevelSecurityStatements(statements), qt.DeepEquals, []string{
 		`ALTER TABLE "orders" ENABLE ROW LEVEL SECURITY;`,
@@ -249,7 +249,7 @@ CREATE POLICY p ON "ORDERS" FOR ALL TO PUBLIC USING (tenant_id = 1);
 	c.Assert(database.RLSPolicies, qt.HasLen, 1)
 	c.Assert(database.RLSPolicies[0].Table, qt.Equals, "ORDERS")
 
-	statements, err := renderer.GetOrderedCreateStatements(database, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(database, "postgres")
 	c.Assert(err, qt.IsNil)
 	c.Assert(createPolicyStatements(statements), qt.DeepEquals, []string{
 		"CREATE POLICY \"p\" ON \"ORDERS\" FOR ALL TO PUBLIC\n    USING (tenant_id = 1)\n;",
@@ -283,7 +283,7 @@ CREATE POLICY p ON "App".ORDERS FOR ALL TO PUBLIC USING (tenant_id = 1);
 	c.Assert(database.RLSEnabledTables, qt.HasLen, 1)
 	c.Assert(database.RLSEnabledTables[0].Table, qt.Equals, "App.orders")
 
-	statements, err := renderer.GetOrderedCreateStatements(database, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(database, "postgres")
 	c.Assert(err, qt.IsNil)
 	c.Assert(createPolicyStatements(statements), qt.DeepEquals, []string{
 		"CREATE POLICY \"p\" ON \"App\".\"orders\" FOR ALL TO PUBLIC\n    USING (tenant_id = 1)\n;",
@@ -313,7 +313,7 @@ CREATE POLICY p ON "App".ORDERS FOR ALL TO PUBLIC USING (tenant_id = 1);
 //
 // This row stops at the loaded schema and does not assert the render. The
 // PostgreSQL renderer widens identifier bytes to runes when it splits a
-// qualified identifier (`core/renderer/internal/dialects/postgres/postgres.go`,
+// qualified identifier (`engine/builtin/internal/dialects/postgres/postgres.go`,
 // `splitQualifiedIdentifier`), so `Ä` is emitted as two mojibake characters;
 // `sqlite` and `mssql` carry the same line. That is a separate defect, and
 // asserting the render here would write it into a baseline instead of leaving
@@ -368,7 +368,7 @@ CREATE POLICY p ON "ORDERS" FOR ALL TO PUBLIC USING (tenant_id = 2);
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.RLSPolicies, qt.HasLen, 2)
 
-	statements, err := renderer.GetOrderedCreateStatements(database, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(database, "postgres")
 	c.Assert(err, qt.IsNil)
 	c.Assert(createPolicyStatements(statements), qt.DeepEquals, []string{
 		"CREATE POLICY \"p\" ON \"orders\" FOR ALL TO PUBLIC\n    USING (tenant_id = 1)\n;",
@@ -395,7 +395,7 @@ CREATE POLICY p ON zeta_orders  FOR ALL TO PUBLIC USING (tenant_id = 2);
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.RLSPolicies, qt.HasLen, 2)
 
-	statements, err := renderer.GetOrderedCreateStatements(database, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(database, "postgres")
 	c.Assert(err, qt.IsNil)
 	c.Assert(createPolicyStatements(statements), qt.DeepEquals, []string{
 		"CREATE POLICY \"p\" ON \"alpha_orders\" FOR ALL TO PUBLIC\n    USING (tenant_id = 1)\n;",

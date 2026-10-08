@@ -201,10 +201,14 @@ difference, so the report opens with `No schema drift found, but 1 declared
 object could not be decided` rather than claiming there is no drift. It lists
 the object under `Undecided`, and counts the objects as one `undecided` finding
 at `warning` severity. The default threshold fails on it, and
-`--severity destructive` does not, because nothing the read could not see is a
-change that would lose data. The JSON report carries the objects in
-`undecided`, with `drift` false and `failed` set by the threshold, and
-`github-actions` annotates each one. `ptah schema serve` counts and lists them
+`--severity destructive` counts only established destructive changes. A missing
+observation does not establish that a withheld operation is safe.
+
+The JSON report carries common-object limits in `undecided.common` and feature limits in
+`undecided.features`, with `drift` false and `failed` set by the threshold.
+Feature limits retain a structured subject and the provider's reason; they can
+concern a whole namespace. Text summaries count these as comparison limits.
+`github-actions` annotates every limit. `ptah schema serve` counts and lists them
 the same way.
 
 ### An extension the schema does not describe

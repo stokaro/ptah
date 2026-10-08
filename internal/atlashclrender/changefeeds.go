@@ -2,33 +2,27 @@ package atlashclrender
 
 import (
 	"fmt"
-	"strings"
 )
 
-// reportChangefeeds names every table whose YDB changefeeds the document
-// leaves out, because HCL has no block for one. That makes the loss
-// [ptah.run/internal/goannotationexport.ErrLossyCleanup] for `ptah schema
-// export --cleanup-go-annotations`, which would otherwise delete the only
-// place the changefeeds are declared. Reading the document back drops none
-// either: the loader records that HCL cannot express one.
-func (r *renderer) reportChangefeeds() {
-	for _, table := range r.db.Tables {
-		if len(table.Changefeeds) == 0 {
-			continue
-		}
-		names := make([]string, len(table.Changefeeds))
-		for i, changefeed := range table.Changefeeds {
-			names[i] = changefeed.Name
-		}
-		message := fmt.Sprintf("changefeeds %s are not represented in HCL", strings.Join(names, ", "))
-		if len(names) == 1 {
-			message = fmt.Sprintf("changefeed %s is not represented in HCL", names[0])
-		}
+// reportFeatureObjects names every feature value the HCL document leaves out.
+// It reads identities without interpreting payloads, so an unrecognized provider
+// cannot turn export loss into a successful cleanup of the source annotations.
+func (r *renderer) reportFeatureObjects() {
+	for _, ref := range r.db.FeatureObjects.Refs() {
 		r.diagnostics = append(r.diagnostics, Diagnostic{
 			Severity: SeverityWarning,
-			Path:     fmt.Sprintf("table.%s", table.QualifiedName()),
-			Message:  message,
+			Path:     fmt.Sprintf("features[%q][%q][%q][%q][%q][%q]", ref.Kind, ref.Catalog.Source, ref.Schema.Source, ref.Parent.Source, ref.Name.Source, ref.Signature),
+			Message:  fmt.Sprintf("feature object %s of kind %s is not represented in HCL", ref, ref.Kind),
 		})
+	}
+	for _, facets := range r.db.FacetSlots() {
+		for _, kind := range facets.Kinds() {
+			r.diagnostics = append(r.diagnostics, Diagnostic{
+				Severity: SeverityWarning,
+				Path:     "feature." + string(kind),
+				Message:  fmt.Sprintf("feature facet %s is not represented in HCL", kind),
+			})
+		}
 	}
 }
 

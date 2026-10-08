@@ -9,10 +9,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
 )
@@ -93,9 +94,9 @@ func (f sqliteTableIdentityFixture) assertNothingPlanned(c *qt.C) {
 	c.Helper()
 	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), f.conn, nil)
 	c.Assert(err, qt.IsNil)
-	diff := schemadiff.CompareWithDialect(f.load(c), live, "sqlite")
+	diff := must.Must(schemadiff.CompareWithDialect(c.Context(), f.load(c), live, "sqlite", must.Must(builtin.New())))
 	c.Assert(diff.TablesAdded, qt.HasLen, 0)
-	c.Assert(diff.TablesRemoved, qt.HasLen, 0)
+	c.Assert(diff.TablesRemoved.Names(), qt.HasLen, 0)
 	c.Assert(diff.TablesModified, qt.HasLen, 0, qt.Commentf("%+v", diff.TablesModified))
 }
 
@@ -106,7 +107,7 @@ func (f sqliteTableIdentityFixture) assertNothingPlanned(c *qt.C) {
 func TestSQLiteTableIdentity_LiveRenderedFileCreatesEachColumn(t *testing.T) {
 	c := qt.New(t)
 	f := newSQLiteTableIdentityFixture(c)
-	statements, err := renderer.GetOrderedCreateStatements(f.load(c), "sqlite")
+	statements, err := builtin.GetOrderedCreateStatements(f.load(c), "sqlite")
 	c.Assert(err, qt.IsNil)
 
 	f.execute(c, statements)

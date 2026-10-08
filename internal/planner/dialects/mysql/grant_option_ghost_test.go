@@ -1,10 +1,13 @@
 package mysql_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -29,7 +32,10 @@ func TestPlan_MySQLFamilyClearsAnOrphanedGrantOption(t *testing.T) {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			statements, err := planner.GenerateSchemaDiffSQLStatements(grantOptionGhostRemoved(), dialect)
+			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				grantOptionGhostRemoved(), dialect,
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements, qt.DeepEquals, []string{
@@ -50,7 +56,10 @@ func TestPlan_MySQLFamilyRevokesARealPrivilegeNormally(t *testing.T) {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, dialect)
+			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				diff, dialect,
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements, qt.DeepEquals, []string{
@@ -70,7 +79,10 @@ func TestPlan_MySQLFamilyLeavesAPlainUsageRevokeAlone(t *testing.T) {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, dialect)
+			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				diff, dialect,
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements, qt.DeepEquals, []string{
@@ -97,7 +109,10 @@ func TestPlan_MySQLFamilyMergesAGhostWithAKeptPrivilegesOptionOnTheSameObject(t 
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, dialect)
+			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				diff, dialect,
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements, qt.DeepEquals, []string{
@@ -117,7 +132,10 @@ func TestPlan_SQLServerDoesNotTreatUsageAsAGrantOptionGhost(t *testing.T) {
 		{Role: "reader", Privilege: "USAGE", ObjectType: "TABLE", ObjectName: "orders", WithOption: true},
 	}}
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "sqlserver")
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, "sqlserver",
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.DeepEquals, []string{

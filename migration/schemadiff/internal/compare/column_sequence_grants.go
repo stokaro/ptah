@@ -2,10 +2,10 @@ package compare
 
 import (
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/columnsequence"
-	"ptah.run/internal/objectidentity"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 

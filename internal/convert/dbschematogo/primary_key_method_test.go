@@ -4,8 +4,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -26,7 +28,7 @@ func TestConvert_DescribesAPrimaryKeyMethod(t *testing.T) {
 		}},
 	}
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(schema, "mariadb")
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), schema, "mariadb", must.Must(builtin.New())))
 
 	c.Assert(database.Tables[0].PrimaryKey, qt.DeepEquals, []string{"id"})
 	c.Assert(database.Tables[0].PrimaryKeyMethod, qt.Equals, "HASH")

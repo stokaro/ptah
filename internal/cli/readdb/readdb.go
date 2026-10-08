@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/convert/dbschematogo"
@@ -123,13 +124,22 @@ func readDBCommand(cmd *cobra.Command, opts *options) error {
 	hashshard.ReportUndescribed(stderr, schema)
 
 	// Format and display the schema
-	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema, conn.Info().Dialect)
+	runtime, err := builtin.New()
+	if err != nil {
+		return err
+	}
+	dbsch, err := dbschematogo.ConvertDBSchemaToGoSchema(cmd.Context(), schema, conn.Info().Dialect, runtime)
+	if err != nil {
+		return fmt.Errorf("error converting schema: %w", err)
+	}
 	info := conn.Info()
-	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(dbsch, info.Dialect, info.Capabilities)
+	rendered, err := renderer.RenderSchema(cmd.Context(), runtime, renderer.SchemaRequest{
+		Target: info.Dialect, Schema: dbsch, Capabilities: info.Capabilities, Identifiers: info.IdentifierSemantics,
+	})
 	if err != nil {
 		return fmt.Errorf("error rendering schema: %w", err)
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), strings.Join(statements, "\n\n"))
+	fmt.Fprintln(cmd.OutOrStdout(), strings.Join(rendered.Statements, "\n\n"))
 
 	return nil
 }

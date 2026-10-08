@@ -28,7 +28,7 @@ func TestInspectSource_DatabaseURL(t *testing.T) {
 	c := qt.New(t)
 	dbPath := seedInspectSQLiteDB(c)
 
-	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{Runtime: inspectFeatureRuntime(c),
 		URLs:   []string{"sqlite://" + dbPath},
 		Format: "hcl",
 	})
@@ -44,7 +44,7 @@ func TestInspectSource_DatabaseURLStillValidatesDevDialect(t *testing.T) {
 	dbPath := seedInspectSQLiteDB(c)
 	diagnosticCalled := false
 
-	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{Runtime: inspectFeatureRuntime(c),
 		URLs:   []string{"sqlite://" + dbPath},
 		DevURL: "notadriver://x",
 		Format: "hcl",
@@ -69,7 +69,7 @@ func TestInspectSource_LocalSQLFileOnDev(t *testing.T) {
 	devPath := filepath.Join(dir, "dev.db")
 	c.Assert(os.WriteFile(schemaPath, []byte("CREATE TABLE users (\n  id INTEGER PRIMARY KEY,\n  email TEXT NOT NULL\n);\n"), 0o600), qt.IsNil)
 
-	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{Runtime: inspectFeatureRuntime(c),
 		URLs:   []string{"file://" + schemaPath},
 		DevURL: "sqlite://" + devPath,
 		Format: "hcl",
@@ -103,7 +103,7 @@ func TestInspectSource_LocalSQLFileWaitsForDevRealmLock(t *testing.T) {
 
 	blockedCtx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
-	renderedResult, err := atlasschema.InspectSource(blockedCtx, atlasschema.InspectSourceOptions{
+	renderedResult, err := atlasschema.InspectSource(blockedCtx, atlasschema.InspectSourceOptions{Runtime: inspectFeatureRuntime(c),
 		URLs:   []string{"file://" + schemaPath},
 		DevURL: "sqlite://" + devPath,
 		Format: "hcl",
@@ -112,7 +112,7 @@ func TestInspectSource_LocalSQLFileWaitsForDevRealmLock(t *testing.T) {
 	c.Assert(renderedResult.Rendered, qt.Equals, "")
 	c.Assert(lock.Release(), qt.IsNil)
 
-	renderedResult, err = atlasschema.InspectSource(t.Context(), atlasschema.InspectSourceOptions{
+	renderedResult, err = atlasschema.InspectSource(t.Context(), atlasschema.InspectSourceOptions{Runtime: inspectFeatureRuntime(c),
 		URLs:   []string{"file://" + schemaPath},
 		DevURL: "sqlite://" + devPath,
 		Format: "hcl",
@@ -137,7 +137,7 @@ func TestInspectSource_RefusesADevDatabaseThatHoldsAView(t *testing.T) {
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte("CREATE TABLE fresh_table (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 
-	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{Runtime: inspectFeatureRuntime(c),
 		URLs:   []string{"file://" + schemaPath},
 		DevURL: "sqlite://" + devPath,
 		Format: "hcl",
@@ -164,7 +164,7 @@ func TestInspectSource_RefusesADevDatabaseThatHoldsATable(t *testing.T) {
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte("CREATE TABLE fresh_table (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 
-	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{Runtime: inspectFeatureRuntime(c),
 		URLs:   []string{"file://" + schemaPath},
 		DevURL: "sqlite://" + devPath,
 		Format: "hcl",
@@ -191,7 +191,7 @@ func TestInspectSource_MigrationDirOnDev(t *testing.T) {
 	_, err := migratesum.WriteWithFormat(migrationsDir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 
-	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{Runtime: inspectFeatureRuntime(c),
 		URLs:   []string{"file://" + migrationsDir},
 		DevURL: "sqlite://" + devPath,
 		Format: "hcl",
@@ -227,7 +227,7 @@ func TestInspectSource_EnvSchemaSource(t *testing.T) {
 		0o600,
 	), qt.IsNil)
 
-	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{Runtime: inspectFeatureRuntime(c),
 		URLs:   []string{"env://src"},
 		DevURL: "sqlite://" + filepath.Join(dir, "dev.db"),
 		Format: "hcl",
@@ -251,7 +251,7 @@ func TestInspectSource_SplitWriteExportReloads(t *testing.T) {
 	dbPath := seedInspectSQLiteDB(c)
 	outDir := filepath.Join(t.TempDir(), "schema")
 
-	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{Runtime: inspectFeatureRuntime(c),
 		URLs:   []string{"sqlite://" + dbPath},
 		Format: `{{ hcl . | split | write ` + strconv.Quote(outDir) + ` }}`,
 	})
@@ -293,7 +293,7 @@ CREATE TABLE sessions (
 	dbschema.CloseAndWarn(conn)
 	outDir := filepath.Join(dir, "schema-sql")
 
-	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{Runtime: inspectFeatureRuntime(c),
 		URLs:   []string{"sqlite://" + dbPath},
 		Format: `{{ sql . | split | write ` + strconv.Quote(outDir) + ` }}`,
 	})
@@ -325,7 +325,7 @@ func TestInspectSource_WriteRootMayLeaveTheWorkingDirectory(t *testing.T) {
 	c.Assert(os.Mkdir(work, 0o750), qt.IsNil)
 	t.Chdir(work)
 
-	_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+	_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{Runtime: inspectFeatureRuntime(c),
 		URLs:   []string{"sqlite://" + dbPath},
 		Format: `{{ sql . | split | write "../outside-ptah" }}`,
 	})
@@ -341,7 +341,7 @@ func TestInspectSource_FileExportThenDevInspectionRoundTrip(t *testing.T) {
 	dbPath := seedInspectSQLiteDB(c)
 	dir := t.TempDir()
 
-	live, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+	live, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{Runtime: inspectFeatureRuntime(c),
 		URLs:   []string{"sqlite://" + dbPath},
 		Format: "hcl",
 	})
@@ -349,7 +349,7 @@ func TestInspectSource_FileExportThenDevInspectionRoundTrip(t *testing.T) {
 	exported := filepath.Join(dir, "schema.hcl")
 	c.Assert(os.WriteFile(exported, []byte(live.Rendered), 0o600), qt.IsNil)
 
-	reloaded, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+	reloaded, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{Runtime: inspectFeatureRuntime(c),
 		URLs:   []string{"file://" + exported},
 		DevURL: "sqlite://" + filepath.Join(dir, "dev.db"),
 		Format: "hcl",
@@ -365,7 +365,7 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		schemaPath := filepath.Join(c.TempDir(), "schema.sql")
 		c.Assert(os.WriteFile(schemaPath, []byte("CREATE TABLE t (id int);\n"), 0o600), qt.IsNil)
 
-		renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+		renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{Runtime: inspectFeatureRuntime(c),
 			URLs: []string{"file://" + schemaPath},
 		})
 
@@ -387,7 +387,7 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		schemaPath := filepath.Join(c.TempDir(), "schema.sql")
 		c.Assert(os.WriteFile(schemaPath, []byte("CREATE TABLE t (id int);\n"), 0o600), qt.IsNil)
 
-		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{Runtime: inspectFeatureRuntime(c),
 			URLs:   []string{"file://" + schemaPath},
 			DevURL: "docker://sqlite",
 		})
@@ -397,7 +397,7 @@ func TestInspectSource_FailurePath(t *testing.T) {
 
 	t.Run("unsupported source scheme", func(t *testing.T) {
 		c := qt.New(t)
-		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{Runtime: inspectFeatureRuntime(c),
 			URLs: []string{"atlas://remote/app"},
 		})
 
@@ -408,7 +408,7 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		// The unreachable URL proves selector validation runs pre-connect:
 		// reaching the database would produce a connection error instead.
 		c := qt.New(t)
-		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{Runtime: inspectFeatureRuntime(c),
 			URLs:    []string{"postgres://127.0.0.1:1/unreachable"},
 			Exclude: []string{"a[type=table].b[type=column]"},
 		})
@@ -420,7 +420,7 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		// The unreachable URL proves selector validation runs pre-connect:
 		// reaching the database would produce a connection error instead.
 		c := qt.New(t)
-		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{Runtime: inspectFeatureRuntime(c),
 			URLs:    []string{"postgres://127.0.0.1:1/unreachable"},
 			Include: []string{"*[type=column]"},
 		})
@@ -436,7 +436,7 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		// projection like any other selector and the unreachable URL is what
 		// fails here.
 		c := qt.New(t)
-		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{Runtime: inspectFeatureRuntime(c),
 			URLs:    []string{"postgres://127.0.0.1:1/unreachable"},
 			Include: []string{"public.users.email"},
 		})
@@ -446,7 +446,7 @@ func TestInspectSource_FailurePath(t *testing.T) {
 
 	t.Run("invalid format before source resolution", func(t *testing.T) {
 		c := qt.New(t)
-		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{Runtime: inspectFeatureRuntime(c),
 			URLs:   []string{"sqlite://ignored.db"},
 			Format: "{{ if }}",
 		})
@@ -459,7 +459,7 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		dbPath := seedInspectSQLiteDB(c)
 		outDir := filepath.Join(c.TempDir(), "dup")
 
-		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{Runtime: inspectFeatureRuntime(c),
 			URLs:   []string{"sqlite://" + dbPath},
 			Format: `{{ $s := sql . | split }}{{ $s | write ` + strconv.Quote(outDir) + ` }}{{ $s | write ` + strconv.Quote(outDir) + ` }}`,
 		})

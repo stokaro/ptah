@@ -6,13 +6,16 @@ package generator
 // does not expose without a filesystem and database connection.
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -34,7 +37,7 @@ var fkColumnTypeDialects = []struct {
 // (MySQL errno 3780, MariaDB errno 1832), so the
 // migration must drop the key, MODIFY the column, then recreate the key — and
 // the generated down migration must be the exact inverse. This runs the REAL
-// down-path (generateDownMigrationSQL -> reverseSchemaDiffWithSchema over the
+// down-path (generateDownMigrationSQL -> reverseSchemaDiffWithPrior over the
 // introspected pre-change schema), not a hand-rolled reversal.
 func TestGenerateMigration_ForeignKeyColumnTypeChange_UpDownInverse(t *testing.T) {
 	// The target FK keeps the database's CASCADE action, so only the column type
@@ -45,7 +48,9 @@ func TestGenerateMigration_ForeignKeyColumnTypeChange_UpDownInverse(t *testing.T
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			upDiff := schemadiff.CompareWithDialect(gen, dbSchema, tc.name)
+			upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+				gen, dbSchema, tc.name, must.Must(builtin.New()),
+			))
 			c.Assert(upDiff.HasChanges(), qt.IsTrue)
 			// Only the referencing column changes type; the foreign key itself is
 			// not added or removed by the diff.
@@ -54,12 +59,16 @@ func TestGenerateMigration_ForeignKeyColumnTypeChange_UpDownInverse(t *testing.T
 
 			addStmt := "ALTER TABLE posts ADD CONSTRAINT fk_posts_user_slug FOREIGN KEY (user_slug) REFERENCES users(slug)"
 
-			up, err := generateUpMigrationSQL(upDiff, gen, tc.name)
+			up, err := generateUpMigrationSQL(
+				context.Background(), must.Must(builtin.New()),
+				upDiff, gen, tc.name,
+			)
 			c.Assert(err, qt.IsNil)
 			up = legacyRenderedSQL(up)
 			assertOrderedOnce(c, up, tc.drop, "ALTER TABLE posts MODIFY COLUMN user_slug VARCHAR(100) NOT NULL;", addStmt)
 
-			down, err := generateDownMigrationSQL(upDiff, gen, dbSchema, tc.name)
+			down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+				upDiff, gen, dbSchema, tc.name)
 			c.Assert(err, qt.IsNil)
 			down = legacyRenderedSQL(down)
 			assertOrderedOnce(c, down, tc.drop, "ALTER TABLE posts MODIFY COLUMN user_slug varchar(50) NOT NULL;", addStmt)
@@ -83,13 +92,18 @@ func TestGenerateMigration_ForeignKeyColumnTypeChange_CoincidentActionChange(t *
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			upDiff := schemadiff.CompareWithDialect(gen, dbSchema, tc.name)
+			upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+				gen, dbSchema, tc.name, must.Must(builtin.New()),
+			))
 			c.Assert(upDiff.HasChanges(), qt.IsTrue)
 			// The FK definition change is recorded as a same-name add + remove.
 			c.Assert(upDiff.ConstraintsAdded.Names(), qt.Contains, "fk_posts_user_slug")
 			c.Assert(upDiff.ConstraintsRemoved.Names(), qt.Contains, "fk_posts_user_slug")
 
-			up, err := generateUpMigrationSQL(upDiff, gen, tc.name)
+			up, err := generateUpMigrationSQL(
+				context.Background(), must.Must(builtin.New()),
+				upDiff, gen, tc.name,
+			)
 			c.Assert(err, qt.IsNil)
 			up = legacyRenderedSQL(up)
 			// One re-add (owned by the constraint machinery); the drop count is
@@ -99,7 +113,8 @@ func TestGenerateMigration_ForeignKeyColumnTypeChange_CoincidentActionChange(t *
 				"ALTER TABLE posts MODIFY COLUMN user_slug VARCHAR(100);",
 				"ALTER TABLE posts ADD CONSTRAINT fk_posts_user_slug FOREIGN KEY (user_slug) REFERENCES users(slug) ON DELETE SET NULL;")
 
-			down, err := generateDownMigrationSQL(upDiff, gen, dbSchema, tc.name)
+			down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+				upDiff, gen, dbSchema, tc.name)
 			c.Assert(err, qt.IsNil)
 			down = legacyRenderedSQL(down)
 			c.Assert(strings.Count(down, "ADD CONSTRAINT fk_posts_user_slug"), qt.Equals, 1, qt.Commentf("DOWN:\n%s", down))

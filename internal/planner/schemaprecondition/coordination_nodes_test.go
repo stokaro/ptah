@@ -1,13 +1,16 @@
 package schemaprecondition_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/clickhouse"
 	"ptah.run/internal/planner/dialects/mysql"
 	"ptah.run/internal/planner/dialects/postgres"
@@ -51,7 +54,7 @@ func TestRefuseCoordinationNodes_FailurePath(t *testing.T) {
 func TestRefuseCoordinationNodes_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	c.Assert(schemaprecondition.RefuseCoordinationNodes(platform.Postgres, nil), qt.IsNil)
-	c.Assert(schemaprecondition.RefuseCoordinationNodes(platform.Postgres, &difftypes.SchemaDiff{TablesRemoved: []string{"t"}}),
+	c.Assert(schemaprecondition.RefuseCoordinationNodes(platform.Postgres, &difftypes.SchemaDiff{TablesRemoved: difftypes.TableRemovals{{Name: "t"}}}),
 		qt.IsNil)
 }
 
@@ -63,10 +66,34 @@ func TestPlanners_RefuseCoordinationNodes(t *testing.T) {
 		name string
 		plan func(*difftypes.SchemaDiff) error
 	}{
-		{name: "postgres", plan: func(d *difftypes.SchemaDiff) error { _, err := postgres.New().GenerateMigrationAST(d); return err }},
-		{name: "mysql", plan: func(d *difftypes.SchemaDiff) error { _, err := mysql.New().GenerateMigrationAST(d); return err }},
-		{name: "sqlite", plan: func(d *difftypes.SchemaDiff) error { _, err := sqlite.New().GenerateMigrationAST(d); return err }},
-		{name: "clickhouse", plan: func(d *difftypes.SchemaDiff) error { _, err := clickhouse.New().GenerateMigrationAST(d); return err }},
+		{name: "postgres", plan: func(d *difftypes.SchemaDiff) error {
+			_, err := postgres.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				d,
+			)
+			return err
+		}},
+		{name: "mysql", plan: func(d *difftypes.SchemaDiff) error {
+			_, err := mysql.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				d,
+			)
+			return err
+		}},
+		{name: "sqlite", plan: func(d *difftypes.SchemaDiff) error {
+			_, err := sqlite.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				d,
+			)
+			return err
+		}},
+		{name: "clickhouse", plan: func(d *difftypes.SchemaDiff) error {
+			_, err := clickhouse.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				d,
+			)
+			return err
+		}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

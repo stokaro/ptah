@@ -23,11 +23,13 @@
 package schemastats
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"sort"
 	"strings"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 )
 
@@ -49,10 +51,14 @@ type Stats struct {
 
 // Collect counts every object kind in db.
 //
-// A nil database yields zero for every kind rather than an error: "no schema"
-// and "an empty schema" are the same shape to a metrics pipeline, and a scrape
-// that fails is worse than one reporting zeroes it can chart.
-func Collect(db *schemamodel.Database) Stats {
+// A nil database yields zero captured values for common and registered feature
+// metrics. Zero does not assert inspected absence. Reporting requires an explicit
+// runtime; target is optional source context. Unavailable services return an
+// error and no partial stats.
+func Collect(ctx context.Context, db *schemamodel.Database, target string, runtime schemaext.ReportingRuntime) (Stats, error) {
+	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
+		return Stats{}, err
+	}
 	if db == nil {
 		db = &schemamodel.Database{}
 	}
@@ -76,7 +82,11 @@ func Collect(db *schemamodel.Database) Stats {
 		{Name: "roles", Help: "Roles", Value: len(db.Roles)},
 		{Name: "grants", Help: "Privilege grants", Value: len(db.Grants)},
 	}
-	return Stats{Metrics: append(metrics, ydbMetrics(db)...)}
+	metrics, err := appendFeatureMetrics(ctx, db, target, runtime, append(metrics, ydbMetrics(db)...))
+	if err != nil {
+		return Stats{}, err
+	}
+	return Stats{Metrics: metrics}, nil
 }
 
 // metricPrefix namespaces every metric, so a pipeline scraping several tools

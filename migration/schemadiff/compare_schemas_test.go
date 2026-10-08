@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -44,10 +46,10 @@ func usersV2() *schemamodel.Database {
 func TestCompareSchemas_PlansAddedColumnAndIndex(t *testing.T) {
 	c := qt.New(t)
 
-	diff := schemadiff.CompareSchemas(usersV2(), usersV1(), platform.Postgres)
+	diff := must.Must(schemadiff.CompareSchemas(t.Context(), usersV2(), usersV1(), platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.TablesAdded, qt.HasLen, 0)
-	c.Assert(diff.TablesRemoved, qt.HasLen, 0)
+	c.Assert(diff.TablesRemoved.Names(), qt.HasLen, 0)
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	modified := diff.TablesModified[0]
 	c.Assert(modified.TableName, qt.Equals, "users")
@@ -65,7 +67,7 @@ func TestCompareSchemas_PlansAddedColumnAndIndex(t *testing.T) {
 func TestCompareSchemas_IdenticalInputsReportNothing(t *testing.T) {
 	c := qt.New(t)
 
-	diff := schemadiff.CompareSchemas(usersV2(), usersV2(), platform.Postgres)
+	diff := must.Must(schemadiff.CompareSchemas(t.Context(), usersV2(), usersV2(), platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %+v", diff))
 }
@@ -90,7 +92,7 @@ func TestCompareSchemas_YDBSelfCompareReportsNothing(t *testing.T) {
 	)
 	schemamodel.Finalize(db)
 
-	diff := schemadiff.CompareSchemas(db, db, platform.YDB)
+	diff := must.Must(schemadiff.CompareSchemas(t.Context(), db, db, platform.YDB, must.Must(builtin.New())))
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %+v", diff))
 }
@@ -125,10 +127,10 @@ func TestCompareSchemas_MatchesExplicitConversionThenCompare(t *testing.T) {
 	}
 	schemamodel.Finalize(desired)
 
-	got := schemadiff.CompareSchemas(desired, current, platform.Postgres)
-	want := schemadiff.CompareWithDialect(
-		desired, goschematodb.ToDBSchema(current, platform.Postgres), platform.Postgres,
-	)
+	got := must.Must(schemadiff.CompareSchemas(t.Context(), desired, current, platform.Postgres, must.Must(builtin.New())))
+	want := must.Must(schemadiff.CompareWithDialect(
+		t.Context(), desired, must.Must(goschematodb.ToDBSchema(t.Context(), current, platform.Postgres, must.Must(builtin.New()))), platform.Postgres, must.Must(builtin.New()),
+	))
 
 	c.Assert(got.HasChanges(), qt.IsTrue, qt.Commentf("fixture must produce a non-empty diff"))
 	c.Assert(got, qt.DeepEquals, want)
@@ -157,14 +159,14 @@ func TestCompareSchemas_DialectReachesTheConversion(t *testing.T) {
 	}
 	schemamodel.Finalize(db)
 
-	diff := schemadiff.CompareSchemas(db, db, platform.Postgres)
+	diff := must.Must(schemadiff.CompareSchemas(t.Context(), db, db, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %+v", diff))
 
-	dialectless := schemadiff.CompareWithDialect(
-		db, goschematodb.ToDBSchema(db, ""), platform.Postgres,
-	)
-	c.Assert(dialectless.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
+	otherTarget := must.Must(schemadiff.CompareWithDialect(
+		t.Context(), db, must.Must(goschematodb.ToDBSchema(t.Context(), db, platform.ClickHouse, must.Must(builtin.New()))), platform.Postgres, must.Must(builtin.New()),
+	))
+	c.Assert(otherTarget.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_users_email_hash", TableName: "users"},
 	})
-	c.Assert(dialectless.IndexesRemoved, qt.DeepEquals, dialectless.IndexAdditions())
+	c.Assert(otherTarget.IndexesRemoved, qt.DeepEquals, otherTarget.IndexAdditions())
 }

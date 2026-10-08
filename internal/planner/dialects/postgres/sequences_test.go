@@ -1,13 +1,16 @@
 package postgres_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/renderer"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -32,11 +35,14 @@ func TestPlanner_SequencesAdded_OrderedBeforeTablesWithOwnershipAfter(t *testing
 	}
 	// After the schema exists: a creation carries what CREATE TABLE renders
 	// from, derived from the declaration (stokaro/ptah#2315).
-	diff.TablesAdded = difftypes.TableCreationsFor(desired, "orders")
+	diff.TablesAdded = difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "orders")
 
-	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 
 	createIdx := strings.Index(sql, "CREATE SEQUENCE")
@@ -69,9 +75,12 @@ func TestPlanner_SequencesModified_EmitsAlterForChangedOptionsOnly(t *testing.T)
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff)
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 

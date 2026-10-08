@@ -35,6 +35,7 @@ func TestMigrationsLintReadsTheServerVersionFromTheDevDatabaseLive(t *testing.T)
 	dir := writeServerVersionLintDir(c, t)
 
 	report, err := migrationlintreport.Build(c.Context(), migrationlintreport.Options{
+		Runtime: lintFeatureRuntime(c),
 		Dir:     dir,
 		DevURL:  devURL,
 		FailOn:  migrationlintreport.FailOnError,
@@ -56,6 +57,7 @@ func TestMigrationsLintPrefersTheDeclaredServerVersionOverTheDevDatabaseLive(t *
 	dir := writeServerVersionLintDir(c, t)
 
 	report, err := migrationlintreport.Build(c.Context(), migrationlintreport.Options{
+		Runtime:       lintFeatureRuntime(c),
 		Dir:           dir,
 		DevURL:        devURL,
 		ServerVersion: "13",
@@ -127,6 +129,7 @@ func TestMigrationsLintResolvesTheDeclaredVersionAgainstTheConnectedProductLive(
 	dir := writeServerVersionLintDir(c, t)
 
 	report, err := migrationlintreport.Build(c.Context(), migrationlintreport.Options{
+		Runtime:       lintFeatureRuntime(c),
 		Dir:           dir,
 		DevURL:        devURL,
 		ServerVersion: "10.11.6-MariaDB",
@@ -155,6 +158,7 @@ func TestMigrationsLintRefusesADeclaredVersionTheServerDoesNotOwnLive(t *testing
 	dir := writeServerVersionLintDir(c, t)
 
 	_, err := migrationlintreport.Build(c.Context(), migrationlintreport.Options{
+		Runtime:       lintFeatureRuntime(c),
 		Dir:           dir,
 		DevURL:        devURL,
 		ServerVersion: "PostgreSQL 16.3 (Debian)",
@@ -235,6 +239,7 @@ func TestMigrationsLintPartialReportKeepsTheResolvedServerVersionLive(t *testing
 	dir := writeFailingReplayLintDir(c, t)
 
 	report, err := migrationlintreport.Build(c.Context(), migrationlintreport.Options{
+		Runtime:       lintFeatureRuntime(c),
 		Dir:           dir,
 		DevURL:        devURL,
 		ServerVersion: "13",
@@ -283,6 +288,7 @@ func TestMigrationsLintRunsTheConnectedProductsRulesLive(t *testing.T) {
 	dir := writeSystemVersioningLintDir(c, t)
 
 	report, err := migrationlintreport.Build(c.Context(), migrationlintreport.Options{
+		Runtime: lintFeatureRuntime(c),
 		Dir:     dir,
 		DevURL:  devURL,
 		FailOn:  migrationlintreport.FailOnError,
@@ -305,6 +311,7 @@ func TestMigrationsLintKeepsTheDialectTheOperatorNamedLive(t *testing.T) {
 	dir := writeSystemVersioningLintDir(c, t)
 
 	report, err := migrationlintreport.Build(c.Context(), migrationlintreport.Options{
+		Runtime: lintFeatureRuntime(c),
 		Dir:     dir,
 		DevURL:  devURL,
 		Dialect: "mysql",

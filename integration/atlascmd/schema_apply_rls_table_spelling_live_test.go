@@ -14,8 +14,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/atlas"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemaload"
@@ -254,7 +254,7 @@ func executeRenderedSchema(t *testing.T, dbURL, schemaPath string) error {
 	// decides how an unquoted name folds.
 	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{schemaPath}, Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
-	statements, err := renderer.GetOrderedCreateStatements(database, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(database, "postgres")
 	c.Assert(err, qt.IsNil)
 	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
 	c.Assert(err, qt.IsNil)

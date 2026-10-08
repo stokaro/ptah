@@ -3,14 +3,16 @@
 package gonative_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -153,17 +155,20 @@ func TestExcludeConstraints_EndToEnd_PostgreSQL(t *testing.T) {
 			c := qt.New(t)
 
 			// Step 1: Compare schemas to detect differences
-			diff := schemadiff.Compare(tt.desired, tt.database)
+			diff := must.Must(schemadiff.Compare(t.Context(), tt.desired, tt.database, must.Must(builtin.New())))
 
 			// Step 2: Verify that constraints are detected as added
 			c.Assert(diff.ConstraintsAdded, qt.HasLen, len(tt.expectedSQL))
 
 			// Step 3: Generate migration AST using PostgreSQL planner
-			nodes, err := planner.GenerateSchemaDiffAST(diff, "postgres")
+			nodes, err := planner.GenerateSchemaDiffAST(
+				context.Background(), must.Must(builtin.New()),
+				diff, "postgres",
+			)
 			c.Assert(err, qt.IsNil)
 
 			// Step 4: Render AST to SQL
-			sql, err := renderer.RenderSQL("postgres", nodes...)
+			sql, err := builtin.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
 
 			// Step 5: Extract and verify SQL statements
@@ -227,14 +232,17 @@ func TestExcludeConstraints_EndToEnd_MySQL(t *testing.T) {
 	}
 
 	// Step 1: Compare schemas
-	diff := schemadiff.Compare(desired, database)
+	diff := must.Must(schemadiff.Compare(t.Context(), desired, database, must.Must(builtin.New())))
 
 	// Step 2: Generate migration AST using MySQL planner
-	nodes, err := planner.GenerateSchemaDiffAST(diff, "mysql")
+	nodes, err := planner.GenerateSchemaDiffAST(
+		context.Background(), must.Must(builtin.New()),
+		diff, "mysql",
+	)
 	c.Assert(err, qt.IsNil)
 
 	// Step 3: Render AST to SQL
-	sql, err := renderer.RenderSQL("mysql", nodes...)
+	sql, err := builtin.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
 
 	// Step 4: Verify that a warning is generated for EXCLUDE constraints
@@ -271,7 +279,7 @@ func TestExcludeConstraints_SchemaComparison(t *testing.T) {
 		// Empty database - no existing constraints
 	}
 
-	diff := schemadiff.Compare(desired, database)
+	diff := must.Must(schemadiff.Compare(t.Context(), desired, database, must.Must(builtin.New())))
 
 	// Verify that both constraints are detected as additions
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 2)
@@ -292,7 +300,7 @@ func TestExcludeConstraints_EmptySchema(t *testing.T) {
 
 	database := &catalog.Database{}
 
-	diff := schemadiff.Compare(desired, database)
+	diff := must.Must(schemadiff.Compare(t.Context(), desired, database, must.Must(builtin.New())))
 
 	// Verify no changes detected
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
@@ -300,7 +308,10 @@ func TestExcludeConstraints_EmptySchema(t *testing.T) {
 	c.Assert(diff.HasChanges(), qt.IsFalse)
 
 	// Generate migration AST - should be empty
-	nodes, err := planner.GenerateSchemaDiffAST(diff, "postgres")
+	nodes, err := planner.GenerateSchemaDiffAST(
+		context.Background(), must.Must(builtin.New()),
+		diff, "postgres",
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 0)
 }

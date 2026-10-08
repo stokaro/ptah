@@ -39,7 +39,7 @@ func newRegionsConn(t *testing.T, rows [][2]string) *dbschema.DatabaseConnection
 
 // writeRegionsFixture writes a Go source carrying a //ptah:schema:data
 // annotation for the "regions" table and the referenced YAML rows file into
-// root, so goschema.ParseDir + LoadManagedRows resolve the desired rows.
+// root, so goschema.ParseDir + manageddata.LoadRows resolve the desired rows.
 func writeRegionsFixture(t *testing.T, root, yamlRows string) {
 	t.Helper()
 	c := qt.New(t)

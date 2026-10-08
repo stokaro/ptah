@@ -9,10 +9,11 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
@@ -84,7 +85,7 @@ func TestPostgresLiveViewColumnsConverge(t *testing.T) {
 	description, err := atlashcl.Parse(viewColumnsDocument(schemaName), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	for _, statement := range statements {
 		_, execErr := conn.ExecContext(ctx, statement)
@@ -111,7 +112,7 @@ func TestPostgresLiveViewColumnsConverge(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(live.Views, qt.HasLen, 1)
 
-	settled := schemadiff.CompareWithDialect(description, live, platform.Postgres)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(settled.ViewsAdded, qt.HasLen, 0)
 	c.Assert(settled.ViewsModified, qt.HasLen, 0)
 	c.Assert(settled.ViewsRemoved, qt.HasLen, 0)

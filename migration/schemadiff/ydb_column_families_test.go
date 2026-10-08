@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
@@ -11,6 +12,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -86,9 +88,9 @@ func TestCompare_YDBColumnFamilies_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			against := schemadiff.CompareWithDialect(ydbFamilyDeclaration(test.declared...), ydbFamilyCatalog(test.read...), platform.YDB)
+			against := must.Must(schemadiff.CompareWithDialect(t.Context(), ydbFamilyDeclaration(test.declared...), ydbFamilyCatalog(test.read...), platform.YDB, must.Must(builtin.New())))
 			c.Assert(against.TablesModified, qt.HasLen, 0)
-			itself := schemadiff.CompareSchemas(ydbFamilyDeclaration(test.declared...), ydbFamilyDeclaration(test.declared...), platform.YDB)
+			itself := must.Must(schemadiff.CompareSchemas(t.Context(), ydbFamilyDeclaration(test.declared...), ydbFamilyDeclaration(test.declared...), platform.YDB, must.Must(builtin.New())))
 			c.Assert(itself.TablesModified, qt.HasLen, 0)
 		})
 	}
@@ -134,7 +136,7 @@ func TestCompare_YDBColumnFamilies_Change(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(ydbFamilyDeclaration(test.declared...), ydbFamilyCatalog(test.read...), platform.YDB)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), ydbFamilyDeclaration(test.declared...), ydbFamilyCatalog(test.read...), platform.YDB, must.Must(builtin.New())))
 			c.Assert(diff.TablesModified, qt.HasLen, 1)
 			c.Assert(diff.TablesModified[0].YDBColumnFamiliesChange, qt.DeepEquals,
 				&difftypes.YDBColumnFamiliesChange{Desired: test.want, Current: test.read})
@@ -159,7 +161,7 @@ func TestCompare_YDBColumnFamilies_Coverage(t *testing.T) {
 	read.Tables[0].Columns = append(read.Tables[0].Columns, catalog.Column{Name: "gone", DataType: "Utf8",
 		ColumnType: "Utf8", IsNullable: "YES", OrdinalPosition: 4})
 
-	diff := schemadiff.CompareWithDialect(silent, read, platform.YDB)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), silent, read, platform.YDB, must.Must(builtin.New())))
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].YDBColumnFamiliesChange, qt.IsNil)
 	c.Assert(diff.TablesModified[0].Desired.Table.YDBColumnFamilies, qt.DeepEquals,
@@ -170,9 +172,10 @@ func TestCompare_YDBColumnFamilies_Coverage(t *testing.T) {
 		Reason: coverage.Unsupported, Provenance: coverage.Observed})
 	opts := config.DefaultCompareOptions()
 	opts.Dialect = platform.YDB
-	withheld, undecided := schemadiff.CompareReportingUndecidedAdditions(
-		ydbFamilyDeclaration(ast.YDBColumnFamilySpec{Name: "cold"}), unread, opts)
+	withheld, undecided, err := schemadiff.CompareReportingUndecidedAdditions(
+		t.Context(), ydbFamilyDeclaration(ast.YDBColumnFamilySpec{Name: "cold"}), unread, opts, must.Must(builtin.New()))
+	c.Assert(err, qt.IsNil)
 	c.Assert(withheld.HasChanges(), qt.IsFalse)
-	c.Assert(undecided, qt.DeepEquals, []coverage.Object{{Kind: coverage.ColumnFamily, Name: "docs",
+	c.Assert(undecided.Common, qt.DeepEquals, []coverage.Object{{Kind: coverage.ColumnFamily, Name: "docs",
 		Reason: coverage.Unsupported, Provenance: coverage.Observed}})
 }

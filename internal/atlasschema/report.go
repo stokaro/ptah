@@ -5,7 +5,7 @@ import (
 
 	digest "github.com/opencontainers/go-digest"
 
-	"ptah.run/core/coverage"
+	"ptah.run/migration/schemadiff"
 )
 
 // PlanReportContractVersion is the version of the document `ptah schema plan
@@ -20,8 +20,8 @@ import (
 // does not know the version it reads refuses the document rather than reading
 // the fields it recognizes out of a shape that means something else.
 const (
-	PlanReportContractVersion  = 1
-	ApplyReportContractVersion = 1
+	PlanReportContractVersion  = 2
+	ApplyReportContractVersion = 2
 )
 
 // PlanOutcome is how one `schema plan` run ended.
@@ -149,16 +149,17 @@ type PlanReport struct {
 	// the kind out, or the target cannot report it -- so nothing checked
 	// whether the object exists. No statement is planned for it, because a
 	// creation could fail or diverge against an object that is already there.
-	// Each entry is a [coverage.Object]: the kind and the name, and the reason
-	// and provenance the read gave for not describing the kind. The entries are
-	// sorted by kind and then name, and the command explains each one on
-	// standard error.
+	// Common-object limits retain the kind, name, reason, and provenance.
+	// Feature limits retain the model kind, structured subject, and reason,
+	// including limits on a whole namespace. The command explains each limit
+	// on standard error. Version 2 uses this structured report in place of the
+	// version 1 array of common-object limits.
 	//
 	// The field is independent of the outcome. Next to changes it names what
 	// the plan does not cover; next to no-changes it means the database is not
 	// shown to match. A caller that decides "in sync" from the outcome reads
 	// this field too.
-	Undecided []coverage.Object `json:"undecided,omitempty"`
+	Undecided schemadiff.Diagnostics `json:"undecided,omitzero"`
 	// Refusal is present when Outcome is refused.
 	Refusal *Refusal `json:"refusal,omitempty"`
 	// Error is the run's error message, present when Outcome is refused or
@@ -176,14 +177,14 @@ type PlanEvidence struct {
 	Path string
 	// Undecided are the declared objects the comparison withheld, from
 	// [PreparePlanFileReportingUndecided].
-	Undecided []coverage.Object
+	Undecided schemadiff.Diagnostics
 	// Err is the run's error, and nil when it returned cleanly.
 	Err error
 }
 
 // NewPlanReport classifies one plan run from its evidence.
 func NewPlanReport(evidence PlanEvidence) PlanReport {
-	report := PlanReport{ContractVersion: PlanReportContractVersion, Undecided: evidence.Undecided}
+	report := PlanReport{ContractVersion: PlanReportContractVersion, Undecided: evidence.Undecided.Clone()}
 	if evidence.Err != nil {
 		report.Error = evidence.Err.Error()
 		report.Refusal = refusalFor(evidence.Err)
@@ -228,7 +229,7 @@ type ApplyReport struct {
 	// and for a run that read --plan: a plan file records statements, and what
 	// was withheld when it was computed is in the report of the `schema plan`
 	// run that computed it.
-	Undecided []coverage.Object `json:"undecided,omitempty"`
+	Undecided schemadiff.Diagnostics `json:"undecided,omitzero"`
 	// Refusal is present when Outcome is refused.
 	Refusal *Refusal `json:"refusal,omitempty"`
 	// Error is the run's error message, present when Outcome is refused,
@@ -247,7 +248,7 @@ type ApplyEvidence struct {
 	Statements []string
 	// Undecided are the declared objects the comparison withheld, from
 	// [ApplyRuntimePlan.Undecided].
-	Undecided []coverage.Object
+	Undecided schemadiff.Diagnostics
 	// Dispatched reports that the statements were handed to the database. It
 	// is set before execution starts, so a run that died inside it still
 	// reports it.
@@ -272,7 +273,7 @@ func NewApplyReport(evidence ApplyEvidence) ApplyReport {
 		PlanName:        evidence.PlanName,
 		PlanDigest:      evidence.PlanDigest,
 		Statements:      evidence.Statements,
-		Undecided:       evidence.Undecided,
+		Undecided:       evidence.Undecided.Clone(),
 		Outcome:         evidence.Completed,
 	}
 	if evidence.Err == nil {

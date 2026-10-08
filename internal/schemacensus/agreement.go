@@ -1,10 +1,13 @@
 package schemacensus
 
 import (
+	"context"
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine"
 	"ptah.run/internal/capabilityprobe"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -27,34 +30,47 @@ import (
 // product was right and the probe was wrong. Compare through the erroring
 // [schemadiff.CompareWithDatabaseInfo] for the same reason: the pure entry
 // points skip the validation every native command performs.
-func MeasurePlan() []Observation {
-	return measure(planOne)
+func MeasurePlan(ctx context.Context, runtime engine.SchemaRuntime) ([]Observation, error) {
+	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
+		return nil, err
+	}
+	result, err := measure(func(schema schemamodel.Database, cell capabilityprobe.Cell) (string, error) {
+		return planOne(ctx, runtime, schema, cell)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // planOne is the shipping plan path for one cell: compare against nothing, plan,
 // render.
-func planOne(schema schemamodel.Database, cell capabilityprobe.Cell) string {
+func planOne(ctx context.Context, runtime engine.SchemaRuntime, schema schemamodel.Database, cell capabilityprobe.Cell) (string, error) {
 	finalized := deepCopyDatabase(schema)
 	schemamodel.Finalize(&finalized)
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(
-		&finalized,
+		ctx, &finalized,
 		&catalog.Database{},
 		catalog.ServerInfo{Dialect: cell.Dialect, Capabilities: cell.Preset()},
-		nil,
+		nil, runtime,
 	)
 	if err != nil {
-		return "refused: " + err.Error()
+		return measuredRefusal(err)
 	}
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		ctx, runtime,
 		diff,
 		cell.Dialect,
 		planner.Options{Capabilities: cell.Preset()},
 	)
 	if err != nil {
-		return "refused: " + err.Error()
+		return measuredRefusal(err)
 	}
-	return strings.Join(statements, "\n")
+	return strings.Join(statements, "\n"), nil
 }
 
 // SurfaceDifference is one field the two surfaces do not agree about, and the

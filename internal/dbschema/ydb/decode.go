@@ -61,11 +61,9 @@ func (r *Reader) table(
 		column.Comment = comments.Columns[meta.GetName()]
 		table.Columns = append(table.Columns, column)
 	}
-	changefeeds, unread, err := r.changefeeds(ctx, source, schema, name, described)
-	if err != nil {
+	if err := r.observeChangefeeds(ctx, source, schema, name, described, db); err != nil {
 		return fmt.Errorf("%s: %w", subject, err)
 	}
-	table.Changefeeds = changefeeds
 	if columnTable == nil || columnTable.Spec.TTL == nil {
 		policy, err := rowDeletionPolicy(described.GetTtlSettings())
 		if err != nil {
@@ -91,7 +89,6 @@ func (r *Reader) table(
 		table.YDBPartitioning = ydbpartition.TableSpec(settings)
 	}
 	db.Tables = append(db.Tables, table)
-	db.NotDescribed = db.NotDescribed.With(unread...)
 
 	if len(key) > 0 {
 		// YDB names no key, so the constraint carries the name a renderer

@@ -1,14 +1,17 @@
 package planner_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -125,9 +128,12 @@ func TestGenerateSchemaDiffSQL_ARewrittenObjectEndsWithTheDeclaredComment(t *tes
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(rewrittenObjects(test.declared), rewrittenInDatabase(test.current), platform.Postgres)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), rewrittenObjects(test.declared), rewrittenInDatabase(test.current), platform.Postgres, must.Must(builtin.New())))
 
-			sql, err := planner.GenerateSchemaDiffSQL(diff, platform.Postgres)
+			sql, err := planner.GenerateSchemaDiffSQL(
+				context.Background(), must.Must(builtin.New()),
+				diff, platform.Postgres,
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(commentLines(sql), qt.DeepEquals, test.want, qt.Commentf("plan:\n%s", sql))
@@ -152,9 +158,12 @@ func TestGenerateSchemaDiffSQL_ARecreatedObjectsCommentFollowsItsCreate(t *testi
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(rewrittenObjects("new"), rewrittenInDatabase("old"), platform.Postgres)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), rewrittenObjects("new"), rewrittenInDatabase("old"), platform.Postgres, must.Must(builtin.New())))
 
-			sql, err := planner.GenerateSchemaDiffSQL(diff, platform.Postgres)
+			sql, err := planner.GenerateSchemaDiffSQL(
+				context.Background(), must.Must(builtin.New()),
+				diff, platform.Postgres,
+			)
 
 			c.Assert(err, qt.IsNil)
 			create := strings.Index(sql, test.create)
@@ -170,9 +179,12 @@ func TestGenerateSchemaDiffSQL_ARecreatedObjectsCommentFollowsItsCreate(t *testi
 func TestGenerateSchemaDiffSQL_ACreatedObjectIsWrittenWithItsComment(t *testing.T) {
 	c := qt.New(t)
 	database := &catalog.Database{Tables: rewrittenInDatabase("").Tables}
-	diff := schemadiff.CompareWithDialect(rewrittenObjects("note"), database, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), rewrittenObjects("note"), database, platform.Postgres, must.Must(builtin.New())))
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.Postgres)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Postgres,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(commentLines(sql), qt.DeepEquals, []string{

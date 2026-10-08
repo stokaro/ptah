@@ -19,6 +19,13 @@ func (s *scopeSelection) projectGenerated(db *schemamodel.Database) *schemamodel
 		return s.selected(typeList("table"), table.Schema, table.Name)
 	})
 	keptByStruct := generatedTableByStruct(out.Tables)
+	keptTables := make(map[tableIdentity]struct{}, len(out.Tables))
+	for _, table := range out.Tables {
+		keptTables[s.tableIdentity(table.Schema, table.Name)] = struct{}{}
+	}
+	out.FeatureObjects, out.FeatureCoverage = selectTableFeatures(db.FeatureObjects, db.FeatureCoverage, func(schema, table string) bool {
+		return s.tableKept(keptTables, schema, table)
+	})
 
 	out.Fields = keep(db.Fields, func(field schemamodel.Field) bool {
 		_, ok := keptByStruct[field.StructName]

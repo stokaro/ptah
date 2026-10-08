@@ -1,13 +1,16 @@
 package ydb_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -31,7 +34,7 @@ func TestGenerateMigrationAST_Views_HappyPath(t *testing.T) {
 			Table:  schemamodel.Table{StructName: "T", Name: "tags", Schema: "app"},
 			Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "BIGINT", Primary: true}},
 		}},
-		TablesRemoved: []string{"legacy"},
+		TablesRemoved: difftypes.TableRemovals{{Name: "legacy", Current: observedFeeds(t, "", "legacy")}},
 		ViewsAdded: difftypes.ViewChanges{
 			// Declared before the view it reads, so only the order the plan
 			// computes puts it after.
@@ -87,7 +90,10 @@ func TestGenerateMigrationAST_ReplacesAViewInPlaceWhereTheTargetCan(t *testing.T
 	}
 
 	nodes, err := ydb.NewWithCapabilities(capability.YDB262().With(capability.CreateOrReplaceView, true)).
-		GenerateMigrationAST(diff)
+		GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			diff,
+		)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.DeepEquals, []ast.Node{ast.NewCreateView("active").SetBody("SELECT 2 AS a").SetReplace()})

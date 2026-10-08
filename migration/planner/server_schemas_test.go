@@ -1,13 +1,16 @@
 package planner_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -63,7 +66,10 @@ func TestGenerateSchemaDiffSQLStatements_PlansTheDatabasesOfAWholeServer_HappyPa
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.dialect)
+			got, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				test.diff, test.dialect,
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.DeepEquals, test.want)
@@ -81,7 +87,10 @@ func TestGenerateSchemaDiffSQLStatements_PlansTheDatabasesOfAWholeServer_Failure
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, err := planner.GenerateSchemaDiffSQLStatements(serverSchemaChanges(), dialect)
+			got, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				serverSchemaChanges(), dialect,
+			)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, `.*the diff creates, drops or changes a database, which only a MySQL or MariaDB plan of a whole server does.*`)

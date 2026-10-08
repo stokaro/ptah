@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -65,10 +67,11 @@ func TestAGuardedNonExtensionCreationSurvivesAReadThatDidNotLook(t *testing.T) {
 				coverage.Extension, coverage.Policy, coverage.Sequence,
 			)
 
-			diff, undecided := schemadiff.CompareReportingUndecidedAdditions(test.desired(), database, nil)
+			diff, undecided, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), test.desired(), database, nil, must.Must(builtin.New()))
+			c.Assert(err, qt.IsNil)
 
 			c.Assert(test.read(diff), qt.DeepEquals, test.wantPlanned)
-			c.Assert(undecided, qt.HasLen, 0)
+			c.Assert(undecided.Common, qt.HasLen, 0)
 		})
 	}
 }
@@ -85,10 +88,11 @@ func TestUnknownCurrentExtensionIsWithheldRegardlessOfCreationGuard(t *testing.T
 			current := &catalog.Database{}
 			current.NotDescribed = coverage.Set{}.WithKind(coverage.Extension)
 
-			diff, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, current, nil)
+			diff, undecided, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), desired, current, nil, must.Must(builtin.New()))
+			c.Assert(err, qt.IsNil)
 
 			c.Assert(diff.ExtensionsAdded.Names(), qt.HasLen, 0)
-			c.Assert(undecided, qt.DeepEquals, []coverage.Object{{
+			c.Assert(undecided.Common, qt.DeepEquals, []coverage.Object{{
 				Kind: coverage.Extension,
 				Name: "citext",
 			}})
@@ -113,14 +117,15 @@ func TestAPolicyAdditionSurvivesAReadThatDidNotLook(t *testing.T) {
 	database := &catalog.Database{Tables: []catalog.Table{{Name: "guarded"}}}
 	database.NotDescribed = coverage.Set{}.WithKind(coverage.Policy)
 
-	diff, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, database, nil)
+	diff, undecided, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), desired, database, nil, must.Must(builtin.New()))
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(diff.RLSPoliciesAdded, qt.HasLen, 1)
 	c.Assert(diff.RLSPoliciesAdded[0].PolicyName, qt.Equals, "p")
 	c.Assert(diff.RLSPoliciesAdded[0].TableName, qt.Equals, "guarded")
 	c.Assert(diff.RLSPoliciesAdded[0].Desired.Name, qt.Equals, "p",
 		qt.Commentf("an addition carries the declaration it renders from (stokaro/ptah#2315)"))
-	c.Assert(undecided, qt.HasLen, 0)
+	c.Assert(undecided.Common, qt.HasLen, 0)
 }
 
 // TestAnUnguardedCreationIsWithheldAndNamed is the other half. Withholding one
@@ -181,10 +186,11 @@ func TestAnUnguardedCreationIsWithheldAndNamed(t *testing.T) {
 			database := &catalog.Database{}
 			database.NotDescribed = test.notDescribed
 
-			diff, undecided := schemadiff.CompareReportingUndecidedAdditions(test.desired(), database, nil)
+			diff, undecided, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), test.desired(), database, nil, must.Must(builtin.New()))
+			c.Assert(err, qt.IsNil)
 
 			c.Assert(test.read(diff), qt.HasLen, 0)
-			c.Assert(undecided, qt.DeepEquals, test.wantWithheld)
+			c.Assert(undecided.Common, qt.DeepEquals, test.wantWithheld)
 		})
 	}
 }
@@ -239,10 +245,11 @@ func TestAnUndeclaredReadPlansEveryAdditionAndWithholdsNothing(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff, undecided := schemadiff.CompareReportingUndecidedAdditions(test.desired(), &catalog.Database{}, nil)
+			diff, undecided, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), test.desired(), &catalog.Database{}, nil, must.Must(builtin.New()))
+			c.Assert(err, qt.IsNil)
 
 			c.Assert(test.read(diff), qt.DeepEquals, test.wantPlanned)
-			c.Assert(undecided, qt.HasLen, 0)
+			c.Assert(undecided.Common, qt.HasLen, 0)
 		})
 	}
 }
@@ -261,9 +268,10 @@ func TestWithheldAdditionsAreNotChanges(t *testing.T) {
 	database := &catalog.Database{}
 	database.NotDescribed = coverage.Set{}.WithKind(coverage.Sequence)
 
-	diff, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, database, nil)
+	diff, undecided, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), desired, database, nil, must.Must(builtin.New()))
+	c.Assert(err, qt.IsNil)
 
-	c.Assert(undecided, qt.HasLen, 1)
+	c.Assert(undecided.Common, qt.HasLen, 1)
 	c.Assert(diff.HasChanges(), qt.IsFalse)
 }
 
@@ -284,9 +292,10 @@ func TestWithheldAdditionsAreOrdered(t *testing.T) {
 	database := &catalog.Database{}
 	database.NotDescribed = coverage.Set{}.WithKind(coverage.Extension, coverage.Sequence)
 
-	_, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, database, nil)
+	_, undecided, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), desired, database, nil, must.Must(builtin.New()))
+	c.Assert(err, qt.IsNil)
 
-	c.Assert(undecided, qt.DeepEquals, []coverage.Object{
+	c.Assert(undecided.Common, qt.DeepEquals, []coverage.Object{
 		{Kind: coverage.Extension, Name: "btree_gist"},
 		{Kind: coverage.Extension, Name: "citext"},
 		{Kind: coverage.Sequence, Name: "public.a_seq"},
@@ -305,8 +314,9 @@ func TestAGuardIsNotAnExcuseToIgnoreARemovalRecord(t *testing.T) {
 	desired.NotDescribed = coverage.Set{}.WithKind(coverage.Extension)
 	database := &catalog.Database{Extensions: []catalog.Extension{{Name: "pgcrypto", Schema: "public"}}}
 
-	diff, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, database, nil)
+	diff, undecided, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), desired, database, nil, must.Must(builtin.New()))
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, 0)
-	c.Assert(undecided, qt.HasLen, 0)
+	c.Assert(undecided.Common, qt.HasLen, 0)
 }

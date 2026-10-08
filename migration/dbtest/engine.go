@@ -15,8 +15,10 @@ import (
 	"strings"
 	"time"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine"
 	"ptah.run/internal/htmlstyle"
 	"ptah.run/migration/internal/scratchdb"
 	"ptah.run/migration/internal/shadowdb"
@@ -27,6 +29,8 @@ import (
 
 // Options configures a single [RunMigrationTest] invocation.
 type Options struct {
+	// Runtime selects required feature conversion and comparison services.
+	Runtime engine.SchemaRuntime
 	// Cases are the test cases to run, in order.
 	Cases []Case
 	// MigrationsDir names the directory holding the migration files. Name it
@@ -446,6 +450,9 @@ var reportHTMLTemplate = template.Must(template.New("dbtest-report").Parse(`<bod
 // failures are captured in the report, not returned as an error, so callers
 // should inspect [Report.Failed].
 func RunMigrationTest(ctx context.Context, opts Options) (*Report, error) {
+	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
+		return nil, err
+	}
 	if err := validateCasesForRun(opts.Cases, opts.SeedDir); err != nil {
 		return nil, fmt.Errorf("invalid test cases: %w", err)
 	}
@@ -470,6 +477,7 @@ func RunMigrationTest(ctx context.Context, opts Options) (*Report, error) {
 
 	run := func(ctx context.Context, conn *dbschema.DatabaseConnection, c Case) (CaseResult, error) {
 		r := &runner{
+			runtime:         opts.Runtime,
 			conn:            conn,
 			migrationsDir:   opts.MigrationsDir,
 			migrationsFS:    opts.MigrationsFS,
@@ -654,6 +662,7 @@ func runEphemeralCase(
 
 // runner executes steps against a single shared database connection.
 type runner struct {
+	runtime       engine.SchemaRuntime
 	conn          *dbschema.DatabaseConnection
 	migrationsDir string
 	migrationsFS  fs.FS
@@ -797,7 +806,7 @@ func (r *runner) runApplySchema(ctx context.Context) (passed bool, detail string
 	if r.desiredSchema == nil {
 		return false, "apply_schema requires a desired schema root directory"
 	}
-	applied, err := applyDesiredSchema(ctx, r.conn, r.desiredSchema)
+	applied, err := applyDesiredSchema(ctx, r.conn, r.desiredSchema, r.runtime)
 	if err != nil {
 		return false, fmt.Sprintf("apply_schema failed: %v", err)
 	}
@@ -1285,7 +1294,7 @@ func (r *runner) runEstablishSchema(
 	// Applied through the same convergence path apply_schema uses, so a plan
 	// case starts from a state built exactly the way every other test builds
 	// one.
-	if _, err := applyDesiredSchema(ctx, r.conn, desired); err != nil {
+	if _, err := applyDesiredSchema(ctx, r.conn, desired, r.runtime); err != nil {
 		return false, fmt.Sprintf("schema %s failed: %v", step.URL, err)
 	}
 	return true, ""

@@ -1,14 +1,17 @@
 package ydb_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -81,7 +84,10 @@ func TestGenerateMigrationAST_VectorIndex_FailurePath(t *testing.T) {
 				IndexesAdded: difftypes.IndexChanges{{TableName: "items", Index: plannedVector("by_emb", "emb", 2)}},
 			}
 
-			nodes, err := ydb.NewWithCapabilities(capability.YDB262()).GenerateMigrationAST(diff)
+			nodes, err := ydb.NewWithCapabilities(capability.YDB262()).GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				diff,
+			)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)

@@ -16,6 +16,8 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
 	"ptah.run/dbschema"
+	"ptah.run/engine"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/cli/cliobs"
 	"ptah.run/internal/cli/internal/cmdutil"
@@ -60,6 +62,7 @@ const (
 )
 
 type options struct {
+	featureRuntime       engine.SchemaRuntime
 	dbURL                string
 	migrationsDir        string
 	target               string
@@ -278,6 +281,10 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 	projectCfg, err := dbcli.LoadProjectConfig(cmd, opts.configPath)
+	if err != nil {
+		return err
+	}
+	opts.featureRuntime, err = builtin.New()
 	if err != nil {
 		return err
 	}
@@ -857,6 +864,7 @@ func downOnlineDDLInterceptor(
 
 // dynamicRollback carries what a --plan rollback needs.
 type dynamicRollback struct {
+	runtime        engine.SchemaRuntime
 	conn           *dbschema.DatabaseConnection
 	devURL         string
 	migrationsFS   fs.FS
@@ -891,6 +899,7 @@ func runDynamicRollback(cmd *cobra.Command, r rollbackExecution, emit cliobs.Emi
 	defer releaseDev()
 
 	statements, err := shadow.PlanDynamicRollback(cmd.Context(), shadow.DynamicRollbackOptions{
+		Runtime:          r.runtime,
 		TargetConnection: r.conn,
 		DevDatabaseURL:   devURL,
 		FS:               r.migrationsFS,
@@ -990,6 +999,7 @@ func buildRollbackExecution(
 		migrator:      mig,
 		preflightHook: hook,
 		dynamicRollback: dynamicRollback{
+			runtime:        resolved.featureRuntime,
 			conn:           conn,
 			devURL:         resolved.shadowDB,
 			migrationsFS:   in.migrationsFS,

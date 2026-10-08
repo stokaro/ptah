@@ -3,12 +3,15 @@
 package ydb_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -118,9 +121,10 @@ func TestYDBUniqueConstraint_AddedToATableThatExists_FailurePath(t *testing.T) {
 			apply(c, conn, planAgainst(c, conn, before, uniqueSchemas))
 
 			info := conn.Info()
-			diff, err := schemadiff.CompareWithDatabaseInfo(uniqueDeclaration(), readScoped(c, conn, uniqueSchemas), info, nil)
+			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), uniqueDeclaration(), readScoped(c, conn, uniqueSchemas), info, nil, must.Must(builtin.New()))
 			c.Assert(err, qt.IsNil)
 			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+				context.Background(), must.Must(builtin.New()),
 				diff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
 			)
 

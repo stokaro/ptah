@@ -1,11 +1,14 @@
 package mysql_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mysql"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -45,7 +48,10 @@ func TestPlanner_NonASCIIIndexNamesThatMayCollide_AreRefused(t *testing.T) {
 				},
 			}
 
-			nodes, err := mysql.New().GenerateMigrationAST(diff)
+			nodes, err := mysql.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				diff,
+			)
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(nodes, qt.IsNil)
@@ -65,7 +71,10 @@ func TestPlanner_TwoASCIIIndexNames_StillPlan(t *testing.T) {
 		},
 	}
 
-	nodes, err := mysql.New().GenerateMigrationAST(diff)
+	nodes, err := mysql.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(len(nodes) > 0, qt.IsTrue)

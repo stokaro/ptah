@@ -9,8 +9,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/platform/capability"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/importer"
 	"ptah.run/migration/migrator"
@@ -101,9 +104,9 @@ func TestLiquibaseTypedImport_AppliesReadsBackAndRollsBack(t *testing.T) {
 			out := c.TempDir()
 			parser, err := importer.ParserByName("liquibase")
 			c.Assert(err, qt.IsNil)
-			parser, err = importer.WithDialect(parser, test.dialect)
+			parser, err = importer.WithRendering(parser, test.dialect, capability.ForDialect(test.dialect), must.Must(builtin.New()))
 			c.Assert(err, qt.IsNil)
-			result, err := importer.Import(os.DirFS(source), parser, out, importer.Options{})
+			result, err := importer.Import(c.Context(), os.DirFS(source), parser, out, importer.Options{})
 			c.Assert(err, qt.IsNil)
 			c.Assert(result.Files, qt.HasLen, 6)
 

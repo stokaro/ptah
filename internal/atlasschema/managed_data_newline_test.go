@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/migration/safety"
 )
@@ -24,7 +26,7 @@ func TestPreparePlanFile_ANewlineInADeclaredValueIsOneStatement(t *testing.T) {
 
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
 		Desired: regionsSchema(regionRow("NL", "first line\nsecond line", 1)),
-	})
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.Statements, qt.HasLen, 2)
@@ -45,7 +47,7 @@ func TestPreparePlanFile_ANewlineInAnUpdatedValueIsOneWarning(t *testing.T) {
 	applyPlan(c, conn, regionsSchema(regionRow("NO", "Norway", 1)))
 
 	desired := regionsSchema(regionRow("NO", "Nor\nway", 1))
-	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{Desired: desired})
+	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.Statements, qt.HasLen, 1)
@@ -75,7 +77,7 @@ func TestPreparePlanFile_ANewlineInADeletedKeyIsDestructive(t *testing.T) {
 
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
 		Desired: regionsSchema(),
-	})
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.Statements, qt.HasLen, 1)

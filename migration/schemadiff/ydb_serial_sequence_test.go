@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -58,7 +60,7 @@ func TestCompare_YDBSerialSequenceAgrees_HappyPath(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(test.desired, test.database, platform.YDB)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), test.desired, test.database, platform.YDB, must.Must(builtin.New())))
 			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %+v", diff))
 			c.Assert(diff.CurrentDatabasePath, qt.Equals, "/local")
 		})
@@ -98,7 +100,7 @@ func TestCompare_YDBSerialSequenceChanges(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(test.desired, test.database, platform.YDB)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), test.desired, test.database, platform.YDB, must.Must(builtin.New())))
 			c.Assert(diff.TablesModified, qt.HasLen, 1)
 			c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
 			column := diff.TablesModified[0].ColumnsModified[0]
@@ -132,7 +134,7 @@ func TestCompare_SerialSequenceIsComparedOnlyWhereThePlannerChangesIt(t *testing
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(test.desired, test.database, test.dialect)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), test.desired, test.database, test.dialect, must.Must(builtin.New())))
 			for _, table := range diff.TablesModified {
 				for _, column := range table.ColumnsModified {
 					c.Assert(column.Changes["identity_start"], qt.Equals, "")
@@ -151,7 +153,7 @@ func TestCompareSchemas_YDBSerialSequenceSelfCompareReportsNothing(t *testing.T)
 	c := qt.New(t)
 	db := ordersDeclaring("BIGSERIAL", "100", "5")
 
-	diff := schemadiff.CompareSchemas(db, db, platform.YDB)
+	diff := must.Must(schemadiff.CompareSchemas(t.Context(), db, db, platform.YDB, must.Must(builtin.New())))
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %+v", diff))
 	c.Assert(diff.TablesModified, qt.DeepEquals, []difftypes.TableDiff(nil))

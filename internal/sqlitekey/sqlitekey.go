@@ -174,7 +174,7 @@ func isRowidAlias(keyColumns []string, field schemamodel.Field) bool {
 // measured, `CREATE TABLE t (id INT PRIMARY KEY, a TEXT) STRICT` reports
 // notnull=1 where the same table spelled INTEGER reports 0.
 //
-// The list mirrors mapColumnType in core/renderer/internal/dialects/sqlite.
+// The list mirrors mapColumnType in engine/builtin/internal/dialects/sqlite.
 // sqlitekey_internal_test.go pins the correspondence by rendering each type
 // through the public renderer, so a change there reddens here.
 func rendersAsSQLiteInteger(rawType string) bool {

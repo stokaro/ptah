@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/migration/schemadiff/difftypes"
 	"ptah.run/migration/schemadiff/internal/compare"
@@ -78,7 +79,7 @@ func TestIndexes_AddedTableIndexCarriesOwner(t *testing.T) {
 		},
 	}
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableCreationsFor(desired, "users"),
+		TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "users"),
 	}
 
 	compare.Indexes(desired, &catalog.Database{}, diff)

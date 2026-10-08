@@ -12,7 +12,7 @@ import (
 func TestApplyDiffPolicy_SkipDropTableFiltersOnlyDroppedTableRemovals(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		TablesRemoved: []string{"old_users"},
+		TablesRemoved: difftypes.TableRemovals{{Name: "old_users"}},
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "old_users_email_idx", TableName: "old_users"},
 			{Name: "posts_title_idx", TableName: "posts"},
@@ -39,7 +39,7 @@ func TestApplyDiffPolicy_SkipDropTableFiltersOnlyDroppedTableRemovals(t *testing
 
 	got := atlasschema.ApplyDiffPolicy(diff, atlasschema.DiffPolicy{SkipDropTable: true})
 
-	c.Assert(got.TablesRemoved, qt.IsNil)
+	c.Assert(got.TablesRemoved.Names(), qt.IsNil)
 	c.Assert(got.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "posts_title_idx", TableName: "posts"},
 	})
@@ -58,7 +58,7 @@ func TestApplyDiffPolicy_SkipDropTableFiltersOnlyDroppedTableRemovals(t *testing
 		{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "posts"},
 		{Role: "app", Privilege: "USAGE", ObjectType: "SCHEMA", ObjectName: "old_users"},
 	})
-	c.Assert(diff.TablesRemoved, qt.DeepEquals, []string{"old_users"})
+	c.Assert(diff.TablesRemoved.Names(), qt.DeepEquals, []string{"old_users"})
 	c.Assert(diff.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "old_users_email_idx", TableName: "old_users"},
 		{Name: "posts_title_idx", TableName: "posts"},

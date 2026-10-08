@@ -9,9 +9,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/migrator"
 )
@@ -72,6 +74,7 @@ func TestGenerateMigration_PartitionedParentAvoidsConcurrentIndexWithRealPostgre
 	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
 
 	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+		Runtime:       must.Must(builtin.New()),
 		GoEntitiesDir: entitiesDir,
 		DatabaseURL:   targetURL,
 		MigrationName: "add_events_tenant_index",
@@ -156,6 +159,7 @@ func TestGenerateMigration_UnknownRowStatisticsBuildConcurrentlyWithRealPostgres
 	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
 
 	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+		Runtime:       must.Must(builtin.New()),
 		GoEntitiesDir: entitiesDir,
 		DatabaseURL:   targetURL,
 		MigrationName: "add_members_email_index",
@@ -260,6 +264,7 @@ func TestGenerateMigration_EmptyNeverAnalyzedTableStaysTransactionalWithRealPost
 	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
 
 	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+		Runtime:       must.Must(builtin.New()),
 		GoEntitiesDir: entitiesDir,
 		DatabaseURL:   targetURL,
 		MigrationName: "add_members_email_index",

@@ -8,9 +8,11 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/dbtarget"
 )
@@ -89,7 +91,7 @@ func TestDeclaredRowsConvergeOnClickHouseLive(t *testing.T) {
 	)
 	applyClickHouseDeclaredRows(c, ctx, conn, desired)
 
-	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired})
+	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.Statements(), qt.HasLen, 0)
 }
@@ -120,7 +122,7 @@ func applyClickHouseDeclaredRows(
 	desired *schemamodel.Database,
 ) {
 	c.Helper()
-	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired})
+	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	for _, statement := range plan.Statements() {
 		_, err := conn.ExecContext(ctx, statement)

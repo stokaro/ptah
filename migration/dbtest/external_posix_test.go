@@ -34,7 +34,7 @@ import (
 func TestRunTest_AnAuthorizedExternalStepRuns(t *testing.T) {
 	c := qt.New(t)
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		AllowExternalCommands: true,
 		Cases: []dbtest.Case{{
 			Name: "runs a program",
@@ -64,7 +64,7 @@ func TestRunTest_AnExternalStepRunsWithoutAShell(t *testing.T) {
 
 	const hostile = "a; id > /dev/null && echo pwned"
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		AllowExternalCommands: true,
 		Cases: []dbtest.Case{{
 			Name: "no shell",
@@ -96,7 +96,7 @@ func TestRunTest_AnExternalStepRunsWithoutAShell(t *testing.T) {
 func TestRunTest_AnExternalStepObeysItsTimeout(t *testing.T) {
 	c := qt.New(t)
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		AllowExternalCommands: true,
 		ExternalTimeout:       50 * time.Millisecond,
 		Cases: []dbtest.Case{{
@@ -141,7 +141,7 @@ func TestRunTest_ExternalStepFailures_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+			report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 				AllowExternalCommands: true,
 				Cases: []dbtest.Case{{
 					Name:  test.name,
@@ -164,7 +164,7 @@ func TestRunTest_AnExternalStepRunsInItsWorkingDirectory(t *testing.T) {
 	dir := t.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(dir, "marker.txt"), []byte("here"), 0o600), qt.IsNil)
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		AllowExternalCommands: true,
 		Cases: []dbtest.Case{{
 			Name: "working dir",

@@ -13,10 +13,10 @@ import (
 )
 
 // dialectsDirectory holds one package per renderer.
-const dialectsDirectory = "core/renderer/internal/dialects"
+const dialectsDirectory = "engine/builtin/internal/dialects"
 
 // rendererRoot is the package every dialect renderer is linked into.
-const rendererRoot = "./core/renderer"
+const rendererRoot = "./engine/builtin"
 
 // LinkedRenderers lists the dialect renderer packages the renderer links, as
 // the go command resolves its imports, spelled as [Renderer.Package] spells

@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasmigrate"
@@ -32,8 +33,8 @@ import (
 // introspecting a database that has the whole migration directory applied (and
 // converting the result with atlascompat.DBSchemaToGoSchema) or from Go
 // entities / schema files. An empty schema yields empty up and down bodies.
-func generateCheckpoint(schema *schemamodel.Database, dialect string) (upSQL, downSQL string, err error) {
-	return generateCheckpointWithDatabaseInfo(schema, catalog.ServerInfo{
+func generateCheckpoint(ctx context.Context, runtime Runtime, schema *schemamodel.Database, dialect string) (upSQL, downSQL string, err error) {
+	return generateCheckpointWithDatabaseInfo(ctx, runtime, schema, catalog.ServerInfo{
 		Dialect:      dialect,
 		Capabilities: capability.ForDialect(dialect),
 	})
@@ -46,6 +47,8 @@ func generateCheckpoint(schema *schemamodel.Database, dialect string) (upSQL, do
 // resolves the complete candidate identifier set under the live catalog
 // collation — the distinction that matters on SQL Server.
 func generateCheckpointWithDatabaseInfo(
+	ctx context.Context,
+	runtime Runtime,
 	schema *schemamodel.Database,
 	info catalog.ServerInfo,
 ) (upSQL, downSQL string, err error) {
@@ -54,11 +57,11 @@ func generateCheckpointWithDatabaseInfo(
 	}
 
 	empty := &catalog.Database{}
-	diff, err := schemadiff.CompareWithDatabaseInfo(schema, empty, info, nil)
+	diff, err := schemadiff.CompareWithDatabaseInfo(ctx, schema, empty, info, nil, runtime)
 	if err != nil {
 		return "", "", fmt.Errorf("generate checkpoint: %w", err)
 	}
-	return generateCheckpointFromDiff(schema, empty, info, diff, "")
+	return generateCheckpointFromDiff(ctx, runtime, schema, empty, info, diff, "")
 }
 
 // generateCheckpointWithDatabaseQualified renders a checkpoint after resolving
@@ -66,6 +69,7 @@ func generateCheckpointWithDatabaseInfo(
 // schema qualifier the shadow-replay entry point carries (empty for none).
 func generateCheckpointWithDatabaseQualified(
 	ctx context.Context,
+	runtime Runtime,
 	conn *dbschema.DatabaseConnection,
 	schema *schemamodel.Database,
 	qualifier string,
@@ -74,14 +78,16 @@ func generateCheckpointWithDatabaseQualified(
 		return "", "", fmt.Errorf("checkpoint schema is required")
 	}
 	empty := &catalog.Database{}
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, schema, empty, nil)
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, schema, empty, nil, runtime)
 	if err != nil {
 		return "", "", fmt.Errorf("generate checkpoint: %w", err)
 	}
-	return generateCheckpointFromDiff(schema, empty, conn.Info(), diff, qualifier)
+	return generateCheckpointFromDiff(ctx, runtime, schema, empty, conn.Info(), diff, qualifier)
 }
 
 func generateCheckpointFromDiff(
+	ctx context.Context,
+	runtime Runtime,
 	schema *schemamodel.Database,
 	empty *catalog.Database,
 	info catalog.ServerInfo,
@@ -96,7 +102,8 @@ func generateCheckpointFromDiff(
 	if err != nil {
 		return "", "", err
 	}
-	plan, err := PlanBidirectionalSchemaDiff(BidirectionalSchemaPlanOptions{
+	plan, err := PlanBidirectionalSchemaDiff(ctx, BidirectionalSchemaPlanOptions{
+		Runtime:       runtime,
 		Diff:          diff,
 		DesiredSchema: schema,
 		CurrentSchema: empty,
@@ -110,7 +117,7 @@ func generateCheckpointFromDiff(
 	if err != nil {
 		return "", "", fmt.Errorf("generate checkpoint: %w", err)
 	}
-	spec, _, err := buildGeneratedMigrationSpec(generatedMigrationSpecOptions{
+	spec, _, err := buildGeneratedMigrationSpec(ctx, runtime, generatedMigrationSpecOptions{
 		Plan:      plan,
 		Qualifier: qualifier,
 	})
@@ -295,6 +302,8 @@ func AtlasCheckpointArtifact(version int64, description, upSQL string) (name, co
 
 // CheckpointFromShadowOptions configures GenerateCheckpointFromShadow.
 type CheckpointFromShadowOptions struct {
+	// Runtime is required and selects comparison, conversion, and reversal services.
+	Runtime Runtime
 	// ShadowDatabaseURL is an ephemeral database the generator drops clean and
 	// replays the migration directory into. Its contents are discarded.
 	ShadowDatabaseURL string
@@ -349,6 +358,9 @@ type CheckpointFromShadowOptions struct {
 // rather than under conservative offline rules — on SQL Server that is what
 // lets case-variant identifiers coexist in one checkpoint.
 func GenerateCheckpointFromShadow(ctx context.Context, opts CheckpointFromShadowOptions) (upSQL, downSQL string, err error) {
+	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
+		return "", "", err
+	}
 	dialect := opts.Dialect
 	if resolvedDialect, dialectErr := atlasurl.DialectFromURL(opts.ShadowDatabaseURL); dialectErr == nil {
 		dialect = resolvedDialect
@@ -374,6 +386,9 @@ func GenerateCheckpointFromShadow(ctx context.Context, opts CheckpointFromShadow
 // generation so it can be exercised against any connection, including an
 // in-memory one, without a live server.
 func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.DatabaseConnection, opts CheckpointFromShadowOptions) (upSQL, downSQL string, err error) {
+	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
+		return "", "", err
+	}
 	if opts.Dialect != "" && !shadowdb.SameDialect(opts.Dialect, shadowConn.Info().Dialect) {
 		return "", "", fmt.Errorf(
 			"checkpoint generation failed: shadow database dialect %q does not match target dialect %q",
@@ -424,9 +439,12 @@ func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.Databa
 	if err != nil {
 		return "", "", fmt.Errorf("checkpoint generation failed: read shadow schema: %w", err)
 	}
-	goSchema := dbschematogo.ConvertDBSchemaToGoSchema(shadowSchema, shadowConn.Info().Dialect)
+	goSchema, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, shadowSchema, shadowConn.Info().Dialect, opts.Runtime)
+	if err != nil {
+		return "", "", fmt.Errorf("capture checkpoint schema: %w", err)
+	}
 	upSQL, downSQL, err = generateCheckpointWithDatabaseQualified(
-		ctx,
+		ctx, opts.Runtime,
 		shadowConn,
 		goSchema,
 		opts.SchemaQualifier,

@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -59,7 +61,7 @@ func TestAssessRendered_Replications(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			rendered, err := safety.AssessRenderedWithCapabilities([]ast.Node{test.node}, platform.YDB, capability.YDB262())
+			rendered, err := safety.AssessRenderedWithCapabilities(c.Context(), must.Must(builtin.New()), []ast.Node{test.node}, platform.YDB, capability.YDB262())
 			c.Assert(err, qt.IsNil)
 			c.Assert(rendered, qt.HasLen, 1)
 			c.Assert(rendered[0].Severity, qt.Equals, test.severity)

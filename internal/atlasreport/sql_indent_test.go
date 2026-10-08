@@ -39,6 +39,7 @@ func TestMigrateDiffIndentPreservesQuotedSQL(t *testing.T) {
 }
 
 func TestSchemaReportsIndentPreservesRoutineBody(t *testing.T) {
+	c := qt.New(t)
 	const body = "BEGIN\n RETURN 'first\nsecond';\nEND;"
 	const statement = "CREATE FUNCTION f() RETURNS text AS $$" + body + "$$ LANGUAGE plpgsql;"
 	reports := []struct {
@@ -48,7 +49,7 @@ func TestSchemaReportsIndentPreservesRoutineBody(t *testing.T) {
 		{"diff", atlasreport.NewSchemaDiff(nil, nil, []string{statement}).MarshalSQL},
 		{"apply", atlasreport.NewSchemaApply(atlasreport.SchemaApplyOptions{Statements: []string{statement}}).MarshalSQL},
 		{"plan", atlasreport.NewSchemaPlan(atlasreport.SchemaPlanOptions{Statements: []atlasreport.SchemaPlanChange{{Cmd: statement}}}).MarshalSQL},
-		{"inspect", atlasreport.NewSchemaInspectReport(
+		{"inspect", newInspectReport(c,
 			&schemamodel.Database{Functions: []schemamodel.Function{{Name: "f", Returns: "text", Language: "plpgsql", Body: body}}},
 			&catalog.Database{}, catalog.ServerInfo{Dialect: platform.Postgres, Capabilities: capability.Capabilities{capability.Functions: true}}, nil,
 			atlasreport.SchemaInspectReportOptions{},

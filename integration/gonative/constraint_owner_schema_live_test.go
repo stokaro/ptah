@@ -10,9 +10,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
@@ -50,8 +50,11 @@ func TestPostgreSQLConstraintOwnersSurviveSQLExport(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	// Roles belong to the shared server; this round trip replays database objects.
 	observed.Roles = nil
-	model := dbschematogo.ConvertDBSchemaToGoSchema(observed, platform.Postgres)
-	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(model, platform.Postgres, source.Info().Capabilities)
+	runtime, err := builtin.New()
+	c.Assert(err, qt.IsNil)
+	model, err := dbschematogo.ConvertDBSchemaToGoSchema(c.Context(), observed, platform.Postgres, runtime)
+	c.Assert(err, qt.IsNil)
+	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(model, platform.Postgres, source.Info().Capabilities)
 	c.Assert(err, qt.IsNil)
 	for _, statement := range statements {
 		for _, sqlStatement := range sqlutil.SplitStatements(statement) {
@@ -62,7 +65,9 @@ func TestPostgreSQLConstraintOwnersSurviveSQLExport(t *testing.T) {
 	readBack, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), target, []string{"app", "public"})
 	c.Assert(err, qt.IsNil)
 	readBack.Roles = nil
-	c.Assert(schemadiff.CompareWithDialect(model, readBack, platform.Postgres).HasChanges(), qt.IsFalse)
+	diff, err := schemadiff.CompareWithDialect(c.Context(), model, readBack, platform.Postgres, runtime)
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.HasChanges(), qt.IsFalse)
 
 	for _, test := range []struct {
 		schema string

@@ -6,8 +6,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 )
 
@@ -30,7 +32,7 @@ func TestPreparePlanFile_DeclaredRowsFollowTheForeignKey(t *testing.T) {
 			[]schemamodel.ManagedRow{regionRow("emea", "Europe, Middle East and Africa", 1)},
 			[]schemamodel.ManagedRow{countryRow("CZ", "Czechia", "emea")},
 		),
-	})
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	sql := planSQL(plan)
@@ -92,7 +94,7 @@ func TestPreparePlanFile_DeletedRowsFollowTheForeignKeyBackwards(t *testing.T) {
 			[]schemamodel.ManagedRow{regionRow("emea", "Europe, Middle East and Africa", 1)},
 			[]schemamodel.ManagedRow{countryRow("CZ", "Czechia", "emea")},
 		),
-	})
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	sql := planSQL(plan)
@@ -125,7 +127,7 @@ func TestPreparePlanFile_AnInsertPrecedesEveryDelete(t *testing.T) {
 			},
 			[]schemamodel.ManagedRow{countryRow("US", "United States", "amer")},
 		),
-	})
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	sql := planSQL(plan)

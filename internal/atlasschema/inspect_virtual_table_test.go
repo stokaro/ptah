@@ -386,7 +386,7 @@ func TestInspectReportsAVirtualTableTheRenderingCannotCarry(t *testing.T) {
 			t.Chdir(t.TempDir())
 
 			var diagnostics bytes.Buffer
-			opts := atlasschema.InspectOptions{
+			opts := atlasschema.InspectOptions{Runtime: inspectFeatureRuntime(c),
 				Format:      tt.format,
 				Diagnostics: &diagnostics,
 				Exclude:     tt.exclude,
@@ -495,7 +495,7 @@ func TestInspectRefusesAVirtualTableTheRenderingCannotCarry(t *testing.T) {
 			conn := connectSQLite(c, virtualTableFixture(c, t.TempDir(), tt.setup))
 			defer dbschema.CloseAndWarn(conn)
 
-			_, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
+			_, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{Runtime: inspectFeatureRuntime(c),
 				Format:                        tt.format,
 				Diagnostics:                   &bytes.Buffer{},
 				ValidateRenderedVirtualTables: tt.validate,

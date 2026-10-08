@@ -1,12 +1,16 @@
 package clickhouse_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -60,6 +64,7 @@ func TestColumnDDLResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
 				withDeclaredTables(&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 					TableName:    test.diffName,
 					ColumnsAdded: difftypes.ColumnChanges{{StructName: "Event", Name: "note", Type: "String"}},
@@ -84,6 +89,7 @@ func TestColumnDDLDoesNotGuessBetweenSchemas(t *testing.T) {
 	c := qt.New(t)
 
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
 		withDeclaredTables(&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 			TableName:    "app.events",
 			ColumnsAdded: difftypes.ColumnChanges{{StructName: "Event", Name: "note", Type: "String"}},
@@ -134,9 +140,10 @@ func TestCreateTableResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
 			// spelling this row is about: the plan renders what the creation
 			// holds, and the diff naming the table differently is the subject.
 			declared := eventsTable(test.tableSchema)
-			creations := difftypes.TableCreationsFor(declared, "events")
+			creations := difftypes.TableCreationsFor(declared, identifier.ForDialect("clickhouse"), "events")
 			creations[0].Name = test.diffName
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
 				&difftypes.SchemaDiff{TablesAdded: creations},
 
 				"clickhouse",
@@ -156,8 +163,8 @@ func TestCreateTableDoesNotGuessBetweenSchemas(t *testing.T) {
 	c := qt.New(t)
 
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
-
-		&difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(eventsTable("reporting"), "app.events")},
+		context.Background(), must.Must(builtin.New()),
+		&difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(eventsTable("reporting"), identifier.ForDialect("clickhouse"), "app.events")},
 
 		"clickhouse",
 	)

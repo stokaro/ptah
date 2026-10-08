@@ -105,7 +105,7 @@ func applyDiffPolicy(diff *difftypes.SchemaDiff, policy DiffPolicy) *difftypes.S
 		return diff
 	}
 	filtered := *diff
-	removedTables := tableSet(diff.TablesRemoved)
+	removedTables := tableSet(diff.TablesRemoved.Names())
 	filtered.TablesRemoved = nil
 	indexRemovals := slices.DeleteFunc(filtered.IndexRemovals(), func(ref difftypes.IndexRef) bool {
 		return hasTable(removedTables, ref.TableName)
@@ -116,7 +116,7 @@ func applyDiffPolicy(diff *difftypes.SchemaDiff, policy DiffPolicy) *difftypes.S
 	filtered.ConstraintsRemoved = slices.DeleteFunc(
 		slices.Clone(filtered.ConstraintsRemoved),
 		func(value difftypes.ConstraintRemovalInfo) bool {
-			return slices.Contains(diff.TablesRemoved, value.TableName)
+			return slices.Contains(diff.TablesRemoved.Names(), value.TableName)
 		},
 	)
 	filtered.TriggersRemoved = slices.DeleteFunc(slices.Clone(filtered.TriggersRemoved), func(ref difftypes.TriggerRef) bool {

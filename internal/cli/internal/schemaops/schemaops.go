@@ -9,7 +9,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
-	"ptah.run/core/coverage"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
 	"ptah.run/dbschema"
@@ -26,6 +26,8 @@ import (
 
 // CompareOptions configures a live schema comparison.
 type CompareOptions struct {
+	// Runtime selects the model services used for the comparison.
+	Runtime        schemadiff.DatabaseRuntime
 	RootDirs       []string
 	SchemaFiles    []string
 	Commands       []schemasource.Command
@@ -74,7 +76,7 @@ type CompareResult struct {
 	// exist, and Diff plans nothing for them. Sorted by kind and then name. An
 	// empty Diff beside a non-empty Undecided has not shown that the database
 	// matches.
-	Undecided []coverage.Object
+	Undecided schemadiff.Diagnostics
 	// DataDrift is the reference-row comparison, in counts, and is nil when
 	// [CompareOptions.ManagedData] did not ask for one. A non-nil DataDrift
 	// with no tables is a comparison that ran and found the declared rows in
@@ -86,6 +88,9 @@ type CompareResult struct {
 // external command, reads the live database schema, applies command filters, and
 // returns a dialect-aware schema diff.
 func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
+	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
+		return nil, err
+	}
 	if opts.DatabaseURL == "" {
 		return nil, fmt.Errorf("database URL is required")
 	}
@@ -140,7 +145,7 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 		conn,
 		desired,
 		dbSchema,
-		compareOpts,
+		compareOpts, opts.Runtime,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error comparing schemas: %w", err)

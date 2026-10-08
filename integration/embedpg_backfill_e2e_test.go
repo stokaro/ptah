@@ -10,8 +10,11 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
+	"ptah.run/core/platform/capability"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/embedengine"
 	"ptah.run/internal/embedgen"
@@ -57,7 +60,7 @@ func TestEmbedPGBackfillE2E(t *testing.T) {
 	seedArticles(c, ctx, db, spec)
 
 	store := embedpg.NewStore(db)
-	c.Assert(store.EnsureSchema(ctx), qt.IsNil)
+	c.Assert(store.EnsureSchema(ctx, must.Must(builtin.New()), capability.ForDialect(embedpg.Dialect)), qt.IsNil)
 	source, err := embedpg.NewSource(db, spec)
 	c.Assert(err, qt.IsNil)
 	target, err := embedpg.NewTarget(db, spec)

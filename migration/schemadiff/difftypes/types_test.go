@@ -38,7 +38,7 @@ func TestSchemaDiff_HasChanges(t *testing.T) {
 		{
 			name: "tables removed",
 			diff: &difftypes.SchemaDiff{
-				TablesRemoved: []string{"old_table"},
+				TablesRemoved: difftypes.TableRemovals{{Name: "old_table"}},
 			},
 			expected: true,
 		},

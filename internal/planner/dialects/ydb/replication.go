@@ -8,7 +8,10 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbreplication"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -113,7 +116,7 @@ func refuseReplicaTables(diff *difftypes.SchemaDiff) error {
 			}
 		}
 	}
-	for _, removed := range diff.TablesRemoved {
+	for _, removed := range diff.TablesRemoved.Names() {
 		tablePath := namePath(removed)
 		for _, replication := range diff.Replications.CurrentReplications {
 			if replication.State != catalog.ReplicationDone || !diff.Replications.Declares(replication.QualifiedName()) ||
@@ -198,7 +201,7 @@ func refuseTransferDependencies(diff *difftypes.SchemaDiff) error {
 			continue
 		}
 		source := ydbreplication.SourceKey(transfer.Spec.Source, "")
-		if topics[source] || declaresChangefeed(declared, source) || recordsTopic(diff.CurrentNotDescribed, source) {
+		if topics[source] || declaresChangefeed(diff.Replications.DesiredObjects, declared, source) || recordsTopic(diff.CurrentNotDescribed, source) || recordsChangefeed(diff.Replications.CurrentCoverage, declared, source) {
 			continue
 		}
 		return refuseFact(subject, fmt.Sprintf("it reads topic %s, which the schema declares neither as a topic "+
@@ -210,15 +213,32 @@ func refuseTransferDependencies(diff *difftypes.SchemaDiff) error {
 
 // declaresChangefeed reports whether source, a topic path, is the topic of a
 // changefeed a declared table carries.
-func declaresChangefeed(declared map[string]schemamodel.Table, source string) bool {
+func declaresChangefeed(objects schemaext.Objects, declared map[string]schemamodel.Table, source string) bool {
 	tablePath, changefeed, found := cutLast(source)
 	if !found {
 		return false
 	}
 	table, ok := declared[tablePath]
-	return ok && slices.ContainsFunc(table.Changefeeds, func(spec ast.ChangefeedSpec) bool {
-		return spec.Name == changefeed
-	})
+	if !ok {
+		return false
+	}
+	ref := ydbschema.ChangefeedRef(table.Schema, table.Name, changefeed)
+	return slices.ContainsFunc(objects.Refs(), func(candidate objectidentity.ID) bool { return candidate.Key() == ref.Key() })
+}
+
+// recordsChangefeed recognizes an explicitly observed unreadable stream whose
+// parent survives. An unknown namespace alone proves no topic exists.
+func recordsChangefeed(knowledgeOf schemaext.Coverage, declared map[string]schemamodel.Table, source string) bool {
+	tablePath, changefeed, found := cutLast(source)
+	if !found {
+		return false
+	}
+	table, ok := declared[tablePath]
+	if !ok {
+		return false
+	}
+	knowledge, found := knowledgeOf.SubjectKnowledge(ydbschema.ChangefeedKind, ydbschema.ChangefeedRef(table.Schema, table.Name, changefeed))
+	return found && knowledge.State == schemaext.Unrepresentable
 }
 
 // recordsTopic reports whether the read recorded a topic at source, a path:
@@ -233,12 +253,7 @@ func recordsTopic(notDescribed coverage.Set, source string) bool {
 		!object.WholeKind() {
 		return true
 	}
-	if !found {
-		return false
-	}
-	tableSchema, table, _ := cutLast(schema)
-	object, limited := notDescribed.Limit(coverage.Changefeed, tableref.Canonical(tableSchema, table)+"/"+name)
-	return limited && !object.WholeKind()
+	return false
 }
 
 // cutLast splits a path at its last slash.

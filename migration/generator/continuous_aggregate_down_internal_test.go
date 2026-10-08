@@ -5,15 +5,18 @@ package generator
 // API only exposes the SQL that comes out of the whole pipeline.
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -76,7 +79,7 @@ func TestGenerateDownMigration_ContinuousAggregate(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			sql, err := generateDownMigrationSQL(
+			sql, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
 				test.diff,
 				desired,
 				database,
@@ -121,10 +124,12 @@ func TestGenerateDownMigration_ContinuousAggregateBodyComesFromTheComparison(t *
 		}},
 	}
 
-	upDiff := schemadiff.CompareWithDialect(desired, database, platform.Postgres)
+	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		desired, database, platform.Postgres, must.Must(builtin.New()),
+	))
 	c.Assert(upDiff.ContinuousAggregatesRemoved.Names(), qt.DeepEquals, []string{"public.hourly"})
 
-	sql, err := generateDownMigrationSQL(
+	sql, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff,
 		desired,
 		database,
@@ -166,15 +171,21 @@ func TestGenerateDownMigration_ModifiedAggregateIsRecreatedFromThePriorDeclarati
 	}
 
 	caps := capability.Postgres17().With(capability.ContinuousAggregates, true)
-	upDiff := schemadiff.CompareWithDialect(desired, database, platform.Postgres)
+	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		desired, database, platform.Postgres, must.Must(builtin.New()),
+	))
 	c.Assert(upDiff.ContinuousAggregatesModified, qt.HasLen, 1)
 
-	up, err := generateUpMigrationSQL(upDiff, desired, platform.Postgres, caps)
+	up, err := generateUpMigrationSQL(
+		context.Background(), must.Must(builtin.New()),
+		upDiff, desired, platform.Postgres, caps,
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Contains, declaredBody)
 	c.Assert(up, qt.Contains, "timescaledb.materialized_only = true")
 
-	down, err := generateDownMigrationSQL(upDiff, desired, database, platform.Postgres, caps)
+	down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+		upDiff, desired, database, platform.Postgres, caps)
 	c.Assert(err, qt.IsNil)
 	c.Assert(down, qt.Contains, priorDefinition,
 		qt.Commentf("the rollback recreates the definition the database held"))

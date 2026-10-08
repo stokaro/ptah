@@ -39,10 +39,15 @@
 //	}
 //
 //	// Compare schemas with environment-specific configuration
-//	diff := schemadiff.CompareWithOptions(generated, database, opts)
+//	runtime, err := builtin.New()
+//	if err != nil { return err }
+//	diff, err := schemadiff.CompareWithDatabase(ctx, conn, generated, database, opts, runtime)
+//	if err != nil { return err }
 //
 //	// Generate migrations based on the differences
 //	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+//		Runtime: runtime,
+//		CompareOptions: opts,
 //		GoEntitiesDir: "./models",
 //		DatabaseURL:   "postgres://user:pass@localhost/db",
 //		MigrationName: "update_extensions",
@@ -51,15 +56,29 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"log"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
 func main() {
+	if err := run(context.Background()); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run(ctx context.Context) error {
+	runtime, err := builtin.New()
+	if err != nil {
+		return err
+	}
 	fmt.Println("PostgreSQL Extension Ignore Functionality Demo")
 	fmt.Println("==============================================")
 	fmt.Println()
@@ -74,10 +93,15 @@ func main() {
 	fmt.Println()
 
 	// Demonstrate different configuration options
-	demonstrateDefaultBehavior(desired, database)
-	demonstrateCustomIgnoreList(desired, database)
-	demonstrateAdditionalIgnoredExtensions(desired, database)
-	demonstrateManageAllExtensions(desired, database)
+	for _, demonstrate := range []func(context.Context, *schemamodel.Database, *catalog.Database, schemaext.ComparisonRuntime) error{
+		demonstrateDefaultBehavior, demonstrateCustomIgnoreList,
+		demonstrateAdditionalIgnoredExtensions, demonstrateManageAllExtensions,
+	} {
+		if err := demonstrate(ctx, desired, database, runtime); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func createSampleGeneratedSchema() *schemamodel.Database {
@@ -115,53 +139,72 @@ func getDatabaseExtensionNames(extensions []catalog.Extension) []string {
 	return names
 }
 
-func demonstrateDefaultBehavior(desired *schemamodel.Database, current *catalog.Database) {
+func demonstrateDefaultBehavior(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, runtime schemaext.ComparisonRuntime) error {
 	fmt.Println("1. Default Behavior (ignores 'plpgsql'):")
-	fmt.Println("   Code: schemadiff.Compare(generated, database)")
+	fmt.Println(`   Code: schemadiff.CompareWithDialect(ctx, generated, database, "postgres", runtime)`)
 
-	diff := schemadiff.Compare(desired, current)
+	diff, err := schemadiff.CompareWithDialect(ctx, desired, current, "postgres", runtime)
+	if err != nil {
+		return err
+	}
 
 	fmt.Printf("   Extensions to add: %v\n", diff.ExtensionsAdded)
 	fmt.Printf("   Extensions to remove: %v\n", diff.ExtensionsRemoved)
 	fmt.Println("   Note: 'plpgsql' is ignored by default, so it won't be removed")
 	fmt.Println()
+	return nil
 }
 
-func demonstrateCustomIgnoreList(desired *schemamodel.Database, current *catalog.Database) {
+func demonstrateCustomIgnoreList(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, runtime schemaext.ComparisonRuntime) error {
 	fmt.Println("2. Custom Ignore List (ignore 'adminpack' only):")
 	fmt.Println("   Code: config.WithIgnoredExtensions(\"adminpack\")")
 
 	opts := config.WithIgnoredExtensions("adminpack")
-	diff := schemadiff.CompareWithOptions(desired, current, opts)
+	opts.Dialect = "postgres"
+	diff, err := schemadiff.CompareWithOptions(ctx, desired, current, opts, runtime)
+	if err != nil {
+		return err
+	}
 
 	fmt.Printf("   Extensions to add: %v\n", diff.ExtensionsAdded)
 	fmt.Printf("   Extensions to remove: %v\n", diff.ExtensionsRemoved)
 	fmt.Println("   Note: 'adminpack' is ignored, but 'plpgsql' will be removed")
 	fmt.Println()
+	return nil
 }
 
-func demonstrateAdditionalIgnoredExtensions(desired *schemamodel.Database, current *catalog.Database) {
+func demonstrateAdditionalIgnoredExtensions(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, runtime schemaext.ComparisonRuntime) error {
 	fmt.Println("3. Additional Ignored Extensions (default + 'adminpack'):")
 	fmt.Println("   Code: config.WithAdditionalIgnoredExtensions(\"adminpack\")")
 
 	opts := config.WithAdditionalIgnoredExtensions("adminpack")
-	diff := schemadiff.CompareWithOptions(desired, current, opts)
+	opts.Dialect = "postgres"
+	diff, err := schemadiff.CompareWithOptions(ctx, desired, current, opts, runtime)
+	if err != nil {
+		return err
+	}
 
 	fmt.Printf("   Extensions to add: %v\n", diff.ExtensionsAdded)
 	fmt.Printf("   Extensions to remove: %v\n", diff.ExtensionsRemoved)
 	fmt.Println("   Note: Both 'plpgsql' and 'adminpack' are ignored")
 	fmt.Println()
+	return nil
 }
 
-func demonstrateManageAllExtensions(desired *schemamodel.Database, current *catalog.Database) {
+func demonstrateManageAllExtensions(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, runtime schemaext.ComparisonRuntime) error {
 	fmt.Println("4. Manage All Extensions (no ignoring):")
 	fmt.Println("   Code: config.WithIgnoredExtensions() // empty list")
 
 	opts := config.WithIgnoredExtensions() // Empty list - manage everything
-	diff := schemadiff.CompareWithOptions(desired, current, opts)
+	opts.Dialect = "postgres"
+	diff, err := schemadiff.CompareWithOptions(ctx, desired, current, opts, runtime)
+	if err != nil {
+		return err
+	}
 
 	fmt.Printf("   Extensions to add: %v\n", diff.ExtensionsAdded)
 	fmt.Printf("   Extensions to remove: %v\n", diff.ExtensionsRemoved)
 	fmt.Println("   Note: All extensions are managed, including 'plpgsql'")
 	fmt.Println()
+	return nil
 }

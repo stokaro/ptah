@@ -9,7 +9,9 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/convert/dbschematogo"
 )
@@ -34,7 +36,7 @@ func TestSchemaInspectJSON_ReportsOmittedYDBFamilies(t *testing.T) {
 				Grants:                  []schemamodel.Grant{{}},
 				Views:                   []schemamodel.View{{Name: "v"}},
 			}
-			report := atlasreport.NewSchemaInspectReport(db, &catalog.Database{},
+			report := newInspectReport(c, db, &catalog.Database{},
 				catalog.ServerInfo{Dialect: "ydb"}, &diagnostics, atlasreport.SchemaInspectReportOptions{})
 
 			output, err := atlasreport.RenderSchemaInspect(format, report)
@@ -59,11 +61,13 @@ func TestSchemaInspectJSON_ReportsOmittedYDBFamilies(t *testing.T) {
 	}
 }
 
-func jsonLossFixture() (*schemamodel.Database, *catalog.Database) {
+func jsonLossFixture(c *qt.C) (*schemamodel.Database, *catalog.Database) {
+	objects, err := schemaext.NewObjects(ydbschema.DesiredObject("app", "events", ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON"}))
+	c.Assert(err, qt.IsNil)
 	db := &schemamodel.Database{
+		FeatureObjects: objects,
 		Tables: []schemamodel.Table{{
 			StructName: "AppEvents", Schema: "app", Name: "events",
-			Changefeeds:       []ast.ChangefeedSpec{{Name: "updates"}},
 			YDBColumnFamilies: []ast.YDBColumnFamilySpec{{Name: "cold"}},
 			RowDeletionPolicy: &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "P1D"},
 			YDBPartitioning:   &ast.YDBTablePartitioningSpec{MinPartitions: 2},
@@ -94,8 +98,8 @@ func jsonLossFixture() (*schemamodel.Database, *catalog.Database) {
 func TestSchemaInspectJSON_ReportsTablePropertiesWithoutChangingDocument(t *testing.T) {
 	c := qt.New(t)
 	var diagnostics bytes.Buffer
-	db, described := jsonLossFixture()
-	report := atlasreport.NewSchemaInspectReport(db, described, catalog.ServerInfo{Dialect: "ydb"},
+	db, described := jsonLossFixture(c)
+	report := newInspectReport(c, db, described, catalog.ServerInfo{Dialect: "ydb"},
 		&diagnostics, atlasreport.SchemaInspectReportOptions{})
 
 	data, err := json.Marshal(report)
@@ -136,10 +140,10 @@ func TestSchemaInspectJSON_TemplateFragmentsOnlyReportSelectedProperties(t *test
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			var diagnostics bytes.Buffer
-			db, described := jsonLossFixture()
+			db, described := jsonLossFixture(c)
 			db.Fields = []schemamodel.Field{{StructName: "AppEvents", Name: "id", Type: "Int64", Comment: "private"}}
 			described.Tables[0].Columns = []catalog.Column{{Name: "id", DataType: "Int64", Comment: "private"}}
-			report := atlasreport.NewSchemaInspectReport(db, described, catalog.ServerInfo{Dialect: "ydb"},
+			report := newInspectReport(c, db, described, catalog.ServerInfo{Dialect: "ydb"},
 				&diagnostics, atlasreport.SchemaInspectReportOptions{})
 
 			output, err := atlasreport.RenderSchemaInspect(test.format, report)
@@ -159,7 +163,7 @@ func TestSchemaInspectJSON_DoesNotWarnForACompleteProjection(t *testing.T) {
 		Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "Int64"}},
 	}
 	described := &catalog.Database{Tables: []catalog.Table{{Name: "t", Columns: []catalog.Column{{Name: "id", DataType: "Int64"}}}}}
-	report := atlasreport.NewSchemaInspectReport(db, described, catalog.ServerInfo{Dialect: "ydb"},
+	report := newInspectReport(c, db, described, catalog.ServerInfo{Dialect: "ydb"},
 		&diagnostics, atlasreport.SchemaInspectReportOptions{})
 
 	data, err := json.Marshal(report.Realm)
@@ -173,7 +177,7 @@ func TestSchemaInspectJSON_PreservesOtherDialectsDiagnostics(t *testing.T) {
 	c := qt.New(t)
 	var diagnostics bytes.Buffer
 	db := &schemamodel.Database{Roles: []schemamodel.Role{{Name: "reader"}}}
-	report := atlasreport.NewSchemaInspectReport(db, &catalog.Database{}, catalog.ServerInfo{Dialect: "postgres"},
+	report := newInspectReport(c, db, &catalog.Database{}, catalog.ServerInfo{Dialect: "postgres"},
 		&diagnostics, atlasreport.SchemaInspectReportOptions{})
 
 	data, err := report.MarshalJSON()
@@ -186,12 +190,12 @@ func TestSchemaInspectJSON_PreservesOtherDialectsDiagnostics(t *testing.T) {
 func TestSchemaInspectJSON_TableFragmentsKeepSchemaIdentity(t *testing.T) {
 	c := qt.New(t)
 	var diagnostics bytes.Buffer
-	db, described := jsonLossFixture()
+	db, described := jsonLossFixture(c)
 	db.Tables = append(db.Tables, schemamodel.Table{StructName: "ArchiveEvents", Schema: "archive", Name: "events"})
 	db.Fields = append(db.Fields, schemamodel.Field{StructName: "ArchiveEvents", Name: "id", Type: "Int64"})
 	described.Tables = append(described.Tables, catalog.Table{Schema: "archive", Name: "events",
 		Columns: []catalog.Column{{Name: "id", DataType: "Int64"}}})
-	report := atlasreport.NewSchemaInspectReport(db, described, catalog.ServerInfo{Dialect: "ydb"},
+	report := newInspectReport(c, db, described, catalog.ServerInfo{Dialect: "ydb"},
 		&diagnostics, atlasreport.SchemaInspectReportOptions{})
 
 	output, err := atlasreport.RenderSchemaInspect(`{{ json (index (index .Realm.Schemas 1).Tables 0) }}`, report)
@@ -209,8 +213,9 @@ func TestSchemaInspectJSON_CatalogDefaultPresenceSurvivesModelConversion(t *test
 			described := &catalog.Database{Tables: []catalog.Table{{
 				Name: "t", Columns: []catalog.Column{{Name: "value", DataType: "Utf8", ColumnDefault: &literal}},
 			}}}
-			model := dbschematogo.ConvertDBSchemaToGoSchema(described, "ydb")
-			report := atlasreport.NewSchemaInspectReport(model, described, catalog.ServerInfo{Dialect: "ydb"},
+			model, err := dbschematogo.ConvertDBSchemaToGoSchema(c.Context(), described, "ydb", inspectRuntime(c))
+			c.Assert(err, qt.IsNil)
+			report := newInspectReport(c, model, described, catalog.ServerInfo{Dialect: "ydb"},
 				&diagnostics, atlasreport.SchemaInspectReportOptions{})
 
 			data, err := report.MarshalJSON()

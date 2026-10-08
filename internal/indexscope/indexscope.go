@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemavalidation"
 	"ptah.run/internal/tableref"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -329,12 +330,15 @@ func validateRefs(
 
 func validateRef(operation string, position int, ref difftypes.IndexRef) error {
 	if strings.TrimSpace(ref.Name) == "" || strings.TrimSpace(ref.TableName) == "" {
-		return fmt.Errorf(
-			"%w: %s index reference at position %d requires a name and owning table",
+		message := fmt.Sprintf(
+			"%s: %s index reference at position %d requires a name and owning table",
 			ptaherr.ErrInvalidSchemaDiff,
 			operation,
 			position,
 		)
+		return (schemavalidation.Result{Complete: true, Diagnostics: []schemavalidation.Diagnostic{{
+			Code: schemavalidation.InvalidSchema, Kind: "index", Object: ref.Name, Message: message,
+		}}}).Err("")
 	}
 	return nil
 }
@@ -437,13 +441,16 @@ func validateAdditionsAreDescribed(changes difftypes.IndexChanges) error {
 		if len(change.Index.Fields) > 0 || len(change.Index.Parts) > 0 {
 			continue
 		}
-		return fmt.Errorf(
-			"%w: added index %s.%s is not described by the diff; "+
+		message := fmt.Sprintf(
+			"%s: added index %s.%s is not described by the diff; "+
 				"an addition has to carry the index it creates",
 			ptaherr.ErrInvalidSchemaDiff,
 			change.TableName,
 			change.Index.Name,
 		)
+		return (schemavalidation.Result{Complete: true, Diagnostics: []schemavalidation.Diagnostic{{
+			Code: schemavalidation.InvalidSchema, Kind: "index", Object: change.Index.Name, Message: message,
+		}}}).Err("")
 	}
 	return nil
 }

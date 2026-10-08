@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/ydb-platform/ydb-go-genproto/Ydb_Table_V1"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Table"
@@ -19,6 +20,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/migration/planner"
@@ -204,10 +206,13 @@ func TestYDBColumnFamilies_ChangesInPlace(t *testing.T) {
 func planRebuildAgainst(c *qt.C, conn *dbschema.DatabaseConnection, declared *schemamodel.Database) ([]string, error) {
 	c.Helper()
 	info := conn.Info()
-	diff, err := schemadiff.CompareWithDatabaseInfo(declared, readScoped(c, conn, familySchemas), info, nil)
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, readScoped(c, conn, familySchemas), info, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	return planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, info.Dialect,
-		planner.Options{Capabilities: info.Capabilities, AllowTableRebuild: true})
+	return planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		diff, info.Dialect,
+		planner.Options{Capabilities: info.Capabilities, AllowTableRebuild: true},
+	)
 }
 
 // A family and a storage pool the declaration leaves out stay, since a

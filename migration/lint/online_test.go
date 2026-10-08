@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/migrationlintreport"
 	"ptah.run/migration/lint"
 )
@@ -356,7 +357,10 @@ func TestOnlineMode_StandaloneLintHonorsTheSameSelection(t *testing.T) {
 	c.Assert(os.WriteFile(filepath.Join(dir, "0000000001_x.down.sql"),
 		[]byte("-- +ptah no_transaction\nDROP INDEX CONCURRENTLY idx;\n"), 0o600), qt.IsNil)
 
+	runtime, err := builtin.New()
+	c.Assert(err, qt.IsNil)
 	report, err := migrationlintreport.Build(c.Context(), migrationlintreport.Options{
+		Runtime: runtime,
 		Dir:     dir,
 		FailOn:  migrationlintreport.FailOnError,
 		Changed: migrationlintreport.ChangedOptions{Dir: true},

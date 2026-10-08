@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -17,7 +19,7 @@ func TestCompareWithDialect_UniqueIndexOwnsColumnUniqueness(t *testing.T) {
 	desired := uniqueIndexGeneratedSchema()
 	database := uniqueIndexDatabaseSchema()
 
-	diff := schemadiff.CompareWithDialect(desired, database, "sqlite")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "sqlite", must.Must(builtin.New())))
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
@@ -29,7 +31,7 @@ func TestCompareWithDialect_ResolvedUniqueIndexOwnerOverridesImportedStructName(
 	desired.Indexes[0].StructName = "users"
 	database := uniqueIndexDatabaseSchema()
 
-	diff := schemadiff.CompareWithDialect(desired, database, "sqlite")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "sqlite", must.Must(builtin.New())))
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
@@ -42,7 +44,7 @@ func TestCompareWithDialect_UniqueIndexAdditionDoesNotModifyColumn(t *testing.T)
 	database.Indexes = nil
 	database.Tables[0].Columns[0].IsUnique = false
 
-	diff := schemadiff.CompareWithDialect(desired, database, "sqlite")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "sqlite", must.Must(builtin.New())))
 
 	c.Assert(diff.TablesModified, qt.HasLen, 0)
 	c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{{
@@ -59,7 +61,7 @@ func TestCompareWithDialect_UniqueIndexRemovalKeepsColumnDifferenceVisible(t *te
 	desired.Indexes = nil
 	database := uniqueIndexDatabaseSchema()
 
-	diff := schemadiff.CompareWithDialect(desired, database, "sqlite")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "sqlite", must.Must(builtin.New())))
 
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.DeepEquals, []difftypes.ColumnDiff{{
@@ -86,7 +88,7 @@ func TestCompareWithDialect_FieldUniqueStillOwnsMissingUniqueness(t *testing.T) 
 	database.Indexes = nil
 	database.Tables[0].Columns[0].IsUnique = false
 
-	diff := schemadiff.CompareWithDialect(desired, database, "sqlite")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "sqlite", must.Must(builtin.New())))
 
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.DeepEquals, []difftypes.ColumnDiff{{
@@ -126,7 +128,7 @@ func TestCompareWithDialect_SingleColumnUniqueConstraintOwnsUniqueness(t *testin
 		ColumnNames: []string{"email"},
 	}}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "sqlite")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "sqlite", must.Must(builtin.New())))
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
@@ -158,7 +160,7 @@ func TestCompareWithDialect_StructOwnedUniqueConstraintOwnsUniqueness(t *testing
 		ColumnNames: []string{"email"},
 	}}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "sqlite")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "sqlite", must.Must(builtin.New())))
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
@@ -194,7 +196,7 @@ func TestCompareWithDialect_SchemaQualifiedStructOwnedUniqueConstraintOwnsUnique
 		ColumnNames: []string{"email"},
 	}}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
@@ -226,7 +228,7 @@ func TestCompareWithDialect_LiteralDotUsesStructuralTableIdentity(t *testing.T) 
 		}},
 	}}}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
@@ -243,10 +245,10 @@ func TestCompareWithDialect_LiteralDotDoesNotMatchSchemaQualification(t *testing
 		Type:   "TABLE",
 	}}}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 
 	c.Assert(diff.TablesAdded.Names(), qt.DeepEquals, []string{`"tenant.data"`})
-	c.Assert(diff.TablesRemoved, qt.DeepEquals, []string{"tenant.data"})
+	c.Assert(diff.TablesRemoved.Names(), qt.DeepEquals, []string{"tenant.data"})
 	c.Assert(diff.TablesModified, qt.HasLen, 0)
 }
 
@@ -258,7 +260,7 @@ func TestCompareWithDialect_LiteralDotAndQualifiedTablesRemainDistinct(t *testin
 		{StructName: "Qualified", Schema: "tenant", Name: "data"},
 	}}
 
-	diff := schemadiff.CompareWithDialect(desired, &catalog.Database{}, "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, &catalog.Database{}, "postgres", must.Must(builtin.New())))
 
 	c.Assert(diff.TablesAdded.Names(), qt.DeepEquals, []string{`"tenant.data"`, "tenant.data"})
 }
@@ -292,7 +294,7 @@ func TestCompareWithDialect_ConstraintMembersPreserveStructuralIdentity(t *testi
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 
 	c.Assert(diff.ConstraintsAdded.Names(), qt.DeepEquals, []string{"guard"})
 	c.Assert(diff.ConstraintsRemoved.Names(), qt.DeepEquals, []string{"payload.guard"})
@@ -364,7 +366,7 @@ func TestCompareWithDialect_LiteralDotUniqueIndexOwnsColumnUniqueness(t *testing
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
@@ -385,7 +387,7 @@ func TestCompareWithDialect_FilteredDatabaseIndexCannotHideUniqueRemoval(t *test
 		Name: "users_email_key", TableName: "users", Type: "UNIQUE", ColumnNames: []string{"email"},
 	}}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.DeepEquals, []difftypes.ColumnDiff{{
@@ -406,7 +408,7 @@ func TestCompareWithDialect_PartialUniqueIndexDoesNotOwnColumnUniqueness(t *test
 	database := uniqueIndexDatabaseSchema()
 	database.Indexes[0].Condition = "email IS NOT NULL"
 
-	diff := schemadiff.CompareWithDialect(desired, database, "sqlite")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "sqlite", must.Must(builtin.New())))
 
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.DeepEquals, []difftypes.ColumnDiff{{
@@ -500,7 +502,7 @@ func TestCompareWithDialect_AUniqueIndexIsNotTheConstraintsBecauseOfItsName(t *t
 			database.Indexes[0].Name = test.index
 			database.Tables[0].Columns[0].IsUnique = false
 
-			diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 
 			c.Assert(diff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{{
 				Name:      test.index,
@@ -540,7 +542,7 @@ func TestCompareWithDialect_AConstraintsBackingIndexIsStillTheConstraints(t *tes
 				Name: test.index, TableName: "users", Type: "UNIQUE", ColumnNames: []string{"email"},
 			}}
 
-			diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 
 			c.Assert(diff.IndexRemovals(), qt.HasLen, 0)
 		})

@@ -11,10 +11,11 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/jackc/pgx/v5"
 
-	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
@@ -73,7 +74,7 @@ func applyRoleCaseSchema(c *qt.C, engine dbtarget.Engine, quote, template string
 	desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{Dialect: dialect})
 	c.Assert(err, qt.IsNil)
 
-	statements, err := renderer.GetOrderedCreateStatements(desired, dialect)
+	statements, err := builtin.GetOrderedCreateStatements(desired, dialect)
 	c.Assert(err, qt.IsNil)
 	for _, statement := range statements {
 		_, err := conn.ExecContext(ctx, statement)
@@ -81,7 +82,7 @@ func applyRoleCaseSchema(c *qt.C, engine dbtarget.Engine, quote, template string
 	}
 	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schema})
 	c.Assert(err, qt.IsNil)
-	return schemadiff.CompareWithDialect(desired, live, dialect)
+	return must.Must(schemadiff.CompareWithDialect(c.Context(), desired, live, dialect, must.Must(builtin.New())))
 }
 
 // TestRoleCase_LivePolicyNamesTheRoleTheServerHolds applies a policy whose TO

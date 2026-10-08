@@ -17,7 +17,7 @@
 // the two styles freely, and an AST node this package does not cover is still
 // reachable by building it directly.
 //
-// What consumes the result is unchanged either way. ptah/core/renderer turns the
+// What consumes the result is unchanged either way. ptah/engine/builtin turns the
 // nodes into SQL for every dialect renderer.SupportedDialects names;
 // ptah/migration/planner emits the same nodes when it plans a change.
 //
@@ -84,7 +84,7 @@
 //
 // They do not validate. A type name no dialect knows, a foreign key to a table
 // that is not in the schema, or a default that does not parse is built into the
-// AST and reported later: by ptah/core/renderer when the SQL is generated, or by
+// AST and reported later: by ptah/engine/builtin when the SQL is generated, or by
 // the database when it is executed. Rendering a whole schema through
 // renderer.GetOrderedCreateStatements is what checks foreign key ordering and
 // capability support.

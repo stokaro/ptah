@@ -1,6 +1,7 @@
 package generator
 
 import (
+	"context"
 	"fmt"
 	"maps"
 
@@ -8,8 +9,9 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemavalidation"
 	"ptah.run/internal/concurrentindex"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/schemaprep"
@@ -63,6 +65,8 @@ type BidirectionalPlanPolicy struct {
 // SchemaDirectionPlan is one half of a bidirectional schema migration plan.
 // Its slices and diff are planning inputs and must be treated as read-only.
 type SchemaDirectionPlan struct {
+	// Recovery retains each feature owner's reverse strategy and data limits.
+	Recovery                []schemaext.Reversal
 	Diff                    *difftypes.SchemaDiff
 	Nodes                   []ast.Node
 	ConcurrentIndexRefs     []difftypes.IndexRef
@@ -74,9 +78,12 @@ type SchemaDirectionPlan struct {
 //
 // DesiredSchema and CurrentSchema are the exact inputs the two directions were
 // planned against. They are retained so adapters can apply the same qualifier
-// or rendering policy without reconstructing either side. Treat them and both
+// or rendering policy without reconstructing either side. CurrentSchema includes
+// removed tables restored from their captured operands. Treat both schemas and
 // direction plans as read-only.
 type BidirectionalSchemaPlan struct {
+	// PriorSchema is the captured rollback target in declaration form.
+	PriorSchema   *schemamodel.Database
 	Dialect       string
 	Capabilities  capability.Capabilities
 	DesiredSchema *schemamodel.Database
@@ -89,6 +96,8 @@ type BidirectionalSchemaPlan struct {
 // BidirectionalSchemaPlanOptions contains the complete state needed to plan a
 // schema change and the rollback that restores its pre-change state.
 type BidirectionalSchemaPlanOptions struct {
+	// Runtime is required and selects services for both directions.
+	Runtime       Runtime
 	Diff          *difftypes.SchemaDiff
 	DesiredSchema *schemamodel.Database
 	CurrentSchema *catalog.Database
@@ -101,8 +110,9 @@ type BidirectionalSchemaPlanOptions struct {
 // rollback through the same dialect, capabilities, and concurrent-index
 // policy.
 //
-// The reverse direction restores CurrentSchema rather than merely swapping
-// structural additions and removals. This preserves prior column and
+// The reverse direction restores captured table removals and the surrounding
+// CurrentSchema. Captured removals take precedence over later catalog edits.
+// This preserves prior column and
 // constraint definitions, removes MySQL/MariaDB foreign-key backing indexes
 // created by the forward migration, and keeps any prior or same-run index whose
 // leading key columns cover the foreign key.
@@ -117,8 +127,12 @@ type BidirectionalSchemaPlanOptions struct {
 // partitioned parent, would remove every MySQL/MariaDB foreign-key covering
 // index, or cannot be expressed safely by the reverse direction.
 func PlanBidirectionalSchemaDiff(
+	ctx context.Context,
 	opts BidirectionalSchemaPlanOptions,
 ) (*BidirectionalSchemaPlan, error) {
+	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
+		return nil, err
+	}
 	if opts.Diff == nil {
 		return nil, fmt.Errorf("schema diff is required")
 	}
@@ -140,6 +154,12 @@ func PlanBidirectionalSchemaDiff(
 		return nil, fmt.Errorf("invalid capabilities for %s: %w", dialect, err)
 	}
 
+	current, err := restoreTableSource(opts.Diff, opts.CurrentSchema, dialect)
+	if err != nil {
+		return nil, err
+	}
+	opts.CurrentSchema = current
+
 	createRefs, err := concurrentIndexCreateRefs(
 		opts.Diff,
 		opts.DesiredSchema,
@@ -160,10 +180,11 @@ func PlanBidirectionalSchemaDiff(
 		return nil, err
 	}
 
-	return planBidirectionalSchemaDiffWithRefs(opts, dialect, caps, createRefs, dropRefs)
+	return planBidirectionalSchemaDiffWithRefs(ctx, opts, dialect, caps, createRefs, dropRefs)
 }
 
 func planBidirectionalSchemaDiffWithRefs(
+	ctx context.Context,
 	opts BidirectionalSchemaPlanOptions,
 	dialect string,
 	caps capability.Capabilities,
@@ -173,12 +194,15 @@ func planBidirectionalSchemaDiffWithRefs(
 	if err := validateSelectedForwardConcurrentCapabilities(dialect, caps, forwardCreateRefs, forwardDropRefs); err != nil {
 		return nil, err
 	}
-	reverseDiff := reverseSchemaDiffWithSchemaForDialect(
-		opts.Diff,
-		opts.DesiredSchema,
-		opts.CurrentSchema,
-		dialect,
-	)
+	prior, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, opts.CurrentSchema, dialect, opts.Runtime)
+	if err != nil {
+		return nil, fmt.Errorf("capture rollback target: %w", err)
+	}
+	reverseDiff := reverseSchemaDiffWithPrior(opts.Diff, opts.DesiredSchema, opts.CurrentSchema, prior, dialect)
+	recovery, err := reverseFeatureChanges(ctx, opts.Diff, reverseDiff, dialect, caps, opts.Runtime)
+	if err != nil {
+		return nil, fmt.Errorf("reverse feature changes: %w", err)
+	}
 
 	forwardOpts := planner.Options{
 		Capabilities:            caps,
@@ -189,7 +213,10 @@ func planBidirectionalSchemaDiffWithRefs(
 		AllowTableRebuild:       opts.Policy.AllowTableRebuild,
 		TableRebuildRequest:     opts.Policy.TableRebuildRequest,
 	}
-	forwardNodes, err := planner.GenerateSchemaDiffASTWithOptions(opts.Diff, dialect, forwardOpts)
+	forwardNodes, err := planner.GenerateSchemaDiffASTWithOptions(
+		ctx, opts.Runtime,
+		opts.Diff, dialect, forwardOpts,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("error planning forward migration: %w", err)
 	}
@@ -255,16 +282,21 @@ func planBidirectionalSchemaDiffWithRefs(
 	// forward diff; a reversal has no comparison of its own, so the assertion
 	// would otherwise be made for one direction only (stokaro/ptah#2315).
 	if err := validateRollbackTarget(
-		dbschematogo.ConvertDBSchemaToGoSchema(opts.CurrentSchema, dialect), reverseDiff, dialect, caps,
+		ctx, opts.Runtime, prior, reverseDiff, dialect, caps,
 	); err != nil {
 		return nil, fmt.Errorf("error planning reverse migration: %w", err)
 	}
-	reverseNodes, err := planner.GenerateSchemaDiffASTWithOptions(reverseDiff, dialect, reverseOpts)
+	reverseNodes, err := planner.GenerateSchemaDiffASTWithOptions(
+		ctx, opts.Runtime,
+		reverseDiff, dialect, reverseOpts,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("error planning reverse migration: %w", err)
 	}
+	reverseNodes = append(recoveryNotes(recovery), reverseNodes...)
 
 	return &BidirectionalSchemaPlan{
+		PriorSchema:   prior,
 		Dialect:       dialect,
 		Capabilities:  maps.Clone(caps),
 		DesiredSchema: opts.DesiredSchema,
@@ -278,6 +310,7 @@ func planBidirectionalSchemaDiffWithRefs(
 			RequiresNoTransaction:   planner.RequiresNoTransaction(dialect, forwardNodes),
 		},
 		Reverse: SchemaDirectionPlan{
+			Recovery:                recovery,
 			Diff:                    reverseDiff,
 			Nodes:                   reverseNodes,
 			ConcurrentIndexRefs:     reverseCreate,
@@ -419,6 +452,8 @@ func selectIndexRefOccurrences(
 // is not an identifier question, and asking only the identifier half let a
 // rollback be written against a schema that cannot be rendered.
 func validateRollbackTarget(
+	ctx context.Context,
+	service schemavalidation.Service,
 	prior *schemamodel.Database,
 	reverseDiff *difftypes.SchemaDiff,
 	dialect string,
@@ -431,6 +466,20 @@ func validateRollbackTarget(
 	if prepared == nil {
 		return nil
 	}
+	// Whole-schema validation treats named features as creations. A rollback
+	// does not recreate untouched siblings: the reverse owner and the selected
+	// planner validate changed subjects and rebuild captures in their actual
+	// direction. Only children of tables this direction creates belong here.
+	copyOfPrepared := *prepared
+	copyOfPrepared.FeatureObjects = schemaext.Objects{}
+	for _, creation := range reverseDiff.TablesAdded {
+		objects, err := copyOfPrepared.FeatureObjects.Merge(creation.OwnedObjects)
+		if err != nil {
+			return err
+		}
+		copyOfPrepared.FeatureObjects = objects
+	}
+	prepared = &copyOfPrepared
 	if err := identifiervalidation.ValidateTarget(
 		prepared,
 		dialect,
@@ -438,5 +487,11 @@ func validateRollbackTarget(
 	); err != nil {
 		return err
 	}
-	return renderer.ValidateSchemaWithCapabilities(prepared, dialect, caps)
+	result, err := schemavalidation.Validate(ctx, service, schemavalidation.Request{
+		Target: dialect, Capabilities: caps, Schema: prepared, Identifiers: reverseDiff.EffectiveIdentifierSemantics(dialect),
+	})
+	if err != nil {
+		return err
+	}
+	return result.Err(dialect)
 }

@@ -95,7 +95,7 @@ The system operates through four main layers:
 - **Purpose**: Repository-internal helpers for building and parsing AST nodes
 - **Boundary**: These packages are implementation details behind Go `internal/`
   boundaries; embedders should use the stable `core/ast`, `core/goschema`,
-  `core/renderer`, `atlascompat`, and migration packages documented in
+  `engine/builtin`, `atlascompat`, and migration packages documented in
   [Public Go API](public_api.md).
 
 #### renderer Package
@@ -251,8 +251,8 @@ type UpsertNode struct {
 ```go
 // Schema differences for migration planning
 type SchemaDiff struct {
-    TablesAdded              []string
-    TablesRemoved            []string
+    TablesAdded              TableChanges
+    TablesRemoved            TableRemovals
     TablesModified           []TableDiff
     EnumsAdded               []string
     EnumsRemoved             []string

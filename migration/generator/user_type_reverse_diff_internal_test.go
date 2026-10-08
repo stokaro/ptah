@@ -1,6 +1,6 @@
 package generator
 
-// White-box testing required: reverseSchemaDiffWithSchema is unexported and the
+// White-box testing required: reverseSchemaDiffWithPrior is unexported and the
 // property under test is a field of the diff it returns, not a statement in the
 // SQL. Going through the exported generator would need a live database on both
 // ends and would still only show the ordering indirectly.
@@ -41,7 +41,9 @@ func TestReverseSchemaDiff_ModifiedUserTypesCarryTheDownDirectionsCurrentShape(t
 		},
 	}
 
-	reversed := reverseSchemaDiffWithSchema(forward, target, nil)
+	reversed := reverseForTest(t,
+		forward, target, nil, "postgres",
+	)
 
 	c.Assert(reversed.DomainsModified, qt.HasLen, 1)
 	c.Assert(reversed.DomainsModified[0].CurrentBaseType, qt.Equals, "integer")
@@ -66,7 +68,9 @@ func TestReverseSchemaDiff_ModifiedUserTypesWithoutATargetSchema(t *testing.T) {
 		},
 	}
 
-	reversed := reverseSchemaDiff(forward)
+	reversed := reverseForTest(t,
+		forward, nil, nil, "postgres",
+	)
 
 	c.Assert(reversed.DomainsModified, qt.HasLen, 1)
 	c.Assert(reversed.DomainsModified[0].CurrentBaseType, qt.Equals, "")

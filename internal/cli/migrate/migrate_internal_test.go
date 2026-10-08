@@ -14,6 +14,7 @@ import (
 
 	"ptah.run/core/coverage"
 	"ptah.run/migration/safety"
+	"ptah.run/migration/schemadiff"
 )
 
 func TestRenderSafetyReportJSON(t *testing.T) {
@@ -65,7 +66,7 @@ func TestReportNothingToGenerate(t *testing.T) {
 	withheld.Name = "reporter"
 	tests := []struct {
 		name      string
-		undecided []coverage.Object
+		undecided schemadiff.Diagnostics
 		want      string
 	}{
 		{
@@ -74,7 +75,7 @@ func TestReportNothingToGenerate(t *testing.T) {
 		},
 		{
 			name:      "a declared role withheld",
-			undecided: []coverage.Object{withheld},
+			undecided: schemadiff.Diagnostics{Common: []coverage.Object{withheld}},
 			want:      "No migration files generated for sqlite://app.db, but 1 declared object could not be decided.\n",
 		},
 	}

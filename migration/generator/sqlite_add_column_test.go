@@ -9,8 +9,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/migrator"
 )
@@ -38,8 +40,7 @@ func TestGenerateMigration_SQLiteAddColumnHasApplicableDownMigration(t *testing.
 	_, err = conn.ExecContext(ctx, `INSERT INTO users (id, email) VALUES (1, 'a@example.test')`)
 	c.Assert(err, qt.IsNil)
 
-	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
-		GoEntitiesDir: modelsDir,
+	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{Runtime: must.Must(builtin.New()), GoEntitiesDir: modelsDir,
 		DBConn:        conn,
 		MigrationName: "add_name",
 		OutputDir:     migrationsDir,
@@ -82,8 +83,7 @@ func TestGenerateMigration_SQLiteAddColumnPreservesStrictWithoutRowID(t *testing
 	_, err = conn.ExecContext(ctx, `INSERT INTO users (id, email) VALUES ('u1', 'strict@example.test')`)
 	c.Assert(err, qt.IsNil)
 
-	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
-		GoEntitiesDir: modelsDir,
+	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{Runtime: must.Must(builtin.New()), GoEntitiesDir: modelsDir,
 		DBConn:        conn,
 		MigrationName: "add_name",
 		OutputDir:     migrationsDir,
@@ -148,8 +148,7 @@ func TestGenerateMigration_SQLiteAddColumnRebuildsATableOtherTablesReferTo(t *te
 			_, err = conn.ExecContext(ctx, `INSERT INTO posts (id, user_id) VALUES (1, 1)`)
 			c.Assert(err, qt.IsNil)
 
-			files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
-				GoEntitiesDir: modelsDir,
+			files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{Runtime: must.Must(builtin.New()), GoEntitiesDir: modelsDir,
 				DBConn:        conn,
 				MigrationName: "add_name",
 				OutputDir:     migrationsDir,
@@ -201,8 +200,7 @@ func TestGenerateMigration_SQLiteAddColumnRejectsUnsupportedTriggerSyntax(t *tes
 	_, err = conn.ExecContext(ctx, `CREATE TRIGGER trg_users_email AFTER UPDATE OF email ON users FOR EACH ROW BEGIN SELECT NEW.email; END`)
 	c.Assert(err, qt.IsNil)
 
-	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
-		GoEntitiesDir: modelsDir,
+	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{Runtime: must.Must(builtin.New()), GoEntitiesDir: modelsDir,
 		DBConn:        conn,
 		MigrationName: "add_name",
 		OutputDir:     migrationsDir,

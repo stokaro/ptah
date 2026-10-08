@@ -1,14 +1,17 @@
 package ydb_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -94,7 +97,10 @@ func TestGenerateMigrationAST_IndexChangesInPlace_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := ydb.NewWithCapabilities(test.caps).GenerateMigrationAST(test.diff)
+			nodes, err := ydb.NewWithCapabilities(test.caps).GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				test.diff,
+			)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			var capabilityErr *ptaherr.CapabilityError
@@ -122,7 +128,10 @@ func TestGenerateMigrationAST_PlansARenameAlone(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := ydb.NewWithCapabilities(capability.YDB262()).GenerateMigrationAST(test.diff)
+			nodes, err := ydb.NewWithCapabilities(capability.YDB262()).GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				test.diff,
+			)
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)
 		})
@@ -138,7 +147,7 @@ func TestGenerateMigrationAST_TableRebuild_CarriesIndexChangesInPlace(t *testing
 	c := qt.New(t)
 	declaration := appItems(field("label", "TEXT", true), field("n", "BIGINT", true))
 	declaration.Indexes[0].Partitioning = &ast.IndexPartitioningSpec{MinPartitions: 4}
-	diff := modified(difftypes.TableDiff{
+	diff := modified(t, difftypes.TableDiff{
 		TableName: "app.items", Desired: declaration,
 		ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}},
 	})

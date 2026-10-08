@@ -1,12 +1,19 @@
 package postgres_test
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -30,11 +37,12 @@ var supplementalDiffCategories = map[string]string{
 	"DeclaredTables":                  "every table the declaration holds, carried so a foreign key can be resolved to the table it references -- usually one this diff does not touch. It is an INPUT to rendering rather than a change: on its own it creates no operation, and a fixture would assert that a list of tables plans nothing (stokaro/ptah#2315)",
 	"DeclaredForeignKeys":             "every foreign key the schema the plan runs against holds, carried so the MySQL family can drop a column's keys before MODIFY and put them back. PostgreSQL changes a column type in place and touches no key doing it, so this planner reads the field nowhere; a fixture here would assert that a list of foreign keys plans nothing (stokaro/ptah#2315)",
 	"DeclaredFunctions":               "the declaration order and call graph of the declared functions, carried so the additions can be ordered caller-after-callee. The bodies travel with the additions and it renders nothing of its own; TestPlanner_GenerateMigrationAST_OrdersFunctionsByDependencies drives it through FunctionsAdded, which is the only way it can be exercised (stokaro/ptah#2315)",
-	"DeclaredTableDependencies":       "the table dependency graph, carried so the removals can be ordered child-before-parent. A creation carries its own edges and a removal is only a name, which is why this one is schema-wide; it renders nothing on its own, and a fixture would assert that a graph plans nothing (stokaro/ptah#2315)",
+	"DeclaredTableDependencies":       "the table dependency graph, carried so removals can be ordered child-before-parent alongside tables that remain; it renders nothing on its own, and a fixture would assert that a graph plans nothing (stokaro/ptah#2315)",
 	"DeclaredUserTypes":               "the declaration's type vocabulary, which a created column's type is resolved THROUGH rather than rendered FROM. It creates no operation by itself: TestPlanner_CreatesAColumnTypedByADeclaredDomain drives it as part of a table creation, which is the only way it can be exercised (stokaro/ptah#2315)",
 	"DeclaredSchemas":                 "every schema the declaration holds, carried so a CREATE SCHEMA the plan emits can carry the comment, character set and collation the author wrote for it. The plan reaches a schema through an object's qualifier, so the name arrives and nothing else does; on its own the list plans nothing, and TestGenerateSchemaDiffSQLStatements_ACreatedSchemaCarriesItsComment drives it through a table that names a schema, which is the only way it can be exercised (stokaro/ptah#2618)",
 	"DeclaredViewLikes":               "every declared view and materialized view, which a cascading DROP is resolved AGAINST rather than rendered from. The recreate it feeds belongs to the drop that cascaded, and several fixtures below carry it for exactly that reason; on its own it plans nothing (stokaro/ptah#2315)",
 	"DeclaredConstraintHosts":         "the declaration of every table a constraint change names, carried for a target that has to rebuild the table to change a constraint on it. PostgreSQL adds and drops constraints in place and never rebuilds, so this planner reads the field nowhere; a fixture here would assert that a list of table declarations plans nothing (stokaro/ptah#2315)",
+	"ObservedConstraintHosts":         "PostgreSQL changes constraints in place; observed rebuild operands do not add PostgreSQL operations",
 	"CurrentGrants":                   "every grant the read of the database reported, carried for a target that rebuilds a table and has to give the new one the grants the old one held. PostgreSQL changes its tables in place and never rebuilds one, so this planner reads the field nowhere",
 	"DeclaredSecrets":                 "every YDB secret the declaration holds, carried so a rotation request can find the variable a secret's value comes from. It is an input to a rotation rather than a change, and a PostgreSQL plan reaches no secret, so on its own it plans nothing",
 	"DeclaredExternalTables":          "every YDB external table the declaration holds, carried so a YDB plan that drops a data source and creates it again can create the tables over it again. It is an input to that plan rather than a change, and a PostgreSQL plan reaches no external table, so on its own it plans nothing",
@@ -54,6 +62,10 @@ var supplementalDiffCategories = map[string]string{
 // without anything noticing, which is the failure this whole file exists to
 // prevent one level down.
 var refusedDiffCategories = map[string]refusedFixture{
+	"FeatureChanges": {
+		why:  "a named feature change requires an owning planning handler; PostgreSQL refuses a YDB changefeed instead of dropping it",
+		diff: &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: ydbschema.ChangefeedRef("", "events", "feed"), Value: &ydbdiff.Changefeed{After: &ydbschema.DesiredChangefeed{Spec: ydbschema.ChangefeedSpec{Name: "feed", Mode: "UPDATES", Format: "JSON"}}}}}},
+	},
 	"SchemasAdded": {
 		why:  "the comparison records a created database only for a whole MySQL or MariaDB server (stokaro/ptah#3789), so a PostgreSQL plan reaches one only through a diff built by hand, and planning nothing would call the two sides equal",
 		diff: &difftypes.SchemaDiff{SchemasAdded: []schemamodel.Schema{{Name: "app"}}},
@@ -245,7 +257,10 @@ func TestEveryRefusedDiffCategoryIsRefused(t *testing.T) {
 		t.Run(field, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := postgres.New().GenerateMigrationAST(fixture.diff)
+			nodes, err := postgres.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				fixture.diff,
+			)
 
 			c.Assert(err, qt.IsNotNil, qt.Commentf("%s: %s", field, fixture.why))
 			c.Assert(nodes, qt.IsNil)
@@ -273,7 +288,10 @@ func TestEveryDiffCategoryRendersSQL(t *testing.T) {
 			// Each fixture states a diff and the declaration it came from,
 			// so the carries a comparison would have filled are filled here
 			// rather than in every literal (stokaro/ptah#2315).
-			nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(fixture.diff, fixture.desired))
+			nodes, err := postgres.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(fixture.diff, fixture.desired),
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(len(nodes) > 0, qt.IsTrue, qt.Commentf("the planner rendered nothing for %s", fixture.field))
@@ -335,8 +353,8 @@ func diffCategoryFixtures() []categoryFixture {
 	increment := int64(2)
 
 	return []categoryFixture{
-		{"TablesAdded", &difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(oneTable, "t")}, oneTable},
-		{"TablesRemoved", &difftypes.SchemaDiff{TablesRemoved: []string{"t"}}, &schemamodel.Database{}},
+		{"TablesAdded", &difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(oneTable, identifier.ForDialect("postgres"), "t")}, oneTable},
+		{"TablesRemoved", &difftypes.SchemaDiff{TablesRemoved: difftypes.TableRemovals{{Name: "t"}}}, &schemamodel.Database{}},
 		{
 			"TablesModified",
 			&difftypes.SchemaDiff{

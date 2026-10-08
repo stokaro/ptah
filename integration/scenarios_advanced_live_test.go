@@ -29,7 +29,7 @@ func TestAdvancedScenariosWithRealDatabase(t *testing.T) {
 			c.Assert(runner.RunAll(t.Context()), qt.IsNil)
 			report := runner.GetReport()
 			c.Assert(report.TotalTests, qt.Equals, 1)
-			c.Assert(report.PassedTests, qt.Equals, 1)
+			c.Assert(report.PassedTests, qt.Equals, 1, qt.Commentf("scenario results: %#v", report.Results))
 			c.Assert(report.FailedTests, qt.Equals, 0)
 			c.Assert(report.SkippedTests, qt.Equals, 0)
 		})

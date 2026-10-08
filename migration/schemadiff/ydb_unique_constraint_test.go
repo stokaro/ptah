@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -55,8 +57,8 @@ func TestCompare_YDBUniqueConstraintIsItsIndex(t *testing.T) {
 		name string
 		diff *difftypes.SchemaDiff
 	}{
-		{name: "against the database", diff: schemadiff.CompareWithDialect(ydbUniqueDeclaration(), ydbUniqueCatalog(), platform.YDB)},
-		{name: "against the same document", diff: schemadiff.CompareSchemas(ydbUniqueDeclaration(), ydbUniqueDeclaration(), platform.YDB)},
+		{name: "against the database", diff: must.Must(schemadiff.CompareWithDialect(t.Context(), ydbUniqueDeclaration(), ydbUniqueCatalog(), platform.YDB, must.Must(builtin.New())))},
+		{name: "against the same document", diff: must.Must(schemadiff.CompareSchemas(t.Context(), ydbUniqueDeclaration(), ydbUniqueDeclaration(), platform.YDB, must.Must(builtin.New())))},
 	}
 
 	for _, test := range tests {
@@ -76,7 +78,7 @@ func TestCompare_YDBUniqueConstraintAddsItsIndex(t *testing.T) {
 	database := ydbUniqueCatalog()
 	database.Indexes = nil
 
-	diff := schemadiff.CompareWithDialect(ydbUniqueDeclaration(), database, platform.YDB)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), ydbUniqueDeclaration(), database, platform.YDB, must.Must(builtin.New())))
 
 	c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "accounts_email_key", TableName: "accounts"},

@@ -41,7 +41,7 @@ func TestGenerateMigrationAST_ColumnTTLFromRowPolicy(t *testing.T) {
 	declaration := itemsDeclaration(field("ts", "TIMESTAMP", true))
 	declaration.Table.YDBColumnTable = columnRetention()
 	declaration.Table.PrimaryKey = []string{"ts", "id"}
-	diff := modified(difftypes.TableDiff{
+	diff := modified(t, difftypes.TableDiff{
 		TableName: "items", Desired: declaration,
 		YDBColumnTableChange:    &difftypes.YDBColumnTableChange{Desired: columnRetention(), Current: &ast.YDBColumnTableSpec{HashColumns: []string{"id"}}},
 		RowDeletionPolicyChange: &difftypes.RowDeletionPolicyChange{Current: &ast.RowDeletionPolicySpec{Column: "ts", Interval: "P7D"}},

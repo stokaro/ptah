@@ -4,12 +4,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff"
 )
@@ -42,15 +44,17 @@ func TestPlanBidirectionalSchemaDiff_SerialSequenceRollsBack(t *testing.T) {
 			ColumnName: "id", ColumnNames: []string{"id"}}},
 	}
 	desired := itemsWithIncrement("10")
-	diff := schemadiff.CompareWithDialect(desired, current, platform.YDB)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		desired, current, platform.YDB, must.Must(builtin.New()),
+	))
 
-	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
-		Diff:          diff,
-		DesiredSchema: desired,
-		CurrentSchema: current,
-		Dialect:       platform.YDB,
-		Capabilities:  capability.YDB262(),
-	})
+	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(),
+		generator.BidirectionalSchemaPlanOptions{Runtime: must.Must(builtin.New()), Diff: diff,
+			DesiredSchema: desired,
+			CurrentSchema: current,
+			Dialect:       platform.YDB,
+			Capabilities:  capability.YDB262(),
+		})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.Forward.Nodes, qt.DeepEquals, []ast.Node{&ast.AlterSerialSequenceNode{
@@ -78,15 +82,17 @@ func TestPlanBidirectionalSchemaDiff_ARestartedSequenceRefusesBothDirections(t *
 			ColumnName: "id", ColumnNames: []string{"id"}}},
 	}
 	desired := itemsWithIncrement("10")
-	diff := schemadiff.CompareWithDialect(desired, current, platform.YDB)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		desired, current, platform.YDB, must.Must(builtin.New()),
+	))
 
-	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
-		Diff:          diff,
-		DesiredSchema: desired,
-		CurrentSchema: current,
-		Dialect:       platform.YDB,
-		Capabilities:  capability.YDB262(),
-	})
+	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(),
+		generator.BidirectionalSchemaPlanOptions{Runtime: must.Must(builtin.New()), Diff: diff,
+			DesiredSchema: desired,
+			CurrentSchema: current,
+			Dialect:       platform.YDB,
+			Capabilities:  capability.YDB262(),
+		})
 
 	c.Assert(err, qt.ErrorMatches, `.*the sequence was restarted at 100, and YDB replays that restart .*`)
 	c.Assert(plan, qt.IsNil)

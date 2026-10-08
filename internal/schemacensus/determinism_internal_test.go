@@ -12,8 +12,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/capabilityprobe"
 )
 
@@ -30,18 +32,24 @@ import (
 func TestSurfaces_RenderTheSameBytesTwice(t *testing.T) {
 	surfaces := []struct {
 		name    string
-		surface func(schemamodel.Database, capabilityprobe.Cell) string
+		surface func(schemamodel.Database, capabilityprobe.Cell) (string, error)
 	}{
-		{name: "render", surface: renderOne},
-		{name: "plan", surface: planOne},
+		{name: "render", surface: func(schema schemamodel.Database, cell capabilityprobe.Cell) (string, error) {
+			return renderOne(t.Context(), must.Must(builtin.New()), schema, cell)
+		}},
+		{name: "plan", surface: func(schema schemamodel.Database, cell capabilityprobe.Cell) (string, error) {
+			return planOne(t.Context(), must.Must(builtin.New()), schema, cell)
+		}},
 	}
 
 	for _, surface := range surfaces {
 		for _, fixture := range Fixtures() {
 			t.Run(surface.name+" "+fixture.Name, func(t *testing.T) {
 				c := qt.New(t)
-				first := everyCell(surface.surface, fixture.Schema, fixture.Cells(capabilityprobe.Cells))
-				second := everyCell(surface.surface, fixture.Schema, fixture.Cells(capabilityprobe.Cells))
+				first, err := everyCell(surface.surface, fixture.Schema, fixture.Cells(capabilityprobe.Cells))
+				c.Assert(err, qt.IsNil)
+				second, err := everyCell(surface.surface, fixture.Schema, fixture.Cells(capabilityprobe.Cells))
+				c.Assert(err, qt.IsNil)
 				c.Assert(second, qt.DeepEquals, first)
 			})
 		}

@@ -1,15 +1,17 @@
 package planner_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -28,9 +30,12 @@ func TestGetPlanner_CapabilityWiring(t *testing.T) {
 	t.Run("mariadb gets guarded drops", func(t *testing.T) {
 		c := qt.New(t)
 
-		nodes, err := planner.GenerateSchemaDiffAST(diff, "mariadb")
+		nodes, err := planner.GenerateSchemaDiffAST(
+			context.Background(), must.Must(builtin.New()),
+			diff, "mariadb",
+		)
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("mariadb", nodes...)
+		sql, err := builtin.RenderSQL("mariadb", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 		c.Assert(sql, qt.Contains, "ALTER TABLE posts DROP FOREIGN KEY IF EXISTS fk_posts_user;",
@@ -40,9 +45,12 @@ func TestGetPlanner_CapabilityWiring(t *testing.T) {
 	t.Run("mysql stays unguarded", func(t *testing.T) {
 		c := qt.New(t)
 
-		nodes, err := planner.GenerateSchemaDiffAST(diff, "mysql")
+		nodes, err := planner.GenerateSchemaDiffAST(
+			context.Background(), must.Must(builtin.New()),
+			diff, "mysql",
+		)
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("mysql", nodes...)
+		sql, err := builtin.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 		c.Assert(sql, qt.Contains, "ALTER TABLE posts DROP FOREIGN KEY fk_posts_user;",
@@ -63,7 +71,10 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_UsesServerVersionPreset(t *t
 		c := qt.New(t)
 		caps := capability.ForServerVersion("mysql", "5.7.44")
 
-		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, "mysql", planner.Options{Capabilities: caps})
+		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+			context.Background(), must.Must(builtin.New()),
+			diff, "mysql", planner.Options{Capabilities: caps},
+		)
 		c.Assert(err, qt.IsNil)
 		sql := legacyRenderedSQL(strings.Join(statements, "\n"))
 
@@ -75,7 +86,10 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_UsesServerVersionPreset(t *t
 		c := qt.New(t)
 		caps := capability.ForServerVersion("mysql", "8.0.17")
 
-		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, "mysql", planner.Options{Capabilities: caps})
+		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+			context.Background(), must.Must(builtin.New()),
+			diff, "mysql", planner.Options{Capabilities: caps},
+		)
 		c.Assert(err, qt.IsNil)
 		sql := legacyRenderedSQL(strings.Join(statements, "\n"))
 
@@ -86,7 +100,10 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_UsesServerVersionPreset(t *t
 		c := qt.New(t)
 		caps := capability.ForServerVersion("mysql", "8.0.19")
 
-		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, "mysql", planner.Options{Capabilities: caps})
+		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+			context.Background(), must.Must(builtin.New()),
+			diff, "mysql", planner.Options{Capabilities: caps},
+		)
 		c.Assert(err, qt.IsNil)
 		sql := legacyRenderedSQL(strings.Join(statements, "\n"))
 
@@ -98,9 +115,12 @@ func TestGetPlanner_DistributedSQLCapabilityWiring(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_users_email", Fields: []string{"email"}}, TableName: "users"}}}
-	nodes, err := planner.GenerateSchemaDiffAST(diff, platform.CockroachDB)
+	nodes, err := planner.GenerateSchemaDiffAST(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.CockroachDB,
+	)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL(platform.CockroachDB, nodes...)
+	sql, err := builtin.RenderSQL(platform.CockroachDB, nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);",
@@ -118,7 +138,10 @@ func TestGetPlanner_CockroachDBTableQualifiedIndexReplacement(t *testing.T) {
 	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "public.users"},
 	})
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.CockroachDB)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.CockroachDB,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2)

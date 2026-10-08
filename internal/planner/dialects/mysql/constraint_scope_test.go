@@ -1,13 +1,15 @@
 package mysql_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/planner/dialects/mysql"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -37,9 +39,12 @@ var mysqlFamilyDialects = []string{"mysql", "mariadb"}
 // right.
 func renderMySQLFamily(c *qt.C, dialect string, diff *difftypes.SchemaDiff, desired *schemamodel.Database) string {
 	diff = withDeclaredObjects(diff, desired)
-	nodes, err := mysql.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := mysql.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL(dialect, nodes...)
+	sql, err := builtin.RenderSQL(dialect, nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 	return sql
@@ -177,7 +182,7 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedCheckAndUniqueAdditions(t *t
 
 func TestPlanner_GenerateMigrationAST_DropsFKBeforeRemovingItsTable(t *testing.T) {
 	diff := &difftypes.SchemaDiff{
-		TablesRemoved: []string{"tasks", "projects", "accounts"},
+		TablesRemoved: difftypes.TableRemovals{{Name: "tasks"}, {Name: "projects"}, {Name: "accounts"}},
 		ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 			{Name: "fk_tasks_project", TableName: "tasks", Type: "FOREIGN KEY"},
 			{Name: "fk_projects_account", TableName: "projects", Type: "FOREIGN KEY"},
@@ -680,7 +685,7 @@ func TestPlanner_GenerateMigrationAST_PureConstraintRemovals_TableQualified(t *t
 			c := qt.New(t)
 
 			diff := &difftypes.SchemaDiff{
-				TablesRemoved: []string{"obsolete"},
+				TablesRemoved: difftypes.TableRemovals{{Name: "obsolete"}},
 				ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 					{Name: "fk_orders_customer", TableName: "orders", Type: "FOREIGN KEY"},
 					{Name: "chk_qty", TableName: "things", Type: "CHECK"},
@@ -870,10 +875,13 @@ func TestPlanner_ModifiedPrimaryKeyIsDroppedThenReadded(t *testing.T) {
 		}},
 	}
 
-	nodes, err := mysql.New().GenerateMigrationAST(diff)
+	nodes, err := mysql.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("mysql", nodes...)
+	sql, err := builtin.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "ALTER TABLE `users` DROP PRIMARY KEY, ADD PRIMARY KEY (`id`, `tenant`);")
 	c.Assert(strings.Count(sql, "DROP PRIMARY KEY"), qt.Equals, 1)

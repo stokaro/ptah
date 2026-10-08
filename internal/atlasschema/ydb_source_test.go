@@ -6,7 +6,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 )
 
@@ -24,7 +26,7 @@ func TestYQLDocumentDiffUsesDeclaredDatabaseRoot(t *testing.T) {
 			report, err := atlasschema.Diff(t.Context(), atlasschema.DiffOptions{
 				FromURLs: []string{"file://" + filepath.ToSlash(before)}, ToURLs: []string{"file://" + filepath.ToSlash(after)},
 				DevURL: "docker://ydb/" + version + "/local", Schemas: []string{"shop"},
-			})
+				Runtime: must.Must(builtin.New())})
 			c.Assert(err, qt.IsNil)
 			sql, err := report.MarshalSQL()
 			c.Assert(err, qt.IsNil)

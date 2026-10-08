@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
+	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -149,7 +150,7 @@ func TestNewBaselineMismatchError_ReportsWhatTheTargetReadCouldNotCheck(t *testi
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			err := newBaselineMismatchError(test.diff, []coverage.Object{withheld})
+			err := newBaselineMismatchError(test.diff, schemadiff.Diagnostics{Common: []coverage.Object{withheld}})
 
 			c.Assert(err.Result.Stage, qt.Equals, "schema-match")
 			c.Assert(err.Result.Mismatches, qt.DeepEquals, test.want)

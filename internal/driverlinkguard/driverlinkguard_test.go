@@ -12,14 +12,14 @@ import (
 // purePaths are the entry points that turn Go structs into SQL. Each one is
 // reachable by an embedder who never connects to a database, and each one is a
 // separate root because they do not import one another: `core/goschema` parses
-// the struct tags, `core/renderer` writes the DDL, and `migration/planner`
+// the struct tags, `engine/builtin` writes the DDL, and `migration/planner`
 // orders it.
 var purePaths = []struct {
 	name string
 	pkg  string
 }{
 	{name: "goschema parses the struct tags", pkg: "ptah.run/core/goschema"},
-	{name: "renderer writes the DDL", pkg: "ptah.run/core/renderer"},
+	{name: "renderer writes the DDL", pkg: "ptah.run/engine/builtin"},
 	{name: "planner orders it", pkg: "ptah.run/migration/planner"},
 }
 
@@ -55,7 +55,7 @@ const connectionLayer = "ptah.run/dbschema"
 // the YAML reader rather than as a dependency any of these packages names.
 //
 // Growing this list is a decision, not a formality: a module that reaches
-// `core/renderer` reaches every embedder who renders SQL. If the new dependency
+// `engine/builtin` reaches every embedder who renders SQL. If the new dependency
 // belongs to the connection layer, the import that pulled it in is the defect.
 var permittedModules = []string{
 	"ptah.run",
@@ -68,7 +68,7 @@ var permittedModules = []string{
 //
 // The failure prints the import chain rather than the module alone, because the
 // edge that has to be cut is nearly never in the package that was changed --
-// the one this test was written for ran core/renderer -> internal/schemaselection
+// the one this test was written for ran engine/builtin -> internal/schemaselection
 // -> internal/atlasurl, and only the last of those three had ever heard of a
 // driver.
 func TestPureRenderingPathsLinkNoDatabaseDriver(t *testing.T) {

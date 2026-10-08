@@ -1,13 +1,16 @@
 package atlas
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/atlasschema"
@@ -226,7 +229,12 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	runtime, err := builtin.New()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	rendered, err := atlasschema.InspectSource(cmd.Context(), atlasschema.InspectSourceOptions{
+		Runtime:        runtime,
 		URLs:           []string{opts.url},
 		DevURL:         opts.devURL,
 		Schemas:        opts.schemas,
@@ -242,9 +250,11 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 		SuppressRoleCoverageNote: opts.policy.IsStrictCE(),
 
 		// Atlas-compatible surface; see internal/cli/atlas/schema_apply.go.
-		IgnoreUnknownHCLNames:     opts.policy.IgnoreUnknownHCLNames(),
-		ValidateDesiredSchema:     opts.policy.ValidateDesiredSchema,
-		PrepareInspectedSchema:    opts.policy.PrepareInspectedSchema,
+		IgnoreUnknownHCLNames: opts.policy.IgnoreUnknownHCLNames(),
+		ValidateDesiredSchema: opts.policy.ValidateDesiredSchema,
+		PrepareInspectedSchema: func(ctx context.Context, current *catalog.Database, info catalog.ServerInfo) (*catalog.Database, error) {
+			return opts.policy.PrepareInspectedSchema(ctx, current, info.Dialect, runtime)
+		},
 		ValidateLiveObject:        atlasLiveSchemaObjectValidator(opts.policy),
 		ValidateMigrationSource:   opts.policy.MigrationSourceValidator(opts.devURL),
 		ValidateLocalSchemaSource: opts.policy.ValidateLocalSchemaSource,

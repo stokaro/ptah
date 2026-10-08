@@ -1,12 +1,15 @@
 package planner_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 )
 
@@ -65,7 +68,10 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_OmitNullBackfill(t *testing.
 				map[string]string{"nullable": "true -> false", "default_expr": " -> 9"},
 			)
 
-			got, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, test.dialect, planner.Options{OmitNullBackfill: test.omit})
+			got, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+				context.Background(), must.Must(builtin.New()),
+				diff, test.dialect, planner.Options{OmitNullBackfill: test.omit},
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.DeepEquals, test.want)

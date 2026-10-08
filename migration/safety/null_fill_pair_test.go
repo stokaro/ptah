@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/safety"
 )
 
@@ -112,7 +114,7 @@ func TestAssessRendered_NullFillPair(t *testing.T) {
 			c := qt.New(t)
 			node := &ast.AlterTableNode{Name: "flags", Operations: test.operations}
 
-			assessments, err := safety.AssessRendered([]ast.Node{node}, platform.Postgres)
+			assessments, err := safety.AssessRendered(c.Context(), must.Must(builtin.New()), []ast.Node{node}, platform.Postgres)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(judgedOf(assessments), qt.DeepEquals, test.want)
@@ -156,7 +158,7 @@ func TestAssessRendered_NullFillPairIsPostgreSQLOnly(t *testing.T) {
 			c := qt.New(t)
 			node := &ast.AlterTableNode{Name: "flags", Operations: test.operations}
 
-			assessments, err := safety.AssessRendered([]ast.Node{node}, platform.MySQL)
+			assessments, err := safety.AssessRendered(c.Context(), must.Must(builtin.New()), []ast.Node{node}, platform.MySQL)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(judgedOf(assessments), qt.DeepEquals, test.want)

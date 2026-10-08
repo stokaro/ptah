@@ -3,16 +3,19 @@
 package gonative_test
 
 import (
+	"context"
 	"database/sql"
 	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -57,7 +60,7 @@ func TestCockroachDBTableQualifiedIndexIdentity_RoundTrip(t *testing.T) {
 
 	ordersTarget := cockroachIndexIdentityOrdersTarget()
 	live := readCockroachIndexIdentitySchema(c, t, dsn)
-	diff := schemadiff.CompareWithDialect(ordersTarget, live, platform.CockroachDB)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), ordersTarget, live, platform.CockroachDB, must.Must(builtin.New())))
 	c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(diff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: cockroachIndexIdentityName, TableName: cockroachIndexIdentityUsersTable},
@@ -65,7 +68,10 @@ func TestCockroachDBTableQualifiedIndexIdentity_RoundTrip(t *testing.T) {
 
 	removeDiff := &difftypes.SchemaDiff{}
 	removeDiff.SetIndexRemovals(diff.IndexRemovals())
-	statements, err := planner.GenerateSchemaDiffSQLStatements(removeDiff, platform.CockroachDB)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		removeDiff, platform.CockroachDB,
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.DeepEquals, []string{
 		`DROP INDEX IF EXISTS "` + cockroachIndexIdentityUsersTable + `"@"` +
@@ -75,13 +81,13 @@ func TestCockroachDBTableQualifiedIndexIdentity_RoundTrip(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("execute CockroachDB index removal: %s", statements[0]))
 
 	live = readCockroachIndexIdentitySchema(c, t, dsn)
-	removedDiff := schemadiff.CompareWithDialect(ordersTarget, live, platform.CockroachDB)
+	removedDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), ordersTarget, live, platform.CockroachDB, must.Must(builtin.New())))
 	c.Assert(removedDiff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(removedDiff.IndexRemovals(), qt.HasLen, 0)
 	c.Assert(live.Indexes, qt.HasLen, 1)
 
 	bothTarget := cockroachIndexIdentityBothTarget()
-	addDiff := schemadiff.CompareWithDialect(bothTarget, live, platform.CockroachDB)
+	addDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), bothTarget, live, platform.CockroachDB, must.Must(builtin.New())))
 	c.Assert(addDiff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: cockroachIndexIdentityName, TableName: cockroachIndexIdentityUsersTable},
 	})
@@ -89,7 +95,10 @@ func TestCockroachDBTableQualifiedIndexIdentity_RoundTrip(t *testing.T) {
 
 	createDiff := &difftypes.SchemaDiff{}
 	createDiff.SetIndexAdditions(addDiff.IndexesAdded)
-	statements, err = planner.GenerateSchemaDiffSQLStatements(createDiff, platform.CockroachDB)
+	statements, err = planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		createDiff, platform.CockroachDB,
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 1)
 	c.Assert(statements[0], qt.Contains,
@@ -99,7 +108,7 @@ func TestCockroachDBTableQualifiedIndexIdentity_RoundTrip(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("execute CockroachDB index addition: %s", statements[0]))
 
 	live = readCockroachIndexIdentitySchema(c, t, dsn)
-	finalDiff := schemadiff.CompareWithDialect(bothTarget, live, platform.CockroachDB)
+	finalDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), bothTarget, live, platform.CockroachDB, must.Must(builtin.New())))
 	c.Assert(finalDiff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(finalDiff.IndexRemovals(), qt.HasLen, 0)
 	c.Assert(live.Indexes, qt.HasLen, 2)

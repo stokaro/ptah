@@ -11,10 +11,12 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/sijms/go-ora/v3" // registers the Oracle driver for database/sql
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/dbtarget"
 )
@@ -181,7 +183,7 @@ func oracleDeclaredRowsPlan(
 	table string,
 ) []string {
 	c.Helper()
-	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired})
+	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	name := strings.ToUpper(table)
 	return slices.DeleteFunc(plan.Statements(), func(statement string) bool {

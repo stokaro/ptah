@@ -11,11 +11,12 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/jackc/pgx/v5"
 
 	"ptah.run/catalog"
-	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/dbtarget"
 )
@@ -156,8 +157,8 @@ func TestReadDescribesCoveringIndex_Live(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			info := conn.Info()
 
-			statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(
-				dbschematogo.ConvertDBSchemaToGoSchema(schema, "postgres"),
+			statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(
+				must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), schema, "postgres", must.Must(builtin.New()))),
 				info.Dialect,
 				info.Capabilities,
 			)

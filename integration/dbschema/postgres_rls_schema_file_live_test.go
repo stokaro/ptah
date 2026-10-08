@@ -12,11 +12,12 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/planner"
@@ -86,7 +87,7 @@ func (f rlsFileFixture) compare(c *qt.C, desired *schemamodel.Database) *difftyp
 	c.Helper()
 	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), f.conn, []string{f.schema})
 	c.Assert(err, qt.IsNil)
-	return schemadiff.CompareWithDialect(desired, live, platform.Postgres)
+	return must.Must(schemadiff.CompareWithDialect(c.Context(), desired, live, platform.Postgres, must.Must(builtin.New())))
 }
 
 // visibleTenants is what the owner role reads from the table, in order.
@@ -145,7 +146,7 @@ func TestPostgresLiveSQLSchemaFileForceAndRestrictiveConverge(t *testing.T) {
 ALTER TABLE S.docs ENABLE ROW LEVEL SECURITY;
 `+rlsFilePolicies("RESTRICTIVE"))
 
-	statements, err := renderer.GetOrderedCreateStatements(desired, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(desired, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	f.exec(c, statements)
 	f.exec(c, []string{
@@ -174,7 +175,7 @@ ALTER TABLE S.docs FORCE ROW LEVEL SECURITY;
 ALTER TABLE S.docs FORCE ROW LEVEL SECURITY;
 `+rlsFilePolicies("PERMISSIVE"))
 
-	statements, err := renderer.GetOrderedCreateStatements(unforcedRestrictive, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(unforcedRestrictive, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	f.exec(c, statements)
 	f.exec(c, []string{
@@ -212,7 +213,10 @@ ALTER TABLE S.docs FORCE ROW LEVEL SECURITY;
 	}
 	for _, step := range steps {
 		diff := rlsPart(f.compare(c, step.desired))
-		planned, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.Postgres)
+		planned, err := planner.GenerateSchemaDiffSQLStatements(
+			context.Background(), must.Must(builtin.New()),
+			diff, platform.Postgres,
+		)
 		c.Assert(err, qt.IsNil, qt.Commentf("step %s", step.name))
 		c.Assert(forceStatements(planned), qt.DeepEquals, step.wantForce, qt.Commentf("step %s", step.name))
 		f.exec(c, planned)

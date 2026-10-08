@@ -4,11 +4,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 )
 
 // changefeedSource is an entity whose struct carries the given annotations
@@ -44,14 +46,14 @@ func TestParseSource_Changefeed_HappyPath(t *testing.T) {
 		name      string
 		onStruct  string
 		onHolder  string
-		wantItems []ast.ChangefeedSpec
-		wantShop  []ast.ChangefeedSpec
+		wantItems []ydbschema.ChangefeedSpec
+		wantShop  []ydbschema.ChangefeedSpec
 	}{
 		{
 			name: "one on the struct, its options folded as YDB folds them",
 			onStruct: `//ptah:schema:changefeed name="updates" mode="updates" format="json" retention_period="PT12H" initial_scan
 `,
-			wantItems: []ast.ChangefeedSpec{{Name: "updates", Mode: "UPDATES", Format: "JSON", RetentionPeriod: "PT12H", InitialScan: true}},
+			wantItems: []ydbschema.ChangefeedSpec{{Name: "updates", Mode: "UPDATES", Format: "JSON", RetentionPeriod: "PT12H", InitialScan: true}},
 		},
 		{
 			name: "consumers on the struct, in the order written",
@@ -59,7 +61,7 @@ func TestParseSource_Changefeed_HappyPath(t *testing.T) {
 //ptah:schema:changefeed:consumer changefeed="feed" name="audit" important
 //ptah:schema:changefeed:consumer changefeed="feed" name="late" supported_codecs="raw,gzip" read_from="2026-01-01T00:00:00Z"
 `,
-			wantItems: []ast.ChangefeedSpec{{Name: "feed", Mode: "KEYS_ONLY", Format: "JSON", Consumers: []ast.TopicConsumerSpec{
+			wantItems: []ydbschema.ChangefeedSpec{{Name: "feed", Mode: "KEYS_ONLY", Format: "JSON", Consumers: []ast.TopicConsumerSpec{
 				{Name: "audit", Important: true},
 				{Name: "late", SupportedCodecs: []string{"raw", "gzip"}, ReadFrom: "2026-01-01T00:00:00Z"},
 			}}},
@@ -68,7 +70,7 @@ func TestParseSource_Changefeed_HappyPath(t *testing.T) {
 			name: "on a holder field, naming a table in a directory",
 			onHolder: `	//ptah:schema:changefeed name="feed" table="shop.orders" mode="NEW_IMAGE" format="DEBEZIUM_JSON"
 	//ptah:schema:changefeed:consumer changefeed="feed" table="shop.orders" name="audit"`,
-			wantShop: []ast.ChangefeedSpec{{Name: "feed", Mode: "NEW_IMAGE", Format: "DEBEZIUM_JSON",
+			wantShop: []ydbschema.ChangefeedSpec{{Name: "feed", Mode: "NEW_IMAGE", Format: "DEBEZIUM_JSON",
 				Consumers: []ast.TopicConsumerSpec{{Name: "audit"}}}},
 		},
 	}
@@ -78,8 +80,8 @@ func TestParseSource_Changefeed_HappyPath(t *testing.T) {
 			db, err := goschema.ParseSource("items.go", changefeedSource(test.onStruct, test.onHolder))
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Tables, qt.HasLen, 2)
-			c.Assert(db.Tables[0].Changefeeds, qt.DeepEquals, test.wantItems)
-			c.Assert(db.Tables[1].Changefeeds, qt.DeepEquals, test.wantShop)
+			c.Assert(must.Must(ydbschema.DesiredChangefeeds(db.FeatureObjects, db.Tables[0].Schema, db.Tables[0].Name)), qt.DeepEquals, test.wantItems)
+			c.Assert(must.Must(ydbschema.DesiredChangefeeds(db.FeatureObjects, db.Tables[1].Schema, db.Tables[1].Name)), qt.DeepEquals, test.wantShop)
 		})
 	}
 }

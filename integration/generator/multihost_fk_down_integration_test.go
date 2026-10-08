@@ -7,10 +7,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
 )
@@ -122,7 +124,7 @@ func TestMultiHostMixinFKModify_DownRoundTrip_Integration(t *testing.T) {
 
 			// 6. Idempotency: the DB now matches the prior schema again, so a fresh
 			//    diff against the prior generated schema is clean (no churn loop).
-			idemDiff := schemadiff.CompareWithDialect(genPrior, dbAfterDown, dialect)
+			idemDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), genPrior, dbAfterDown, dialect, must.Must(builtin.New())))
 			c.Assert(idemDiff.HasChanges(), qt.IsFalse,
 				qt.Commentf("post-DOWN diff must be clean; added=%v removed=%v",
 					idemDiff.ConstraintsAdded, idemDiff.ConstraintsRemoved))

@@ -13,9 +13,10 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/types/known/durationpb"
 
+	"ptah.run/catalog"
 	"ptah.run/core/ast"
-	"ptah.run/core/coverage"
-	"ptah.run/internal/tableref"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbchangefeed"
 	"ptah.run/internal/ydbttl"
 )
@@ -58,48 +59,48 @@ func (r *Reader) changefeeds(
 	source Source,
 	schema, table string,
 	described *Ydb_Table.DescribeTableResult,
-) ([]ast.ChangefeedSpec, []coverage.Object, error) {
-	var read []ast.ChangefeedSpec
-	var records []coverage.Object
+) ([]*ydbschema.ObservedChangefeed, []schemaext.SubjectCoverage, error) {
+	var read []*ydbschema.ObservedChangefeed
+	var records []schemaext.SubjectCoverage
 	for _, feed := range described.GetChangefeeds() {
-		spec, modeled, err := r.changefeed(ctx, source, schema, table, feed)
+		observed, modeled, err := r.changefeed(ctx, source, schema, table, feed)
 		if err != nil {
 			return nil, nil, fmt.Errorf("changefeed %q: %w", feed.GetName(), err)
 		}
 		if !modeled {
-			records = append(records, coverage.Object{
-				Kind:       coverage.Changefeed,
-				Name:       tableref.Canonical(schema, table+"/"+feed.GetName()),
-				Reason:     coverage.Unsupported,
-				Provenance: coverage.Observed,
+			records = append(records, schemaext.SubjectCoverage{
+				Kind:      ydbschema.ChangefeedKind,
+				Subject:   ydbschema.ChangefeedRef(schema, table, feed.GetName()),
+				Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "the observed changefeed has settings this reader cannot represent"},
 			})
 			continue
 		}
-		read = append(read, spec)
+		read = append(read, observed)
 	}
-	slices.SortFunc(read, func(a, b ast.ChangefeedSpec) int { return strings.Compare(a.Name, b.Name) })
+	slices.SortFunc(read, func(a, b *ydbschema.ObservedChangefeed) int { return strings.Compare(a.Spec.Name, b.Spec.Name) })
 	return read, records, nil
 }
 
 // changefeed reads one changefeed and its topic. It reports false for one
 // holding something Ptah does not model: a mode, a format or a state it does
-// not know, an AWS region, attributes, trace identifiers, a field the pinned
-// protocol buffers do not know, or a topic or consumer setting it does not
-// read.
+// not know, an AWS region, attributes other than the replication binding,
+// trace identifiers, a field the pinned protocol buffers do not know, or a
+// topic or consumer setting it does not read.
 func (r *Reader) changefeed(
 	ctx context.Context,
 	source Source,
 	schema, table string,
 	feed *Ydb_Table.ChangefeedDescription,
-) (ast.ChangefeedSpec, bool, error) {
+) (*ydbschema.ObservedChangefeed, bool, error) {
 	mode, knownMode := changefeedModes[feed.GetMode()]
 	format, knownFormat := changefeedFormats[feed.GetFormat()]
 	userSIDs, traceIDs, knownFields := changefeedUnknownFields(feed)
+	binding, knownOwnership := changefeedReplication(feed.GetAttributes())
 	if !knownMode || !knownFormat || !knownFields || traceIDs ||
-		feed.GetAwsRegion() != "" || len(feed.GetAttributes()) > 0 {
-		return ast.ChangefeedSpec{}, false, nil
+		feed.GetAwsRegion() != "" || !knownOwnership {
+		return nil, false, nil
 	}
-	spec := ast.ChangefeedSpec{
+	spec := ydbschema.ChangefeedSpec{
 		Name:              feed.GetName(),
 		Mode:              mode,
 		Format:            format,
@@ -117,21 +118,21 @@ func (r *Reader) changefeed(
 	case Ydb_Table.ChangefeedDescription_STATE_DISABLED:
 		spec.Disabled = true
 	default:
-		return ast.ChangefeedSpec{}, false, nil
+		return nil, false, nil
 	}
 	resolved, whole := durationSeconds(feed.GetResolvedTimestampsInterval())
 	if !whole {
-		return ast.ChangefeedSpec{}, false, nil
+		return nil, false, nil
 	}
 	if resolved > 0 {
 		spec.ResolvedTimestamps = ydbttl.FormatInterval(resolved)
 	}
 	topic, err := source.DescribeTopic(ctx, r.absolute(schema, path.Join(table, feed.GetName())))
 	if err != nil {
-		return ast.ChangefeedSpec{}, false, err
+		return nil, false, err
 	}
 	modeled := readTopic(&spec, topic)
-	return spec, modeled, nil
+	return &ydbschema.ObservedChangefeed{Spec: spec, Replication: binding}, modeled, nil
 }
 
 // changefeedUnknownFields reads the fields of a changefeed description the
@@ -173,7 +174,7 @@ func changefeedUnknownFields(feed *Ydb_Table.ChangefeedDescription) (userSIDs, t
 // partition count where it is above one: a changefeed that declared none
 // starts with one partition per partition of the table, which a table created
 // without settings has one of.
-func readTopic(spec *ast.ChangefeedSpec, topic *Ydb_Topic.DescribeTopicResult) bool {
+func readTopic(spec *ydbschema.ChangefeedSpec, topic *Ydb_Topic.DescribeTopicResult) bool {
 	retention, whole := durationSeconds(topic.GetRetentionPeriod())
 	if !whole {
 		return false
@@ -274,4 +275,29 @@ func durationSeconds(duration *durationpb.Duration) (uint64, bool) {
 		return 0, false
 	}
 	return uint64(seconds), true
+}
+
+// observeChangefeeds captures a table's individual objects and source claims
+// together. A failed read or invalid record publishes neither collection.
+func (r *Reader) observeChangefeeds(ctx context.Context, source Source, schema, table string,
+	described *Ydb_Table.DescribeTableResult, database *catalog.Database,
+) error {
+	feeds, unread, err := r.changefeeds(ctx, source, schema, table, described)
+	if err != nil {
+		return err
+	}
+	objects := database.FeatureObjects
+	for _, feed := range feeds {
+		objects, err = objects.With(schemaext.Object{Ref: ydbschema.ChangefeedRef(schema, table, feed.Spec.Name), Value: feed})
+		if err != nil {
+			return err
+		}
+	}
+	subjects := append(database.FeatureCoverage.SubjectRecords(), unread...)
+	knowledge, err := ydbschema.ChangefeedCoverage(schemaext.Observed, subjects)
+	if err != nil {
+		return err
+	}
+	database.FeatureObjects, database.FeatureCoverage = objects, knowledge
+	return nil
 }

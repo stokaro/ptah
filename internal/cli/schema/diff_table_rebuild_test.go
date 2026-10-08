@@ -10,10 +10,8 @@ import (
 // rebuildFrom and rebuildTo differ by one column type, a change YDB makes only
 // by rebuilding the table.
 const (
-	rebuildFrom = "table \"rb\" {\n  column \"id\" {\n    type = Int64\n  }\n  column \"v\" {\n    type = Int32\n" +
-		"    null = true\n  }\n  primary_key {\n    columns = [column.id]\n  }\n}\n"
-	rebuildTo = "table \"rb\" {\n  column \"id\" {\n    type = Int64\n  }\n  column \"v\" {\n    type = Int64\n" +
-		"    null = true\n  }\n  primary_key {\n    columns = [column.id]\n  }\n}\n"
+	rebuildFrom = "CREATE TABLE rb (id Int64 NOT NULL, v Int32, PRIMARY KEY (id));"
+	rebuildTo   = "CREATE TABLE rb (id Int64 NOT NULL, v Int64, PRIMARY KEY (id));"
 )
 
 // The native surface asks for a rebuild with --allow-table-rebuild, and its
@@ -23,8 +21,8 @@ const (
 func TestSchemaDiffNamesTheRebuildFlagOnYDB(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	fromPath := writeSchemaSQLFile(c, dir, "from.hcl", rebuildFrom)
-	toPath := writeSchemaSQLFile(c, dir, "to.hcl", rebuildTo)
+	fromPath := writeSchemaSQLFile(c, dir, "from.sql", rebuildFrom)
+	toPath := writeSchemaSQLFile(c, dir, "to.sql", rebuildTo)
 
 	out, err := runSchema("", "diff", "--from", fromPath, "--to", toPath,
 		"--dev-url", "ydb://127.0.0.1:1/local?bogus=1")
@@ -38,12 +36,32 @@ func TestSchemaDiffNamesTheRebuildFlagOnYDB(t *testing.T) {
 func TestSchemaDiffPlansARebuildWithTheFlagOnYDB(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	fromPath := writeSchemaSQLFile(c, dir, "from.hcl", rebuildFrom)
-	toPath := writeSchemaSQLFile(c, dir, "to.hcl", rebuildTo)
+	fromPath := writeSchemaSQLFile(c, dir, "from.sql", rebuildFrom)
+	toPath := writeSchemaSQLFile(c, dir, "to.sql", rebuildTo)
 
 	out, err := runSchema("", "diff", "--from", fromPath, "--to", toPath,
 		"--dev-url", "ydb://127.0.0.1:1/local?bogus=1", "--allow-table-rebuild")
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "ALTER TABLE `__ptah_rebuild_rb` RENAME TO `rb`;")
+}
+
+// HCL cannot describe changefeeds, so rebuilding from HCL alone would assume
+// the old table has no streams to preserve. The opt-in does not grant that fact.
+func TestSchemaDiffRefusesARebuildWithoutChangefeedKnowledge(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	before := writeSchemaSQLFile(c, dir, "from.hcl", `table "rb" {
+ column "id" { type = Int64 }
+ column "v" { type = Int32 }
+ primary_key { columns = [column.id] }
+}`)
+	after := writeSchemaSQLFile(c, dir, "to.hcl", `table "rb" {
+ column "id" { type = Int64 }
+ column "v" { type = Int64 }
+ primary_key { columns = [column.id] }
+}`)
+	out, err := runSchema("", "diff", "--from", before, "--to", after, "--dev-url", "ydb://127.0.0.1:1/local?bogus=1", "--allow-table-rebuild")
+	c.Assert(err, qt.ErrorMatches, `.*the changefeed namespace is not fully described.*`)
+	c.Assert(out, qt.Not(qt.Contains), "ALTER TABLE")
 }

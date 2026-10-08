@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -70,8 +72,8 @@ func TestCompareWithDatabaseInfo_ComparesTheDatabasesOfAWholeServer_HappyPath(t 
 			c := qt.New(t)
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				declaredDatabases(test.r1), serverDatabases(),
-				catalog.ServerInfo{Dialect: test.dialect, WholeServer: true}, nil,
+				t.Context(), declaredDatabases(test.r1), serverDatabases(),
+				catalog.ServerInfo{Dialect: test.dialect, WholeServer: true}, nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -101,7 +103,7 @@ func TestCompareWithDatabaseInfo_ComparesNoDatabasesWithoutAWholeServer(t *testi
 			c := qt.New(t)
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				declaredDatabases(schemamodel.Schema{}), serverDatabases(), test.info, nil,
+				t.Context(), declaredDatabases(schemamodel.Schema{}), serverDatabases(), test.info, nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -124,7 +126,7 @@ func TestCompareWithDatabaseInfo_DeclaresTheDatabaseOfADesiredTable(t *testing.T
 	}}
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(
-		desired, serverDatabases(), catalog.ServerInfo{Dialect: platform.MySQL, WholeServer: true}, nil,
+		t.Context(), desired, serverDatabases(), catalog.ServerInfo{Dialect: platform.MySQL, WholeServer: true}, nil, must.Must(builtin.New()),
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -161,7 +163,7 @@ func TestCompareWithDatabaseInfo_ComparesTheDatabasesOfAWholeServer_FailurePath(
 			c := qt.New(t)
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				test.desired, serverDatabases(), catalog.ServerInfo{Dialect: platform.MariaDB, WholeServer: true}, nil,
+				t.Context(), test.desired, serverDatabases(), catalog.ServerInfo{Dialect: platform.MariaDB, WholeServer: true}, nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)

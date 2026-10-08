@@ -119,7 +119,7 @@ func TestRouting_TheDelegatingRenderersAreTheOnesThatDelegate(t *testing.T) {
 func TestRouting_SelfTest(t *testing.T) {
 	kinds := []astrouteguard.NodeKind{{Name: "CreateTableNode"}, {Name: "IndexNode"}}
 	shared := astrouteguard.Renderer{
-		Package: "core/renderer/internal/dialects/shared",
+		Package: "engine/builtin/internal/dialects/shared",
 		Routed:  []string{"CreateTableNode", "IndexNode"},
 	}
 	byPackage := map[string]astrouteguard.Renderer{"shared": shared}
@@ -137,7 +137,7 @@ func TestRouting_SelfTest(t *testing.T) {
 		{
 			name: "a renderer forwarding to one that answers",
 			renderer: astrouteguard.Renderer{
-				Package:     "core/renderer/internal/dialects/thin",
+				Package:     "engine/builtin/internal/dialects/thin",
 				Routed:      []string{"CreateTableNode"},
 				DelegatesTo: "shared",
 			},
@@ -146,7 +146,7 @@ func TestRouting_SelfTest(t *testing.T) {
 		{
 			name: "a renderer forwarding nowhere",
 			renderer: astrouteguard.Renderer{
-				Package: "core/renderer/internal/dialects/gap",
+				Package: "engine/builtin/internal/dialects/gap",
 				Routed:  []string{"CreateTableNode"},
 			},
 			want: []string{"IndexNode"},
@@ -154,7 +154,7 @@ func TestRouting_SelfTest(t *testing.T) {
 		{
 			name: "a renderer forwarding to a package the guard does not know",
 			renderer: astrouteguard.Renderer{
-				Package:     "core/renderer/internal/dialects/lost",
+				Package:     "engine/builtin/internal/dialects/lost",
 				Routed:      []string{"CreateTableNode"},
 				DelegatesTo: "absent",
 			},
@@ -184,7 +184,7 @@ func TestRouting_EveryRendererPackageIsUnderTheDialectsDirectory(t *testing.T) {
 	for _, renderer := range renderers {
 		t.Run(path.Base(renderer.Package), func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(strings.HasPrefix(renderer.Package, "core/renderer/internal/dialects/"), qt.IsTrue,
+			c.Assert(strings.HasPrefix(renderer.Package, "engine/builtin/internal/dialects/"), qt.IsTrue,
 				qt.Commentf("renderer found at %s", renderer.Package))
 			c.Assert(len(renderer.Routed) > 0, qt.IsTrue,
 				qt.Commentf("%s names no node kind at all", renderer.Package))

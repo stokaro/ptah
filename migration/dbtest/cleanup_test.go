@@ -22,7 +22,7 @@ import (
 func TestRunTest_CleanupRunsAfterTheBodyPasses(t *testing.T) {
 	c := qt.New(t)
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		Cases: []dbtest.Case{{
 			Name: "teardown in reverse",
 			Steps: []dbtest.Step{
@@ -59,7 +59,7 @@ func TestRunTest_CleanupRunsAfterTheBodyPasses(t *testing.T) {
 func TestRunTest_CleanupRunsAfterTheBodyFails(t *testing.T) {
 	c := qt.New(t)
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		Cases: []dbtest.Case{{
 			Name: "body fails",
 			Steps: []dbtest.Step{
@@ -95,7 +95,7 @@ func TestRunTest_CleanupRunsAfterTheBodyFails(t *testing.T) {
 func TestRunTest_ACleanupFailureDoesNotDisplaceTheBodyFailure(t *testing.T) {
 	c := qt.New(t)
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		Cases: []dbtest.Case{{
 			Name:  "both fail",
 			Steps: []dbtest.Step{{Name: "check", Exec: "SELECT * FROM missing_table"}},
@@ -132,7 +132,7 @@ func TestRunTest_ACleanupFailureDoesNotDisplaceTheBodyFailure(t *testing.T) {
 func TestRunTest_ASkippedCaseRunsNoCleanup(t *testing.T) {
 	c := qt.New(t)
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		Cases: []dbtest.Case{{
 			Name:    "skipped",
 			Skip:    true,
@@ -153,7 +153,7 @@ func TestRunTest_ASkippedCaseRunsNoCleanup(t *testing.T) {
 func TestReport_MarksACleanupStepInEveryFormat(t *testing.T) {
 	c := qt.New(t)
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		Cases: []dbtest.Case{{
 			Name:    "marked",
 			Steps:   []dbtest.Step{{Name: "body", Exec: "SELECT 1"}},
@@ -257,7 +257,7 @@ func TestParseAtlasTestCases_CleanupRefusals_FailurePath(t *testing.T) {
 func TestReport_TheHTMLReportMarksACleanupStepStructurally(t *testing.T) {
 	c := qt.New(t)
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		Cases: []dbtest.Case{{
 			Name:    "named anything",
 			Steps:   []dbtest.Step{{Name: "body", Exec: "SELECT 1"}},

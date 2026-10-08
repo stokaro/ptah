@@ -10,12 +10,14 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/sijms/go-ora/v3" // registers the Oracle driver for database/sql
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -50,9 +52,12 @@ func TestOracleCompositeTypesPlanAndConvergeE2E(t *testing.T) {
 
 	before, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, before, nil)
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, before, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities},
+	)
 	c.Assert(err, qt.IsNil)
 
 	creates := oracleStatementsNaming(statements, "CREATE OR REPLACE TYPE")
@@ -73,7 +78,7 @@ func TestOracleCompositeTypesPlanAndConvergeE2E(t *testing.T) {
 		"ORA_POINT(X NUMBER(10,2), Y NUMBER(10,2))",
 	})
 
-	settled, err := schemadiff.CompareWithDatabase(ctx, conn, declared, after, nil)
+	settled, err := schemadiff.CompareWithDatabase(ctx, conn, declared, after, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	c.Assert(settled.CompositeTypesAdded, qt.HasLen, 0)
 	c.Assert(settled.CompositeTypesRemoved, qt.HasLen, 0)
@@ -81,9 +86,12 @@ func TestOracleCompositeTypesPlanAndConvergeE2E(t *testing.T) {
 
 	// And the removal direction, whose ordering matters: dropping a type a
 	// column still uses answers ORA-02303.
-	teardown, err := schemadiff.CompareWithDatabase(ctx, conn, &schemamodel.Database{}, after, nil)
+	teardown, err := schemadiff.CompareWithDatabase(ctx, conn, &schemamodel.Database{}, after, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	teardownStatements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(teardown, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
+	teardownStatements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		teardown, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities},
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(oracleFirstIndexOf(c, teardownStatements, "DROP TABLE") <
 		oracleFirstIndexOf(c, teardownStatements, "DROP TYPE"), qt.IsTrue)

@@ -27,16 +27,21 @@
 package dbmlrender
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/schemaexportloss"
 )
 
 // Options selects what is rendered.
 type Options struct {
+	// Target supplies optional source context to the selected model reporters.
+	// Owned objects must retain their parent table's source spelling.
+	Target string
 	// IncludeTables and ExcludeTables narrow the table set by name. Empty
 	// includes everything.
 	IncludeTables []string
@@ -68,7 +73,10 @@ func (r Result) Warnings() []string {
 }
 
 // Render writes the schema as DBML.
-func Render(db *schemamodel.Database, opts Options) (Result, error) {
+func Render(ctx context.Context, db *schemamodel.Database, opts Options, runtime schemaext.ReportingRuntime) (Result, error) {
+	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
+		return Result{}, err
+	}
 	if db == nil {
 		return Result{}, fmt.Errorf("schema database is nil")
 	}
@@ -76,10 +84,23 @@ func Render(db *schemamodel.Database, opts Options) (Result, error) {
 	if metadata := b.selectedExportMetadata(); len(metadata) > 0 {
 		return Result{}, exportMetadataError(metadata)
 	}
+	values, err := b.featureValues()
+	if err != nil {
+		return Result{}, err
+	}
+	featureCounts, err := schemaexportloss.FeatureCounts(ctx, opts.Target, values, runtime)
+	if err != nil {
+		return Result{}, err
+	}
 	omitted := append(schemaexportloss.CommonFamilies(db), b.omittedKeys()...)
+	omitted = append(omitted, schemaexportloss.Descriptions(featureCounts)...)
 	omitted = append(omitted, b.omittedStorage()...)
 	sort.Strings(omitted)
-	return Result{DBML: b.render(), Omitted: omitted}, nil
+	document := b.render()
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	return Result{DBML: document, Omitted: omitted}, nil
 }
 
 func exportMetadataError(metadata []schemamodel.ExportMetadata) error {

@@ -8,9 +8,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/migration/safety"
 )
@@ -24,7 +26,7 @@ func TestPreparePlanFile_PlansDeclaredRowsOnAFreshDatabase(t *testing.T) {
 
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
 		Desired: regionsSchema(regionRow("CZ", "Czechia", 2), regionRow("NO", "Norway", 1)),
-	})
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	sql := planSQL(plan)
@@ -46,7 +48,7 @@ func TestPreparePlanFile_PlansADataOnlyChange(t *testing.T) {
 
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
 		Desired: regionsSchema(regionRow("NO", "Norge", 1)),
-	})
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	sql := planSQL(plan)
@@ -67,7 +69,7 @@ func TestPreparePlanFile_ADeletedRowIsDestructive(t *testing.T) {
 
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
 		Desired: regionsSchema(regionRow("NO", "Norway", 1)),
-	})
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(planSQL(plan), qt.Contains, `DELETE FROM "regions"`)
@@ -83,7 +85,7 @@ func TestPreparePlanFile_ConvergedRowsPlanNothing(t *testing.T) {
 	desired := regionsSchema(regionRow("NO", "Norway", 1))
 	applyPlan(c, conn, desired)
 
-	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{Desired: desired})
+	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.Statements, qt.HasLen, 0)
@@ -100,7 +102,7 @@ func TestPreparePlanFile_UnmanagedColumnsAreNotRewritten(t *testing.T) {
 	_, err := conn.ExecContext(context.Background(), `UPDATE regions SET note = 'kept' WHERE code = 'NO'`)
 	c.Assert(err, qt.IsNil)
 
-	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{Desired: desired})
+	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.Statements, qt.HasLen, 0, qt.Commentf("a column no declaration names is not a difference"))
@@ -122,7 +124,7 @@ func TestPreparePlanFile_RefusesRowsNobodyRead(t *testing.T) {
 	desired.ManagedData[0].Rows = nil
 	desired.ManagedData[0].File = ""
 
-	_, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{Desired: desired})
+	_, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.ErrorMatches, `managed data for table regions was never read.*`)
 }
@@ -144,7 +146,7 @@ func TestPreparePlanFile_ReadsRowsADeclarationStillNames(t *testing.T) {
 	desired.ManagedData[0].Rows = nil
 	desired.ManagedData[0].SourceDir = sourceDir
 
-	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{Desired: desired})
+	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	declared := make([]string, 0, len(plan.Statements))
@@ -175,7 +177,7 @@ func TestPreparePlanFile_RefusesARowFileOutsideTheProject(t *testing.T) {
 
 	_, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
 		Desired: desired, ProjectRoot: project,
-	})
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.ErrorMatches, `.*outside.*`)
 }
@@ -204,7 +206,7 @@ func TestPreparePlanFile_ResolvesAnAbsoluteRowFileUnderItsSource(t *testing.T) {
 
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
 		Desired: desired, ProjectRoot: project,
-	})
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil, qt.Commentf("the absolute name was read under the source directory"))
 	declared := make([]string, 0, len(plan.Statements))
@@ -238,7 +240,7 @@ func TestPreparePlanFile_ReadsARowFileTheProjectStillContains(t *testing.T) {
 
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
 		Desired: desired, ProjectRoot: project,
-	})
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	declared := make([]string, 0, len(plan.Statements))
@@ -299,7 +301,7 @@ func itoa(value int) string {
 
 func applyPlan(c *qt.C, conn *dbschema.DatabaseConnection, desired *schemamodel.Database) {
 	c.Helper()
-	plan, err := atlasschema.PlanApply(context.Background(), conn, atlasschema.ApplyOptions{Desired: desired})
+	plan, err := atlasschema.PlanApply(context.Background(), conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	for _, statement := range plan.Statements() {
 		_, err := conn.ExecContext(context.Background(), statement)

@@ -240,7 +240,7 @@ test "schema" "rows" {
 func TestRunTest_ASkippedCaseIsNeitherPassedNorFailed(t *testing.T) {
 	c := qt.New(t)
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		Cases: []dbtest.Case{
 			{
 				Name: "skipped",
@@ -277,7 +277,7 @@ func TestRunTest_ASkippedCaseIsNeitherPassedNorFailed(t *testing.T) {
 func TestReport_RepresentsASkippedCaseInEveryFormat(t *testing.T) {
 	c := qt.New(t)
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		Cases: []dbtest.Case{
 			{Name: "skipped", Skip: true, Steps: []dbtest.Step{{Exec: "SELECT 1"}}},
 			{Name: "ran", Steps: []dbtest.Step{{Exec: "SELECT 1"}}},

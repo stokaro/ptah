@@ -9,11 +9,13 @@ import (
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/config"
 	"ptah.run/core/goschema"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -137,7 +139,7 @@ func inlineEnumDiff(
 	live, err := conn.Reader().ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
 	diff, err := schemadiff.CompareWithDatabase(
-		context.Background(), conn, description, live, config.DefaultCompareOptions(),
+		context.Background(), conn, description, live, config.DefaultCompareOptions(), must.Must(builtin.New()),
 	)
 	c.Assert(err, qt.IsNil)
 	return diff
@@ -170,7 +172,10 @@ func applyInlineEnum(
 	_ = dialect
 	diff := inlineEnumDiff(c, conn, description)
 	info := conn.Info()
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, info.Dialect, planner.Options{Capabilities: info.Capabilities})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		diff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+	)
 	c.Assert(err, qt.IsNil)
 	for _, statement := range statements {
 		_, execErr := conn.ExecContext(ctx, statement)

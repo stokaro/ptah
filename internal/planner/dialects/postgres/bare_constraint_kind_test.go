@@ -1,14 +1,16 @@
 package postgres_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -33,7 +35,10 @@ func TestPlannerRefusesABareNameConstraintAddition(t *testing.T) {
 		ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "aaa_fk_child_parent"}, {Name: "zzz_ck_child_amount"}},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff)
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 
 	c.Assert(nodes, qt.IsNil)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -63,7 +68,10 @@ func TestPlannerOrdersAForeignKeyAfterTheOtherKinds(t *testing.T) {
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff)
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 	c.Assert(err, qt.IsNil)
 	sql := renderPostgresNodes(c, nodes)
 
@@ -79,7 +87,7 @@ func TestPlannerOrdersAForeignKeyAfterTheOtherKinds(t *testing.T) {
 // error the caller would have to check.
 func renderPostgresNodes(c *qt.C, nodes []ast.Node) string {
 	c.Helper()
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	return sql
 }

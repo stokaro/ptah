@@ -45,7 +45,7 @@ func TestRefuseTopics_HappyPath(t *testing.T) {
 		diff *difftypes.SchemaDiff
 	}{
 		{name: "no diff"},
-		{name: "a diff without topics", diff: &difftypes.SchemaDiff{TablesRemoved: []string{"t"}}},
+		{name: "a diff without topics", diff: &difftypes.SchemaDiff{TablesRemoved: difftypes.TableRemovals{{Name: "t"}}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

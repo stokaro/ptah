@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
 )
@@ -160,14 +162,14 @@ func TestToDBSchema_DefaultPrivilegesSurviveTheRoundTrip(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			read := goschematodb.ToDBSchema(
-				&schemamodel.Database{DefaultPrivileges: test.declared},
-				platform.Postgres,
-			)
+			read := must.Must(goschematodb.ToDBSchema(
+				t.Context(), &schemamodel.Database{DefaultPrivileges: test.declared},
+				platform.Postgres, must.Must(builtin.New()),
+			))
 
 			c.Assert(read.DefaultPrivileges, qt.DeepEquals, test.wantRows)
 
-			back := dbschematogo.ConvertDBSchemaToGoSchema(read, platform.Postgres)
+			back := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), read, platform.Postgres, must.Must(builtin.New())))
 
 			c.Assert(back.DefaultPrivileges, qt.DeepEquals, test.wantBack)
 		})

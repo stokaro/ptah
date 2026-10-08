@@ -7,8 +7,8 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 )
 
 // namedNotNullSchema is one table whose non-key column carries a NOT NULL
@@ -42,7 +42,7 @@ func namedNotNullSchema(primaryNotNullName string) *schemamodel.Database {
 func TestCollectDatabase_NotNullConstraintNameReachesTheDDL(t *testing.T) {
 	c := qt.New(t)
 
-	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(
+	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(
 		namedNotNullSchema(""), platform.Postgres, capability.Postgres18())
 
 	c.Assert(err, qt.IsNil)
@@ -61,7 +61,7 @@ func TestCollectDatabase_NotNullConstraintNameReachesTheDDL(t *testing.T) {
 func TestCollectDatabase_NotNullConstraintNameIsDroppedOnAKeyColumn(t *testing.T) {
 	c := qt.New(t)
 
-	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(
+	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(
 		namedNotNullSchema("accounts_id_nn"), platform.Postgres, capability.Postgres18())
 
 	c.Assert(err, qt.IsNil)
@@ -83,7 +83,7 @@ func TestCollectDatabase_NotNullConstraintNameIsDroppedOnAKeyColumn(t *testing.T
 func TestCollectDatabase_NotNullConstraintNameIsRefusedWhereItCannotBeKept(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := renderer.GetOrderedCreateStatementsWithCapabilities(
+	_, err := builtin.GetOrderedCreateStatementsWithCapabilities(
 		namedNotNullSchema(""), platform.Postgres, capability.Postgres17())
 
 	c.Assert(err, qt.IsNotNil)

@@ -3,16 +3,19 @@
 package dbschema_test
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -80,10 +83,13 @@ func liveRoleRoundTrip(c *qt.C, dbURL string) {
 	// 1. The role is seen as missing, planned, and the statement runs.
 	live, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
-	creation := schemadiff.CompareWithDialect(declared, live, conn.Info().Dialect)
+	creation := must.Must(schemadiff.CompareWithDialect(c.Context(), declared, live, conn.Info().Dialect, must.Must(builtin.New())))
 	c.Assert(creation.RolesAdded.Names(), qt.Contains, role)
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(creation, conn.Info().Dialect)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		creation, conn.Info().Dialect,
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(statements, "\n"), qt.Contains, "CREATE ROLE")
 	for _, statement := range statements {
@@ -101,7 +107,7 @@ func liveRoleRoundTrip(c *qt.C, dbURL string) {
 
 	// 3. The convergence assertion. Comparing the same declaration against a
 	// freshly read database must leave nothing to do.
-	settled := schemadiff.CompareWithDialect(declared, created, conn.Info().Dialect)
+	settled := must.Must(schemadiff.CompareWithDialect(c.Context(), declared, created, conn.Info().Dialect, must.Must(builtin.New())))
 	c.Assert(settled.RolesAdded, qt.HasLen, 0)
 	c.Assert(settled.RolesModified, qt.HasLen, 0)
 	c.Assert(settled.RolesRemoved, qt.HasLen, 0)

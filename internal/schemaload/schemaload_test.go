@@ -8,11 +8,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/schemaload"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -538,20 +539,26 @@ tables:
 	})
 	c.Assert(err, qt.IsNil)
 
-	compositeRender, err := renderer.GetOrderedCreateStatements(composite, "postgres")
+	compositeRender, err := builtin.GetOrderedCreateStatements(composite, "postgres")
 	c.Assert(err, qt.IsNil)
-	handMergedRender, err := renderer.GetOrderedCreateStatements(handMerged, "postgres")
+	handMergedRender, err := builtin.GetOrderedCreateStatements(handMerged, "postgres")
 	c.Assert(err, qt.IsNil)
 	c.Assert(compositeRender, qt.DeepEquals, handMergedRender)
 
 	emptyDatabase := &catalog.Database{}
-	compositeDiff := schemadiff.CompareWithDialect(composite, emptyDatabase, "postgres")
-	handMergedDiff := schemadiff.CompareWithDialect(handMerged, emptyDatabase, "postgres")
+	compositeDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), composite, emptyDatabase, "postgres", must.Must(builtin.New())))
+	handMergedDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), handMerged, emptyDatabase, "postgres", must.Must(builtin.New())))
 	c.Assert(compositeDiff, qt.DeepEquals, handMergedDiff)
 
-	compositeMigration, err := planner.GenerateSchemaDiffSQL(compositeDiff, "postgres")
+	compositeMigration, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		compositeDiff, "postgres",
+	)
 	c.Assert(err, qt.IsNil)
-	handMergedMigration, err := planner.GenerateSchemaDiffSQL(handMergedDiff, "postgres")
+	handMergedMigration, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		handMergedDiff, "postgres",
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(compositeMigration, qt.Equals, handMergedMigration)
 }

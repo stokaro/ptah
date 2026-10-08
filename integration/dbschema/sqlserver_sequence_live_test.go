@@ -3,19 +3,21 @@
 package dbschema_test
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -58,7 +60,7 @@ func TestSQLServerLiveSequenceRoundTrip(t *testing.T) {
 	// 1. The renderer's statements are the ones the server is given. Nothing is
 	// hand-written here, so a statement this engine refuses fails the test
 	// rather than being quietly corrected.
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.SQLServer)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.SQLServer)
 	c.Assert(err, qt.IsNil)
 	rendered := strings.Join(statements, "\n")
 	c.Assert(rendered, qt.Contains, "CREATE SEQUENCE")
@@ -93,7 +95,7 @@ func TestSQLServerLiveSequenceRoundTrip(t *testing.T) {
 
 	// 3. The convergence assertion. Comparing the same description against what
 	// the server now holds must produce nothing to do.
-	settled := schemadiff.CompareWithDialect(description, live, platform.SQLServer)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.SQLServer, must.Must(builtin.New())))
 	c.Assert(settled.SequencesAdded, qt.HasLen, 0)
 	c.Assert(settled.SequencesRemoved, qt.HasLen, 0)
 	c.Assert(settled.SequencesModified, qt.HasLen, 0)
@@ -103,9 +105,12 @@ func TestSQLServerLiveSequenceRoundTrip(t *testing.T) {
 	changed := sqlServerSequenceSchema(schemaName)
 	newIncrement := int64(7)
 	changed.Sequences[0].Increment = &newIncrement
-	modification := schemadiff.CompareWithDialect(changed, live, platform.SQLServer)
+	modification := must.Must(schemadiff.CompareWithDialect(t.Context(), changed, live, platform.SQLServer, must.Must(builtin.New())))
 	c.Assert(modification.SequencesModified, qt.HasLen, 1)
-	nodes, err := planner.GenerateSchemaDiffAST(modification, platform.SQLServer)
+	nodes, err := planner.GenerateSchemaDiffAST(
+		context.Background(), must.Must(builtin.New()),
+		modification, platform.SQLServer,
+	)
 	c.Assert(err, qt.IsNil)
 	alters := renderedStatementsNaming(c, nodes, "ALTER SEQUENCE")
 	c.Assert(alters, qt.HasLen, 1)
@@ -123,7 +128,7 @@ func renderedStatementsNaming(c *qt.C, nodes []ast.Node, keyword string) []strin
 	c.Helper()
 	kept := make([]string, 0, len(nodes))
 	for _, node := range nodes {
-		sql, err := renderer.RenderSQL(platform.SQLServer, node)
+		sql, err := builtin.RenderSQL(platform.SQLServer, node)
 		c.Assert(err, qt.IsNil)
 		if strings.Contains(sql, keyword) {
 			kept = append(kept, sql)

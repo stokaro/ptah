@@ -24,6 +24,7 @@ import (
 	"golang.org/x/term"
 
 	"ptah.run/core/platform"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/agentapi"
 	"ptah.run/internal/agentaudit"
 	"ptah.run/internal/agentgate"
@@ -175,7 +176,14 @@ func build(cmd *cobra.Command, opts *Options, openRecorder auditOpener) (*agenta
 		// reads as a session against the server the operator asked for.
 		fmt.Fprintf(cmd.ErrOrStderr(), "ptah: %s\n", target.Note)
 	}
+	runtime, err := builtin.New()
+	if err != nil {
+		closeWorkspace()
+		return nil, noop, err
+	}
 	gates, err := agentgate.New(agentgate.Options{
+		Validation:   runtime,
+		Rendering:    runtime,
 		Dialect:      dialect,
 		Version:      opts.ServerVersion,
 		Capabilities: target.Capabilities,

@@ -9,12 +9,13 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -58,7 +59,7 @@ func TestSQLServerLiveExtendedPropertyRoundTrip(t *testing.T) {
 
 	// 1. The statements the server is given are the renderer's own. A
 	// statement this engine refuses fails the test rather than being adapted.
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.SQLServer)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.SQLServer)
 	c.Assert(err, qt.IsNil)
 	rendered := strings.Join(statements, "\n")
 	c.Assert(rendered, qt.Contains, "sp_addextendedproperty")
@@ -80,7 +81,7 @@ func TestSQLServerLiveExtendedPropertyRoundTrip(t *testing.T) {
 
 	// 3. Convergence. Comparing the same description against what the server
 	// now holds must produce nothing to do.
-	settled := schemadiff.CompareWithDialect(description, live, platform.SQLServer)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.SQLServer, must.Must(builtin.New())))
 	c.Assert(extendedPropertiesOn(settled.ExtendedPropertiesAdded, table), qt.HasLen, 0)
 	c.Assert(extendedPropertiesOn(settled.ExtendedPropertiesRemoved, table), qt.HasLen, 0)
 	c.Assert(modifiedExtendedPropertiesOn(settled.ExtendedPropertiesModified, table), qt.HasLen, 0)
@@ -89,7 +90,7 @@ func TestSQLServerLiveExtendedPropertyRoundTrip(t *testing.T) {
 	// update rather than a drop and an add, and the statement it plans is one
 	// the server accepts and the reader sees.
 	changed := sqlServerExtendedPropertySchema(table, property, columnProperty, "disabled")
-	plan := schemadiff.CompareWithDialect(changed, live, platform.SQLServer)
+	plan := must.Must(schemadiff.CompareWithDialect(t.Context(), changed, live, platform.SQLServer, must.Must(builtin.New())))
 	c.Assert(extendedPropertiesOn(plan.ExtendedPropertiesAdded, table), qt.HasLen, 0)
 	c.Assert(modifiedExtendedPropertiesOn(plan.ExtendedPropertiesModified, table), qt.HasLen, 1)
 
@@ -101,7 +102,7 @@ func TestSQLServerLiveExtendedPropertyRoundTrip(t *testing.T) {
 
 	after, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
-	settledAgain := schemadiff.CompareWithDialect(changed, after, platform.SQLServer)
+	settledAgain := must.Must(schemadiff.CompareWithDialect(t.Context(), changed, after, platform.SQLServer, must.Must(builtin.New())))
 	c.Assert(modifiedExtendedPropertiesOn(settledAgain.ExtendedPropertiesModified, table), qt.HasLen, 0)
 }
 
@@ -152,7 +153,7 @@ func TestSQLServerLiveExtendedPropertyLeavesAnUnwritableValueAlone(t *testing.T)
 	// A declaration that does not name it plans no removal, which is the half
 	// that would otherwise destroy the value.
 	empty := &schemamodel.Database{}
-	settled := schemadiff.CompareWithDialect(empty, live, platform.SQLServer)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), empty, live, platform.SQLServer, must.Must(builtin.New())))
 	c.Assert(extendedPropertiesOn(settled.ExtendedPropertiesRemoved, table), qt.HasLen, 0)
 }
 
@@ -272,7 +273,7 @@ func TestSQLServerLiveDatabaseScopedExtendedPropertyRoundTrip(t *testing.T) {
 		},
 	}
 
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.SQLServer)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.SQLServer)
 	c.Assert(err, qt.IsNil)
 	rendered := strings.Join(statements, "\n")
 	// The database property passes no level; the schema one passes level 0.
@@ -294,7 +295,7 @@ func TestSQLServerLiveDatabaseScopedExtendedPropertyRoundTrip(t *testing.T) {
 	c.Assert(found.Value, qt.Equals, "database scope")
 	c.Assert(found.QualifiedOwner(), qt.Equals, "(database)")
 
-	settled := schemadiff.CompareWithDialect(description, live, platform.SQLServer)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.SQLServer, must.Must(builtin.New())))
 	c.Assert(extendedPropertiesNamed(settled.ExtendedPropertiesAdded, databaseProperty), qt.HasLen, 0)
 	c.Assert(extendedPropertiesNamed(settled.ExtendedPropertiesRemoved, databaseProperty), qt.HasLen, 0)
 	c.Assert(modifiedExtendedPropertiesNamed(settled.ExtendedPropertiesModified, databaseProperty), qt.HasLen, 0)

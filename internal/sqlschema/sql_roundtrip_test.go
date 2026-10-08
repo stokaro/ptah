@@ -8,8 +8,8 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/parser"
 	"ptah.run/internal/sqlschema"
@@ -102,7 +102,7 @@ CREATE TABLE children (
 	c.Assert(db.Fields[3].Foreign, qt.Equals, "tenant.data(id)")
 
 	schemamodel.Finalize(&db)
-	statements, err := renderer.GetOrderedCreateStatements(&db, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(&db, "postgres")
 	c.Assert(err, qt.IsNil)
 	rendered := strings.Join(statements, "\n")
 
@@ -121,7 +121,7 @@ CREATE TABLE pets (id bigserial, user_id bigint, PRIMARY KEY (id));
 ALTER TABLE pets ADD CONSTRAINT fk_pets_user FOREIGN KEY (user_id) REFERENCES users(id);`)
 	schemamodel.Finalize(&db)
 
-	statements, err := renderer.GetOrderedCreateStatements(&db, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(&db, "postgres")
 	c.Assert(err, qt.IsNil)
 	rendered := strings.Join(statements, "\n")
 
@@ -186,7 +186,7 @@ func TestToDatabase_QuotedDotsPreserveIdentifierBoundaries(t *testing.T) {
 	c.Assert(db.Indexes[0].TableName, qt.Equals, `"tenant.data"`)
 	c.Assert(db.Indexes[1].TableName, qt.Equals, "tenant.data")
 
-	statements, err := renderer.GetOrderedCreateStatements(&db, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(&db, "postgres")
 	c.Assert(err, qt.IsNil)
 	rendered := strings.Join(statements, "\n")
 	c.Assert(rendered, qt.Contains, `CREATE TABLE "tenant.data"`)
@@ -270,7 +270,7 @@ func TestToDatabase_ParserPreservesIndexExpression(t *testing.T) {
 		Expr: `concat(first_name, '. ', last_name)`,
 	}})
 
-	rendered, err := renderer.RenderSQL(
+	rendered, err := builtin.RenderSQL(
 		"postgres",
 		modelast.FromIndex(db.Indexes[0]),
 	)
@@ -337,7 +337,7 @@ func TestToDatabase_PostgresExtensionIdentifiersUseCatalogIdentity(t *testing.T)
 		Name:   "pgcrypto",
 		Schema: "extensions",
 	}})
-	unquotedSQL, err := renderer.RenderSQL("postgres", modelast.FromExtension(unquoted.Extensions[0]))
+	unquotedSQL, err := builtin.RenderSQL("postgres", modelast.FromExtension(unquoted.Extensions[0]))
 	c.Assert(err, qt.IsNil)
 	c.Assert(unquotedSQL, qt.Contains, `CREATE EXTENSION "pgcrypto" WITH SCHEMA "extensions";`)
 
@@ -347,7 +347,7 @@ func TestToDatabase_PostgresExtensionIdentifiersUseCatalogIdentity(t *testing.T)
 		Schema: " Extension Store ",
 	}})
 
-	rendered, err := renderer.RenderSQL("postgres", modelast.FromExtension(quoted.Extensions[0]))
+	rendered, err := builtin.RenderSQL("postgres", modelast.FromExtension(quoted.Extensions[0]))
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered, qt.Contains, `CREATE EXTENSION "PGCrypto" WITH SCHEMA " Extension Store ";`)
 }

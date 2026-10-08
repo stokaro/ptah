@@ -9,8 +9,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -35,9 +37,12 @@ func TestYDBDesiredYQL_StreamingQueries(t *testing.T) {
 	apply(c, conn, planAgainst(c, conn, first, schemas))
 	c.Assert(planAgainst(c, conn, first, schemas), qt.HasLen, 0)
 	refused := loadStreamingYQL(c, path, topics+"CREATE STREAMING QUERY `ptah_yql_streaming/copy` WITH (RUN=FALSE)"+body+" WHERE TRUE; END DO;")
-	diff, err := schemadiff.CompareWithDatabaseInfo(refused, readScoped(c, conn, schemas), conn.Info(), nil)
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), refused, readScoped(c, conn, schemas), conn.Info(), nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, "ydb", planner.Options{Capabilities: conn.Info().Capabilities})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		diff, "ydb", planner.Options{Capabilities: conn.Info().Capabilities},
+	)
 	c.Assert(err, qt.ErrorMatches, `(?s).*allow_state_reset=true.*`)
 	c.Assert(statements, qt.HasLen, 0)
 	for _, source := range []string{

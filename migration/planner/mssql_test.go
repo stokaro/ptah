@@ -1,13 +1,16 @@
 package planner_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -51,9 +54,12 @@ func TestGenerateSchemaDiffSQL_SQLServerCreatesTSQL(t *testing.T) {
 	}
 	// After the schema exists: a creation carries what CREATE TABLE renders
 	// from, derived from the declaration (stokaro/ptah#2315).
-	diff.TablesAdded = difftypes.TableCreationsFor(desired, "users")
+	diff.TablesAdded = difftypes.TableCreationsFor(desired, identifier.ForDialect("mssql"), "users")
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.SQLServer)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.SQLServer,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "CREATE TABLE [dbo].[users] (")
@@ -92,7 +98,10 @@ func TestGenerateSchemaDiffSQL_SQLServerRejectsUnsupportedColumnDrift(t *testing
 			}},
 		}},
 	}
-	_, err := planner.GenerateSchemaDiffSQL(diff, platform.SQLServer)
+	_, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.SQLServer,
+	)
 
 	c.Assert(err, qt.ErrorMatches, `.*SQL Server planner only supports type, nullability and default changes on users\.status; unsupported changes: unique.*`)
 }
@@ -116,7 +125,10 @@ func TestGenerateSchemaDiffSQL_SQLServerAddsColumnToQualifiedTable(t *testing.T)
 		DeclaredTables: desired.Tables,
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.SQLServer)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.SQLServer,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "ALTER TABLE [dbo].[users] ADD [nickname] NVARCHAR(64);")
@@ -138,7 +150,10 @@ func TestGenerateSchemaDiffSQL_SQLServerModifiesColumnOnQualifiedTable(t *testin
 			}},
 		}},
 	}
-	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.SQLServer)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.SQLServer,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "ALTER TABLE [dbo].[users] ALTER COLUMN [email] NVARCHAR(320) NOT NULL;")
@@ -154,7 +169,10 @@ func TestGenerateSchemaDiffSQL_SQLServerRejectsColumnRemoval(t *testing.T) {
 			ColumnsRemoved: difftypes.ColumnChanges{{Name: "legacy_id"}},
 		}},
 	}
-	_, err := planner.GenerateSchemaDiffSQL(diff, platform.SQLServer)
+	_, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.SQLServer,
+	)
 
 	c.Assert(err, qt.ErrorMatches, `.*SQL Server planner does not support automatic DROP COLUMN for users; write an explicit migration that drops dependent constraints and indexes first.*`)
 }
@@ -185,7 +203,10 @@ func TestGenerateSchemaDiffSQL_SQLServerFilteredIndexPredicateChange(t *testing.
 			{Name: "users", Key: "users"},
 		})
 	diff.IdentifierSemantics = &semantics
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.SQLServer)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.SQLServer,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2)
@@ -213,7 +234,10 @@ func TestGenerateSchemaDiffSQL_SQLServerUnfilteredIndexStaysWithoutWhere(t *test
 			{Name: "users", Key: "users"},
 		})
 	diff.IdentifierSemantics = &semantics
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.SQLServer)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.SQLServer,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 1)

@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlasschema"
@@ -140,7 +141,12 @@ func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
 		return cmdutil.Fail(cmd, err)
 	}
 
+	runtime, err := builtin.New()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	report, changes, err := atlasschema.DiffReportingChanges(cmd.Context(), atlasschema.DiffOptions{
+		Runtime:             runtime,
 		FromURLs:            opts.fromURLs,
 		ToURLs:              opts.toURLs,
 		DevURL:              opts.devURL,

@@ -1,14 +1,16 @@
 package postgres_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -50,9 +52,12 @@ func TestPlanner_AColumnTakesItsKeyUnderTheComparisonsName(t *testing.T) {
 			}}}
 			caps := capability.Postgres17()
 
-			nodes, err := postgres.NewForDialect(platform.Postgres, caps).GenerateMigrationAST(diff)
+			nodes, err := postgres.NewForDialect(platform.Postgres, caps).GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				diff,
+			)
 			c.Assert(err, qt.IsNil)
-			sql, err := renderer.RenderSQLWithCapabilities(platform.Postgres, caps, nodes...)
+			sql, err := builtin.RenderSQLWithCapabilities(platform.Postgres, caps, nodes...)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, test.want)

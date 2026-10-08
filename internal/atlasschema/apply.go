@@ -11,11 +11,12 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
-	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	"ptah.run/engine"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/atlasurl"
@@ -39,6 +40,8 @@ import (
 )
 
 type ApplyOptions struct {
+	// Runtime selects feature services and codecs for this operation. It is required.
+	Runtime engine.SchemaRuntime
 	ToURLs  []string
 	Exclude []string
 	// ProjectRoot bounds the files a desired state may make this process read.
@@ -137,6 +140,8 @@ type ApplyPlan struct {
 
 // ApplyRuntimeOptions configures Atlas schema apply planning and execution.
 type ApplyRuntimeOptions struct {
+	// Runtime selects feature services and codecs for this operation. It is required.
+	Runtime engine.SchemaRuntime
 	DevURL  string
 	ToURLs  []string
 	Exclude []string
@@ -196,16 +201,17 @@ type ApplyRuntimeOptions struct {
 // ApplyRuntimePlan is a prepared Atlas schema apply operation for one open
 // database connection.
 type ApplyRuntimePlan struct {
-	plan   ApplyPlan
-	dryRun bool
-	conn   *dbschema.DatabaseConnection
-	txMode migrator.MigrationTxMode
+	runtime engine.SchemaRuntime
+	plan    ApplyPlan
+	dryRun  bool
+	conn    *dbschema.DatabaseConnection
+	txMode  migrator.MigrationTxMode
 	// current is the filtered (schema/include scope and exclude) introspected
 	// target state the plan was computed against; the dev database simulation
 	// recreates it before rehearsing the plan.
 	current *catalog.Database
 	// undecided is what [ApplyRuntimePlan.Undecided] returns.
-	undecided []coverage.Object
+	undecided schemadiff.Diagnostics
 }
 
 func (p ApplyPlan) HasChanges() bool {
@@ -227,6 +233,9 @@ func PlanApply(
 ) (ApplyPlan, error) {
 	computation, err := computeApplyPlan(ctx, conn, opts)
 	if err != nil {
+		return ApplyPlan{}, err
+	}
+	if err := computation.undecided.Err(); err != nil {
 		return ApplyPlan{}, err
 	}
 	return ApplyPlan{statements: computation.executionStatements()}, nil
@@ -265,7 +274,7 @@ type applyComputation struct {
 	statements []string
 	// undecided are the declared objects the comparison withheld because the
 	// read did not describe their kind; see [ApplyRuntimePlan.Undecided].
-	undecided []coverage.Object
+	undecided schemadiff.Diagnostics
 	// dataStatements reconcile declared rows. They are kept apart from the DDL
 	// so a plan can record the severity this package assigns them: a SQL
 	// analyzer reads a DELETE of a reference row as safe, which is true about
@@ -306,7 +315,11 @@ func PreflightApplyTarget(
 	schemas []string,
 	validateSchema func(*schemamodel.Database) error,
 	validateLiveObject func(LiveSchemaObject) error,
+	runtime schemaext.ConversionRuntime,
 ) error {
+	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
+		return err
+	}
 	if validateSchema == nil && validateLiveObject == nil {
 		return nil
 	}
@@ -321,7 +334,7 @@ func PreflightApplyTarget(
 	if err != nil {
 		return fmt.Errorf("read database schema: %w", err)
 	}
-	if err := validateCurrentApplySchema(current, validateSchema); err != nil {
+	if err := validateCurrentApplySchema(ctx, current, conn.Info().Dialect, validateSchema, runtime); err != nil {
 		return err
 	}
 	return ValidateLiveObjects(conn, readScope, validateLiveObject)
@@ -346,6 +359,9 @@ func computeApplyPlan(
 	conn *dbschema.DatabaseConnection,
 	opts ApplyOptions,
 ) (applyComputation, error) {
+	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
+		return applyComputation{}, err
+	}
 	if err := validateApplyPlanningInputs(conn, opts); err != nil {
 		return applyComputation{}, err
 	}
@@ -370,45 +386,20 @@ func computeApplyPlan(
 		return applyComputation{}, err
 	}
 	current := opts.baseline.WithoutEnvironment(read.current, declaredExtensionNames(desired))
-	current = opts.baseline.WithoutStartingPoint(current,
-		goschematodb.ToDBSchema(desired, conn.Info().Dialect), defaultSchemaOf(conn.Info()))
-	if err := validateCurrentApplyState(conn, current, read.readScope, opts); err != nil {
+	declared, err := goschematodb.ToDBSchema(ctx, desired, conn.Info().Dialect, opts.Runtime)
+	if err != nil {
 		return applyComputation{}, err
 	}
-	scoped := scopeApplyStates(current, desired, scope)
-	current, currentReports, currentErr := scoped.current, scoped.currentReports, scoped.currentErr
-	if currentErr != nil && !emptySelection(currentErr) {
-		return applyComputation{}, currentErr
+	current = opts.baseline.WithoutStartingPoint(current, declared, defaultSchemaOf(conn.Info()))
+	if err := validateCurrentApplyState(ctx, conn, current, read.readScope, opts); err != nil {
+		return applyComputation{}, err
 	}
-	desired, desiredReports, desiredErr := scoped.desired, scoped.desiredReports, scoped.desiredErr
-	if desiredErr != nil && !emptySelection(desiredErr) {
-		return applyComputation{}, desiredErr
+	selectionOpts := opts
+	selectionOpts.RefuseUnmatchedExclude = opts.RefuseUnmatchedExclude && !allowUnmatched
+	current, desired, err = selectApplyStates(current, desired, scope, selectionOpts)
+	if err != nil {
+		return applyComputation{}, err
 	}
-	// An --exclude selector that named nothing in the database and nothing in
-	// the desired state protected nothing, and apply is the verb that carries
-	// the plan out. Refusing is the safe answer there; the opt-in named in the
-	// message restores the permissive one. Callers that only compute a plan
-	// say so instead.
-	unmatched := atlasfilter.UnmatchedAcrossStates(currentReports.Exclude, desiredReports.Exclude)
-	if opts.RefuseUnmatchedExclude && !allowUnmatched {
-		if err := refuseUnmatchedExclude(unmatched); err != nil {
-			return applyComputation{}, err
-		}
-	} else {
-		reportUnmatchedExclude(opts.Diagnostics, unmatched)
-	}
-	// An --include selection that matched neither the database nor the desired
-	// state leaves nothing to apply. Reported as a synced schema it is a verb
-	// claiming success for work it did not do, with the target untouched, so
-	// schema apply refuses instead. One empty side is left alone: that is what
-	// a pure create or a pure drop looks like.
-	if emptySelection(currentErr) && emptySelection(desiredErr) {
-		return applyComputation{}, fmt.Errorf(
-			"%w; schema apply would change nothing",
-			currentErr,
-		)
-	}
-	applyExtensionSupportCoverage(desired, currentReports.Selection, desiredReports.Selection)
 
 	computation := applyComputation{
 		current:          current,
@@ -424,7 +415,7 @@ func computeApplyPlan(
 	// (stokaro/ptah#1028).
 	compareOpts := config.DefaultCompareOptions()
 	compareOpts.SkipTableDrops = opts.Policy.SkipDropTable
-	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(ctx, conn, desired, current, compareOpts)
+	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(ctx, conn, desired, current, compareOpts, opts.Runtime)
 	if err != nil {
 		return applyComputation{}, fmt.Errorf("compare database schema: %w", err)
 	}
@@ -439,18 +430,21 @@ func computeApplyPlan(
 		return applyComputation{}, err
 	}
 	if diff.HasChanges() {
-		computation.statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, info.Dialect, planner.Options{
-			Capabilities:         info.Capabilities,
-			ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
-			OnlineAlter:          opts.Policy.OnlineAlter,
-			ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
-			ConcurrentIndexRefs: declaredConcurrentIndexRefs(
-				opts.Policy, diff, desired, current, info.Dialect, info.Capabilities,
-			),
-			OmitNullBackfill:    opts.OmitNullBackfill,
-			AllowTableRebuild:   opts.Policy.AllowTableRebuild,
-			TableRebuildRequest: opts.Policy.TableRebuildRequest,
-		})
+		computation.statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(
+			ctx, opts.Runtime,
+			diff, info.Dialect, planner.Options{
+				Capabilities:         info.Capabilities,
+				ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
+				OnlineAlter:          opts.Policy.OnlineAlter,
+				ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
+				ConcurrentIndexRefs: declaredConcurrentIndexRefs(
+					opts.Policy, diff, desired, current, info.Dialect, info.Capabilities,
+				),
+				OmitNullBackfill:    opts.OmitNullBackfill,
+				AllowTableRebuild:   opts.Policy.AllowTableRebuild,
+				TableRebuildRequest: opts.Policy.TableRebuildRequest,
+			},
+		)
 		if err != nil {
 			return applyComputation{}, fmt.Errorf("generate schema apply SQL: %w", err)
 		}
@@ -465,6 +459,47 @@ func computeApplyPlan(
 		return applyComputation{}, err
 	}
 	return computation, nil
+}
+
+// selectApplyStates checks selectors against both sides before planning. One
+// empty side is a create or removal; two empty selections cannot prove agreement.
+func selectApplyStates(current *catalog.Database, desired *schemamodel.Database, scope atlasfilter.Scope, opts ApplyOptions) (*catalog.Database, *schemamodel.Database, error) {
+	scoped := scopeApplyStates(current, desired, scope)
+	current, currentReports, currentErr := scoped.current, scoped.currentReports, scoped.currentErr
+	if currentErr != nil && !emptySelection(currentErr) {
+		return nil, nil, currentErr
+	}
+	desired, desiredReports, desiredErr := scoped.desired, scoped.desiredReports, scoped.desiredErr
+	if desiredErr != nil && !emptySelection(desiredErr) {
+		return nil, nil, desiredErr
+	}
+	// An --exclude selector that named nothing in the database and nothing in
+	// the desired state protected nothing, and apply is the verb that carries
+	// the plan out. Refusing is the safe answer there; the opt-in named in the
+	// message restores the permissive one. Callers that only compute a plan
+	// say so instead.
+	unmatched := atlasfilter.UnmatchedAcrossStates(currentReports.Exclude, desiredReports.Exclude)
+	if opts.RefuseUnmatchedExclude {
+		if err := refuseUnmatchedExclude(unmatched); err != nil {
+			return nil, nil, err
+		}
+	} else {
+		reportUnmatchedExclude(opts.Diagnostics, unmatched)
+	}
+	// An --include selection that matched neither the database nor the desired
+	// state leaves nothing to apply. Reported as a synced schema it is a verb
+	// claiming success for work it did not do, with the target untouched, so
+	// schema apply refuses instead. One empty side is left alone: that is what
+	// a pure create or a pure drop looks like.
+	if emptySelection(currentErr) && emptySelection(desiredErr) {
+		return nil, nil, fmt.Errorf(
+			"%w; schema apply would change nothing",
+			currentErr,
+		)
+	}
+	applyExtensionSupportCoverage(desired, currentReports.Selection, desiredReports.Selection)
+
+	return current, desired, nil
 }
 
 func validateApplyPlanningInputs(conn *dbschema.DatabaseConnection, opts ApplyOptions) error {
@@ -523,12 +558,13 @@ func scopeApplyStates(
 }
 
 func validateCurrentApplyState(
+	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	current *catalog.Database,
 	readScope []string,
 	opts ApplyOptions,
 ) error {
-	if err := validateCurrentApplySchema(current, opts.ValidateCurrentSchema); err != nil {
+	if err := validateCurrentApplySchema(ctx, current, conn.Info().Dialect, opts.ValidateCurrentSchema, opts.Runtime); err != nil {
 		return err
 	}
 	return ValidateLiveObjects(conn, readScope, opts.ValidateLiveObject)
@@ -542,16 +578,20 @@ func resolveApplyAllowUnmatched(opts ApplyOptions) (bool, error) {
 }
 
 func validateCurrentApplySchema(
+	ctx context.Context,
 	current *catalog.Database,
+	dialect string,
 	validate func(*schemamodel.Database) error,
+	runtime schemaext.ConversionRuntime,
 ) error {
 	if validate == nil {
 		return nil
 	}
-	// The dialect is not in scope here and threading it would reach five
-	// callers; an empty one answers what every server does, which is this
-	// path's existing behavior.
-	return validate(dbschematogo.ConvertDBSchemaToGoSchema(current, ""))
+	desired, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, current, dialect, runtime)
+	if err != nil {
+		return err
+	}
+	return validate(desired)
 }
 
 // applyRead is the database side of an apply together with the scopes it was
@@ -672,6 +712,7 @@ func loadDesiredApplySchema(
 		return nil, err
 	}
 	state, err := set.Resolve(ctx, atlassource.ResolveOptions{
+		Runtime:           opts.Runtime,
 		DatabaseURL:       conn.Info().URL,
 		Dialect:           conn.Info().Dialect,
 		DialectFlag:       "--url",
@@ -723,7 +764,10 @@ func loadDesiredApplySchema(
 		if err != nil {
 			return nil, fmt.Errorf("read target schema: %w", err)
 		}
-		state = state.WithoutStartingPoint(atlassource.State{DB: target}, conn.Info().Dialect)
+		state, err = state.WithoutStartingPoint(ctx, atlassource.State{DB: target}, conn.Info().Dialect, opts.Runtime)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return state.Schema, nil
 }
@@ -838,6 +882,7 @@ func PrepareApply(
 	}
 
 	computation, err := computeApplyPlan(ctx, conn, ApplyOptions{
+		Runtime:                   opts.Runtime,
 		ProjectRoot:               opts.ProjectRoot,
 		ToURLs:                    opts.ToURLs,
 		Exclude:                   opts.Exclude,
@@ -869,6 +914,7 @@ func PrepareApply(
 		return ApplyRuntimePlan{}, err
 	}
 	return ApplyRuntimePlan{
+		runtime:   opts.Runtime,
 		plan:      ApplyPlan{statements: computation.executionStatements()},
 		dryRun:    opts.DryRun,
 		conn:      conn,
@@ -939,8 +985,8 @@ func (p ApplyRuntimePlan) Statements() []string {
 // exist, and no statement in the plan creates them. They are sorted by kind and
 // then name. A plan with no statements and a non-empty Undecided has not shown
 // that the target matches the desired schema.
-func (p ApplyRuntimePlan) Undecided() []coverage.Object {
-	return slices.Clone(p.undecided)
+func (p ApplyRuntimePlan) Undecided() schemadiff.Diagnostics {
+	return p.undecided.Clone()
 }
 
 // Execute applies the prepared schema diff. Dry-run and no-op plans return

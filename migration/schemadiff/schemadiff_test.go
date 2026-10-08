@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -28,7 +30,7 @@ func TestCompare_DefaultBehavior(t *testing.T) {
 	}
 
 	// Test default behavior (should ignore plpgsql)
-	diff := schemadiff.Compare(desired, database)
+	diff := must.Must(schemadiff.Compare(t.Context(), desired, database, must.Must(builtin.New())))
 
 	// plpgsql should be ignored by default, so no extensions should be removed
 	c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"pg_trgm"})
@@ -75,7 +77,7 @@ func TestCompareWithDialect_MySQLFamilyInlineEnumsMatchGeneratedEnumFields(t *te
 				}},
 			}
 
-			diff := schemadiff.CompareWithDialect(desired, database, dialect)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, dialect, must.Must(builtin.New())))
 			c.Assert(diff.EnumsAdded.Names(), qt.HasLen, 0)
 			c.Assert(diff.EnumsRemoved.Names(), qt.HasLen, 0)
 			c.Assert(diff.TablesModified, qt.HasLen, 0)
@@ -120,7 +122,7 @@ func TestCompareWithDialect_GeneratedColumnDefaultKindMatchesDialect(t *testing.
 				}},
 			}
 
-			diff := schemadiff.CompareWithDialect(desired, database, tt.dialect)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, tt.dialect, must.Must(builtin.New())))
 			c.Assert(diff.TablesModified, qt.HasLen, 0)
 		})
 	}
@@ -215,7 +217,7 @@ func TestCompareWithDialect_GeneratedColumnCatalogExpressionsMatch(t *testing.T)
 				}},
 			}
 
-			diff := schemadiff.CompareWithDialect(desired, database, tt.dialect)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, tt.dialect, must.Must(builtin.New())))
 			c.Assert(diff.TablesModified, qt.HasLen, 0)
 		})
 	}
@@ -251,7 +253,7 @@ func TestCompareWithDialect_GeneratedColumnStringLiteralMismatchIsAGap(t *testin
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "mysql")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "mysql", must.Must(builtin.New())))
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified[0].Changes["generated"], qt.Contains, "'ACTIVE'")
@@ -287,7 +289,7 @@ func TestCompareWithDialect_GeneratedColumnEscapedStringLiteralMismatchIsAGap(t 
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "mariadb")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "mariadb", must.Must(builtin.New())))
 
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
@@ -324,7 +326,7 @@ func TestCompareWithDialect_GeneratedColumnDoubleQuotedStringLiteralMismatchIsAG
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "mariadb")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "mariadb", must.Must(builtin.New())))
 
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
@@ -349,7 +351,7 @@ func TestCompareWithDialect_MariaDBViewBodyMatchesCatalogReadback(t *testing.T) 
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "mariadb")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "mariadb", must.Must(builtin.New())))
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
@@ -372,7 +374,7 @@ func TestCompareWithDialect_MariaDBViewPredicateDriftStillDiffs(t *testing.T) {
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "mariadb")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "mariadb", must.Must(builtin.New())))
 
 	c.Assert(diff.ViewsModified, qt.HasLen, 1)
 	c.Assert(diff.ViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
@@ -396,7 +398,7 @@ func TestCompareWithDialect_MariaDBViewWrongSchemaQualifierStillDiffs(t *testing
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "mariadb")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "mariadb", must.Must(builtin.New())))
 
 	c.Assert(diff.ViewsModified, qt.HasLen, 1)
 	c.Assert(diff.ViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
@@ -420,7 +422,7 @@ func TestCompareWithDialect_MariaDBViewWrongSchemaRelationStillDiffs(t *testing.
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "mariadb")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "mariadb", must.Must(builtin.New())))
 
 	c.Assert(diff.ViewsModified, qt.HasLen, 1)
 	c.Assert(diff.ViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
@@ -442,7 +444,7 @@ func TestCompareWithDialect_MariaDBViewStringLiteralDriftStillDiffs(t *testing.T
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "mariadb")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "mariadb", must.Must(builtin.New())))
 
 	c.Assert(diff.ViewsModified, qt.HasLen, 1)
 	c.Assert(diff.ViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
@@ -464,7 +466,7 @@ func TestCompareWithDialect_MariaDBViewEscapedStringLiteralDriftStillDiffs(t *te
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "mariadb")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "mariadb", must.Must(builtin.New())))
 
 	c.Assert(diff.ViewsModified, qt.HasLen, 1)
 	c.Assert(diff.ViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
@@ -486,7 +488,7 @@ func TestCompareWithDialect_MariaDBViewDoubleQuotedStringLiteralDriftStillDiffs(
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "mariadb")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "mariadb", must.Must(builtin.New())))
 
 	c.Assert(diff.ViewsModified, qt.HasLen, 1)
 	c.Assert(diff.ViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
@@ -540,7 +542,7 @@ func TestCompareWithDialect_SQLServerGeneratedExpressionNormalizesCatalogDefinit
 				}},
 			}
 
-			diff := schemadiff.CompareWithDialect(desired, database, "sqlserver")
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "sqlserver", must.Must(builtin.New())))
 			c.Assert(diff.TablesModified, qt.HasLen, 0)
 		})
 	}
@@ -652,7 +654,7 @@ func TestCompareWithDialect_MySQLDefaultsTypesFixtureMatchesCatalogReadback(t *t
 		},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "mysql")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "mysql", must.Must(builtin.New())))
 	c.Assert(diff.TablesModified, qt.HasLen, 0)
 }
 
@@ -780,7 +782,7 @@ func TestCompareWithDialect_MySQLConstraintsActionsFixtureMatchesCatalogReadback
 		},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "mysql")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "mysql", must.Must(builtin.New())))
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
 
@@ -808,7 +810,7 @@ func TestCompareWithDialect_MySQLCharsetEscapedStringLiteralMatchesGeneratedEsca
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "mysql")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "mysql", must.Must(builtin.New())))
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
 
@@ -853,7 +855,7 @@ func TestCompareWithDialect_SQLiteInlineEnumsMatchGeneratedEnumFields(t *testing
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "sqlite")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "sqlite", must.Must(builtin.New())))
 	c.Assert(diff.EnumsAdded.Names(), qt.HasLen, 0)
 	c.Assert(diff.EnumsRemoved.Names(), qt.HasLen, 0)
 	c.Assert(diff.TablesModified, qt.HasLen, 0)
@@ -878,11 +880,11 @@ func TestCompareWithDialect_SQLiteRenderedColumnTypesMatchCatalogReadback(t *tes
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(
-				sqliteColumnGeneratedSchema(tt.generatedType),
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), sqliteColumnGeneratedSchema(tt.generatedType),
 				sqliteColumnDatabaseSchema(tt.databaseType),
-				"sqlite",
-			)
+				"sqlite", must.Must(builtin.New()),
+			))
 			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 		})
 	}
@@ -916,11 +918,11 @@ func TestCompareWithDialect_SQLiteEquivalentDeclarationsDoNotRebuild(t *testing.
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(
-				sqliteColumnGeneratedSchema(tt.generatedType),
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), sqliteColumnGeneratedSchema(tt.generatedType),
 				sqliteColumnDatabaseSchema(tt.databaseType),
-				"sqlite",
-			)
+				"sqlite", must.Must(builtin.New()),
+			))
 			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %+v", diff))
 		})
 	}
@@ -929,11 +931,11 @@ func TestCompareWithDialect_SQLiteEquivalentDeclarationsDoNotRebuild(t *testing.
 func TestCompareWithDialect_SQLiteDistinctColumnTypesStillDiff(t *testing.T) {
 	c := qt.New(t)
 
-	diff := schemadiff.CompareWithDialect(
-		sqliteColumnGeneratedSchema("INTEGER"),
+	diff := must.Must(schemadiff.CompareWithDialect(
+		t.Context(), sqliteColumnGeneratedSchema("INTEGER"),
 		sqliteColumnDatabaseSchema("TEXT"),
-		"sqlite",
-	)
+		"sqlite", must.Must(builtin.New()),
+	))
 
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
@@ -978,11 +980,11 @@ func TestCompareWithDialect_SQLiteDeclaredTypeDriftStillDiffs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(
-				sqliteColumnGeneratedSchema(tt.generatedType),
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), sqliteColumnGeneratedSchema(tt.generatedType),
 				sqliteColumnDatabaseSchema(tt.databaseType),
-				"sqlite",
-			)
+				"sqlite", must.Must(builtin.New()),
+			))
 			c.Assert(diff.TablesModified, qt.HasLen, 1)
 			c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
 			c.Assert(diff.TablesModified[0].ColumnsModified[0].Changes["type"], qt.Equals, tt.wantChange)
@@ -1034,7 +1036,7 @@ func TestCompareWithDialect_SQLiteUniqueConstraintAutoindexIsIgnored(t *testing.
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "sqlite")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "sqlite", must.Must(builtin.New())))
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
@@ -1055,7 +1057,7 @@ func TestCompareWithDialect_NonSQLiteAutoindexNameIsCompared(t *testing.T) {
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 
 	c.Assert(diff.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "sqlite_autoindex_projects_1", TableName: "projects"},
@@ -1107,7 +1109,7 @@ func TestCompareWithDialect_SQLServerInlineEnumsMatchGeneratedEnumFields(t *test
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "sqlserver")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "sqlserver", must.Must(builtin.New())))
 	c.Assert(diff.EnumsAdded.Names(), qt.HasLen, 0)
 	c.Assert(diff.EnumsRemoved.Names(), qt.HasLen, 0)
 	c.Assert(diff.TablesModified, qt.HasLen, 0)
@@ -1159,7 +1161,7 @@ func TestCompareWithOptions_CustomIgnoreList(t *testing.T) {
 
 	// Test with custom ignore list (ignore adminpack but not plpgsql)
 	opts := config.WithIgnoredExtensions("adminpack")
-	diff := schemadiff.CompareWithOptions(desired, database, opts)
+	diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, database, opts, must.Must(builtin.New())))
 
 	// adminpack should be ignored, plpgsql should be marked for removal
 	c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"pg_trgm"})
@@ -1184,7 +1186,7 @@ func TestCompareWithOptions_NoIgnoredExtensions(t *testing.T) {
 
 	// Test with no ignored extensions (manage all extensions)
 	opts := config.WithIgnoredExtensions() // Empty list
-	diff := schemadiff.CompareWithOptions(desired, database, opts)
+	diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, database, opts, must.Must(builtin.New())))
 
 	// All database extensions should be marked for removal
 	c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"pg_trgm"})
@@ -1210,7 +1212,7 @@ func TestCompareWithOptions_AdditionalIgnoredExtensions(t *testing.T) {
 
 	// Test with additional ignored extensions (default + adminpack)
 	opts := config.WithAdditionalIgnoredExtensions("adminpack")
-	diff := schemadiff.CompareWithOptions(desired, database, opts)
+	diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, database, opts, must.Must(builtin.New())))
 
 	// plpgsql and adminpack should be ignored, only pg_stat_statements should be removed
 	c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"pg_trgm"})
@@ -1233,7 +1235,7 @@ func TestCompareWithOptions_NilOptions(t *testing.T) {
 	}
 
 	// Test with nil options (should use defaults)
-	diff := schemadiff.CompareWithOptions(desired, database, nil)
+	diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, database, nil, must.Must(builtin.New())))
 
 	// Should behave the same as Compare() - ignore plpgsql by default
 	c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"pg_trgm"})
@@ -1258,7 +1260,7 @@ func TestLibraryUsageExamples(t *testing.T) {
 	t.Run("simple usage with defaults", func(t *testing.T) {
 		// Most common usage - just compare with defaults
 		c := qt.New(t)
-		diff := schemadiff.Compare(desired, database)
+		diff := must.Must(schemadiff.Compare(t.Context(), desired, database, must.Must(builtin.New())))
 
 		c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"btree_gin"})
 		c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, make([]string, 0)) // plpgsql ignored
@@ -1268,7 +1270,7 @@ func TestLibraryUsageExamples(t *testing.T) {
 		// User wants to ignore specific extensions
 		c := qt.New(t)
 		opts := config.WithIgnoredExtensions("plpgsql", "adminpack")
-		diff := schemadiff.CompareWithOptions(desired, database, opts)
+		diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, database, opts, must.Must(builtin.New())))
 
 		c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"btree_gin"})
 		c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, make([]string, 0))
@@ -1278,7 +1280,7 @@ func TestLibraryUsageExamples(t *testing.T) {
 		// User wants to manage all extensions (no ignoring)
 		c := qt.New(t)
 		opts := config.WithIgnoredExtensions()
-		diff := schemadiff.CompareWithOptions(desired, database, opts)
+		diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, database, opts, must.Must(builtin.New())))
 
 		c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"btree_gin"})
 		c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, []string{"plpgsql"})
@@ -1288,7 +1290,7 @@ func TestLibraryUsageExamples(t *testing.T) {
 		// User wants defaults plus additional ignored extensions
 		c := qt.New(t)
 		opts := config.WithAdditionalIgnoredExtensions("uuid-ossp")
-		diff := schemadiff.CompareWithOptions(desired, database, opts)
+		diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, database, opts, must.Must(builtin.New())))
 
 		c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"btree_gin"})
 		c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, make([]string, 0)) // plpgsql still ignored
@@ -1320,11 +1322,11 @@ func TestCompareWithDialect_SpannerStringSpellingsAreOneType(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(
-				sqliteColumnGeneratedSchema(tt.generatedType),
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), sqliteColumnGeneratedSchema(tt.generatedType),
 				sqliteColumnDatabaseSchema(tt.databaseType),
-				"spanner",
-			)
+				"spanner", must.Must(builtin.New()),
+			))
 			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %+v", diff))
 		})
 	}
@@ -1350,11 +1352,11 @@ func TestCompareWithDialect_SpannerWidthIsStillATypeChange(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(
-				sqliteColumnGeneratedSchema(tt.generatedType),
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), sqliteColumnGeneratedSchema(tt.generatedType),
 				sqliteColumnDatabaseSchema(tt.databaseType),
-				"spanner",
-			)
+				"spanner", must.Must(builtin.New()),
+			))
 			c.Assert(diff.HasChanges(), qt.IsTrue, qt.Commentf("diff: %+v", diff))
 		})
 	}
@@ -1365,11 +1367,11 @@ func TestCompareWithDialect_SpannerWidthIsStillATypeChange(t *testing.T) {
 func TestCompareWithDialect_SpannerFoldDoesNotReachOtherTargets(t *testing.T) {
 	c := qt.New(t)
 
-	diff := schemadiff.CompareWithDialect(
-		sqliteColumnGeneratedSchema("text"),
+	diff := must.Must(schemadiff.CompareWithDialect(
+		t.Context(), sqliteColumnGeneratedSchema("text"),
 		sqliteColumnDatabaseSchema("character varying"),
-		"postgres",
-	)
+		"postgres", must.Must(builtin.New()),
+	))
 
 	c.Assert(diff.HasChanges(), qt.IsTrue, qt.Commentf("diff: %+v", diff))
 }
@@ -1435,7 +1437,7 @@ func TestCompareWithDialect_SpannerForeignKeyBackingIndexIsNotDrift(t *testing.T
 	c := qt.New(t)
 	desired, database := spannerForeignKeySchemas("IDX_children_parent_id_FBF4366D73F2084A")
 
-	diff := schemadiff.CompareWithDialect(desired, database, "spanner")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "spanner", must.Must(builtin.New())))
 
 	c.Assert(diff.IndexesRemoved, qt.HasLen, 0, qt.Commentf("diff: %+v", diff))
 }
@@ -1451,7 +1453,7 @@ func TestCompareWithDialect_SpannerStillDropsAnIndexAPersonWrote(t *testing.T) {
 	c := qt.New(t)
 	desired, database := spannerForeignKeySchemas("children_parent_idx")
 
-	diff := schemadiff.CompareWithDialect(desired, database, "spanner")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "spanner", must.Must(builtin.New())))
 
 	c.Assert(diff.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "children_parent_idx", TableName: "children"},
@@ -1465,7 +1467,7 @@ func TestCompareWithDialect_SpannerBackingIndexRuleStaysOnSpanner(t *testing.T) 
 	c := qt.New(t)
 	desired, database := spannerForeignKeySchemas("IDX_children_parent_id_FBF4366D73F2084A")
 
-	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 
 	c.Assert(diff.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "IDX_children_parent_id_FBF4366D73F2084A", TableName: "children"},
@@ -1507,7 +1509,7 @@ func TestCompareWithDialect_SQLiteBooleanDefaultMatchesWhatTheRendererWrites(t *
 			database := sqliteColumnDatabaseSchema(tt.columnType)
 			database.Tables[0].Columns[1].ColumnDefault = &tt.live
 
-			diff := schemadiff.CompareWithDialect(desired, database, "sqlite")
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "sqlite", must.Must(builtin.New())))
 
 			c.Assert(!diff.HasChanges(), qt.Equals, tt.wantNoChanges, qt.Commentf("diff: %+v", diff))
 		})

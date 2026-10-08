@@ -652,10 +652,34 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-core-featureplan",
+      "kind": "public-package",
+      "surface": "ptah.run/core/featureplan",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-core-goschema",
       "kind": "public-package",
       "surface": "ptah.run/core/goschema",
       "claimed_by": "docs/site/src/content/docs/schema/go-annotations.md"
+    },
+    {
+      "id": "gopkg-core-manageddata",
+      "kind": "public-package",
+      "surface": "ptah.run/core/manageddata",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-core-objectidentity",
+      "kind": "public-package",
+      "surface": "ptah.run/core/objectidentity",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-core-plangraph",
+      "kind": "public-package",
+      "surface": "ptah.run/core/plangraph",
+      "claimed_by": null
     },
     {
       "id": "gopkg-core-platform",
@@ -694,15 +718,39 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-core-schemacapture",
+      "kind": "public-package",
+      "surface": "ptah.run/core/schemacapture",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-core-schemaext",
+      "kind": "public-package",
+      "surface": "ptah.run/core/schemaext",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-core-schemamodel",
       "kind": "public-package",
       "surface": "ptah.run/core/schemamodel",
       "claimed_by": null
     },
     {
+      "id": "gopkg-core-schemaprojection",
+      "kind": "public-package",
+      "surface": "ptah.run/core/schemaprojection",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-core-schemasource",
       "kind": "public-package",
       "surface": "ptah.run/core/schemasource",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-core-schemavalidation",
+      "kind": "public-package",
+      "surface": "ptah.run/core/schemavalidation",
       "claimed_by": null
     },
     {
@@ -724,9 +772,75 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-postgres-pgproject",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/postgres/pgproject",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-ydb-ydbast",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/ydb/ydbast",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-ydb-ydbcompare",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/ydb/ydbcompare",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-ydb-ydbconvert",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/ydb/ydbconvert",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-ydb-ydbdiff",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/ydb/ydbdiff",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-ydb-ydbplan",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/ydb/ydbplan",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-ydb-ydbreport",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/ydb/ydbreport",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-ydb-ydbreverse",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/ydb/ydbreverse",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-ydb-ydbschema",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/ydb/ydbschema",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-docs",
       "kind": "public-package",
       "surface": "ptah.run/docs",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-engine",
+      "kind": "public-package",
+      "surface": "ptah.run/engine",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-engine-builtin",
+      "kind": "public-package",
+      "surface": "ptah.run/engine/builtin",
       "claimed_by": null
     },
     {

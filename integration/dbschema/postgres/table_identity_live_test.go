@@ -12,11 +12,12 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/jackc/pgx/v5"
 
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
@@ -128,9 +129,9 @@ func (f tableIdentityFixture) assertNothingPlannedForTheTables(c *qt.C) {
 	c.Helper()
 	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), f.conn, []string{f.schema})
 	c.Assert(err, qt.IsNil)
-	diff := schemadiff.CompareWithDialect(f.load(c), live, f.dialect)
+	diff := must.Must(schemadiff.CompareWithDialect(c.Context(), f.load(c), live, f.dialect, must.Must(builtin.New())))
 	c.Assert(diff.TablesAdded, qt.HasLen, 0)
-	c.Assert(diff.TablesRemoved, qt.HasLen, 0)
+	c.Assert(diff.TablesRemoved.Names(), qt.HasLen, 0)
 	c.Assert(diff.TablesModified, qt.HasLen, 0, qt.Commentf("%+v", diff.TablesModified))
 	c.Assert(diff.IndexesAdded, qt.HasLen, 0)
 	c.Assert(diff.IndexesRemoved, qt.HasLen, 0, qt.Commentf("%+v", diff.IndexesRemoved))
@@ -144,7 +145,7 @@ func (f tableIdentityFixture) assertNothingPlannedForTheTables(c *qt.C) {
 func TestTableIdentity_LiveRenderedFileCreatesEachTable(t *testing.T) {
 	c := qt.New(t)
 	f := newTableIdentityFixture(c)
-	statements, err := renderer.GetOrderedCreateStatements(f.load(c), f.dialect)
+	statements, err := builtin.GetOrderedCreateStatements(f.load(c), f.dialect)
 	c.Assert(err, qt.IsNil)
 
 	f.execute(c, statements)

@@ -14,6 +14,8 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/cmdflags"
@@ -46,6 +48,7 @@ const (
 var testReportFormats = []string{"text", "json", "html"}
 
 type testOptions struct {
+	runtime     engine.SchemaRuntime
 	dir         string
 	rootDir     string
 	rootDirSet  bool
@@ -210,6 +213,11 @@ The command exits non-zero if any case fails.`,
 // machines, and a note interleaved with them makes a passing run unparseable
 // while still exiting 0.
 func runSchemaTest(ctx context.Context, out, diag io.Writer, opts testOptions) error {
+	runtime, err := builtin.New()
+	if err != nil {
+		return err
+	}
+	opts.runtime = runtime
 	if err := validateTestSources(opts); err != nil {
 		return err
 	}
@@ -273,6 +281,7 @@ func runSchemaTest(ctx context.Context, out, diag io.Writer, opts testOptions) e
 	}
 
 	report, err := dbtest.RunSchemaTest(ctx, dbtest.SchemaOptions{
+		Runtime: opts.runtime,
 		Cases:   cases,
 		RootDir: opts.rootDir,
 		Desired: desired,
@@ -441,6 +450,7 @@ func resolveTestDesiredDatabase(
 		return nil, err
 	}
 	state, err := set.Resolve(ctx, atlassource.ResolveOptions{
+		Runtime:     opts.runtime,
 		DatabaseURL: opts.dbURL,
 		Dialect:     devDialect,
 		DialectFlag: "--" + testDBURLFlag,

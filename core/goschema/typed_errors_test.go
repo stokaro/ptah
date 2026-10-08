@@ -1,6 +1,7 @@
 package goschema_test
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -8,11 +9,12 @@ import (
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -122,12 +124,15 @@ func runEmbedPath(root string) error {
 	if err != nil {
 		return err
 	}
-	diff := schemadiff.Compare(desired, &catalog.Database{})
-	nodes, err := planner.GenerateSchemaDiffAST(diff, "postgres")
+	diff := must.Must(schemadiff.Compare(context.Background(), desired, &catalog.Database{}, must.Must(builtin.New())))
+	nodes, err := planner.GenerateSchemaDiffAST(
+		context.Background(), must.Must(builtin.New()),
+		diff, "postgres",
+	)
 	if err != nil {
 		return err
 	}
-	_, err = renderer.RenderSQL("postgres", nodes...)
+	_, err = builtin.RenderSQL("postgres", nodes...)
 	return err
 }
 

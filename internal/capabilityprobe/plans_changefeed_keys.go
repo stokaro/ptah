@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"path"
 
-	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbschema"
 )
 
 // withChangefeedKeys adds the questions the YDB renderer, reader and planner
@@ -60,7 +60,7 @@ func changefeedStatement(table, options string) string {
 // key names, and reads each back.
 func ydbChangefeedExperiments() []experiment {
 	t := ydbSpelling
-	option := func(key capability.Capability, table, clause, expectation string, want func(ast.ChangefeedSpec) bool) experiment {
+	option := func(key capability.Capability, table, clause, expectation string, want func(ydbschema.ChangefeedSpec) bool) experiment {
 		return proven(key, schemaChange{
 			setup:  []string{t.table(table, "id Uint64 NOT NULL, n Int64", "id")},
 			change: []string{changefeedStatement(table, clause)},
@@ -76,26 +76,26 @@ func ydbChangefeedExperiments() []experiment {
 			},
 			after: []check{ydbDescribedChangefeed("cfk", "feed",
 				"the changefeed in UPDATES mode, its topic keeping records for 12 hours for important consumer c",
-				func(spec ast.ChangefeedSpec) bool {
+				func(spec ydbschema.ChangefeedSpec) bool {
 					return spec.Mode == "UPDATES" && spec.RetentionPeriod == "PT12H" &&
 						len(spec.Consumers) == 1 && spec.Consumers[0].Name == "c" && spec.Consumers[0].Important
 				})},
 		}),
 		option(capability.ChangefeedUserSIDs, "cfu", ", USER_SIDS = TRUE", "the changefeed naming the user of each change",
-			func(spec ast.ChangefeedSpec) bool { return spec.UserSIDs }),
+			func(spec ydbschema.ChangefeedSpec) bool { return spec.UserSIDs }),
 		option(capability.ChangefeedSchemaChanges, "cfs", ", SCHEMA_CHANGES = TRUE",
 			"the changefeed writing a record for each schema change",
-			func(spec ast.ChangefeedSpec) bool { return spec.SchemaChanges }),
+			func(spec ydbschema.ChangefeedSpec) bool { return spec.SchemaChanges }),
 		option(capability.ChangefeedTopicAutoPartitioning, "cfa", ", TOPIC_AUTO_PARTITIONING = 'ENABLED'",
 			"the changefeed's topic gaining partitions as writes grow",
-			func(spec ast.ChangefeedSpec) bool { return spec.TopicAutoPartitioning }),
+			func(spec ydbschema.ChangefeedSpec) bool { return spec.TopicAutoPartitioning }),
 		proven(capability.TopicConsumerAvailabilityPeriod, schemaChange{
 			setup: []string{t.table("cfc", "id Uint64 NOT NULL, n Int64", "id"), changefeedStatement("cfc", "")},
 			change: []string{
 				"ALTER TOPIC `cfc/feed` ADD CONSUMER c WITH (availability_period = Interval('PT1H'))",
 			},
 			after: []check{ydbDescribedChangefeed("cfc", "feed", "consumer c keeping unread records for an hour",
-				func(spec ast.ChangefeedSpec) bool {
+				func(spec ydbschema.ChangefeedSpec) bool {
 					return len(spec.Consumers) == 1 && spec.Consumers[0].Name == "c" &&
 						spec.Consumers[0].AvailabilityPeriod == "PT1H"
 				})},
@@ -105,7 +105,7 @@ func ydbChangefeedExperiments() []experiment {
 
 // ydbDescribedChangefeed reads table through Ptah's YDB reader and holds when
 // its changefeed name reads back as want says.
-func ydbDescribedChangefeed(table, name, expectation string, want func(ast.ChangefeedSpec) bool) check {
+func ydbDescribedChangefeed(table, name, expectation string, want func(ydbschema.ChangefeedSpec) bool) check {
 	return check{
 		describes: expectation,
 		inspect: func(ctx context.Context, s *session) (Attempt, bool, string) {
@@ -121,7 +121,13 @@ func ydbDescribedChangefeed(table, name, expectation string, want func(ast.Chang
 				if found.Name != table {
 					continue
 				}
-				for _, changefeed := range found.Changefeeds {
+				feeds, err := ydbschema.ObservedChangefeeds(db.FeatureObjects, found.Schema, found.Name)
+				if err != nil {
+					attempt.Accepted = false
+					attempt.ServerErr = err.Error()
+					return attempt, false, "the read returned invalid changefeed state"
+				}
+				for _, changefeed := range feeds {
 					if changefeed.Name == name {
 						return attempt, want(changefeed), fmt.Sprintf("read %+v", changefeed)
 					}

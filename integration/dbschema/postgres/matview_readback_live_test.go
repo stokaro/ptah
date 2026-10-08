@@ -9,12 +9,14 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/jackc/pgx/v5"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
 )
@@ -68,7 +70,7 @@ func TestMaterializedViewReadback_LiveUnqualifiedBodyRoundTrips(t *testing.T) {
 	// than about the source table the desired state does not declare.
 	viewLikes := &catalog.Database{Views: live.Views, MatViews: live.MatViews}
 
-	settled := schemadiff.CompareWithDialect(declared, viewLikes, platform.Postgres)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), declared, viewLikes, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(settled.MaterializedViewsModified, qt.HasLen, 0)
 	c.Assert(settled.ViewsModified, qt.HasLen, 0)
 	c.Assert(settled.HasChanges(), qt.IsFalse, qt.Commentf("settled diff: %+v", settled))
@@ -83,7 +85,7 @@ func TestMaterializedViewReadback_LiveUnqualifiedBodyRoundTrips(t *testing.T) {
 		}},
 		Views: declared.Views,
 	}
-	changeDiff := schemadiff.CompareWithDialect(changed, viewLikes, platform.Postgres)
+	changeDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), changed, viewLikes, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(changeDiff.MaterializedViewsModified, qt.HasLen, 1)
 	c.Assert(changeDiff.ViewsModified, qt.HasLen, 0)
 }

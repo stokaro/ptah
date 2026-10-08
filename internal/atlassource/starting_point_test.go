@@ -41,7 +41,8 @@ func TestStateWithoutStartingPointLeavesWhatTheSourceBuilt(t *testing.T) {
 		Tables: []catalog.Table{{Schema: "public", Name: "todos"}},
 	}}
 
-	got := replayedOnStartingPoint().WithoutStartingPoint(other, "postgres")
+	got, err := replayedOnStartingPoint().WithoutStartingPoint(t.Context(), other, "postgres", sourceRuntime(c))
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(got.DB.Tables, qt.DeepEquals, []catalog.Table{{Schema: "public", Name: "todos"}})
 	c.Assert(got.DB.Triggers, qt.HasLen, 1)
@@ -59,7 +60,8 @@ func TestStateWithoutStartingPointKeepsWhatADocumentDeclares(t *testing.T) {
 		Tables: []schemamodel.Table{{Schema: "auth", Name: "users"}},
 	}}
 
-	got := replayedOnStartingPoint().WithoutStartingPoint(other, "postgres")
+	got, err := replayedOnStartingPoint().WithoutStartingPoint(t.Context(), other, "postgres", sourceRuntime(c))
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(got.DB.Tables, qt.DeepEquals, []catalog.Table{
 		{Schema: "auth", Name: "users"}, {Schema: "public", Name: "todos"},
@@ -73,7 +75,8 @@ func TestStateWithoutStartingPointOfAnotherSource(t *testing.T) {
 	state := replayedOnStartingPoint()
 	state.EnvironmentState = nil
 
-	got := state.WithoutStartingPoint(atlassource.State{}, "postgres")
+	got, err := state.WithoutStartingPoint(t.Context(), atlassource.State{}, "postgres", sourceRuntime(c))
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(got.DB, qt.Equals, state.DB)
 	c.Assert(got.Schema, qt.Equals, state.Schema)

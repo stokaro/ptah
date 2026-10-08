@@ -1,0 +1,32 @@
+package builtin_test
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
+)
+
+func TestGetOrderedCreateStatements_PostgresOrdersViewLikeDependencies(t *testing.T) {
+	c := qt.New(t)
+	database := &schemamodel.Database{
+		Views: []schemamodel.View{{
+			Name: "a_report",
+			Body: "SELECT id FROM z_base",
+		}},
+		MaterializedViews: []schemamodel.MaterializedView{{
+			Name: "z_base",
+			Body: "SELECT id FROM users",
+		}},
+	}
+
+	statements, err := builtin.GetOrderedCreateStatements(database, platform.Postgres)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements, qt.HasLen, 2)
+	c.Assert(statements[0], qt.Contains, `CREATE MATERIALIZED VIEW "z_base"`)
+	c.Assert(statements[1], qt.Contains, `CREATE VIEW "a_report"`)
+}

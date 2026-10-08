@@ -1,6 +1,7 @@
 package schemacensus_test
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -8,8 +9,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/schemacensus"
 )
 
@@ -230,7 +233,9 @@ func TestFixtures_AreNamedOnce(t *testing.T) {
 // measured runs the census once for the whole file. Four assertions read the
 // same answer, and the run renders every fixture against every declared release
 // line twice per field.
-var measured = sync.OnceValue(schemacensus.Measure)
+var measured = sync.OnceValue(func() []schemacensus.Observation {
+	return must.Must(schemacensus.Measure(context.Background(), must.Must(builtin.New())))
+})
 
 // The helpers below hold the selection each assertion is about, so the test
 // functions stay one build and one uniform assertion. They select DATA rather
@@ -453,7 +458,9 @@ func recordedDifferencesWithNoReason() []string {
 }
 
 // measuredPlan runs the plan-side census once for the whole file.
-var measuredPlan = sync.OnceValue(schemacensus.MeasurePlan)
+var measuredPlan = sync.OnceValue(func() []schemacensus.Observation {
+	return must.Must(schemacensus.MeasurePlan(context.Background(), must.Must(builtin.New())))
+})
 
 // surfaceDisagreements is every field exactly one surface reads, as
 // "field render-only" pairs keyed by field.

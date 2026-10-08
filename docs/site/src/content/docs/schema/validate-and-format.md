@@ -109,7 +109,9 @@ postgres: schema: invalid foreign key: field "customer_id" references unknown ta
 
 The run exits `1`. Every line names the dialect it was found under, then the
 object, then what is wrong with it. A schema with nothing wrong prints nothing
-and exits `0`, so a hook can read the status alone.
+and exits `0`, so a hook can read the status alone. Cancellation or failure to
+perform validation returns an error instead of schema findings. Those errors
+exit `2`; they do not establish whether the schema is valid.
 
 ## Validate against every dialect you ship to
 

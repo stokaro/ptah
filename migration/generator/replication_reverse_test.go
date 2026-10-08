@@ -4,13 +4,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -59,15 +60,15 @@ func TestPlanBidirectionalSchemaDiff_ReplicationsRollBack(t *testing.T) {
 		{Name: "id", DataType: "Int64", ColumnType: "Int64", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1},
 	}}}}
 
-	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
-		Diff:          diff,
-		DesiredSchema: &schemamodel.Database{Tables: []schemamodel.Table{{StructName: "L", Name: "log"}}},
-		CurrentSchema: current,
-		Dialect:       platform.YDB,
-		Capabilities:  capability.YDB262(),
-	})
+	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(),
+		generator.BidirectionalSchemaPlanOptions{Runtime: must.Must(builtin.New()), Diff: diff,
+			DesiredSchema: &schemamodel.Database{Tables: []schemamodel.Table{{StructName: "L", Name: "log"}}},
+			CurrentSchema: current,
+			Dialect:       platform.YDB,
+			Capabilities:  capability.YDB262(),
+		})
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQLWithCapabilities(platform.YDB, capability.YDB262(), plan.Reverse.Nodes...)
+	sql, err := builtin.RenderSQLWithCapabilities(platform.YDB, capability.YDB262(), plan.Reverse.Nodes...)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, "DROP ASYNC REPLICATION `mirror` CASCADE;\n"+

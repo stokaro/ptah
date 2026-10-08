@@ -10,12 +10,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/config"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/schemafile"
@@ -55,7 +56,7 @@ func TestSQLiteDeclaredTypesSurviveAReadE2E(t *testing.T) {
 	read, err := conn.Reader().ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
-	described := dbschematogo.ConvertDBSchemaToGoSchema(read, "")
+	described := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), read, "sqlite", must.Must(builtin.New())))
 
 	c.Assert(describedColumnTypes(described), qt.DeepEquals, map[string]string{
 		"id":       "INTEGER",
@@ -78,7 +79,7 @@ func TestSQLiteDeclaredTypesSurviveAReadE2E(t *testing.T) {
 	// And the description of the database compares clean against the database
 	// it describes.
 	diff, err := schemadiff.CompareWithDatabase(
-		context.Background(), conn, described, read, config.DefaultCompareOptions())
+		context.Background(), conn, described, read, config.DefaultCompareOptions(), must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %+v", diff))
@@ -114,7 +115,7 @@ func TestSQLiteEquivalentSpellingsDoNotRebuildE2E(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 
 			diff, err := schemadiff.CompareWithDatabase(context.Background(), conn,
-				sqliteColumnDeclaration(test.declared), read, config.DefaultCompareOptions())
+				sqliteColumnDeclaration(test.declared), read, config.DefaultCompareOptions(), must.Must(builtin.New()))
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %+v", diff))
@@ -148,7 +149,7 @@ func TestSQLiteDifferentAffinitiesStillRebuildE2E(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 
 			diff, err := schemadiff.CompareWithDatabase(context.Background(), conn,
-				sqliteColumnDeclaration(test.declared), read, config.DefaultCompareOptions())
+				sqliteColumnDeclaration(test.declared), read, config.DefaultCompareOptions(), must.Must(builtin.New()))
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(diff.HasChanges(), qt.IsTrue, qt.Commentf("diff: %+v", diff))
@@ -225,7 +226,7 @@ func TestSQLiteDeclaredTypesSurviveTheDocumentE2E(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	diff, err := schemadiff.CompareWithDatabase(
-		context.Background(), conn, loaded, read, config.DefaultCompareOptions())
+		context.Background(), conn, loaded, read, config.DefaultCompareOptions(), must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %+v", diff))
@@ -238,13 +239,13 @@ func TestSQLiteDeclaredTypesSurviveTheDocumentE2E(t *testing.T) {
 	replayConn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+replayPath)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(replayConn)
-	statements, err := renderer.GetOrderedCreateStatements(loaded, platform.SQLite)
+	statements, err := builtin.GetOrderedCreateStatements(loaded, platform.SQLite)
 	c.Assert(err, qt.IsNil)
 	c.Assert(atlasschema.ApplySQL(context.Background(), replayConn,
 		migrator.MigrationTxModeAll, strings.Join(statements, "\n")), qt.IsNil)
 
 	replayed, err := replayConn.Reader().ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
-	c.Assert(describedColumnTypes(dbschematogo.ConvertDBSchemaToGoSchema(replayed, "")),
-		qt.DeepEquals, describedColumnTypes(dbschematogo.ConvertDBSchemaToGoSchema(read, "")))
+	c.Assert(describedColumnTypes(must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), replayed, "sqlite", must.Must(builtin.New())))),
+		qt.DeepEquals, describedColumnTypes(must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), read, "sqlite", must.Must(builtin.New())))))
 }

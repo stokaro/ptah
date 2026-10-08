@@ -9,12 +9,13 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -50,7 +51,7 @@ func TestSQLServerLiveRoleAndGrantRoundTrip(t *testing.T) {
 
 	// 1. The renderer's statements are the ones the server is given. Nothing is
 	// hand-written, so a statement this engine refuses fails the test.
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.SQLServer)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.SQLServer)
 	c.Assert(err, qt.IsNil)
 	rendered := strings.Join(statements, "\n")
 	c.Assert(rendered, qt.Contains, "CREATE ROLE")
@@ -82,7 +83,7 @@ func TestSQLServerLiveRoleAndGrantRoundTrip(t *testing.T) {
 	// 3. The convergence assertion, which is what the capability key is really
 	// about. Comparing the same description against what the server now holds
 	// must produce nothing to do.
-	settled := schemadiff.CompareWithDialect(description, live, platform.SQLServer)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.SQLServer, must.Must(builtin.New())))
 	c.Assert(rolesNamed(settled.RolesAdded.Names(), role), qt.HasLen, 0)
 	c.Assert(rolesNamed(settled.RolesRemoved.Names(), role), qt.HasLen, 0)
 	c.Assert(settled.RolesModified, qt.HasLen, 0)
@@ -272,7 +273,7 @@ func TestSQLServerLiveReaderClassifiesDenyAndSchemaGrants(t *testing.T) {
 		Roles:  []schemamodel.Role{{StructName: "A", Name: role, Inherit: true}},
 		Grants: []schemamodel.Grant{{StructName: "A", Role: role, Privileges: []string{"SELECT"}, OnTable: "dbo." + table}},
 	}
-	diff := schemadiff.CompareWithDialect(description, live, platform.SQLServer)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.SQLServer, must.Must(builtin.New())))
 	for _, ref := range grantsFor(diff.GrantsRemoved, role) {
 		c.Assert(ref.Privilege, qt.Not(qt.Equals), "DELETE")
 	}

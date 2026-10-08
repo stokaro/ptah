@@ -1,12 +1,15 @@
 package planner_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -144,7 +147,10 @@ func TestGenerateSchemaDiffSQLStatements_KeyHoldingTheColumnKeysNameGoesFirst(t 
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.dialect)
+			got, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				test.diff, test.dialect,
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.DeepEquals, test.want)
@@ -217,7 +223,10 @@ func TestGenerateSchemaDiffSQLStatements_KeyUnderAnotherNameStaysWithTheRemovals
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.dialect)
+			got, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				test.diff, test.dialect,
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.DeepEquals, test.want)

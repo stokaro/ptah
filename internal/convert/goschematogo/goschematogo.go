@@ -15,8 +15,10 @@ import (
 	"unicode"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/schemaprep"
@@ -102,6 +104,9 @@ func Render(db *schemamodel.Database, opts Options) ([]File, error) {
 	}
 
 	ctx := newRenderContext(db, opts)
+	if err := ctx.captureFeatureObjects(); err != nil {
+		return nil, err
+	}
 	if opts.SingleFile {
 		file, err := ctx.renderSingleFile()
 		if err != nil {
@@ -218,6 +223,7 @@ func validatePackageName(name string) error {
 }
 
 type renderContext struct {
+	changefeedsByTable map[objectidentity.Key][]ydbschema.ChangefeedSpec
 	db                 *schemamodel.Database
 	opts               Options
 	enumsByName        map[string]schemamodel.Enum
@@ -551,7 +557,7 @@ func (ctx *renderContext) writeTable(w *sourceWriter, table schemamodel.Table) {
 	for _, family := range ydbfamily.Stated(table.YDBColumnFamilies) {
 		w.writeComment(annotation("ptah:schema:columnfamily", columnFamilyAttrs(family)...))
 	}
-	for _, changefeed := range table.Changefeeds {
+	for _, changefeed := range ctx.changefeedsByTable[changefeedTableRef(table).Key()] {
 		w.writeComment(annotation("ptah:schema:changefeed", changefeedAttrs(changefeed)...))
 		for _, consumer := range changefeed.Consumers {
 			w.writeComment(annotation("ptah:schema:changefeed:consumer", consumerAttrs(changefeed.Name, consumer)...))
@@ -682,7 +688,7 @@ func columnFamilyAttrs(family ast.YDBColumnFamilySpec) []attr {
 // changefeedAttrs writes a YDB changefeed as the attributes the annotation
 // parser reads it from. A disabled changefeed is written as an enabled one:
 // no annotation declares one disabled, because no statement disables one.
-func changefeedAttrs(changefeed ast.ChangefeedSpec) []attr {
+func changefeedAttrs(changefeed ydbschema.ChangefeedSpec) []attr {
 	flag := func(name string, on bool) attr { return attr{name: name, value: "true", set: on} }
 	return []attr{
 		{name: ydbchangefeed.AttributeName, value: changefeed.Name, set: true},

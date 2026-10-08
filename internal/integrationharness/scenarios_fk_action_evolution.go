@@ -57,6 +57,7 @@ func testDynamicFKActionEvolution(ctx context.Context, conn *dbschema.DatabaseCo
 			return loadErr
 		}
 		if _, genErr := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+			Runtime:       vem.runtime,
 			GoEntitiesDir: vem.GetEntitiesDir(),
 			DBConn:        conn,
 			OutputDir:     migrationsDir,

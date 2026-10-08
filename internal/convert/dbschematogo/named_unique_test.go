@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -56,7 +58,7 @@ func emailField(c *qt.C, database *schemamodel.Database) schemamodel.Field {
 func TestConvert_KeepsAUniqueConstraintNameSomebodyChose(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(uniqueSchema("customers_email_uq"), "")
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), uniqueSchema("customers_email_uq"), "postgres", must.Must(builtin.New())))
 
 	c.Assert(database.Constraints, qt.HasLen, 1)
 	c.Assert(database.Constraints[0].Name, qt.Equals, "customers_email_uq")
@@ -85,7 +87,7 @@ func TestConvert_LeavesAGeneratedUniqueNameToTheColumn(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database := dbschematogo.ConvertDBSchemaToGoSchema(uniqueSchema(tt.constraintName), "")
+			database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), uniqueSchema(tt.constraintName), "postgres", must.Must(builtin.New())))
 
 			c.Assert(database.Constraints, qt.HasLen, 0)
 			c.Assert(emailField(c, database).Unique, qt.IsTrue)

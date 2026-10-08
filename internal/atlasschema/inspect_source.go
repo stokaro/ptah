@@ -12,6 +12,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasfilter"
@@ -28,6 +29,8 @@ import (
 
 // InspectSourceOptions configures URL-driven Atlas schema inspection.
 type InspectSourceOptions struct {
+	// Runtime selects required feature conversion and reporting services.
+	Runtime InspectRuntime
 	// URLs are the raw inspection sources: a database URL, a local schema file,
 	// a migration directory, or an env:// reference. Several local schema files
 	// merge into one composite desired schema, the way every other verb that
@@ -85,7 +88,7 @@ type InspectSourceOptions struct {
 	ValidateInspectedSchema func(*schemamodel.Database) error
 	// PrepareInspectedSchema normalizes and validates the exact introspected
 	// database snapshot that rendering and file exports consume.
-	PrepareInspectedSchema func(*catalog.Database) (*catalog.Database, error)
+	PrepareInspectedSchema func(context.Context, *catalog.Database, catalog.ServerInfo) (*catalog.Database, error)
 	// ValidateLiveObject applies to catalog-only live or dev-database objects
 	// before output or file exports. Nil avoids supplemental catalog reads.
 	ValidateLiveObject func(LiveSchemaObject) error
@@ -234,6 +237,9 @@ func refuseInspectDevURLForm(devURL string) error {
 // and the result is introspected so the output is normalized by a real
 // database of the target dialect.
 func InspectSource(ctx context.Context, opts InspectSourceOptions) (InspectResult, error) {
+	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
+		return InspectResult{}, err
+	}
 	if err := ValidateInspectOptions(opts); err != nil {
 		return InspectResult{}, err
 	}
@@ -243,6 +249,7 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (InspectResul
 	}
 
 	inspectOpts := InspectOptions{
+		Runtime:                  opts.Runtime,
 		DevURL:                   opts.DevURL,
 		Schemas:                  opts.Schemas,
 		Include:                  opts.Include,
@@ -363,6 +370,7 @@ func inspectOnDev(
 		// the file arm above loads them; the other two kinds read none of them.
 		schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(devURL, "", "")
 		state, err := set.Resolve(ctx, atlassource.ResolveOptions{
+			Runtime:                   opts.Runtime,
 			DatabaseURL:               devURL,
 			Dialect:                   dialect,
 			DialectFlag:               "--dev-url",
@@ -448,6 +456,7 @@ func inspectOnDev(
 				schema = baseline.WithoutEnvironment(schema, nil)
 				schema = baseline.WithoutStartingPoint(schema, nil, defaultSchemaOf(replayConn.Info()))
 				rendered, err = renderInspectSchema(
+					ctx,
 					schema,
 					replayConn.Info(),
 					validatedOpts,
@@ -463,7 +472,7 @@ func inspectOnDev(
 		atlassource.KindCompositeSchema:
 		var rendered InspectResult
 		err := withMaterializedDevSchema(
-			ctx,
+			ctx, opts.Runtime,
 			devConn,
 			desired,
 			opts.Diagnostics,
@@ -475,10 +484,12 @@ func inspectOnDev(
 					return err
 				}
 				schema = baseline.WithoutEnvironment(schema, declaredExtensionNames(desired))
-				schema = baseline.WithoutStartingPoint(schema,
-					goschematodb.ToDBSchema(desired, materializedConn.Info().Dialect),
-					defaultSchemaOf(materializedConn.Info()))
-				rendered, err = renderInspectSchema(schema, materializedConn.Info(), validatedOpts)
+				declared, err := goschematodb.ToDBSchema(ctx, desired, materializedConn.Info().Dialect, opts.Runtime)
+				if err != nil {
+					return err
+				}
+				schema = baseline.WithoutStartingPoint(schema, declared, defaultSchemaOf(materializedConn.Info()))
+				rendered, err = renderInspectSchema(ctx, schema, materializedConn.Info(), validatedOpts)
 				return err
 			},
 		)
@@ -527,11 +538,15 @@ func prepareInspectMigrationSnapshot(
 
 func withMaterializedDevSchema(
 	ctx context.Context,
+	service renderer.SchemaService,
 	devConn *dbschema.DatabaseConnection,
 	desired *schemamodel.Database,
 	diag io.Writer,
 	consume migrationreplay.Consumer,
 ) (resultErr error) {
+	if err := schemaext.RequireRuntime(ctx, service); err != nil {
+		return err
+	}
 	lock, err := devlock.Acquire(ctx, devConn, 0)
 	if err != nil {
 		return fmt.Errorf("acquire schema inspection dev database lock: %w", err)
@@ -551,6 +566,12 @@ func withMaterializedDevSchema(
 		if err != nil {
 			return err
 		}
+		statements, err := renderMaterializedSchema(ctx, service, materializedConn, desired, diag)
+		if err != nil {
+			return err
+		}
+		// Rendering completes before reset and before cleanup is armed. A failed
+		// provider call must not trigger a dev-realm mutation on the way out.
 		defer func() {
 			if !devlock.MayClean(ctx) {
 				// The realm's lock was lost, and another run may hold the
@@ -569,35 +590,34 @@ func withMaterializedDevSchema(
 		if err := devclean.DatabaseRealmKeeping(ctx, materializedConn, baseline); err != nil {
 			return fmt.Errorf("reset dev database: %w", err)
 		}
-		if err := materializeOnDev(ctx, materializedConn, desired, diag); err != nil {
-			return err
+		if err := executeApplyStatements(ctx, materializedConn.Writer(), statements); err != nil {
+			return fmt.Errorf("materialize schema on dev database: %w", err)
 		}
 		return consume(materializedConn, baseline)
 	}))
 }
 
-// materializeOnDev executes the desired schema's ordered CREATE statements on
-// an already-reset dev database, minus the roles that database's server
-// already has.
-func materializeOnDev(
+// renderMaterializedSchema prepares a complete render before resetting the
+// dev database, excluding roles its server already owns.
+func renderMaterializedSchema(
 	ctx context.Context,
+	service renderer.SchemaService,
 	devConn *dbschema.DatabaseConnection,
 	desired *schemamodel.Database,
 	diag io.Writer,
-) error {
+) ([]string, error) {
 	info := devConn.Info()
 	desired, err := devMaterializableSchema(ctx, devConn, desired, diag)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(desired, info.Dialect, info.Capabilities)
+	rendered, err := renderer.RenderSchema(ctx, service, renderer.SchemaRequest{
+		Target: info.Dialect, Schema: desired, Capabilities: info.Capabilities, Identifiers: info.IdentifierSemantics,
+	})
 	if err != nil {
-		return fmt.Errorf("render schema DDL for dev database: %w", err)
+		return nil, fmt.Errorf("render schema DDL for dev database: %w", err)
 	}
-	if err := executeApplyStatements(ctx, devConn.Writer(), statements); err != nil {
-		return fmt.Errorf("materialize schema on dev database: %w", err)
-	}
-	return nil
+	return rendered.Statements, nil
 }
 
 // devMaterializableSchema returns the desired state with the roles the dev
@@ -670,11 +690,11 @@ func readValidatedInspectDevSchema(
 	if opts.withoutRevision {
 		schema = atlassource.WithoutRevisionTable(schema)
 	}
-	schema, err = prepareInspectSchema(schema, opts.inspect.PrepareSchema)
+	schema, err = prepareInspectSchema(ctx, schema, devConn.Info(), opts.inspect.PrepareSchema)
 	if err != nil {
 		return nil, InspectOptions{}, err
 	}
-	if err := validateInspectSchema(schema, opts.inspect.ValidateSchema); err != nil {
+	if err := validateInspectSchema(ctx, schema, devConn.Info().Dialect, opts.inspect); err != nil {
 		return nil, InspectOptions{}, err
 	}
 	if err := ValidateLiveObjects(devConn, names, opts.inspect.ValidateLiveObject); err != nil {

@@ -1,6 +1,7 @@
 package planner_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -9,6 +10,7 @@ import (
 
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -18,7 +20,7 @@ import (
 // core embedder flow: build or parse a desired *schemamodel.Database, diff it
 // against the current state (schemadiff.CompareSchemas diffs two in-memory
 // documents; use schemadiff.CompareWithDatabase for a live one), and hand the
-// diff to the planner. The diff is the planner's whole input: the comparison
+// diff to the planner with the same context and runtime. The comparison
 // puts everything planning needs on it, the schema-wide Declared* carries
 // included. The output is deterministic: two runs over the same inputs
 // produce byte-identical SQL.
@@ -34,8 +36,13 @@ func ExampleGenerateSchemaDiffSQL() {
 		},
 	}
 
-	diff := schemadiff.CompareSchemas(desired, &schemamodel.Database{}, "postgres")
-	sql, err := planner.GenerateSchemaDiffSQL(diff, "postgres")
+	ctx := context.Background()
+	runtime := must.Must(builtin.New())
+	diff := must.Must(schemadiff.CompareSchemas(ctx, desired, &schemamodel.Database{}, "postgres", runtime))
+	sql, err := planner.GenerateSchemaDiffSQL(
+		ctx, runtime,
+		diff, "postgres",
+	)
 	if err != nil {
 		fmt.Println("plan failed:", err)
 		return
@@ -75,8 +82,13 @@ func ExampleGenerateSchemaDiffSQLStatements() {
 		},
 	}
 
-	diff := schemadiff.CompareSchemas(desired, current, "postgres")
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "postgres")
+	ctx := context.Background()
+	runtime := must.Must(builtin.New())
+	diff := must.Must(schemadiff.CompareSchemas(ctx, desired, current, "postgres", runtime))
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		ctx, runtime,
+		diff, "postgres",
+	)
 	if err != nil {
 		fmt.Println("plan failed:", err)
 		return
@@ -138,12 +150,18 @@ func ExampleRequiresNoTransaction() {
 			{StructName: "User", Name: "idx_users_email", Fields: []string{"email"}},
 		},
 	}
-	diff := schemadiff.CompareSchemas(desired, current, "postgres")
+	ctx := context.Background()
+	runtime := must.Must(builtin.New())
+	diff := must.Must(schemadiff.CompareSchemas(ctx, desired, current, "postgres", runtime))
 
 	locking := must.Must(planner.GenerateSchemaDiffASTWithOptions(
-		diff, "postgres", planner.Options{}))
+		ctx, runtime,
+		diff, "postgres", planner.Options{},
+	))
 	concurrent := must.Must(planner.GenerateSchemaDiffASTWithOptions(
-		diff, "postgres", planner.Options{ConcurrentIndexes: true}))
+		ctx, runtime,
+		diff, "postgres", planner.Options{ConcurrentIndexes: true},
+	))
 
 	fmt.Println("locking build needs autocommit:", planner.RequiresNoTransaction("postgres", locking))
 	fmt.Println("concurrent build needs autocommit:", planner.RequiresNoTransaction("postgres", concurrent))

@@ -17,9 +17,10 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/config/projectconfig"
-	"ptah.run/core/coverage"
+	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
@@ -102,6 +103,10 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 }
 
 func compareCommand(cmd *cobra.Command, opts *options) error {
+	runtime, err := builtin.New()
+	if err != nil {
+		return err
+	}
 	out := cmd.OutOrStdout()
 
 	if err := sqlitevirtual.ValidateExplicitURLToggle(opts.dbURL); err != nil {
@@ -199,13 +204,13 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 
 	// 3. Compare schemas (dialect-aware: MySQL/MariaDB RESTRICT == NO ACTION)
 	info := conn.Info()
-	compareOpts, err := resolveGeneratedExpressions(cmd.Context(), opts, connectTimeout, info, result)
+	compareOpts, err := resolveGeneratedExpressions(cmd.Context(), runtime, opts, connectTimeout, info, result)
 	if err != nil {
 		return err
 	}
 	compareOpts = dbcli.CompareOptionsIgnoringExtensions(cmd, opts.ignoreExtensions, projectCfg, compareOpts)
 	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(
-		cmd.Context(), conn, result, dbSchema, compareOpts,
+		cmd.Context(), conn, result, dbSchema, compareOpts, runtime,
 	)
 	if err != nil {
 		return fmt.Errorf("error comparing schemas: %w", err)
@@ -224,10 +229,13 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	if err := diff.RotateSecrets(rotateSecrets); err != nil {
 		return err
 	}
-	output, err := planner.GenerateSchemaDiffSQLWithOptions(diff, info.Dialect, planner.Options{
-		Capabilities:      info.Capabilities,
-		AllowTableRebuild: rebuild,
-	})
+	output, err := planner.GenerateSchemaDiffSQLWithOptions(
+		cmd.Context(), runtime,
+		diff, info.Dialect, planner.Options{
+			Capabilities:      info.Capabilities,
+			AllowTableRebuild: rebuild,
+		},
+	)
 
 	if err != nil {
 		return fmt.Errorf("error generating schema diff SQL: %w", err)
@@ -259,13 +267,13 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 func writeComparison(
 	out, errOut io.Writer,
 	diff *difftypes.SchemaDiff,
-	undecided []coverage.Object,
+	undecided schemadiff.Diagnostics,
 	sql, dialect string,
 ) {
 	undecidednote.Report(errOut, undecided, "the database", "the desired schema")
 	categories := diffreport.Categories(diff)
-	if len(categories) == 0 && len(undecided) > 0 {
-		fmt.Fprintf(out, "No differences planned, but %s:\n", undecidednote.Summary(len(undecided)))
+	if len(categories) == 0 && !undecided.Empty() {
+		fmt.Fprintf(out, "No differences planned, but %s:\n", undecidednote.Summary(undecided))
 		writeUndecided(out, undecided)
 		return
 	}
@@ -274,9 +282,9 @@ func writeComparison(
 		return
 	}
 	writeDifferences(out, errOut, categories, sql, dialect)
-	if len(undecided) > 0 {
+	if !undecided.Empty() {
 		fmt.Fprintln(out)
-		fmt.Fprintf(out, "Undecided (%d):\n", len(undecided))
+		fmt.Fprintf(out, "Undecided (%d):\n", undecided.Count())
 		writeUndecided(out, undecided)
 	}
 }
@@ -307,9 +315,9 @@ func writeDifferences(out, errOut io.Writer, categories []diffreport.Category, s
 
 // writeUndecided names each undecided object by kind and name, sorted here so
 // the report does not depend on the order its caller passes them in.
-func writeUndecided(out io.Writer, undecided []coverage.Object) {
-	names := make([]string, 0, len(undecided))
-	for _, object := range undecided {
+func writeUndecided(out io.Writer, undecided schemadiff.Diagnostics) {
+	names := make([]string, 0, undecided.Count())
+	for _, object := range undecidednote.Entries(undecided, "the database") {
 		names = append(names, fmt.Sprintf("%s %q", object.Kind, object.Name))
 	}
 	slices.Sort(names)
@@ -334,12 +342,12 @@ func pluralize(singular, plural string, count int) string {
 // when nothing checked that it does. It is the same expected negative result a
 // difference is -- the check ran and the database is not proven to match -- not
 // a command failure, so it takes 1 rather than 2.
-func nonEmptyDiffExitCode(diff *difftypes.SchemaDiff, undecided []coverage.Object) error {
+func nonEmptyDiffExitCode(diff *difftypes.SchemaDiff, undecided schemadiff.Diagnostics) error {
 	if diff.HasChanges() {
 		return exitcode.New(1, errors.New("schema diff is non-empty"))
 	}
-	if len(undecided) > 0 {
-		return exitcode.New(1, errors.New(undecidednote.Summary(len(undecided))))
+	if !undecided.Empty() {
+		return exitcode.New(1, errors.New(undecidednote.Summary(undecided)))
 	}
 	return nil
 }
@@ -360,12 +368,13 @@ func nonEmptyDiffExitCode(diff *difftypes.SchemaDiff, undecided []coverage.Objec
 // not ask for is worth one line on stderr.
 func resolveGeneratedExpressions(
 	ctx context.Context,
+	service renderer.Service,
 	opts *options,
 	connectTimeout time.Duration,
 	info catalog.ServerInfo,
 	declared *schemamodel.Database,
 ) (*config.CompareOptions, error) {
-	probes, err := genexprprobe.For(info.Dialect, info.Capabilities, declared)
+	probes, err := genexprprobe.For(ctx, service, info.Dialect, info.Capabilities, declared)
 	if err != nil {
 		return nil, err
 	}

@@ -209,6 +209,8 @@ for example:
 ```
 
 Supported kinds: `drop_table`, `drop_column`, `drop_index`, `drop_enum`.
+Skipping `drop_index` also preserves the retained index's comment. A replacement
+that drops and recreates an index still runs, including its comment changes.
 Skipping `drop_table` also omits the dependent removals (indexes, constraints,
 triggers, RLS policies, table-level grants) that a kept table must retain, so the
 plan stays consistent. Skip is currently honored by the PostgreSQL-family planner.

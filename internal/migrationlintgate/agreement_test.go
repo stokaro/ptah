@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/migrationlintgate"
 	"ptah.run/internal/migrationlintreport"
 	"ptah.run/migration/lint"
@@ -85,7 +86,10 @@ func lintRefuses(c *qt.C, fsys fstest.MapFS, databaseDialect string) bool {
 	devURL, known := devURLs[databaseDialect]
 	c.Assert(known, qt.IsTrue, qt.Commentf("no dev URL for dialect %q", databaseDialect))
 
-	_, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
+	runtime, err := builtin.New()
+	c.Assert(err, qt.IsNil)
+	_, err = migrationlintreport.Build(context.Background(), migrationlintreport.Options{
+		Runtime:   runtime,
 		FS:        fsys,
 		Dir:       "migrations",
 		DirFormat: "auto",

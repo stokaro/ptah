@@ -32,7 +32,7 @@ type ManagedData struct {
 }
 ```
 
-`LoadManagedRows` resolves `SourceDir`/`File` against a host directory and
+`manageddata.LoadRows` resolves `SourceDir`/`File` against a host directory and
 parses it at use time. So the declaration is a pointer into the author's working
 copy, and everything downstream of publication has already lost it.
 

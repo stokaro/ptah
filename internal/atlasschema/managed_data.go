@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/manageddata"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dataorder"
@@ -186,7 +187,7 @@ func declaredRows(
 	); err != nil {
 		return nil, fmt.Errorf("managed data file %q for table %s: %w", declaration.File, qualified, err)
 	}
-	return schemamodel.LoadManagedRowValues("", declaration)
+	return manageddata.LoadRowValues("", declaration)
 }
 
 // managedDataDiff reconciles one declaration against the database and renders
@@ -240,7 +241,7 @@ func managedDataDiff(
 	// second resolver here read a timestamp back as its source text, so a
 	// declared moment never paired with the moment a driver returns and the two
 	// stages answered differently about one converged row (stokaro/ptah#3276).
-	rows, err := schemamodel.ResolveManagedRows(declaration)
+	rows, err := manageddata.ResolveRows(declaration)
 	if err != nil {
 		return nil, managedrows.Read{}, err
 	}

@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/migration/schemadiff"
 )
@@ -75,9 +77,9 @@ func TestCompareWithDialect_PostgresArrayAndDomainColumnsCompareEqualToThemselve
 		},
 	}
 
-	diff := schemadiff.CompareWithDialect(dbschematogo.ConvertDBSchemaToGoSchema(database, "postgres"), database, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), database, "postgres", must.Must(builtin.New()))), database, platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.TablesModified, qt.HasLen, 0, qt.Commentf("a database compared against itself reported %+v", diff.TablesModified))
 	c.Assert(diff.TablesAdded, qt.HasLen, 0)
-	c.Assert(diff.TablesRemoved, qt.HasLen, 0)
+	c.Assert(diff.TablesRemoved.Names(), qt.HasLen, 0)
 }

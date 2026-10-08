@@ -30,6 +30,7 @@ import (
 	"ptah.run/core/ast"
 	sqlplatform "ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/privilegefold"
 )
@@ -1118,8 +1119,11 @@ func applyAlterOperation(
 	database, base *schemamodel.Database, target alterTarget, op ast.AlterOperation, sourcePlatform string,
 ) error {
 	switch typed := op.(type) {
-	case *ast.AddChangefeedOperation:
-		return appendChangefeed(target, typed.Changefeed)
+	case *ast.ExtensionAlterOperation:
+		if added, ok := typed.Payload.(*ydbast.AddChangefeed); ok {
+			return appendChangefeed(target, added.Changefeed)
+		}
+		return fmt.Errorf("%w: ALTER TABLE %s %s", ErrUnmodeledStatement, target.written, describeAlterOperation(op))
 	case *ast.AddColumnOperation:
 		added := len(database.Fields)
 		if err := applyAlterTableAddColumn(database, base, target, typed); err != nil {
@@ -1232,8 +1236,11 @@ func applyAddConstraint(database *schemamodel.Database, target alterTarget, oper
 // for a refusal.
 func describeAlterOperation(op ast.AlterOperation) string {
 	switch typed := op.(type) {
-	case *ast.AddChangefeedOperation:
-		return "ADD CHANGEFEED " + typed.Changefeed.Name
+	case *ast.ExtensionAlterOperation:
+		if added, ok := typed.Payload.(*ydbast.AddChangefeed); ok {
+			return "ADD CHANGEFEED " + added.Changefeed.Name
+		}
+		return "extension operation"
 	case *ast.AddColumnOperation:
 		if typed.Column != nil {
 			return "ADD COLUMN " + typed.Column.Name

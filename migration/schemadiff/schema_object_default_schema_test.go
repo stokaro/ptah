@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -15,7 +17,7 @@ func TestCompareWithDialect_ImplicitSchemaMatchesSchemaObjects(t *testing.T) {
 	c := qt.New(t)
 	desired, database := schemaObjectIdentityFixtures("public", "")
 
-	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))
 }
@@ -24,7 +26,7 @@ func TestCompareWithDialect_DifferentSchemaDoesNotMatchSchemaObjects(t *testing.
 	c := qt.New(t)
 	desired, database := schemaObjectIdentityFixtures("public", "reporting")
 
-	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 
 	c.Assert(diff.FunctionsAdded.Names(), qt.DeepEquals, []string{"public.f_ctl"})
 	c.Assert(diff.FunctionsRemoved.Names(), qt.DeepEquals, []string{"reporting.f_ctl"})

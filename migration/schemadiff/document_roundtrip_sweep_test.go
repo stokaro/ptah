@@ -8,12 +8,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
@@ -250,7 +252,7 @@ func TestHCLDocument_StillRemovesWhatItCouldHaveNamed(t *testing.T) {
 	}
 
 	parsed := loadPostgresDocument(c, renderPostgresDocument(c, roundTripFixture()))
-	diff := schemadiff.Compare(parsed, live)
+	diff := must.Must(schemadiff.Compare(t.Context(), parsed, live, must.Must(builtin.New())))
 
 	c.Assert(diff.SequencesRemoved.Names(), qt.HasLen, 1)
 	c.Assert(diff.DomainsRemoved.Names(), qt.HasLen, 1)
@@ -435,7 +437,7 @@ func TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped(t *testing.T) {
 	}
 
 	parsed := loadPostgresDocument(c, renderPostgresDocument(c, db))
-	diff := schemadiff.Compare(parsed, live)
+	diff := must.Must(schemadiff.Compare(t.Context(), parsed, live, must.Must(builtin.New())))
 
 	c.Assert(parsed.Topics, qt.HasLen, 0)
 	c.Assert(parsed.ResourcePools, qt.HasLen, 0)
@@ -484,7 +486,7 @@ func TestRoundTrip_ExternalObjectsAreRecordedNotDropped(t *testing.T) {
 	}
 
 	parsed := loadPostgresDocument(c, renderPostgresDocument(c, db))
-	diff := schemadiff.Compare(parsed, live)
+	diff := must.Must(schemadiff.Compare(t.Context(), parsed, live, must.Must(builtin.New())))
 	yaml := loadYAMLDocument(c)
 
 	c.Assert(parsed.ExternalDataSources, qt.HasLen, 0)

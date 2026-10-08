@@ -1,14 +1,17 @@
 package planner_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -134,7 +137,10 @@ func TestGenerateSchemaDiffASTWithOptions_SQLServerDefaultChange(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := planner.GenerateSchemaDiffASTWithOptions(sqlServerColumnDiff(test.desired, test.changes), platform.SQLServer, planner.Options{})
+			nodes, err := planner.GenerateSchemaDiffASTWithOptions(
+				context.Background(), must.Must(builtin.New()),
+				sqlServerColumnDiff(test.desired, test.changes), platform.SQLServer, planner.Options{},
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(alterSteps(nodes), qt.DeepEquals, test.want)
@@ -149,7 +155,9 @@ func TestGenerateSchemaDiffASTWithOptions_SQLServerSetsTheDeclaredDefault(t *tes
 	desired := schemamodel.Field{Name: "status", Type: "NVARCHAR(20)", Nullable: true, Default: "active", StructName: "User"}
 
 	nodes, err := planner.GenerateSchemaDiffASTWithOptions(
-		sqlServerColumnDiff(desired, map[string]string{"default": "('inactive') -> active"}), platform.SQLServer, planner.Options{})
+		context.Background(), must.Must(builtin.New()),
+		sqlServerColumnDiff(desired, map[string]string{"default": "('inactive') -> active"}), platform.SQLServer, planner.Options{},
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 3)
@@ -167,7 +175,9 @@ func TestGenerateSchemaDiffASTWithOptions_MySQLDefaultChangeStaysOneModify(t *te
 	desired := schemamodel.Field{Name: "status", Type: "VARCHAR(20)", Nullable: true, Default: "active", StructName: "User"}
 
 	nodes, err := planner.GenerateSchemaDiffASTWithOptions(
-		sqlServerColumnDiff(desired, map[string]string{"type": "varchar(10) -> VARCHAR(20)", "default": "inactive -> active"}), platform.MySQL, planner.Options{})
+		context.Background(), must.Must(builtin.New()),
+		sqlServerColumnDiff(desired, map[string]string{"type": "varchar(10) -> VARCHAR(20)", "default": "inactive -> active"}), platform.MySQL, planner.Options{},
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(alterSteps(nodes), qt.DeepEquals, []string{"ALTER COLUMN"})

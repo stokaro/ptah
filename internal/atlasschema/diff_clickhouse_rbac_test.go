@@ -6,7 +6,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 )
 
@@ -154,5 +156,5 @@ func clickHouseRBACDiffOptions(c *qt.C, from, to string) atlasschema.DiffOptions
 		FromURLs: []string{"file://" + fromPath},
 		ToURLs:   []string{"file://" + toPath},
 		DevURL:   "clickhouse://localhost/dev",
-	}
+		Runtime:  must.Must(builtin.New())}
 }

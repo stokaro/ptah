@@ -832,6 +832,10 @@ came in later releases each need a key: `user_sids` (26.1), `schema_changes`
 `availability_period` (25.4). Other dialects refuse a table that declares a
 changefeed.
 
+Go export refuses a disabled changefeed because annotations cannot request its
+disabled state. It also refuses a retained replication binding, which cannot
+be recreated through a changefeed annotation.
+
 ### Changing a changefeed
 
 YDB changes a changefeed's retention and consumers in place, through
@@ -843,9 +847,14 @@ YDB keeps a consumer's codecs once set.
 Any other change drops the changefeed and adds it again (`MODE alter is not
 supported`). **The stream restarts: the records nobody read are lost, and every
 consumer starts again from the beginning of the new stream.** The plan says so
-above the statements. YDB has no statement that disables a changefeed (`ALTER
-CHANGEFEED ... DISABLE` answers `Name not found: quote`), so one the server
-disabled is added again too.
+above the statements. A declaration requesting an enabled stream also recreates
+one the server disabled. If the declaration cannot describe changefeeds, Ptah
+preserves the observed disabled state. Unrelated changes and changes to that
+stream's topic leave it disabled.
+
+YDB has no statement that disables a changefeed (`ALTER CHANGEFEED ... DISABLE`
+answers `Name not found: quote`). A table rebuild therefore refuses to recreate
+a stream that must remain disabled.
 
 `DROP TABLE` drops a table's changefeeds with it. YDB refuses to rename a table
 that carries one (`Cannot move table with cdc streams`, lint rule `YD109`), and
@@ -1157,9 +1166,17 @@ stops it (`Create dst error: StatusSchemeError, Empty replication config`).
 While the replication runs, its replica tables are read-only. A write answers
 `Can't execute write tx at replicated table`, and an `ALTER TABLE` answers
 `path is an async replica table`. The read records each replica table rather
-than describing it, so no plan drops, changes or creates one. The changefeed
-YDB adds to each source table of a replication of the same database is
-recorded the same way, and stays.
+than describing it, so no plan drops, changes or creates one.
+
+Ptah inspects the changefeed YDB adds to a source table and retains its
+replication binding. The binding names a destination table and an item number;
+the replication controller may live in another database or cluster. Leaving
+this changefeed out of a schema keeps it. Ptah refuses to change or recreate it
+independently, or to drop or rebuild its source table while the binding exists.
+Release the stream through its replication controller before changing the
+source table. SQL creation export refuses a retained binding because creating
+an ordinary changefeed would not restore the replication or its position.
+Unknown binding fields remain unrepresentable and block affected plans.
 
 ### Changing a replication
 
@@ -1809,6 +1826,15 @@ steps as a rebuild, so it does not report the final `DROP TABLE` as a lost
 table; it does when the copy leaves out a column the directory's earlier
 migrations gave the table.
 
+A rebuild requires complete observations of the table's changefeed namespace,
+even when no changefeed changed. An empty list without inspection coverage does
+not establish that the table has no streams. The plan keeps separate current
+and desired definitions, including when a primary-key change alone causes the
+rebuild. Missing or partial observations refuse the rebuild before any SQL is
+returned. A comparison between HCL files alone cannot establish this state:
+HCL has no changefeed declaration. Use SQL or another source that describes
+changefeeds, or compare against a complete live inspection.
+
 Even with the flag, a rebuild is refused when it would damage the table:
 
 - a table with a Serial column. The new table's sequence would start at 1 while
@@ -2225,8 +2251,9 @@ table "orders" {
 
 HCL and DBML have no block for a changefeed or a column family, so a document
 in either says nothing about one. Applying it leaves the database's
-changefeeds and column families as they are, and a rebuild adds them to the new
-table. `schema inspect` and `ptah schema export` warn about the changefeeds and
+changefeeds and column families as they are. A rebuild restores the changefeeds
+only when inspection describes them completely and their state can be recreated.
+`schema inspect` and `ptah schema export` warn about the changefeeds and
 column families they leave out, and `--cleanup-go-annotations` refuses to delete
 them. DBML warnings count omitted objects and table properties by kind, including
 TTL, column storage, partitioning, index settings and Serial sequence settings.

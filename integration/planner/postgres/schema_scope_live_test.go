@@ -3,12 +3,15 @@
 package postgres_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -89,7 +92,10 @@ func TestPlannerDoesNotWriteToARelationTheSchemaNeverDeclaredLive(t *testing.T) 
 				DeclaredTables: desired.Tables,
 			}
 
-			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "postgres")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				diff, "postgres",
+			)
 			c.Assert(err, qt.IsNil)
 			c.Logf("plan:\n%s", strings.Join(statements, "\n"))
 			executeSQL(c, dbURL, statements)

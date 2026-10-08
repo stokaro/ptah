@@ -1018,7 +1018,7 @@ func tablesTouchedBy(diff *difftypes.SchemaDiff, makes created, policy Policy) [
 	// because a filtered-away field can no longer say what it excluded.
 	planned, _ := diffpolicy.ApplyForDialect(diff, policy.skipSet(), platform.SQLite)
 
-	touched := slices.Clone(planned.TablesRemoved)
+	touched := planned.TablesRemoved.Names()
 	for _, table := range planned.TablesModified {
 		// Asked through the planner's own predicate rather than a second
 		// spelling of it, so a change to what SQLite can express in place is
@@ -1071,7 +1071,7 @@ func tablesTouchedBy(diff *difftypes.SchemaDiff, makes created, policy Policy) [
 		// The spellings really do differ: TablesRemoved carries the
 		// comparator's, a constraint's TableName the declaration's or the
 		// catalog's (stokaro/ptah#1351).
-		if policy.SkipDropTable && objectlookup.Contains(diff.TablesRemoved, name, semantics) {
+		if policy.SkipDropTable && objectlookup.Contains(diff.TablesRemoved.Names(), name, semantics) {
 			continue
 		}
 		kept = append(kept, name)

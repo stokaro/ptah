@@ -11,10 +11,12 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/planner"
@@ -74,12 +76,15 @@ func TestGrantOptionRevoke_LiveKeepsThePrivileges(t *testing.T) {
 
 			live, err := conn.Reader().ReadSchemaContext(c.Context())
 			c.Assert(err, qt.IsNil)
-			diff, err := schemadiff.CompareWithDatabase(c.Context(), conn, declared, live, nil)
+			diff, err := schemadiff.CompareWithDatabase(c.Context(), conn, declared, live, nil, must.Must(builtin.New()))
 			c.Assert(err, qt.IsNil)
 			c.Assert(diff.GrantOptionsRevoked, qt.HasLen, 2)
 			c.Assert(diff.GrantsRemoved, qt.HasLen, 0)
 
-			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, test.dialect)
+			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				diff, test.dialect,
+			)
 			c.Assert(err, qt.IsNil)
 			for _, statement := range statements {
 				c.Assert(conn.Writer().ExecuteSQL(c.Context(), statement), qt.IsNil, qt.Commentf("statement:\n%s", statement))
@@ -88,7 +93,7 @@ func TestGrantOptionRevoke_LiveKeepsThePrivileges(t *testing.T) {
 			c.Assert(tablePrivileges(c, adminDB, databaseName, role), qt.DeepEquals, []string{"INSERT NO", "SELECT NO"})
 			settled, err := conn.Reader().ReadSchemaContext(c.Context())
 			c.Assert(err, qt.IsNil)
-			again, err := schemadiff.CompareWithDatabase(c.Context(), conn, declared, settled, nil)
+			again, err := schemadiff.CompareWithDatabase(c.Context(), conn, declared, settled, nil, must.Must(builtin.New()))
 			c.Assert(err, qt.IsNil)
 			c.Assert(again.GrantOptionsRevoked, qt.HasLen, 0)
 			c.Assert(again.GrantsAdded, qt.HasLen, 0)

@@ -3,14 +3,17 @@
 package clickhouse_test
 
 import (
+	"context"
 	"database/sql"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	clickhousedb "ptah.run/internal/dbschema/clickhouse"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/planner"
@@ -73,13 +76,14 @@ func TestMaterializedViewLifecycleRoundTripsLive(t *testing.T) {
 		Name:       viewName,
 		Body:       "SELECT count() AS c FROM " + sourceTable + " WHERE active = true",
 	}}}
-	creationDiff := schemadiff.CompareWithDialect(
-		created,
+	creationDiff := must.Must(schemadiff.CompareWithDialect(
+		t.Context(), created,
 		readClickHouseMaterializedViews(t, db, database),
-		platform.ClickHouse,
-	)
+		platform.ClickHouse, must.Must(builtin.New()),
+	))
 	c.Assert(creationDiff.MaterializedViewsAdded.Names(), qt.DeepEquals, []string{viewName})
 	createStatements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
 		creationDiff,
 
 		platform.ClickHouse,
@@ -96,7 +100,7 @@ func TestMaterializedViewLifecycleRoundTripsLive(t *testing.T) {
 	c.Assert(createdReadback.MatViews[0].Name, qt.Equals, "user_counts")
 	c.Assert(createdReadback.MatViews[0].Body, qt.Contains, "users")
 	c.Assert(
-		schemadiff.CompareWithDialect(created, createdReadback, platform.ClickHouse).HasChanges(),
+		must.Must(schemadiff.CompareWithDialect(t.Context(), created, createdReadback, platform.ClickHouse, must.Must(builtin.New()))).HasChanges(),
 		qt.IsFalse,
 	)
 
@@ -114,11 +118,12 @@ func TestMaterializedViewLifecycleRoundTripsLive(t *testing.T) {
 		Name:       viewName,
 		Body:       "SELECT count() AS c FROM " + sourceTable + " WHERE active = false",
 	}}}
-	changeDiff := schemadiff.CompareWithDialect(changed, createdReadback, platform.ClickHouse)
+	changeDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), changed, createdReadback, platform.ClickHouse, must.Must(builtin.New())))
 	c.Assert(changeDiff.MaterializedViewsModified, qt.HasLen, 1)
 	c.Assert(changeDiff.MaterializedViewsAdded, qt.HasLen, 0)
 	c.Assert(changeDiff.MaterializedViewsRemoved, qt.HasLen, 0)
 	changeStatements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
 		changeDiff,
 
 		platform.ClickHouse,
@@ -132,17 +137,18 @@ func TestMaterializedViewLifecycleRoundTripsLive(t *testing.T) {
 
 	changedReadback := readClickHouseMaterializedViews(t, db, database)
 	c.Assert(
-		schemadiff.CompareWithDialect(changed, changedReadback, platform.ClickHouse).HasChanges(),
+		must.Must(schemadiff.CompareWithDialect(t.Context(), changed, changedReadback, platform.ClickHouse, must.Must(builtin.New()))).HasChanges(),
 		qt.IsFalse,
 	)
 
-	removalDiff := schemadiff.CompareWithDialect(
-		&schemamodel.Database{},
+	removalDiff := must.Must(schemadiff.CompareWithDialect(
+		t.Context(), &schemamodel.Database{},
 		changedReadback,
-		platform.ClickHouse,
-	)
+		platform.ClickHouse, must.Must(builtin.New()),
+	))
 	c.Assert(removalDiff.MaterializedViewsRemoved.Names(), qt.DeepEquals, []string{viewName})
 	dropStatements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
 		removalDiff,
 
 		platform.ClickHouse,
@@ -156,11 +162,11 @@ func TestMaterializedViewLifecycleRoundTripsLive(t *testing.T) {
 	removedReadback := readClickHouseMaterializedViews(t, db, database)
 	c.Assert(removedReadback.MatViews, qt.HasLen, 0)
 	c.Assert(
-		schemadiff.CompareWithDialect(
-			&schemamodel.Database{},
+		must.Must(schemadiff.CompareWithDialect(
+			t.Context(), &schemamodel.Database{},
 			removedReadback,
-			platform.ClickHouse,
-		).HasChanges(),
+			platform.ClickHouse, must.Must(builtin.New()),
+		)).HasChanges(),
 		qt.IsFalse,
 	)
 
@@ -211,12 +217,13 @@ func TestMaterializedViewUnqualifiedBodyRoundTripsLive(t *testing.T) {
 			Body:       "SELECT id FROM users",
 		}},
 	}
-	creationDiff := schemadiff.CompareWithDialect(
-		declared,
+	creationDiff := must.Must(schemadiff.CompareWithDialect(
+		t.Context(), declared,
 		readClickHouseViewLikes(t, db, database),
-		platform.ClickHouse,
-	)
+		platform.ClickHouse, must.Must(builtin.New()),
+	))
 	createStatements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
 		creationDiff,
 
 		platform.ClickHouse,
@@ -234,7 +241,7 @@ func TestMaterializedViewUnqualifiedBodyRoundTripsLive(t *testing.T) {
 	c.Assert(readback.Views, qt.HasLen, 1)
 	c.Assert(readback.Views[0].Body, qt.Contains, database+".users")
 
-	settledDiff := schemadiff.CompareWithDialect(declared, readback, platform.ClickHouse)
+	settledDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), declared, readback, platform.ClickHouse, must.Must(builtin.New())))
 	c.Assert(settledDiff.MaterializedViewsModified, qt.HasLen, 0)
 	c.Assert(settledDiff.ViewsModified, qt.HasLen, 0)
 	c.Assert(settledDiff.HasChanges(), qt.IsFalse, qt.Commentf("settled diff: %+v", settledDiff))
@@ -249,7 +256,7 @@ func TestMaterializedViewUnqualifiedBodyRoundTripsLive(t *testing.T) {
 		}},
 		Views: declared.Views,
 	}
-	changeDiff := schemadiff.CompareWithDialect(changed, readback, platform.ClickHouse)
+	changeDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), changed, readback, platform.ClickHouse, must.Must(builtin.New())))
 	c.Assert(changeDiff.MaterializedViewsModified, qt.HasLen, 1)
 	c.Assert(changeDiff.ViewsModified, qt.HasLen, 0)
 }
@@ -292,12 +299,13 @@ func TestMaterializedViewAliasedBodyRoundTripsLive(t *testing.T) {
 			Body:       "SELECT u.id AS id FROM users AS u",
 		}},
 	}
-	creationDiff := schemadiff.CompareWithDialect(
-		declared,
+	creationDiff := must.Must(schemadiff.CompareWithDialect(
+		t.Context(), declared,
 		readClickHouseViewLikes(t, db, database),
-		platform.ClickHouse,
-	)
+		platform.ClickHouse, must.Must(builtin.New()),
+	))
 	createStatements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
 		creationDiff,
 
 		platform.ClickHouse,
@@ -318,7 +326,7 @@ func TestMaterializedViewAliasedBodyRoundTripsLive(t *testing.T) {
 	c.Assert(readback.Views[0].Body, qt.Contains, "u.id")
 	c.Assert(readback.Views[0].Body, qt.Contains, database+".users")
 
-	settledDiff := schemadiff.CompareWithDialect(declared, readback, platform.ClickHouse)
+	settledDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), declared, readback, platform.ClickHouse, must.Must(builtin.New())))
 	c.Assert(settledDiff.MaterializedViewsModified, qt.HasLen, 0)
 	c.Assert(settledDiff.ViewsModified, qt.HasLen, 0)
 	c.Assert(settledDiff.HasChanges(), qt.IsFalse, qt.Commentf("settled diff: %+v", settledDiff))
@@ -332,7 +340,7 @@ func TestMaterializedViewAliasedBodyRoundTripsLive(t *testing.T) {
 		}},
 		Views: declared.Views,
 	}
-	changeDiff := schemadiff.CompareWithDialect(changed, readback, platform.ClickHouse)
+	changeDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), changed, readback, platform.ClickHouse, must.Must(builtin.New())))
 	c.Assert(changeDiff.MaterializedViewsModified, qt.HasLen, 1)
 	c.Assert(changeDiff.ViewsModified, qt.HasLen, 0)
 }
@@ -369,12 +377,13 @@ func TestMaterializedViewAliasNamedLikeTheDatabaseRoundTripsLive(t *testing.T) {
 			Body:       body,
 		}},
 	}
-	creationDiff := schemadiff.CompareWithDialect(
-		declared,
+	creationDiff := must.Must(schemadiff.CompareWithDialect(
+		t.Context(), declared,
 		readClickHouseViewLikes(t, db, database),
-		platform.ClickHouse,
-	)
+		platform.ClickHouse, must.Must(builtin.New()),
+	))
 	createStatements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
 		creationDiff,
 
 		platform.ClickHouse,
@@ -391,7 +400,7 @@ func TestMaterializedViewAliasNamedLikeTheDatabaseRoundTripsLive(t *testing.T) {
 	c.Assert(readback.MatViews[0].Body, qt.Contains, database+".id")
 	c.Assert(readback.MatViews[0].Body, qt.Contains, database+".users")
 
-	settledDiff := schemadiff.CompareWithDialect(declared, readback, platform.ClickHouse)
+	settledDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), declared, readback, platform.ClickHouse, must.Must(builtin.New())))
 	c.Assert(settledDiff.MaterializedViewsModified, qt.HasLen, 0)
 	c.Assert(settledDiff.ViewsModified, qt.HasLen, 0)
 	c.Assert(settledDiff.HasChanges(), qt.IsFalse, qt.Commentf("settled diff: %+v", settledDiff))
@@ -439,12 +448,13 @@ func TestMaterializedViewUnqualifiedNameRoundTripsLive(t *testing.T) {
 			Body:       "SELECT id FROM users",
 		}},
 	}
-	creationDiff := schemadiff.CompareWithDialect(
-		declared,
+	creationDiff := must.Must(schemadiff.CompareWithDialect(
+		t.Context(), declared,
 		readClickHouseViewLikes(t, db, database),
-		platform.ClickHouse,
-	)
+		platform.ClickHouse, must.Must(builtin.New()),
+	))
 	createStatements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
 		creationDiff,
 
 		platform.ClickHouse,
@@ -460,13 +470,14 @@ func TestMaterializedViewUnqualifiedNameRoundTripsLive(t *testing.T) {
 	c.Assert(readback.Views, qt.HasLen, 1)
 	c.Assert(readback.Views[0].Schema, qt.Equals, database)
 
-	settledDiff := schemadiff.CompareWithDialect(declared, readback, platform.ClickHouse)
+	settledDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), declared, readback, platform.ClickHouse, must.Must(builtin.New())))
 	c.Assert(settledDiff.MaterializedViewsAdded, qt.HasLen, 0)
 	c.Assert(settledDiff.MaterializedViewsRemoved, qt.HasLen, 0)
 	c.Assert(settledDiff.HasChanges(), qt.IsFalse, qt.Commentf("settled diff: %+v", settledDiff))
 
 	// The second apply: an empty plan, executed.
 	settledStatements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
 		settledDiff,
 
 		platform.ClickHouse,
@@ -607,14 +618,15 @@ func TestViewKindChangeAppliesLive(t *testing.T) {
 		Name:       viewName,
 		Body:       body,
 	}}}
-	toPlainDiff := schemadiff.CompareWithDialect(
-		asPlainView,
+	toPlainDiff := must.Must(schemadiff.CompareWithDialect(
+		t.Context(), asPlainView,
 		readClickHouseViewLikes(t, db, database),
-		platform.ClickHouse,
-	)
+		platform.ClickHouse, must.Must(builtin.New()),
+	))
 	c.Assert(toPlainDiff.ViewsAdded.Names(), qt.DeepEquals, []string{viewName})
 	c.Assert(toPlainDiff.MaterializedViewsRemoved.Names(), qt.DeepEquals, []string{viewName})
 	toPlainStatements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
 		toPlainDiff,
 
 		platform.ClickHouse,
@@ -632,7 +644,7 @@ func TestViewKindChangeAppliesLive(t *testing.T) {
 	c.Assert(plainReadback.Views, qt.HasLen, 1)
 	c.Assert(plainReadback.MatViews, qt.HasLen, 0)
 	c.Assert(
-		schemadiff.CompareWithDialect(asPlainView, plainReadback, platform.ClickHouse).HasChanges(),
+		must.Must(schemadiff.CompareWithDialect(t.Context(), asPlainView, plainReadback, platform.ClickHouse, must.Must(builtin.New()))).HasChanges(),
 		qt.IsFalse,
 	)
 
@@ -641,14 +653,15 @@ func TestViewKindChangeAppliesLive(t *testing.T) {
 		Name:       viewName,
 		Body:       body,
 	}}}
-	toMaterializedDiff := schemadiff.CompareWithDialect(
-		asMaterialized,
+	toMaterializedDiff := must.Must(schemadiff.CompareWithDialect(
+		t.Context(), asMaterialized,
 		plainReadback,
-		platform.ClickHouse,
-	)
+		platform.ClickHouse, must.Must(builtin.New()),
+	))
 	c.Assert(toMaterializedDiff.MaterializedViewsAdded.Names(), qt.DeepEquals, []string{viewName})
 	c.Assert(toMaterializedDiff.ViewsRemoved.Names(), qt.DeepEquals, []string{viewName})
 	toMaterializedStatements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
 		toMaterializedDiff,
 
 		platform.ClickHouse,
@@ -664,11 +677,11 @@ func TestViewKindChangeAppliesLive(t *testing.T) {
 	c.Assert(materializedReadback.Views, qt.HasLen, 0)
 	c.Assert(materializedReadback.MatViews, qt.HasLen, 1)
 	c.Assert(
-		schemadiff.CompareWithDialect(
-			asMaterialized,
+		must.Must(schemadiff.CompareWithDialect(
+			t.Context(), asMaterialized,
 			materializedReadback,
-			platform.ClickHouse,
-		).HasChanges(),
+			platform.ClickHouse, must.Must(builtin.New()),
+		)).HasChanges(),
 		qt.IsFalse,
 	)
 }

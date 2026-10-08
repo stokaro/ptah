@@ -4,12 +4,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -40,17 +41,17 @@ func TestPlanBidirectionalSchemaDiff_YDBViewsRollBack(t *testing.T) {
 		{Schema: "app", Name: "changed", Body: "SELECT 3 AS a"},
 	}}
 
-	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
-		Diff:          diff,
-		DesiredSchema: desired,
-		CurrentSchema: current,
-		Dialect:       platform.YDB,
-		Capabilities:  capability.YDB251(),
-	})
+	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(),
+		generator.BidirectionalSchemaPlanOptions{Runtime: must.Must(builtin.New()), Diff: diff,
+			DesiredSchema: desired,
+			CurrentSchema: current,
+			Dialect:       platform.YDB,
+			Capabilities:  capability.YDB251(),
+		})
 	c.Assert(err, qt.IsNil)
-	up, err := renderer.RenderSQLWithCapabilities(platform.YDB, capability.YDB251(), plan.Forward.Nodes...)
+	up, err := builtin.RenderSQLWithCapabilities(platform.YDB, capability.YDB251(), plan.Forward.Nodes...)
 	c.Assert(err, qt.IsNil)
-	down, err := renderer.RenderSQLWithCapabilities(platform.YDB, capability.YDB251(), plan.Reverse.Nodes...)
+	down, err := builtin.RenderSQLWithCapabilities(platform.YDB, capability.YDB251(), plan.Reverse.Nodes...)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(up, qt.Equals, "DROP VIEW `app/changed`;\n"+

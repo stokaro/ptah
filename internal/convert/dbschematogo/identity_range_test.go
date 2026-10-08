@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -48,7 +50,7 @@ func identityField(c *qt.C, database *schemamodel.Database) schemamodel.Field {
 func TestConvert_CarriesTheIdentityRange(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(identitySchema("1000", "5"), "")
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), identitySchema("1000", "5"), "postgres", must.Must(builtin.New())))
 
 	field := identityField(c, database)
 	c.Assert(field.AutoInc, qt.IsTrue)
@@ -61,7 +63,7 @@ func TestConvert_CarriesTheIdentityRange(t *testing.T) {
 func TestConvert_LeavesAnIdentityColumnWithoutARangeAlone(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(identitySchema("", ""), "")
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), identitySchema("", ""), "postgres", must.Must(builtin.New())))
 
 	field := identityField(c, database)
 	c.Assert(field.AutoInc, qt.IsTrue)

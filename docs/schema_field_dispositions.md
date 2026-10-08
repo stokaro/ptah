@@ -44,14 +44,14 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-571 fields are reachable from the desired schema, and each one carries
+588 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 498 | reaches rendered SQL on at least one target |
-| `comparison` | 8 | read when two schemas are compared, and written into no statement |
-| `planning` | 8 | read while a change set is assembled or ordered |
+| `ddl` | 510 | reaches rendered SQL on at least one target |
+| `comparison` | 9 | read when two schemas are compared, and written into no statement |
+| `planning` | 12 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
 | `source` | 26 | identifies the source text the declaration was read from |
 | `export` | 10 | what a generated document carries, or reports that it cannot |
@@ -71,19 +71,6 @@ None.
 | `ast.AsyncReplicationSpec.Connection` | `ddl` | — |
 | `ast.AsyncReplicationSpec.ConsistencyLevel` | `ddl` | — |
 | `ast.AsyncReplicationSpec.Items` | `ddl` | — |
-| `ast.ChangefeedSpec.Consumers` | `ddl` | — |
-| `ast.ChangefeedSpec.Disabled` | `ddl` | — |
-| `ast.ChangefeedSpec.Format` | `ddl` | — |
-| `ast.ChangefeedSpec.InitialScan` | `ddl` | — |
-| `ast.ChangefeedSpec.Mode` | `ddl` | — |
-| `ast.ChangefeedSpec.Name` | `ddl` | — |
-| `ast.ChangefeedSpec.ResolvedTimestamps` | `ddl` | — |
-| `ast.ChangefeedSpec.RetentionPeriod` | `ddl` | — |
-| `ast.ChangefeedSpec.SchemaChanges` | `ddl` | — |
-| `ast.ChangefeedSpec.TopicAutoPartitioning` | `ddl` | — |
-| `ast.ChangefeedSpec.TopicMinActivePartitions` | `ddl` | — |
-| `ast.ChangefeedSpec.UserSIDs` | `ddl` | — |
-| `ast.ChangefeedSpec.VirtualTimestamps` | `ddl` | — |
 | `ast.CoordinationNodeSpec.AttachConsistencyMode` | `ddl` | — |
 | `ast.CoordinationNodeSpec.RateLimiterCountersMode` | `ddl` | — |
 | `ast.CoordinationNodeSpec.ReadConsistencyMode` | `ddl` | — |
@@ -135,14 +122,9 @@ None.
 | `ast.StreamingQuerySpec.Run` | `ddl` | — |
 | `ast.StreamingQuerySpec.Text` | `ddl` | — |
 | `ast.TopicConsumerSpec.AvailabilityPeriod` | `ddl` | — |
-| `ast.TopicConsumerSpec.AvailabilityPeriod` | `ddl` | — |
-| `ast.TopicConsumerSpec.Important` | `ddl` | — |
 | `ast.TopicConsumerSpec.Important` | `ddl` | — |
 | `ast.TopicConsumerSpec.Name` | `ddl` | — |
-| `ast.TopicConsumerSpec.Name` | `ddl` | — |
 | `ast.TopicConsumerSpec.ReadFrom` | `ddl` | — |
-| `ast.TopicConsumerSpec.ReadFrom` | `ddl` | — |
-| `ast.TopicConsumerSpec.SupportedCodecs` | `ddl` | — |
 | `ast.TopicConsumerSpec.SupportedCodecs` | `ddl` | — |
 | `ast.TopicSpec.AutoPartitioningDownUtilizationPercent` | `ddl` | — |
 | `ast.TopicSpec.AutoPartitioningStabilizationWindow` | `ddl` | — |
@@ -204,6 +186,7 @@ None.
 | `schemamodel.CompositeField.Type` | `ddl` | — |
 | `schemamodel.CompositeType.Comment` | `ddl` | — |
 | `schemamodel.CompositeType.Dialects` | `ddl` | — |
+| `schemamodel.CompositeType.Facets` | `ddl` | — |
 | `schemamodel.CompositeType.Fields` | `ddl` | — |
 | `schemamodel.CompositeType.Name` | `ddl` | — |
 | `schemamodel.CompositeType.Schema` | `ddl` | — |
@@ -213,6 +196,7 @@ None.
 | `schemamodel.Constraint.Comment` | `ddl` | — |
 | `schemamodel.Constraint.Deferrable` | `ddl` | — |
 | `schemamodel.Constraint.ExcludeElements` | `ddl` | — |
+| `schemamodel.Constraint.Facets` | `ddl` | — |
 | `schemamodel.Constraint.ForeignColumn` | `ddl` | — |
 | `schemamodel.Constraint.ForeignColumns` | `ddl` | — |
 | `schemamodel.Constraint.ForeignTable` | `ddl` | — |
@@ -259,6 +243,9 @@ None.
 | `schemamodel.Database.Extensions` | `ddl` | — |
 | `schemamodel.Database.ExternalDataSources` | `ddl` | — |
 | `schemamodel.Database.ExternalTables` | `ddl` | — |
+| `schemamodel.Database.Facets` | `ddl` | — |
+| `schemamodel.Database.FeatureCoverage` | `comparison` | records source knowledge for exact feature models and subjects; limits which state can be compared or reconstructed |
+| `schemamodel.Database.FeatureObjects` | `ddl` | — |
 | `schemamodel.Database.Fields` | `ddl` | — |
 | `schemamodel.Database.FunctionDependencies` | `derived` | function creation order, derived by Finalize from the declared bodies |
 | `schemamodel.Database.Functions` | `ddl` | — |
@@ -301,6 +288,7 @@ None.
 | `schemamodel.Domain.Default` | `ddl` | — |
 | `schemamodel.Domain.DefaultExpr` | `ddl` | — |
 | `schemamodel.Domain.Dialects` | `ddl` | — |
+| `schemamodel.Domain.Facets` | `ddl` | — |
 | `schemamodel.Domain.Name` | `ddl` | — |
 | `schemamodel.Domain.NotNull` | `ddl` | — |
 | `schemamodel.Domain.Schema` | `ddl` | — |
@@ -321,6 +309,7 @@ None.
 | `schemamodel.EmbeddedSources.Definitions` | `derived` | the embedded declarations retained so materialization can run again after a merge; the columns they produce are what reaches DDL |
 | `schemamodel.EmbeddedSources.Fields` | `ddl` | — |
 | `schemamodel.Enum.Comment` | `ddl` | — |
+| `schemamodel.Enum.Facets` | `ddl` | — |
 | `schemamodel.Enum.Name` | `ddl` | — |
 | `schemamodel.Enum.Schema` | `ddl` | — |
 | `schemamodel.Enum.Values` | `ddl` | — |
@@ -371,6 +360,7 @@ None.
 | `schemamodel.Field.DefaultSet` | `ddl` | — |
 | `schemamodel.Field.Deferrable` | `ddl` | — |
 | `schemamodel.Field.Enum` | `ddl` | — |
+| `schemamodel.Field.Facets` | `ddl` | — |
 | `schemamodel.Field.FieldName` | `source` | the Go struct field the column was read from; the column's own name is its identity. The only render that moves under its ablation is the PostgreSQL-family renderer walking table options in map order |
 | `schemamodel.Field.Foreign` | `ddl` | — |
 | `schemamodel.Field.ForeignKeyMatch` | `ddl` | — |
@@ -401,6 +391,7 @@ None.
 | `schemamodel.Function.Body` | `ddl` | — |
 | `schemamodel.Function.Comment` | `ddl` | — |
 | `schemamodel.Function.Dialects` | `ddl` | — |
+| `schemamodel.Function.Facets` | `ddl` | — |
 | `schemamodel.Function.Kind` | `ddl` | — |
 | `schemamodel.Function.Language` | `ddl` | — |
 | `schemamodel.Function.Leakproof` | `ddl` | — |
@@ -437,6 +428,7 @@ None.
 | `schemamodel.Index.Comment` | `ddl` | — |
 | `schemamodel.Index.Concurrently` | `planning` | asks that the index be BUILT without locking when added to a live table; internal/concurrentindex owns that decision, and only a plan carries it into DDL |
 | `schemamodel.Index.Condition` | `ddl` | — |
+| `schemamodel.Index.Facets` | `ddl` | — |
 | `schemamodel.Index.Fields` | `ddl` | — |
 | `schemamodel.Index.Granularity` | `ddl` | — |
 | `schemamodel.Index.IncludeColumns` | `ddl` | — |
@@ -475,6 +467,7 @@ None.
 | `schemamodel.MaterializedView.Comment` | `ddl` | — |
 | `schemamodel.MaterializedView.DependsOn` | `planning` | the same ordering edge, on a materialized view |
 | `schemamodel.MaterializedView.Dialects` | `ddl` | — |
+| `schemamodel.MaterializedView.Facets` | `ddl` | — |
 | `schemamodel.MaterializedView.Name` | `ddl` | — |
 | `schemamodel.MaterializedView.Refresh` | `ddl` | — |
 | `schemamodel.MaterializedView.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
@@ -507,6 +500,7 @@ None.
 | `schemamodel.Range.Collation` | `ddl` | — |
 | `schemamodel.Range.Comment` | `ddl` | — |
 | `schemamodel.Range.Dialects` | `ddl` | — |
+| `schemamodel.Range.Facets` | `ddl` | — |
 | `schemamodel.Range.Name` | `ddl` | — |
 | `schemamodel.Range.Schema` | `ddl` | — |
 | `schemamodel.Range.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
@@ -523,6 +517,7 @@ None.
 | `schemamodel.Role.CreateDB` | `ddl` | — |
 | `schemamodel.Role.CreateRole` | `ddl` | — |
 | `schemamodel.Role.Dialects` | `ddl` | — |
+| `schemamodel.Role.Facets` | `ddl` | — |
 | `schemamodel.Role.Group` | `ddl` | — |
 | `schemamodel.Role.Inherit` | `ddl` | — |
 | `schemamodel.Role.Login` | `ddl` | — |
@@ -535,6 +530,7 @@ None.
 | `schemamodel.Schema.Charset` | `ddl` | — |
 | `schemamodel.Schema.Collate` | `ddl` | — |
 | `schemamodel.Schema.Comment` | `ddl` | — |
+| `schemamodel.Schema.Facets` | `ddl` | — |
 | `schemamodel.Schema.Name` | `ddl` | — |
 | `schemamodel.Secret.Name` | `ddl` | — |
 | `schemamodel.Secret.Schema` | `ddl` | — |
@@ -550,6 +546,7 @@ None.
 | `schemamodel.Sequence.Comment` | `ddl` | — |
 | `schemamodel.Sequence.Cycle` | `ddl` | — |
 | `schemamodel.Sequence.Dialects` | `ddl` | — |
+| `schemamodel.Sequence.Facets` | `ddl` | — |
 | `schemamodel.Sequence.IfNotExists` | `ddl` | — |
 | `schemamodel.Sequence.Increment` | `ddl` | — |
 | `schemamodel.Sequence.MaxValue` | `ddl` | — |
@@ -572,7 +569,6 @@ None.
 | `schemamodel.Table.APIName` | `export` | the name an exported API document carries when it differs from the database name |
 | `schemamodel.Table.APINames` | `export` | the per-format names an exported API document carries, overriding the general one |
 | `schemamodel.Table.AutoIncrement` | `ddl` | — |
-| `schemamodel.Table.Changefeeds` | `ddl` | — |
 | `schemamodel.Table.Charset` | `ddl` | — |
 | `schemamodel.Table.Checks` | `ddl` | — |
 | `schemamodel.Table.Collate` | `ddl` | — |
@@ -580,6 +576,7 @@ None.
 | `schemamodel.Table.CustomSQL` | `ddl` | — |
 | `schemamodel.Table.DependsOn` | `planning` | an ordering edge the author declares because no foreign key states it; the CREATE TABLE it orders does not mention it |
 | `schemamodel.Table.Engine` | `ddl` | — |
+| `schemamodel.Table.Facets` | `ddl` | — |
 | `schemamodel.Table.Name` | `ddl` | — |
 | `schemamodel.Table.Overrides` | `ddl` | — |
 | `schemamodel.Table.Partition` | `ddl` | — |
@@ -620,6 +617,7 @@ None.
 | `schemamodel.Trigger.Dialects` | `ddl` | — |
 | `schemamodel.Trigger.Event` | `ddl` | — |
 | `schemamodel.Trigger.ExecuteFunction` | `ddl` | — |
+| `schemamodel.Trigger.Facets` | `ddl` | — |
 | `schemamodel.Trigger.ForEach` | `ddl` | — |
 | `schemamodel.Trigger.Name` | `ddl` | — |
 | `schemamodel.Trigger.NewTable` | `ddl` | — |
@@ -633,7 +631,26 @@ None.
 | `schemamodel.View.Comment` | `ddl` | — |
 | `schemamodel.View.DependsOn` | `planning` | an ordering edge the author declares because the view's body does not reveal it; the CREATE VIEW it orders does not mention it |
 | `schemamodel.View.Dialects` | `ddl` | — |
+| `schemamodel.View.Facets` | `ddl` | — |
 | `schemamodel.View.Name` | `ddl` | — |
 | `schemamodel.View.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.View.WithCheck` | `ddl` | — |
+| `ydbschema.ChangefeedSpec.Consumers` | `ddl` | — |
+| `ydbschema.ChangefeedSpec.Disabled` | `ddl` | — |
+| `ydbschema.ChangefeedSpec.Format` | `ddl` | — |
+| `ydbschema.ChangefeedSpec.InitialScan` | `ddl` | — |
+| `ydbschema.ChangefeedSpec.Mode` | `ddl` | — |
+| `ydbschema.ChangefeedSpec.Name` | `ddl` | — |
+| `ydbschema.ChangefeedSpec.ResolvedTimestamps` | `ddl` | — |
+| `ydbschema.ChangefeedSpec.RetentionPeriod` | `ddl` | — |
+| `ydbschema.ChangefeedSpec.SchemaChanges` | `ddl` | — |
+| `ydbschema.ChangefeedSpec.TopicAutoPartitioning` | `ddl` | — |
+| `ydbschema.ChangefeedSpec.TopicMinActivePartitions` | `ddl` | — |
+| `ydbschema.ChangefeedSpec.UserSIDs` | `ddl` | — |
+| `ydbschema.ChangefeedSpec.VirtualTimestamps` | `ddl` | — |
+| `ydbschema.DesiredChangefeed.RetainedReplication` | `planning` | retains an observed controller binding and refuses independent changefeed creation or mutation |
+| `ydbschema.DesiredChangefeed.Spec` | `ddl` | — |
+| `ydbschema.ReplicationBinding.DestinationPath` | `planning` | records the observed replica destination without interpreting it as a local replication object |
+| `ydbschema.ReplicationBinding.ItemID` | `planning` | identifies the observed replication target item whose stream must not be managed independently |
+| `ydbschema.ReplicationBinding.SupportsTopicAutopartitioning` | `planning` | preserves observed controller behavior through snapshots and codecs |
 <!-- END GENERATED FIELD DISPOSITIONS -->

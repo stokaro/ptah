@@ -26,7 +26,8 @@ import (
 // it; the text report never asks, and paying two introspections for output
 // nobody prints would be a cost with no answer attached.
 type schemaCapture struct {
-	devURL string
+	devURL  string
+	runtime Runtime
 	// baseVersionKey is the first analyzed migration's revision-table token.
 	// Current is read immediately before it runs.
 	baseVersionKey string
@@ -41,8 +42,8 @@ type schemaCapture struct {
 	desired string
 }
 
-func newSchemaCapture(analysis lint.Analysis, devURL string) *schemaCapture {
-	capture := &schemaCapture{devURL: devURL}
+func newSchemaCapture(analysis lint.Analysis, devURL string, runtime Runtime) *schemaCapture {
+	capture := &schemaCapture{devURL: devURL, runtime: runtime}
 	capture.baseVersionKey, capture.hasBase = firstAnalyzedVersionKey(analysis)
 	if scope := schemaselection.FromURL(devURL).Scope; scope != "" {
 		capture.schemas = []string{scope}
@@ -117,6 +118,7 @@ func (c *schemaCapture) render(
 	// Only the rendering. This capture compares two HCL documents, so the
 	// model beside it answers a question nothing here asks.
 	result, err := atlasschema.Inspect(ctx, conn, atlasschema.InspectOptions{
+		Runtime: c.runtime,
 		DevURL:  c.devURL,
 		Schemas: c.schemas,
 		Format:  "hcl",

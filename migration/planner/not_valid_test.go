@@ -1,12 +1,15 @@
 package planner_test
 
 import (
+	"context"
 	"strconv"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -46,6 +49,7 @@ func TestPlan_AddsAConstraintTheDeclarationAllowsNotValid(t *testing.T) {
 				c := qt.New(t)
 
 				sql, err := planner.GenerateSchemaDiffSQLWithOptions(
+					context.Background(), must.Must(builtin.New()),
 					&difftypes.SchemaDiff{ConstraintsAdded: difftypes.ConstraintAdditions{test.constraint}},
 					"postgres",
 					planner.Options{Capabilities: capability.Postgres18(), OnlineAlter: online},
@@ -65,6 +69,7 @@ func TestPlan_ValidatesAConstraintTheDatabaseHoldsNotValid(t *testing.T) {
 	c := qt.New(t)
 
 	sql, err := planner.GenerateSchemaDiffSQLWithOptions(
+		context.Background(), must.Must(builtin.New()),
 		&difftypes.SchemaDiff{ConstraintsValidated: []difftypes.ConstraintValidation{{TableName: "orders", Name: "ck_amount"}}},
 		"postgres",
 		planner.Options{Capabilities: capability.Postgres18()},

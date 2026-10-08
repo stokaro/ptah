@@ -33,7 +33,7 @@ func excludeTable() *schemamodel.Database {
 func TestSchemaInspectReport_MarshalDBML_ReportsWhatItLeavesOut(t *testing.T) {
 	c := qt.New(t)
 	var diagnostics bytes.Buffer
-	report := atlasreport.NewSchemaInspectReport(
+	report := newInspectReport(c,
 		excludeTable(), &catalog.Database{}, catalog.ServerInfo{Dialect: "postgres"}, &diagnostics,
 		atlasreport.SchemaInspectReportOptions{DescribeSchemas: true},
 	)
@@ -55,7 +55,7 @@ func TestSchemaInspectReport_MarshalDBML_SaysNothingWhenNothingIsLeftOut(t *test
 	var diagnostics bytes.Buffer
 	db := excludeTable()
 	db.Constraints = nil
-	report := atlasreport.NewSchemaInspectReport(
+	report := newInspectReport(c,
 		db, &catalog.Database{}, catalog.ServerInfo{Dialect: "postgres"}, &diagnostics,
 		atlasreport.SchemaInspectReportOptions{DescribeSchemas: true},
 	)
@@ -75,7 +75,7 @@ func TestSchemaInspectReport_DBMLReportsYDBObjectsOnDiagnostics(t *testing.T) {
 		AsyncReplications: []schemamodel.AsyncReplication{{Name: "mirror"}},
 		Secrets:           []schemamodel.Secret{{Name: "credentials"}},
 	}
-	report := atlasreport.NewSchemaInspectReport(
+	report := newInspectReport(c,
 		db, &catalog.Database{}, catalog.ServerInfo{Dialect: "ydb"}, &diagnostics,
 		atlasreport.SchemaInspectReportOptions{},
 	)

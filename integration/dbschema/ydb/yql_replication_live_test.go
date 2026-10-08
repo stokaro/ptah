@@ -4,7 +4,6 @@ package ydb_test
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -38,7 +37,7 @@ func TestYDBDesiredYQL_Replication(t *testing.T) {
 			apply(c, conn, planAgainst(c, conn, desired, replicationSchemas))
 			settledRead(c, conn, "the YQL replica recorded", replicaRecorded)
 			c.Assert(planAgainst(c, conn, desired, replicationSchemas), qt.HasLen, 0)
-			moved := strings.Replace(connection, "localhost", "127.0.0.1", 1)
+			moved := alternateSelfConnection(c, connection)
 			c.Assert(moved, qt.Not(qt.Equals), connection)
 			changed := desiredReplicationYQL(c, source+fmt.Sprintf("ALTER ASYNC REPLICATION `ptah_ydb_repl/mirror` SET (CONNECTION_STRING='%s');", moved))
 			c.Assert(planError(c, conn, changed), qt.ErrorIs, ptaherr.ErrUnsupportedFeature)

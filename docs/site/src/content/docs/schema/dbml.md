@@ -134,6 +134,12 @@ the document clean. `ptah schema inspect --format dbml` reports the same way,
 for what the database holds and DBML cannot write, a key's EXCLUDE or
 DEFERRABLE included.
 
+Feature owners supply the omission labels for their models. Exporting Go
+declarations to DBML does not require a database target. Table filters also
+filter the features owned by those tables. If a feature's parent cannot be
+resolved, or its reporter is unavailable, the export fails before writing a
+document.
+
 ## What is refused, and why
 
 A **many-to-many relationship** — `Ref: a.id <> b.id` — has no foreign key

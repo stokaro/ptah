@@ -1,15 +1,18 @@
 package goschema_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
-	"ptah.run/core/renderer"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -58,17 +61,20 @@ type User struct {
 
 		// Create a schema diff for table creation
 		diff := &difftypes.SchemaDiff{
-			TablesAdded: difftypes.TableCreationsFor(database, "users"),
+			TablesAdded: difftypes.TableCreationsFor(database, identifier.ForDialect("postgres"), "users"),
 		}
 
 		// Generate migration AST
 		planner := postgres.New()
-		astNodes, err := planner.GenerateMigrationAST(diff)
+		astNodes, err := planner.GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			diff,
+		)
 		c.Assert(err, qt.IsNil)
 		c.Assert(astNodes, qt.HasLen, 1)
 
 		// Render to SQL
-		sql, err := renderer.RenderSQL("postgresql", astNodes[0])
+		sql, err := builtin.RenderSQL("postgresql", astNodes[0])
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -167,17 +173,20 @@ type Post struct {
 
 		// Create a schema diff for table creation
 		diff := &difftypes.SchemaDiff{
-			TablesAdded: difftypes.TableCreationsFor(database, "posts"),
+			TablesAdded: difftypes.TableCreationsFor(database, identifier.ForDialect("postgres"), "posts"),
 		}
 
 		// Generate migration AST
 		planner := postgres.New()
-		astNodes, err := planner.GenerateMigrationAST(diff)
+		astNodes, err := planner.GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			diff,
+		)
 		c.Assert(err, qt.IsNil)
 		c.Assert(astNodes, qt.HasLen, 1)
 
 		// Render to SQL
-		sql, err := renderer.RenderSQL("postgresql", astNodes[0])
+		sql, err := builtin.RenderSQL("postgresql", astNodes[0])
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -262,12 +271,15 @@ type Post struct {
 
 		// Create a schema diff for table creation
 		diff := &difftypes.SchemaDiff{
-			TablesAdded: difftypes.TableCreationsFor(database, "users", "posts"),
+			TablesAdded: difftypes.TableCreationsFor(database, identifier.ForDialect("postgres"), "users", "posts"),
 		}
 
 		// Generate migration AST
 		planner := postgres.New()
-		astNodes, err := planner.GenerateMigrationAST(diff)
+		astNodes, err := planner.GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			diff,
+		)
 		c.Assert(err, qt.IsNil)
 		// 2 CREATE TABLE statements plus 1 ALTER TABLE ADD CONSTRAINT for the
 		// posts.user_id field-level foreign key. The FK has no explicit
@@ -280,7 +292,7 @@ type Post struct {
 		// Render to SQL
 		var sqlStatements []string
 		for _, node := range astNodes {
-			sql, err := renderer.RenderSQL("postgresql", node)
+			sql, err := builtin.RenderSQL("postgresql", node)
 			c.Assert(err, qt.IsNil)
 			sql = legacyRenderedSQL(sql)
 			sqlStatements = append(sqlStatements, sql)

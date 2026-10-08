@@ -58,12 +58,6 @@ ptah_schema_topics{dialect="sqlite"} 0
 # HELP ptah_schema_topic_consumers Consumers of standalone topics.
 # TYPE ptah_schema_topic_consumers gauge
 ptah_schema_topic_consumers{dialect="sqlite"} 0
-# HELP ptah_schema_changefeeds Table changefeeds.
-# TYPE ptah_schema_changefeeds gauge
-ptah_schema_changefeeds{dialect="sqlite"} 0
-# HELP ptah_schema_changefeed_consumers Consumers of table changefeeds.
-# TYPE ptah_schema_changefeed_consumers gauge
-ptah_schema_changefeed_consumers{dialect="sqlite"} 0
 # HELP ptah_schema_coordination_nodes Coordination nodes.
 # TYPE ptah_schema_coordination_nodes gauge
 ptah_schema_coordination_nodes{dialect="sqlite"} 0
@@ -94,4 +88,10 @@ ptah_schema_external_columns{dialect="sqlite"} 0
 # HELP ptah_schema_streaming_queries Streaming queries.
 # TYPE ptah_schema_streaming_queries gauge
 ptah_schema_streaming_queries{dialect="sqlite"} 0
+# HELP ptah_schema_changefeeds Table changefeeds.
+# TYPE ptah_schema_changefeeds gauge
+ptah_schema_changefeeds{dialect="sqlite"} 0
+# HELP ptah_schema_changefeed_consumers Consumers of table changefeeds.
+# TYPE ptah_schema_changefeed_consumers gauge
+ptah_schema_changefeed_consumers{dialect="sqlite"} 0
 # EOF

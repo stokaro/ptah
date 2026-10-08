@@ -4,13 +4,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -28,17 +29,17 @@ func TestPlanBidirectionalSchemaDiff_TablePartitioningRollsBack(t *testing.T) {
 		},
 	}}}
 
-	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
-		Diff:          diff,
-		DesiredSchema: &schemamodel.Database{},
-		CurrentSchema: &catalog.Database{},
-		Dialect:       platform.YDB,
-		Capabilities:  capability.YDB262(),
-	})
+	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(),
+		generator.BidirectionalSchemaPlanOptions{Runtime: must.Must(builtin.New()), Diff: diff,
+			DesiredSchema: &schemamodel.Database{},
+			CurrentSchema: &catalog.Database{},
+			Dialect:       platform.YDB,
+			Capabilities:  capability.YDB262(),
+		})
 	c.Assert(err, qt.IsNil)
-	forward, err := renderer.RenderSQLWithCapabilities(platform.YDB, capability.YDB262(), plan.Forward.Nodes...)
+	forward, err := builtin.RenderSQLWithCapabilities(platform.YDB, capability.YDB262(), plan.Forward.Nodes...)
 	c.Assert(err, qt.IsNil)
-	reverse, err := renderer.RenderSQLWithCapabilities(platform.YDB, capability.YDB262(), plan.Reverse.Nodes...)
+	reverse, err := builtin.RenderSQLWithCapabilities(platform.YDB, capability.YDB262(), plan.Reverse.Nodes...)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(forward, qt.Equals, "ALTER TABLE `items` SET (AUTO_PARTITIONING_BY_SIZE = ENABLED, "+

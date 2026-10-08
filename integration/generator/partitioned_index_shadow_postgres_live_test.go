@@ -8,10 +8,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/migrator"
 )
@@ -57,6 +59,7 @@ func TestGenerateMigration_PartitionedParentShadowRoundTripWithRealPostgres(t *t
 	// Cycle 1: the parent, the table that becomes its partition, and the index
 	// on the parent -- verified on the shadow before a byte is written.
 	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+		Runtime:           must.Must(builtin.New()),
 		Generated:         desired,
 		DatabaseURL:       targetURL,
 		ShadowDatabaseURL: shadowURL,
@@ -95,6 +98,7 @@ func TestGenerateMigration_PartitionedParentShadowRoundTripWithRealPostgres(t *t
 	// Cycle 2 over the same surface: nothing left to plan, and the shadow is
 	// never asked to judge a statement that would have failed on the target.
 	second, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+		Runtime:           must.Must(builtin.New()),
 		Generated:         desired,
 		DatabaseURL:       targetURL,
 		ShadowDatabaseURL: shadowURL,

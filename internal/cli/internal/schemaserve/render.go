@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"ptah.run/core/coverage"
 	"ptah.run/internal/schemadoc"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/safety"
+	"ptah.run/migration/schemadiff"
 )
 
 // dashboardCSS is what this view adds to the document's own appearance.
@@ -113,17 +113,17 @@ func writeStatus(out *strings.Builder, current observation) {
 // writeUndecided lists the declared objects the comparison could not check,
 // each with the reason the read gave. Their count is a finding above; this
 // says which objects, and why.
-func writeUndecided(out *strings.Builder, undecided []coverage.Object) {
-	if len(undecided) == 0 {
+func writeUndecided(out *strings.Builder, undecided schemadiff.Diagnostics) {
+	if undecided.Empty() {
 		return
 	}
 	out.WriteString(`<div class="card"><div class="card-head"><h3>Undecided</h3></div>`)
 	out.WriteString(`<div class="scroller"><table><thead><tr><th>Kind</th><th>Name</th><th>Why</th></tr></thead><tbody>`)
-	for _, object := range undecided {
+	for _, object := range undecidednote.Entries(undecided, "the database") {
 		out.WriteString(`<tr>`)
-		fmt.Fprintf(out, `<td>%s</td>`, escape(string(object.Kind)))
+		fmt.Fprintf(out, `<td>%s</td>`, escape(object.Kind))
 		fmt.Fprintf(out, `<td class="name">%s</td>`, escape(object.Name))
-		fmt.Fprintf(out, `<td>%s</td>`, escape(undecidednote.Cause(object, "the database")))
+		fmt.Fprintf(out, `<td>%s</td>`, escape(object.Reason))
 		out.WriteString(`</tr>`)
 	}
 	out.WriteString(`</tbody></table></div></div>`)

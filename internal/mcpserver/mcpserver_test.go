@@ -92,7 +92,7 @@ func TestServer_OffersExactlyTheReadOnlyOperations(t *testing.T) {
 	rows := []toolRow{
 		{name: "describe_session", owner: "internal/agentpolicy and internal/agenttarget"},
 		{name: "validate_schema", owner: "internal/schemavalidate"},
-		{name: "render_schema", owner: "core/renderer"},
+		{name: "render_schema", owner: "engine/builtin"},
 		{name: "schema_lineage", owner: "internal/schemalineage"},
 		{name: "search_docs", owner: "internal/docsembed"},
 		{name: "read_database", owner: "dbschema"},

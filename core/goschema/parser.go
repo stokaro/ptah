@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/goschema/internal/parseutils"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/annotationmeta"
 	"ptah.run/internal/chrefresh"
@@ -745,6 +746,8 @@ func splitCSVAttribute(value string) []string {
 }
 
 type schemaParseState struct {
+	featureObjects          schemaext.Objects
+	featureCoverage         schemaext.Coverage
 	filename                string
 	fset                    *token.FileSet
 	tableNameToStructName   map[string]string
@@ -1096,6 +1099,8 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 	})
 
 	result := schemamodel.Database{
+		FeatureObjects:          state.featureObjects,
+		FeatureCoverage:         state.featureCoverage,
 		Schemas:                 state.schemas,
 		Tables:                  state.tableDirectives,
 		Fields:                  state.schemaFields,

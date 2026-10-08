@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
+	"ptah.run/core/schemaext"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/triggerdef"
 )
@@ -32,6 +33,12 @@ import (
 // fingerprint it already had. [Database.NotDescribed] and [Field.APIExpose]
 // spell out the reasoning.
 type Database struct {
+	// FeatureObjects holds individually named feature objects, including table-owned children.
+	FeatureObjects schemaext.Objects `json:"feature_objects,omitzero"`
+	// FeatureCoverage records the model definitions and scopes this source actually describes.
+	FeatureCoverage schemaext.Coverage `json:"feature_coverage,omitzero"`
+	// Facets carries typed settings owned by feature providers.
+	Facets                  schemaext.Facets `json:"facets,omitzero"`
 	Schemas                 []Schema
 	Tables                  []Table
 	Fields                  []Field
@@ -119,10 +126,12 @@ type Database struct {
 
 // Schema represents a database schema/namespace.
 type Schema struct {
-	Name    string // Schema name, e.g. "public"
-	Comment string // Optional schema comment/description
-	Charset string // Optional default character set (MySQL/MariaDB)
-	Collate string // Optional default collation (MySQL/MariaDB)
+	// Facets carries typed settings owned by feature providers.
+	Facets  schemaext.Facets `json:"facets,omitzero"`
+	Name    string           // Schema name, e.g. "public"
+	Comment string           // Optional schema comment/description
+	Charset string           // Optional default character set (MySQL/MariaDB)
+	Collate string           // Optional default collation (MySQL/MariaDB)
 }
 
 // EmbeddedField represents an embedded field in a Go struct that should be handled specially
@@ -218,9 +227,11 @@ type TargetNames struct {
 //	//ptah:schema:field name="id" type="SERIAL" platform.mysql.type="INT AUTO_INCREMENT"
 //	    ID int64
 type Field struct {
-	StructName string // Name of the Go struct this field belongs to
-	FieldName  string // Name of the Go struct field
-	Name       string // Database column name
+	// Facets carries typed settings owned by feature providers.
+	Facets     schemaext.Facets `json:"facets,omitzero"`
+	StructName string           // Name of the Go struct this field belongs to
+	FieldName  string           // Name of the Go struct field
+	Name       string           // Database column name
 	// APIName is the name this column carries in an exported API schema, when
 	// that is meant to differ from the column name. Empty leaves the exporters
 	// deriving it from Name as they always have.
@@ -434,9 +445,11 @@ const (
 //	    _ int
 //	}
 type Index struct {
-	StructName string   // Name of the Go struct this index belongs to
-	Name       string   // Index name (e.g., "idx_users_email")
-	Fields     []string // Column names included in the index
+	// Facets carries typed settings owned by feature providers.
+	Facets     schemaext.Facets `json:"facets,omitzero"`
+	StructName string           // Name of the Go struct this index belongs to
+	Name       string           // Index name (e.g., "idx_users_email")
+	Fields     []string         // Column names included in the index
 	// Parts carries structured index elements for dialect-specific metadata,
 	// such as DESC ordering and expression indexes. Fields remains the legacy
 	// column/expression list for compatibility.
@@ -556,6 +569,8 @@ type Index struct {
 //   - PRIMARY KEY: Composite primary key constraints
 //   - FOREIGN KEY: Table-level foreign key constraints
 type Constraint struct {
+	// Facets carries typed settings owned by feature providers.
+	Facets schemaext.Facets `json:"facets,omitzero"`
 	// KeyBlockSize is a MySQL-family primary key block-size hint; zero uses the engine default.
 	KeyBlockSize uint64
 	StructName   string // Name of the Go struct this constraint belongs to
@@ -704,7 +719,7 @@ type Extension struct {
 	Provides []string
 
 	// Dialects scopes this declaration to the named target dialects. See
-	// [ScopeToDialect] for what an empty scope means and why the JSON tag is
+	// [ScopeToTarget] for what an empty scope means and why the JSON tag is
 	// load-bearing.
 	Dialects []string `json:",omitempty"`
 }
@@ -742,8 +757,10 @@ type Extension struct {
 //	    RoleID int64
 //	}
 type Table struct {
-	StructName string // Name of the Go struct this table represents
-	Name       string // Database table name
+	// Facets carries typed settings owned by feature providers.
+	Facets     schemaext.Facets `json:"facets,omitzero"`
+	StructName string           // Name of the Go struct this table represents
+	Name       string           // Database table name
 	// APIName is the name this table carries in an exported API schema, when
 	// that differs from the table name. Empty leaves the exporters deriving it
 	// from Name as they always have.
@@ -843,12 +860,6 @@ type Table struct {
 	// YDB's default family. It carries the ast type for the reason RowTTL
 	// does.
 	YDBColumnFamilies []ast.YDBColumnFamilySpec
-	// Changefeeds are the YDB changefeeds this table declares: the
-	// `//ptah:schema:changefeed` annotations and the YAML `changefeeds`
-	// list. It carries the ast type for the reason RowTTL does. A renderer
-	// for a target without capability.Changefeeds refuses a table declaring
-	// one rather than building the table without its stream.
-	Changefeeds []ast.ChangefeedSpec
 	// YDBPartitioning is YDB's, and every other target refuses it: how this
 	// row table splits into partitions, its read replicas, its key bloom
 	// filter and the partitions it is created with, nil for a table declaring
@@ -940,7 +951,9 @@ func QualifyTableName(schema, table string) string {
 //	MySQL:
 //	  CREATE TABLE users (status ENUM('active', 'inactive', 'suspended') DEFAULT 'active');
 type Enum struct {
-	Name string // The generated enum type name (e.g., "enum_user_status")
+	// Facets carries typed settings owned by feature providers.
+	Facets schemaext.Facets `json:"facets,omitzero"`
+	Name   string           // The generated enum type name (e.g., "enum_user_status")
 	// Schema owns the enum, empty for the connection's or document's default
 	// schema. It is a field rather than a qualifier folded into Name because
 	// Name is what a column's declared type is matched against, and a domain,
@@ -984,18 +997,20 @@ func (e Enum) QualifiedName() string {
 //	//ptah:schema:domain name="email" type="TEXT" check="VALUE ~ '^[^@]+@[^@]+$'"
 //	type EmailDomain struct{}
 type Domain struct {
-	StructName  string // Name of the Go struct this domain is associated with
-	Name        string // Domain name (e.g., "email")
-	Schema      string // Optional schema/namespace (PostgreSQL-style)
-	BaseType    string // Underlying base data type (e.g., "TEXT", "VARCHAR(255)")
-	NotNull     bool   // Whether the domain is NOT NULL
-	Default     string // Optional literal DEFAULT value
-	DefaultExpr string // Optional DEFAULT expression (function call)
-	Check       string // Optional CHECK constraint expression (uses VALUE)
-	Comment     string // Optional comment for documentation
+	// Facets carries typed settings owned by feature providers.
+	Facets      schemaext.Facets `json:"facets,omitzero"`
+	StructName  string           // Name of the Go struct this domain is associated with
+	Name        string           // Domain name (e.g., "email")
+	Schema      string           // Optional schema/namespace (PostgreSQL-style)
+	BaseType    string           // Underlying base data type (e.g., "TEXT", "VARCHAR(255)")
+	NotNull     bool             // Whether the domain is NOT NULL
+	Default     string           // Optional literal DEFAULT value
+	DefaultExpr string           // Optional DEFAULT expression (function call)
+	Check       string           // Optional CHECK constraint expression (uses VALUE)
+	Comment     string           // Optional comment for documentation
 
 	// Dialects scopes this declaration to the named target dialects. See
-	// [ScopeToDialect].
+	// [ScopeToTarget].
 	Dialects []string `json:",omitempty"`
 }
 
@@ -1027,6 +1042,8 @@ type CompositeField struct {
 //	//ptah:schema:composite name="address" fields="street:TEXT,city:TEXT,zip:VARCHAR(10)"
 //	type AddressType struct{}
 type CompositeType struct {
+	// Facets carries typed settings owned by feature providers.
+	Facets     schemaext.Facets `json:"facets,omitzero"`
 	StructName string           // Name of the Go struct this type is associated with
 	Name       string           // Composite type name (e.g., "address")
 	Schema     string           // Optional schema/namespace (PostgreSQL-style)
@@ -1034,7 +1051,7 @@ type CompositeType struct {
 	Comment    string           // Optional comment for documentation
 
 	// Dialects scopes this declaration to the named target dialects. See
-	// [ScopeToDialect].
+	// [ScopeToTarget].
 	Dialects []string `json:",omitempty"`
 }
 
@@ -1057,15 +1074,17 @@ func (c CompositeType) QualifiedName() string {
 //	//ptah:schema:range name="floatrange" subtype="float8" subtype_diff="float8mi"
 //	type FloatRange struct{}
 type Range struct {
-	StructName     string // Name of the Go struct this type is associated with
-	Name           string // Range type name (e.g., "floatrange")
-	Schema         string // Optional schema/namespace (PostgreSQL-style)
-	Subtype        string // Required element subtype (e.g., "float8")
-	SubtypeOpClass string // Optional operator class for the subtype
-	Collation      string // Optional collation for the subtype
-	Canonical      string // Optional canonicalization function
-	SubtypeDiff    string // Optional subtype difference function
-	Comment        string // Optional comment for documentation
+	// Facets carries typed settings owned by feature providers.
+	Facets         schemaext.Facets `json:"facets,omitzero"`
+	StructName     string           // Name of the Go struct this type is associated with
+	Name           string           // Range type name (e.g., "floatrange")
+	Schema         string           // Optional schema/namespace (PostgreSQL-style)
+	Subtype        string           // Required element subtype (e.g., "float8")
+	SubtypeOpClass string           // Optional operator class for the subtype
+	Collation      string           // Optional collation for the subtype
+	Canonical      string           // Optional canonicalization function
+	SubtypeDiff    string           // Optional subtype difference function
+	Comment        string           // Optional comment for documentation
 
 	// ClearedAttributes names the optional attributes this declaration writes
 	// as empty, which is how it asks for none of them.
@@ -1083,7 +1102,7 @@ type Range struct {
 	ClearedAttributes []string `json:",omitempty"`
 
 	// Dialects scopes this declaration to the named target dialects. See
-	// [ScopeToDialect].
+	// [ScopeToTarget].
 	Dialects []string `json:",omitempty"`
 }
 
@@ -1135,8 +1154,10 @@ func (r Range) QualifiedName() string {
 //	END;
 //	$$ LANGUAGE plpgsql SECURITY DEFINER;
 type Function struct {
-	StructName string // Name of the Go struct this function is associated with
-	Name       string // Function name (e.g., "set_tenant_context")
+	// Facets carries typed settings owned by feature providers.
+	Facets     schemaext.Facets `json:"facets,omitzero"`
+	StructName string           // Name of the Go struct this function is associated with
+	Name       string           // Function name (e.g., "set_tenant_context")
 	// Kind separates a function from a procedure. Empty means "function",
 	// which is what every declaration written before procedures existed meant.
 	//
@@ -1191,7 +1212,7 @@ type Function struct {
 	Comment string // Optional comment for documentation
 
 	// Dialects scopes this declaration to the named target dialects. See
-	// [ScopeToDialect].
+	// [ScopeToTarget].
 	Dialects []string `json:",omitempty"`
 }
 
@@ -1222,22 +1243,24 @@ type Function struct {
 //
 //	CREATE SEQUENCE order_number_seq AS bigint START WITH 1000 INCREMENT BY 1 CACHE 20;
 type Sequence struct {
-	StructName  string // Name of the Go struct this sequence is associated with
-	Name        string // Sequence name (e.g., "order_number_seq")
-	Schema      string // Optional schema/namespace (PostgreSQL-style)
-	AsType      string // Optional underlying integer type (e.g., "bigint")
-	Start       *int64 // Optional START WITH value
-	Increment   *int64 // Optional INCREMENT BY value (must be non-zero)
-	MinValue    *int64 // Optional MINVALUE bound
-	MaxValue    *int64 // Optional MAXVALUE bound
-	Cache       *int64 // Optional CACHE size
-	Cycle       bool   // Whether the sequence uses CYCLE (default NO CYCLE)
-	OwnedBy     string // Optional "table.column" association (OWNED BY)
-	IfNotExists bool   // Whether to use IF NOT EXISTS clause
-	Comment     string // Optional comment for documentation
+	// Facets carries typed settings owned by feature providers.
+	Facets      schemaext.Facets `json:"facets,omitzero"`
+	StructName  string           // Name of the Go struct this sequence is associated with
+	Name        string           // Sequence name (e.g., "order_number_seq")
+	Schema      string           // Optional schema/namespace (PostgreSQL-style)
+	AsType      string           // Optional underlying integer type (e.g., "bigint")
+	Start       *int64           // Optional START WITH value
+	Increment   *int64           // Optional INCREMENT BY value (must be non-zero)
+	MinValue    *int64           // Optional MINVALUE bound
+	MaxValue    *int64           // Optional MAXVALUE bound
+	Cache       *int64           // Optional CACHE size
+	Cycle       bool             // Whether the sequence uses CYCLE (default NO CYCLE)
+	OwnedBy     string           // Optional "table.column" association (OWNED BY)
+	IfNotExists bool             // Whether to use IF NOT EXISTS clause
+	Comment     string           // Optional comment for documentation
 
 	// Dialects scopes this declaration to the named target dialects. See
-	// [ScopeToDialect].
+	// [ScopeToTarget].
 	Dialects []string `json:",omitempty"`
 }
 
@@ -1673,11 +1696,13 @@ func (s Sequence) QualifiedName() string {
 //	//ptah:schema:view name="active_users" body="SELECT * FROM users WHERE deleted_at IS NULL" with_check="false"
 //	type User struct{}
 type View struct {
-	StructName string // Name of the Go struct this view is associated with
-	Name       string // View name
-	Body       string // SELECT query used as the view body
-	WithCheck  bool   // Whether to add WITH CHECK OPTION where supported
-	Comment    string // Optional comment for documentation
+	// Facets carries typed settings owned by feature providers.
+	Facets     schemaext.Facets `json:"facets,omitzero"`
+	StructName string           // Name of the Go struct this view is associated with
+	Name       string           // View name
+	Body       string           // SELECT query used as the view body
+	WithCheck  bool             // Whether to add WITH CHECK OPTION where supported
+	Comment    string           // Optional comment for documentation
 
 	// Attributes carries a view's own WITH clause on the targets that have one
 	// -- SQL Server's SCHEMABINDING and VIEW_METADATA. See
@@ -1691,7 +1716,7 @@ type View struct {
 	DependsOn []string `json:",omitempty"`
 
 	// Dialects scopes this declaration to the named target dialects. See
-	// [ScopeToDialect].
+	// [ScopeToTarget].
 	Dialects []string `json:",omitempty"`
 }
 
@@ -1710,10 +1735,12 @@ type View struct {
 // [ptah.run/internal/matviewrefresh] for the whole reasoning and the
 // refusal a declaration of the retired attribute gets (stokaro/ptah#1625).
 type MaterializedView struct {
-	StructName string // Name of the Go struct this materialized view is associated with
-	Name       string // Materialized view name
-	Body       string // SELECT query used as the materialized view body
-	Comment    string // Optional comment for documentation
+	// Facets carries typed settings owned by feature providers.
+	Facets     schemaext.Facets `json:"facets,omitzero"`
+	StructName string           // Name of the Go struct this materialized view is associated with
+	Name       string           // Materialized view name
+	Body       string           // SELECT query used as the materialized view body
+	Comment    string           // Optional comment for documentation
 
 	// DependsOn names objects this view must be created after, beyond the ones
 	// its body mentions. See [ptah.run/internal/deporder.ViewLike] for what a
@@ -1731,7 +1758,7 @@ type MaterializedView struct {
 	Refresh *ast.MatViewRefreshSpec
 
 	// Dialects scopes this declaration to the named target dialects. See
-	// [ScopeToDialect].
+	// [ScopeToTarget].
 	Dialects []string `json:",omitempty"`
 }
 
@@ -1742,10 +1769,12 @@ type MaterializedView struct {
 //	//ptah:schema:trigger name="set_updated_at" table="users" timing="BEFORE" event="UPDATE" for="ROW" body="NEW.updated_at = NOW(); RETURN NEW;"
 //	type User struct{}
 type Trigger struct {
-	StructName string // Name of the Go struct this trigger is associated with
-	Name       string // Trigger name
-	Table      string // Target table
-	Timing     string // BEFORE, AFTER, or INSTEAD OF
+	// Facets carries typed settings owned by feature providers.
+	Facets     schemaext.Facets `json:"facets,omitzero"`
+	StructName string           // Name of the Go struct this trigger is associated with
+	Name       string           // Trigger name
+	Table      string           // Target table
+	Timing     string           // BEFORE, AFTER, or INSTEAD OF
 	// Event is the statement or statements the trigger fires on: INSERT,
 	// UPDATE, DELETE or TRUNCATE, several joined by OR, and an UPDATE may name
 	// its columns, as in `INSERT OR UPDATE OF a, b`. [Trigger.Canonicalize]
@@ -1773,7 +1802,7 @@ type Trigger struct {
 	ExecuteFunction string
 
 	// Dialects scopes this declaration to the named target dialects. See
-	// [ScopeToDialect].
+	// [ScopeToTarget].
 	Dialects []string `json:",omitempty"`
 }
 
@@ -2033,7 +2062,7 @@ type RLSPolicy struct {
 	Restrictive bool `json:",omitempty"`
 
 	// Dialects scopes this declaration to the named target dialects. See
-	// [ScopeToDialect].
+	// [ScopeToTarget].
 	Dialects []string `json:",omitempty"`
 }
 
@@ -2065,7 +2094,7 @@ type RLSEnabledTable struct {
 	Forced bool `json:",omitempty"`
 
 	// Dialects scopes this declaration to the named target dialects. See
-	// [ScopeToDialect].
+	// [ScopeToTarget].
 	Dialects []string `json:",omitempty"`
 }
 
@@ -2106,16 +2135,18 @@ type RLSEnabledTable struct {
 //	-- Read-only user role
 //	CREATE ROLE readonly_user WITH LOGIN;
 type Role struct {
-	StructName  string // Name of the Go struct this role is associated with
-	Name        string // Role name (e.g., "app_user")
-	Login       bool   // Whether role can login (default: false)
-	Password    string // Encrypted password (optional)
-	Superuser   bool   // Whether role is superuser (default: false)
-	CreateDB    bool   // Whether role can create databases (default: false)
-	CreateRole  bool   // Whether role can create other roles (default: false)
-	Inherit     bool   // Whether role inherits privileges (default: true)
-	Replication bool   // Whether role can initiate replication (default: false)
-	Comment     string // Optional comment for documentation
+	// Facets carries typed settings owned by feature providers.
+	Facets      schemaext.Facets `json:"facets,omitzero"`
+	StructName  string           // Name of the Go struct this role is associated with
+	Name        string           // Role name (e.g., "app_user")
+	Login       bool             // Whether role can login (default: false)
+	Password    string           // Encrypted password (optional)
+	Superuser   bool             // Whether role is superuser (default: false)
+	CreateDB    bool             // Whether role can create databases (default: false)
+	CreateRole  bool             // Whether role can create other roles (default: false)
+	Inherit     bool             // Whether role inherits privileges (default: true)
+	Replication bool             // Whether role can initiate replication (default: false)
+	Comment     string           // Optional comment for documentation
 
 	// Group is YDB's: it declares the role as a group, a principal of its own
 	// kind that never logs in and is the only kind with members, as YDB's
@@ -2134,7 +2165,7 @@ type Role struct {
 	MemberOf []string `json:",omitempty"`
 
 	// Dialects scopes this declaration to the named target dialects. See
-	// [ScopeToDialect].
+	// [ScopeToTarget].
 	Dialects []string `json:",omitempty"`
 }
 
@@ -2186,7 +2217,7 @@ type Grant struct {
 	Columns []string `json:",omitempty"`
 
 	// Dialects scopes this declaration to the named target dialects. See
-	// [ScopeToDialect].
+	// [ScopeToTarget].
 	Dialects []string `json:",omitempty"`
 }
 
@@ -2335,7 +2366,7 @@ type DefaultPrivilege struct {
 	Revoked []string `json:",omitempty"`
 
 	// Dialects scopes this declaration to the named target dialects. See
-	// [ScopeToDialect].
+	// [ScopeToTarget].
 	Dialects []string `json:",omitempty"`
 }
 
@@ -2412,7 +2443,7 @@ func (d *DefaultPrivilege) Canonicalize() {
 //
 // The referenced file is a top-level YAML list of row maps, resolved relative to
 // the directory of the Go source file that carries the annotation. Use
-// LoadManagedRows to read it:
+// [ptah.run/core/manageddata.LoadRows] to read it:
 //
 //   - code: US
 //     name: United States
@@ -2435,7 +2466,7 @@ type ManagedData struct {
 	// Rows carries the declared rows once something has read File, and is the
 	// only form that survives publication: File and SourceDir point into the
 	// working copy of whoever wrote the annotation, and an artifact that
-	// travels carries neither. [LoadManagedRowValues] fills it.
+	// travels carries neither. [ptah.run/core/manageddata.LoadRowValues] fills it.
 	//
 	// A nil slice means the file has not been read, which is why publication
 	// refuses it rather than publishing a table with no rows. An empty non-nil

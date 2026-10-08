@@ -6,6 +6,7 @@
 package goschematodb
 
 import (
+	"context"
 	"maps"
 	"slices"
 	"strconv"
@@ -15,8 +16,10 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/columnsequence"
+	"ptah.run/internal/convert/features"
 	"ptah.run/internal/pgdefaultacl"
 	"ptah.run/internal/pgprivilege"
 	"ptah.run/internal/routineargs"
@@ -37,11 +40,12 @@ import (
 // shape keeps those apart in Method and Type. On a PostgreSQL-family target it
 // also adds the EXECUTE that PUBLIC holds on every declared routine the
 // document does not revoke it from, because a database built from the document
-// would hold it. An empty dialect converts as if no target were known, leaves
-// Method unset and adds no privilege.
-func ToDBSchema(db *schemamodel.Database, dialect string) *catalog.Database {
+// would hold it. The target must be registered in runtime. Named feature
+// objects and facets use its batched conversion service; a failed conversion
+// returns no schema.
+func ToDBSchema(ctx context.Context, db *schemamodel.Database, dialect string, runtime schemaext.ConversionRuntime) (*catalog.Database, error) {
 	if db == nil {
-		return &catalog.Database{}
+		db = &schemamodel.Database{}
 	}
 	// A UNIQUE constraint is a unique index on YDB, so a document converted to
 	// stand for a YDB database holds the index its database would.
@@ -56,6 +60,7 @@ func ToDBSchema(db *schemamodel.Database, dialect string) *catalog.Database {
 	}
 
 	out := &catalog.Database{
+		Facets:              db.Facets,
 		Schemas:             toDBSchemas(db.Schemas),
 		Tables:              toDBTables(db.Tables, db.Fields, db.RLSEnabledTables, dialect),
 		Enums:               toDBEnums(db.Enums),
@@ -103,13 +108,22 @@ func ToDBSchema(db *schemamodel.Database, dialect string) *catalog.Database {
 		NotDescribed: db.NotDescribed,
 	}
 	applyTablePrimaryKeys(out, db.Tables)
-	return out
+	if err := features.RequireFacetPreservation(db.FacetSlots(), out.FacetSlots()); err != nil {
+		return nil, err
+	}
+	objects, coverage, err := features.Convert(ctx, runtime, dialect, schemaext.Desired, schemaext.Observed, db.FeatureObjects, db.FeatureCoverage, out.FacetSlots())
+	if err != nil {
+		return nil, err
+	}
+	out.FeatureObjects, out.FeatureCoverage = objects, coverage
+	return out, nil
 }
 
 func toDBSchemas(schemas []schemamodel.Schema) []catalog.Schema {
 	out := make([]catalog.Schema, 0, len(schemas))
 	for _, schema := range schemas {
 		out = append(out, catalog.Schema{
+			Facets:  schema.Facets,
 			Name:    schema.Name,
 			Comment: schema.Comment,
 			Charset: schema.Charset,
@@ -134,6 +148,7 @@ func toDBTables(
 	for _, table := range tables {
 		enablement, rlsEnabled := tableRLSEnablement(table, rlsEnabledTables)
 		out = append(out, catalog.Table{
+			Facets:       table.Facets,
 			Name:         table.Name,
 			Schema:       table.Schema,
 			Type:         "TABLE",
@@ -154,7 +169,6 @@ func toDBTables(
 			// comparison carries its column families and changefeeds as a
 			// database would.
 			YDBColumnFamilies: ast.CloneYDBColumnFamilies(table.YDBColumnFamilies),
-			Changefeeds:       ast.CloneChangefeeds(table.Changefeeds),
 			// A database built from the document carries the policy it
 			// declares, so a file-to-file comparison of one document against
 			// itself has nothing to plan for it.
@@ -218,6 +232,7 @@ func toDBColumn(field schemamodel.Field, ordinal int) catalog.Column {
 		nullable = "YES"
 	}
 	column := catalog.Column{
+		Facets:     field.Facets,
 		Name:       field.Name,
 		DataType:   field.Type,
 		ColumnType: field.Type,
@@ -278,6 +293,7 @@ func toDBEnums(enums []schemamodel.Enum) []catalog.Enum {
 	out := make([]catalog.Enum, 0, len(enums))
 	for _, enum := range enums {
 		out = append(out, catalog.Enum{
+			Facets:  enum.Facets,
 			Name:    enum.Name,
 			Values:  append([]string(nil), enum.Values...),
 			Comment: enum.Comment,
@@ -303,24 +319,26 @@ func toDBIndexes(
 	for _, index := range indexes {
 		tableName, schema := indexTable(index.StructName, index.TableName, tables)
 		out = append(out, catalog.Index{
-			Name:           index.Name,
-			TableName:      tableName,
-			Schema:         schema,
-			Columns:        append([]string(nil), index.Fields...),
-			Parts:          toDBIndexParts(index.Parts, index.Operator),
-			IsUnique:       index.Unique,
-			Condition:      index.Condition,
-			Comment:        index.Comment,
-			Invisible:      index.Invisible,
-			KeyBlockSize:   index.KeyBlockSize,
-			NullsDistinct:  index.NullsDistinct,
-			Method:         indexAccessMethod(index.Type, dialect),
-			IncludeColumns: append([]string(nil), index.IncludeColumns...),
-			StorageParams:  maps.Clone(index.StorageParams),
-			Partitioning:   index.Partitioning.Clone(),
-			Vector:         index.Vector.Clone(),
-			Type:           index.Type,
-			Granularity:    index.Granularity,
+			Facets:             index.Facets,
+			Name:               index.Name,
+			TableName:          tableName,
+			Schema:             schema,
+			Columns:            append([]string(nil), index.Fields...),
+			Parts:              toDBIndexParts(index.Parts, index.Operator),
+			IsUnique:           index.Unique,
+			Condition:          index.Condition,
+			Comment:            index.Comment,
+			Invisible:          index.Invisible,
+			KeyBlockSize:       index.KeyBlockSize,
+			NullsDistinct:      clonePtr(index.NullsDistinct),
+			Method:             indexAccessMethod(index.Type, dialect),
+			IncludeColumns:     append([]string(nil), index.IncludeColumns...),
+			StorageParams:      maps.Clone(index.StorageParams),
+			Partitioning:       index.Partitioning.Clone(),
+			Vector:             index.Vector.Clone(),
+			Type:               index.Type,
+			Granularity:        index.Granularity,
+			RequiresExtensions: slices.Clone(index.RequiresExtensions),
 		})
 	}
 	return out
@@ -356,6 +374,7 @@ func toDBIndexParts(parts []schemamodel.IndexPart, indexOperator string) []catal
 			Name:       part.Name,
 			Expr:       part.Expr,
 			Operator:   operator,
+			Prefix:     part.Prefix,
 			Desc:       part.Desc,
 			NullsOrder: part.NullsOrder,
 		}
@@ -425,6 +444,7 @@ func toDBConstraints(
 	for _, constraint := range constraints {
 		tableName, schema := indexTable(constraint.StructName, constraint.Table, tables)
 		dbConstraint := catalog.Constraint{
+			Facets:         constraint.Facets,
 			Name:           constraint.Name,
 			TableName:      tableName,
 			Schema:         schema,
@@ -432,20 +452,21 @@ func toDBConstraints(
 			ColumnNames:    append([]string(nil), constraint.Columns...),
 			ColumnName:     first(constraint.Columns),
 			CheckClause:    optionalStringPtr(constraint.CheckExpression),
-			NullsDistinct:  constraint.NullsDistinct,
+			NullsDistinct:  clonePtr(constraint.NullsDistinct),
 			IncludeColumns: append([]string(nil), constraint.IncludeColumns...),
 			UsingMethod:    optionalStringPtr(constraint.UsingMethod),
 			KeyBlockSize:   constraint.KeyBlockSize,
 			ExcludeElements: optionalStringPtr(
 				constraint.ExcludeElements,
 			),
-			WhereCondition: optionalStringPtr(constraint.WhereCondition),
-			NotValid:       constraint.NotValid,
-			Comment:        constraint.Comment,
-			Deferrable:     constraint.Deferrable,
-			Initially:      constraint.Initially,
-			Match:          constraint.Match,
-			NotEnforced:    constraint.NotEnforced,
+			WhereCondition:     optionalStringPtr(constraint.WhereCondition),
+			NotValid:           constraint.NotValid,
+			Comment:            constraint.Comment,
+			Deferrable:         constraint.Deferrable,
+			Initially:          constraint.Initially,
+			Match:              constraint.Match,
+			NotEnforced:        constraint.NotEnforced,
+			RequiresExtensions: slices.Clone(constraint.RequiresExtensions),
 		}
 		if constraint.ForeignTable != "" {
 			foreignTable, foreignSchema := splitTableIdentity(constraint.ForeignTable)
@@ -604,6 +625,7 @@ func toDBSequences(sequences []schemamodel.Sequence) []catalog.Sequence {
 	out := make([]catalog.Sequence, 0, len(sequences))
 	for _, sequence := range sequences {
 		out = append(out, catalog.Sequence{
+			Facets:    sequence.Facets,
 			Name:      sequence.Name,
 			Schema:    sequence.Schema,
 			DataType:  sequence.AsType,
@@ -628,6 +650,7 @@ func toDBDomains(domains []schemamodel.Domain) []catalog.Domain {
 			defaultValue = domain.DefaultExpr
 		}
 		out = append(out, catalog.Domain{
+			Facets:   domain.Facets,
 			Name:     domain.Name,
 			Schema:   domain.Schema,
 			BaseType: domain.BaseType,
@@ -651,6 +674,7 @@ func toDBCompositeTypes(composites []schemamodel.CompositeType) []catalog.Compos
 			})
 		}
 		out = append(out, catalog.CompositeType{
+			Facets:  composite.Facets,
 			Name:    composite.Name,
 			Schema:  composite.Schema,
 			Fields:  fields,
@@ -664,6 +688,7 @@ func toDBRanges(ranges []schemamodel.Range) []catalog.Range {
 	out := make([]catalog.Range, 0, len(ranges))
 	for _, rangeType := range ranges {
 		out = append(out, catalog.Range{
+			Facets:  rangeType.Facets,
 			Name:    rangeType.Name,
 			Schema:  rangeType.Schema,
 			Subtype: rangeType.Subtype,
@@ -679,6 +704,7 @@ func toDBFunctions(functions []schemamodel.Function) []catalog.Function {
 		function.Canonicalize()
 		name, schema := splitTableIdentity(function.Name)
 		out = append(out, catalog.Function{
+			Facets:     function.Facets,
 			Name:       name,
 			Schema:     schema,
 			Parameters: function.Parameters,
@@ -760,6 +786,7 @@ func toDBViews(views []schemamodel.View) []catalog.View {
 			checkOption = "LOCAL"
 		}
 		out = append(out, catalog.View{
+			Facets:      view.Facets,
 			Name:        name,
 			Schema:      schema,
 			Body:        view.Body,
@@ -826,6 +853,7 @@ func toDBMaterializedViews(views []schemamodel.MaterializedView) []catalog.Mater
 	for _, view := range views {
 		name, schema := splitTableIdentity(view.Name)
 		out = append(out, catalog.MaterializedView{
+			Facets:  view.Facets,
 			Name:    name,
 			Schema:  schema,
 			Body:    view.Body,
@@ -841,6 +869,7 @@ func toDBTriggers(triggers []schemamodel.Trigger, tables map[string]schemamodel.
 		trigger.Canonicalize()
 		tableName, schema := indexTable(trigger.StructName, trigger.Table, tables)
 		out = append(out, catalog.Trigger{
+			Facets:  trigger.Facets,
 			Name:    trigger.Name,
 			Schema:  schema,
 			Table:   tableName,
@@ -883,6 +912,7 @@ func toDBRoles(roles []schemamodel.Role) []catalog.Role {
 			passwordState = catalog.RolePasswordPresent
 		}
 		out = append(out, catalog.Role{
+			Facets:        role.Facets,
 			Name:          role.Name,
 			Login:         role.Login,
 			Superuser:     role.Superuser,

@@ -6,7 +6,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasschema"
 )
@@ -39,7 +41,7 @@ table "users" {
 		FromURLs: []string{"file://" + from},
 		ToURLs:   []string{"file://" + to},
 		DevURL:   "postgres://localhost/dev",
-	})
+		Runtime:  must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Changes, qt.HasLen, 1)
@@ -82,7 +84,7 @@ table "audit_logs" {
 		ToURLs:   []string{"file://" + to},
 		DevURL:   "postgres://localhost/dev",
 		Exclude:  []string{"audit_logs"},
-	})
+		Runtime:  must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	sql, err := report.MarshalSQL()
@@ -108,7 +110,7 @@ CREATE TABLE diff_skip (
 		ToURLs:   []string{"file://" + to},
 		DevURL:   "sqlite://dev.db",
 		Exclude:  []string{"diff_skip"},
-	})
+		Runtime:  must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Changes, qt.HasLen, 0)
@@ -131,7 +133,7 @@ func TestDiff_LocalFilesRefusesIncludeThatMatchesNeitherSide(t *testing.T) {
 		ToURLs:   []string{"file://" + to},
 		DevURL:   "sqlite://" + filepath.Join(dir, "dev.db"),
 		Include:  []string{"posts.title"},
-	})
+		Runtime:  must.Must(builtin.New())})
 
 	var emptySelection *atlasfilter.EmptySelectionError
 	c.Assert(err, qt.ErrorAs, &emptySelection)
@@ -141,7 +143,7 @@ func TestDiff_LocalFilesRefusesIncludeThatMatchesNeitherSide(t *testing.T) {
 func TestDiff_LocalFilesRequiresDevURL(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlasschema.Diff(t.Context(), atlasschema.DiffOptions{})
+	_, err := atlasschema.Diff(t.Context(), atlasschema.DiffOptions{Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.ErrorMatches, `--dev-url is required for local schema file diffing`)
 }

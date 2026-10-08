@@ -9,7 +9,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/dbtest"
 )
@@ -79,6 +81,7 @@ test "migrate" "skipped" {
 	c.Assert(cases, qt.HasLen, 3)
 
 	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+		Runtime:     must.Must(builtin.New()),
 		DBURL:       serverURL,
 		Parallelism: 2,
 		Cases:       cases,

@@ -8,14 +8,15 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/sijms/go-ora/v3" // registers the Oracle driver for database/sql
 
 	"ptah.run/config"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
 )
@@ -60,7 +61,7 @@ func TestOracleVectorDeclarationConvergesLive(t *testing.T) {
 		oracleTableByName(c, read.Tables, "ORA_VECTORS").Columns, "EMBEDDING")
 	c.Assert(embedding.DataType, qt.Equals, "VECTOR(512,INT8,DENSE)")
 
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, read, config.DefaultCompareOptions())
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, read, config.DefaultCompareOptions(), must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	c.Assert(oracleDiffSummary(diff), qt.DeepEquals, []string(nil))
 }
@@ -140,7 +141,7 @@ func TestOracleVectorParameterChangeIsReportedLive(t *testing.T) {
 
 			// The one edit, on the declaration only.
 			desired := oracleVectorDeclaration(tt.desired)
-			diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, read, config.DefaultCompareOptions())
+			diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, read, config.DefaultCompareOptions(), must.Must(builtin.New()))
 			c.Assert(err, qt.IsNil)
 			c.Assert(oracleDiffSummary(diff), qt.DeepEquals, []string{tt.want})
 		})
@@ -179,7 +180,7 @@ func applyOracleVectorDeclaration(
 ) {
 	c.Helper()
 
-	statements, err := renderer.RenderSQLWithCapabilities(
+	statements, err := builtin.RenderSQLWithCapabilities(
 		platform.Oracle,
 		capability.ForServerVersion(platform.Oracle, conn.Info().Version),
 		oracleConvergenceNodes(declared)...,

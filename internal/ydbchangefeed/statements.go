@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbttl"
@@ -31,7 +32,7 @@ func TablePath(table string) string {
 // The WITH clause names MODE and FORMAT, which YDB requires, and each other
 // option only where spec declares it. An interval is written as
 // [ydbttl.FormatInterval] writes the seconds it denotes, a spelling YDB takes.
-func AddStatements(table string, spec ast.ChangefeedSpec) []string {
+func AddStatements(table string, spec ydbschema.ChangefeedSpec) []string {
 	options := []string{
 		"MODE = " + quoteString(strings.ToUpper(spec.Mode)),
 		"FORMAT = " + quoteString(strings.ToUpper(spec.Format)),
@@ -90,7 +91,7 @@ func DropStatement(table, name string) string {
 // is refused on 25.1.4.7. A consumer change names the consumer's important
 // and read_from settings whether or not they differ, so its outcome does not
 // depend on what the consumer held.
-func TopicStatements(table string, desired, previous ast.ChangefeedSpec) (statements, restarted []string) {
+func TopicStatements(table string, desired, previous ydbschema.ChangefeedSpec) (statements, restarted []string) {
 	topic := TopicPath(table, desired.Name)
 	if retentionSeconds(desired) != retentionSeconds(previous) {
 		statements = append(statements, fmt.Sprintf("ALTER TOPIC %s SET (retention_period = %s);",
@@ -108,7 +109,7 @@ func TopicStatements(table string, desired, previous ast.ChangefeedSpec) (statem
 		case !found:
 			added = append(added, want)
 		case consumerEqual(want, have):
-		case len(want.SupportedCodecs) == 0 && len(have.SupportedCodecs) > 0:
+		case consumerRecreated(want, have):
 			statements = append(statements, dropConsumer(topic, want.Name))
 			added = append(added, want)
 			restarted = append(restarted, want.Name)

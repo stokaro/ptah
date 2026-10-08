@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
-	"ptah.run/internal/objectidentity"
+	"ptah.run/core/objectidentity"
 )
 
 // projectDatabase applies the schema universe and include selectors to the
@@ -23,6 +23,9 @@ func (s *scopeSelection) projectDatabase(db *catalog.Database) *catalog.Database
 		}
 		keptTables[s.tableIdentity(table.Schema, table.Name)] = struct{}{}
 		return true
+	})
+	out.FeatureObjects, out.FeatureCoverage = selectTableFeatures(db.FeatureObjects, db.FeatureCoverage, func(schema, table string) bool {
+		return s.tableKept(keptTables, schema, table)
 	})
 
 	out.Indexes = keep(db.Indexes, func(index catalog.Index) bool {

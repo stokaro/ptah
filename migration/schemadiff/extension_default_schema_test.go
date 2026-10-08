@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -17,7 +19,7 @@ func TestCompare_ImplicitExtensionSchemaMatchesPostgreSQLDefault(t *testing.T) {
 		Extensions: []catalog.Extension{{Name: "pgcrypto", Schema: "public"}},
 	}
 
-	diff := schemadiff.Compare(desired, database)
+	diff := must.Must(schemadiff.Compare(t.Context(), desired, database, must.Must(builtin.New())))
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))
 }
@@ -29,7 +31,7 @@ func TestCompareWithOptions_ImplicitExtensionSchemaMatchesPostgreSQLDefault(t *t
 		Extensions: []catalog.Extension{{Name: "pgcrypto", Schema: "public"}},
 	}
 
-	diff := schemadiff.CompareWithOptions(desired, database, nil)
+	diff := must.Must(schemadiff.CompareWithOptions(t.Context(), desired, database, nil, must.Must(builtin.New())))
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))
 }

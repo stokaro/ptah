@@ -1,17 +1,20 @@
 package ydb_test
 
 import (
+	"context"
 	"regexp"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
+	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -19,9 +22,12 @@ import (
 // renderRebuild plans diff with rebuilds allowed and renders it.
 func renderRebuild(c *qt.C, caps capability.Capabilities, diff *difftypes.SchemaDiff) string {
 	c.Helper()
-	nodes, err := ydb.NewWithCapabilities(caps).WithTableRebuild(true).GenerateMigrationAST(diff)
+	nodes, err := ydb.NewWithCapabilities(caps).WithTableRebuild(true).GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQLWithCapabilities("ydb", caps, nodes...)
+	sql, err := builtin.RenderSQLWithCapabilities("ydb", caps, nodes...)
 	c.Assert(err, qt.IsNil)
 	return sql
 }
@@ -54,8 +60,8 @@ func heldIndexDefaults(table, index string) string {
 }
 
 // appItems is the desired table app/items: a key, a column and an index.
-func appItems(fields ...schemamodel.Field) difftypes.TableDeclaration {
-	return difftypes.TableDeclaration{
+func appItems(fields ...schemamodel.Field) schemacapture.TableDeclaration {
+	return schemacapture.TableDeclaration{
 		Table:   schemamodel.Table{StructName: "S", Name: "items", Schema: "app"},
 		Fields:  append([]schemamodel.Field{keyField("id")}, fields...),
 		Indexes: []schemamodel.Index{{StructName: "S", Name: "items_label", Fields: []string{"label"}}},
@@ -78,7 +84,7 @@ func TestGenerateMigrationAST_TableRebuild_HappyPath(t *testing.T) {
 	}{
 		{
 			name: "a type change of a nullable column",
-			diff: modified(difftypes.TableDiff{
+			diff: modified(t, difftypes.TableDiff{
 				TableName: "app.items", Desired: appItems(label, field("n", "BIGINT", true)),
 				ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}},
 			}),
@@ -90,7 +96,7 @@ func TestGenerateMigrationAST_TableRebuild_HappyPath(t *testing.T) {
 		},
 		{
 			name: "a type change of a NOT NULL column",
-			diff: modified(difftypes.TableDiff{
+			diff: modified(t, difftypes.TableDiff{
 				TableName: "app.items", Desired: appItems(label, field("n", "BIGINT", false)),
 				ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}},
 			}),
@@ -102,7 +108,7 @@ func TestGenerateMigrationAST_TableRebuild_HappyPath(t *testing.T) {
 		},
 		{
 			name: "a column made NOT NULL, beside a column added with a default",
-			diff: modified(difftypes.TableDiff{
+			diff: modified(t, difftypes.TableDiff{
 				TableName: "app.items",
 				Desired: appItems(field("label", "TEXT", false),
 					schemamodel.Field{StructName: "S", Name: "qty", Type: "INTEGER", Default: "1", DefaultSet: true}),
@@ -147,7 +153,7 @@ func TestGenerateMigrationAST_TableRebuild_CarriesComments(t *testing.T) {
 	desired := appItems(label, field("n", "BIGINT", true))
 	desired.Table.Comment = "Items"
 	desired.Indexes[0].Comment = "By name"
-	diff := modified(difftypes.TableDiff{
+	diff := modified(t, difftypes.TableDiff{
 		TableName: "app.items", Desired: desired,
 		CommentChange:   &difftypes.CommentChange{Current: "old", Desired: "Items"},
 		ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}},
@@ -171,7 +177,7 @@ func TestGenerateMigrationAST_TableRebuild_CarriesComments(t *testing.T) {
 // in the new table, and the key change itself plans no statement.
 func TestGenerateMigrationAST_TableRebuild_KeyChange(t *testing.T) {
 	c := qt.New(t)
-	declaration := difftypes.TableDeclaration{
+	declaration := schemacapture.TableDeclaration{
 		Table: schemamodel.Table{StructName: "S", Name: "items", Schema: "app", PrimaryKey: []string{"id", "k"}},
 		Fields: []schemamodel.Field{
 			{StructName: "S", Name: "id", Type: "BIGINT"},
@@ -181,7 +187,8 @@ func TestGenerateMigrationAST_TableRebuild_KeyChange(t *testing.T) {
 	diff := &difftypes.SchemaDiff{
 		ConstraintsAdded:        difftypes.ConstraintAdditions{{Name: "items_pkey", TableName: "app.items", Type: "PRIMARY KEY"}},
 		ConstraintsRemoved:      difftypes.ConstraintRemovals{{Name: "items_pkey", TableName: "app.items", Type: "PRIMARY KEY"}},
-		DeclaredConstraintHosts: []difftypes.TableDeclaration{declaration},
+		DeclaredConstraintHosts: []schemacapture.TableDeclaration{declaredFeeds(t, declaration)},
+		ObservedConstraintHosts: []schemacapture.TableObservation{observedFeeds(t, "app", "items")},
 	}
 
 	got := renderRebuild(c, capability.YDB251(), diff)
@@ -205,12 +212,12 @@ func TestGenerateMigrationAST_TableRebuild_KeyChange(t *testing.T) {
 // the next free one.
 func TestGenerateMigrationAST_TableRebuild_PicksAFreeScratchName(t *testing.T) {
 	c := qt.New(t)
-	diff := modified(difftypes.TableDiff{
+	diff := modified(t, difftypes.TableDiff{
 		TableName: "app.items", Desired: appItems(field("label", "TEXT", true), field("n", "BIGINT", true)),
 		ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}},
 	})
 	diff.DeclaredTables = []schemamodel.Table{{Name: "__ptah_rebuild_items", Schema: "app"}}
-	diff.TablesRemoved = []string{"app.__ptah_replaced_items"}
+	diff.TablesRemoved = difftypes.TableRemovals{{Name: "app.__ptah_replaced_items", Current: observedFeeds(t, "app", "__ptah_replaced_items")}}
 
 	got := renderRebuild(c, capability.YDB262(), diff)
 
@@ -229,14 +236,14 @@ func TestGenerateMigrationAST_TableRebuild_NotAskedFor(t *testing.T) {
 		wantErr string
 	}{
 		{name: "a type change",
-			diff: modified(difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(),
+			diff: modified(t, difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(),
 				ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}}}),
 			wantKey: capability.AlterColumnType,
 			wantErr: `changing the type of column "n" of table "items" \(Int32 -> Int64\), which requires target capability ` +
 				`alter_column_type, unavailable on this ydb target; YDB makes it by rebuilding the table, which Ptah ` +
 				`plans when asked with --allow-table-rebuild`},
 		{name: "a column made NOT NULL",
-			diff: modified(difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(),
+			diff: modified(t, difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(),
 				ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"nullable": "true -> false"}}}}),
 			wantKey: capability.AlterColumnSetNotNull,
 			wantErr: `making column "n" of table "items" NOT NULL, which requires target capability alter_column_set_not_null, ` +
@@ -249,7 +256,7 @@ func TestGenerateMigrationAST_TableRebuild_NotAskedFor(t *testing.T) {
 				`unavailable on this ydb target; YDB makes it by rebuilding the table, which Ptah plans when asked with ` +
 				`--allow-table-rebuild`},
 		{name: "a column added to the key",
-			diff: modified(difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(keyField("k")),
+			diff: modified(t, difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(keyField("k")),
 				ColumnsAdded: difftypes.ColumnChanges{keyField("k")}}),
 			wantKey: capability.PrimaryKeyAlterable,
 			wantErr: `adding column "k" to table "items" as part of the key, which requires target capability ` +
@@ -260,12 +267,15 @@ func TestGenerateMigrationAST_TableRebuild_NotAskedFor(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := ydb.NewWithCapabilities(capability.YDB262()).GenerateMigrationAST(test.diff)
+			nodes, err := ydb.NewWithCapabilities(capability.YDB262()).GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				test.diff,
+			)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			refusal, ok := err.(*ptaherr.CapabilityError)
-			c.Assert(ok, qt.IsTrue)
+			var refusal *ptaherr.CapabilityError
+			c.Assert(err, qt.ErrorAs, &refusal)
 			c.Assert(refusal.Feature, qt.Equals, string(test.wantKey))
 			c.Assert(nodes, qt.IsNil)
 		})
@@ -285,14 +295,17 @@ func TestGenerateMigrationAST_TableRebuild_NamesTheCallersRequest(t *testing.T) 
 		{name: "the native flag", request: "", want: "--allow-table-rebuild"},
 		{name: "a variable", request: "PTAH_ALLOW_TABLE_REBUILD=1", want: "PTAH_ALLOW_TABLE_REBUILD=1"},
 	}
-	diff := modified(difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(),
+	diff := modified(t, difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(),
 		ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}}})
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
 			nodes, err := ydb.NewWithCapabilities(capability.YDB262()).WithTableRebuildRequest(test.request).
-				GenerateMigrationAST(diff)
+				GenerateMigrationAST(
+					context.Background(), must.Must(builtin.New()),
+					diff,
+				)
 
 			c.Assert(err, qt.ErrorMatches, `changing the type of column "n" of table "items" \(Int32 -> Int64\), .*`+
 				`; YDB makes it by rebuilding the table, which Ptah plans when asked with `+regexp.QuoteMeta(test.want))
@@ -315,8 +328,8 @@ func TestGenerateMigrationAST_TableRebuild_FailurePath(t *testing.T) {
 		{
 			name: "a Serial column",
 			caps: capability.YDB262(),
-			diff: modified(difftypes.TableDiff{TableName: "app.items",
-				Desired: difftypes.TableDeclaration{
+			diff: modified(t, difftypes.TableDiff{TableName: "app.items",
+				Desired: schemacapture.TableDeclaration{
 					Table:  schemamodel.Table{StructName: "S", Name: "items", Schema: "app"},
 					Fields: []schemamodel.Field{serialKey, field("n", "BIGINT", true)},
 				},
@@ -325,21 +338,20 @@ func TestGenerateMigrationAST_TableRebuild_FailurePath(t *testing.T) {
 				`sequence would start at 1 while the copied rows keep theirs, so the next insert would collide .*`,
 		},
 		{
-			name: "a TTL run interval and a changefeed the read did not describe",
+			name: "a TTL run interval the read did not describe",
 			caps: capability.YDB262(),
-			diff: notDescribing(modified(difftypes.TableDiff{TableName: "app.items",
+			diff: notDescribing(modified(t, difftypes.TableDiff{TableName: "app.items",
 				Desired: appItems(field("label", "TEXT", true), field("n", "BIGINT", true)), ColumnsModified: typeChange}),
 				coverage.Object{Kind: coverage.TTL, Name: "app.items"},
-				coverage.Object{Kind: coverage.Changefeed, Name: "app.items/updates"},
 				coverage.Object{Kind: coverage.TTL, Name: "app.other"}),
 			wantErr: `rebuilding table "app.items": the table carries a TTL run interval or tiering policy, ` +
-				`changefeeds with settings Ptah does not read, which Ptah does not model and ` +
+				`which Ptah does not model and ` +
 				`so cannot write on the new table: recreating it would drop them\. .*`,
 		},
 		{
 			name: "column families and storage settings the read did not describe",
 			caps: capability.YDB262(),
-			diff: notDescribing(modified(difftypes.TableDiff{TableName: "app.items",
+			diff: notDescribing(modified(t, difftypes.TableDiff{TableName: "app.items",
 				Desired: appItems(field("label", "TEXT", true), field("n", "BIGINT", true)), ColumnsModified: typeChange}),
 				coverage.Object{Kind: coverage.ColumnFamily, Name: "app.items"},
 				coverage.Object{Kind: coverage.TableOption}),
@@ -349,7 +361,7 @@ func TestGenerateMigrationAST_TableRebuild_FailurePath(t *testing.T) {
 		{
 			name: "a target that cannot rename a table",
 			caps: capability.YDB262().With(capability.RenameTable, false),
-			diff: modified(difftypes.TableDiff{TableName: "app.items",
+			diff: modified(t, difftypes.TableDiff{TableName: "app.items",
 				Desired: appItems(field("label", "TEXT", true), field("n", "BIGINT", true)), ColumnsModified: typeChange}),
 			wantErr: `rebuilding table "app.items", which swaps the new table into place by renaming it, which requires ` +
 				`target capability rename_table, .*`,
@@ -357,7 +369,7 @@ func TestGenerateMigrationAST_TableRebuild_FailurePath(t *testing.T) {
 		{
 			name: "a NOT NULL column added without a default",
 			caps: capability.YDB262(),
-			diff: modified(difftypes.TableDiff{TableName: "app.items",
+			diff: modified(t, difftypes.TableDiff{TableName: "app.items",
 				Desired:      appItems(field("label", "TEXT", true), field("n", "BIGINT", true), field("m", "TEXT", false)),
 				ColumnsAdded: difftypes.ColumnChanges{field("m", "TEXT", false)}, ColumnsModified: typeChange}),
 			wantErr: `adding column "m" to table "app.items" in a rebuild: the copy has no value for a NOT NULL column ` +
@@ -375,7 +387,10 @@ func TestGenerateMigrationAST_TableRebuild_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := ydb.NewWithCapabilities(test.caps).WithTableRebuild(true).GenerateMigrationAST(test.diff)
+			nodes, err := ydb.NewWithCapabilities(test.caps).WithTableRebuild(true).GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				test.diff,
+			)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
@@ -395,7 +410,7 @@ func notDescribing(diff *difftypes.SchemaDiff, objects ...coverage.Object) *diff
 // allowed: the plan stays the in-place statement.
 func TestGenerateMigrationAST_TableRebuild_OnlyWhatNeedsIt(t *testing.T) {
 	c := qt.New(t)
-	diff := modified(difftypes.TableDiff{
+	diff := modified(t, difftypes.TableDiff{
 		TableName: "items", Desired: itemsDeclaration(field("label", "TEXT", true)),
 		ColumnsModified: []difftypes.ColumnDiff{{
 			ColumnName: "label", Changes: map[string]string{"nullable": "false -> true"}, Desired: field("label", "TEXT", true),
@@ -412,7 +427,7 @@ func TestGenerateMigrationAST_TableRebuild_UnwrapsAKeyDeclaredNullable(t *testin
 	c := qt.New(t)
 	declaration := appItems(field("label", "TEXT", true), field("n", "BIGINT", true))
 	declaration.Fields[0].Nullable = true
-	diff := modified(difftypes.TableDiff{
+	diff := modified(t, difftypes.TableDiff{
 		TableName: "app.items", Desired: declaration,
 		ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}},
 	})
@@ -426,7 +441,7 @@ func TestGenerateMigrationAST_TableRebuild_UnwrapsAKeyDeclaredNullable(t *testin
 // added on its own, where the old table is gone or the index exists already.
 func TestGenerateMigrationAST_TableRebuild_CarriesTheIndexChanges(t *testing.T) {
 	c := qt.New(t)
-	diff := modified(difftypes.TableDiff{
+	diff := modified(t, difftypes.TableDiff{
 		TableName: "app.items", Desired: appItems(field("label", "TEXT", true), field("n", "BIGINT", true)),
 		ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}},
 	})

@@ -24,9 +24,12 @@
 //
 // # Core Functionality
 //
-// Every comparison has the same shape -- a desired schema and a current schema
-// in, a *difftypes.SchemaDiff out. The entry points differ in what the caller
-// can supply and in what they report back:
+// Every comparison takes a context, desired and current state, and an explicit
+// runtime. Pure comparisons accept schemaext.ComparisonRuntime. Offline target
+// comparisons require TargetRuntime, including selected schema validation. Live
+// comparisons require DatabaseRuntime, adding selected rendering for probes.
+// Each returns a *difftypes.SchemaDiff and an error.
+// The entry points differ in their target inputs and coverage reporting:
 //
 //   - Compare: the desired schema against a database schema, under
 //     config.DefaultCompareOptions
@@ -128,14 +131,18 @@
 //
 // # Error Handling
 //
-// The pure entry points -- Compare, CompareWithDialect, CompareWithOptions,
-// CompareSchemas, and CompareReportingUndecidedAdditions -- never return an
-// error. CompareWithDatabaseInfo and the CompareWithDatabase variants can
-// refuse a comparison: they validate the identifier-semantics snapshot (an
-// invalid one is reported with an error satisfying
-// errors.Is(err, ptaherr.ErrInvalidSchemaDiff)) and check the declaration
-// against the target before comparing, returning an error rather than a diff
-// that plans a statement the server would refuse.
+// Every entry point can refuse invalid inputs or a failed provider operation.
+// Cancellation and provider errors return no partial result. Invalid explicit
+// identifier snapshots are refused with ptaherr.ErrInvalidSchemaDiff.
+//
+// Non-reporting entry points return ErrIncompleteComparison and no diff when
+// evidence leaves a requested state unresolved. Reporting variants return
+// established changes and Diagnostics, whose common-object and feature limits
+// must accompany any partial report. An empty diff with non-empty diagnostics
+// does not establish agreement.
+//
+// CompareWithDatabaseInfo and CompareWithDatabase also validate declarations
+// against target facts before comparing.
 //
 // # Thread Safety
 //

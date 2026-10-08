@@ -6,8 +6,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ptaherr"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 )
 
@@ -36,7 +38,7 @@ func TestDiffRefusesTheRetiredRefreshStrategyBeforeComparing(t *testing.T) {
 				FromURLs: []string{"file://" + from},
 				ToURLs:   []string{"file://" + to},
 				DevURL:   "postgres://localhost/dev",
-			})
+				Runtime:  must.Must(builtin.New())})
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrRetiredAttribute)
 			c.Assert(err, qt.ErrorMatches, `.*materialized view "user_counts" declares refresh_strategy.*`)
@@ -65,7 +67,7 @@ func TestDiffRefusesTheRetiredRefreshStrategyDespiteExclusion(t *testing.T) {
 		ToURLs:   []string{"file://" + to},
 		DevURL:   "postgres://localhost/dev",
 		Exclude:  []string{"legacy_stats"},
-	})
+		Runtime:  must.Must(builtin.New())})
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrRetiredAttribute)
 	c.Assert(report.Changes, qt.HasLen, 0)

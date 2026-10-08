@@ -16,10 +16,12 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/integrationfixture"
 	"ptah.run/internal/sqlscript"
 	"ptah.run/internal/testsummary"
+	"ptah.run/migration/generator"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/planner"
@@ -465,6 +467,7 @@ func cleanPostgresFixtureFunctions(ctx context.Context, conn *dbschema.DatabaseC
 
 // VersionedEntityManager manages versioned entity fixtures for tests
 type VersionedEntityManager struct {
+	runtime     generator.Runtime
 	fixturesFS  fs.FS
 	tempDir     string
 	entitiesDir string
@@ -473,6 +476,10 @@ type VersionedEntityManager struct {
 
 // NewVersionedEntityManager creates a new versioned entity manager
 func NewVersionedEntityManager(fixturesFS fs.FS) (*VersionedEntityManager, error) {
+	runtime, err := builtin.New()
+	if err != nil {
+		return nil, err
+	}
 	tempDir, err := os.MkdirTemp("", "ptah_integration_test_*")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temp directory: %w", err)
@@ -484,6 +491,7 @@ func NewVersionedEntityManager(fixturesFS fs.FS) (*VersionedEntityManager, error
 	}
 
 	return &VersionedEntityManager{
+		runtime:     runtime,
 		fixturesFS:  fixturesFS,
 		tempDir:     tempDir,
 		entitiesDir: entitiesDir,
@@ -577,23 +585,29 @@ func (vem *VersionedEntityManager) GenerateMigrationSQL(ctx context.Context, con
 		return nil, false, fmt.Errorf("failed to read database schema: %w", err)
 	}
 
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, dbSchema, nil)
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, dbSchema, nil, vem.runtime)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to compare schemas: %w", err)
 	}
 
 	// Generate migration SQL
 	info := conn.Info()
-	nodes, err := planner.GenerateSchemaDiffASTWithOptions(diff, info.Dialect, planner.Options{
-		Capabilities: info.Capabilities,
-	})
+	nodes, err := planner.GenerateSchemaDiffASTWithOptions(
+		ctx, vem.runtime,
+		diff, info.Dialect, planner.Options{
+			Capabilities: info.Capabilities,
+		},
+	)
 
 	if err != nil {
 		return nil, false, fmt.Errorf("error generating migration plan: %w", err)
 	}
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, info.Dialect, planner.Options{
-		Capabilities: info.Capabilities,
-	})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		ctx, vem.runtime,
+		diff, info.Dialect, planner.Options{
+			Capabilities: info.Capabilities,
+		},
+	)
 
 	if err != nil {
 		return nil, false, fmt.Errorf("error generating migration SQL: %w", err)

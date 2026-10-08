@@ -6,13 +6,16 @@ package generator
 // the SQL-only generation stage below them.
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -29,7 +32,10 @@ func TestGenerateUpMigrationSQL_EndsANoteWithoutASemicolon(t *testing.T) {
 		}},
 	}
 
-	sql, err := generateUpMigrationSQL(diff, &schemamodel.Database{}, platform.Postgres)
+	sql, err := generateUpMigrationSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, &schemamodel.Database{}, platform.Postgres,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "DROP POLICY IF EXISTS \"tenant_only\" ON \"site_media_settings\";\n")

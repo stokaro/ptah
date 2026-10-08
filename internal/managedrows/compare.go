@@ -70,7 +70,7 @@ type Request struct {
 	// Rows are the declared rows, already resolved to the Go values the
 	// comparison works in. The caller resolves them, because the file a caller
 	// may read is bounded differently on each path, and every caller resolves
-	// through [schemamodel.ResolveManagedRows] so the values are not.
+	// through [ptah.run/core/manageddata.ResolveRows] so the values are not.
 	Rows []map[string]any
 	// Live is the introspected catalog the table and column decisions are made
 	// against. A nil catalog decides nothing, and the read goes out as the

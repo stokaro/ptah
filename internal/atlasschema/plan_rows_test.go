@@ -6,8 +6,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	digest "github.com/opencontainers/go-digest"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 )
 
@@ -26,18 +28,18 @@ func TestVerifyPlanTargetRefusesAPlanWhoseDeclaredRowsMoved(t *testing.T) {
 
 	plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{
 		Desired: regionsSchema(regionRow("NO", "Norway", 1)),
-	})
+		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.ManagedRows, qt.DeepEquals, []atlasschema.PlanRowSet{{
 		Table: "regions", Keys: []string{"code"}, Columns: []string{"code", "name", "rank"},
 	}})
 	c.Assert(plan.RowsFingerprint, qt.Matches, `sha256:[0-9a-f]{64}`)
-	c.Assert(atlasschema.VerifyPlanTarget(ctx, conn, plan), qt.IsNil)
+	c.Assert(atlasschema.VerifyPlanTarget(ctx, conn, plan, must.Must(builtin.New())), qt.IsNil)
 
 	_, err = conn.ExecContext(ctx, `UPDATE regions SET name = 'Edited twice' WHERE code = 'NO'`)
 	c.Assert(err, qt.IsNil)
 
-	err = atlasschema.VerifyPlanTarget(ctx, conn, plan)
+	err = atlasschema.VerifyPlanTarget(ctx, conn, plan, must.Must(builtin.New()))
 	c.Assert(err, qt.ErrorMatches,
 		`pre-planned migration is stale: the declared rows it reads no longer hold what the plan was computed against .*`)
 	var stale *atlasschema.StalePlanError
@@ -50,7 +52,7 @@ func TestVerifyPlanTargetRefusesAPlanWhoseDeclaredRowsMoved(t *testing.T) {
 	// plan: a consumer that binds an approval to the plan sees a new one.
 	replanned, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{
 		Desired: regionsSchema(regionRow("NO", "Norway", 1)),
-	})
+		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(planSQL(replanned), qt.Equals, planSQL(plan))
 	c.Assert(replanned.RowsFingerprint, qt.Not(qt.Equals), plan.RowsFingerprint)
@@ -69,13 +71,13 @@ func TestVerifyPlanTargetIgnoresAColumnTheDeclarationDoesNotManage(t *testing.T)
 	c.Assert(err, qt.IsNil)
 	plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{
 		Desired: regionsSchema(regionRow("NO", "Norway", 1)),
-	})
+		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 
 	_, err = conn.ExecContext(ctx, `UPDATE regions SET note = 'written by an application' WHERE code = 'NO'`)
 	c.Assert(err, qt.IsNil)
 
-	c.Assert(atlasschema.VerifyPlanTarget(ctx, conn, plan), qt.IsNil)
+	c.Assert(atlasschema.VerifyPlanTarget(ctx, conn, plan, must.Must(builtin.New())), qt.IsNil)
 }
 
 // A table the plan creates holds nothing to read, so nothing is recorded for it:
@@ -86,7 +88,7 @@ func TestPreparePlanFileRecordsNoRowsForATableItCreates(t *testing.T) {
 
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
 		Desired: regionsSchema(regionRow("NO", "Norway", 1)),
-	})
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.ManagedRows, qt.IsNil)
@@ -102,8 +104,8 @@ func TestPreparePlanFileWithoutDeclaredRowsKeepsItsName(t *testing.T) {
 	desired := writePlanDesiredSchema(c, dir, "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
 
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
-		ToURLs: []string{desired},
-	})
+		ToURLs:  []string{desired},
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.ManagedRows, qt.IsNil)

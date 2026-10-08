@@ -1140,7 +1140,7 @@ after:   CREATE INDEX IF NOT EXISTS "i" ON "public"."t" ("name");
 ```
 
 So that row needed a new statement in
-`core/renderer/internal/dialects/postgres` as well as a new projection in the
+`engine/builtin/internal/dialects/postgres` as well as a new projection in the
 reader, and the loss was never confined to the read path.
 
 | Attribute | Read from | Before | Tracked in |
@@ -1975,7 +1975,7 @@ Server read the flag — so a first version of this change made any modification
 of a single-column key column plan `ALTER COLUMN "id" DROP NOT NULL`, which
 PostgreSQL refuses outright with `column "id" is in a primary key`
 (SQLSTATE 42P16). Both renderers take the primary-key branch now, and every
-dialect in `renderer.SupportedDialects()` is pinned in both directions by
+dialect in `builtin.SupportedDialects()` is pinned in both directions by
 `TestModifyColumn_KeyColumnNeverRendersNullable` and
 `TestModifyColumn_OrdinaryColumnStillRendersNullable`.
 

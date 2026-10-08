@@ -6,8 +6,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/sqliteforeignkeys"
 )
@@ -30,7 +32,7 @@ func TestPlanApply_DeclaredRowsStayInsideASQLiteRebuildBracket(t *testing.T) {
 
 	plan, err := atlasschema.PlanApply(context.Background(), conn, atlasschema.ApplyOptions{
 		Desired: rebuildBracketSchema("TEXT", "AT", "CZ"),
-	})
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	statements := plan.Statements()
@@ -49,7 +51,7 @@ func TestPreparePlanFile_DeclaredRowsStayInsideASQLiteRebuildBracket(t *testing.
 
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
 		Desired: rebuildBracketSchema("TEXT", "AT", "CZ"),
-	})
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	statements := make([]string, 0, len(plan.Statements))
@@ -69,7 +71,7 @@ func TestPlanApply_DeclaredRowsWithoutARebuildFollowTheSchema(t *testing.T) {
 
 	plan, err := atlasschema.PlanApply(context.Background(), conn, atlasschema.ApplyOptions{
 		Desired: rebuildBracketSchema("INTEGER", "CZ"),
-	})
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	statements := plan.Statements()

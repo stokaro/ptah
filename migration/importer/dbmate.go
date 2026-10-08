@@ -1,6 +1,7 @@
 package importer
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"regexp"
@@ -44,7 +45,11 @@ func (dbmateParser) Detect(fsys fs.FS) bool {
 	return false
 }
 
-func (p dbmateParser) Parse(fsys fs.FS) (*ParseResult, error) {
+func (p dbmateParser) Parse(ctx context.Context, fsys fs.FS) (*ParseResult, error) {
+	return parseWithContext(ctx, func() (*ParseResult, error) { return p.parse(fsys) })
+}
+
+func (p dbmateParser) parse(fsys fs.FS) (*ParseResult, error) {
 	result := &ParseResult{}
 	entries, err := topLevelOnly(fsys, p.Name(), result)
 	if err != nil {

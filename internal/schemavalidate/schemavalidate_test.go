@@ -4,8 +4,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/schemavalidate"
 )
 
@@ -37,11 +39,11 @@ func messages(problems []schemavalidate.Problem) []string {
 func TestCollect_IndexNamingAnUndeclaredColumnIsAProblem(t *testing.T) {
 	c := qt.New(t)
 
-	problems := schemavalidate.Collect(ordersSchema(schemamodel.Index{
+	problems := must.Must(schemavalidate.Collect(c.Context(), must.Must(builtin.New()), ordersSchema(schemamodel.Index{
 		StructName: "Order",
 		Name:       "idx_missing",
 		Fields:     []string{"nosuchcolumn"},
-	}), "postgres")
+	}), "postgres"))
 
 	c.Assert(problems, qt.HasLen, 1)
 	c.Assert(problems[0].Kind, qt.Equals, "index")
@@ -55,11 +57,11 @@ func TestCollect_IndexNamingAnUndeclaredColumnIsAProblem(t *testing.T) {
 func TestCollect_IndexPartSpellingIsCheckedToo(t *testing.T) {
 	c := qt.New(t)
 
-	problems := schemavalidate.Collect(ordersSchema(schemamodel.Index{
+	problems := must.Must(schemavalidate.Collect(c.Context(), must.Must(builtin.New()), ordersSchema(schemamodel.Index{
 		StructName: "Order",
 		Name:       "idx_parts",
 		Parts:      []schemamodel.IndexPart{{Name: "total"}, {Name: "nosuchcolumn"}},
-	}), "postgres")
+	}), "postgres"))
 
 	c.Assert(problems, qt.HasLen, 1)
 	c.Assert(problems[0].Message, qt.Contains, `names column "nosuchcolumn"`)
@@ -76,16 +78,16 @@ func TestCollect_IndexPartSpellingIsCheckedToo(t *testing.T) {
 func TestCollect_ExpressionPartsNameNoColumn(t *testing.T) {
 	c := qt.New(t)
 
-	exprOnly := schemavalidate.Collect(ordersSchema(schemamodel.Index{
+	exprOnly := must.Must(schemavalidate.Collect(c.Context(), must.Must(builtin.New()), ordersSchema(schemamodel.Index{
 		StructName: "Order",
 		Name:       "idx_expr",
 		Parts:      []schemamodel.IndexPart{{Expr: "lower(total)"}},
-	}), "postgres")
-	exprAndName := schemavalidate.Collect(ordersSchema(schemamodel.Index{
+	}), "postgres"))
+	exprAndName := must.Must(schemavalidate.Collect(c.Context(), must.Must(builtin.New()), ordersSchema(schemamodel.Index{
 		StructName: "Order",
 		Name:       "idx_expr_named",
 		Parts:      []schemamodel.IndexPart{{Name: "nosuchcolumn", Expr: "lower(total)"}},
-	}), "postgres")
+	}), "postgres"))
 
 	c.Assert(exprOnly, qt.HasLen, 0)
 	c.Assert(exprAndName, qt.HasLen, 0)
@@ -94,12 +96,12 @@ func TestCollect_ExpressionPartsNameNoColumn(t *testing.T) {
 func TestCollect_IncludeColumnsAreChecked(t *testing.T) {
 	c := qt.New(t)
 
-	problems := schemavalidate.Collect(ordersSchema(schemamodel.Index{
+	problems := must.Must(schemavalidate.Collect(c.Context(), must.Must(builtin.New()), ordersSchema(schemamodel.Index{
 		StructName:     "Order",
 		Name:           "idx_include",
 		Fields:         []string{"total"},
 		IncludeColumns: []string{"nosuchcolumn"},
-	}), "postgres")
+	}), "postgres"))
 
 	c.Assert(problems, qt.HasLen, 1)
 	c.Assert(problems[0].Message, qt.Contains, `names column "nosuchcolumn"`)
@@ -108,12 +110,12 @@ func TestCollect_IncludeColumnsAreChecked(t *testing.T) {
 func TestCollect_IndexNamingAnUndeclaredTableIsAProblem(t *testing.T) {
 	c := qt.New(t)
 
-	problems := schemavalidate.Collect(ordersSchema(schemamodel.Index{
+	problems := must.Must(schemavalidate.Collect(c.Context(), must.Must(builtin.New()), ordersSchema(schemamodel.Index{
 		StructName: "NoSuchStruct",
 		TableName:  "nosuchtable",
 		Name:       "idx_orphan",
 		Fields:     []string{"id"},
-	}), "postgres")
+	}), "postgres"))
 
 	c.Assert(problems, qt.HasLen, 1)
 	c.Assert(problems[0].Message, qt.Contains, `names table "nosuchtable"`)
@@ -124,11 +126,11 @@ func TestCollect_IndexNamingAnUndeclaredTableIsAProblem(t *testing.T) {
 func TestCollect_ReportsEveryProblemNotTheFirst(t *testing.T) {
 	c := qt.New(t)
 
-	problems := schemavalidate.Collect(ordersSchema(
+	problems := must.Must(schemavalidate.Collect(c.Context(), must.Must(builtin.New()), ordersSchema(
 		schemamodel.Index{StructName: "Order", Name: "a", Fields: []string{"missing_one"}},
 		schemamodel.Index{StructName: "Order", Name: "b", Fields: []string{"missing_two"}},
 		schemamodel.Index{StructName: "Order", Name: "c", Fields: []string{"missing_three"}},
-	), "postgres")
+	), "postgres"))
 
 	c.Assert(problems, qt.HasLen, 3)
 	c.Assert(messages(problems), qt.Contains, `postgres: index "b": names column "missing_two", which table "orders" does not declare`)
@@ -139,11 +141,11 @@ func TestCollect_ReportsEveryProblemNotTheFirst(t *testing.T) {
 func TestCollect_AValidSchemaHasNoProblems(t *testing.T) {
 	c := qt.New(t)
 
-	problems := schemavalidate.Collect(ordersSchema(schemamodel.Index{
+	problems := must.Must(schemavalidate.Collect(c.Context(), must.Must(builtin.New()), ordersSchema(schemamodel.Index{
 		StructName: "Order",
 		Name:       "idx_total",
 		Fields:     []string{"total"},
-	}), "postgres")
+	}), "postgres"))
 
 	c.Assert(problems, qt.HasLen, 0)
 }
@@ -172,8 +174,8 @@ func TestCollect_AnIndexOnAScopedAwayMaterializedViewIsAnOrphan(t *testing.T) {
 		Indexes: []schemamodel.Index{{StructName: "Summary", Name: "idx_summary", Fields: []string{"id"}}},
 	}
 
-	postgresProblems := schemavalidate.Collect(database, "postgres")
-	mysqlProblems := schemavalidate.Collect(database, "mysql")
+	postgresProblems := must.Must(schemavalidate.Collect(c.Context(), must.Must(builtin.New()), database, "postgres"))
+	mysqlProblems := must.Must(schemavalidate.Collect(c.Context(), must.Must(builtin.New()), database, "mysql"))
 
 	// PostgreSQL was given the view, so the index has an owner and the columns
 	// of a view are not checkable here.
@@ -185,7 +187,7 @@ func TestCollect_AnIndexOnAScopedAwayMaterializedViewIsAnOrphan(t *testing.T) {
 func TestCollect_ANilSchemaIsReportedRatherThanPanicking(t *testing.T) {
 	c := qt.New(t)
 
-	problems := schemavalidate.Collect(nil, "postgres")
+	problems := must.Must(schemavalidate.Collect(c.Context(), must.Must(builtin.New()), nil, "postgres"))
 
 	c.Assert(problems, qt.HasLen, 1)
 	c.Assert(problems[0].Kind, qt.Equals, "schema")

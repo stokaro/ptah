@@ -12,9 +12,11 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/generator"
@@ -53,7 +55,7 @@ func TestVerifyBaseline_ReplayErrorWithRealPostgres(t *testing.T) {
 		Version:           1,
 		Dialect:           platform.Postgres,
 		Capabilities:      target.Info().Capabilities,
-	})
+		Runtime:           must.Must(builtin.New())})
 
 	c.Assert(err, qt.ErrorMatches, `baseline shadow check failed: missing column users\.name`)
 	var shadowErr *shadow.VerificationError
@@ -103,6 +105,7 @@ func TestGenerateMigration_ConcurrentIndexApplyAndRollbackWithRealPostgres(t *te
 	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
 
 	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+		Runtime:       must.Must(builtin.New()),
 		GoEntitiesDir: entitiesDir,
 		DatabaseURL:   targetURL,
 		MigrationName: "add_users_email_index",

@@ -11,12 +11,14 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/query"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/managedrows"
 	"ptah.run/migration/datadiff"
@@ -410,7 +412,7 @@ func declaredRowsPlan(c *qt.C, conn *dbschema.DatabaseConnection, desired *schem
 	c.Helper()
 	plan, err := atlasschema.PlanApply(c.Context(), conn, atlasschema.ApplyOptions{
 		Desired: desired, Schemas: []string{dataDeclaredSchema},
-	})
+		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	return plan.Statements()
 }

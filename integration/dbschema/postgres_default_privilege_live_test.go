@@ -10,12 +10,13 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
 )
@@ -86,7 +87,7 @@ func TestPostgresLiveDefaultPrivilegeConverges(t *testing.T) {
 	description := defaultPrivilegeSchema(schemaName, owner, reader)
 
 	// 1. The rendered statements are the ones the server is given.
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	joined := strings.Join(statements, "\n")
 	c.Assert(joined, qt.Contains, "ALTER DEFAULT PRIVILEGES")
@@ -111,7 +112,7 @@ func TestPostgresLiveDefaultPrivilegeConverges(t *testing.T) {
 	c.Assert(defaultPrivilegeGrantOption(c, live.DefaultPrivileges, "INSERT"), qt.IsTrue)
 
 	// 3. The convergence assertion.
-	settled := schemadiff.CompareWithDialect(description, live, platform.Postgres)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(settled.DefaultPrivilegesAdded, qt.HasLen, 0)
 	c.Assert(settled.DefaultPrivilegesRemoved, qt.HasLen, 0)
 }
@@ -138,7 +139,7 @@ func TestPostgresLiveDefaultPrivilegeTakesEffectOnACreatedTable(t *testing.T) {
 	defer dropDefaultPrivilegeFixture(conn, schemaName, owner, reader)
 
 	description := defaultPrivilegeSchema(schemaName, owner, reader)
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	for _, statement := range statements {
 		_, execErr := conn.ExecContext(ctx, statement)

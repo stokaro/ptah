@@ -4,12 +4,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -22,15 +23,15 @@ func TestPlanBidirectionalSchemaDiff_IndexVisibilityRollsBack(t *testing.T) {
 		{TableName: "orders", Name: "k_total", Invisible: true},
 	}}
 
-	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
-		Diff:          diff,
-		DesiredSchema: &schemamodel.Database{},
-		CurrentSchema: &catalog.Database{},
-		Dialect:       platform.MySQL,
-		Capabilities:  capability.MySQL84(),
-	})
+	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(),
+		generator.BidirectionalSchemaPlanOptions{Runtime: must.Must(builtin.New()), Diff: diff,
+			DesiredSchema: &schemamodel.Database{},
+			CurrentSchema: &catalog.Database{},
+			Dialect:       platform.MySQL,
+			Capabilities:  capability.MySQL84(),
+		})
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQLWithCapabilities(platform.MySQL, capability.MySQL84(), plan.Reverse.Nodes...)
+	sql, err := builtin.RenderSQLWithCapabilities(platform.MySQL, capability.MySQL84(), plan.Reverse.Nodes...)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.Reverse.Diff.IndexVisibilityChanged, qt.DeepEquals, []difftypes.IndexVisibilityChange{

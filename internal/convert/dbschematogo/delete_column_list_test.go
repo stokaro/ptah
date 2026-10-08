@@ -4,8 +4,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
 )
@@ -41,12 +43,12 @@ func deleteListCatalog() *catalog.Database {
 func TestConvertDBSchemaToGoSchema_CarriesTheDeleteColumnList(t *testing.T) {
 	c := qt.New(t)
 
-	declared := dbschematogo.ConvertDBSchemaToGoSchema(deleteListCatalog(), "postgres")
+	declared := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), deleteListCatalog(), "postgres", must.Must(builtin.New())))
 	var lists [][]string
 	for _, constraint := range declared.Constraints {
 		lists = append(lists, constraint.OnDeleteColumns)
 	}
-	roundTrip := goschematodb.ToDBSchema(declared, "postgres")
+	roundTrip := must.Must(goschematodb.ToDBSchema(t.Context(), declared, "postgres", must.Must(builtin.New())))
 	var roundTripLists [][]string
 	for _, constraint := range roundTrip.Constraints {
 		roundTripLists = append(roundTripLists, constraint.OnDeleteColumns)

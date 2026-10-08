@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -92,11 +94,11 @@ func TestCompareWithDialect_MySQLUnchangedUniqueIndexIsSynced(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(
-				mysqlUniqueKeyGeneratedSchema(),
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), mysqlUniqueKeyGeneratedSchema(),
 				mysqlUniqueKeyDatabaseSchema(),
-				test.dialect,
-			)
+				test.dialect, must.Must(builtin.New()),
+			))
 
 			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 		})
@@ -123,11 +125,11 @@ func TestCompareWithDialect_NoObjectIsBothAddedAndRemoved(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(
-				mysqlUniqueKeyGeneratedSchema(),
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), mysqlUniqueKeyGeneratedSchema(),
 				mysqlUniqueKeyDatabaseSchema(),
-				test.dialect,
-			)
+				test.dialect, must.Must(builtin.New()),
+			))
 
 			c.Assert(
 				addedIndexesAlsoRemovedAsConstraints(diff),
@@ -170,7 +172,7 @@ func TestCompareWithDialect_NameHeuristicUniqueKeyIsSynced(t *testing.T) {
 			database.Indexes[0].Name = test.indexName
 			database.Constraints[0].Name = test.indexName
 
-			diff := schemadiff.CompareWithDialect(desired, database, "mysql")
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "mysql", must.Must(builtin.New())))
 
 			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 		})
@@ -202,11 +204,11 @@ func TestCompareWithDialect_UndeclaredUniqueKeyIsStillRemoved(t *testing.T) {
 			desired := mysqlUniqueKeyGeneratedSchema()
 			desired.Indexes = nil
 
-			diff := schemadiff.CompareWithDialect(
-				desired,
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), desired,
 				mysqlUniqueKeyDatabaseSchema(),
-				test.dialect,
-			)
+				test.dialect, must.Must(builtin.New()),
+			))
 
 			c.Assert(diff.ConstraintsRemoved, qt.DeepEquals, difftypes.ConstraintRemovals{{
 				Name:      "uq_users_email",
@@ -268,7 +270,7 @@ func TestCompareWithDialect_UniqueKeyOnAnotherTableIsNotTheSameObject(t *testing
 				}},
 			})
 
-			diff := schemadiff.CompareWithDialect(desired, database, test.dialect)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, test.dialect, must.Must(builtin.New())))
 
 			c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{{
 				Name:      "uq_users_email",
@@ -309,11 +311,11 @@ func TestCompareWithDialect_DeclaredIndexUniquenessStillCompared(t *testing.T) {
 			desired := mysqlUniqueKeyGeneratedSchema()
 			desired.Indexes[0].Unique = false
 
-			diff := schemadiff.CompareWithDialect(
-				desired,
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), desired,
 				mysqlUniqueKeyDatabaseSchema(),
-				test.dialect,
-			)
+				test.dialect, must.Must(builtin.New()),
+			))
 
 			c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{{
 				Name:      "uq_users_email",
@@ -361,7 +363,7 @@ func TestCompareWithDialect_DeclaredIndexColumnsStillCompared(t *testing.T) {
 				IsNullable: "NO",
 			})
 
-			diff := schemadiff.CompareWithDialect(desired, database, test.dialect)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, test.dialect, must.Must(builtin.New())))
 
 			c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{{
 				Name:      "uq_users_email",
@@ -404,11 +406,11 @@ func TestCompareWithDialect_DeclaredUniqueConstraintKeepsConstraintOwnership(t *
 				Columns:    []string{"email"},
 			}}
 
-			diff := schemadiff.CompareWithDialect(
-				desired,
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), desired,
 				mysqlUniqueKeyDatabaseSchema(),
-				test.dialect,
-			)
+				test.dialect, must.Must(builtin.New()),
+			))
 
 			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 		})
@@ -448,11 +450,11 @@ func TestCompareWithDialect_ConstraintBackedIndexRemovalIsRecordedEverywhere(t *
 			desired := mysqlUniqueKeyGeneratedSchema()
 			desired.Indexes[0].Unique = false
 
-			diff := schemadiff.CompareWithDialect(
-				desired,
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), desired,
 				mysqlUniqueKeyDatabaseSchema(),
-				test.dialect,
-			)
+				test.dialect, must.Must(builtin.New()),
+			))
 
 			c.Assert(diff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{{
 				Name:      "uq_users_email",
@@ -480,7 +482,7 @@ func TestCompareWithDialect_PlainIndexRemovalIsNotConstraintBacked(t *testing.T)
 		database.Indexes[0].Name = "idx_users_email"
 		database.Indexes[0].IsUnique = false
 
-		diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+		diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 
 		c.Assert(diff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{{
 			Name:      "idx_users_email",
@@ -512,11 +514,11 @@ func TestCompareWithDialect_MySQLKeyWithAnUnreadablePartDoesNotChurn(t *testing.
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(
-				expressionKeyGeneratedSchema(),
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), expressionKeyGeneratedSchema(),
 				expressionKeyDatabaseSchema(true),
-				test.dialect,
-			)
+				test.dialect, must.Must(builtin.New()),
+			))
 
 			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 		})
@@ -539,11 +541,11 @@ func TestCompareWithDialect_MySQLKeyReadWholeIsStillCompared(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(
-				expressionKeyGeneratedSchema(),
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), expressionKeyGeneratedSchema(),
 				expressionKeyDatabaseSchema(false),
-				test.dialect,
-			)
+				test.dialect, must.Must(builtin.New()),
+			))
 
 			c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{{
 				Name:      "idx_mixed",
@@ -598,7 +600,7 @@ func TestCompareWithDialect_MySQLUnreadablePartDoesNotHideANamedDifference(t *te
 				IsNullable: "NO",
 			})
 
-			diff := schemadiff.CompareWithDialect(desired, database, test.dialect)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, test.dialect, must.Must(builtin.New())))
 
 			c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{{
 				Name:      "idx_mixed",

@@ -1,6 +1,7 @@
 package importer
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"regexp"
@@ -57,7 +58,11 @@ func (gooseParser) Detect(fsys fs.FS) bool {
 	return false
 }
 
-func (p gooseParser) Parse(fsys fs.FS) (*ParseResult, error) {
+func (p gooseParser) Parse(ctx context.Context, fsys fs.FS) (*ParseResult, error) {
+	return parseWithContext(ctx, func() (*ParseResult, error) { return p.parse(fsys) })
+}
+
+func (p gooseParser) parse(fsys fs.FS) (*ParseResult, error) {
 	result := &ParseResult{}
 	entries, err := topLevelOnly(fsys, p.Name(), result)
 	if err != nil {

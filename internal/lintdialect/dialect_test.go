@@ -1,8 +1,6 @@
 package lintdialect_test
 
 import (
-	"os"
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -14,45 +12,14 @@ import (
 	"ptah.run/migration/lint"
 )
 
-// normalizeDialectSource is the file that decides which dialect spellings ptah
-// accepts anywhere. The spelling list below is read out of it rather than
-// copied here, so a spelling added to the switch is covered by these tests
-// without anyone editing this file.
-//
-// That property is the whole point for this package: a hand-maintained list
-// of canonical names here, beside every alias the rest of the tree takes, is a
-// copied list, and a copied list is exactly what lets the two drift apart
-// unnoticed (stokaro/ptah#270).
-//
-// internal/modelast/dialect_spelling_test.go reads the same switch the
-// same way. The extraction is duplicated rather than shared because the only
-// place to share it from would be a non-test package exported solely to be read
-// by tests.
-const normalizeDialectSource = "../../core/platform/constants.go"
-
-// quotedLiteral deliberately requires a non-empty literal: the switch's default
-// arm returns "", which is the one string in the body that is not a spelling.
-var quotedLiteral = regexp.MustCompile(`"([^"]+)"`)
-
-// acceptedSpellings returns every dialect spelling that appears as a case in
-// platform.NormalizeDialect's switch, read from the switch body itself.
+// acceptedSpellings reads the declaration used by built-in normalization and
+// registration, so adding an alias automatically extends these sweeps.
 func acceptedSpellings(c *qt.C) []string {
-	source, err := os.ReadFile(normalizeDialectSource)
-	c.Assert(err, qt.IsNil)
-
-	_, afterSignature, foundSignature := strings.Cut(string(source), "func NormalizeDialect(dialect string) string {")
-	c.Assert(foundSignature, qt.IsTrue, qt.Commentf("NormalizeDialect signature moved in %s", normalizeDialectSource))
-
-	body, _, foundEnd := strings.Cut(afterSignature, "\n}")
-	c.Assert(foundEnd, qt.IsTrue, qt.Commentf("NormalizeDialect body is unterminated in %s", normalizeDialectSource))
-
-	matches := quotedLiteral.FindAllStringSubmatch(body, -1)
-	spellings := make([]string, 0, len(matches))
-	for _, match := range matches {
-		spellings = append(spellings, match[1])
-	}
+	spellings := platform.DialectSpellings()
 	slices.Sort(spellings)
-	return slices.Compact(spellings)
+	c.Assert(len(spellings) > 9, qt.IsTrue,
+		qt.Commentf("only %d spellings, so the sweep is incomplete", len(spellings)))
+	return spellings
 }
 
 // platformCanonicalDialects returns the distinct canonical names the accepted
@@ -71,8 +38,8 @@ func platformCanonicalDialects(c *qt.C) []string {
 //
 // Not every engine platform knows: the two lists agree only while there is no
 // dialect lint has no rules for. The filter is lintdialect.Valid itself rather
-// than a list copied into this file, so the anti-drift property the extraction
-// above exists for holds: what is asserted is the partition, and
+// than a list copied into this file, so the anti-drift property of the shared
+// declaration holds: what is asserted is the partition, and
 // TestCanonical_RefusesEveryEngineLintCannotAnalyzeYet names which side each
 // engine is on (stokaro/ptah#1875).
 func canonicalDialects(c *qt.C) []string {
@@ -100,23 +67,18 @@ func familyMembers(c *qt.C) map[string][]string {
 	return members
 }
 
-// TestAcceptedSpellings_ExtractionControls proves the spelling list the sweeps
-// below iterate is really the switch's own list.
-//
-// Reverting the extraction -- a renamed signature, a regexp that stops matching
-// -- leaves acceptedSpellings empty, and an empty list makes every exhaustive
-// test below pass while comparing nothing.
-func TestAcceptedSpellings_ExtractionControls(t *testing.T) {
+// TestAcceptedSpellings_DeclarationControls pins representative aliases and
+// canonical names so an incomplete declaration cannot vacate the sweeps.
+func TestAcceptedSpellings_DeclarationControls(t *testing.T) {
 	c := qt.New(t)
 
 	spellings := acceptedSpellings(c)
 
-	// Positive control: aliases that exist only inside the switch, one per
-	// engine family that has one.
+	// Positive control: representative aliases from each engine family.
 	for _, alias := range []string{"pgx", "postgresql", "ch", "sqlite3", "mssql", "tsql", "sql-server", "crdb", "cockroach", "ysql", "yugabyte", "cloudspanner", "google_spanner", "google-spanner", "sql_server", "ydbs"} {
 		c.Assert(spellings, qt.Contains, alias)
 	}
-	// Positive control: every canonical name is a case of its own switch.
+	// Positive control: canonical names are accepted spellings too.
 	for _, canonical := range []string{
 		platform.Postgres, platform.MySQL, platform.MariaDB, platform.ClickHouse,
 		platform.SQLite, platform.SQLServer, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
@@ -124,7 +86,7 @@ func TestAcceptedSpellings_ExtractionControls(t *testing.T) {
 	} {
 		c.Assert(spellings, qt.Contains, canonical)
 	}
-	// Negative control: the extractor must not reach past the switch body.
+	// Every enumerated spelling must resolve to a target.
 	for _, spelling := range spellings {
 		c.Assert(platform.NormalizeDialect(spelling), qt.Not(qt.Equals), "", qt.Commentf("collected %q, which is not an accepted spelling", spelling))
 	}

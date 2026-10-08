@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -52,7 +54,7 @@ func TestCompare_ADeclaredDefaultPrivilegeReachesTheDiff(t *testing.T) {
 		DefaultPrivileges: []schemamodel.DefaultPrivilege{declaredDefaultPrivilege()},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, &catalog.Database{}, "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, &catalog.Database{}, "postgres", must.Must(builtin.New())))
 
 	c.Assert(diff.DefaultPrivilegesAdded, qt.HasLen, 1)
 	c.Assert(diff.DefaultPrivilegesAdded[0].String(), qt.Equals,
@@ -74,7 +76,7 @@ func TestCompare_ADefaultPrivilegeMatchingItsRowIsNoChange(t *testing.T) {
 		DefaultPrivileges: []catalog.DefaultPrivilege{describedDefaultPrivilege()},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, current, "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, current, "postgres", must.Must(builtin.New())))
 
 	c.Assert(diff.DefaultPrivilegesAdded, qt.HasLen, 0)
 	c.Assert(diff.DefaultPrivilegesRemoved, qt.HasLen, 0)
@@ -113,7 +115,7 @@ func TestCompare_AScopedAwayDefaultPrivilegeIsNotPlannedForRemoval(t *testing.T)
 				DefaultPrivileges: []catalog.DefaultPrivilege{describedDefaultPrivilege()},
 			}
 
-			diff := schemadiff.CompareWithDialect(desired, current, test.dialect)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, current, test.dialect, must.Must(builtin.New())))
 
 			c.Assert(diff.DefaultPrivilegesRemoved, qt.HasLen, 0)
 		})
@@ -136,7 +138,7 @@ func TestCompare_AnUndeclaredDefaultPrivilegeIsStillRemovedOnAScopedTarget(t *te
 		DefaultPrivileges: []catalog.DefaultPrivilege{describedDefaultPrivilege()},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, current, "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, current, "postgres", must.Must(builtin.New())))
 
 	c.Assert(diff.DefaultPrivilegesRemoved, qt.HasLen, 1)
 	c.Assert(diff.DefaultPrivilegesRemoved[0].String(), qt.Equals,

@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -42,7 +44,7 @@ func deferredKeySchema(deferrable bool, initially string) *catalog.Database {
 func TestConvert_DescribesADeferrableKey(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(deferredKeySchema(true, "deferred"), "")
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), deferredKeySchema(true, "deferred"), "postgres", must.Must(builtin.New())))
 
 	c.Assert(database.Tables[0].PrimaryKey, qt.DeepEquals, []string{"id"})
 	c.Assert(database.Tables[0].PrimaryKeyDeferrable, qt.IsTrue)
@@ -58,7 +60,7 @@ func TestConvert_DescribesADeferrableKey(t *testing.T) {
 func TestConvert_LeavesAKeyThatDoesNotDeferToItsColumn(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(deferredKeySchema(false, ""), "")
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), deferredKeySchema(false, ""), "postgres", must.Must(builtin.New())))
 
 	c.Assert(database.Tables[0].PrimaryKey, qt.IsNil)
 	c.Assert(database.Tables[0].PrimaryKeyDeferrable, qt.IsFalse)

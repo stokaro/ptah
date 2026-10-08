@@ -38,6 +38,7 @@ func verifyPlannedShadowMigration(
 		return nil
 	}
 	return shadow.VerifyMigration(ctx, shadow.MigrationVerifyOptions{
+		Runtime:           opts.Runtime,
 		ShadowDatabaseURL: opts.ShadowDatabaseURL,
 		TargetConnection:  conn,
 		MigrationsDir:     opts.OutputDir,

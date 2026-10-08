@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -44,7 +46,7 @@ func TestCompare_AColumnModificationCarriesTheDeclaredColumn(t *testing.T) {
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
@@ -90,7 +92,7 @@ func TestCompare_AnEmbeddedColumnsModificationCarriesTheFoldedColumn(t *testing.
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
@@ -136,7 +138,7 @@ func TestCompare_ACollidingTableNameCarriesTheStructurallyIdentifiedColumn(t *te
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 
 	modified := columnModificationsOf(c, diff.TablesModified, "tenant.data")
 	c.Assert(modified.Desired.StructName, qt.Equals, "Qualified")

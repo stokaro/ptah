@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -68,11 +70,11 @@ func TestCompareWithDialect_CommentDifferenceIsAChange(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(
-				commentedDeclaration(tt.declared, ""),
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), commentedDeclaration(tt.declared, ""),
 				commentedDatabase(tt.inDatabase, ""),
-				"postgres",
-			)
+				"postgres", must.Must(builtin.New()),
+			))
 
 			c.Assert(diff.TablesModified, qt.HasLen, tt.wantModified)
 			c.Assert(tableCommentChange(diff), qt.DeepEquals, tt.wantTable)
@@ -86,11 +88,11 @@ func TestCompareWithDialect_CommentDifferenceIsAChange(t *testing.T) {
 func TestCompareWithDialect_AColumnCommentDifferenceIsAChange(t *testing.T) {
 	c := qt.New(t)
 
-	diff := schemadiff.CompareWithDialect(
-		commentedDeclaration("", "primary contact"),
+	diff := must.Must(schemadiff.CompareWithDialect(
+		t.Context(), commentedDeclaration("", "primary contact"),
 		commentedDatabase("", "login address"),
-		"postgres",
-	)
+		"postgres", must.Must(builtin.New()),
+	))
 
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	modified := diff.TablesModified[0].ColumnsModified

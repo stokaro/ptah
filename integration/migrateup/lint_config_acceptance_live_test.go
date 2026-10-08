@@ -13,8 +13,8 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/migrateup"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/lint"
@@ -136,7 +136,7 @@ func requireLintGatePostgresURL(t *testing.T) string {
 func dropLintGatePostgresTables(c *qt.C, conn *dbschema.DatabaseConnection, names ...string) {
 	c.Helper()
 	for _, name := range names {
-		statement, err := renderer.RenderSQL(platform.Postgres, ast.NewDropTable(name).SetIfExists().SetCascade())
+		statement, err := builtin.RenderSQL(platform.Postgres, ast.NewDropTable(name).SetIfExists().SetCascade())
 		c.Assert(err, qt.IsNil)
 		_, err = conn.ExecContext(context.Background(), statement)
 		c.Check(err, qt.IsNil)

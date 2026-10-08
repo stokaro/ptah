@@ -8,8 +8,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/agentapi"
 	"ptah.run/internal/agentgate"
 	"ptah.run/internal/agentpolicy"
@@ -68,7 +70,7 @@ func newWorkspace(c *qt.C, write agentpolicy.Verdict, approver agentpolicy.Appro
 	if approver != nil {
 		options = append(options, agentpolicy.WithApprover(approver))
 	}
-	gates, err := agentgate.New(agentgate.Options{Dialect: "postgres"})
+	gates, err := agentgate.New(agentgate.Options{Validation: must.Must(builtin.New()), Rendering: must.Must(builtin.New()), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 	session, err := agentapi.NewSession(agentapi.SessionConfig{
 		Workspace:   workspace,

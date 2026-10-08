@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/internal/cli/internal/schemaops"
 	"ptah.run/migration/migrator"
+	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -73,14 +74,14 @@ func TestEntityDriftErrorRefusesWhatTheReadCouldNotCheck(t *testing.T) {
 	}{
 		{
 			name:   "a declared role the read could not check",
-			result: &schemaops.CompareResult{Diff: &difftypes.SchemaDiff{}, Undecided: []coverage.Object{withheld}},
+			result: &schemaops.CompareResult{Diff: &difftypes.SchemaDiff{}, Undecided: schemadiff.Diagnostics{Common: []coverage.Object{withheld}}},
 			want:   "baseline drift verification failed: 1 declared object could not be decided; see the warnings above",
 		},
 		{
 			name: "a difference beside it",
 			result: &schemaops.CompareResult{
 				Diff:      &difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: "notes"}}},
-				Undecided: []coverage.Object{withheld},
+				Undecided: schemadiff.Diagnostics{Common: []coverage.Object{withheld}},
 			},
 			want: `baseline drift verification failed: schema drift detected; findings: .*tables_added.*`,
 		},

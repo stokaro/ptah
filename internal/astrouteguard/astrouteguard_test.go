@@ -169,7 +169,7 @@ func TestMarkedKinds_HappyPath(t *testing.T) {
 	}{
 		{
 			marker:  astrouteguard.AlterOperationMarker,
-			present: []string{"AddColumnOperation", "AddChangefeedOperation", "DropRowDeletionPolicyOperation"},
+			present: []string{"AddColumnOperation", "ExtensionAlterOperation", "DropRowDeletionPolicyOperation"},
 			absent:  []string{"EnumTypeDef", "AddEnumValueOperation", "AlterTableNode"},
 		},
 		{

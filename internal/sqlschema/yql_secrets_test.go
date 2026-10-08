@@ -8,8 +8,8 @@ import (
 
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -23,12 +23,12 @@ func TestReadYQLSecrets(t *testing.T) {
 		{Name: "b", Schema: "a", ValueEnv: "PTAH_SECRET_NESTED"},
 	})
 	c.Assert(database.NotDescribed.Describes(coverage.Secret), qt.IsTrue)
-	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(&database, "ydb", capability.YDB262())
+	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(&database, "ydb", capability.YDB262())
 	c.Assert(err, qt.IsNil)
 	again, _, err := sqlschema.Read([]byte(strings.Join(statements, "\n")), "ydb")
 	c.Assert(err, qt.IsNil)
 	c.Assert(again.Secrets, qt.DeepEquals, database.Secrets)
-	rendered, err := renderer.GetOrderedCreateStatementsWithCapabilities(&again, "ydb", capability.YDB262())
+	rendered, err := builtin.GetOrderedCreateStatementsWithCapabilities(&again, "ydb", capability.YDB262())
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered, qt.DeepEquals, statements)
 }
@@ -66,7 +66,7 @@ func TestReadYQLSecretRefusedOnOlderLine(t *testing.T) {
 	c := qt.New(t)
 	database, _, err := sqlschema.Read([]byte("CREATE SECRET s WITH (value = $PTAH_SECRET_TEST);"), "ydb")
 	c.Assert(err, qt.IsNil)
-	_, err = renderer.GetOrderedCreateStatementsWithCapabilities(&database, "ydb", capability.YDB251())
+	_, err = builtin.GetOrderedCreateStatementsWithCapabilities(&database, "ydb", capability.YDB251())
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "secrets")
 }

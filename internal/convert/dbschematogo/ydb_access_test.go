@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -26,7 +28,7 @@ func TestConvertDBSchemaToGoSchema_YDBAccessModel(t *testing.T) {
 		DatabasePath:    "/local",
 	}
 
-	described := dbschematogo.ConvertDBSchemaToGoSchema(read, platform.YDB)
+	described := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), read, platform.YDB, must.Must(builtin.New())))
 
 	c.Assert(described.Roles, qt.DeepEquals, []schemamodel.Role{
 		{Name: "app", Login: true, Inherit: true, MemberOf: []string{"readers", "USERS"}},
@@ -49,7 +51,7 @@ func TestConvertDBSchemaToGoSchema_RoleGraphStaysAnalysisOnly(t *testing.T) {
 		RoleMemberships: []catalog.RoleMembership{{Role: "readers", Member: "app"}},
 	}
 
-	described := dbschematogo.ConvertDBSchemaToGoSchema(read, platform.Postgres)
+	described := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), read, platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(described.Roles, qt.DeepEquals, []schemamodel.Role{{Name: "app", Login: true, Inherit: true}})
 }

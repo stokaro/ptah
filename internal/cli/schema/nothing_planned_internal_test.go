@@ -13,6 +13,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/coverage"
+	"ptah.run/migration/schemadiff"
 )
 
 // TestPrintNothingPlanned says "synced" only when the comparison withheld
@@ -22,7 +23,7 @@ func TestPrintNothingPlanned(t *testing.T) {
 	withheld.Name = "reporter"
 	tests := []struct {
 		name      string
-		undecided []coverage.Object
+		undecided schemadiff.Diagnostics
 		want      string
 	}{
 		{
@@ -31,7 +32,7 @@ func TestPrintNothingPlanned(t *testing.T) {
 		},
 		{
 			name:      "a declared role withheld",
-			undecided: []coverage.Object{withheld},
+			undecided: schemadiff.Diagnostics{Common: []coverage.Object{withheld}},
 			want:      "No changes planned, but 1 declared object could not be decided.\n",
 		},
 	}

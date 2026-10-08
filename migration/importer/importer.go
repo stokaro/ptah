@@ -10,14 +10,16 @@ package importer
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
 	"slices"
 	"strings"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
 	"ptah.run/internal/liquibaserun"
 )
 
@@ -62,7 +64,9 @@ type Parser interface {
 	// used and which it deliberately turned down. It does not order or validate
 	// the migrations — Normalize does, and it does not have to account for
 	// files it never saw — AccountForSource does.
-	Parse(fsys fs.FS) (*ParseResult, error)
+	// The context is required and reaches every selected rendering call.
+	// Cancellation returns no parsed result.
+	Parse(ctx context.Context, fsys fs.FS) (*ParseResult, error)
 }
 
 // Parsers returns the registered source-tool parsers, in detection-preference
@@ -89,57 +93,40 @@ func ParserByName(tool string) (Parser, error) {
 	return nil, fmt.Errorf("unsupported source tool %q (supported: %s)", tool, supportedTools())
 }
 
-// dialectRenderer is a Parser whose source can describe a change without
-// writing its SQL, so converting that change needs a target dialect.
-type dialectRenderer interface {
-	withDialect(dialect string, caps capability.Capabilities) Parser
+// typedChangeRenderer converts declarations to SQL through a selected service.
+type typedChangeRenderer interface {
+	withRendering(target string, caps capability.Capabilities, service renderer.Service) Parser
 }
 
-// WithDialect returns parser set to render, for dialect, the changes its source
-// describes without SQL -- Liquibase's typed changes such as createTable.
+// WithRendering configures a parser to render typed changes for target through
+// service. Only Liquibase describes changes without SQL; other source tools
+// refuse this option. Target is the provider's canonical name and may be a
+// custom target. The service resolves its support when parsing reaches a typed
+// change. This function does not render, connect to a server, or choose defaults.
 //
-// Only a Liquibase parser takes a dialect. Every other supported tool's
-// migrations are SQL already, so a dialect handed to one of them is refused
-// rather than ignored, and so is a nil parser. dialect is any spelling
-// core/platform.NormalizeDialect accepts; an unknown one is refused. The parser
-// passed in is not modified.
-//
-// A migration converted from a typed change is written for that dialect and no
-// other. A changeset whose changes are all SQL converts the same with or
-// without a dialect.
-//
-// The changes are rendered against the dialect's default capability preset.
-// [WithDialectCapabilities] names the release line instead.
-func WithDialect(parser Parser, dialect string) (Parser, error) {
-	return WithDialectCapabilities(parser, dialect, capability.ForDialect(dialect))
-}
-
-// WithDialectCapabilities is [WithDialect] for a concrete server capability
-// set, the way core/renderer.NewRendererWithCapabilities is NewRenderer for
-// one. Use it when the release line the migrations will run on is known: a
-// statement one release line accepts and another does not is rendered the way
-// caps says.
-//
-// caps is a preset for dialect, and one that fails caps.Validate is refused.
-// The returned parser keeps its own copy, so changing caps afterwards does not
-// change what it renders. The refusals WithDialect describes apply here too.
-func WithDialectCapabilities(parser Parser, dialect string, caps capability.Capabilities) (Parser, error) {
+// The parser receives its own capability snapshot. The caller owns the service,
+// which must remain safe for concurrent calls. Parsing supplies the invocation's
+// context, so configuring a parser does not capture a request lifetime.
+// A recorded rendering omission refuses conversion rather than discarding part
+// of the source change. The original parser is not modified.
+func WithRendering(parser Parser, target string, caps capability.Capabilities, service renderer.Service) (Parser, error) {
 	if parser == nil {
 		return nil, errors.New("a target dialect needs a source tool: choose or detect the parser first")
 	}
-	normalized := platform.NormalizeDialect(dialect)
-	if normalized == "" {
-		return nil, fmt.Errorf("unsupported dialect %q", dialect)
+	if strings.TrimSpace(target) == "" {
+		return nil, errors.New("a rendering target is required")
+	}
+	if err := schemaext.RequireRuntime(context.Background(), service); err != nil {
+		return nil, err
 	}
 	if err := caps.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid capabilities for %s: %w", normalized, err)
+		return nil, fmt.Errorf("invalid capabilities for %s: %w", target, err)
 	}
-	rendering, ok := parser.(dialectRenderer)
+	rendering, ok := parser.(typedChangeRenderer)
 	if !ok {
-		return nil, fmt.Errorf(
-			"a target dialect applies only to a Liquibase source; %s migrations are SQL already", parser.Name())
+		return nil, fmt.Errorf("a target dialect applies only to a Liquibase source; %s migrations are SQL already", parser.Name())
 	}
-	return rendering.withDialect(normalized, caps.Clone()), nil
+	return rendering.withRendering(target, caps.Clone(), service), nil
 }
 
 // dbmsSelector is a Parser whose source can limit a changeset to some
@@ -173,7 +160,7 @@ type dbmsSelector interface {
 //
 // Without it a `dbms` attribute is refused. Only a Liquibase parser takes it;
 // any other is refused. The parser passed in is not modified, and the result
-// keeps a dialect set by [WithDialect].
+// keeps a dialect set by [WithRendering].
 func WithLiquibaseDBMS(parser Parser, shortName string) (Parser, error) {
 	if parser == nil {
 		return nil, errors.New("a Liquibase database name needs a source tool: choose or detect the parser first")
@@ -262,8 +249,12 @@ type Options struct {
 // declines instead of failing); a successful result still lists every
 // unconverted file in [EmitResult.Declined], and every changeset left out
 // because the source tool never runs it in [EmitResult.Skipped], and a caller
-// owes the user both lists. It is the single entry point the CLI uses.
-func Import(sourceFS fs.FS, parser Parser, outDir string, opts Options) (*EmitResult, error) {
+// owes the user both lists. It is the single entry point the CLI uses. A missing
+// or canceled context is refused before parsing and checked before writing.
+func Import(ctx context.Context, sourceFS fs.FS, parser Parser, outDir string, opts Options) (*EmitResult, error) {
+	if err := parseContext(ctx); err != nil {
+		return nil, err
+	}
 	if parser == nil {
 		detected, err := DetectParser(sourceFS)
 		if err != nil {
@@ -271,7 +262,7 @@ func Import(sourceFS fs.FS, parser Parser, outDir string, opts Options) (*EmitRe
 		}
 		parser = detected
 	}
-	parsed, err := parser.Parse(sourceFS)
+	parsed, err := parser.Parse(ctx, sourceFS)
 	if err != nil {
 		return nil, fmt.Errorf("parse %s source: %w", parser.Name(), err)
 	}
@@ -281,6 +272,9 @@ func Import(sourceFS fs.FS, parser Parser, outDir string, opts Options) (*EmitRe
 	}
 	normalized, err := Normalize(parsed.Migrations)
 	if err != nil {
+		return nil, err
+	}
+	if err := parseContext(ctx); err != nil {
 		return nil, err
 	}
 	result, err := Emit(outDir, normalized, declined, opts)
@@ -319,4 +313,29 @@ func Normalize(migrations []SourceMigration) ([]SourceMigration, error) {
 		return cmp.Compare(a.Version, b.Version)
 	})
 	return append(versioned, repeatable...), nil
+}
+
+// parseContext rejects missing or canceled invocation contexts before reads and
+// before Import starts writing the converted directory.
+func parseContext(ctx context.Context) error {
+	if ctx == nil {
+		return errors.New("migration import requires a context")
+	}
+	return ctx.Err()
+}
+
+// parseWithContext gives every source parser the same cancellation boundary.
+// A parser that completed after cancellation must not publish its partial work.
+func parseWithContext(ctx context.Context, parse func() (*ParseResult, error)) (*ParseResult, error) {
+	if err := parseContext(ctx); err != nil {
+		return nil, err
+	}
+	result, err := parse()
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
 }

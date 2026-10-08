@@ -1590,6 +1590,12 @@ own base64 hashes (those have no local recipe — in either direction). Without
 `--save`/`--output`/`--dry-run`, the plan document prints to stdout, and
 `--auto-approve` is accepted for CLI compatibility.
 
+Ptah fingerprints include named feature objects, attached settings, and the
+source's coverage claims. Each feature is bound to its codec owner, version,
+and model definition. Missing codecs refuse fingerprinting. Plans generated
+with a different fingerprint format must be regenerated and reviewed before
+applying them.
+
 An `--output` path ending in `.json` writes the native JSON plan
 (`format_version` 1) instead, which additionally records per-statement safety
 severity, the dialect, exclude patterns, and the schemas the plan reads beyond

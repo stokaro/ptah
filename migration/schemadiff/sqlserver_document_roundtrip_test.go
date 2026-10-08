@@ -6,10 +6,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
@@ -42,7 +44,7 @@ func TestCompare_ARoundTripThroughPtahsOwnOutputKeepsThem(t *testing.T) {
 	document := renderInspectedDocument(c, describedSQLServerSchema())
 	parsed := loadDocument(c, document)
 
-	diff := schemadiff.Compare(parsed, live)
+	diff := must.Must(schemadiff.Compare(t.Context(), parsed, live, must.Must(builtin.New())))
 
 	c.Assert(diff.ExtendedPropertiesRemoved, qt.HasLen, 0)
 	c.Assert(diff.SynonymsRemoved, qt.HasLen, 0)
@@ -72,7 +74,7 @@ func TestCompare_AnHCLDocumentThatOmitsThemDropsThem(t *testing.T) {
 	declared.Synonyms = nil
 	parsed := loadDocument(c, renderInspectedDocument(c, declared))
 
-	diff := schemadiff.Compare(parsed, live)
+	diff := must.Must(schemadiff.Compare(t.Context(), parsed, live, must.Must(builtin.New())))
 
 	c.Assert(diff.ExtendedPropertiesRemoved, qt.HasLen, 1)
 	c.Assert(diff.SynonymsRemoved.Names(), qt.DeepEquals, []string{"dbo.s_users"})
@@ -94,7 +96,7 @@ func TestCompare_AGoSchemaThatCouldNameThemStillDropsThem(t *testing.T) {
 	declared.ExtendedProperties = nil
 	declared.Synonyms = nil
 
-	diff := schemadiff.Compare(declared, live)
+	diff := must.Must(schemadiff.Compare(t.Context(), declared, live, must.Must(builtin.New())))
 
 	c.Assert(diff.ExtendedPropertiesRemoved, qt.HasLen, 1)
 	c.Assert(diff.SynonymsRemoved.Names(), qt.DeepEquals, []string{"dbo.s_users"})

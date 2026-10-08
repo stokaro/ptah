@@ -1,14 +1,17 @@
 package schemadiff_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -60,7 +63,7 @@ func TestCompare_PrimaryKeyMethod_Synced(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(methodDesired(test.desired), methodCurrent(test.database), test.dialect)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), methodDesired(test.desired), methodCurrent(test.database), test.dialect, must.Must(builtin.New())))
 
 			c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
 			c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
@@ -72,9 +75,12 @@ func TestCompare_PrimaryKeyMethod_Synced(t *testing.T) {
 // a BTREE key as a drop and an add of the key, the add carrying the method.
 func TestCompare_PrimaryKeyMethod_Changed(t *testing.T) {
 	c := qt.New(t)
-	diff := schemadiff.CompareWithDialect(methodDesired("HASH"), methodCurrent(nil), platform.MariaDB)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), methodDesired("HASH"), methodCurrent(nil), platform.MariaDB, must.Must(builtin.New())))
 
-	plan, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.MariaDB)
+	plan, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.MariaDB,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(plan, "\n"), qt.Contains, "DROP PRIMARY KEY")

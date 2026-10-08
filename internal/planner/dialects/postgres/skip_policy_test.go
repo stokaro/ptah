@@ -1,12 +1,14 @@
 package postgres_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -14,7 +16,7 @@ import (
 
 func skipPolicyFixture() (*difftypes.SchemaDiff, *schemamodel.Database) {
 	diff := &difftypes.SchemaDiff{
-		TablesRemoved: []string{"legacy"},
+		TablesRemoved: difftypes.TableRemovals{{Name: "legacy"}},
 		EnumsRemoved:  difftypes.EnumChanges{{Name: "legacy_status"}},
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_legacy", TableName: "users"},
@@ -30,9 +32,12 @@ func skipPolicyFixture() (*difftypes.SchemaDiff, *schemamodel.Database) {
 }
 
 func renderPostgresSkip(c *qt.C, planner *postgres.Planner, diff *difftypes.SchemaDiff, desired *schemamodel.Database) string {
-	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := planner.GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	return sql
 }

@@ -1,15 +1,17 @@
 package clickhouse_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/clickhouse"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -31,7 +33,10 @@ func TestPlanner_IndexRefs_RendersDuplicateNamesOnExactTables(t *testing.T) {
 		{Name: "idx_shared", TableName: "events", Fields: []string{"event_id"}, Type: "minmax"},
 	}}
 
-	nodes, err := clickhouse.New().GenerateMigrationAST(withDeclaredTables(diff, desired))
+	nodes, err := clickhouse.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredTables(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 4)
@@ -50,7 +55,7 @@ func TestPlanner_IndexRefs_RendersDuplicateNamesOnExactTables(t *testing.T) {
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(archiveDrop.Table, qt.Equals, "archive")
 
-	sql, err := renderer.RenderSQL(platform.ClickHouse, nodes...)
+	sql, err := builtin.RenderSQL(platform.ClickHouse, nodes...)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "ALTER TABLE `metrics` ADD INDEX `idx_shared`")
 	c.Assert(sql, qt.Contains, "ALTER TABLE `archive` DROP INDEX `idx_shared`;")

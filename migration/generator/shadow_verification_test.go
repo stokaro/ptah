@@ -8,8 +8,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/shadow"
 )
@@ -54,8 +56,7 @@ type User struct {
 		0o600,
 	), qt.IsNil)
 
-	files, err := generator.GenerateMigration(t.Context(), generator.GenerateMigrationOptions{
-		GoEntitiesDir:     modelsDir,
+	files, err := generator.GenerateMigration(t.Context(), generator.GenerateMigrationOptions{Runtime: must.Must(builtin.New()), GoEntitiesDir: modelsDir,
 		DatabaseURL:       targetURL,
 		MigrationName:     "add_email",
 		OutputDir:         migrationsDir,
@@ -108,8 +109,7 @@ func TestGenerateMigration_RejectsTargetDatabaseAsShadow(t *testing.T) {
 
 	modelsDir, migrationsDir := writeShadowRealmSafetyFixture(c, dir)
 
-	files, err := generator.GenerateMigration(t.Context(), generator.GenerateMigrationOptions{
-		GoEntitiesDir:     modelsDir,
+	files, err := generator.GenerateMigration(t.Context(), generator.GenerateMigrationOptions{Runtime: must.Must(builtin.New()), GoEntitiesDir: modelsDir,
 		DBConn:            target,
 		MigrationName:     "add_email",
 		OutputDir:         migrationsDir,
@@ -137,8 +137,7 @@ func TestGenerateMigration_RejectsEquivalentTargetDatabaseAliasAsShadow(t *testi
 	defer dbschema.CloseAndWarn(target)
 	modelsDir, migrationsDir := writeShadowRealmSafetyFixture(c, dir)
 
-	files, err := generator.GenerateMigration(t.Context(), generator.GenerateMigrationOptions{
-		GoEntitiesDir:     modelsDir,
+	files, err := generator.GenerateMigration(t.Context(), generator.GenerateMigrationOptions{Runtime: must.Must(builtin.New()), GoEntitiesDir: modelsDir,
 		DBConn:            target,
 		MigrationName:     "add_email",
 		OutputDir:         migrationsDir,

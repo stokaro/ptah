@@ -131,7 +131,7 @@ func reverseConstraintAdditions(
 	// name-only key would collapse them onto one host.
 	dbConstraintByTableName := make(map[tableMemberKey]catalog.Constraint)
 	for _, c := range dbSchema.Constraints {
-		if c.Type != "FOREIGN KEY" && c.Type != "PRIMARY KEY" && c.Type != "CHECK" && c.Type != "UNIQUE" {
+		if c.Type != "FOREIGN KEY" && c.Type != "PRIMARY KEY" && c.Type != "CHECK" && c.Type != "UNIQUE" && c.Type != "EXCLUDE" {
 			continue
 		}
 		dbConstraintByTableName[tableMemberKey{table: c.QualifiedTableName(), member: c.Name}] = c
@@ -150,54 +150,47 @@ func reverseConstraintAdditions(
 			// name-only fallback.
 			continue
 		}
-		switch removed.Type {
-		case "FOREIGN KEY":
-			infos = append(infos, foreignKeyAdditionFromDBConstraint(removed.Name, removed.TableName, dbConstraint, semantics))
-		case "PRIMARY KEY":
-			if columns := dbConstraint.ColumnNamesOrDefault(); len(columns) > 0 {
-				infos = append(infos, difftypes.ConstraintAdditionInfo{
-					Name:         removed.Name,
-					TableName:    removed.TableName,
-					Identity:     constraintscope.Identity(semantics, removed.TableName, removed.Name),
-					Type:         "PRIMARY KEY",
-					KeyBlockSize: dbConstraint.KeyBlockSize,
-					UsingMethod:  derefString(dbConstraint.UsingMethod),
-					Columns:      append([]string(nil), columns...),
-					Deferrable:   dbConstraint.Deferrable,
-					Initially:    dbConstraint.Initially,
-					Comment:      dbConstraint.Comment,
-				})
-			}
-		case "CHECK":
-			if dbConstraint.CheckClause != nil && *dbConstraint.CheckClause != "" {
-				infos = append(infos, difftypes.ConstraintAdditionInfo{
-					Name:            removed.Name,
-					TableName:       removed.TableName,
-					Identity:        constraintscope.Identity(semantics, removed.TableName, removed.Name),
-					Type:            "CHECK",
-					CheckExpression: *dbConstraint.CheckClause,
-					Comment:         dbConstraint.Comment,
-					NotEnforced:     dbConstraint.NotEnforced,
-				})
-			}
-		case "UNIQUE":
-			if columns := dbConstraint.ColumnNamesOrDefault(); len(columns) > 0 {
-				infos = append(infos, difftypes.ConstraintAdditionInfo{
-					Name:           removed.Name,
-					TableName:      removed.TableName,
-					Identity:       constraintscope.Identity(semantics, removed.TableName, removed.Name),
-					Type:           "UNIQUE",
-					Columns:        append([]string(nil), columns...),
-					IncludeColumns: append([]string(nil), dbConstraint.IncludeColumns...),
-					NullsDistinct:  cloneBoolPtr(dbConstraint.NullsDistinct),
-					Deferrable:     dbConstraint.Deferrable,
-					Initially:      dbConstraint.Initially,
-					Comment:        dbConstraint.Comment,
-				})
-			}
+		if addition, valid := priorConstraintAddition(removed, dbConstraint, semantics); valid {
+			infos = append(infos, addition)
 		}
 	}
 	return infos
+}
+
+// priorConstraintAddition restores the full definition read before removal.
+// Validation status and exclusion predicates belong to that definition too.
+func priorConstraintAddition(removed difftypes.ConstraintRemovalInfo, current catalog.Constraint, semantics identifier.Semantics) (difftypes.ConstraintAdditionInfo, bool) {
+	if removed.Type == "FOREIGN KEY" {
+		return foreignKeyAdditionFromDBConstraint(removed.Name, removed.TableName, current, semantics), true
+	}
+	columns := current.ColumnNamesOrDefault()
+	switch removed.Type {
+	case "PRIMARY KEY", "UNIQUE":
+		if len(columns) == 0 {
+			return difftypes.ConstraintAdditionInfo{}, false
+		}
+	case "CHECK":
+		if derefString(current.CheckClause) == "" {
+			return difftypes.ConstraintAdditionInfo{}, false
+		}
+	case "EXCLUDE":
+		if derefString(current.ExcludeElements) == "" {
+			return difftypes.ConstraintAdditionInfo{}, false
+		}
+	default:
+		return difftypes.ConstraintAdditionInfo{}, false
+	}
+	return difftypes.ConstraintAdditionInfo{
+		Name: removed.Name, TableName: removed.TableName,
+		Identity: constraintscope.Identity(semantics, removed.TableName, removed.Name),
+		Type:     removed.Type, Columns: slices.Clone(columns),
+		KeyBlockSize: current.KeyBlockSize, IncludeColumns: slices.Clone(current.IncludeColumns),
+		NullsDistinct: cloneBoolPtr(current.NullsDistinct),
+		Deferrable:    current.Deferrable, Initially: current.Initially,
+		Comment: current.Comment, NotEnforced: current.NotEnforced, NotValid: current.NotValid,
+		CheckExpression: derefString(current.CheckClause), UsingMethod: derefString(current.UsingMethod),
+		ExcludeElements: derefString(current.ExcludeElements), WhereCondition: derefString(current.WhereCondition),
+	}, true
 }
 
 // foreignKeyAdditionFromDBConstraint builds a ConstraintAdditionInfo carrying the
@@ -229,6 +222,7 @@ func foreignKeyAdditionFromDBConstraint(
 		Initially:   dbFK.Initially,
 		Match:       dbFK.Match,
 		NotEnforced: dbFK.NotEnforced,
+		NotValid:    dbFK.NotValid,
 	}
 	if columns := dbFK.ColumnNamesOrDefault(); len(columns) > 0 {
 		info.Columns = uniqueStringsPreserveOrder(columns)

@@ -7,11 +7,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/go-sql-driver/mysql" // registers the MySQL driver for database/sql
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	mysqlreader "ptah.run/internal/dbschema/mysql"
 	postgresreader "ptah.run/internal/dbschema/postgres"
 	"ptah.run/migration/schemadiff"
@@ -37,7 +39,7 @@ func TestGeneratedColumnConformanceFixture_RoundTrip_Postgres(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	liveSchema = filterConformanceSchema(liveSchema, generatedColumnConformanceTables())
 
-	diff := schemadiff.CompareWithDialect(target, liveSchema, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), target, liveSchema, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
 
@@ -61,7 +63,7 @@ func TestGeneratedColumnConformanceFixture_RoundTrip_MySQL(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	liveSchema = filterConformanceSchema(liveSchema, generatedColumnConformanceTables())
 
-	diff := schemadiff.CompareWithDialect(target, liveSchema, platform.MySQL)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), target, liveSchema, platform.MySQL, must.Must(builtin.New())))
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
 

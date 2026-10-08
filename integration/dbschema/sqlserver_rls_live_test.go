@@ -9,12 +9,13 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
 )
@@ -71,7 +72,7 @@ func TestSQLServerLiveRLSRoundTrip(t *testing.T) {
 	// 1. The renderer's statements are the ones the server is given, so a
 	// statement this engine refuses fails here rather than being corrected by
 	// hand.
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.SQLServer)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.SQLServer)
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(statements, "\n"), qt.Contains, "CREATE SECURITY POLICY")
 	for _, statement := range statements {
@@ -93,7 +94,7 @@ func TestSQLServerLiveRLSRoundTrip(t *testing.T) {
 
 	// 3. The convergence assertion. Comparing the same description against what
 	// the server now holds must produce nothing to do.
-	settled := schemadiff.CompareWithDialect(description, live, platform.SQLServer)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.SQLServer, must.Must(builtin.New())))
 	c.Assert(settled.RLSPoliciesAdded, qt.HasLen, 0)
 	c.Assert(settled.RLSPoliciesRemoved, qt.HasLen, 0)
 	c.Assert(settled.RLSPoliciesModified, qt.HasLen, 0)

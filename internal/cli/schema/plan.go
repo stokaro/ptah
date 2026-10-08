@@ -11,6 +11,7 @@ import (
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/cmdutil"
@@ -253,7 +254,12 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 		}
 	}
 
+	runtime, err := builtin.New()
+	if err != nil {
+		return atlasschema.PlanEvidence{}, err
+	}
 	plan, undecided, err := atlasschema.PreparePlanFileReportingUndecided(cmd.Context(), conn, atlasschema.PlanFileOptions{
+		Runtime:         runtime,
 		ProjectRoot:     schemaroot.Of(opts.rootDirs),
 		Name:            opts.name,
 		DevURL:          opts.devURL,

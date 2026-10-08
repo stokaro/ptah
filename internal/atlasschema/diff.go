@@ -11,12 +11,15 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
-	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemavalidation"
 	"ptah.run/dbschema"
+	"ptah.run/engine"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlassource"
@@ -39,6 +42,8 @@ import (
 )
 
 type DiffOptions struct {
+	// Runtime selects feature services and codecs for this operation. It is required.
+	Runtime  engine.SchemaRuntime
 	FromURLs []string
 	ToURLs   []string
 	DevURL   string
@@ -122,6 +127,9 @@ type DiffOptions struct {
 // applied, which is the one the statements were generated from. Returning the
 // comparison from before it would describe a change the statements do not make.
 func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, *difftypes.SchemaDiff, error) {
+	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
+		return atlasreport.SchemaDiff{}, nil, err
+	}
 	prepared, err := prepareDiffSources(opts)
 	if err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
@@ -165,6 +173,7 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 	// limit the run to one schema.
 	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.DevURL, "", "")
 	resolveOpts := atlassource.ResolveOptions{
+		Runtime:     opts.Runtime,
 		DatabaseURL: sourceDatabaseURL(opts.DevURL, fromSet, toSet),
 		Dialect:     dialect,
 		DialectFlag: prepared.dialectFlag,
@@ -209,15 +218,23 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 		!holdsServerForComparison(fromSet, toSet) {
 		documentCaps = devServerCapabilities(ctx, dialect, opts.DevURL, opts.ConnectTimeout)
 	}
-	err = withResolvedDiffSources(ctx, fromSet, toSet, resolveOpts,
+	err = withResolvedDiffSources(ctx, opts.Runtime, fromSet, toSet, resolveOpts,
 		func(fromState, toState atlassource.State, conn *dbschema.DatabaseConnection) error {
 			// A side read from the dev database holds that database's own
 			// extensions, which neither source declared, and the starting
 			// point a docker block gave it.
 			fromState, toState = fromState.WithoutEnvironment(toState.ExtensionNames()),
 				toState.WithoutEnvironment(fromState.ExtensionNames())
-			fromState, toState = fromState.WithoutStartingPoint(toState, dialect),
-				toState.WithoutStartingPoint(fromState, dialect)
+			originalFrom := fromState
+			var err error
+			fromState, err = fromState.WithoutStartingPoint(ctx, toState, dialect, opts.Runtime)
+			if err != nil {
+				return err
+			}
+			toState, err = toState.WithoutStartingPoint(ctx, originalFrom, dialect, opts.Runtime)
+			if err != nil {
+				return err
+			}
 			var diffErr error
 			report, changes, diffErr = diffResolvedStates(ctx, conn, fromState, toState, dialect,
 				diffCapabilities(target, opts.ServerVersion, conn, documentCaps), devServerSidesOf(opts.DevURL, fromSet, toSet), opts)
@@ -339,13 +356,7 @@ func diffResolvedStates(
 	if err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
-	if err := refuseOutsideComparedDatabase(dialect, fromState, toState); err != nil {
-		return atlasreport.SchemaDiff{}, nil, err
-	}
-	if err := refuseServerScopeMismatch(stateSide(fromState), stateSide(toState)); err != nil {
-		return atlasreport.SchemaDiff{}, nil, err
-	}
-	if err := validateDiffSystemSchemaStates(fromState, toState, dialect); err != nil {
+	if err := validateResolvedDiffScope(fromState, toState, dialect); err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
 
@@ -357,7 +368,7 @@ func diffResolvedStates(
 		DefaultSchema: defaultSchema,
 	}
 	scope.RealmRelativePatterns = realmRelative
-	fromSide, toSide := scopeDiffStates(fromState, toState, scope, dialect)
+	fromSide, toSide := scopeDiffStates(ctx, fromState, toState, scope, dialect, opts.Runtime)
 	if fromSide.err != nil {
 		return atlasreport.SchemaDiff{}, nil, fromSide.err
 	}
@@ -394,8 +405,8 @@ func diffResolvedStates(
 	// selector protected nothing.
 	reportUnmatchedExclude(opts.Diagnostics, atlasfilter.UnmatchedAcrossStates(fromReport, toReport))
 
-	// Same refusal the native comparison seam makes, applied here because this
-	// surface reaches the comparator through the variant that returns no error.
+	// Offline comparisons have no live target metadata, so this adapter applies
+	// the target validation that the connected comparison performs.
 	// A SQLite virtual table on the --from side is an object --to cannot
 	// declare, so comparing them plans a DROP nobody asked for
 	// (stokaro/ptah#1028).
@@ -414,36 +425,33 @@ func diffResolvedStates(
 	if err := validateRowTTL(dialect, to); err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
-	// The target validation the erroring comparator makes, applied here for
-	// the same reason the refusals above are: without a held connection this
-	// surface reaches the comparator through the variant that returns no
-	// error, so a desired schema this target cannot host would otherwise reach
-	// the planner (stokaro/ptah#2315).
-	//
-	// A held connection reaches the erroring variant, which validates the same
+	// Without a held connection, validate using the selected target's offline
+	// facts before the declaration reaches planning (stokaro/ptah#2315).
+	// A held connection validates the same
 	// schema with the identifier semantics that server resolves. Run here
 	// instead, the validation would use the offline rules, and on SQL Server
 	// those keep no two names apart: every table with two columns would be
 	// refused (stokaro/ptah#4122).
 	if conn == nil {
 		if err := validateDesiredDiffComparison(
-			to, fromSide.database, dialect, capabilities,
+			ctx, opts.Runtime, to, fromSide.database, dialect, capabilities,
 		); err != nil {
 			return atlasreport.SchemaDiff{}, nil, err
 		}
 	}
 
-	// The comparison reports what the --from document's coverage record made
-	// undecidable alongside what it decided. The list is empty for every --from
-	// that is a database, because only a document declares limits about itself.
-	compared, undecided, err := compareDiffSides(ctx, conn, to, fromSide.database, compareOpts)
+	// Both documents and live reads may carry knowledge limits. Preserve them
+	// beside the established changes; silence cannot establish agreement.
+	compared, undecided, err := compareDiffSides(ctx, conn, to, fromSide.database, compareOpts, opts.Runtime)
 	if err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
+	if opts.Diagnostics == nil && !undecided.Empty() {
+		return atlasreport.SchemaDiff{}, nil, undecided.Err()
+	}
 	undecidednote.Report(opts.Diagnostics, undecided, "--from", "--to")
-	// Same second half the native seam applies, applied here for the same
-	// reason the refusal above is: this surface reaches the comparator through
-	// the variant that returns no error. A table both sides name and describe
+	// Apply the planned-change half of target validation to offline comparisons
+	// as well. A table both sides name and describe
 	// differently is rebuilt by the SQLite planner, which destroys a module's
 	// storage as surely as a drop (stokaro/ptah#1028).
 	if err := sqlitevirtual.ValidatePlannedChanges(
@@ -458,19 +466,22 @@ func diffResolvedStates(
 	}
 	var statements []string
 	if diff.HasChanges() {
-		statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, dialect, planner.Options{
+		statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(
+			ctx, opts.Runtime,
+			diff, dialect, planner.Options{
 
-			Capabilities:         capabilities,
-			ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
-			OnlineAlter:          opts.Policy.OnlineAlter,
-			ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
-			ConcurrentIndexRefs: declaredConcurrentIndexRefs(
-				opts.Policy, diff, to, fromSide.database, dialect, capabilities,
-			),
-			OmitNullBackfill:    opts.OmitNullBackfill,
-			AllowTableRebuild:   opts.Policy.AllowTableRebuild,
-			TableRebuildRequest: opts.Policy.TableRebuildRequest,
-		})
+				Capabilities:         capabilities,
+				ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
+				OnlineAlter:          opts.Policy.OnlineAlter,
+				ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
+				ConcurrentIndexRefs: declaredConcurrentIndexRefs(
+					opts.Policy, diff, to, fromSide.database, dialect, capabilities,
+				),
+				OmitNullBackfill:    opts.OmitNullBackfill,
+				AllowTableRebuild:   opts.Policy.AllowTableRebuild,
+				TableRebuildRequest: opts.Policy.TableRebuildRequest,
+			},
+		)
 
 		if err != nil {
 			return atlasreport.SchemaDiff{}, nil, fmt.Errorf("generate schema diff SQL: %w", err)
@@ -494,14 +505,14 @@ func compareDiffSides(
 	desired *schemamodel.Database,
 	current *catalog.Database,
 	opts *config.CompareOptions,
-) (*difftypes.SchemaDiff, []coverage.Object, error) {
+	runtime schemadiff.DatabaseRuntime,
+) (*difftypes.SchemaDiff, schemadiff.Diagnostics, error) {
 	if conn == nil {
-		compared, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, current, opts)
-		return compared, undecided, nil
+		return schemadiff.CompareReportingUndecidedAdditions(ctx, desired, current, opts, runtime)
 	}
-	compared, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(ctx, conn, desired, current, opts)
+	compared, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(ctx, conn, desired, current, opts, runtime)
 	if err != nil {
-		return nil, nil, fmt.Errorf("compare schemas: %w", err)
+		return nil, schemadiff.Diagnostics{}, fmt.Errorf("compare schemas: %w", err)
 	}
 	return compared, undecided, nil
 }
@@ -518,21 +529,27 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	return report, err
 }
 
-// validateDesiredDiffComparison collects the error-capable validation needed
-// before this adapter calls the deliberately non-erroring pure comparator.
+// validateDesiredDiffComparison checks the target declaration before the
+// document comparator, which does not otherwise validate target capabilities.
 func validateDesiredDiffComparison(
+	ctx context.Context,
+	service schemavalidation.Runtime,
 	desired *schemamodel.Database,
 	current *catalog.Database,
 	dialect string,
 	capabilities capability.Capabilities,
 ) error {
-	if err := schemadiff.ValidateDesiredSchema(desired, catalog.ServerInfo{
+	if err := schemadiff.ValidateDesiredSchema(ctx, service, desired, catalog.ServerInfo{
 		Dialect:      dialect,
 		Capabilities: capabilities,
 	}); err != nil {
 		return err
 	}
-	return schemadiff.ValidateRolePasswordComparison(desired, current, dialect)
+	selected, err := service.ResolveTarget(dialect)
+	if err != nil {
+		return err
+	}
+	return schemadiff.ValidateRolePasswordComparison(desired, current, selected)
 }
 
 func validateDiffSystemSchemaStates(
@@ -596,12 +613,13 @@ func validateDiffSystemSchemaState(state atlassource.State, dialect, flag string
 // (stokaro/ptah#3658).
 func withResolvedDiffSources(
 	ctx context.Context,
+	service renderer.SchemaService,
 	fromSet, toSet atlassource.Set,
 	opts atlassource.ResolveOptions,
 	use func(fromState, toState atlassource.State, conn *dbschema.DatabaseConnection) error,
 ) error {
 	if materializesFrom(fromSet, toSet, opts.DevURL) {
-		return withMaterializedFromSource(ctx, fromSet, toSet, opts, use)
+		return withMaterializedFromSource(ctx, service, fromSet, toSet, opts, use)
 	}
 	if !holdsServerForComparison(fromSet, toSet) {
 		fromState, toState, err := resolveDiffSources(ctx, fromSet, toSet, opts)
@@ -661,6 +679,7 @@ func materializesFrom(fromSet, toSet atlassource.Set, devURL string) bool {
 // would turn the dev database's answer for that kind into one.
 func withMaterializedFromSource(
 	ctx context.Context,
+	service renderer.SchemaService,
 	fromSet, toSet atlassource.Set,
 	opts atlassource.ResolveOptions,
 	use func(fromState, toState atlassource.State, conn *dbschema.DatabaseConnection) error,
@@ -675,7 +694,7 @@ func withMaterializedFromSource(
 	if err != nil {
 		return err
 	}
-	fromState, err := materializedState(ctx, fromSet, declared, opts)
+	fromState, err := materializedState(ctx, service, fromSet, declared, opts)
 	if err != nil {
 		return fmt.Errorf("load %s schema: %w", fromSet.Flag, err)
 	}
@@ -692,6 +711,7 @@ func withMaterializedFromSource(
 // back and returns what was read, with the declaration's coverage record.
 func materializedState(
 	ctx context.Context,
+	service renderer.SchemaService,
 	set atlassource.Set,
 	declared atlassource.State,
 	opts atlassource.ResolveOptions,
@@ -717,7 +737,7 @@ func materializedState(
 	}
 
 	var state atlassource.State
-	err = withMaterializedDevSchema(ctx, devConn, declared.Schema, opts.ReportIgnored,
+	err = withMaterializedDevSchema(ctx, service, devConn, declared.Schema, opts.ReportIgnored,
 		func(materialized *dbschema.DatabaseConnection, baseline devclean.Baseline) error {
 			read, err := set.DevState(ctx, materialized, opts)
 			if err != nil {
@@ -903,12 +923,14 @@ type scopedDiffState struct {
 // can exist on only one side while an unselected extension already exists on
 // both, and filtering the other side would manufacture a change.
 func scopeDiffStates(
+	ctx context.Context,
 	fromState, toState atlassource.State,
 	scope atlasfilter.Scope,
 	dialect string,
+	runtime schemaext.ConversionRuntime,
 ) (fromSide, toSide scopedDiffState) {
-	fromSide = scopeDiffState(fromState, scope, "--from schema", dialect)
-	toSide = scopeDiffState(toState, scope, "--to schema", dialect)
+	fromSide = scopeDiffState(ctx, fromState, scope, "--from schema", dialect, runtime)
+	toSide = scopeDiffState(ctx, toState, scope, "--to schema", dialect, runtime)
 	if fromSide.err != nil || toSide.err != nil {
 		return fromSide, toSide
 	}
@@ -916,8 +938,8 @@ func scopeDiffStates(
 	if !changed {
 		return fromSide, toSide
 	}
-	return scopeDiffState(fromState, supportScope, "--from schema", dialect),
-		scopeDiffState(toState, supportScope, "--to schema", dialect)
+	return scopeDiffState(ctx, fromState, supportScope, "--from schema", dialect, runtime),
+		scopeDiffState(ctx, toState, supportScope, "--to schema", dialect, runtime)
 }
 
 // scopeDiffState projects one resolved comparison side without asking either
@@ -927,19 +949,25 @@ func scopeDiffStates(
 // reporting, and the current-side comparison. The generated projection keeps
 // the desired dependency closure and every selectable identity.
 func scopeDiffState(
+	ctx context.Context,
 	state atlassource.State,
 	scope atlasfilter.Scope,
 	side,
 	dialect string,
+	runtime schemaext.ConversionRuntime,
 ) scopedDiffState {
 	desired, generatedReports, generatedErr := scopeGeneratedSide(state.Schema, scope, side)
 	if generatedErr != nil && !emptySelection(generatedErr) {
 		return scopedDiffState{report: generatedReports.Exclude, err: generatedErr}
 	}
 	if state.DB == nil {
+		database, err := goschematodb.ToDBSchema(ctx, desired, dialect, runtime)
+		if err != nil {
+			return scopedDiffState{err: err}
+		}
 		return scopedDiffState{
 			schema:       desired,
-			database:     goschematodb.ToDBSchema(desired, dialect),
+			database:     database,
 			report:       generatedReports.Exclude,
 			selection:    generatedReports.Selection,
 			selectionErr: generatedErr,
@@ -964,7 +992,11 @@ func scopeDiffState(
 	// conversion. Positive matches need no catalog compensation because every
 	// independently selectable identity survives conversion.
 	if emptySelection(databaseErr) {
-		desired = dbschematogo.ConvertDBSchemaToGoSchema(filteredDatabase, "")
+		var err error
+		desired, err = dbschematogo.ConvertDBSchemaToGoSchema(ctx, filteredDatabase, dialect, runtime)
+		if err != nil {
+			return scopedDiffState{err: err}
+		}
 	}
 
 	return scopedDiffState{
@@ -1072,5 +1104,20 @@ func setYDBDiffRoot(dialect, devURL string, current *catalog.Database) error {
 		return fmt.Errorf("YDB diff requires a valid database or Docker dev URL")
 	}
 	current.DatabasePath = root
+	return nil
+}
+
+// validateResolvedDiffScope applies scope refusals after dev-server projection.
+func validateResolvedDiffScope(fromState, toState atlassource.State, dialect string) error {
+	if err := refuseOutsideComparedDatabase(dialect, fromState, toState); err != nil {
+		return err
+	}
+	if err := refuseServerScopeMismatch(stateSide(fromState), stateSide(toState)); err != nil {
+		return err
+	}
+	if err := validateDiffSystemSchemaStates(fromState, toState, dialect); err != nil {
+		return err
+	}
+
 	return nil
 }

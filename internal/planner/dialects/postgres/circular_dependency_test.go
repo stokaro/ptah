@@ -1,13 +1,16 @@
 package postgres_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/renderer"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -40,16 +43,19 @@ func TestTwoPhaseTableCreationWithSelfReference(t *testing.T) {
 
 	// Create a schema diff that adds the users table
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableCreationsFor(desired, "users"),
+		TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "users"),
 	}
 
 	// Generate AST nodes using PostgreSQL planner
 	planner := &postgres.Planner{}
-	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := planner.GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 
 	// Render the nodes to SQL
-	r, err := renderer.NewRenderer("postgresql")
+	r, err := builtin.NewRenderer("postgresql")
 	c.Assert(err, qt.IsNil)
 	var sqlStatements []string
 	for _, node := range nodes {
@@ -129,16 +135,19 @@ func TestComplexDependencyChainTwoPhase(t *testing.T) {
 
 	// Create a schema diff that adds all tables
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableCreationsFor(desired, "tenants", "users", "locations", "areas"),
+		TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "tenants", "users", "locations", "areas"),
 	}
 
 	// Generate AST nodes using PostgreSQL planner
 	planner := &postgres.Planner{}
-	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := planner.GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 
 	// Render the nodes to SQL
-	r, err := renderer.NewRenderer("postgresql")
+	r, err := builtin.NewRenderer("postgresql")
 	c.Assert(err, qt.IsNil)
 	var sqlStatements []string
 	for _, node := range nodes {
@@ -212,16 +221,19 @@ func TestNoForeignKeysInCreateTable(t *testing.T) {
 
 	// Create a schema diff that adds both tables
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableCreationsFor(desired, "users", "posts"),
+		TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "users", "posts"),
 	}
 
 	// Generate AST nodes using PostgreSQL planner
 	planner := &postgres.Planner{}
-	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := planner.GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 
 	// Render the nodes to SQL
-	r, err := renderer.NewRenderer("postgresql")
+	r, err := builtin.NewRenderer("postgresql")
 	c.Assert(err, qt.IsNil)
 	var sqlStatements []string
 	for _, node := range nodes {

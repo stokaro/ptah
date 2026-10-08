@@ -10,12 +10,13 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/migrator"
@@ -68,7 +69,7 @@ func TestSpannerLiveSchemaRoundTrip(t *testing.T) {
 
 	// 1. The renderer's statements are what the server is given. Spanner
 	// refuses DDL inside an explicit transaction, so each runs on its own.
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.Spanner)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.Spanner)
 	c.Assert(err, qt.IsNil)
 	for _, statement := range statements {
 		_, execErr := conn.ExecContext(ctx, statement)
@@ -84,7 +85,7 @@ func TestSpannerLiveSchemaRoundTrip(t *testing.T) {
 	// 3. Convergence. Without the `character varying` fold this reports a type
 	// change on every run, and applying it fails: Spanner refuses to alter a
 	// column an index refers to.
-	settled := schemadiff.CompareWithDialect(description, live, platform.Spanner)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.Spanner, must.Must(builtin.New())))
 	c.Assert(settled.TablesModified, qt.HasLen, 0,
 		qt.Commentf("a second run must have nothing to do"))
 	c.Assert(settled.TablesAdded, qt.HasLen, 0)
@@ -195,7 +196,7 @@ func TestSpannerLiveSequenceRoundTrip(t *testing.T) {
 		_, _ = conn.ExecContext(context.Background(), `DROP SEQUENCE IF EXISTS "`+name+`"`)
 	}()
 
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.Spanner)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.Spanner)
 	c.Assert(err, qt.IsNil)
 	c.Assert(spannerLiveJoined(statements), qt.Contains, "CREATE SEQUENCE",
 		qt.Commentf("a claimed capability has to reach an executable statement"))
@@ -209,7 +210,7 @@ func TestSpannerLiveSequenceRoundTrip(t *testing.T) {
 	c.Assert(spannerLiveSequenceNames(live.Sequences), qt.Contains, name,
 		qt.Commentf("the reader must find the sequence it just applied"))
 
-	settled := schemadiff.CompareWithDialect(description, live, platform.Spanner)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.Spanner, must.Must(builtin.New())))
 	c.Assert(settled.SequencesAdded, qt.HasLen, 0,
 		qt.Commentf("a second run must have nothing to do"))
 	c.Assert(settled.SequencesModified, qt.HasLen, 0)
@@ -235,7 +236,7 @@ func TestSpannerLiveRefusesTheSequenceOptionClauses(t *testing.T) {
 		Sequences: []schemamodel.Sequence{{Name: name, Increment: &increment}},
 	}
 
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.Spanner)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.Spanner)
 	c.Assert(err, qt.IsNil)
 	rendered := spannerLiveJoined(statements)
 	c.Assert(rendered, qt.Contains, "INCREMENT BY",

@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/internal/clirun"
 	"ptah.run/internal/dbtarget"
+	"ptah.run/migration/schemadiff"
 )
 
 // A declared object the comparison could not decide, driven through the
@@ -264,10 +265,11 @@ func TestSchemaDriftReportsAnUndecidedObjectE2E(t *testing.T) {
 
 // undecidedDocument is the part of a JSON document these tests read.
 type undecidedDocument struct {
-	Outcome   string            `json:"outcome"`
-	Drift     bool              `json:"drift"`
-	Failed    bool              `json:"failed"`
-	Undecided []coverage.Object `json:"undecided"`
+	ContractVersion int                    `json:"contract_version"`
+	Outcome         string                 `json:"outcome"`
+	Drift           bool                   `json:"drift"`
+	Failed          bool                   `json:"failed"`
+	Undecided       schemadiff.Diagnostics `json:"undecided"`
 }
 
 // TestJSONDocumentsCarryAnUndecidedObjectE2E holds each machine-readable
@@ -281,24 +283,27 @@ func TestJSONDocumentsCarryAnUndecidedObjectE2E(t *testing.T) {
 	withheld.Name = undecidedRoleName
 
 	tests := []struct {
-		name string
-		args []string
-		want undecidedDocument
+		name     string
+		args     []string
+		want     undecidedDocument
+		wantExit int
 	}{
 		{
 			name: "schema plan",
 			args: []string{"schema", "plan", "--dry-run", "--json"},
-			want: undecidedDocument{Outcome: "no-changes", Undecided: []coverage.Object{withheld}},
+			want: undecidedDocument{ContractVersion: 2, Outcome: "no-changes", Undecided: schemadiff.Diagnostics{Common: []coverage.Object{withheld}}},
 		},
 		{
 			name: "schema apply",
 			args: []string{"schema", "apply", "--auto-approve", "--json"},
-			want: undecidedDocument{Outcome: "no-changes", Undecided: []coverage.Object{withheld}},
+			want: undecidedDocument{ContractVersion: 2, Outcome: "no-changes", Undecided: schemadiff.Diagnostics{Common: []coverage.Object{withheld}}},
 		},
 		{
 			name: "schema drift",
 			args: []string{"schema", "drift", "--format", "json"},
-			want: undecidedDocument{Failed: true, Undecided: []coverage.Object{withheld}},
+			// Drift has its own report shape, without plan/apply's contract version.
+			want:     undecidedDocument{Failed: true, Undecided: schemadiff.Diagnostics{Common: []coverage.Object{withheld}}},
+			wantExit: 1,
 		},
 	}
 
@@ -308,6 +313,8 @@ func TestJSONDocumentsCarryAnUndecidedObjectE2E(t *testing.T) {
 
 			got := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: workDir},
 				append(test.args, "--db-url", target, "--schema-file", "undecided.sql")...)
+			c.Assert(got.ExitCode, qt.Equals, test.wantExit,
+				qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 
 			var document undecidedDocument
 			c.Assert(json.Unmarshal([]byte(got.Stdout), &document), qt.IsNil,

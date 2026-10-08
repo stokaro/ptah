@@ -27,16 +27,19 @@ import (
 	"sync"
 	"time"
 
-	"ptah.run/core/coverage"
+	"ptah.run/core/schemaext"
 	"ptah.run/internal/cli/internal/schemaops"
 	"ptah.run/internal/ociartifact"
 	"ptah.run/internal/schemadoc"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/safety"
+	"ptah.run/migration/schemadiff"
 )
 
 // Options configures the served view.
 type Options struct {
+	// Runtime selects the model services shared by this handler's requests.
+	Runtime schemadiff.DatabaseRuntime
 	// DatabaseURL is the database to compare against. Required.
 	DatabaseURL string
 	// RootDirs names the declared schema as Go annotation roots.
@@ -75,7 +78,7 @@ type observation struct {
 	// Undecided are the declared objects the comparison withheld because the
 	// read did not describe their kind. They are counted in Findings too, so a
 	// page that could not look never says the database matches.
-	Undecided []coverage.Object
+	Undecided schemadiff.Diagnostics
 	Err       error
 	Schema    *schemaSnapshot
 }
@@ -93,7 +96,10 @@ type schemaSnapshot struct {
 var ErrRegistrySchemaSource = errors.New("oci:// schema source cannot be served")
 
 // Handler serves the dashboard.
-func Handler(opts Options) (http.Handler, error) {
+func Handler(ctx context.Context, opts Options) (http.Handler, error) {
+	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(opts.DatabaseURL) == "" {
 		return nil, fmt.Errorf("database URL is required")
 	}
@@ -164,6 +170,7 @@ func (s *server) page(w http.ResponseWriter, r *http.Request) {
 // showing the schema and an explicit failure rather than an empty screen.
 func (s *server) observe(ctx context.Context) observation {
 	result, err := schemaops.Compare(ctx, schemaops.CompareOptions{
+		Runtime:        s.opts.Runtime,
 		RootDirs:       s.opts.RootDirs,
 		SchemaFiles:    s.opts.SchemaFiles,
 		DatabaseURL:    s.opts.DatabaseURL,

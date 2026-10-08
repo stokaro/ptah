@@ -1,14 +1,17 @@
 package schemadiff_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -78,12 +81,15 @@ func TestGenerateSchemaDiffSQL_DomainColumnIsConvertedBeforeTheOldDomainIsDroppe
 
 	desired, database := crossSchemaDomainColumn()
 
-	diff := schemadiff.CompareWithDialect(desired, database, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.DomainsRemoved.Names(), qt.DeepEquals, []string{"status"},
 		qt.Commentf("the desired schema no longer declares public.status, so the plan drops it"))
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.Postgres)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Postgres,
+	)
 	c.Assert(err, qt.IsNil)
 
 	sql := strings.Join(statements, "\n")

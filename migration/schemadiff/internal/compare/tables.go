@@ -13,11 +13,11 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/crdbttl"
 	"ptah.run/internal/deporder"
-	"ptah.run/internal/objectidentity"
 	"ptah.run/internal/rowdeletion"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbcolumn"
 	"ptah.run/internal/ydbpartition"
+	"ptah.run/migration/internal/tableidentity"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -178,8 +178,8 @@ func TablesAndColumnsWithServerSpellings(
 	// Every declared foreign key, for the ones a column type change has to drop
 	// and put back -- keys this diff does not touch, under a column it does.
 	diff.DeclaredForeignKeys = difftypes.ForeignKeyDeclarationsOf(desired)
-	// The dependency graph between tables, for ordering the removals: a
-	// creation carries its own edges, a removal is only a name.
+	// The declaration's dependency graph orders removals alongside tables that
+	// remain. Captured observations retain their own prior constraints.
 	diff.DeclaredTableDependencies = deporder.GeneratedTableDependencies(desired)
 	// The ordering inputs for creating functions: a body may call another
 	// function, and the additions are sorted by name rather than by either.
@@ -187,7 +187,7 @@ func TablesAndColumnsWithServerSpellings(
 	for identity, table := range genTables {
 		if _, exists := dbTables[identity]; !exists {
 			diff.TablesAdded = append(diff.TablesAdded, difftypes.TableCreationFor(
-				desired, table, tableDiffName(table.Schema, table.Name, dialect)))
+				desired, table, tableDiffName(table.Schema, table.Name, dialect), semantics))
 		}
 	}
 
@@ -204,7 +204,9 @@ func TablesAndColumnsWithServerSpellings(
 				!cov.PlansRemoval(coverage.VirtualTable, table.Schema, table.Name) {
 				continue
 			}
-			diff.TablesRemoved = append(diff.TablesRemoved, tableDiffName(table.Schema, table.Name, dialect))
+			diff.TablesRemoved = append(diff.TablesRemoved, difftypes.TableRemoval{
+				Name: tableDiffName(table.Schema, table.Name, dialect), Current: difftypes.TableObservationFor(database, table, dialect, semantics),
+			})
 		}
 	}
 
@@ -269,10 +271,6 @@ func TablesAndColumnsWithServerSpellings(
 			// table whose only difference is which family a column sits in
 			// has to reach TablesModified for the same reason.
 			tableDiff.YDBColumnFamiliesChange = columnFamiliesChange(cov, genTable, dbTable)
-			// Changefeeds belong to the table too, and a table whose only
-			// difference is a changefeed has to reach TablesModified for the
-			// same reason.
-			tableDiff.ChangefeedsChange = changefeedsChange(cov, genTable, dbTable)
 			// A YDB table's settings are compared here for the same reason
 			// again: they belong to the table, and a table whose only
 			// difference is how it splits into partitions has to reach
@@ -300,13 +298,15 @@ func TablesAndColumnsWithServerSpellings(
 	)
 	diff.TablesAdded = keptTables
 	cov.recordUndecidedAdditions(withheldTables)
-	diff.TablesRemoved = keepPlannedRemovals(cov, coverage.Schema, diff.TablesRemoved, tableSchemaOnly)
+	diff.TablesRemoved = keepPlannedRemovals(cov, coverage.Schema, diff.TablesRemoved, tableRemovalSchemaOnly)
 
 	// Sort for consistent output
 	sort.Slice(diff.TablesAdded, func(i, j int) bool {
 		return diff.TablesAdded[i].Name < diff.TablesAdded[j].Name
 	})
-	sort.Strings(diff.TablesRemoved)
+	sort.Slice(diff.TablesRemoved, func(i, j int) bool {
+		return diff.TablesRemoved[i].Name < diff.TablesRemoved[j].Name
+	})
 	sort.Slice(diff.TablesModified, func(i, j int) bool {
 		return diff.TablesModified[i].TableName < diff.TablesModified[j].TableName
 	})
@@ -318,15 +318,7 @@ func TablesAndColumnsWithServerSpellings(
 // distinct ordinary table docs before the exact removal name reaches the
 // planner. Other dialects retain the established comparison behavior.
 func tableMapIdentity(schema, name, dialect string, semantics identifier.Semantics) tableIdentity {
-	if platform.NormalizeDialect(dialect) != platform.SQLite {
-		return newTableIdentity(schema, name, semantics)
-	}
-	if schema == "" {
-		schema = semantics.DefaultSchema
-	}
-	// Verbatim on SQLite: a quoted leading or trailing space is part of the
-	// name there, so trimming merges two distinct tables.
-	return objectidentity.NewBuilder(semantics).TablePartsVerbatim(schema, name).Key()
+	return tableidentity.Subject(schema, name, dialect, semantics).Key()
 }
 
 // tableDiffName preserves the exact catalog identifier on SQLite. Quoted
@@ -384,7 +376,7 @@ func tableChanged(tableDiff difftypes.TableDiff) bool {
 	return len(tableDiff.ColumnsAdded) > 0 || len(tableDiff.ColumnsRemoved) > 0 ||
 		len(tableDiff.ColumnsModified) > 0 || tableDiff.RowTTLChange != nil ||
 		tableDiff.RowDeletionPolicyChange != nil || tableDiff.CommentChange != nil ||
-		tableDiff.ChangefeedsChange != nil || tableDiff.YDBColumnFamiliesChange != nil ||
+		len(tableDiff.FeatureChanges) > 0 || tableDiff.YDBColumnFamiliesChange != nil ||
 		tableDiff.YDBPartitioningChange != nil || tableDiff.YDBColumnTableChange != nil
 }
 
@@ -421,3 +413,7 @@ func tableCreationSchemaOnly(creation difftypes.TableCreation) (string, []string
 }
 
 func tableCreationName(creation difftypes.TableCreation) string { return creation.Name }
+
+func tableRemovalSchemaOnly(removal difftypes.TableRemoval) (string, []string) {
+	return tableSchemaOnly(removal.Name)
+}

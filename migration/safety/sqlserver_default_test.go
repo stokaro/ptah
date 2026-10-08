@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/safety"
 )
 
@@ -48,7 +50,7 @@ func TestAssessRendered_SQLServerDefaultChange(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			assessments, err := safety.AssessRendered([]ast.Node{defaultChange(test.operation)}, platform.SQLServer)
+			assessments, err := safety.AssessRendered(c.Context(), must.Must(builtin.New()), []ast.Node{defaultChange(test.operation)}, platform.SQLServer)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(assessments, qt.HasLen, 1)

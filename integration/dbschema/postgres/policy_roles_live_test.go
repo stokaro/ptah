@@ -12,12 +12,13 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/jackc/pgx/v5"
 
 	"ptah.run/catalog"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
@@ -107,7 +108,7 @@ CREATE POLICY docs_tenant ON %[1]s.docs %[2]s USING (true);
 
 func (f policyRoleFixture) apply(c *qt.C, desired *schemamodel.Database) {
 	c.Helper()
-	statements, err := renderer.GetOrderedCreateStatements(desired, f.dialect)
+	statements, err := builtin.GetOrderedCreateStatements(desired, f.dialect)
 	c.Assert(err, qt.IsNil)
 	for _, statement := range statements {
 		_, err := f.conn.ExecContext(c.Context(), statement)
@@ -124,7 +125,7 @@ func (f policyRoleFixture) read(c *qt.C) *catalog.Database {
 
 func (f policyRoleFixture) compare(c *qt.C, desired *schemamodel.Database) *difftypes.SchemaDiff {
 	c.Helper()
-	return schemadiff.CompareWithDialect(desired, f.read(c), f.dialect)
+	return must.Must(schemadiff.CompareWithDialect(c.Context(), desired, f.read(c), f.dialect, must.Must(builtin.New())))
 }
 
 // TestPolicyRoles_LiveSchemaFileConverges applies each spelling and compares

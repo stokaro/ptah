@@ -1,20 +1,23 @@
 package generator
 
 // White-box testing required: the reverse plan is built by the unexported
-// reverseSchemaDiffWithSchema and rendered by the unexported
+// reverseSchemaDiffWithPrior and rendered by the unexported
 // generateDownMigrationSQL. Asserting on the reversed SchemaDiff alone would
 // only restate the swap; these tests need the rendered down SQL, which is not
 // reachable through the exported GenerateMigration API without writing
 // migration files to disk and reading them back.
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -122,7 +125,9 @@ func TestGenerateDownMigrationSQL_DropsViewLikeObjectsCreatedByUp(t *testing.T) 
 
 	schema := viewLikeGoSchemaWithObjects(revViewBody, revMatViewBody, revTriggerBody)
 	db := viewLikeDBWithTableOnly()
-	upDiff := schemadiff.CompareWithDialect(schema, db, "postgres")
+	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		schema, db, "postgres", must.Must(builtin.New()),
+	))
 
 	c.Assert(upDiff.ViewsAdded.Names(), qt.DeepEquals, []string{"rev_active_users"})
 	c.Assert(upDiff.MaterializedViewsAdded.Names(), qt.DeepEquals, []string{"rev_user_stats"})
@@ -132,7 +137,8 @@ func TestGenerateDownMigrationSQL_DropsViewLikeObjectsCreatedByUp(t *testing.T) 
 	c.Assert(upDiff.TriggersAdded[0].Desired.Name, qt.Equals, "rev_touch",
 		qt.Commentf("an addition carries the declaration it renders from (stokaro/ptah#2315)"))
 
-	downSQL, err := generateDownMigrationSQL(upDiff, schema, db, "postgres")
+	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+		upDiff, schema, db, "postgres")
 	c.Assert(err, qt.IsNil)
 	downSQL = legacyRenderedSQL(downSQL)
 
@@ -171,7 +177,9 @@ func TestGenerateDownMigrationSQL_RestoresViewLikeObjectsDroppedByUp(t *testing.
 	schemamodel.Finalize(schema)
 	db := viewLikeDBWithObjects(revViewBody, revMatViewBody, revTriggerBody)
 
-	upDiff := schemadiff.CompareWithDialect(schema, db, "postgres")
+	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		schema, db, "postgres", must.Must(builtin.New()),
+	))
 
 	c.Assert(upDiff.ViewsRemoved.Names(), qt.DeepEquals, []string{"rev_active_users"})
 	c.Assert(upDiff.MaterializedViewsRemoved.Names(), qt.DeepEquals, []string{"rev_user_stats"})
@@ -179,7 +187,8 @@ func TestGenerateDownMigrationSQL_RestoresViewLikeObjectsDroppedByUp(t *testing.
 		{TriggerName: "rev_touch", TableName: "rev_view_users"},
 	})
 
-	downSQL, err := generateDownMigrationSQL(upDiff, schema, db, "postgres")
+	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+		upDiff, schema, db, "postgres")
 	c.Assert(err, qt.IsNil)
 	downSQL = legacyRenderedSQL(downSQL)
 
@@ -218,17 +227,23 @@ func TestGenerateDownMigrationSQL_ModifiedViewRollbackDropsInsteadOfReplacing(t 
 	schema := viewLikeGoSchemaWithObjects(newBody, revMatViewBody, revTriggerBody)
 	db := viewLikeDBWithObjects(oldBody, revMatViewBody, revTriggerBody)
 
-	upDiff := schemadiff.CompareWithDialect(schema, db, "postgres")
+	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		schema, db, "postgres", must.Must(builtin.New()),
+	))
 	c.Assert(upDiff.ViewsModified, qt.HasLen, 1)
 	c.Assert(upDiff.ViewsModified[0].ViewName, qt.Equals, "rev_active_users")
 
-	upSQL, err := generateUpMigrationSQL(upDiff, schema, "postgres")
+	upSQL, err := generateUpMigrationSQL(
+		context.Background(), must.Must(builtin.New()),
+		upDiff, schema, "postgres",
+	)
 	c.Assert(err, qt.IsNil)
 	// Appending a trailing column is the one shape PostgreSQL does accept, so
 	// the up direction keeps the dependency-preserving replace.
 	c.Assert(legacyRenderedSQL(upSQL), qt.Contains, "CREATE OR REPLACE VIEW rev_active_users")
 
-	downSQL, err := generateDownMigrationSQL(upDiff, schema, db, "postgres")
+	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+		upDiff, schema, db, "postgres")
 	c.Assert(err, qt.IsNil)
 	downSQL = legacyRenderedSQL(downSQL)
 
@@ -276,10 +291,13 @@ func TestGenerateDownMigrationSQL_ModifiedViewKeepsLegalReplace(t *testing.T) {
 	schema := viewLikeGoSchemaWithObjects(newBody, revMatViewBody, revTriggerBody)
 	db := viewLikeDBWithObjects(oldBody, revMatViewBody, revTriggerBody)
 
-	upDiff := schemadiff.CompareWithDialect(schema, db, "postgres")
+	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		schema, db, "postgres", must.Must(builtin.New()),
+	))
 	c.Assert(upDiff.ViewsModified, qt.HasLen, 1)
 
-	downSQL, err := generateDownMigrationSQL(upDiff, schema, db, "postgres")
+	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+		upDiff, schema, db, "postgres")
 	c.Assert(err, qt.IsNil)
 	downSQL = legacyRenderedSQL(downSQL)
 
@@ -313,11 +331,14 @@ func TestGenerateDownMigrationSQL_ModifiedMatViewAndTriggerRollback(t *testing.T
 	schema := viewLikeGoSchemaWithObjects(revViewBody, newMatView, newTrigger)
 	db := viewLikeDBWithObjects(revViewBody, oldMatView, oldTrigger)
 
-	upDiff := schemadiff.CompareWithDialect(schema, db, "postgres")
+	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		schema, db, "postgres", must.Must(builtin.New()),
+	))
 	c.Assert(upDiff.MaterializedViewsModified, qt.HasLen, 1)
 	c.Assert(upDiff.TriggersModified, qt.HasLen, 1)
 
-	downSQL, err := generateDownMigrationSQL(upDiff, schema, db, "postgres")
+	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+		upDiff, schema, db, "postgres")
 	c.Assert(err, qt.IsNil)
 	downSQL = legacyRenderedSQL(downSQL)
 
@@ -356,7 +377,9 @@ func TestReverseSchemaDiff_ReversesViewLikeChangeDescriptions(t *testing.T) {
 		},
 	}
 
-	result := reverseSchemaDiff(input)
+	result := reverseForTest(t,
+		input, nil, nil, "postgres",
+	)
 
 	t.Run("view identity is preserved and the change is flipped", func(t *testing.T) {
 		c := qt.New(t)

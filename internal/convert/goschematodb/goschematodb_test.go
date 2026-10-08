@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/migration/schemadiff"
 )
@@ -56,7 +58,7 @@ func TestToDBSchema_PreservesExtendedSchemaObjects(t *testing.T) {
 	}
 	schemamodel.Finalize(db)
 
-	got := goschematodb.ToDBSchema(db, platform.Postgres)
+	got := must.Must(goschematodb.ToDBSchema(t.Context(), db, platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(got.Schemas, qt.HasLen, 1)
 	c.Assert(got.Schemas[0].Comment, qt.Equals, "Application")
@@ -76,7 +78,7 @@ func TestToDBSchema_PreservesExtendedSchemaObjects(t *testing.T) {
 	c.Assert(got.Grants[0].ObjectType, qt.Equals, "SEQUENCE")
 	c.Assert(got.Grants[0].Schema, qt.Equals, "app")
 	c.Assert(got.Grants[0].ObjectName, qt.Equals, "order_seq")
-	diff := schemadiff.CompareWithDialect(db, got, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), db, got, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("extended HCL objects should not churn: %#v", diff))
 }
 
@@ -108,8 +110,8 @@ func TestToDBSchema_FieldLevelConstraintsStayIdempotent(t *testing.T) {
 		},
 	}
 
-	current := goschematodb.ToDBSchema(db, platform.Postgres)
-	diff := schemadiff.CompareWithDialect(db, current, platform.Postgres)
+	current := must.Must(goschematodb.ToDBSchema(t.Context(), db, platform.Postgres, must.Must(builtin.New())))
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), db, current, platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("field-level CHECK/FK should not produce a file-to-file churn diff: %#v", diff))
 }
@@ -134,7 +136,7 @@ func TestToDBSchema_ExplicitConstraintOverridesFieldLevelConstraintWithSameName(
 		}},
 	}
 
-	got := goschematodb.ToDBSchema(db, platform.Postgres)
+	got := must.Must(goschematodb.ToDBSchema(t.Context(), db, platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(got.Constraints, qt.HasLen, 1)
 	c.Assert(*got.Constraints[0].CheckClause, qt.Equals, "status IN ('active', 'disabled')")
@@ -185,7 +187,7 @@ func TestToDBSchema_PreservesStructuralObjectIdentities(t *testing.T) {
 	}
 	schemamodel.Finalize(db)
 
-	got := goschematodb.ToDBSchema(db, platform.Postgres)
+	got := must.Must(goschematodb.ToDBSchema(t.Context(), db, platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(got.Tables[0].Columns[0].IsPrimaryKey, qt.IsTrue)
 	c.Assert(got.Tables[0].Columns[1].IsPrimaryKey, qt.IsFalse)
@@ -206,7 +208,7 @@ func TestToDBSchema_PreservesStructuralObjectIdentities(t *testing.T) {
 	c.Assert(got.Grants[0].QualifiedTarget(), qt.Equals, `"tenant.data"`)
 	c.Assert(got.Grants[1].QualifiedTarget(), qt.Equals, "tenant.data")
 
-	diff := schemadiff.CompareWithDialect(db, got, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), db, got, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))
 }
 
@@ -222,7 +224,7 @@ func TestToDBSchema_PreservesFunctionIdentities(t *testing.T) {
 	}}
 	schemamodel.Finalize(db)
 
-	got := goschematodb.ToDBSchema(db, platform.Postgres)
+	got := must.Must(goschematodb.ToDBSchema(t.Context(), db, platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(got.Functions, qt.HasLen, 2)
 	c.Assert(got.Functions[0].Name, qt.Equals, "tenant.data")
@@ -234,7 +236,7 @@ func TestToDBSchema_PreservesFunctionIdentities(t *testing.T) {
 	c.Assert(got.Functions[1].QualifiedName(), qt.Equals, "tenant.data")
 	c.Assert(got.Functions[1].Parameters, qt.Equals, "value text")
 
-	diff := schemadiff.CompareWithDialect(db, got, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), db, got, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))
 }
 
@@ -284,7 +286,7 @@ func TestToDBSchema_KeepsForceAndRestrictive(t *testing.T) {
 				}},
 			}
 
-			got := goschematodb.ToDBSchema(db, platform.Postgres)
+			got := must.Must(goschematodb.ToDBSchema(t.Context(), db, platform.Postgres, must.Must(builtin.New())))
 
 			c.Assert(got.Tables, qt.HasLen, 1)
 			c.Assert(got.Tables[0].RLSEnabled, qt.Equals, test.wantEnabled)

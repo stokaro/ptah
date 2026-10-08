@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 )
 
 // writeTestFile writes a parseable Go source file into a directory this test
@@ -138,7 +138,7 @@ type Product struct {
 	c.Assert(productPolicy.Comment, qt.Equals, "Ensures products are isolated by tenant")
 
 	// Generate PostgreSQL SQL and verify it contains the expected statements
-	statements, err := renderer.GetOrderedCreateStatements(&database, "postgresql")
+	statements, err := builtin.GetOrderedCreateStatements(&database, "postgresql")
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.Not(qt.HasLen), 0)
 
@@ -219,7 +219,7 @@ type TestTable struct {
 	c.Assert(database.RLSEnabledTables, qt.HasLen, 1)
 
 	// Generate MySQL SQL - PostgreSQL-specific features should be skipped
-	statements, err := renderer.GetOrderedCreateStatements(&database, "mysql")
+	statements, err := builtin.GetOrderedCreateStatements(&database, "mysql")
 	c.Assert(err, qt.IsNil)
 	sqlOutput := legacyRenderedSQL(strings.Join(statements, "\n"))
 

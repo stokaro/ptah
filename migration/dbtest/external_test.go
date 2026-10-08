@@ -22,7 +22,7 @@ import (
 func TestRunTest_AnExternalStepIsRefusedWithoutAuthorization(t *testing.T) {
 	c := qt.New(t)
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		Cases: []dbtest.Case{
 			{
 				Name:  "ordinary",
@@ -81,7 +81,7 @@ func TestRunTest_AnInvalidExternalStepIsRefusedBeforeAnyDatabase(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+			report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 				AllowExternalCommands: true,
 				Cases: []dbtest.Case{{
 					Name:  test.name,
@@ -186,7 +186,7 @@ func TestRunTest_AnExternalStepInCleanupIsRefusedWithoutAuthorization(t *testing
 
 	marker := filepath.Join(t.TempDir(), "ran")
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		Cases: []dbtest.Case{{
 			Name:  "teardown runs a program",
 			Steps: []dbtest.Step{{Exec: "SELECT 1"}},

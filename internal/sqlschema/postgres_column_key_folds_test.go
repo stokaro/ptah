@@ -8,8 +8,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -204,7 +204,7 @@ func TestRead_PostgresFoldedKeysRenderAsTheServerBuiltThem(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			schemamodel.Finalize(&database)
 
-			statements, err := renderer.GetOrderedCreateStatements(&database, platform.Postgres)
+			statements, err := builtin.GetOrderedCreateStatements(&database, platform.Postgres)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(strings.Join(statements, "\n"), qt.Contains, test.want)

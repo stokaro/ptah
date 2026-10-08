@@ -1,13 +1,15 @@
 package postgres_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -111,9 +113,12 @@ func TestPlanner_ConcurrentIndexDrops(t *testing.T) {
 			c := qt.New(t)
 			diff, desired := tt.fixture()
 
-			nodes, err := tt.planner().GenerateMigrationAST(withDeclaredObjects(diff, desired))
+			nodes, err := tt.planner().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(diff, desired),
+			)
 			c.Assert(err, qt.IsNil)
-			sql, err := renderer.RenderSQL("postgres", nodes...)
+			sql, err := builtin.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(legacyRenderedSQL(sql), qt.Contains, tt.want, qt.Commentf("got:\n%s", sql))

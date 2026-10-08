@@ -10,10 +10,11 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
@@ -73,7 +74,7 @@ func TestPostgresLiveRoutineSettingsConverge(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	// 1. The rendered statements are the ones the server is given.
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(statements, "\n"), qt.Contains, "SET search_path = "+schemaName)
 	for _, statement := range statements {
@@ -88,7 +89,7 @@ func TestPostgresLiveRoutineSettingsConverge(t *testing.T) {
 	c.Assert(live.Functions[0].Settings, qt.DeepEquals, []string{"search_path=" + schemaName})
 
 	// 3. The convergence assertion.
-	settled := schemadiff.CompareWithDialect(description, live, platform.Postgres)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(settled.FunctionsAdded, qt.HasLen, 0)
 	c.Assert(settled.FunctionsModified, qt.HasLen, 0)
 	c.Assert(settled.FunctionsRemoved, qt.HasLen, 0)
@@ -130,7 +131,7 @@ function "plain" {
 	description, err := atlashcl.Parse(document, "schema.hcl")
 	c.Assert(err, qt.IsNil)
 
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(statements, "\n"), qt.Not(qt.Contains), "SET ")
 	for _, statement := range statements {
@@ -143,6 +144,6 @@ function "plain" {
 	c.Assert(live.Functions, qt.HasLen, 1)
 	c.Assert(live.Functions[0].Settings, qt.HasLen, 0)
 
-	settled := schemadiff.CompareWithDialect(description, live, platform.Postgres)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(settled.FunctionsModified, qt.HasLen, 0)
 }

@@ -1,13 +1,16 @@
 package planner_test
 
 import (
+	"context"
 	"regexp"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 )
 
@@ -67,7 +70,10 @@ func TestGenerateSchemaDiffSQLStatements_MySQLFamilyModifyStatesUniqueOnlyWhenIt
 			t.Run(dialect+"/"+test.name, func(t *testing.T) {
 				c := qt.New(t)
 
-				got, err := planner.GenerateSchemaDiffSQLStatements(oneModifiedColumn(test.desired, test.changes), dialect)
+				got, err := planner.GenerateSchemaDiffSQLStatements(
+					context.Background(), must.Must(builtin.New()),
+					oneModifiedColumn(test.desired, test.changes), dialect,
+				)
 
 				c.Assert(err, qt.IsNil)
 				c.Assert(got, qt.HasLen, 1)

@@ -9,10 +9,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -72,14 +74,17 @@ func TestGenerateDownMigrationSQL_RestoresModifiedViewInANamedSchema(t *testing.
 
 	semantics := identifier.ForDialect("postgres")
 	semantics.DefaultSchema = "reporting"
-	upDiff, err := schemadiff.CompareWithDatabaseInfo(schema, db, catalog.ServerInfo{
-		Dialect:             "postgres",
-		IdentifierSemantics: semantics,
-	}, nil)
+	upDiff, err := schemadiff.CompareWithDatabaseInfo(t.Context(),
+		schema, db, catalog.ServerInfo{
+			Dialect:             "postgres",
+			IdentifierSemantics: semantics,
+		}, nil, must.Must(builtin.New()),
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(upDiff.ViewsModified, qt.HasLen, 1)
 
-	downSQL, err := generateDownMigrationSQL(upDiff, schema, db, "postgres")
+	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+		upDiff, schema, db, "postgres")
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(legacyRenderedSQL(downSQL), qt.Contains, priorBody,

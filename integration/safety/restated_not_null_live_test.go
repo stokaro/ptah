@@ -12,12 +12,14 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/safety"
@@ -78,11 +80,17 @@ func planNotNull(c *qt.C, dialect, table string) notNullPlan {
 			Changes:    map[string]string{"nullable": "true -> false"},
 		}},
 	}}}
-	nodes, err := planner.GenerateSchemaDiffASTWithOptions(diff, dialect, planner.Options{})
+	nodes, err := planner.GenerateSchemaDiffASTWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		diff, dialect, planner.Options{},
+	)
 	c.Assert(err, qt.IsNil)
-	assessments, err := safety.AssessRendered(nodes, dialect)
+	assessments, err := safety.AssessRendered(c.Context(), must.Must(builtin.New()), nodes, dialect)
 	c.Assert(err, qt.IsNil)
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, dialect)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, dialect,
+	)
 	c.Assert(err, qt.IsNil)
 	executable := make([]string, 0, len(statements))
 	for _, statement := range statements {

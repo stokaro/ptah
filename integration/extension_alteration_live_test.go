@@ -3,16 +3,19 @@
 package integration_test
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -71,13 +74,16 @@ func TestExtensionVersionAndSchemaConvergeLive(t *testing.T) {
 	}}}
 	live, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
-	raised := schemadiff.CompareWithDialect(declared, live, platform.Postgres)
+	raised := must.Must(schemadiff.CompareWithDialect(t.Context(), declared, live, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(raised.ExtensionsModified, qt.HasLen, 1)
 	c.Assert(raised.ExtensionsModified[0].FromVersion, qt.Equals, "1.5")
 	c.Assert(raised.ExtensionsModified[0].ToVersion, qt.Equals, "1.6")
 
 	// 2. It plans a statement the server accepts.
-	statements, err := planner.GenerateSchemaDiffSQLStatements(raised, platform.Postgres)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		raised, platform.Postgres,
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(statements, "\n"), qt.Contains, "ALTER EXTENSION")
 	for _, statement := range statements {
@@ -88,7 +94,7 @@ func TestExtensionVersionAndSchemaConvergeLive(t *testing.T) {
 	// nothing left to do.
 	settled, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
-	after := schemadiff.CompareWithDialect(declared, settled, platform.Postgres)
+	after := must.Must(schemadiff.CompareWithDialect(t.Context(), declared, settled, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(after.ExtensionsModified, qt.HasLen, 0)
 	c.Assert(after.ExtensionsAdded.Names(), qt.HasLen, 0)
 	c.Assert(after.ExtensionsRemoved.Names(), qt.HasLen, 0)
@@ -97,10 +103,13 @@ func TestExtensionVersionAndSchemaConvergeLive(t *testing.T) {
 	moved := &schemamodel.Database{Extensions: []schemamodel.Extension{{
 		Name: "pg_trgm", Schema: away, Version: "1.6",
 	}}}
-	move := schemadiff.CompareWithDialect(moved, settled, platform.Postgres)
+	move := must.Must(schemadiff.CompareWithDialect(t.Context(), moved, settled, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(move.ExtensionsModified, qt.HasLen, 1)
 	c.Assert(move.ExtensionsModified[0].Relocatable, qt.IsTrue)
-	moveStatements, err := planner.GenerateSchemaDiffSQLStatements(move, platform.Postgres)
+	moveStatements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		move, platform.Postgres,
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(moveStatements, "\n"), qt.Contains, "SET SCHEMA")
 	for _, statement := range moveStatements {
@@ -109,7 +118,7 @@ func TestExtensionVersionAndSchemaConvergeLive(t *testing.T) {
 
 	relocated, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
-	c.Assert(schemadiff.CompareWithDialect(moved, relocated, platform.Postgres).ExtensionsModified, qt.HasLen, 0)
+	c.Assert(must.Must(schemadiff.CompareWithDialect(t.Context(), moved, relocated, platform.Postgres, must.Must(builtin.New()))).ExtensionsModified, qt.HasLen, 0)
 }
 
 // TestExtensionAlterationRefusalsMatchTheServerLive pins that the two shapes

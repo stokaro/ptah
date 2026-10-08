@@ -9,9 +9,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -56,9 +58,12 @@ func TestGenerateDownMigration_RestoresTheDeleteColumnList(t *testing.T) {
 			OnDeleteColumns: []string{"parent_id"},
 		}},
 	}
-	upDiff := schemadiff.CompareWithDialect(desired, current, "postgres")
+	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		desired, current, "postgres", must.Must(builtin.New()),
+	))
 
-	downSQL, err := generateDownMigrationSQL(upDiff, desired, current, "postgres")
+	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+		upDiff, desired, current, "postgres")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(legacyRenderedSQL(downSQL), qt.Contains, "ON DELETE SET NULL (parent_id)")

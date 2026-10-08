@@ -1,14 +1,17 @@
 package planner_test
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/goschema"
 	"ptah.run/core/platform"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -34,8 +37,11 @@ func TestRLSFixturePipeline(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(desired.RLSPolicies, qt.HasLen, test.expectedPolicies)
 			c.Assert(desired.RLSEnabledTables, qt.HasLen, test.expectedEnabledTables)
-			diff := schemadiff.Compare(desired, &catalog.Database{})
-			sql, err := planner.GenerateSchemaDiffSQL(diff, platform.Postgres)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, &catalog.Database{}, platform.Postgres, must.Must(builtin.New())))
+			sql, err := planner.GenerateSchemaDiffSQL(
+				context.Background(), must.Must(builtin.New()),
+				diff, platform.Postgres,
+			)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Not(qt.Equals), "")
 			c.Assert(sql, qt.Contains, "CREATE POLICY")

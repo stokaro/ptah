@@ -79,7 +79,7 @@ func TestClassifySet_RemoteSchemaMarkerFromEnvResolvesToTheArtifact(t *testing.T
 	c.Assert(err, qt.IsNil)
 	c.Assert(set.Kind, qt.Equals, atlassource.KindRemoteSchema)
 
-	state, err := set.Resolve(c.TB.Context(), atlassource.ResolveOptions{Dialect: "sqlite"})
+	state, err := set.Resolve(c.TB.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "sqlite"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(state.Kind, qt.Equals, atlassource.KindRemoteSchema)
@@ -104,7 +104,7 @@ func TestClassifySet_RemoteSchemaMissingArtifactNamesTheReference(t *testing.T) 
 
 	set, err := atlassource.ClassifySet("--to", []string{"env://src"}, envWithSchemaSource(marker))
 	c.Assert(err, qt.IsNil)
-	_, err = set.Resolve(c.TB.Context(), atlassource.ResolveOptions{Dialect: "sqlite"})
+	_, err = set.Resolve(c.TB.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "sqlite"})
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "acme/app:absent")

@@ -8,8 +8,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/goschema"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 )
 
 func TestMerge_RejectsEveryConflictingNamedObject(t *testing.T) {
@@ -328,7 +328,7 @@ func TestMerge_PreservesTablesWithSameGoTypeNameInDifferentSchemas(t *testing.T)
 	c.Assert(merged.Fields[0].StructName, qt.Equals, "auth.users")
 	c.Assert(merged.Fields[1].StructName, qt.Equals, "billing.users")
 
-	statements, err := renderer.GetOrderedCreateStatements(merged, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(merged, "postgres")
 	c.Assert(err, qt.IsNil)
 	rendered := strings.Join(statements, "\n")
 	c.Assert(rendered, qt.Contains, `CREATE TABLE "auth"."users"`)
@@ -370,7 +370,7 @@ func TestMerge_IsolatesSourceLocalNestedEmbeddedHelpers(t *testing.T) {
 	c.Assert(merged.Fields, qt.HasLen, 6)
 	c.Assert(merged.EmbeddedFields, qt.HasLen, 2)
 
-	statements, err := renderer.GetOrderedCreateStatements(merged, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(merged, "postgres")
 	c.Assert(err, qt.IsNil)
 	rendered := strings.Join(statements, "\n")
 	c.Assert(strings.Count(rendered, `"auth_label"`), qt.Equals, 1)
@@ -398,12 +398,12 @@ func TestMerge_PreservesNestedEmbeddedHelpersAcrossRefinalization(t *testing.T) 
 	merged, err := schemamodel.Merge(auth)
 	c.Assert(err, qt.IsNil)
 	schemamodel.Finalize(merged)
-	refinalizedSQL, err := renderer.GetOrderedCreateStatements(merged, "postgres")
+	refinalizedSQL, err := builtin.GetOrderedCreateStatements(merged, "postgres")
 	c.Assert(err, qt.IsNil)
 
 	remerged, err := schemamodel.Merge(merged)
 	c.Assert(err, qt.IsNil)
-	remergedSQL, err := renderer.GetOrderedCreateStatements(remerged, "postgres")
+	remergedSQL, err := builtin.GetOrderedCreateStatements(remerged, "postgres")
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(strings.Join(refinalizedSQL, "\n"), qt.Contains, `"label" TEXT`)
@@ -465,7 +465,7 @@ func TestMerge_DoesNotAttachSourceLocalHelperToSameNamedTable(t *testing.T) {
 	c.Assert(merged.Dependencies["metadata"], qt.HasLen, 0)
 	c.Assert(merged.Dependencies["profiles"], qt.DeepEquals, []string{"organizations"})
 
-	statements, err := renderer.GetOrderedCreateStatements(merged, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(merged, "postgres")
 	c.Assert(err, qt.IsNil)
 	rendered := strings.Join(statements, "\n")
 	c.Assert(strings.Count(rendered, `"organization_id"`), qt.Equals, 2)
@@ -505,7 +505,7 @@ func TestMerge_RebindsEmbeddedTableTypeAcrossParserNames(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(merged.Fields, qt.HasLen, 4)
 
-	statements, err := renderer.GetOrderedCreateStatements(merged, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(merged, "postgres")
 	c.Assert(err, qt.IsNil)
 	rendered := strings.Join(statements, "\n")
 	c.Assert(strings.Count(rendered, `"id" BIGINT`), qt.Equals, 2)
@@ -553,7 +553,7 @@ func TestMerge_UnifiesTableOwnershipAcrossParserNames(t *testing.T) {
 	c.Assert(merged.Fields[0].StructName, qt.Equals, "User")
 	c.Assert(merged.Fields[1].StructName, qt.Equals, "User")
 
-	statements, err := renderer.GetOrderedCreateStatements(merged, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(merged, "postgres")
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(statements, "\n"), qt.Contains, `"email" TEXT`)
 }

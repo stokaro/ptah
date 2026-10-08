@@ -9,9 +9,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/migration/migrator"
 )
@@ -43,8 +45,8 @@ func TestPreparePlanFileComputesFingerprintedPlan(t *testing.T) {
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);\n")
 
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
-		ToURLs: []string{desired},
-	})
+		ToURLs:  []string{desired},
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.FormatVersion, qt.Equals, atlasschema.PlanFormatVersion)
@@ -66,8 +68,8 @@ func TestPreparePlanFileSyncedSchemaHasNoChanges(t *testing.T) {
 	desired := writePlanDesiredSchema(c, dir, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
 
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
-		ToURLs: []string{desired},
-	})
+		ToURLs:  []string{desired},
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.HasChanges(), qt.IsFalse)
@@ -80,18 +82,18 @@ func TestPreparePlanFileHonorsCustomNameAndDevURLDialect(t *testing.T) {
 	desired := writePlanDesiredSchema(c, dir, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
 
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
-		Name:   "my_plan",
-		DevURL: "sqlite://dev.db",
-		ToURLs: []string{desired},
-	})
+		Name:    "my_plan",
+		DevURL:  "sqlite://dev.db",
+		ToURLs:  []string{desired},
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.Name, qt.Equals, "my_plan")
 
 	_, err = atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
-		DevURL: "postgres://localhost/dev",
-		ToURLs: []string{desired},
-	})
+		DevURL:  "postgres://localhost/dev",
+		ToURLs:  []string{desired},
+		Runtime: must.Must(builtin.New())})
 
 	// A dev database of another dialect cannot stand in for the plan target.
 	c.Assert(err, qt.ErrorMatches, `--dev-url dialect "postgres" does not match --url dialect "sqlite"`)
@@ -135,7 +137,7 @@ func TestPreparePlanFileNamesTheContainerItDoesNotStart(t *testing.T) {
 				DevURL:      test.devURL,
 				ToURLs:      []string{desired},
 				Diagnostics: &diagnostics,
-			})
+				Runtime:     must.Must(builtin.New())})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(diagnostics.String(), qt.Contains, test.wantWarning)
@@ -158,9 +160,9 @@ func TestPreparePlanFileRefusesADockerEngineItDoesNotStart(t *testing.T) {
 	desired := writePlanDesiredSchema(c, dir, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
 
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
-		DevURL: "docker://sqlite/dev",
-		ToURLs: []string{desired},
-	})
+		DevURL:  "docker://sqlite/dev",
+		ToURLs:  []string{desired},
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.ErrorMatches, `unsupported docker image "sqlite"`)
 	c.Assert(plan.Dialect, qt.Equals, "")
@@ -170,8 +172,8 @@ func TestPreparePlanFileRequiresConnection(t *testing.T) {
 	c := qt.New(t)
 
 	_, err := atlasschema.PreparePlanFile(context.Background(), nil, atlasschema.PlanFileOptions{
-		ToURLs: []string{"file://desired.sql"},
-	})
+		ToURLs:  []string{"file://desired.sql"},
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.ErrorMatches, `schema plan requires database connection`)
 }
@@ -185,16 +187,16 @@ func TestVerifyPlanTargetDetectsDriftAndDialectMismatch(t *testing.T) {
 	desired := writePlanDesiredSchema(c, dir,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);\n")
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
-		ToURLs: []string{desired},
-	})
+		ToURLs:  []string{desired},
+		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 
-	c.Assert(atlasschema.VerifyPlanTarget(t.Context(), conn, plan), qt.IsNil)
+	c.Assert(atlasschema.VerifyPlanTarget(t.Context(), conn, plan, must.Must(builtin.New())), qt.IsNil)
 
 	// A schema change after planning must be detected as a stale plan.
 	c.Assert(atlasschema.ApplySQL(context.Background(), conn, migrator.MigrationTxModeAll,
 		`CREATE TABLE drifted (id INTEGER PRIMARY KEY);`), qt.IsNil)
-	err = atlasschema.VerifyPlanTarget(t.Context(), conn, plan)
+	err = atlasschema.VerifyPlanTarget(t.Context(), conn, plan, must.Must(builtin.New()))
 	var stale *atlasschema.StalePlanError
 	c.Assert(err, qt.ErrorAs, &stale)
 	c.Assert(stale.PlanFingerprint, qt.Equals, plan.FromFingerprint)
@@ -202,7 +204,7 @@ func TestVerifyPlanTargetDetectsDriftAndDialectMismatch(t *testing.T) {
 
 	mismatched := plan
 	mismatched.Dialect = "mysql"
-	c.Assert(atlasschema.VerifyPlanTarget(t.Context(), conn, mismatched), qt.ErrorMatches,
+	c.Assert(atlasschema.VerifyPlanTarget(t.Context(), conn, mismatched, must.Must(builtin.New())), qt.ErrorMatches,
 		`plan file targets dialect "mysql", but the --url database dialect is "sqlite"`)
 }
 
@@ -212,8 +214,8 @@ func TestPlanFileMarshalReadRoundTrip(t *testing.T) {
 	conn := connectPlanSQLite(c, filepath.Join(dir, "roundtrip.db"))
 	desired := writePlanDesiredSchema(c, dir, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
-		ToURLs: []string{desired},
-	})
+		ToURLs:  []string{desired},
+		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 
 	document, err := atlasschema.MarshalPlanFile(plan)
@@ -349,15 +351,15 @@ func TestSchemaFingerprintIsDeterministicOverContent(t *testing.T) {
 		Tables: []catalog.Table{{Name: "users"}},
 	}
 
-	first, err := atlasschema.SchemaFingerprint(schema)
+	first, err := atlasschema.SchemaFingerprint(t.Context(), schema, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	second, err := atlasschema.SchemaFingerprint(&catalog.Database{
+	second, err := atlasschema.SchemaFingerprint(t.Context(), &catalog.Database{
 		Tables: []catalog.Table{{Name: "users"}},
-	})
+	}, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	changed, err := atlasschema.SchemaFingerprint(&catalog.Database{
+	changed, err := atlasschema.SchemaFingerprint(t.Context(), &catalog.Database{
 		Tables: []catalog.Table{{Name: "orders"}},
-	})
+	}, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 
 	// Equal content yields equal fingerprints; different content differs.
@@ -365,6 +367,6 @@ func TestSchemaFingerprintIsDeterministicOverContent(t *testing.T) {
 	c.Assert(first, qt.Matches, `sha256:[0-9a-f]{64}`)
 	c.Assert(changed, qt.Not(qt.Equals), first)
 
-	_, err = atlasschema.SchemaFingerprint(nil)
+	_, err = atlasschema.SchemaFingerprint(t.Context(), nil, must.Must(builtin.New()))
 	c.Assert(err, qt.ErrorMatches, `schema fingerprint requires schema`)
 }

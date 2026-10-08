@@ -3,16 +3,19 @@
 package gonative_test
 
 import (
+	"context"
 	"database/sql"
 	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/go-sql-driver/mysql" // registers the MySQL driver for database/sql
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbschema/mysql"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -63,14 +66,14 @@ func testMySQLFamilyTableQualifiedIndexIdentityRoundTrip(t *testing.T, dsn, dial
 
 	target := tableQualifiedIndexTarget()
 	live := readMySQLFamilyIndexIdentitySchema(c, db)
-	initialDiff := schemadiff.CompareWithDialect(target, live, dialect)
+	initialDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), target, live, dialect, must.Must(builtin.New())))
 	c.Assert(initialDiff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(initialDiff.IndexRemovals(), qt.HasLen, 0)
 
 	_, err = db.Exec("DROP INDEX " + indexIdentityName + " ON " + indexIdentityOrdersTable)
 	c.Assert(err, qt.IsNil)
 	live = readMySQLFamilyIndexIdentitySchema(c, db)
-	additionDiff := schemadiff.CompareWithDialect(target, live, dialect)
+	additionDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), target, live, dialect, must.Must(builtin.New())))
 	c.Assert(additionDiff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: indexIdentityName, TableName: indexIdentityOrdersTable},
 	})
@@ -78,7 +81,10 @@ func testMySQLFamilyTableQualifiedIndexIdentityRoundTrip(t *testing.T, dsn, dial
 
 	indexOnlyAddition := &difftypes.SchemaDiff{}
 	indexOnlyAddition.SetIndexAdditions(additionDiff.IndexesAdded)
-	addStatements, err := planner.GenerateSchemaDiffSQLStatements(indexOnlyAddition, dialect)
+	addStatements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		indexOnlyAddition, dialect,
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(addStatements, qt.HasLen, 1)
 	_, err = db.Exec(addStatements[0])
@@ -86,7 +92,7 @@ func testMySQLFamilyTableQualifiedIndexIdentityRoundTrip(t *testing.T, dsn, dial
 
 	target = tableQualifiedIndexTargetWithoutOrdersIndex()
 	live = readMySQLFamilyIndexIdentitySchema(c, db)
-	removalDiff := schemadiff.CompareWithDialect(target, live, dialect)
+	removalDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), target, live, dialect, must.Must(builtin.New())))
 	c.Assert(removalDiff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(removalDiff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: indexIdentityName, TableName: indexIdentityOrdersTable},
@@ -94,14 +100,17 @@ func testMySQLFamilyTableQualifiedIndexIdentityRoundTrip(t *testing.T, dsn, dial
 
 	indexOnlyRemoval := &difftypes.SchemaDiff{}
 	indexOnlyRemoval.SetIndexRemovals(removalDiff.IndexRemovals())
-	removeStatements, err := planner.GenerateSchemaDiffSQLStatements(indexOnlyRemoval, dialect)
+	removeStatements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		indexOnlyRemoval, dialect,
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(removeStatements, qt.HasLen, 1)
 	_, err = db.Exec(removeStatements[0])
 	c.Assert(err, qt.IsNil, qt.Commentf("apply exact index removal: %s", removeStatements[0]))
 
 	live = readMySQLFamilyIndexIdentitySchema(c, db)
-	finalDiff := schemadiff.CompareWithDialect(target, live, dialect)
+	finalDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), target, live, dialect, must.Must(builtin.New())))
 	c.Assert(finalDiff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(finalDiff.IndexRemovals(), qt.HasLen, 0)
 }

@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasfilter"
@@ -28,8 +29,17 @@ import (
 	"ptah.run/internal/timescale"
 )
 
+// InspectRuntime supplies conversion, reporting, and schema rendering through
+// one selected build.
+type InspectRuntime interface {
+	schemaext.ConversionRuntime
+	atlasreport.InspectRuntime
+}
+
 // InspectOptions configures Atlas-compatible schema inspection.
 type InspectOptions struct {
+	// Runtime selects required feature conversion and reporting services.
+	Runtime InspectRuntime
 	DevURL  string
 	Schemas []string
 	// Include positively selects the top-level resources inspection keeps,
@@ -63,7 +73,7 @@ type InspectOptions struct {
 	// policy to the fully introspected schema before any template renders or
 	// file export is published. A returned replacement becomes the exact state
 	// every downstream inspection surface sees.
-	PrepareSchema func(*catalog.Database) (*catalog.Database, error)
+	PrepareSchema func(context.Context, *catalog.Database, catalog.ServerInfo) (*catalog.Database, error)
 	// ValidateSchema applies a caller-selected policy to the fully introspected
 	// schema before any template renders or file export is published.
 	ValidateSchema func(*schemamodel.Database) error
@@ -96,6 +106,9 @@ func NormalizeInspectFormat(format string) (string, error) {
 // formatting, applying any split/write file exports the format template
 // planned.
 func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts InspectOptions) (InspectResult, error) {
+	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
+		return InspectResult{}, err
+	}
 	if _, err := NormalizeInspectFormat(opts.Format); err != nil {
 		return InspectResult{}, err
 	}
@@ -110,11 +123,11 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Inspec
 	if err != nil {
 		return InspectResult{}, fmt.Errorf("read database schema: %w", err)
 	}
-	schema, err = prepareInspectSchema(schema, opts.PrepareSchema)
+	schema, err = prepareInspectSchema(ctx, schema, conn.Info(), opts.PrepareSchema)
 	if err != nil {
 		return InspectResult{}, err
 	}
-	if err := validateInspectSchema(schema, opts.ValidateSchema); err != nil {
+	if err := validateInspectSchema(ctx, schema, conn.Info().Dialect, opts); err != nil {
 		return InspectResult{}, err
 	}
 	if err := ValidateLiveObjects(conn, names, opts.ValidateLiveObject); err != nil {
@@ -133,27 +146,30 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Inspec
 	validatedOpts := opts
 	validatedOpts.PrepareSchema = nil
 	validatedOpts.ValidateSchema = nil
-	return renderInspectSchema(schema, conn.Info(), validatedOpts)
+	return renderInspectSchema(ctx, schema, conn.Info(), validatedOpts)
 }
 
 func prepareInspectSchema(
+	ctx context.Context,
 	schema *catalog.Database,
-	prepare func(*catalog.Database) (*catalog.Database, error),
+	info catalog.ServerInfo,
+	prepare func(context.Context, *catalog.Database, catalog.ServerInfo) (*catalog.Database, error),
 ) (*catalog.Database, error) {
 	if prepare == nil {
 		return schema, nil
 	}
-	return prepare(schema)
+	return prepare(ctx, schema, info)
 }
 
-func validateInspectSchema(schema *catalog.Database, validate func(*schemamodel.Database) error) error {
-	if validate == nil {
+func validateInspectSchema(ctx context.Context, schema *catalog.Database, dialect string, opts InspectOptions) error {
+	if opts.ValidateSchema == nil {
 		return nil
 	}
-	// The dialect is not in scope here and threading it would reach five
-	// callers; an empty one answers what every server does, which is this
-	// path's existing behavior.
-	return validate(dbschematogo.ConvertDBSchemaToGoSchema(schema, ""))
+	model, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, schema, dialect, opts.Runtime)
+	if err != nil {
+		return err
+	}
+	return opts.ValidateSchema(model)
 }
 
 // InspectResult is a rendered inspection and the schema it describes.
@@ -180,15 +196,19 @@ type InspectResult struct {
 // exclude filtering, report construction, format rendering, and application
 // of the planned split/write file exports.
 func renderInspectSchema(
+	ctx context.Context,
 	schema *catalog.Database,
 	info catalog.ServerInfo,
 	opts InspectOptions,
 ) (InspectResult, error) {
+	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
+		return InspectResult{}, err
+	}
 	format, err := NormalizeInspectFormat(opts.Format)
 	if err != nil {
 		return InspectResult{}, err
 	}
-	if err := validateInspectSchema(schema, opts.ValidateSchema); err != nil {
+	if err := validateInspectSchema(ctx, schema, info.Dialect, opts); err != nil {
 		return InspectResult{}, err
 	}
 	schema, excludeReport, err := scopeInspectSchema(schema, info, opts)
@@ -230,8 +250,12 @@ func renderInspectSchema(
 	// From the scoped schema too, so a table a selector left out is not named
 	// (stokaro/ptah#3771).
 	hashshard.ReportUndescribed(opts.Diagnostics, schema)
-	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema, info.Dialect)
-	output, err := atlasreport.RenderSchemaInspect(format, atlasreport.NewSchemaInspectReport(
+	dbsch, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, schema, info.Dialect, opts.Runtime)
+	if err != nil {
+		return InspectResult{}, err
+	}
+	report, err := atlasreport.NewSchemaInspectReport(
+		ctx,
 		dbsch,
 		schema,
 		info,
@@ -241,7 +265,12 @@ func renderInspectSchema(
 			DescribeSchemas:         describesSchemas(info, opts),
 			CompatibilityHCLFraming: opts.CompatibilityHCLFraming,
 		},
-	))
+		opts.Runtime,
+	)
+	if err != nil {
+		return InspectResult{}, err
+	}
+	output, err := atlasreport.RenderSchemaInspect(format, report)
 	if err != nil {
 		return InspectResult{}, err
 	}

@@ -1,12 +1,15 @@
 package postgres_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -42,7 +45,10 @@ func uniqueKeyRebuildSchema() *schemamodel.Database {
 func TestPlanner_ConstraintBackedIndexRebuildDropsTheConstraint(t *testing.T) {
 	c := qt.New(t)
 
-	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(uniqueKeyRebuildDiff([]difftypes.IndexRef{{Name: "uq_users_email", TableName: "users"}}), uniqueKeyRebuildSchema()))
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(uniqueKeyRebuildDiff([]difftypes.IndexRef{{Name: "uq_users_email", TableName: "users"}}), uniqueKeyRebuildSchema()),
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
@@ -68,7 +74,10 @@ func TestPlanner_ConstraintBackedIndexRebuildDropsTheConstraint(t *testing.T) {
 func TestPlanner_UnmarkedIndexRebuildStillDropsTheIndex(t *testing.T) {
 	c := qt.New(t)
 
-	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(uniqueKeyRebuildDiff(nil), uniqueKeyRebuildSchema()))
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(uniqueKeyRebuildDiff(nil), uniqueKeyRebuildSchema()),
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
@@ -88,7 +97,10 @@ func TestPlanner_ConstraintBackedStandaloneRemovalDropsTheConstraint(t *testing.
 		ConstraintBackedIndexRemovals: []difftypes.IndexRef{{Name: "uq_users_email", TableName: "users"}},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff)
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)

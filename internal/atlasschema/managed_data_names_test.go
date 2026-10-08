@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 )
 
@@ -30,7 +32,7 @@ func TestPreparePlanFile_FindsTheDeclaredTableUnderTheEnginesNameRules(t *testin
 
 	plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{
 		Desired: regionsSchema(regionRow("CZ", "Czechia", 2)),
-	})
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(planSQL(plan), qt.Not(qt.Contains), "INSERT INTO")

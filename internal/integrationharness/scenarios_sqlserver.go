@@ -8,10 +8,13 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	identifiers "ptah.run/core/platform/identifier"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 )
 
 const sqlServerAcceptanceSchema = "ptah_mssql_acceptance"
@@ -65,11 +68,15 @@ func testDynamicSQLServerIdentitySchemaBracketReservedWords(
 			}},
 		}
 
-		statements, err := renderer.GetOrderedCreateStatements(&database, platform.SQLServer)
+		runtime, err := builtin.New()
+		if err != nil {
+			return err
+		}
+		rendered, err := renderer.RenderSchema(ctx, runtime, renderer.SchemaRequest{Target: platform.SQLServer, Schema: &database, Capabilities: capability.ForDialect(platform.SQLServer), Identifiers: identifiers.ForDialect(platform.SQLServer)})
 		if err != nil {
 			return fmt.Errorf("render SQL Server acceptance schema: %w", err)
 		}
-		sqlText := strings.Join(statements, "\n")
+		sqlText := strings.Join(rendered.Statements, "\n")
 		for _, expected := range []string{
 			"CREATE TABLE [ptah_mssql_acceptance].[order]",
 			"[id] INT IDENTITY(1,1) PRIMARY KEY",

@@ -10,11 +10,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -22,7 +25,7 @@ import (
 func TestPlanGeneratedMigrationSpecs_ConcurrentIndexForPopulatedPostgresTable(t *testing.T) {
 	c := qt.New(t)
 
-	specs, assessments, err := planGeneratedMigrationSpecs(
+	specs, assessments, err := planGeneratedMigrationSpecs(t.Context(), must.Must(builtin.New()),
 		indexOnlyDiff(),
 		indexOnlyGeneratedSchema(),
 		&catalog.Database{Tables: []catalog.Table{{Name: "users", Type: "BASE TABLE", EstimatedRows: 10}}},
@@ -64,7 +67,7 @@ func TestPlanGeneratedMigrationSpecs_ReverseOnlyNoTransactionMarksPair(t *testin
 		Name: "status", Values: []string{"active", "retired"},
 	}}}
 
-	specs, _, err := planGeneratedMigrationSpecs(
+	specs, _, err := planGeneratedMigrationSpecs(t.Context(), must.Must(builtin.New()),
 		diff,
 		desired,
 		current,
@@ -86,7 +89,7 @@ func TestPlanGeneratedMigrationSpecs_ReverseOnlyNoTransactionMarksPair(t *testin
 func TestPlanGeneratedMigrationSpecs_YugabyteConcurrentCreateUsesBlockingRollback(t *testing.T) {
 	c := qt.New(t)
 
-	specs, assessments, err := planGeneratedMigrationSpecs(
+	specs, assessments, err := planGeneratedMigrationSpecs(t.Context(), must.Must(builtin.New()),
 		indexOnlyDiff(),
 		indexOnlyGeneratedSchema(),
 		&catalog.Database{Tables: []catalog.Table{{Name: "users", Type: "BASE TABLE", EstimatedRows: 10}}},
@@ -139,7 +142,8 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexRequiresPopulatedCapablePost
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			specs, _, err := planGeneratedMigrationSpecs(indexOnlyDiff(), indexOnlyGeneratedSchema(), tt.dbSchema, tt.info, 100, "add_index", DiffPolicy{}, atlasmigrate.Qualifier{})
+			specs, _, err := planGeneratedMigrationSpecs(t.Context(), must.Must(builtin.New()),
+				indexOnlyDiff(), indexOnlyGeneratedSchema(), tt.dbSchema, tt.info, 100, "add_index", DiffPolicy{}, atlasmigrate.Qualifier{})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(specs, qt.HasLen, 1)
@@ -166,9 +170,9 @@ func TestPlanGeneratedMigrationSpecs_SplitsTransactionalAndConcurrentIndex(t *te
 	})
 	// After the schema holds the table: a creation carries what CREATE TABLE
 	// renders from (stokaro/ptah#2315).
-	diff.TablesAdded = difftypes.TableCreationsFor(desired, "posts")
+	diff.TablesAdded = difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "posts")
 
-	specs, _, err := planGeneratedMigrationSpecs(
+	specs, _, err := planGeneratedMigrationSpecs(t.Context(), must.Must(builtin.New()),
 		diff,
 		desired,
 		&catalog.Database{Tables: []catalog.Table{{Name: "users", Type: "BASE TABLE", EstimatedRows: 10}}},
@@ -219,7 +223,8 @@ func TestPlanGeneratedMigrationSpecs_SplitsPopulatedAndEmptyTableIndexes(t *test
 		{Name: "posts", Type: "BASE TABLE", EstimatedRows: 0},
 	}}
 
-	specs, _, err := planGeneratedMigrationSpecs(diff, desired, dbSchema, postgresInfo(capability.Postgres16()), 100, "add_indexes", DiffPolicy{}, atlasmigrate.Qualifier{})
+	specs, _, err := planGeneratedMigrationSpecs(t.Context(), must.Must(builtin.New()),
+		diff, desired, dbSchema, postgresInfo(capability.Postgres16()), 100, "add_indexes", DiffPolicy{}, atlasmigrate.Qualifier{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(specs, qt.HasLen, 2)
@@ -265,9 +270,10 @@ func TestPlanGeneratedMigrationSpecs_LeadsWithTheEnumValueAddition(t *testing.T)
 		}},
 		Enums: []schemamodel.Enum{{Name: "status", Values: []string{"active", "archived"}}},
 	}
-	diff.TablesAdded = difftypes.TableCreationsFor(desired, "users")
+	diff.TablesAdded = difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "users")
 
-	specs, _, err := planGeneratedMigrationSpecs(diff, desired, &catalog.Database{}, postgresInfo(capability.Postgres16()), 100, "mixed", DiffPolicy{}, atlasmigrate.Qualifier{})
+	specs, _, err := planGeneratedMigrationSpecs(t.Context(), must.Must(builtin.New()),
+		diff, desired, &catalog.Database{}, postgresInfo(capability.Postgres16()), 100, "mixed", DiffPolicy{}, atlasmigrate.Qualifier{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(specs, qt.HasLen, 2)
@@ -349,7 +355,7 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexDropPolicy(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			specs, _, err := planGeneratedMigrationSpecs(
+			specs, _, err := planGeneratedMigrationSpecs(t.Context(), must.Must(builtin.New()),
 				indexRemovalOnlyDiff(),
 				indexOnlyGeneratedSchema(),
 				indexRemovalDBSchema(),
@@ -372,7 +378,7 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexDropPolicy(t *testing.T) {
 func TestPlanGeneratedMigrationSpecs_ConcurrentIndexDropRequiresCapability(t *testing.T) {
 	c := qt.New(t)
 
-	specs, _, err := planGeneratedMigrationSpecs(
+	specs, _, err := planGeneratedMigrationSpecs(t.Context(), must.Must(builtin.New()),
 		indexRemovalOnlyDiff(),
 		indexOnlyGeneratedSchema(),
 		indexRemovalDBSchema(),
@@ -407,9 +413,9 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexDropSplitsFromTransactional(
 		Primary:    true,
 		AutoInc:    true,
 	})
-	diff.TablesAdded = difftypes.TableCreationsFor(desired, "posts")
+	diff.TablesAdded = difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "posts")
 
-	specs, _, err := planGeneratedMigrationSpecs(
+	specs, _, err := planGeneratedMigrationSpecs(t.Context(), must.Must(builtin.New()),
 		diff,
 		desired,
 		indexRemovalDBSchema(),

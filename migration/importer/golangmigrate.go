@@ -1,6 +1,7 @@
 package importer
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"regexp"
@@ -36,7 +37,11 @@ func (golangMigrateParser) Detect(fsys fs.FS) bool {
 	return false
 }
 
-func (p golangMigrateParser) Parse(fsys fs.FS) (*ParseResult, error) {
+func (p golangMigrateParser) Parse(ctx context.Context, fsys fs.FS) (*ParseResult, error) {
+	return parseWithContext(ctx, func() (*ParseResult, error) { return p.parse(fsys) })
+}
+
+func (p golangMigrateParser) parse(fsys fs.FS) (*ParseResult, error) {
 	result := &ParseResult{}
 	entries, err := topLevelOnly(fsys, p.Name(), result)
 	if err != nil {

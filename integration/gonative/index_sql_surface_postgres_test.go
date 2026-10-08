@@ -17,8 +17,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 )
 
@@ -52,6 +54,7 @@ func TestPostgreSQLIndexAttributes_ItsOwnSQLDescriptionChangesNothing(t *testing
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 
 	documentResult, err := atlasschema.InspectSource(c.Context(), atlasschema.InspectSourceOptions{
+		Runtime:     must.Must(builtin.New()),
 		URLs:        []string{dbURL},
 		Format:      "sql",
 		Diagnostics: io.Discard,
@@ -71,9 +74,9 @@ func TestPostgreSQLIndexAttributes_ItsOwnSQLDescriptionChangesNothing(t *testing
 	c.Assert(os.WriteFile(path, []byte(document), 0o600), qt.IsNil)
 
 	plan, err := atlasschema.PrepareApply(c.Context(), conn, atlasschema.ApplyRuntimeOptions{
-		ToURLs: []string{"file://" + path},
-		DryRun: true,
-	})
+		ToURLs:  []string{"file://" + path},
+		DryRun:  true,
+		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(indexStatements(boundaryStripComments(plan.Statements())), qt.DeepEquals, []string(nil))
 }

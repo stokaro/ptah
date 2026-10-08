@@ -1,14 +1,16 @@
 package mysql_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mysql"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -53,10 +55,13 @@ func TestPlanner_TableLevelConstraintWithoutAnExplicitTable(t *testing.T) {
 			}
 			diff := &difftypes.SchemaDiff{ConstraintsAdded: difftypes.ConstraintAdditionsFor(desired, test.constraint.Name)}
 
-			nodes, err := mysql.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
+			nodes, err := mysql.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(diff, desired),
+			)
 
 			c.Assert(err, qt.IsNil)
-			sql, err := renderer.RenderSQL("mysql", nodes...)
+			sql, err := builtin.RenderSQL("mysql", nodes...)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, test.wantSQL)
 		})
@@ -77,10 +82,13 @@ func TestPlanner_TableLevelConstraintNamesItsOwnTable(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{ConstraintsAdded: difftypes.ConstraintAdditionsFor(desired, "positive_price")}
 
-	nodes, err := mysql.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := mysql.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("mysql", nodes...)
+	sql, err := builtin.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "ALTER TABLE `archived_bookings` ADD CONSTRAINT `positive_price` CHECK (price > 0);")
 }
@@ -131,10 +139,13 @@ func TestPlanner_ExcludeConstraintIsReportedRatherThanEmitted(t *testing.T) {
 			}
 			diff := &difftypes.SchemaDiff{ConstraintsAdded: difftypes.ConstraintAdditionsFor(desired, "one_active_session_per_user")}
 
-			nodes, err := test.planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
+			nodes, err := test.planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(diff, desired),
+			)
 
 			c.Assert(err, qt.IsNil)
-			sql, err := renderer.RenderSQL(test.dialect, nodes...)
+			sql, err := builtin.RenderSQL(test.dialect, nodes...)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, test.want)
 		})

@@ -36,7 +36,7 @@ func TestRenderSchemaInspect_EmptySQLReturnsNoBytesAndKeepsOtherFormats(t *testi
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			output, err := atlasreport.RenderSchemaInspect(test.format, emptySQLiteInspectReport(false))
+			output, err := atlasreport.RenderSchemaInspect(test.format, emptySQLiteInspectReport(c, false))
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(output.Text, qt.Equals, test.want)
@@ -75,7 +75,7 @@ func TestRenderSchemaInspect_SQLKeepsRenderedTerminatorsAndIndentation(t *testin
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			output, err := atlasreport.RenderSchemaInspect(test.format, sqlTerminatorInspectReport())
+			output, err := atlasreport.RenderSchemaInspect(test.format, sqlTerminatorInspectReport(c))
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(output.Text, qt.Equals, test.want)
@@ -83,8 +83,8 @@ func TestRenderSchemaInspect_SQLKeepsRenderedTerminatorsAndIndentation(t *testin
 	}
 }
 
-func sqlTerminatorInspectReport() *atlasreport.SchemaInspectReport {
-	return atlasreport.NewSchemaInspectReport(
+func sqlTerminatorInspectReport(c *qt.C) *atlasreport.SchemaInspectReport {
+	return newInspectReport(c,
 		&schemamodel.Database{
 			Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
 			Fields: []schemamodel.Field{

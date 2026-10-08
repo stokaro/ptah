@@ -14,6 +14,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
 	"ptah.run/dbschema"
@@ -38,6 +39,9 @@ import (
 
 // ResolveOptions configures resolution of one classified desired-state set.
 type ResolveOptions struct {
+	// Runtime selects feature conversion services and codecs for this resolution.
+	// It is required, including for a source with no feature declarations.
+	Runtime schemaext.ConversionRuntime
 	// DatabaseURL supplies the database root used to resolve absolute YDB source
 	// paths. Relative declarations remain portable. The URL is never stored in
 	// the desired model or included in source errors.
@@ -202,23 +206,34 @@ func (s State) ExtensionNames() map[string]bool {
 // other reads what the source built rather than what the dev database started
 // from. A state read from no such dev database comes back as it is. See
 // [devclean.Baseline.WithoutStartingPoint].
-func (s State) WithoutStartingPoint(other State, dialect string) State {
+func (s State) WithoutStartingPoint(ctx context.Context, other State, dialect string, runtime schemaext.ConversionRuntime) (State, error) {
+	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
+		return State{}, err
+	}
 	if s.EnvironmentState == nil || s.DB == nil {
-		return s
+		return s, nil
 	}
 	declared := other.DB
 	if declared == nil && other.Schema != nil {
-		declared = goschematodb.ToDBSchema(other.Schema, dialect)
+		var err error
+		declared, err = goschematodb.ToDBSchema(ctx, other.Schema, dialect, runtime)
+		if err != nil {
+			return State{}, err
+		}
 	}
 	defaultSchema := cmp.Or(s.DefaultSchema, schemaselection.DialectDefault(dialect))
 	filtered := devclean.WithoutKeptState(s.DB, s.EnvironmentState, declared, defaultSchema)
 	s.DB = filtered
 	if s.Schema != nil {
 		notDescribed := s.Schema.NotDescribed
-		s.Schema = dbschematogo.ConvertDBSchemaToGoSchema(filtered, dialect)
+		var err error
+		s.Schema, err = dbschematogo.ConvertDBSchemaToGoSchema(ctx, filtered, dialect, runtime)
+		if err != nil {
+			return State{}, err
+		}
 		s.Schema.NotDescribed = notDescribed
 	}
-	return s
+	return s, nil
 }
 
 // WithoutEnvironment returns the state with its dev database's environment
@@ -284,6 +299,9 @@ type HoldFunc func(state State, conn *dbschema.DatabaseConnection) error
 // An error hold returns is returned as it is, without the resolution context
 // a resolution error carries; a resolution error is returned before hold runs.
 func (s Set) ResolveHolding(ctx context.Context, opts ResolveOptions, hold HoldFunc) error {
+	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
+		return err
+	}
 	if err := s.ValidateLocalSchemaSources(opts.ValidateLocalSchemaSource); err != nil {
 		return err
 	}
@@ -453,9 +471,13 @@ func (s Set) resolveDatabase(ctx context.Context, opts ResolveOptions, finish Ho
 			return err
 		}
 	}
+	desired, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, schema, conn.Info().Dialect, opts.Runtime)
+	if err != nil {
+		return fmt.Errorf("convert %s database schema: %w", s.Flag, err)
+	}
 	return finish(State{
 		Kind:          s.Kind,
-		Schema:        dbschematogo.ConvertDBSchemaToGoSchema(schema, conn.Info().Dialect),
+		Schema:        desired,
 		DB:            schema,
 		DefaultSchema: conn.Info().Schema,
 		RealmScoped:   schemaselection.Realm(conn.Info().Dialect, conn.Info().URL, conn.Info().Schema),
@@ -591,6 +613,9 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions, finis
 // revision table is left out, and opts.ValidateInspectedDatabase runs on the
 // session. opts.ValidateInspectedSchema does not; the caller runs it.
 func (s Set) DevState(ctx context.Context, conn *dbschema.DatabaseConnection, opts ResolveOptions) (State, error) {
+	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
+		return State{}, err
+	}
 	names, err := schemascope.ReadNames(ctx, conn.Info(), opts.Schemas, conn)
 	if err != nil {
 		return State{}, fmt.Errorf("read dev database schema: %w", err)
@@ -605,9 +630,13 @@ func (s Set) DevState(ctx context.Context, conn *dbschema.DatabaseConnection, op
 			return State{}, err
 		}
 	}
+	desired, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, schema, conn.Info().Dialect, opts.Runtime)
+	if err != nil {
+		return State{}, fmt.Errorf("convert dev database schema: %w", err)
+	}
 	return State{
 		Kind:          s.Kind,
-		Schema:        dbschematogo.ConvertDBSchemaToGoSchema(schema, conn.Info().Dialect),
+		Schema:        desired,
 		DB:            schema,
 		DefaultSchema: conn.Info().Schema,
 		RealmScoped:   schemaselection.Realm(conn.Info().Dialect, conn.Info().URL, conn.Info().Schema),

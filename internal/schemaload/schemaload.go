@@ -18,6 +18,7 @@ import (
 
 	"ptah.run/core/coverage"
 	"ptah.run/core/goschema"
+	"ptah.run/core/manageddata"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
 	"ptah.run/internal/atlassource"
@@ -298,7 +299,7 @@ func ReadManagedRows(db *schemamodel.Database) error {
 		if declaration.File == "" || declaration.Rows != nil {
 			continue
 		}
-		rows, err := schemamodel.LoadManagedRowValues("", declaration)
+		rows, err := manageddata.LoadRowValues("", declaration)
 		if err != nil {
 			return err
 		}

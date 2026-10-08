@@ -4,12 +4,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -28,8 +30,8 @@ func removedExtensionNames(c *qt.C, desired *schemamodel.Database, database *cat
 	dialect string, caps capability.Capabilities, opts *config.CompareOptions,
 ) []string {
 	c.Helper()
-	diff, err := schemadiff.CompareWithDatabaseInfo(desired, database,
-		catalog.ServerInfo{Dialect: dialect, Capabilities: caps}, opts)
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), desired, database,
+		catalog.ServerInfo{Dialect: dialect, Capabilities: caps}, opts, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	names := make([]string, 0, len(diff.ExtensionsRemoved))
 	for _, removed := range diff.ExtensionsRemoved {
@@ -87,8 +89,8 @@ func TestCompareWithDatabaseInfo_AServerExtensionALineLacksIsCreated(t *testing.
 	}}
 	desired := &schemamodel.Database{Extensions: []schemamodel.Extension{{Name: "postgres_fdw"}}}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(desired, database,
-		catalog.ServerInfo{Dialect: platform.YugabyteDB, Capabilities: capability.YugabyteDB25()}, nil)
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, database,
+		catalog.ServerInfo{Dialect: platform.YugabyteDB, Capabilities: capability.YugabyteDB25()}, nil, must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.ExtensionsAdded, qt.HasLen, 1)

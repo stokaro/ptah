@@ -5,9 +5,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -51,7 +53,7 @@ func TestConvert_DescribesEnforcementAndMatch(t *testing.T) {
 		},
 	}
 
-	got := dbschematogo.ConvertDBSchemaToGoSchema(database, "postgres")
+	got := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), database, "postgres", must.Must(builtin.New())))
 
 	c.Assert(columnForeignKeys(got), qt.DeepEquals, []string{"p_id match=FULL not_enforced=true"})
 	c.Assert(got.Constraints, qt.HasLen, 1)

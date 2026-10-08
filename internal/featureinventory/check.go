@@ -111,7 +111,7 @@ func cleanSources() Sources {
 		ModulePath:   fixtureModulePath,
 		NativeLeaves: []agentsurface.Leaf{{Name: "schema apply"}, {Name: "db read"}},
 		Ledger: []byte("## Stable Embedder API\n\n" +
-			"- `" + fixtureModulePath + "/core/renderer`\n" +
+			"- `" + fixtureModulePath + "/engine/builtin`\n" +
 			"- `" + fixtureModulePath + "/dbschema`\n\n" +
 			"## Documentation-Only Packages\n\n" +
 			"- `" + fixtureModulePath + "/examples/models`\n"),

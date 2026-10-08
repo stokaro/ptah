@@ -55,7 +55,20 @@ func NewDatabase() *Database {
 // maps (Dependencies, FunctionDependencies, SelfReferencingForeignKeys) are not
 // copied: they are rebuilt from the combined slices by finalizeDatabase, so
 // carrying them here would only risk duplicating self-referencing entries.
-func AppendDatabase(dst, src *Database) {
+func AppendDatabase(dst, src *Database) error {
+	objects, err := dst.FeatureObjects.Merge(src.FeatureObjects)
+	if err != nil {
+		return err
+	}
+	facets, err := dst.Facets.Merge(src.Facets)
+	if err != nil {
+		return err
+	}
+	featureCoverage, err := dst.FeatureCoverage.Merge(src.FeatureCoverage)
+	if err != nil {
+		return err
+	}
+	dst.FeatureObjects, dst.Facets, dst.FeatureCoverage = objects, facets, featureCoverage
 	// A limit one source declared is a limit of the whole composite. Dropping
 	// it here would turn "this description does not claim to describe X" into
 	// silence, and silence is what a comparator reads as a removal -- the exact
@@ -101,6 +114,7 @@ func AppendDatabase(dst, src *Database) {
 	dst.DefaultPrivileges = append(dst.DefaultPrivileges, src.DefaultPrivileges...)
 	dst.RevokedGrants = append(dst.RevokedGrants, src.RevokedGrants...)
 	dst.ManagedData = append(dst.ManagedData, src.ManagedData...)
+	return nil
 }
 
 // finalizeDatabase rebuilds the derived state shared by every parsed or merged
@@ -232,7 +246,10 @@ func Merge(dbs ...*Database) (*Database, error) {
 			continue
 		}
 		source := NewDatabase()
-		AppendDatabase(source, db)
+		source.FeatureCoverage = db.FeatureCoverage
+		if err := AppendDatabase(source, db); err != nil {
+			return nil, err
+		}
 		sources = append(sources, source)
 	}
 	if err := reconcileTableOwners(sources); err != nil {
@@ -240,8 +257,13 @@ func Merge(dbs ...*Database) (*Database, error) {
 	}
 
 	result := NewDatabase()
+	if len(sources) > 0 {
+		result.FeatureCoverage = sources[0].FeatureCoverage
+	}
 	for _, source := range sources {
-		AppendDatabase(result, source)
+		if err := AppendDatabase(result, source); err != nil {
+			return nil, err
+		}
 	}
 	return finalizeMergedDatabase(result)
 }

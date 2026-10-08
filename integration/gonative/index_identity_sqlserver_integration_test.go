@@ -3,15 +3,18 @@
 package gonative_test
 
 import (
+	"context"
 	"database/sql"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -62,6 +65,7 @@ func TestSQLServerTableQualifiedIndexIdentity_RoundTrip(t *testing.T) {
 	}
 	removeDiff.SetIndexRemovals(diff.IndexRemovals())
 	planned, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
 		removeDiff,
 
 		platform.SQLServer,
@@ -95,6 +99,7 @@ func TestSQLServerTableQualifiedIndexIdentity_RoundTrip(t *testing.T) {
 	}
 	createDiff.SetIndexAdditions(addDiff.IndexesAdded)
 	planned, err = planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
 		createDiff,
 
 		platform.SQLServer,
@@ -136,7 +141,7 @@ func compareSQLServerIndexIdentitySchema(
 	defer dbschema.CloseAndWarn(conn)
 	live, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), conn, []string{sqlServerIndexIdentitySchema})
 	c.Assert(err, qt.IsNil)
-	diff, err := schemadiff.CompareWithDatabase(t.Context(), conn, target, live, nil)
+	diff, err := schemadiff.CompareWithDatabase(t.Context(), conn, target, live, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	return live, diff
 }

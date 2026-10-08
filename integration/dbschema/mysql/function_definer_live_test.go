@@ -9,12 +9,14 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/schemadiff"
@@ -77,7 +79,7 @@ func TestForeignDefinerReplacementRefusal_Live(t *testing.T) {
 				Volatility: "IMMUTABLE", Body: "RETURN 2",
 			}}}
 			diff, err := schemadiff.CompareWithDatabase(
-				c.Context(), adminConn, desired, live, nil,
+				c.Context(), adminConn, desired, live, nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -92,7 +94,7 @@ func TestForeignDefinerReplacementRefusal_Live(t *testing.T) {
 			ownerLive, err := ownerConn.Reader().ReadSchemaContext(t.Context())
 			c.Assert(err, qt.IsNil)
 			ownerDiff, err := schemadiff.CompareWithDatabase(
-				c.Context(), ownerConn, desired, ownerLive, nil,
+				c.Context(), ownerConn, desired, ownerLive, nil, must.Must(builtin.New()),
 			)
 			c.Assert(err, qt.IsNil)
 			c.Assert(ownerDiff.FunctionsModified, qt.HasLen, 1)

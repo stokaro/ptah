@@ -4,11 +4,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -51,10 +53,10 @@ func TestCompareWithDatabaseInfo_TargetIndexConflictRejected(t *testing.T) {
 			c := qt.New(t)
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				duplicateIndexTarget(test.addedTable, test.existingTable),
+				t.Context(), duplicateIndexTarget(test.addedTable, test.existingTable),
 				&catalog.Database{},
 				catalog.ServerInfo{Dialect: test.dialect},
-				nil,
+				nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -74,7 +76,7 @@ func TestCompareWithDatabaseInfo_TargetIndexConflictRejectedAgainstAPopulatedSer
 	c := qt.New(t)
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(
-		duplicateIndexTarget("app.users", "app.orders"),
+		t.Context(), duplicateIndexTarget("app.users", "app.orders"),
 		&catalog.Database{
 			Tables: []catalog.Table{
 				{Name: "users", Schema: "app", Type: "TABLE"},
@@ -82,7 +84,7 @@ func TestCompareWithDatabaseInfo_TargetIndexConflictRejectedAgainstAPopulatedSer
 			},
 		},
 		catalog.ServerInfo{Dialect: platform.Postgres},
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -95,7 +97,7 @@ func TestCompareWithDatabaseInfo_AmbiguousStructOwnerRejected(t *testing.T) {
 	c := qt.New(t)
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(
-		&schemamodel.Database{
+		t.Context(), &schemamodel.Database{
 			Tables: []schemamodel.Table{
 				{StructName: "Shared", Schema: "app", Name: "users"},
 				{StructName: "Shared", Schema: "archive", Name: "users"},
@@ -106,7 +108,7 @@ func TestCompareWithDatabaseInfo_AmbiguousStructOwnerRejected(t *testing.T) {
 		},
 		&catalog.Database{},
 		catalog.ServerInfo{Dialect: platform.Postgres},
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -120,7 +122,7 @@ func TestCompareWithDatabaseInfo_UnknownQualifiedTargetOwnerRejected(t *testing.
 	c := qt.New(t)
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(
-		&schemamodel.Database{
+		t.Context(), &schemamodel.Database{
 			Tables: []schemamodel.Table{
 				{StructName: "User", Schema: "public", Name: "users"},
 			},
@@ -130,7 +132,7 @@ func TestCompareWithDatabaseInfo_UnknownQualifiedTargetOwnerRejected(t *testing.
 		},
 		&catalog.Database{},
 		catalog.ServerInfo{Dialect: platform.Postgres},
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)

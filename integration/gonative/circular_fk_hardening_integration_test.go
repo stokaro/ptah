@@ -13,15 +13,16 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	mysqldriver "github.com/go-sql-driver/mysql"
 	_ "github.com/jackc/pgx/v5/stdlib"  // registers the pgx driver for database/sql
 	_ "github.com/microsoft/go-mssqldb" // registers the SQL Server driver for database/sql
 
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/generate"
 	"ptah.run/internal/cli/readdb"
 	"ptah.run/internal/convert/dbschematogo"
@@ -142,8 +143,8 @@ ALTER TABLE ptah_cycle_read_137.right_nodes
 	// schema-local objects from the structured snapshot.
 	liveSchema.Roles = nil
 	liveSchema.Grants = nil
-	database := dbschematogo.ConvertDBSchemaToGoSchema(liveSchema, "")
-	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), liveSchema, "postgres", must.Must(builtin.New())))
+	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(
 		database,
 		conn.Info().Dialect,
 		conn.Info().Capabilities,
@@ -194,7 +195,7 @@ func TestMySQLForeignKeysOverrideMyISAMSessionDefaultIntegration(t *testing.T) {
 		_, setErr := session.ExecContext(t.Context(), "SET SESSION default_storage_engine = MyISAM")
 		c.Assert(setErr, qt.IsNil)
 		info := session.Info()
-		statements, renderErr := renderer.GetOrderedCreateStatementsWithCapabilities(
+		statements, renderErr := builtin.GetOrderedCreateStatementsWithCapabilities(
 			mutualLiveForeignKeyDatabase(prefix),
 			info.Dialect,
 			info.Capabilities,
@@ -239,7 +240,7 @@ func TestMySQLDefaultRejectsNonuniqueReferencedKeyIntegration(t *testing.T) {
 	c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
 	info := conn.Info()
 
-	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(
+	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(
 		indexedLiveForeignKeyDatabase("ptah_indexed_137_mysql_default"),
 		info.Dialect,
 		info.Capabilities,
@@ -271,7 +272,7 @@ func TestMySQLSessionOverrideAllowsNonuniqueReferencedKeyIntegration(t *testing.
 
 	err = conn.WithSession(t.Context(), func(session *dbschema.DatabaseConnection) error {
 		info := session.Info()
-		statements, renderErr := renderer.GetOrderedCreateStatementsWithCapabilities(
+		statements, renderErr := builtin.GetOrderedCreateStatementsWithCapabilities(
 			indexedLiveForeignKeyDatabase(prefix),
 			info.Dialect,
 			info.Capabilities,
@@ -304,7 +305,7 @@ func TestMariaDBAllowsNonuniqueReferencedKeyIntegration(t *testing.T) {
 	c.Cleanup(func() { cleanupMySQLFamilyIndexedTables(c, conn, prefix) })
 	info := conn.Info()
 
-	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(
+	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(
 		indexedLiveForeignKeyDatabase(prefix),
 		info.Dialect,
 		info.Capabilities,
@@ -329,7 +330,7 @@ func TestSQLServerMutualForeignKeysApplyIntegration(t *testing.T) {
 	cleanupSQLServerCycleTables(c, db)
 	c.Cleanup(func() { cleanupSQLServerCycleTables(c, db) })
 
-	statements, err := renderer.GetOrderedCreateStatements(mutualLiveForeignKeyDatabase("ptah_cycle_137_mssql"), "sqlserver")
+	statements, err := builtin.GetOrderedCreateStatements(mutualLiveForeignKeyDatabase("ptah_cycle_137_mssql"), "sqlserver")
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 4)
 	execStatements(c, db, statements)
@@ -354,7 +355,7 @@ func testPostgreSQLFamilyMutualForeignKeys(t *testing.T, databaseName, dialect, 
 	err = db.QueryRow(`SELECT version()`).Scan(&version)
 	c.Assert(err, qt.IsNil)
 	caps := capability.ForServerVersion(dialect, version)
-	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(mutualLiveForeignKeyDatabase(prefix), dialect, caps)
+	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(mutualLiveForeignKeyDatabase(prefix), dialect, caps)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 4)
 	execStatements(c, db, statements)
@@ -380,7 +381,7 @@ func testMySQLFamilyMutualForeignKeys(t *testing.T, databaseName, dsn string) {
 	err = db.QueryRow(`SELECT VERSION()`).Scan(&version)
 	c.Assert(err, qt.IsNil)
 	caps := capability.ForServerVersion("mysql", version)
-	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(mutualLiveForeignKeyDatabase(prefix), strings.ToLower(databaseName), caps)
+	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(mutualLiveForeignKeyDatabase(prefix), strings.ToLower(databaseName), caps)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 4)
 	execStatements(c, db, statements)

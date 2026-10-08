@@ -4,7 +4,7 @@ import (
 	goast "go/ast"
 	"go/parser"
 	"go/token"
-	"io/fs"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -23,16 +23,21 @@ func collectDatabaseCallers(c *qt.C) []string {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	var callers []string
 
-	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() {
-			if path != root && (strings.HasPrefix(entry.Name(), ".") || entry.Name() == "vendor") {
-				return filepath.SkipDir
-			}
-			return nil
-		}
+	output, err := exec.Command("git", "-C", root, "ls-files", "-z", "--", "*.go").Output()
+	c.Assert(err, qt.IsNil)
+	paths := strings.Split(strings.TrimSuffix(string(output), "\x00"), "\x00")
+	c.Assert(len(paths) > 1000, qt.IsTrue, qt.Commentf("tracked Go corpus unexpectedly small: %d", len(paths)))
+	for _, relative := range paths {
+		path := filepath.Join(root, filepath.FromSlash(relative))
+		callers = append(callers, collectDatabaseCallersInFile(c, root, path)...)
+	}
+	return callers
+}
+
+func collectDatabaseCallersInFile(c *qt.C, root, path string) []string {
+	c.Helper()
+	var callers []string
+	err := func() error {
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
@@ -77,7 +82,7 @@ func collectDatabaseCallers(c *qt.C) []string {
 			return true
 		})
 		return nil
-	})
+	}()
 	c.Assert(err, qt.IsNil)
 	return callers
 }

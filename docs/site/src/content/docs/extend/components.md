@@ -36,12 +36,12 @@ uses them internally.
 
 | Need | Stable package(s) | What it gives you |
 | --- | --- | --- |
-| Build SQL DDL programmatically | `core/ast`, `core/astbuilder`, `core/renderer` | Dialect-aware SQL from structured AST nodes, written as struct literals or as builder chains. |
+| Build SQL DDL programmatically | `core/ast`, `core/astbuilder`, `engine/builtin` | Dialect-aware SQL from structured AST nodes, written as struct literals or as builder chains. |
 | Build parameterized DML statements | `core/query` | Fluent, dialect-aware SELECT, INSERT, UPDATE, DELETE and YDB's UPSERT with bound parameters. See [Query builder](../query-builder/). |
 | Parse Go schema annotations | `core/goschema` | Go source comments to Ptah's schema IR. |
 | Parse Atlas HCL schema files | `atlascompat` | Atlas-style HCL schema files to Ptah's schema IR through a stable compatibility wrapper. |
 | Parse YAML schema files | `core/yamlschema` | Ptah's YAML authoring format to the schema IR, from bytes or from a path. |
-| Render SQL from schema IR | `core/renderer`, `atlascompat` | Ordered DDL statements for supported dialects. |
+| Render SQL from schema IR | `engine/builtin`, `atlascompat` | Ordered DDL statements for supported dialects. |
 | Introspect live databases | `dbschema`, `catalog` | Database schema snapshots from live connections. |
 | Compare desired vs. live schemas | `migration/schemadiff`, `migration/schemadiff/difftypes` | Structured schema diffs for planning and reporting. |
 | Plan SQL migrations | `migration/planner` | Ordered AST or SQL statements for schema changes. |
@@ -110,7 +110,7 @@ import (
 	"log"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 )
 
 func main() {
@@ -118,7 +118,7 @@ func main() {
 		AddColumn(ast.NewColumn("id", "SERIAL").SetPrimary()).
 		AddColumn(ast.NewColumn("email", "TEXT").SetNotNull().SetUnique())
 
-	sql, err := renderer.RenderSQL("postgres", table)
+	sql, err := builtin.RenderSQL("postgres", table)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -150,7 +150,7 @@ table := astbuilder.NewTable("users").
 `NewSchema` builds a whole `*ast.StatementList` in one chain — enums, tables,
 indexes, and comments in the order they were added — where `NewTable` and
 `NewIndex` build a single statement. The builders do not validate; an unknown
-type or an unresolved foreign key is reported by `core/renderer` or by the
+type or an unresolved foreign key is reported by `engine/builtin` or by the
 database.
 
 ## End-to-end reuse examples
@@ -190,12 +190,24 @@ db, err := goschema.ParseFS(fsys, "models")
 if err != nil {
 	return err
 }
-statements, err := renderer.GetOrderedCreateStatements(db, "sqlite")
+runtime, err := builtin.New()
 if err != nil {
 	return err
 }
-fmt.Println(statements[0])
+rendered, err := renderer.RenderSchema(ctx, runtime, renderer.SchemaRequest{
+	Target: "sqlite", Schema: db, Capabilities: capability.ForDialect("sqlite"),
+})
+if err != nil {
+	return err
+}
+fmt.Println(rendered.Statements[0])
 ```
+
+`Target.SchemaRendering` selects a whole-schema provider separately from AST
+rendering. It receives the captured declaration once, with target facts and the
+caller context. `renderer.RenderSchema` rejects incomplete replies and returns
+no output on refusal, service failure, or cancellation. Completed refusals expose
+`SchemaRefusalError`; accepted results retain the provider's omission records.
 
 For targets other than SQLite, schema rendering places every `CREATE TABLE`
 before phase-two foreign key statements. SQLite keeps foreign keys inline.
@@ -225,8 +237,11 @@ if err != nil {
 	return err
 }
 
-list := atlascompat.SchemaToAST(*db, "postgres")
-sql, err := renderer.RenderSQL("postgres", list.Statements...)
+list, err := atlascompat.SchemaToAST(*db, "postgres")
+if err != nil {
+	return err
+}
+sql, err := builtin.RenderSQL("postgres", list.Statements...)
 if err != nil {
 	return err
 }
@@ -245,11 +260,14 @@ knows which one filled it.
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/renderer"
 	"ptah.run/core/yamlschema"
+	"ptah.run/engine/builtin"
 )
 
 func main() {
@@ -258,11 +276,17 @@ func main() {
 		log.Fatal(err)
 	}
 
-	statements, err := renderer.GetOrderedCreateStatements(db, "postgres")
+	runtime, err := builtin.New()
 	if err != nil {
 		log.Fatal(err)
 	}
-	for _, statement := range statements {
+	rendered, err := renderer.RenderSchema(context.Background(), runtime, renderer.SchemaRequest{
+		Target: "postgres", Schema: db, Capabilities: capability.ForDialect("postgres"),
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, statement := range rendered.Statements {
 		fmt.Println(statement)
 	}
 }
@@ -304,12 +328,18 @@ if err != nil {
 	return err
 }
 
-diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, live, nil)
+runtime, err := builtin.New()
+if err != nil {
+    return err
+}
+diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, live, nil, runtime)
 if err != nil {
 	return err
 }
 info := conn.Info()
 sql, err := planner.GenerateSchemaDiffSQLWithOptions(
+	ctx,
+	runtime,
 	diff,
 	info.Dialect,
 	planner.Options{Capabilities: info.Capabilities},
@@ -322,6 +352,57 @@ fmt.Println(sql)
 
 For unit tests or offline planning, you can build a `catalog.Database`
 value directly and pass it to `schemadiff`.
+
+Pass the same selected runtime and context through comparison and planning.
+Planning uses its feature services and renderer; a service failure or cancellation
+returns no usable SQL prefix. `core/featureplan` defines the contextual planning
+batch for provider implementations. Owners receive typed changes, captured parent
+state, identifier rules, and target capabilities without opening a database.
+
+Pass that context and runtime to `safety.AssessRendered` or
+`AssessRenderedWithCapabilities` as well. Safety renders the assessment units
+in one batch and keeps each statement associated with its source operation.
+An extension's unknown effects still require manual review when it produces
+several SQL statements. Migration generation uses the same selected renderer
+for assessment, forward SQL, and rollback SQL.
+
+Offline target-aware comparison requires `schemadiff.TargetRuntime`, including
+its selected validation service. Live comparison requires
+`schemadiff.DatabaseRuntime`, adding selected AST rendering for normalization
+probes. Completed rendering refusals leave normalization unresolved; service
+failures abort comparison. Pure comparison accepts `schemaext.ComparisonRuntime`.
+Validation sends the whole captured schema with target facts in one call.
+
+`runtime.ResolveTarget(name)` returns an immutable `schemaext.TargetSelection`.
+It resolves only explicitly registered names and aliases. Use that snapshot with
+`schemamodel.ScopeToTarget` or `OmissionsForTarget`; unresolved selections are
+errors. An empty declaration scope includes the selected target. A named scope
+matches its registered spellings, including aliases. Whole-schema validation and
+rendering apply this projection before codec checks. Comparison also suppresses
+matching observed objects, so exclusion cannot become a requested drop.
+
+This supports custom target scopes in typed declarations. Go annotation and YAML
+scope parsing still recognize built-in names only. `schemavalidation.Runtime`
+combines validation and target resolution for consumers that project declarations
+before checking them.
+
+`Target.Validation` selects a `schemavalidation.Service`; leaving it absent
+refuses validation. A completed reply contains data diagnostics, while missing
+completion, service failure, and cancellation return errors. `NoSkipped` also
+asks the provider to diagnose omitted declarations. Migration generation uses
+the same validator for the desired schema and captured rollback target before
+publishing files.
+
+AST rendering replies must set `Complete`, even for an empty batch. Accepted
+replies account for every input node in `Fragments`. Completed refusals carry
+`Diagnostics` and no output. A diagnostic can name its input node by index;
+`BatchRefusalError` retains that data and exposes the caller's node through the
+local error chain. Service failures remain errors rather than refusal data.
+
+Generated-expression probes and inference-store creation also use selected AST
+rendering. They require the whole batch before database execution and reject
+reported omissions or empty output. Inference-store creation uses an explicit
+PostgreSQL baseline profile for its internal tables and indexes.
 
 Index names are table-scoped in some dialects. Use `diff.IndexAdditions()` and
 `diff.IndexRemovals()` when consuming index changes through a copied slice, or
@@ -355,9 +436,10 @@ target table, column, or index collision. Omitting the snapshot selects
 conservative dialect rules. SQL Server embedders should normally use
 `CompareWithDatabase`.
 
-`CompareWithOptions` has no error return. When an explicit snapshot is invalid,
-incomplete, or collision-prone, it falls back to conservative dialect rules
-instead of allowing unresolved identifiers to collapse into a false zero diff.
+`CompareWithOptions` also refuses an invalid, incomplete, or collision-prone
+explicit snapshot. Every comparison takes a context and the selected feature
+runtime, and returns an error when its inputs or a provider fail. A caller must
+handle that error before using the diff.
 
 Dialect-only SQL Server comparison cannot know the database collation. It keeps
 exact identity for deterministic offline diffs, but treats distinct unresolved
@@ -562,7 +644,7 @@ table := ast.NewCreateTable("accounts").
 		SetIdentity("BY_DEFAULT", "1", "1").
 		SetPrimary())
 
-sql, err := renderer.RenderSQLWithCapabilities("postgres", caps, table)
+sql, err := builtin.RenderSQLWithCapabilities("postgres", caps, table)
 if err != nil {
 	return err
 }
@@ -600,12 +682,12 @@ internal renderers.
 
 **Atlas-compatible transition** — start from
 [Embed the migrator](#embed-the-migrator).
-Stable packages: `atlascompat`, `migration/migrator`, `core/renderer`.
+Stable packages: `atlascompat`, `migration/migrator`, `engine/builtin`.
 The host tool keeps parity expectations; use the conformance reports for
 measured compatibility.
 
 **Dialect extension research** — start from [Use capabilities](#use-capabilities).
-Stable packages: `core/platform/capability`, `core/ast`, `core/renderer`,
+Stable packages: `core/platform/capability`, `core/ast`, `engine/builtin`,
 `migration/planner`, `migration/safety`.
 The host tool keeps unsupported-feature handling; create a design issue before
 relying on out-of-tree extension points.

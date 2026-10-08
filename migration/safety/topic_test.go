@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -44,7 +46,7 @@ func TestAssessRendered_Topics(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			assessments, err := safety.AssessRenderedWithCapabilities([]ast.Node{test.node}, platform.YDB, capability.YDB262())
+			assessments, err := safety.AssessRenderedWithCapabilities(c.Context(), must.Must(builtin.New()), []ast.Node{test.node}, platform.YDB, capability.YDB262())
 			c.Assert(err, qt.IsNil)
 			c.Assert(assessments, qt.HasLen, 1)
 			c.Assert(assessments[0].Severity, qt.Equals, test.severity)
@@ -94,7 +96,7 @@ func TestAssessRendered_TopicConsumerRestarted(t *testing.T) {
 	node := ast.NewAlterTopic("events", ast.TopicSpec{Consumers: []ast.TopicConsumerSpec{{Name: "c"}}},
 		ast.TopicSpec{Consumers: []ast.TopicConsumerSpec{{Name: "c", SupportedCodecs: []string{"raw"}}}})
 
-	assessments, err := safety.AssessRenderedWithCapabilities([]ast.Node{node}, platform.YDB, capability.YDB262())
+	assessments, err := safety.AssessRenderedWithCapabilities(c.Context(), must.Must(builtin.New()), []ast.Node{node}, platform.YDB, capability.YDB262())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(assessments, qt.HasLen, 2)

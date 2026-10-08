@@ -5,10 +5,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -38,6 +42,7 @@ func ydbAccessDeclaration() *schemamodel.Database {
 // and each permission under its name.
 func ydbAccessCatalog() *catalog.Database {
 	return &catalog.Database{
+		FeatureCoverage: must.Must(ydbschema.ChangefeedCoverage(schemaext.Observed, nil)),
 		Tables: []catalog.Table{{Schema: "shop", Name: "orders", Type: "TABLE", Columns: []catalog.Column{
 			{Name: "id", DataType: "Int64", ColumnType: "Int64", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1},
 		}}},
@@ -76,8 +81,8 @@ func TestCompare_YDBAccessControl_PlansNothingOnceApplied(t *testing.T) {
 		name string
 		diff *difftypes.SchemaDiff
 	}{
-		{name: "against the database", diff: schemadiff.CompareWithDialect(ydbAccessDeclaration(), ydbAccessCatalog(), platform.YDB)},
-		{name: "against the same document", diff: schemadiff.CompareSchemas(ydbAccessDeclaration(), ydbAccessDeclaration(), platform.YDB)},
+		{name: "against the database", diff: must.Must(schemadiff.CompareWithDialect(t.Context(), ydbAccessDeclaration(), ydbAccessCatalog(), platform.YDB, must.Must(builtin.New())))},
+		{name: "against the same document", diff: must.Must(schemadiff.CompareSchemas(t.Context(), ydbAccessDeclaration(), ydbAccessDeclaration(), platform.YDB, must.Must(builtin.New())))},
 	}
 
 	for _, test := range tests {
@@ -109,7 +114,7 @@ func TestCompare_YDBAccessControl_PlansTheDifference(t *testing.T) {
 		catalog.Grant{Role: "someone", Privilege: "ydb.granular.erase_row", ObjectType: "TABLE", Schema: "shop", ObjectName: "orders"})
 	database.Grants = database.Grants[1:]
 
-	diff := schemadiff.CompareWithDialect(declaration, database, platform.YDB)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), declaration, database, platform.YDB, must.Must(builtin.New())))
 
 	c.Assert(diff.RoleMembershipsAdded, qt.DeepEquals, []difftypes.RoleMembershipRef{{Role: "readers", Member: "app"}})
 	c.Assert(diff.RoleMembershipsRemoved, qt.DeepEquals, []difftypes.RoleMembershipRef{{Role: "auditors", Member: "readers"}})
@@ -137,7 +142,7 @@ func TestCompare_RoleMembershipsNeedTheKey(t *testing.T) {
 		RoleMemberships: []catalog.RoleMembership{{Role: "other", Member: "app"}},
 	}
 
-	diff := schemadiff.CompareWithDialect(declaration, database, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), declaration, database, platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.RoleMembershipsAdded, qt.IsNil)
 	c.Assert(diff.RoleMembershipsRemoved, qt.IsNil)

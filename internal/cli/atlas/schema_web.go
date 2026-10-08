@@ -152,7 +152,7 @@ func atlasDiffERD(
 		for _, table := range changes.TablesModified {
 			marks[table.TableName] = schemadoc.ChangeChanged
 		}
-		for _, name := range changes.TablesRemoved {
+		for _, name := range changes.TablesRemoved.Names() {
 			marks[name] = schemadoc.ChangeRemoved
 		}
 	}
@@ -165,7 +165,7 @@ func removedTableNames(changes *difftypes.SchemaDiff) []string {
 	if changes == nil {
 		return nil
 	}
-	return changes.TablesRemoved
+	return changes.TablesRemoved.Names()
 }
 
 // unionWithRemovedTables copies the end state and adds back the tables that

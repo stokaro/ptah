@@ -7,14 +7,14 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashcl"
 )
 
 func renderStatements(c *qt.C, db *schemamodel.Database, dialect string) []string {
 	c.Helper()
-	statements, err := renderer.GetOrderedCreateStatements(db, dialect)
+	statements, err := builtin.GetOrderedCreateStatements(db, dialect)
 	c.Assert(err, qt.IsNil)
 	return statements
 }

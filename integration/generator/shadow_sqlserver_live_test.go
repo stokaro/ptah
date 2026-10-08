@@ -13,8 +13,10 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/shadow"
 )
@@ -57,7 +59,7 @@ CREATE TABLE [ptah_shadow_i] (id INT NOT NULL);
 		Version:           1,
 		Dialect:           info.Dialect,
 		Capabilities:      info.Capabilities,
-	})
+		Runtime:           must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 
 	err = shadow.VerifyBaseline(t.Context(), shadow.BaselineVerifyOptions{
@@ -67,7 +69,7 @@ CREATE TABLE [ptah_shadow_i] (id INT NOT NULL);
 		Version:           1,
 		Dialect:           info.Dialect,
 		Capabilities:      info.Capabilities,
-	})
+		Runtime:           must.Must(builtin.New())})
 	c.Assert(err, qt.ErrorMatches, `baseline shadow check failed: shadow database identifier semantics do not match target sqlserver catalog semantics`)
 	var shadowErr *shadow.VerificationError
 	c.Assert(err, qt.ErrorAs, &shadowErr)

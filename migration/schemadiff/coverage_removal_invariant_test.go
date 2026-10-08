@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -115,7 +117,7 @@ func TestCompare_NotInspectedNeverBecomesAbsent(t *testing.T) {
 			// The control first: with nothing recorded, the object the desired
 			// description does not name IS a removal. A row whose control does
 			// not fire proves nothing about the row below it.
-			planned := schemadiff.Compare(&schemamodel.Database{}, current)
+			planned := must.Must(schemadiff.Compare(t.Context(), &schemamodel.Database{}, current, must.Must(builtin.New())))
 			c.Assert(test.removed(planned), qt.Not(qt.Equals), 0,
 				qt.Commentf("the inverse: an unlimited description does plan this removal"))
 
@@ -123,7 +125,7 @@ func TestCompare_NotInspectedNeverBecomesAbsent(t *testing.T) {
 			// it does not describe this kind, plans nothing.
 			desired := &schemamodel.Database{}
 			desired.NotDescribed = desired.NotDescribed.With(coverage.Refused(test.kind))
-			withheld := schemadiff.Compare(desired, current)
+			withheld := must.Must(schemadiff.Compare(t.Context(), desired, current, must.Must(builtin.New())))
 			c.Assert(test.removed(withheld), qt.Equals, 0,
 				qt.Commentf("a kind the description does not describe is not a kind to drop"))
 		})

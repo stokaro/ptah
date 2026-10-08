@@ -3,13 +3,16 @@
 package dbschema_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/planner"
@@ -53,9 +56,9 @@ func TestPostgresLiveDroppedForeignKeyRollbackApplies(t *testing.T) {
 	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	wanted := orderDeclaration(schemaName, nil)
-	diff := schemadiff.CompareWithDialect(wanted, live, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), wanted, live, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(diff.ConstraintsRemoved, qt.HasLen, 1)
-	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
+	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), generator.BidirectionalSchemaPlanOptions{
 		Diff:          diff,
 		DesiredSchema: wanted,
 		CurrentSchema: live,
@@ -64,11 +67,17 @@ func TestPostgresLiveDroppedForeignKeyRollbackApplies(t *testing.T) {
 			Create: generator.ConcurrentIndexDisabled,
 			Drop:   generator.ConcurrentIndexDisabled,
 		},
-	})
+		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
-	forward, err := planner.GenerateSchemaDiffSQLStatements(plan.Forward.Diff, platform.Postgres)
+	forward, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		plan.Forward.Diff, platform.Postgres,
+	)
 	c.Assert(err, qt.IsNil)
-	reverse, err := planner.GenerateSchemaDiffSQLStatements(plan.Reverse.Diff, platform.Postgres)
+	reverse, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		plan.Reverse.Diff, platform.Postgres,
+	)
 	c.Assert(err, qt.IsNil)
 	applyStatements(c, conn, forward)
 
@@ -83,7 +92,7 @@ func TestPostgresLiveDroppedForeignKeyRollbackApplies(t *testing.T) {
 	c.Assert(referenced, qt.Equals, schemaName+".customers")
 	restored, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
-	settled := schemadiff.CompareWithDialect(orderDeclaration(schemaName, customerKey(schemaName)), restored, platform.Postgres)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), orderDeclaration(schemaName, customerKey(schemaName)), restored, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(settled.ConstraintsAdded, qt.HasLen, 0)
 	c.Assert(settled.ConstraintsRemoved, qt.HasLen, 0)
 }

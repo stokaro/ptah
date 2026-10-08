@@ -6,10 +6,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "modernc.org/sqlite" // registers the SQLite driver for database/sql
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbschema/sqlite"
 	"ptah.run/internal/envbool/envbooltest"
 	"ptah.run/internal/sqlitevirtual"
@@ -84,10 +86,10 @@ func TestCompareRefusesToPlanDroppingALiveVirtualTable(t *testing.T) {
 			desired := &schemamodel.Database{Tables: tt.desired}
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				desired,
+				t.Context(), desired,
 				database,
 				catalog.ServerInfo{Dialect: "sqlite"},
-				nil,
+				nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err != nil, qt.Equals, tt.wantErr)
@@ -136,7 +138,7 @@ func removedTableNames(diff *difftypes.SchemaDiff) []string {
 	if diff == nil {
 		return nil
 	}
-	return diff.TablesRemoved
+	return diff.TablesRemoved.Names()
 }
 
 func errorMessage(err error) string {

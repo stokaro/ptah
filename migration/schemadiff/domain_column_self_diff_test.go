@@ -20,8 +20,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/migration/schemadiff"
 )
@@ -115,9 +117,9 @@ func TestCompare_DomainColumnSelfDiffPlansNothing(t *testing.T) {
 				Tables: []catalog.Table{{Name: "t", Columns: []catalog.Column{test.column}}},
 			}
 
-			diff := schemadiff.CompareWithDialect(
-				dbschematogo.ConvertDBSchemaToGoSchema(database, ""), database, "postgres",
-			)
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), database, "postgres", must.Must(builtin.New()))), database, "postgres", must.Must(builtin.New()),
+			))
 
 			c.Assert(diff.TablesModified, qt.HasLen, 0)
 			c.Assert(diff.HasChanges(), qt.IsFalse)
@@ -175,9 +177,9 @@ func TestCompare_NonDomainColumnSelfDiffPlansNothing(t *testing.T) {
 				Tables: []catalog.Table{{Name: "t", Columns: []catalog.Column{test.column}}},
 			}
 
-			diff := schemadiff.CompareWithDialect(
-				dbschematogo.ConvertDBSchemaToGoSchema(database, ""), database, "postgres",
-			)
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), database, "postgres", must.Must(builtin.New()))), database, "postgres", must.Must(builtin.New()),
+			))
 
 			c.Assert(diff.TablesModified, qt.HasLen, 0)
 			c.Assert(diff.HasChanges(), qt.IsFalse)

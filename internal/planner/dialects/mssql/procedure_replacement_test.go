@@ -1,14 +1,16 @@
 package mssql_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	mssqlplanner "ptah.run/internal/planner/dialects/mssql"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -36,12 +38,15 @@ func planProcedureReplacement(c *qt.C, kind string) string {
 		}},
 	}
 
-	nodes, err := mssqlplanner.New().GenerateMigrationAST(diff)
+	nodes, err := mssqlplanner.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 	c.Assert(err, qt.IsNil)
 
 	var rendered strings.Builder
 	for _, node := range nodes {
-		sql, renderErr := renderer.RenderSQL(platform.SQLServer, node)
+		sql, renderErr := builtin.RenderSQL(platform.SQLServer, node)
 		c.Assert(renderErr, qt.IsNil)
 		rendered.WriteString(sql)
 		rendered.WriteString("\n")

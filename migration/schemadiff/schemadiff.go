@@ -1,6 +1,7 @@
 package schemadiff
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -10,18 +11,16 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemavalidation"
 	"ptah.run/internal/clickhouserbac"
-	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/crdbttl"
 	"ptah.run/internal/foreignkeyscope"
 	"ptah.run/internal/reservedrole"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlident"
-	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/systemschema"
 	"ptah.run/internal/timescale"
 	"ptah.run/migration/internal/identifiervalidation"
@@ -29,243 +28,28 @@ import (
 	"ptah.run/migration/schemadiff/internal/compare"
 )
 
-// Compare performs schema comparison between a desired schema and an
-// introspected database schema using default options
-// (config.DefaultCompareOptions, which ignores the "plpgsql" extension).
-//
-// The comparison never returns an error and reads no database: current is
-// whatever snapshot the caller supplies. It is dialect-neutral -- no dialect
-// scoping and no dialect-specific normalization runs -- so prefer
-// CompareWithDialect when the target dialect is known, or CompareWithDatabase
-// when a live connection can also answer identifier semantics. The output
-// does not vary between runs and does not depend on the order the inputs list
-// their objects, so two comparisons of the same two states produce the same
-// diff. For custom configuration, use CompareWithOptions.
-func Compare(desired *schemamodel.Database, current *catalog.Database) *difftypes.SchemaDiff {
-	return CompareWithOptions(desired, current, nil)
+// CompareWithOptions compares schema snapshots using the selected services and
+// options. A nil options value selects config.DefaultCompareOptions. Inputs are
+// not mutated. Invalid identifier snapshots and incomplete knowledge are errors.
+// Nil schema inputs return ptaherr.ErrInvalidSchemaDiff; an empty schema must
+// be supplied explicitly and retain the source's knowledge limits.
+func CompareWithOptions(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, opts *config.CompareOptions, runtime schemaext.ComparisonRuntime) (*difftypes.SchemaDiff, error) {
+	return completeComparison(CompareReportingUndecidedAdditions(ctx, desired, current, opts, runtime))
 }
 
-// CompareWithDialect performs schema comparison using default options plus the
-// supplied target dialect. The dialect drives dialect-specific normalization,
-// such as MySQL-family catalog spellings and referential-action folds (see
-// config.CompareOptions.Dialect). Pass an empty dialect for dialect-neutral
-// comparison (equivalent to Compare).
-func CompareWithDialect(desired *schemamodel.Database, current *catalog.Database, dialect string) *difftypes.SchemaDiff {
-	opts := config.DefaultCompareOptions()
-	opts.Dialect = dialect
-	return CompareWithOptions(desired, current, opts)
-}
-
-// CompareSchemas diffs two in-memory desired-schema documents. Both sides are
-// desired-schema documents: current names the side treated as the existing
-// state, and the diff plans what would turn it into desired. The current side
-// goes through the same conversion the file-to-file schema diff uses before
-// the comparison runs under the supplied dialect. For a current state read
-// from a live database, use CompareWithDatabase instead.
-func CompareSchemas(desired, current *schemamodel.Database, dialect string) *difftypes.SchemaDiff {
-	return CompareWithDialect(desired, goschematodb.ToDBSchema(current, dialect), dialect)
-}
-
-// CompareWithDatabaseInfo compares using caller-supplied database metadata.
-// SQL Server callers should prefer CompareWithDatabase, which resolves the
-// complete candidate identifier set under the live catalog collation.
-//
-// info.Dialect selects the comparison dialect, overriding opts.Dialect. A
-// non-zero info.IdentifierSemantics snapshot must be valid, cover every
-// compared identifier, and admit no target identifier collisions; a snapshot
-// failing any of those checks is refused with an error satisfying
-// errors.Is(err, ptaherr.ErrInvalidSchemaDiff), where CompareWithOptions
-// would silently fall back to the dialect's offline rules.
-//
-// Unlike the pure entry points, this variant also validates the declaration
-// against the target before comparing, and returns an error instead of a diff
-// that plans a statement the server would refuse. Which rules apply is
-// dialect-specific and grows with the dialects; a reserved PostgreSQL role
-// name and SQLite's virtual-table rules are two of them. One of those checks
-// is a promise in its own right: PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP is
-// resolved on every SQLite comparison, so a malformed value is reported
-// whether or not this comparison reaches a virtual table.
-func CompareWithDatabaseInfo(
-	desired *schemamodel.Database,
-	database *catalog.Database,
-	info catalog.ServerInfo,
-	opts *config.CompareOptions,
-) (*difftypes.SchemaDiff, error) {
-	diff, _, err := compareWithDatabaseInfoReportingUndecidedAdditions(
-		desired, database, info, opts,
-	)
-	return diff, err
-}
-
-func compareWithDatabaseInfoReportingUndecidedAdditions(
-	desired *schemamodel.Database,
-	database *catalog.Database,
-	info catalog.ServerInfo,
-	opts *config.CompareOptions,
-) (*difftypes.SchemaDiff, []coverage.Object, error) {
-	merged := config.DefaultCompareOptions()
-	if opts != nil {
-		*merged = *opts
-		merged.IgnoredExtensions = slices.Clone(opts.IgnoredExtensions)
-	}
-	merged.Dialect = info.Dialect
-	// Projected here as well as in the funnel below, because the refusals
-	// between this line and that one read the desired state directly. A role
-	// scoped away from this target must not be checked against this target's
-	// reserved names: it is not being declared here at all. The projection is
-	// idempotent, so applying it twice is the same schema.
-	desired = schemamodel.ScopeToDialect(desired, info.Dialect)
-	// Resolved before any of the validations below can return, so a malformed
-	// drop toggle is reported on every SQLite comparison rather than only the
-	// ones that get far enough to classify a virtual table (stokaro/ptah#1028).
-	if err := sqlitevirtual.ValidateToggle(info.Dialect); err != nil {
-		return nil, nil, err
-	}
-	// A reserved PostgreSQL role is in neither Database.Roles nor
-	// Database.RolesOutOfScope, so comparing it would read it as absent and
-	// plan a CREATE ROLE the server always refuses. Refuse the declaration
-	// here instead, before anything is compared (stokaro/ptah#1312).
-	if err := validateDeclaredBeforeComparison(desired, database, info); err != nil {
-		return nil, nil, err
-	}
-	// A SQLite virtual table cannot appear on the desired side of any
-	// comparison, so its absence there is not deletion intent and its presence
-	// there is a different kind of object. Refuse both before anything is
-	// compared, rather than planning a DROP the operator never asked for
-	// (stokaro/ptah#1028).
-	//
-	// The caller's diff policy travels with the comparison because both halves
-	// of that guard predict statements, and a caller that skips `drop_table`
-	// deletes the predicted DROP again before anything is rendered. See
-	// [config.CompareOptions.SkipTableDrops].
-	virtualPolicy := sqlitevirtual.Policy{
-		SkipDropTable:  merged.SkipTableDrops,
-		SkipDropColumn: merged.SkipColumnDrops,
-		SkipDropIndex:  merged.SkipIndexDrops,
-	}
-	if err := sqlitevirtual.ValidateComparison(info.Dialect, desired, database, virtualPolicy); err != nil {
-		return nil, nil, err
-	}
-	desired = schemaprep.AssignDefaultForeignKeyNames(desired, info.Dialect)
-	semantics := info.IdentifierSemantics.Normalize(info.Dialect)
-	if !info.IdentifierSemantics.IsZero() &&
-		!info.IdentifierSemantics.Equal(semantics) {
-		return nil, nil, fmt.Errorf(
-			"%w: invalid identifier semantics snapshot",
-			ptaherr.ErrInvalidSchemaDiff,
-		)
-	}
-	names := collectIdentifierNames(desired, database, semantics.DefaultSchema)
-	if err := identifiervalidation.ValidateCoverage(semantics, names); err != nil {
-		return nil, nil, err
-	}
-	if err := ValidateDesiredSchema(desired, info); err != nil {
-		return nil, nil, err
-	}
-	if err := ValidateRolePasswordComparison(desired, database, info.Dialect); err != nil {
-		return nil, nil, err
-	}
-	merged.IdentifierSemantics = &semantics
-	// A connection to a whole MySQL-family server compares its databases as
-	// well as what is in them. Only the connection says it is one: a server
-	// read and a read of one database both describe tables, and only the
-	// first describes the databases (stokaro/ptah#3789).
-	merged.ServerSchemas = merged.ServerSchemas || info.WholeServer
-	if merged.ServerSchemas && isMySQLFamilyComparison(info.Dialect) {
-		if err := compare.RequireServerDatabases(desired); err != nil {
-			return nil, nil, err
-		}
-	}
-	diff, undecided := compareReportingUndecidedAdditions(desired, database, merged, info.Capabilities, info.DefaultIntSize)
-	// The half of the SQLite virtual-table guard that only the comparator can
-	// answer. A table both sides name and describe differently is rebuilt by
-	// the SQLite planner -- drop, recreate, copy -- which destroys a module's
-	// storage as surely as a drop, and whether that will happen is this diff's
-	// answer rather than anything the pre-comparison check could compute
-	// without a second copy of these rules (stokaro/ptah#1028).
-	if err := sqlitevirtual.ValidatePlannedChanges(
-		info.Dialect, database, diff, virtualPolicy,
-	); err != nil {
-		return nil, nil, err
-	}
-	if err := compare.ValidateMySQLFunctionDefinerReplacements(
-		desired,
-		database,
-		diff,
-		info.Dialect,
-		semantics,
-	); err != nil {
-		return nil, nil, err
-	}
-	return diff, undecided, nil
-}
-
-// CompareWithOptions performs schema comparison between a desired schema and an
-// introspected database schema with custom configuration options.
-//
-// A nil opts selects config.DefaultCompareOptions (which ignores the "plpgsql"
-// extension). The comparison never returns an error and reads no database.
-//
-// Setting opts.Dialect selects more than normalization rules. The desired
-// state is first projected to that target -- an object whose declaration is
-// scoped to other dialects is absent rather than reported as added -- and the
-// matching scoped-away objects are suppressed on the current side too, so a
-// multi-dialect declaration converges instead of re-planning (or dropping) the
-// same objects forever. Default foreign-key names are also assigned under the
-// dialect, the way the renderer would assign them. All of that preparation
-// works on a copy: neither argument is mutated, here or on any other entry
-// point in this package.
-//
-// A non-nil opts.IdentifierSemantics is honored only when it is a valid
-// resolved snapshot that covers every compared identifier and admits no
-// target identifier collisions. A snapshot failing any of those checks is
-// silently discarded here and the dialect's conservative offline rules apply;
-// use CompareWithDatabaseInfo to have an invalid snapshot refused with an
-// error instead.
-//
-// Example usage:
-//
-//	// Use default options (ignores "plpgsql")
-//	diff := schemadiff.CompareWithOptions(desired, current, nil)
-//
-//	// Ignore specific extensions
-//	opts := config.WithIgnoredExtensions("plpgsql", "adminpack")
-//	diff := schemadiff.CompareWithOptions(desired, current, opts)
-//
-//	// Don't ignore any extensions
-//	opts := config.WithIgnoredExtensions()
-//	diff := schemadiff.CompareWithOptions(desired, current, opts)
-func CompareWithOptions(desired *schemamodel.Database, current *catalog.Database, opts *config.CompareOptions) *difftypes.SchemaDiff {
-	diff, _ := CompareReportingUndecidedAdditions(desired, current, opts)
-	return diff
-}
-
-// CompareReportingUndecidedAdditions performs the same comparison as
-// [CompareWithOptions] and also reports what it could not decide.
-//
-// The second return names objects the DESIRED state declares that the CURRENT
-// state's coverage record made undecidable -- the read never looked at that
-// kind -- and whose creation Ptah renders without an IF NOT EXISTS guard, so
-// planning it would fail the migration if the object were already there. They
-// are absent from the diff's added lists, and a caller that reports a synced
-// schema without mentioning them is telling an operator less than the truth
-// (stokaro/ptah#1276).
-//
-// It is a second return rather than a field on [difftypes.SchemaDiff] because
-// every slice field of that type is a category of change the planner renders
-// SQL for, asserted by reflection over the struct (stokaro/ptah#1284). An
-// undecided addition is the opposite: there is no statement to run, and a
-// `migrate diff` that wrote a migration file holding none would be worse than
-// the silence this replaces.
-//
-// The entries are sorted by kind and then name, so a diagnostic built from them
-// is stable across runs over the same two states.
+// CompareReportingUndecidedAdditions returns the established changes and all
+// undecided common or feature state. Diagnostics are separate from executable
+// changes. A caller rendering a partial diff must also report its knowledge
+// limits. Service errors and cancellation discard the complete result.
+// Nil schemas are missing inputs, not empty declarations or catalogs.
 func CompareReportingUndecidedAdditions(
+	ctx context.Context,
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	opts *config.CompareOptions,
-) (*difftypes.SchemaDiff, []coverage.Object) {
-	return compareReportingUndecidedAdditions(desired, database, opts, nil, 0)
+	runtime schemaext.ComparisonRuntime,
+) (*difftypes.SchemaDiff, Diagnostics, error) {
+	return compareReportingUndecidedAdditions(ctx, desired, database, opts, nil, 0, runtime)
 }
 
 // compareReportingUndecidedAdditions is [CompareReportingUndecidedAdditions]
@@ -276,19 +60,39 @@ func CompareReportingUndecidedAdditions(
 // defaultIntSize is [catalog.ServerInfo.DefaultIntSize], 0 where no connection
 // read it.
 func compareReportingUndecidedAdditions(
+	ctx context.Context,
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	opts *config.CompareOptions,
 	caps capability.Capabilities,
 	defaultIntSize int,
-) (*difftypes.SchemaDiff, []coverage.Object) {
+	runtime schemaext.ComparisonRuntime,
+) (*difftypes.SchemaDiff, Diagnostics, error) {
+	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
+		return nil, Diagnostics{}, err
+	}
+	if desired == nil || database == nil {
+		return nil, Diagnostics{}, fmt.Errorf("%w: comparison requires desired and observed schemas", ptaherr.ErrInvalidSchemaDiff)
+	}
 	if opts == nil {
 		opts = config.DefaultCompareOptions()
+	}
+	var selected schemaext.TargetSelection
+	if opts.Dialect != "" {
+		var err error
+		selected, err = runtime.ResolveTarget(opts.Dialect)
+		if err != nil {
+			return nil, Diagnostics{}, err
+		}
+		resolved := *opts
+		resolved.Dialect = selected.Name()
+		opts = &resolved
 	}
 	if len(caps) == 0 {
 		caps = comparisonCapabilities(opts.Dialect)
 	}
 	if opts.Dialect != "" {
+		var err error
 		// The declared scope resolves first, so every later step -- coverage,
 		// identifier validation, each per-kind comparison -- sees the desired
 		// state this target actually has. An object scoped away from this
@@ -300,8 +104,10 @@ func compareReportingUndecidedAdditions(
 		// the database still holding a scoped-away object, which reads as
 		// present in the target and absent from the declaration -- the shape of
 		// a drop. See suppressScopedAway.
-		omitted := schemamodel.OmissionsForDialect(desired, opts.Dialect)
-		desired = schemamodel.ScopeToDialect(desired, opts.Dialect)
+		desired, database, err = scopeComparison(desired, database, selected)
+		if err != nil {
+			return nil, Diagnostics{}, err
+		}
 		desired = schemaprep.AssignDefaultForeignKeyNames(desired, opts.Dialect)
 		// A UNIQUE constraint is a unique index on YDB, which is what the
 		// reader reports for one a plan applied.
@@ -309,32 +115,31 @@ func compareReportingUndecidedAdditions(
 		// A YDB privilege spelled as GRANT does is the permission name the
 		// reader reports.
 		desired = schemaprep.YDBPermissionNamesFor(desired, opts.Dialect)
-		database = suppressScopedAway(database, omitted)
 	}
 
 	diff := &difftypes.SchemaDiff{}
-	identifierSemantics := identifier.ForDialect(opts.Dialect)
+	identifierSemantics, err := comparisonIdentifiers(desired, database, opts)
+	if err != nil {
+		return nil, Diagnostics{}, err
+	}
 	if opts.IdentifierSemantics != nil {
-		candidate := opts.IdentifierSemantics.Normalize(opts.Dialect)
-		candidateNames := collectIdentifierNames(
-			desired,
-			database,
-			candidate.DefaultSchema,
-		)
-		validSnapshot := opts.IdentifierSemantics.IsZero() ||
-			opts.IdentifierSemantics.Equal(candidate)
-		if validSnapshot &&
-			identifiervalidation.ValidateCoverage(candidate, candidateNames) == nil &&
-			identifiervalidation.ValidateTarget(desired, opts.Dialect, candidate) == nil {
-			identifierSemantics = candidate
-		}
-		storedSemantics := identifierSemantics
-		diff.IdentifierSemantics = &storedSemantics
+		stored := identifierSemantics.Clone()
+		diff.IdentifierSemantics = &stored
 	}
 	desired, database = normalizeInlineEnumsForCompare(desired, database, opts)
 	desired = normalizeGeneratedColumnsForCompare(desired, opts)
-	desired = compare.AdoptUndescribedChangefeeds(desired, database, opts.Dialect, identifierSemantics)
-	desired = compare.AdoptTransferConsumers(desired, database, opts.Dialect, identifierSemantics)
+	desired, err = compare.AdoptTransferConsumers(desired, database, opts.Dialect, identifierSemantics)
+	if err != nil {
+		return nil, Diagnostics{}, err
+	}
+	featureResult, err := compareFeatures(ctx, desired, database, opts.Dialect, identifierSemantics, caps, runtime)
+	if err != nil {
+		return nil, Diagnostics{}, err
+	}
+	desired, err = effectiveFeatureState(desired, featureResult.Desired, opts.Dialect, identifierSemantics)
+	if err != nil {
+		return nil, Diagnostics{}, err
+	}
 	desired = compare.AdoptUndescribedColumnTables(desired, database, opts.Dialect, identifierSemantics)
 	desired = compare.AdoptHeldColumnFamilies(desired, database, opts.Dialect, identifierSemantics)
 	desired = compare.AdoptUndescribedRowDeletionPolicies(desired, database, opts.Dialect, identifierSemantics)
@@ -367,6 +172,10 @@ func compareReportingUndecidedAdditions(
 		},
 		caps,
 	)
+
+	if err := attachFeatureChanges(diff, desired, database, comparisonChanges(featureResult), opts.Dialect, identifierSemantics); err != nil {
+		return nil, Diagnostics{}, err
+	}
 
 	// Compare enum type definitions and values. The semantics carry the
 	// connection's default schema, without which an `enum` block's mandatory
@@ -446,9 +255,8 @@ func compareReportingUndecidedAdditions(
 	// rebuilds a table to change one. It is filled here rather than beside the
 	// other carries because it reads the constraint lists, which the call above
 	// is what fills (stokaro/ptah#2315).
-	diff.DeclaredConstraintHosts = difftypes.ConstraintHostDeclarationsOf(
-		desired, diff.ConstraintsAdded, diff.ConstraintsRemoved, identifierSemantics,
-	)
+	diff.DeclaredConstraintHosts = constraintHostDeclarations(desired, diff, identifierSemantics)
+	diff.ObservedConstraintHosts = constraintHostObservations(database, diff.DeclaredConstraintHosts, opts.Dialect, identifierSemantics)
 	// What the read of the database declined to describe, for a target that
 	// rebuilds a table and must not drop a setting nobody compared.
 	diff.CurrentNotDescribed = database.NotDescribed
@@ -477,7 +285,10 @@ func compareReportingUndecidedAdditions(
 		return strings.Compare(a.Name, b.Name)
 	})
 
-	return diff, undecided
+	if err := ctx.Err(); err != nil {
+		return nil, Diagnostics{}, err
+	}
+	return diff, Diagnostics{Common: undecided, Features: featureResult.Undecided}, nil
 }
 
 // comparisonCapabilities is the capability set a comparison without a live
@@ -791,42 +602,48 @@ func validateKeysIntoComparedSchemas(desired *schemamodel.Database, database *ca
 // ValidateDesiredSchema refuses a desired schema this target cannot be planned
 // against, before anything is compared.
 //
-// Two rules are asked, and both need the whole declaration rather than a set of
-// changes. Identifier validation answers questions between declarations -- an
+// Identifier validation and selected target validation need the whole
+// declaration rather than a set of changes. Identifier validation checks an
 // index name used twice, a foreign key whose referenced columns are not unique,
-// two names one collation folds together -- and the renderer's validation
-// answers whether this target can host what the document declares at all. A
+// two names one collation folds together. The selected validator answers
+// whether this target can host what the document declares. A
 // plan reads only the diff, so neither can run there: a conflict between two
 // unchanged tables is invisible to a change set that names neither
 // (stokaro/ptah#2315).
 //
-// It is exported because the comparison is reachable through variants that
-// return no error, and a surface that takes one of those has to make the same
-// refusal itself. Giving both ends one predicate is what keeps them from
-// drifting apart: the alternative is two lists of rules that agree when the
-// second is written and stop agreeing when the first is extended.
+// Adapters that compare documents without database-aware comparison can call
+// this validation explicitly. It uses the same selected service as comparison.
 //
-// Render and plan share this validation, which is what stokaro/ptah#1717 asks
-// for -- `schema render` reaches it through the renderer directly, and the plan
-// pipeline reaches it through the comparison that feeds the planner.
-func ValidateDesiredSchema(desired *schemamodel.Database, info catalog.ServerInfo) error {
+// The built-in validator shares checks with schema rendering. The comparison
+// invokes the selected service before the diff reaches the planner, so a target
+// refusal prevents planning even when no changed object exposes the conflict.
+func ValidateDesiredSchema(ctx context.Context, service schemavalidation.Runtime, desired *schemamodel.Database, info catalog.ServerInfo) error {
+	if err := schemaext.RequireRuntime(ctx, service); err != nil {
+		return err
+	}
 	if desired == nil {
-		return nil
+		return fmt.Errorf("%w: cannot validate a nil database schema", ptaherr.ErrInvalidSchemaDiff)
 	}
 	// Both projections are idempotent, so a caller that already applied them
 	// gets the same schema back. A declaration this dialect was not given is
 	// not part of its desired state, and a foreign key without a name is one
 	// the plan would name the same way.
-	scoped := schemaprep.AssignDefaultForeignKeyNames(
-		schemamodel.ScopeToDialect(desired, info.Dialect),
-		info.Dialect,
-	)
+	selected, err := service.ResolveTarget(info.Dialect)
+	if err != nil {
+		return err
+	}
+	info.Dialect = selected.Name()
+	scoped, err := schemamodel.ScopeToTarget(desired, selected)
+	if err != nil {
+		return err
+	}
+	scoped = schemaprep.AssignDefaultForeignKeyNames(scoped, info.Dialect)
 	if err := identifiervalidation.ValidateTarget(
 		scoped,
 		info.Dialect,
 		info.IdentifierSemantics.Normalize(info.Dialect),
 	); err != nil {
-		return err
+		return &RefusalError{cause: err}
 	}
 	caps := info.Capabilities
 	if len(caps) == 0 {
@@ -834,11 +651,15 @@ func ValidateDesiredSchema(desired *schemamodel.Database, info catalog.ServerInf
 	}
 	// A column does not carry the schema of the user type it names, only the
 	// declaration does (stokaro/ptah#1138).
-	return renderer.ValidateSchemaWithCapabilities(
-		schemaprep.QualifyDeclaredUserTypes(scoped, info.Dialect),
-		info.Dialect,
-		caps,
-	)
+	target := selected.Name()
+	result, err := schemavalidation.Validate(ctx, service, schemavalidation.Request{
+		Target: target, Capabilities: caps, Identifiers: info.IdentifierSemantics.Normalize(info.Dialect),
+		Schema: schemaprep.QualifyDeclaredUserTypes(scoped, info.Dialect),
+	})
+	if err != nil {
+		return err
+	}
+	return result.Err(target)
 }
 
 // isMySQLFamilyComparison reports whether dialect names MySQL or MariaDB, the

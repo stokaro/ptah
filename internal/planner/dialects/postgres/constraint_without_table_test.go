@@ -1,15 +1,17 @@
 package postgres_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -74,12 +76,15 @@ func TestPlanner_TableLevelConstraintWithoutAnExplicitTable(t *testing.T) {
 			// test is about and that resolution is the comparison's: the planner
 			// renders the record, and the record carries the table the
 			// declaration resolved to (stokaro/ptah#2315).
-			diff := schemadiff.CompareWithDialect(desired, bookingsDatabase(), platform.Postgres)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, bookingsDatabase(), platform.Postgres, must.Must(builtin.New())))
 
-			nodes, err := postgres.New().GenerateMigrationAST(diff)
+			nodes, err := postgres.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				diff,
+			)
 
 			c.Assert(err, qt.IsNil)
-			sql, err := renderer.RenderSQL("postgres", nodes...)
+			sql, err := builtin.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, test.wantSQL)
 		})
@@ -105,12 +110,15 @@ func TestPlanner_TableLevelConstraintNamesItsOwnTable(t *testing.T) {
 			Table: "archived_bookings", CheckExpression: "price > 0",
 		}},
 	}
-	diff := schemadiff.CompareWithDialect(desired, bookingsDatabase(), platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, bookingsDatabase(), platform.Postgres, must.Must(builtin.New())))
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff)
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `ALTER TABLE "archived_bookings" ADD CONSTRAINT "positive_price" CHECK (price > 0);`)
 }
@@ -130,7 +138,10 @@ func TestPlanner_RefusesAConstraintTheDiffDoesNotDescribe(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "positive_price"}}}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff)
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 
 	c.Assert(nodes, qt.IsNil)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)

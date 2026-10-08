@@ -6,6 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
+	"ptah.run/dialect/ydb/ydbast"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/migration/safety"
 )
 
@@ -14,7 +16,7 @@ import (
 // can end a consumer's position or keep records for less time, and an
 // addition loses nothing.
 func TestClassify_Changefeed(t *testing.T) {
-	feed := ast.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON"}
+	feed := ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON"}
 	alter := func(operation ast.AlterOperation) ast.Node {
 		return &ast.AlterTableNode{Name: "items", Operations: []ast.AlterOperation{operation}}
 	}
@@ -25,17 +27,17 @@ func TestClassify_Changefeed(t *testing.T) {
 		wantReason   string
 	}{
 		{
-			name: "a changefeed dropped", node: alter(&ast.DropChangefeedOperation{Name: "updates"}),
+			name: "a changefeed dropped", node: alter(&ast.ExtensionAlterOperation{Payload: &ydbast.DropChangefeed{Name: "updates"}}),
 			wantSeverity: safety.Destructive,
 			wantReason:   "DROP CHANGEFEED removes the change stream with every record nobody read, and its consumers",
 		},
 		{
-			name: "a changefeed's topic changed", node: alter(&ast.AlterChangefeedTopicOperation{Changefeed: feed, Previous: feed}),
+			name: "a changefeed's topic changed", node: alter(&ast.ExtensionAlterOperation{Payload: &ydbast.AlterChangefeedTopic{Changefeed: feed, Previous: feed}}),
 			wantSeverity: safety.Warning,
 			wantReason:   "ALTER TOPIC can drop a consumer's position or shorten how long the stream keeps records",
 		},
 		{
-			name: "a changefeed added", node: alter(&ast.AddChangefeedOperation{Changefeed: feed}),
+			name: "a changefeed added", node: alter(&ast.ExtensionAlterOperation{Payload: &ydbast.AddChangefeed{Changefeed: feed}}),
 			wantSeverity: safety.Safe,
 			wantReason:   "does not remove data or tighten constraints",
 		},

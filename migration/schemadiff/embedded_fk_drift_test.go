@@ -1,14 +1,16 @@
 package schemadiff_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mysql"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/internal/schemaprep"
@@ -133,12 +135,15 @@ func TestEmbeddedInlineMixinFK_NeverTargetsStructName(t *testing.T) {
 		c := qt.New(t)
 
 		gen := ownableMixinSchema(hosts...)
-		diff := schemadiff.Compare(gen, ownableMixinColumnsOnlyDB(hosts...))
+		diff := must.Must(schemadiff.Compare(t.Context(), gen, ownableMixinColumnsOnlyDB(hosts...), must.Must(builtin.New())))
 		c.Assert(diff.HasChanges(), qt.IsTrue)
 
-		nodes, err := postgres.New().GenerateMigrationAST(diff)
+		nodes, err := postgres.New().GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			diff,
+		)
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("postgres", nodes...)
+		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -159,13 +164,16 @@ func TestEmbeddedInlineMixinFK_NeverTargetsStructName(t *testing.T) {
 		c := qt.New(t)
 
 		gen := ownableMixinSchema(hosts...)
-		diff := schemadiff.Compare(gen, ownableMixinColumnsOnlyDB(hosts...))
+		diff := must.Must(schemadiff.Compare(t.Context(), gen, ownableMixinColumnsOnlyDB(hosts...), must.Must(builtin.New())))
 
 		// Reverse the diff the way the generator does for the down migration.
 		downDiff := reverseConstraintDiff(diff)
-		nodes, err := postgres.New().GenerateMigrationAST(downDiff)
+		nodes, err := postgres.New().GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			downDiff,
+		)
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("postgres", nodes...)
+		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -183,7 +191,7 @@ func TestEmbeddedInlineMixinFK_NeverTargetsStructName(t *testing.T) {
 		c := qt.New(t)
 
 		gen := ownableMixinSchema(hosts...)
-		diff := schemadiff.Compare(gen, ownableMixinConvergedDB(hosts...))
+		diff := must.Must(schemadiff.Compare(t.Context(), gen, ownableMixinConvergedDB(hosts...), must.Must(builtin.New())))
 		c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("added=%v removed=%v", diff.ConstraintsAdded, diff.ConstraintsRemoved))
 	})
 }
@@ -205,15 +213,18 @@ func TestEmbeddedInlineMixinFK_MultiHostActionDrift(t *testing.T) {
 
 		// Generated tenant FK = ON DELETE CASCADE; DB = converged NO ACTION.
 		gen := ownableMixinSchemaWithTenantOnDelete("CASCADE", hosts...)
-		diff := schemadiff.Compare(gen, ownableMixinConvergedDB(hosts...))
+		diff := must.Must(schemadiff.Compare(t.Context(), gen, ownableMixinConvergedDB(hosts...), must.Must(builtin.New())))
 		c.Assert(diff.HasChanges(), qt.IsTrue)
 		// The same FK name is added + removed once per host (a modification).
 		c.Assert(countName(diff.ConstraintsAdded.Names(), "fk_entity_tenant"), qt.Equals, len(hosts))
 		c.Assert(countName(diff.ConstraintsRemoved.Names(), "fk_entity_tenant"), qt.Equals, len(hosts))
 
-		nodes, err := postgres.New().GenerateMigrationAST(diff)
+		nodes, err := postgres.New().GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			diff,
+		)
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("postgres", nodes...)
+		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -235,10 +246,13 @@ func TestEmbeddedInlineMixinFK_MultiHostActionDrift(t *testing.T) {
 		}
 
 		// Idempotency: once the database carries CASCADE, regenerating is empty.
-		converged := schemadiff.Compare(gen, ownableMixinConvergedTenantOnDelete("CASCADE", hosts...))
-		noopNodes, err := postgres.New().GenerateMigrationAST(converged)
+		converged := must.Must(schemadiff.Compare(t.Context(), gen, ownableMixinConvergedTenantOnDelete("CASCADE", hosts...), must.Must(builtin.New())))
+		noopNodes, err := postgres.New().GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			converged,
+		)
 		c.Assert(err, qt.IsNil)
-		noopSQL, err := renderer.RenderSQL("postgres", noopNodes...)
+		noopSQL, err := builtin.RenderSQL("postgres", noopNodes...)
 		c.Assert(err, qt.IsNil)
 		noopSQL = legacyRenderedSQL(noopSQL)
 		c.Assert(noopSQL, qt.Not(qt.Contains), "fk_entity_tenant",
@@ -250,12 +264,15 @@ func TestEmbeddedInlineMixinFK_MultiHostActionDrift(t *testing.T) {
 
 		gen := ownableMixinSchemaWithTenantOnDelete("CASCADE", hosts...)
 		converged := ownableMixinConvergedDBForDialect(gen, "mysql", hosts...)
-		diff := schemadiff.CompareWithDialect(gen, converged, "mysql")
+		diff := must.Must(schemadiff.CompareWithDialect(t.Context(), gen, converged, "mysql", must.Must(builtin.New())))
 		c.Assert(diff.HasChanges(), qt.IsTrue)
 
-		nodes, err := mysql.New().GenerateMigrationAST(diff)
+		nodes, err := mysql.New().GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			diff,
+		)
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("mysql", nodes...)
+		sql, err := builtin.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -337,12 +354,15 @@ func TestEmbeddedInlineMixinFK_MixedModifyAndAdd_NoPhantomDrop(t *testing.T) {
 	)
 
 	gen := ownableMixinSchemaWithTenantOnDelete("CASCADE", allHosts...)
-	diff := schemadiff.Compare(gen, dbSchema)
+	diff := must.Must(schemadiff.Compare(t.Context(), gen, dbSchema, must.Must(builtin.New())))
 	c.Assert(diff.HasChanges(), qt.IsTrue)
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff)
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 

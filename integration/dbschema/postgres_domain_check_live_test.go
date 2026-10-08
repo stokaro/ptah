@@ -9,11 +9,12 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -83,7 +84,7 @@ func TestPostgresLiveDomainCheckConverges(t *testing.T) {
 	const originalCheck = "VALUE IN ('a','b')"
 	const replacedCheck = "VALUE IN ('a','b','c')"
 
-	statements, err := renderer.GetOrderedCreateStatements(declared(originalCheck), platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(declared(originalCheck), platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	for _, statement := range statements {
 		_, execErr := conn.ExecContext(ctx, statement)
@@ -104,6 +105,7 @@ func TestPostgresLiveDomainCheckConverges(t *testing.T) {
 	// 3. The plan runs against a database whose column has this domain's type.
 	//    A DROP DOMAIN would be refused here; these statements are not that.
 	planStatements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
 		changed, platform.Postgres,
 	)
 
@@ -139,7 +141,7 @@ func compareLiveDomains(
 	c.Helper()
 	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, current, nil)
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, current, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	return diff
 }

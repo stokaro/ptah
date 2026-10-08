@@ -42,6 +42,7 @@ CREATE TABLE users (
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
+		Runtime:     selectedRuntime(c),
 		Dir:         migrationsDir,
 		Desired:     localDesiredSet(c, "file://"+schemaPath),
 		Name:        "add_email",
@@ -88,6 +89,7 @@ CREATE TABLE users (
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
+		Runtime:     selectedRuntime(c),
 		Dir:         migrationsDir,
 		Desired:     localDesiredSet(c, "file://"+schemaPath),
 		Name:        "add_email",
@@ -126,6 +128,7 @@ CREATE TABLE users (
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
+		Runtime:     selectedRuntime(c),
 		Dir:         migrationsDir,
 		Desired:     localDesiredSet(c, "file://"+schemaPath),
 		Name:        "add_email",
@@ -174,6 +177,7 @@ CREATE TABLE users (
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
+		Runtime:     selectedRuntime(c),
 		Dir:         migrationsDir,
 		Desired:     localDesiredSet(c, "file://"+schemaPath),
 		Name:        "add_email",
@@ -214,6 +218,7 @@ CREATE TABLE users (
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
+		Runtime:     selectedRuntime(c),
 		Dir:         migrationsDir,
 		Desired:     localDesiredSet(c, "file://"+schemaPath),
 		Name:        "noop",
@@ -252,6 +257,7 @@ table "users" {
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
+		Runtime:     selectedRuntime(c),
 		Dir:         migrationsDir,
 		Desired:     localDesiredSet(c, "file://"+schemaPath),
 		Name:        "out_of_scope",
@@ -298,6 +304,7 @@ CREATE TABLE users (
 	c.Assert(err, qt.IsNil)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
+		Runtime:     selectedRuntime(c),
 		Dir:         migrationsDir,
 		Desired:     localDesiredSet(c, "file://"+schemaPath),
 		Name:        "add_email",
@@ -336,6 +343,7 @@ func TestGenerateDiff_LockTimeout(t *testing.T) {
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
+		Runtime:     selectedRuntime(c),
 		Dir:         migrationsDir,
 		Desired:     localDesiredSet(c, "file://"+schemaPath),
 		Name:        "locked_diff",
@@ -366,6 +374,7 @@ func TestGenerateDiff_NegativeLockTimeoutDoesNotWait(t *testing.T) {
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.GenerateDiff(t.Context(), conn, atlasmigrate.DiffOptions{
+		Runtime:     selectedRuntime(c),
 		Dir:         migrationsDir,
 		Desired:     localDesiredSet(c, "file://"+schemaPath),
 		Name:        "locked_diff",
@@ -402,6 +411,7 @@ func TestGenerateDiff_LockCoversMigrationDirectoryDesiredResolution(t *testing.T
 	c.Assert(err, qt.IsNil)
 
 	result, err := atlasmigrate.GenerateDiff(t.Context(), conn, atlasmigrate.DiffOptions{
+		Runtime:     selectedRuntime(c),
 		Dir:         migrationsDir,
 		Desired:     localDesiredSet(c, "file://"+desiredDir),
 		Name:        "locked_diff",
@@ -429,6 +439,7 @@ func TestGenerateDiff_RejectsInvalidFormatBeforeCreatingDirectory(t *testing.T) 
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
+		Runtime: selectedRuntime(c),
 		Dir:     migrationsDir,
 		Desired: localDesiredSet(c, "file://"+filepath.Join(dir, "schema.sql")),
 		Format:  `{{ json . }}`,
@@ -461,6 +472,7 @@ CREATE TABLE users (
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
+		Runtime:     selectedRuntime(c),
 		Dir:         migrationsDir,
 		Desired:     localDesiredSet(c, "file://"+schemaPath),
 		Name:        "add_email",
@@ -491,6 +503,7 @@ THIS IS NOT SQL;
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
+		Runtime:     selectedRuntime(c),
 		Dir:         migrationsDir,
 		Desired:     localDesiredSet(c, "file://"+schemaPath),
 		Name:        "invalid_replay",
@@ -520,6 +533,7 @@ func TestGenerateDiff_PreCanceledContextPreservesDevAndSkipsDirectory(t *testing
 	cancel()
 
 	result, err := atlasmigrate.GenerateDiff(ctx, conn, atlasmigrate.DiffOptions{
+		Runtime:     selectedRuntime(c),
 		Dir:         migrationsDir,
 		Desired:     localDesiredSet(c, "file://"+schemaPath),
 		Name:        "canceled",
@@ -563,6 +577,7 @@ func TestGenerateDiff_InvalidMigrationSnapshotDoesNotResetDevDatabase(t *testing
 	c.Assert(err, qt.IsNil)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
+		Runtime:     selectedRuntime(c),
 		Dir:         migrationsDir,
 		Desired:     localDesiredSet(c, "file://"+schemaPath),
 		Name:        "must_not_reset",
@@ -582,6 +597,7 @@ func TestGenerateDiff_FailurePath(t *testing.T) {
 	t.Run("nil dev database connection", func(t *testing.T) {
 		c := qt.New(t)
 		result, err := atlasmigrate.GenerateDiff(context.Background(), nil, atlasmigrate.DiffOptions{
+			Runtime: selectedRuntime(c),
 			Dir:     c.TempDir(),
 			Desired: localDesiredSet(c, "file://schema.sql"),
 		})
@@ -595,6 +611,7 @@ func TestGenerateDiff_FailurePath(t *testing.T) {
 		defer dbschema.CloseAndWarn(conn)
 
 		result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
+			Runtime: selectedRuntime(c),
 			Desired: localDesiredSet(c, "file://schema.sql"),
 		})
 		c.Assert(err, qt.ErrorMatches, "migrate diff requires migration directory")
@@ -607,7 +624,8 @@ func TestGenerateDiff_FailurePath(t *testing.T) {
 		defer dbschema.CloseAndWarn(conn)
 
 		result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
-			Dir: c.TempDir(),
+			Runtime: selectedRuntime(c),
+			Dir:     c.TempDir(),
 		})
 		c.Assert(err, qt.ErrorMatches, "migrate diff requires desired state")
 		c.Assert(result.Synced, qt.IsFalse)
@@ -627,6 +645,7 @@ func TestGenerateDiff_QualifierRejectedBeforeAnyWrite(t *testing.T) {
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
+		Runtime:     selectedRuntime(c),
 		Dir:         migrationsDir,
 		Desired:     localDesiredSet(c, "file://"+schemaPath),
 		Name:        "qualified",
@@ -655,6 +674,7 @@ func TestGenerateDiff_QualifierRejectsMultiSchemaScopeBeforeAnyWrite(t *testing.
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
+		Runtime:     selectedRuntime(c),
 		Dir:         migrationsDir,
 		Desired:     localDesiredSet(c, "file://"+schemaPath),
 		Name:        "qualified",
@@ -700,6 +720,7 @@ CREATE TABLE users (
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
+		Runtime:     selectedRuntime(c),
 		Dir:         migrationsDir,
 		Desired:     localDesiredSet(c, "file://"+schemaPath),
 		Name:        "add_email",

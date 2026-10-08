@@ -17,7 +17,7 @@ import (
 func parseMigrations(t testing.TB, parser importer.Parser, fsys fs.FS) ([]importer.SourceMigration, error) {
 	t.Helper()
 
-	parsed, err := parser.Parse(fsys)
+	parsed, err := parser.Parse(t.Context(), fsys)
 	if err != nil {
 		return nil, err
 	}

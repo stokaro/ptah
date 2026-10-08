@@ -1,14 +1,17 @@
 package sqlite_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -45,7 +48,10 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			statements, err := planner.GenerateSchemaDiffSQLStatements(withDeclaredTable(test.diff, test.desired), "sqlite")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredTable(test.diff, test.desired), "sqlite",
+			)
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(plan, qt.Not(qt.Contains), test.unwantedSQL, qt.Commentf("plan:\n%s", plan))
@@ -83,7 +89,7 @@ func TestCompare_ATriggerFoldsACaseDifference(t *testing.T) {
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, "sqlite")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "sqlite", must.Must(builtin.New())))
 
 	c.Assert(diff.TriggersAdded, qt.HasLen, 0,
 		qt.Commentf("the two spellings are one trigger, not one to add and one to drop"))
@@ -92,7 +98,10 @@ func TestCompare_ATriggerFoldsACaseDifference(t *testing.T) {
 	c.Assert(diff.TriggersModified[0].Desired.Table, qt.Equals, "Notes",
 		qt.Commentf("the entry carries the declaration as written, not the folded spelling"))
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(withDeclaredTable(diff, desired), "sqlite")
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredTable(diff, desired), "sqlite",
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(statements, "\n"), qt.Contains, "TRIGGER")
@@ -116,13 +125,16 @@ func TestCompare_AModifiedViewResolvesACaseDifference(t *testing.T) {
 		Views: []catalog.View{{Name: "active_notes", Body: "SELECT id FROM notes"}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, platform.SQLite)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, platform.SQLite, must.Must(builtin.New())))
 
 	c.Assert(diff.ViewsModified, qt.HasLen, 1)
 	c.Assert(diff.ViewsModified[0].Desired.Name, qt.Equals, "Active_Notes",
 		qt.Commentf("the comparison folded the case and resolved to the declaration"))
 
-	sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, desired), platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredTable(diff, desired), platform.SQLite,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "VIEW")

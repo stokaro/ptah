@@ -5,7 +5,10 @@ import (
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/platform/capability"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/importer"
 )
 
@@ -17,7 +20,7 @@ func parseLiquibaseOn(c *qt.C, dbms string, files fstest.MapFS) (*importer.Parse
 	c.Assert(err, qt.IsNil)
 	selecting, err := importer.WithLiquibaseDBMS(parser, dbms)
 	c.Assert(err, qt.IsNil)
-	return selecting.Parse(files)
+	return selecting.Parse(c.Context(), files)
 }
 
 // With the database named, a changeset's dbms decides whether it imports, by
@@ -172,7 +175,7 @@ func TestWithLiquibaseDBMS_WithDialect_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	parser, err := importer.ParserByName("liquibase")
 	c.Assert(err, qt.IsNil)
-	rendering, err := importer.WithDialect(parser, "postgres")
+	rendering, err := importer.WithRendering(parser, "postgres", capability.ForDialect("postgres"), must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	selecting, err := importer.WithLiquibaseDBMS(rendering, "postgresql")
 	c.Assert(err, qt.IsNil)
@@ -182,7 +185,7 @@ func TestWithLiquibaseDBMS_WithDialect_HappyPath(t *testing.T) {
 			`<changeSet id="2" author="s" dbms="mysql"><loadData tableName="t" file="t.csv"/></changeSet></databaseChangeLog>`,
 	)}}
 
-	parsed, err := selecting.Parse(files)
+	parsed, err := selecting.Parse(c.Context(), files)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.Migrations, qt.HasLen, 1)

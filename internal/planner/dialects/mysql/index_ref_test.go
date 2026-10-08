@@ -1,16 +1,19 @@
 package mysql_test
 
 import (
+	"context"
 	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mysql"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -42,7 +45,10 @@ func TestPlanner_IndexRefs_MySQLFamilyRoutesDuplicateAdditions(t *testing.T) {
 	for _, test := range mysqlFamilyPlannerCases() {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := test.planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
+			nodes, err := test.planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(diff, desired),
+			)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(nodes, qt.HasLen, 2)
@@ -71,7 +77,10 @@ func TestPlanner_IndexRefs_MySQLFamilyRoutesDuplicateRemovals(t *testing.T) {
 	for _, test := range mysqlFamilyPlannerCases() {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := test.planner.GenerateMigrationAST(diff)
+			nodes, err := test.planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				diff,
+			)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(nodes, qt.HasLen, 2)
@@ -102,7 +111,10 @@ func TestPlanner_IndexRefs_MySQLFamilyReplacesOnlyExactRef(t *testing.T) {
 	for _, test := range mysqlFamilyPlannerCases() {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := test.planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
+			nodes, err := test.planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(diff, desired),
+			)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(nodes, qt.HasLen, 2)
@@ -132,7 +144,10 @@ func TestPlanner_IndexRefs_MySQLFamilyPreservesReplacementAddition(t *testing.T)
 	for _, test := range mysqlFamilyPlannerCases() {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := test.planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
+			nodes, err := test.planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(diff, desired),
+			)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(nodes, qt.HasLen, 1)
@@ -160,7 +175,10 @@ func TestPlanner_IndexRefs_MySQLFamilyCaseInsensitiveReplacementDropsFirst(t *te
 	for _, test := range mysqlFamilyPlannerCases() {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := test.planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
+			nodes, err := test.planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(diff, desired),
+			)
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)
 
@@ -196,7 +214,10 @@ func TestPlanner_IndexRefs_SQLServerSharedPlannerRoutesDuplicateAdditions(t *tes
 	}}
 
 	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
-		GenerateMigrationAST(withDeclaredObjects(diff, desired))
+		GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			withDeclaredObjects(diff, desired),
+		)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -228,7 +249,10 @@ func TestPlanner_IndexRefs_SQLServerPreservesIndexPartDirection(t *testing.T) {
 	}
 
 	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
-		GenerateMigrationAST(withDeclaredObjects(diff, desired))
+		GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			withDeclaredObjects(diff, desired),
+		)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
@@ -258,7 +282,10 @@ func TestPlanner_IndexRefs_SQLServerPreservesFilteredIndexPredicate(t *testing.T
 	}
 
 	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
-		GenerateMigrationAST(withDeclaredObjects(diff, desired))
+		GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			withDeclaredObjects(diff, desired),
+		)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
@@ -285,7 +312,10 @@ func TestPlanner_IndexRefs_SQLServerUnknownCollationOrdersPotentialReplacementSa
 	}
 
 	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
-		GenerateMigrationAST(withDeclaredObjects(diff, desired))
+		GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			withDeclaredObjects(diff, desired),
+		)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
 
@@ -317,7 +347,10 @@ func TestPlanner_IndexRefs_SQLServerCaseInsensitiveReplacementDropsFirst(t *test
 	}
 
 	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
-		GenerateMigrationAST(withDeclaredObjects(diff, desired))
+		GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			withDeclaredObjects(diff, desired),
+		)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
 
@@ -350,7 +383,10 @@ func TestPlanner_IndexRefs_SQLServerCaseSensitiveVariantsRemainIndependent(t *te
 	}
 
 	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
-		GenerateMigrationAST(withDeclaredObjects(diff, desired))
+		GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			withDeclaredObjects(diff, desired),
+		)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
 

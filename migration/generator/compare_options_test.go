@@ -7,10 +7,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff"
 )
@@ -49,8 +51,7 @@ func TestGenerateMigrationOptions_CompareOptions_Initialization(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			opts := generator.GenerateMigrationOptions{
-				GoEntitiesDir:  "./testdata",
+			opts := generator.GenerateMigrationOptions{Runtime: must.Must(builtin.New()), GoEntitiesDir: "./testdata",
 				DatabaseURL:    "memory://test",
 				MigrationName:  "test_migration",
 				OutputDir:      t.TempDir(),
@@ -83,7 +84,9 @@ func TestGenerateMigrationOptions_CompareOptions_NilHandling_DefaultBehavior(t *
 	}
 
 	// Test schema comparison with nil options (should use defaults)
-	diff := schemadiff.CompareWithOptions(desired, database, nil)
+	diff := must.Must(schemadiff.CompareWithOptions(t.Context(),
+		desired, database, nil, must.Must(builtin.New()),
+	))
 
 	// With nil options, should use defaults (ignore plpgsql)
 	c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"pg_trgm"})
@@ -112,7 +115,9 @@ func TestGenerateMigrationOptions_CompareOptions_NilHandling_CustomOptions(t *te
 
 	// Test schema comparison with custom options
 	compareOptions := config.WithIgnoredExtensions("plpgsql", "adminpack")
-	diff := schemadiff.CompareWithOptions(desired, database, compareOptions)
+	diff := must.Must(schemadiff.CompareWithOptions(t.Context(),
+		desired, database, compareOptions, must.Must(builtin.New()),
+	))
 
 	// With custom options ignoring both plpgsql and adminpack
 	c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"pg_trgm"})
@@ -193,7 +198,9 @@ func TestGenerateMigrationOptions_CompareOptions_ConfigurationValidation(t *test
 				},
 			}
 
-			diff := schemadiff.CompareWithOptions(desired, database, tt.compareOptions)
+			diff := must.Must(schemadiff.CompareWithOptions(t.Context(),
+				desired, database, tt.compareOptions, must.Must(builtin.New()),
+			))
 
 			c.Assert(diff.ExtensionsAdded.Names(), qt.HasLen, tt.expectedAddedCount,
 				qt.Commentf("Expected %d extensions to be added", tt.expectedAddedCount))
@@ -232,8 +239,7 @@ type TestTable struct {
 	c.Assert(err, qt.IsNil)
 
 	// Test with memory database and empty ignored extensions list
-	opts := generator.GenerateMigrationOptions{
-		GoEntitiesDir:  entitiesDir,
+	opts := generator.GenerateMigrationOptions{Runtime: must.Must(builtin.New()), GoEntitiesDir: entitiesDir,
 		DatabaseURL:    "memory://test",
 		MigrationName:  "test_empty_ignored",
 		OutputDir:      migrationsDir,
@@ -279,8 +285,7 @@ type TestTable struct {
 	c.Assert(err, qt.IsNil)
 
 	// Test with memory database and duplicate ignored extensions
-	opts := generator.GenerateMigrationOptions{
-		GoEntitiesDir:  entitiesDir,
+	opts := generator.GenerateMigrationOptions{Runtime: must.Must(builtin.New()), GoEntitiesDir: entitiesDir,
 		DatabaseURL:    "memory://test",
 		MigrationName:  "test_duplicate_ignored",
 		OutputDir:      migrationsDir,

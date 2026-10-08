@@ -1,0 +1,1083 @@
+// Package oracle renders Ptah AST nodes to Oracle DDL.
+package oracle
+
+import (
+	"fmt"
+	"strings"
+
+	"ptah.run/core/ast"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
+	"ptah.run/engine/builtin/internal/dialects/internal/bufwriter"
+	"ptah.run/engine/builtin/internal/dialects/internal/grantrefusal"
+	"ptah.run/internal/renderdiag"
+	"ptah.run/internal/triggerdef"
+)
+
+const DialectName = platform.Oracle
+
+type Renderer struct {
+	w    bufwriter.Writer
+	caps capability.Capabilities
+	// sink receives a record for each declaration this target does not emit.
+	// A nil sink drops what it is given, so a render nobody asked to report
+	// costs nothing.
+	sink *renderdiag.Sink
+}
+
+// ReportOmissionsTo directs this renderer's omission records to sink.
+//
+// The ordered-render path builds a renderer per statement, so the sink outlives
+// the renderer rather than the other way round; that is what lets one report
+// span a schema without any state surviving a statement.
+func (r *Renderer) ReportOmissionsTo(sink *renderdiag.Sink) {
+	r.sink = sink
+}
+
+// New constructs a renderer for the Oracle the offline paths assume, which is
+// the newest measured line rather than the oldest supported one, for the reason
+// the SQLite renderer gives: a rendered file is read by whatever server the
+// operator has, and describing it as the 21 floor would drop guards every
+// engine in the ladder above accepts.
+func New() *Renderer {
+	return NewWithCapabilities(capability.Oracle23())
+}
+
+// NewWithCapabilities constructs an Oracle renderer for a concrete server
+// capability set. The set is cloned so later caller mutations cannot change
+// rendering behavior (stokaro/ptah#916).
+func NewWithCapabilities(caps capability.Capabilities) *Renderer {
+	return &Renderer{caps: caps.Clone()}
+}
+
+func (r *Renderer) capabilities() capability.Capabilities { return r.caps }
+
+func (r *Renderer) Dialect() string { return DialectName }
+
+func (r *Renderer) GetDialect() string { return r.Dialect() }
+
+func (r *Renderer) Reset() { r.w.Reset() }
+
+func (r *Renderer) Output() string { return r.w.Output() }
+
+func (r *Renderer) GetOutput() string { return r.Output() }
+
+func (r *Renderer) Render(node ast.Node) (string, error) {
+	r.Reset()
+	if err := node.Accept(r); err != nil {
+		return "", err
+	}
+	return r.Output(), nil
+}
+
+// createGuard returns the IF NOT EXISTS clause the target takes, and the empty
+// string when it takes none. The caller decides whether the declaration asked
+// for a guard at all.
+//
+// Measured on 23.26, the guard is a guard rather than a clause the parser
+// discards: a second `CREATE TABLE IF NOT EXISTS` of a name that exists is
+// accepted, where the same statement without the clause answers ORA-00955.
+// Measured on 21.3, every spelling of it is a syntax error while a bare CREATE
+// TABLE in the same session is accepted.
+func (r *Renderer) createGuard() string {
+	if r.capabilities().Has(capability.ObjectExistenceGuards) {
+		return " IF NOT EXISTS"
+	}
+	return ""
+}
+
+// dropGuard is createGuard's other half, for DROP.
+func (r *Renderer) dropGuard() string {
+	if r.capabilities().Has(capability.ObjectExistenceGuards) {
+		return " IF EXISTS"
+	}
+	return ""
+}
+
+// renderCreateSchema refuses, because an Oracle schema is not an object anybody
+// creates.
+//
+// A schema here IS a user: objects live in the namespace of the account that
+// owns them, and the statement that makes one is CREATE USER, which is an
+// account with a password and a quota rather than the namespace this node
+// describes. Oracle does have a CREATE SCHEMA statement and it is a different
+// thing entirely -- a way to submit several CREATE and GRANT statements as one
+// transaction into a schema that already exists. Measured: `CREATE SCHEMA
+// ptah_s` answers ORA-02420, missing schema authorization clause.
+//
+// Rendering CREATE USER from this node would silently create an account, which
+// is a privilege decision no schema file should make on an operator's behalf.
+func (r *Renderer) renderCreateSchema(node *ast.CreateSchemaNode) error {
+	r.notSupported("schemas", node.Name)
+	return nil
+}
+
+func (r *Renderer) renderCreateDatabase(node *ast.CreateDatabaseNode) error {
+	r.notSupported("databases", node.Name)
+	return nil
+}
+
+// namedColumnCheck gives an unnamed column CHECK the name the comparison will
+// look for.
+//
+// Oracle names an inline CHECK itself -- measured, a column declared
+// `view_count NUMBER(10) CHECK (view_count >= 0)` comes back from
+// ALL_CONSTRAINTS as SYS_C008794, and the number is per database. The
+// comparison looks for the convention an unnamed column check carries
+// everywhere else, `<table>_<column>_check`, so the first read-back after
+// CREATE TABLE disagrees with the declaration and the next apply renames the
+// constraint. The schema converges, but only on the second run.
+//
+// This is the same defect stokaro/ptah#1716 fixed for SQL Server, whose
+// CK__orders__status__571DF1D5 is the same idea with a different hash.
+//
+// A declaration that names its own check keeps that name; only the unnamed
+// case is filled in.
+func namedColumnCheck(table string, column *ast.ColumnNode) *ast.ColumnNode {
+	if column == nil || column.Check == "" || column.CheckName != "" {
+		return column
+	}
+	named := *column
+	named.CheckName = unquoteIdentifier(tableLeafName(table)) + "_" + column.Name + "_check"
+	return &named
+}
+
+// tableLeafName drops the schema qualifier, so a table in a named schema gets
+// the same check name it would get in the default one.
+func tableLeafName(table string) string {
+	parts := splitQualifiedIdentifier(table)
+	if len(parts) == 0 {
+		return table
+	}
+	return parts[len(parts)-1]
+}
+
+func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
+	// Oracle has no trailing table-option clause, so every option the author
+	// declared is dropped here. It was dropped before this line too; what is
+	// new is that the loss is now reported rather than silent.
+	r.sink.RecordDroppedTableOptions(node.Name, node.Options)
+	// The identity clause is always rendered as GENERATED BY DEFAULT with no
+	// start or step, so a column declaring ALWAYS gets different semantics and
+	// a declared start reaches the output nowhere.
+	for _, column := range node.Columns {
+		r.sink.RecordLostIdentity(renderdiag.ColumnName(node.Name, column.Name), renderdiag.Identity{
+			Generation: column.IdentityGeneration,
+			Start:      column.IdentityStart,
+			Increment:  column.IdentityIncrement,
+			Options:    column.IdentityOptions,
+		})
+		// UNIQUE and the identity clause are written; the rest is not. Oracle
+		// 12.2 and later do have a column COLLATE clause, so the collation is a
+		// declaration this target could carry and does not.
+		r.sink.RecordLostColumnProperties(
+			renderdiag.ColumnName(node.Name, column.Name),
+			renderdiag.ColumnProperties{
+				Charset:               column.Charset,
+				Collate:               column.Collate,
+				UpdateExpression:      column.UpdateExpression,
+				NotNullConstraintName: column.NotNullConstraintName,
+			},
+		)
+	}
+	// Only the PostgreSQL family renders a PARTITION BY clause, so a
+	// declared partitioning produces one ordinary table here: every row
+	// lands in the same place.
+	r.sink.RecordLostPartition(node.Name, node.Partition)
+	guard := ""
+	if node.IfNotExists {
+		guard = r.createGuard()
+	}
+
+	if len(node.Columns) == 0 && len(node.Constraints) == 0 && node.SelectBody != "" {
+		r.w.Writef("CREATE TABLE%s %s", guard, escapeQualifiedIdentifier(node.Name))
+		r.writeCustomSQL(node)
+		r.w.WriteLinef(" AS %s;", strings.TrimSpace(node.SelectBody))
+		r.renderTableComments(node)
+		return nil
+	}
+
+	r.w.WriteLinef("CREATE TABLE%s %s (", guard, escapeQualifiedIdentifier(node.Name))
+
+	if err := singleIdentityColumn(node); err != nil {
+		return err
+	}
+	if err := quotedColumnsAreQuotedInExpressions(node); err != nil {
+		return err
+	}
+
+	lines := make([]string, 0, len(node.Columns)+len(node.Constraints))
+	for _, column := range node.Columns {
+		line, err := renderColumn(namedColumnCheck(node.Name, column), r.capabilities())
+		if err != nil {
+			return fmt.Errorf("render column %s: %w", column.Name, err)
+		}
+		lines = append(lines, line)
+	}
+	for _, constraint := range node.Constraints {
+		line, err := renderConstraint(constraint)
+		if err != nil {
+			return fmt.Errorf("render constraint: %w", err)
+		}
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+
+	for i, line := range lines {
+		if i == len(lines)-1 {
+			r.w.WriteLine(line)
+			continue
+		}
+		r.w.WriteLinef("%s,", line)
+	}
+
+	r.w.Write(")")
+	// The author's own raw tail closes the statement (stokaro/ptah#2590).
+	r.writeCustomSQL(node)
+	r.w.WriteLine(";")
+	r.renderTableComments(node)
+	return nil
+}
+
+// writeCustomSQL writes the raw SQL tail the author attached to CREATE TABLE,
+// preceded by one space, and writes nothing for a table declaring none.
+//
+// The text is emitted verbatim. Ptah does not parse it, so there is nothing to
+// validate it against and nothing to normalize -- see
+// [ptah.run/core/ast.CreateTableNode.CustomSQL].
+func (r *Renderer) writeCustomSQL(node *ast.CreateTableNode) {
+	if custom := strings.TrimSpace(node.CustomSQL); custom != "" {
+		r.w.Write(" " + custom)
+	}
+}
+
+// renderTableComments writes the comments a table and its columns carry.
+//
+// They were written as SQL line comments above the statement -- decoration the
+// server never reads -- so a comment did not survive a replay. Measured on
+// Oracle Free 23, a schema this repository did not write, replayed into an
+// empty one:
+//
+//	source:  CUSTOMERS  'people who buy'   EMAIL  'login address'
+//	replay:  CUSTOMERS  <none>             EMAIL  <none>
+//
+// `schema apply --dry-run` against the source reported `Schema is synced`
+// throughout, and the replay reported success (stokaro/ptah#2132).
+//
+// Oracle has no inline form for either: a comment is its own statement, the way
+// PostgreSQL writes one. They follow the CREATE TABLE because the object has to
+// exist before a comment can name it, and the column loop is skipped entirely
+// for a table whose columns carry none, so an ordinary render gains no
+// statements.
+func (r *Renderer) renderTableComments(node *ast.CreateTableNode) {
+	if node.Comment != "" {
+		r.w.WriteLinef("COMMENT ON TABLE %s IS %s;",
+			escapeQualifiedIdentifier(node.Name), escapeStringLiteral(node.Comment))
+	}
+	for _, column := range node.Columns {
+		if column.Comment == "" {
+			continue
+		}
+		r.w.WriteLinef("COMMENT ON COLUMN %s.%s IS %s;",
+			escapeQualifiedIdentifier(node.Name),
+			escapeIdentifier(column.Name),
+			escapeStringLiteral(column.Comment))
+	}
+}
+
+// renderAlterTable renders Oracle's ALTER TABLE, whose clause names differ from
+// the SQL every other dialect here writes.
+//
+// Measured on 23.26 and 21.3 alike:
+//
+//	ACCEPTED ALTER TABLE t ADD (c NUMBER)
+//	REFUSED  ALTER TABLE t ADD COLUMN c NUMBER      ORA-03050 / ORA-00904
+//	ACCEPTED ALTER TABLE t MODIFY (c NUMBER(10))
+//	REFUSED  ALTER TABLE t ALTER COLUMN c TYPE NUMBER(10)   ORA-01735
+//	ACCEPTED ALTER TABLE t DROP COLUMN c
+//
+// So the column is added without the word COLUMN and changed with MODIFY, and
+// only the drop carries the keyword that the other two refuse.
+// singleIdentityColumn refuses a table declaring more than one auto-increment
+// column.
+//
+// Oracle allows exactly one identity column per table -- measured, a CREATE
+// TABLE with a second one answers ORA-30669, "table can have only one identity
+// column" -- where PostgreSQL and MySQL both allow several SERIAL columns and
+// the stub schema in this repository declares three.
+//
+// The refusal names every column involved rather than only the second, because
+// which one to keep is the author's decision and a renderer that picked would
+// be choosing which key column silently stops generating values.
+func singleIdentityColumn(node *ast.CreateTableNode) error {
+	var identity []string
+	for _, column := range node.Columns {
+		if column != nil && generatesIdentity(column) {
+			identity = append(identity, column.Name)
+		}
+	}
+	if len(identity) <= 1 {
+		return nil
+	}
+	return unsupportedFeaturef(
+		"table %q declares %d auto-increment columns (%s) and Oracle allows one per table",
+		node.Name, len(identity), strings.Join(identity, ", "))
+}
+
+// quotedColumnsAreQuotedInExpressions refuses a table whose expressions name a
+// quoted column without quoting it. See bareReferenceInExpression for what the
+// server answers otherwise, and why the check is a scan rather than a parse.
+func quotedColumnsAreQuotedInExpressions(node *ast.CreateTableNode) error {
+	expressions := make([]string, 0, len(node.Columns)*2+len(node.Constraints))
+	for _, column := range node.Columns {
+		if column == nil {
+			continue
+		}
+		expressions = append(expressions, column.Check, column.GeneratedExpression)
+		if column.Default != nil {
+			expressions = append(expressions, column.Default.Expression)
+		}
+	}
+	for _, constraint := range node.Constraints {
+		if constraint != nil {
+			expressions = append(expressions, constraint.Expression)
+		}
+	}
+
+	for _, column := range node.Columns {
+		if column == nil {
+			continue
+		}
+		for _, expression := range expressions {
+			if !bareReferenceInExpression(column.Name, expression) {
+				continue
+			}
+			return unsupportedFeaturef(
+				"column %q of table %q needs quoting in Oracle, and the expression %q names it without quotes; "+
+					"an unquoted name folds to upper case and refers to a different column, so write %s in the expression",
+				column.Name, node.Name, strings.TrimSpace(expression), escapeIdentifier(column.Name))
+		}
+	}
+	return nil
+}
+
+func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
+	table := escapeQualifiedIdentifier(node.Name)
+	for _, operation := range node.Operations {
+		switch op := operation.(type) {
+		case *ast.AddColumnOperation:
+			line, err := renderColumn(op.Column, r.capabilities())
+			if err != nil {
+				return fmt.Errorf("render added column %s: %w", op.Column.Name, err)
+			}
+			r.w.WriteLinef("ALTER TABLE %s ADD (%s);", table, strings.TrimSpace(line))
+		case *ast.DropColumnOperation:
+			cascade := ""
+			if op.Cascade {
+				cascade = " CASCADE CONSTRAINTS"
+			}
+			r.w.WriteLinef("ALTER TABLE %s DROP COLUMN %s%s;", table, escapeIdentifier(op.ColumnName), cascade)
+		case *ast.ModifyColumnOperation:
+			line, err := renderModifiedColumn(op)
+			if err != nil {
+				return fmt.Errorf("render modified column %s: %w", op.Column.Name, err)
+			}
+			r.w.WriteLinef("ALTER TABLE %s MODIFY (%s);", table, strings.TrimSpace(line))
+		case *ast.RenameColumnOperation:
+			r.w.WriteLinef("ALTER TABLE %s RENAME COLUMN %s TO %s;",
+				table, escapeIdentifier(op.OldName), escapeIdentifier(op.NewName))
+		case *ast.RenameTableOperation:
+			r.w.WriteLinef("ALTER TABLE %s RENAME TO %s;", table, escapeIdentifier(op.NewName))
+		case *ast.AddConstraintOperation:
+			line, err := renderConstraint(op.Constraint)
+			if err != nil {
+				return fmt.Errorf("render added constraint: %w", err)
+			}
+			r.w.WriteLinef("ALTER TABLE %s ADD %s;", table, strings.TrimSpace(line))
+		case *ast.DropConstraintOperation:
+			// No guard here on any line, including the one that takes guards
+			// everywhere else. Measured on 23.26: `ALTER TABLE t DROP
+			// CONSTRAINT IF EXISTS c` answers ORA-01735, invalid ALTER TABLE
+			// option, on the same server that accepts the guard on CREATE
+			// TABLE and DROP INDEX. DropConstraintIfExists is false on both
+			// presets for that reason, and this is where it is spent.
+			guard := ""
+			if op.IfExists && r.capabilities().Has(capability.DropConstraintIfExists) {
+				guard = "IF EXISTS "
+			}
+			r.w.WriteLinef("ALTER TABLE %s DROP CONSTRAINT %s%s;", table, guard, escapeIdentifier(op.ConstraintName))
+		case *ast.SetCommentOperation:
+			r.writeSetComment(table, op)
+		default:
+			return unsupportedFeaturef("unsupported alter table operation %T", operation)
+		}
+	}
+	return nil
+}
+
+func (r *Renderer) renderColumnNode(_ *ast.ColumnNode) error { return nil }
+
+func (r *Renderer) renderConstraintNode(_ *ast.ConstraintNode) error { return nil }
+
+func (r *Renderer) renderIndex(node *ast.IndexNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	// The line above is a SQL comment, which the server does not store: the
+	// render looks like it kept the text and the database has none of it.
+	r.sink.RecordLostComment(renderdiag.IndexKind, node.Name, node.Comment)
+	// Only the PostgreSQL family has an operator-class clause, so a declared
+	// class reaches the output nowhere here.
+	r.recordLostOperatorClasses(node)
+	// A FULLTEXT parser names a MySQL plugin and storage parameters are a
+	// PostgreSQL clause; this target has neither.
+	r.sink.RecordLostProperty(renderdiag.IndexKind, node.Name, renderdiag.ParserProperty, node.Parser)
+	r.sink.RecordLostStorageParams(node.Name, node.StorageParams)
+	// There is no clause here to name an access method, so a declared one
+	// reaches the output nowhere. A declared BTREE is not reported: it is what
+	// this target builds anyway.
+	r.sink.RecordLostIndexType(node.Name, node.Type)
+	if strings.TrimSpace(node.Condition) != "" {
+		// Oracle has no WHERE clause on CREATE INDEX. The equivalent it does
+		// have -- a function-based index whose expression is NULL for the rows
+		// to leave out -- is a different object with different matching rules,
+		// so producing one from this node would apply an index the declaration
+		// did not ask for.
+		return unsupportedFeaturef("partial indexes are not supported; index %q declares a WHERE condition", node.Name)
+	}
+	parts := []string{"CREATE"}
+	if node.Unique {
+		parts = append(parts, "UNIQUE")
+	}
+	create := "INDEX"
+	if node.IfNotExists {
+		create += r.createGuard()
+	}
+	parts = append(parts, create)
+	parts = append(parts, escapeQualifiedIdentifier(node.Name), "ON", escapeQualifiedIdentifier(node.Table))
+	parts = append(parts, "("+strings.Join(renderIndexParts(node.EffectiveParts()), ", ")+")")
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	return nil
+}
+
+func (r *Renderer) renderDropIndex(node *ast.DropIndexNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	guard := ""
+	if node.IfExists && r.capabilities().Has(capability.DropIndexIfExists) {
+		guard = " IF EXISTS"
+	}
+	// Oracle names an index in its own schema-wide namespace rather than under
+	// the table, so no ON clause follows: `DROP INDEX <name>` is the whole
+	// statement.
+	r.w.WriteLinef("DROP INDEX%s %s;", guard, escapeQualifiedIdentifier(node.Name))
+	return nil
+}
+
+func (r *Renderer) renderUpsert(_ *ast.UpsertNode) error {
+	return unsupportedFeaturef("upsert rendering is not implemented")
+}
+
+func (r *Renderer) renderEnum(_ *ast.EnumNode) error { return nil }
+
+// renderComment writes a comment node -- a planner's note or warning -- as a
+// plain line comment. An empty comment is a separator line.
+func (r *Renderer) renderComment(node *ast.CommentNode) error {
+	if node.Text == "" {
+		r.w.WriteLine("--")
+		return nil
+	}
+	r.w.WriteLinef("-- %s", node.Text)
+	return nil
+}
+
+func (r *Renderer) renderDropTable(node *ast.DropTableNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	guard := ""
+	if node.IfExists {
+		guard = r.dropGuard()
+	}
+	for _, name := range node.TableNames() {
+		// One statement per table: Oracle's DROP TABLE takes a single name,
+		// unlike the comma-separated list PostgreSQL and MySQL accept.
+		//
+		// PURGE, so the table does not land in the recycle bin. It is not a
+		// tidiness preference: a dropped table keeps its dependencies there,
+		// and a plan that drops a table and then the domain its column was
+		// typed by answers
+		//
+		//	ORA-11538: The domain DOM_EMAIL to be dropped has dependent
+		//	objects in the recycle bin.
+		//
+		// halfway through -- measured on 23.26.2.0.0, and the first plan
+		// stokaro/ptah#1920 produced hit exactly that. The alternative,
+		// DROP DOMAIN ... FORCE, was measured too and is worse: with a LIVE
+		// dependent it succeeds and silently untypes the column, so a NOT NULL
+		// the domain enforced is gone and nobody asked. Purging here keeps
+		// that refusal (ORA-11502) for the case that deserves it.
+		//
+		// It is also what internal/dbschema/oracle's own cleanup does, for the
+		// storage half of the same reason.
+		r.w.WriteLinef("DROP TABLE%s %s PURGE;", guard, escapeQualifiedIdentifier(name))
+	}
+	return nil
+}
+
+func (r *Renderer) renderCreateType(node *ast.CreateTypeNode) error {
+	// A domain is rendered where the preset says so -- 23 has CREATE DOMAIN
+	// and 21 answers ORA-00901 (stokaro/ptah#1920).
+	if domain, isDomain := node.TypeDef.(*ast.DomainTypeDef); isDomain && r.domainsRendered() {
+		return r.visitCreateDomain(node, domain)
+	}
+	// A composite is Oracle's object type, and the spelling is the difference:
+	// PostgreSQL's `AS (...)` is accepted here and creates an INVALID,
+	// incomplete type (stokaro/ptah#1920).
+	if composite, isComposite := node.TypeDef.(*ast.CompositeTypeDef); isComposite && r.compositesRendered() {
+		return r.visitCreateComposite(node, composite)
+	}
+	// Anything else refuses rather than writing a comment: a comment makes
+	// `schema render` exit 0 on a model the planner refuses at apply time,
+	// which is the reason the SQLite renderer stopped commenting its
+	// materialized views.
+	return unsupportedFeaturef("%s: user types are not rendered for Oracle", strings.TrimSpace("CREATE TYPE "+node.Name))
+}
+
+func (r *Renderer) renderAlterType(node *ast.AlterTypeNode) error {
+	return unsupportedFeaturef("%s: user types are not rendered for Oracle", strings.TrimSpace("ALTER TYPE "+node.Name))
+}
+
+func (r *Renderer) renderDropType(node *ast.DropTypeNode) error {
+	if node.Domain && r.domainsRendered() {
+		return r.visitDropDomain(node)
+	}
+	if !node.Domain && r.compositesRendered() {
+		return r.visitDropComposite(node)
+	}
+	return unsupportedFeaturef("DROP TYPE %s: user types are not rendered for Oracle", node.Name)
+}
+
+func (r *Renderer) renderExtension(node *ast.ExtensionNode) error {
+	r.notSupported("extensions", node.Name)
+	return nil
+}
+
+func (r *Renderer) renderDropExtension(node *ast.DropExtensionNode) error {
+	r.notSupported("DROP EXTENSION", node.Name)
+	return nil
+}
+
+func (r *Renderer) renderCreateSequence(node *ast.CreateSequenceNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	create := "CREATE SEQUENCE"
+	if node.IfNotExists {
+		create += r.createGuard()
+	}
+	parts := []string{create, escapeQualifiedIdentifier(node.Name)}
+	parts = append(parts, sequenceOptions(node.Start, node.Increment, node.MinValue, node.MaxValue, node.Cache, &node.Cycle)...)
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	return nil
+}
+
+func (r *Renderer) renderAlterSequence(node *ast.AlterSequenceNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	if node.Start != nil {
+		// ALTER SEQUENCE ... START WITH is not how Oracle moves a live
+		// counter, and emitting it would either be refused or reset something
+		// the declaration did not ask to reset. Refusing is the answer that
+		// cannot silently renumber a key column.
+		return unsupportedFeaturef("ALTER SEQUENCE %s: changing the start counter is not rendered for Oracle", node.Name)
+	}
+	options := sequenceOptions(nil, node.Increment, node.MinValue, node.MaxValue, node.Cache, node.Cycle)
+	if len(options) == 0 {
+		return nil
+	}
+	r.w.WriteLinef("ALTER SEQUENCE %s %s;", escapeQualifiedIdentifier(node.Name), strings.Join(options, " "))
+	return nil
+}
+
+func (r *Renderer) renderDropSequence(node *ast.DropSequenceNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	guard := ""
+	if node.IfExists {
+		guard = r.dropGuard()
+	}
+	r.w.WriteLinef("DROP SEQUENCE%s %s;", guard, escapeQualifiedIdentifier(node.Name))
+	return nil
+}
+
+func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	create := "CREATE VIEW"
+	if node.Replace {
+		create = "CREATE OR REPLACE VIEW"
+	}
+	r.w.WriteLinef("%s %s AS", create, escapeQualifiedIdentifier(node.Name))
+	r.w.WriteLine(strings.TrimSpace(node.Body))
+	if node.WithCheck {
+		r.w.WriteLine("WITH CHECK OPTION")
+	}
+	r.w.WriteLine(";")
+	return nil
+}
+
+func (r *Renderer) renderDropView(node *ast.DropViewNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	guard := ""
+	if node.IfExists {
+		guard = r.dropGuard()
+	}
+	r.w.WriteLinef("DROP VIEW%s %s;", guard, escapeQualifiedIdentifier(node.Name))
+	return nil
+}
+
+func (r *Renderer) renderCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
+	// Refreshing is an operation on this target rather than a property of the
+	// view: there is no clause here that could schedule one, so a declared
+	// schedule reaches the output nowhere and the view is populated once.
+	r.sink.RecordLostRefresh(node.Name, node.Refresh)
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	r.w.WriteLinef("CREATE MATERIALIZED VIEW %s AS", escapeQualifiedIdentifier(node.Name))
+	r.w.WriteLine(strings.TrimSpace(node.Body))
+	r.w.WriteLine(";")
+	return nil
+}
+
+func (r *Renderer) renderDropMaterializedView(node *ast.DropMaterializedViewNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	guard := ""
+	if node.IfExists {
+		guard = r.dropGuard()
+	}
+	r.w.WriteLinef("DROP MATERIALIZED VIEW%s %s;", guard, escapeQualifiedIdentifier(node.Name))
+	return nil
+}
+
+// renderRefreshMaterializedView renders Oracle's refresh, which is a procedure
+// call rather than a statement.
+func (r *Renderer) renderRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
+	if node.Concurrently {
+		return unsupportedFeaturef("REFRESH MATERIALIZED VIEW %s: CONCURRENTLY is not supported", node.Name)
+	}
+	r.w.WriteLinef("BEGIN DBMS_MVIEW.REFRESH(%s); END;", escapeStringLiteral(node.Name))
+	return nil
+}
+
+func (r *Renderer) renderAlterMaterializedViewRefresh(node *ast.AlterMaterializedViewRefreshNode) error {
+	return unsupportedFeaturef("ALTER MATERIALIZED VIEW %s: changing a refresh policy is not rendered for Oracle", node.Name)
+}
+
+// renderCreateTrigger renders the trigger header; the body is PL/SQL the
+// declaration supplies.
+func (r *Renderer) renderCreateTrigger(node *ast.CreateTriggerNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	create := "CREATE TRIGGER"
+	if node.Replace {
+		if !r.capabilities().Has(capability.CreateOrReplaceTrigger) {
+			return unsupportedFeaturef("the target Oracle does not support CREATE OR REPLACE TRIGGER; trigger %q asks for it", node.Name)
+		}
+		create = "CREATE OR REPLACE TRIGGER"
+	}
+	forEach := strings.ToUpper(strings.TrimSpace(node.ForEach))
+	if forEach == "" {
+		forEach = "ROW"
+	}
+	if forEach != "ROW" {
+		return unsupportedFeaturef("FOR EACH %s triggers are not supported", forEach)
+	}
+	// Oracle takes an event list and UPDATE OF columns as written, but has no
+	// TRUNCATE row trigger, and its WHEN and REFERENCING name row aliases
+	// rather than PostgreSQL's pseudo-records and transition tables.
+	switch {
+	case triggerdef.Includes(triggerdef.Events(node.Event), "TRUNCATE"):
+		return unsupportedFeaturef("trigger %q fires on TRUNCATE, which has no row trigger on Oracle", node.Name)
+	case strings.TrimSpace(node.When) != "":
+		return unsupportedFeaturef("trigger %q has a PostgreSQL WHEN condition", node.Name)
+	case node.OldTable != "" || node.NewTable != "":
+		return unsupportedFeaturef("trigger %q declares transition tables, which Oracle does not have", node.Name)
+	}
+	body := strings.TrimSpace(node.Body)
+	r.w.WriteLinef("%s %s %s %s ON %s FOR EACH ROW",
+		create,
+		escapeQualifiedIdentifier(node.Name),
+		strings.TrimSpace(node.Timing),
+		strings.TrimSpace(node.Event),
+		escapeQualifiedIdentifier(node.Table),
+	)
+	r.w.WriteLine(body)
+	return nil
+}
+
+func (r *Renderer) renderDropTrigger(node *ast.DropTriggerNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	// No guard: Oracle has no IF EXISTS on DROP TRIGGER on either measured
+	// line, unlike the index, sequence, view and table drops above.
+	r.w.WriteLinef("DROP TRIGGER %s;", escapeQualifiedIdentifier(node.Name))
+	return nil
+}
+
+func (r *Renderer) renderCreatePolicy(node *ast.CreatePolicyNode) error {
+	r.notSupported("RLS policies", node.Name)
+	return nil
+}
+
+func (r *Renderer) renderDropPolicy(node *ast.DropPolicyNode) error {
+	r.notSupported("DROP POLICY", node.Name)
+	return nil
+}
+
+func (r *Renderer) renderAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
+	r.notSupported("row-level security", node.Table)
+	return nil
+}
+
+func (r *Renderer) renderAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
+	r.notSupported("row-level security", node.Table)
+	return nil
+}
+
+func (r *Renderer) renderAlterTableForceRLS(node *ast.AlterTableForceRLSNode) error {
+	r.notSupported("row-level security", node.Table)
+	return nil
+}
+
+// renderCreateRole renders Oracle's CREATE ROLE, and refuses a declaration that
+// describes a user rather than a role.
+//
+// Oracle's CREATE ROLE takes none of the attributes ast.CreateRoleNode carries
+// from PostgreSQL. There, one statement makes a thing that can hold privileges
+// AND a thing that can log in; here those are two objects, and the one that
+// logs in is a USER. So a declaration carrying LOGIN, a password, or any of the
+// PostgreSQL capability flags is refused rather than rendered: `CREATE ROLE app`
+// would be accepted by the server and would not be what was declared, which is
+// the failure this repository keeps finding -- a statement the engine accepts is
+// not evidence it did what was asked.
+//
+// No IF NOT EXISTS guard, measured on 23.26.2.0.0: a second CREATE ROLE answers
+// ORA-01921, and the clause is not accepted (stokaro/ptah#1920).
+func (r *Renderer) renderCreateRole(node *ast.CreateRoleNode) error {
+	if attribute := oracleUserOnlyRoleAttribute(node); attribute != "" {
+		return unsupportedFeaturef(
+			"role %q declares %s, which in Oracle describes a USER rather than a ROLE; "+
+				"CREATE ROLE would be accepted and would not create what was declared",
+			node.Name, attribute)
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	// The line above is a SQL comment, which the server does not store: the
+	// render looks like it kept the text and the database has none of it. Only
+	// the PostgreSQL family has COMMENT ON ROLE.
+	r.sink.RecordLostComment(renderdiag.RoleKind, node.Name, node.Comment)
+	r.w.WriteLinef("CREATE ROLE %s;", escapeIdentifier(node.Name))
+	return nil
+}
+
+// oracleUserOnlyRoleAttribute names the first attribute on the declaration that
+// Oracle can only satisfy with a user, or "" when the role is a plain one.
+func oracleUserOnlyRoleAttribute(node *ast.CreateRoleNode) string {
+	switch {
+	case node.Login:
+		return "LOGIN"
+	case node.Password != "":
+		return "a password"
+	case node.Superuser:
+		return "SUPERUSER"
+	case node.CreateDB:
+		return "CREATEDB"
+	case node.CreateRole:
+		return "CREATEROLE"
+	default:
+		return ""
+	}
+}
+
+// renderDropRole renders DROP ROLE, unguarded.
+//
+// Measured on 23.26.2.0.0: dropping an absent role answers ORA-01919, and
+// Oracle has no IF EXISTS on this statement -- the same shape DROP TRIGGER
+// carries above.
+func (r *Renderer) renderDropRole(node *ast.DropRoleNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	r.w.WriteLinef("DROP ROLE %s;", escapeIdentifier(node.Name))
+	return nil
+}
+
+// renderAlterRole stays refused, and the reason is not that Oracle lacks the
+// statement.
+//
+// Oracle has ALTER ROLE, and it changes how the role is AUTHENTICATED --
+// IDENTIFIED BY, EXTERNALLY, GLOBALLY. It cannot change the capability flags
+// ast.AlterRoleNode carries, because a role has none of them. Rendering it
+// would answer a different question than the one asked.
+func (r *Renderer) renderAlterRole(node *ast.AlterRoleNode) error {
+	r.notSupported("ALTER ROLE", node.Name)
+	return nil
+}
+
+// renderGrantPrivilege renders both grant shapes Oracle has: an object privilege
+// with ON, and a system privilege without it.
+//
+// WITH GRANT OPTION is refused rather than emitted, and the refusal is the
+// engine's: measured on 23.26.2.0.0,
+// `GRANT SELECT, INSERT ON t TO r WITH GRANT OPTION` answers
+// `ORA-01926: A role cannot be granted a privilege with the WITH GRANT OPTION`.
+// Emitting it would render a statement the server refuses, which is worse than
+// refusing it here -- the plan would fail halfway through.
+func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
+	if err := grantrefusal.Path("oracle", "GRANT", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
+	if err := grantrefusal.Routine("oracle", "GRANT", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
+	if err := grantrefusal.Columns("oracle", "GRANT", node.ObjectName, node.Columns); err != nil {
+		return err
+	}
+	if node.WithOption {
+		return unsupportedFeaturef(
+			"grant to role %q carries WITH GRANT OPTION, which Oracle refuses for a role "+
+				"(ORA-01926); grant it to a user instead", node.Role)
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	r.w.WriteLinef("GRANT %s%s TO %s;",
+		strings.Join(node.Privileges, ", "),
+		oracleGrantTarget(node.ObjectName),
+		escapeIdentifier(node.Role))
+	return nil
+}
+
+// renderRevokePrivilege mirrors the grant, with the same two shapes.
+func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
+	if err := grantrefusal.Path("oracle", "REVOKE", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
+	if err := grantrefusal.Routine("oracle", "REVOKE", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
+	if err := grantrefusal.Columns("oracle", "REVOKE", node.ObjectName, node.Columns); err != nil {
+		return err
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	r.w.WriteLinef("REVOKE %s%s FROM %s;",
+		strings.Join(node.Privileges, ", "),
+		oracleGrantTarget(node.ObjectName),
+		escapeIdentifier(node.Role))
+	return nil
+}
+
+// oracleGrantTarget renders the ON clause, or nothing for a system privilege.
+//
+// A system privilege such as CREATE SESSION names no object, and `GRANT CREATE
+// SESSION ON  TO r` is a syntax error rather than a harmless extra space.
+func oracleGrantTarget(object string) string {
+	if strings.TrimSpace(object) == "" {
+		return ""
+	}
+	return " ON " + escapeQualifiedIdentifier(object)
+}
+
+// renderExtendedProperty names the property as skipped: an extended property is
+// SQL Server's own object, and Oracle has no catalog to attach one to.
+//
+// The nearest Oracle construct is COMMENT ON, which Ptah already models as an
+// object comment, and rendering a property as a comment would put a named
+// value nobody can read back into the one slot the comment already owns.
+//
+// Skipped rather than refused, which is the difference between this and
+// renderAlterRole above. A refusal fails the whole render, and
+// schemamodel.ExtendedProperty carries no dialect scope -- exactly as
+// schemamodel.Synonym does not -- so refusing here would make one schema
+// renderable on five targets and fatal on the sixth. Every other renderer
+// writes this comment; Oracle answering differently would be the asymmetry,
+// not the consistency.
+func (r *Renderer) renderExtendedProperty(node *ast.ExtendedPropertyNode) error {
+	r.w.WriteLinef("-- ORACLE: extended property %q is not supported", node.Name)
+	return nil
+}
+
+// renderCreateContinuousAggregate refuses: a continuous aggregate is a
+// TimescaleDB object, and TimescaleDB is an extension of PostgreSQL.
+//
+// There is no capability key behind this refusal, for the reason
+// renderCreateSynonym gives: a key would have exactly one value forever and
+// would invite a preset to turn it on.
+func (r *Renderer) renderCreateContinuousAggregate(node *ast.CreateContinuousAggregateNode) error {
+	r.w.WriteLinef("-- ORACLE: continuous aggregate %s is not supported by this target; skipped.", node.Name)
+	return nil
+}
+
+func (r *Renderer) renderDropContinuousAggregate(node *ast.DropContinuousAggregateNode) error {
+	r.w.WriteLinef("-- ORACLE: continuous aggregate %s is not supported by this target; skipped.", node.Name)
+	return nil
+}
+
+// renderCreateHypertable refuses: a hypertable is a TimescaleDB object, and
+// TimescaleDB is an extension of PostgreSQL.
+//
+// There is no capability key behind this refusal, for the reason
+// renderCreateSynonym gives: a key would have exactly one value forever and
+// would invite a preset to turn it on.
+func (r *Renderer) renderCreateHypertable(node *ast.CreateHypertableNode) error {
+	r.w.WriteLinef("-- ORACLE: hypertable %s is not supported by this target; skipped.", node.Table)
+	return nil
+}
+
+// renderCreateSynonym renders Oracle's own object: a synonym is a native Oracle
+// concept rather than a compatibility shim.
+func (r *Renderer) renderCreateSynonym(node *ast.CreateSynonymNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	r.w.WriteLinef("CREATE SYNONYM %s FOR %s;",
+		escapeQualifiedIdentifier(node.Name), escapeQualifiedIdentifier(node.Target))
+	return nil
+}
+
+func (r *Renderer) renderDropSynonym(node *ast.DropSynonymNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	guard := ""
+	if node.IfExists {
+		guard = r.dropGuard()
+	}
+	r.w.WriteLinef("DROP SYNONYM%s %s;", guard, escapeQualifiedIdentifier(node.Name))
+	return nil
+}
+
+func (r *Renderer) renderRawSQL(node *ast.RawSQLNode) error {
+	r.w.WriteLine(strings.TrimSpace(node.SQL))
+	return nil
+}
+
+// ALTER DEFAULT PRIVILEGES is PostgreSQL's own statement: it records, in
+// pg_default_acl, the privileges an object gets when a named role creates one.
+// No other engine here has a catalog for that, and the nearest thing on each --
+// granting on the schema, or on every object in it -- applies to what exists
+// rather than to what is created next. So the declaration is named and skipped
+// rather than approximated with a statement that means something else.
+//
+// The grant visitor beside this one renders unconditionally, so copying its
+// shape would emit nothing and record nothing. The skip is explicit.
+func (r *Renderer) renderDefaultPrivilege(node *ast.DefaultPrivilegeNode) error {
+	r.notSupported("ALTER DEFAULT PRIVILEGES", node.Grantee)
+	return nil
+}
+
+// renderRevokeDefaultPrivilege names and skips the revoke half, for the reason
+// renderDefaultPrivilege carries.
+func (r *Renderer) renderRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilegeNode) error {
+	r.notSupported("ALTER DEFAULT PRIVILEGES", node.Grantee)
+	return nil
+}
+
+func (r *Renderer) notSupported(feature, name string) {
+	r.w.WriteLinef("-- ORACLE: %s %q is not supported", feature, name)
+	r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Kind: feature, Name: name})
+}
+
+// refuses reports whether the target declines the capability a statement needs,
+// writing the named skip comment when it does.
+//
+// A comment rather than an error, because one schema is applied across several
+// dialects: a declaration the target cannot host is named in the plan and the
+// rest of the plan still runs. An error is kept for a declaration this target
+// COULD host but only by writing something other than what was asked.
+func (r *Renderer) refuses(key capability.Capability, kind, name string) bool {
+	if r.capabilities().Has(key) {
+		return false
+	}
+	r.notSupported(strings.ToUpper(kind), name)
+	return true
+}
+
+func unsupportedFeaturef(format string, args ...any) error {
+	return fmt.Errorf("%w: oracle: %s", ptaherr.ErrUnsupportedFeature, fmt.Sprintf(format, args...))
+}
+
+// writeSetComment renders a comment transition the way Oracle spells it: a
+// statement of its own, like PostgreSQL and unlike MySQL.
+//
+// Oracle has no inline comment clause, so a comment cannot travel with the
+// MODIFY that carries every other column change -- it needs its own statement
+// whether the column changed or not (stokaro/ptah#2168).
+//
+// An empty comment is written as the empty literal rather than NULL. Oracle has
+// no empty string: ” IS NULL there, so `COMMENT ON ... IS ”` clears the
+// comment and the catalog reports NULL afterwards, which is the absence the
+// reader brings back. `IS NULL` is a syntax error on this statement.
+func (r *Renderer) writeSetComment(table string, op *ast.SetCommentOperation) {
+	kind := "TABLE"
+	target := table
+	if op.Column != "" {
+		kind = "COLUMN"
+		target += "." + escapeIdentifier(op.Column)
+	}
+	r.w.WriteLinef("COMMENT ON %s %s IS %s;", kind, target, escapeStringLiteral(op.Comment))
+}
+
+// recordLostOperatorClasses names every operator class the index declares.
+//
+// A class is declared per index or per part, and the distinct values are
+// recorded once each: two columns sharing a class lost one thing, not two.
+func (r *Renderer) recordLostOperatorClasses(node *ast.IndexNode) {
+	seen := make(map[string]struct{})
+	for _, class := range append([]string{node.Operator}, partOperatorClasses(node)...) {
+		if class == "" {
+			continue
+		}
+		if _, repeated := seen[class]; repeated {
+			continue
+		}
+		seen[class] = struct{}{}
+		r.sink.RecordLostProperty(
+			renderdiag.IndexKind, node.Name, renderdiag.OperatorClassProperty, class)
+	}
+}
+
+// partOperatorClasses returns the class each declared part carries.
+func partOperatorClasses(node *ast.IndexNode) []string {
+	parts := node.EffectiveParts()
+	classes := make([]string, 0, len(parts))
+	for _, part := range parts {
+		classes = append(classes, part.Operator)
+	}
+	return classes
+}
+
+// renderObjectComment names a comment statement this dialect has no spelling
+// of. COMMENT ON is the PostgreSQL family's, and only its planner emits the
+// node, so a caller that builds one for this target is told what was left out.
+func (r *Renderer) renderObjectComment(node *ast.ObjectCommentNode) error {
+	r.notSupported("COMMENT ON "+string(node.Object), node.Name)
+	return nil
+}

@@ -16,7 +16,7 @@ import (
 // markup for every rule this package adds to the shared appearance.
 func styledReport(c *qt.C) string {
 	c.Helper()
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		Cases: []dbtest.Case{
 			{Name: "skipped", Skip: true, Steps: []dbtest.Step{{Exec: "SELECT 1"}}},
 			{Name: "ran", Steps: []dbtest.Step{{Exec: "SELECT 1"}}},

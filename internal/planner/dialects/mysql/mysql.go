@@ -1,17 +1,21 @@
 package mysql
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"slices"
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/featureplan"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemavalidation"
 	"ptah.run/internal/constraintscope"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/indexscope"
@@ -56,7 +60,7 @@ const (
 //	}
 //
 //	// Generate migration AST nodes
-//	nodes, err := planner.GenerateMigrationAST(diff, generated)
+//	nodes, err := planner.GenerateMigrationAST(ctx, runtime, diff)
 //	if err != nil {
 //		return err
 //	}
@@ -1245,7 +1249,7 @@ func (p *Planner) releaseKeyNames(result []ast.Node, diff *difftypes.SchemaDiff,
 }
 
 func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, tableName := range deporder.TableDropOrderWithDependencies(diff.TablesRemoved, diff.DeclaredTables, diff.DeclaredTableDependencies) {
+	for _, tableName := range deporder.TableDropOrderWithDependencies(diff.TablesRemoved.Names(), diff.DeclaredTables, diff.DeclaredTableDependencies) {
 		dropTableNode := ast.NewDropTable(tableName).
 			SetIfExists().
 			SetCascade().
@@ -1310,7 +1314,7 @@ func (p *Planner) handleEnumRemovals(result []ast.Node, diff *difftypes.SchemaDi
 //		},
 //	}
 //
-//	nodes, err := planner.GenerateMigrationAST(diff, generated)
+//	nodes, err := planner.GenerateMigrationAST(ctx, runtime, diff)
 //	if err != nil {
 //		return err
 //	}
@@ -1337,14 +1341,23 @@ func (p *Planner) handleEnumRemovals(result []ast.Node, diff *difftypes.SchemaDi
 // Returns a slice of AST nodes representing SQL statements or an error when
 // the diff cannot be planned safely. Each node can be rendered to SQL using a
 // MySQL-specific visitor.
-func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
+func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff) (plannedNodes []ast.Node, planErr error) {
+	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := ctx.Err(); err != nil {
+			plannedNodes, planErr = nil, err
+		}
+	}()
+
 	if err := schemaprecondition.RefuseIndexChangesInPlace(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}
 	if err := schemaprecondition.RefuseYDBTableSettingChanges(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}
-	if err := schemaprecondition.RefuseChangefeedChanges(p.targetDialect(), diff); err != nil {
+	if err := schemaprecondition.RefuseFeatureChanges(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}
 	if err := schemaprecondition.RefuseYDBObjects(p.targetDialect(), diff); err != nil {
@@ -1627,12 +1640,9 @@ func (p *Planner) rejectMaterializedViews(diff *difftypes.SchemaDiff) error {
 	message := fmt.Sprintf(
 		"materialized views are not supported by %s; remove matview definitions for this target: %s",
 		engine, strings.Join(changedMaterializedViewNames(diff), ", "))
-	return &ptaherr.CapabilityError{
-		Dialect: p.targetDialect(),
-		Feature: "materialized views",
-		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: message,
-	}
+	return (schemavalidation.Result{Complete: true, Diagnostics: []schemavalidation.Diagnostic{{
+		Code: schemavalidation.UnsupportedFeature, Kind: "materialized view", Feature: "materialized views", Message: message,
+	}}}).Err(p.targetDialect())
 }
 
 func (p *Planner) addNewViews(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
@@ -2032,11 +2042,14 @@ func (p *Planner) addNamedConstraintsByKind(
 		if constraintRecordIsForeignKey(diff.ConstraintsAdded, constraintName) != wantForeignKey {
 			continue
 		}
-		return nil, fmt.Errorf(
-			"%w: constraint %q is added without a definition the planner can render; "+
+		message := fmt.Sprintf(
+			"%s: constraint %q is added without a definition the planner can render; "+
 				"a diff has to describe the constraints it names",
 			ptaherr.ErrInvalidSchemaDiff, constraintName,
 		)
+		return nil, (schemavalidation.Result{Complete: true, Diagnostics: []schemavalidation.Diagnostic{{
+			Code: schemavalidation.InvalidSchema, Kind: "constraint", Object: constraintName, Message: message,
+		}}}).Err(p.targetDialect())
 	}
 	return result, nil
 }
@@ -2316,7 +2329,7 @@ func (p *Planner) removeConstraints(
 	}
 
 	droppedTables := make(map[string]struct{}, len(diff.TablesRemoved))
-	for _, t := range diff.TablesRemoved {
+	for _, t := range diff.TablesRemoved.Names() {
 		droppedTables[semantics.QualifiedTableIdentityKey(t)] = struct{}{}
 	}
 

@@ -3,13 +3,16 @@
 package dbschema_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -63,9 +66,12 @@ func TestPostgresLiveZeroArgumentOverloadRemovalApplies(t *testing.T) {
 
 	live, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
-	diff := schemadiff.CompareWithDialect(routineWithArgumentAlone(c, schemaName), live, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), routineWithArgumentAlone(c, schemaName), live, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(diff.FunctionsRemoved, qt.HasLen, 1)
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.Postgres)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Postgres,
+	)
 	c.Assert(err, qt.IsNil)
 
 	applyStatements(c, conn, statements)

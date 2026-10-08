@@ -8,8 +8,8 @@ import (
 
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -43,7 +43,7 @@ func TestReadYQLExternalObjectsRoundTrip(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.ExternalTables[0].Options["CSV_DELIMITER"], qt.Equals, " ")
 	for _, caps := range []capability.Capabilities{capability.YDB251(), capability.YDB262()} {
-		statements, renderErr := renderer.GetOrderedCreateStatementsWithCapabilities(&database, "ydb", caps.With(capability.ExternalDataSources, true))
+		statements, renderErr := builtin.GetOrderedCreateStatementsWithCapabilities(&database, "ydb", caps.With(capability.ExternalDataSources, true))
 		c.Assert(renderErr, qt.IsNil)
 		again, _, readErr := sqlschema.Read([]byte(strings.Join(statements, "\n")), "ydb")
 		c.Assert(readErr, qt.IsNil)

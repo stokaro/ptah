@@ -1,15 +1,17 @@
 package planner_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -125,13 +127,16 @@ func diagnosticLines(statements []string) []string {
 }
 
 func planStatements(c *qt.C, diff *difftypes.SchemaDiff, desired *schemamodel.Database, dialect string) []string {
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, dialect)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, dialect,
+	)
 	c.Assert(err, qt.IsNil)
 	return statements
 }
 
 func renderStatements(c *qt.C, desired *schemamodel.Database, dialect string) []string {
-	statements, err := renderer.GetOrderedCreateStatements(desired, dialect)
+	statements, err := builtin.GetOrderedCreateStatements(desired, dialect)
 	c.Assert(err, qt.IsNil)
 	return statements
 }
@@ -485,7 +490,10 @@ func TestPlan_ExtensionInstallationSchemaSupportedTargets(t *testing.T) {
 	for _, dialect := range []string{platform.Postgres, platform.YugabyteDB} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, dialect)
+			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				diff, dialect,
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements, qt.DeepEquals, []string{
@@ -504,7 +512,10 @@ func TestPlan_ExtensionInstallationSchemaUnsupportedTargetsFailBeforeAST(t *test
 	for _, dialect := range []string{platform.CockroachDB, platform.Spanner} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := planner.GenerateSchemaDiffAST(diff, dialect)
+			nodes, err := planner.GenerateSchemaDiffAST(
+				context.Background(), must.Must(builtin.New()),
+				diff, dialect,
+			)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, `.*`+dialect+` does not support PostgreSQL extension installation schema "extensions" for extension "pgcrypto"`)
@@ -521,7 +532,10 @@ func TestPlan_WhitespaceOnlyExtensionInstallationSchemaUnsupportedTargetsFailBef
 	for _, dialect := range []string{platform.CockroachDB, platform.Spanner} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := planner.GenerateSchemaDiffAST(diff, dialect)
+			nodes, err := planner.GenerateSchemaDiffAST(
+				context.Background(), must.Must(builtin.New()),
+				diff, dialect,
+			)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, `.*`+dialect+` does not support PostgreSQL extension installation schema " " for extension "pgcrypto"`)
@@ -623,6 +637,7 @@ func TestPlan_MySQLFamilyRoleRefusalNamesTheSameRoleAtEitherGate(t *testing.T) {
 				c := qt.New(t)
 
 				statements, err := planner.GenerateSchemaDiffSQLStatements(
+					context.Background(), must.Must(builtin.New()),
 					&difftypes.SchemaDiff{RolesAdded: rolesCarrying(added...)}, dialect,
 				)
 
@@ -710,6 +725,7 @@ func TestPlan_SQLiteStillRefusesTheRoleItCannotManage(t *testing.T) {
 			c := qt.New(t)
 
 			_, err := planner.GenerateSchemaDiffAST(
+				context.Background(), must.Must(builtin.New()),
 				roleFamilyCreationDiff(), dialect,
 			)
 
@@ -795,7 +811,10 @@ func TestPlan_UserTypeCreationsOnTargetsThatCannotHostThem_FailurePath(t *testin
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := planner.GenerateSchemaDiffAST(test.diff, test.dialect)
+			nodes, err := planner.GenerateSchemaDiffAST(
+				context.Background(), must.Must(builtin.New()),
+				test.diff, test.dialect,
+			)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, `.*`+test.wantErr)
 			c.Assert(nodes, qt.IsNil)
@@ -837,7 +856,10 @@ func TestPlan_UserTypeCreationsOnTargetsThatHostThem_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := planner.GenerateSchemaDiffAST(test.diff, test.dialect)
+			nodes, err := planner.GenerateSchemaDiffAST(
+				context.Background(), must.Must(builtin.New()),
+				test.diff, test.dialect,
+			)
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)
 		})

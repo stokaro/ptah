@@ -1,12 +1,15 @@
 package planner_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -95,7 +98,10 @@ func TestGenerateSchemaDiffSQLStatements_ColumnChangeClauses_HappyPath(t *testin
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, err := planner.GenerateSchemaDiffSQLStatements(oneModifiedColumn(test.desired, test.changes), platform.Postgres)
+			got, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				oneModifiedColumn(test.desired, test.changes), platform.Postgres,
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.DeepEquals, test.want)
@@ -112,6 +118,7 @@ func TestGenerateSchemaDiffSQLStatements_MySQLColumnCommentPrecedesTheStatement(
 	desired := schemamodel.Field{Name: "fresh", Type: "BOOLEAN", StructName: "Flag", Default: "true"}
 
 	got, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
 		oneModifiedColumn(desired, map[string]string{"default_expr": " -> true"}), platform.MySQL,
 	)
 

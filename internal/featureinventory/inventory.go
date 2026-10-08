@@ -11,7 +11,7 @@ import (
 	yaml "go.yaml.in/yaml/v3"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/agentsurface"
 )
 
@@ -320,7 +320,7 @@ func programRows(binaries []string) []Row {
 func dialectRows() []Row {
 	seen := make(map[string]bool)
 	var rows []Row
-	for _, spelling := range renderer.SupportedDialects() {
+	for _, spelling := range builtin.SupportedDialects() {
 		name := platform.NormalizeDialect(spelling)
 		if name == "" || seen[name] {
 			continue

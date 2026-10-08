@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/schemafile"
 )
@@ -51,7 +53,7 @@ func TestToDBSchema_SQLDocumentCarriesIndexKeySuffixes(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	parts := make(map[string][]catalog.IndexPart)
-	for _, index := range goschematodb.ToDBSchema(db, platform.Postgres).Indexes {
+	for _, index := range must.Must(goschematodb.ToDBSchema(t.Context(), db, platform.Postgres, must.Must(builtin.New()))).Indexes {
 		parts[index.Name] = index.Parts
 	}
 

@@ -45,7 +45,7 @@ func TestResolve_DatabaseSourceIntrospectsLiveSchema(t *testing.T) {
 	url := seedSQLite(t, "CREATE TABLE live_users (id INTEGER PRIMARY KEY, email TEXT NOT NULL)")
 	set := classifySingle(t, "--from", url)
 
-	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{
+	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
 		Dialect:     "sqlite",
 		DialectFlag: "--dev-url",
 	})
@@ -66,7 +66,7 @@ func TestResolve_DatabaseSourceDialectMismatchFailsBeforeConnecting(t *testing.T
 	// must fire first.
 	set := classifySingle(t, "--to", "postgres://localhost:1/never")
 
-	_, err := set.Resolve(t.Context(), atlassource.ResolveOptions{
+	_, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
 		Dialect:     "sqlite",
 		DialectFlag: "--url",
 	})
@@ -80,7 +80,7 @@ func TestResolve_MigrationDirReplaysOnDevDatabase(t *testing.T) {
 	devURL := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
 	set := classifySingle(t, "--to", "file://"+dir)
 
-	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{
+	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
 		Dialect:     "sqlite",
 		DialectFlag: "--url",
 		DevURL:      devURL,
@@ -112,7 +112,7 @@ CREATE VIEW user_ids AS SELECT id FROM users;
 	devURL := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
 	set := classifySingle(t, "--to", "file://"+dir)
 
-	_, err = set.Resolve(t.Context(), atlassource.ResolveOptions{
+	_, err = set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
 		Dialect: "sqlite",
 		DevURL:  devURL,
 	})
@@ -126,7 +126,7 @@ func TestResolve_MigrationDirRequiresDevURL(t *testing.T) {
 	dir := writeMigrationDir(t)
 	set := classifySingle(t, "--to", "file://"+dir)
 
-	_, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Dialect: "sqlite"})
+	_, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "sqlite"})
 
 	c.Assert(err, qt.ErrorMatches,
 		`--to "file://.*" is a migration directory; --dev-url is required to replay it on a dev database`)
@@ -148,7 +148,7 @@ func TestResolve_MigrationDirRoutesADockerDevURLToTheProvisioner(t *testing.T) {
 	dir := writeMigrationDir(t)
 	set := classifySingle(t, "--to", "file://"+dir)
 
-	_, err := set.Resolve(t.Context(), atlassource.ResolveOptions{
+	_, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
 		Dialect: "sqlite",
 		DevURL:  "docker://sqlite/latest/dev",
 	})
@@ -161,7 +161,7 @@ func TestResolve_MigrationDirRejectsDevDialectMismatch(t *testing.T) {
 	dir := writeMigrationDir(t)
 	set := classifySingle(t, "--to", "file://"+dir)
 
-	_, err := set.Resolve(t.Context(), atlassource.ResolveOptions{
+	_, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
 		Dialect:     "sqlite",
 		DialectFlag: "--from",
 		DevURL:      "postgres://localhost:1/dev",
@@ -179,7 +179,7 @@ func TestResolve_MigrationDirRejectsChecksumDrift(t *testing.T) {
 	devURL := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
 	set := classifySingle(t, "--to", "file://"+dir)
 
-	_, err := set.Resolve(t.Context(), atlassource.ResolveOptions{
+	_, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
 		Dialect: "sqlite",
 		DevURL:  devURL,
 	})
@@ -192,7 +192,7 @@ func TestResolve_LocalFileValidatesSourceBeforeParsing(t *testing.T) {
 	wantErr := errors.New("strict local-source policy")
 	set := classifySingle(t, "--to", "file://missing-schema.yaml")
 
-	_, err := set.Resolve(t.Context(), atlassource.ResolveOptions{
+	_, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
 		Dialect: "sqlite",
 		DevURL:  "sqlite://dev.db",
 		ValidateLocalSchemaSource: func(source string) error {
@@ -223,7 +223,7 @@ func TestResolve_MigrationDirWithoutSumViaEnvReplays(t *testing.T) {
 	set, err := atlassource.ClassifySet("--to", []string{"env://migration.dir"}, env)
 	c.Assert(err, qt.IsNil)
 
-	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{
+	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
 		Dialect: "sqlite",
 		DevURL:  devURL,
 	})
@@ -244,7 +244,7 @@ func TestResolve_MigrationDirFiltersRevisionTable(t *testing.T) {
 	devURL := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
 	set := classifySingle(t, "--to", "file://"+dir)
 
-	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{
+	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
 		Dialect: "sqlite",
 		DevURL:  devURL,
 	})
@@ -262,7 +262,7 @@ func TestResolve_LocalFilesMatchLegacyLoader(t *testing.T) {
 		[]byte("CREATE TABLE files_users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 	set := classifySingle(t, "--to", "file://"+schemaPath)
 
-	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Dialect: "sqlite"})
+	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "sqlite"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(state.Kind, qt.Equals, atlassource.KindLocalFile)
@@ -279,7 +279,7 @@ func TestResolve_EmptyLocalDirectoryRefuses(t *testing.T) {
 	dir := t.TempDir()
 	set := classifySingle(t, "--to", "file://"+dir)
 
-	_, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Dialect: "sqlite"})
+	_, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "sqlite"})
 
 	c.Assert(err, qt.ErrorMatches, `".*" contains neither SQL nor HCL files`)
 }
@@ -297,7 +297,7 @@ func TestResolve_LocalDirectoryOfSQLFiles(t *testing.T) {
 		[]byte("CREATE TABLE dir_posts (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 	set := classifySingle(t, "--to", "file://"+dir)
 
-	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Dialect: "sqlite"})
+	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "sqlite"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(state.Kind, qt.Equals, atlassource.KindLocalFile)
@@ -335,7 +335,7 @@ func TestResolve_MigrationDirRefusesADevDatabaseThatIsProtected(t *testing.T) {
 	devURL := seedSQLite(t, "CREATE TABLE kept (id INTEGER PRIMARY KEY); INSERT INTO kept VALUES (1);")
 	set := classifySingle(t, "--to", "file://"+dir)
 
-	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{
+	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
 		Dialect:     "sqlite",
 		DialectFlag: "--url",
 		DevURL:      devURL,
@@ -361,7 +361,7 @@ func TestResolve_MigrationDirReplaysBesideAProtectedDatabase(t *testing.T) {
 	devURL := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
 	set := classifySingle(t, "--to", "file://"+dir)
 
-	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{
+	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
 		Dialect:     "sqlite",
 		DialectFlag: "--url",
 		DevURL:      devURL,

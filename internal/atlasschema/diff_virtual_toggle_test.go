@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/envbool/envbooltest"
 	"ptah.run/internal/sqlitevirtual"
@@ -90,7 +92,7 @@ func TestDiffResolvesTheDropToggleBeforeSelectionCanReturn(t *testing.T) {
 				FromURLs: []string{"sqlite://" + from},
 				ToURLs:   []string{tt.toURL(to)},
 				Include:  tt.include,
-			})
+				Runtime:  must.Must(builtin.New())})
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Contains, tt.wantErrContains)

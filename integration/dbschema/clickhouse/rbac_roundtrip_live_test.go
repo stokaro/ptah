@@ -6,17 +6,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/planner"
@@ -474,9 +477,12 @@ func planClickHouseRBAC(
 ) (*difftypes.SchemaDiff, []string) {
 	c.Helper()
 	info := conn.Info()
-	diff, err := schemadiff.CompareWithDatabaseInfo(declared, readClickHouseRBAC(c, conn), info, nil)
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, readClickHouseRBAC(c, conn), info, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, info.Dialect, planner.Options{Capabilities: info.Capabilities})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		diff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+	)
 	c.Assert(err, qt.IsNil)
 	return diff, statements
 }
@@ -576,7 +582,7 @@ func clickHouseGrantsNamingNoKnownRole(schema *catalog.Database) []catalog.Grant
 func clickHouseRolesCarryingAnAttribute(schema *catalog.Database) []catalog.Role {
 	all := slices.Concat(schema.Roles, schema.RolesOutOfScope)
 	return slices.DeleteFunc(all, func(role catalog.Role) bool {
-		return role == (catalog.Role{
+		return reflect.DeepEqual(role, catalog.Role{
 			Name:          role.Name,
 			Inherit:       true,
 			PasswordState: catalog.RolePasswordAbsent,

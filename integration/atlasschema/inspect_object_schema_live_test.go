@@ -9,8 +9,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/migration/migrator"
 )
@@ -235,6 +237,7 @@ func TestInspectLive_EveryObjectKindKeepsItsSchema(t *testing.T) {
 			source := newInspectLiveConnection(c, ctx, "", test.setup)
 
 			documentResult, err := atlasschema.Inspect(ctx, source, atlasschema.InspectOptions{
+				Runtime:                must.Must(builtin.New()),
 				Format:                 "hcl",
 				OmitAtlasRefusedBlocks: test.omitRefused,
 			})
@@ -255,16 +258,16 @@ func TestInspectLive_EveryObjectKindKeepsItsSchema(t *testing.T) {
 			//	CREATE TYPE "public"."p_color" AS ENUM ('red', 'green');
 			//	DROP TYPE IF EXISTS "p_color" CASCADE;
 			noop, err := atlasschema.PlanApply(ctx, source, atlasschema.ApplyOptions{
-				ToURLs: []string{"file://" + path},
-			})
+				ToURLs:  []string{"file://" + path},
+				Runtime: must.Must(builtin.New())})
 			c.Assert(err, qt.IsNil)
 			c.Assert(noop.Statements(), qt.HasLen, 0,
 				qt.Commentf("document:\n%s\nplan:\n%s", document, noop.SQL()))
 
 			target := newInspectLiveConnection(c, ctx, "", nil)
 			plan, err := atlasschema.PlanApply(ctx, target, atlasschema.ApplyOptions{
-				ToURLs: []string{"file://" + path},
-			})
+				ToURLs:  []string{"file://" + path},
+				Runtime: must.Must(builtin.New())})
 			c.Assert(err, qt.IsNil, qt.Commentf("document:\n%s", document))
 			c.Assert(
 				atlasschema.ApplyStatements(ctx, target, migrator.MigrationTxModeNone, plan.Statements()),

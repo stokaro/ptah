@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/schemaserve"
@@ -113,7 +114,12 @@ func runSchemaServe(cmd *cobra.Command, opts schemaServeOptions) error {
 	schemasValue := dbcli.EffectiveString(cmd, dbcli.SchemasFlagName, opts.schemasRaw,
 		dbcli.JoinSchemasValue(projectCfg.SchemasValue()))
 
-	handler, err := schemaserve.Handler(schemaserve.Options{
+	runtime, err := builtin.New()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	handler, err := schemaserve.Handler(cmd.Context(), schemaserve.Options{
+		Runtime:     runtime,
 		DatabaseURL: dbURL,
 		RootDirs:    opts.rootDirs,
 		SchemaFiles: opts.schemaFiles,

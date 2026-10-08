@@ -10,10 +10,12 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/catalog"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/dbtarget"
 )
@@ -98,7 +100,7 @@ func TestPostgresArrayColumnSurvivesAReadE2E(t *testing.T) {
 			// The type as the converter hands it onward is the value every
 			// renderer downstream writes, so recreating the column from it is
 			// what proves the read is usable and not merely non-empty.
-			converted := dbschematogo.ConvertDBSchemaToGoSchema(read, "postgres")
+			converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), read, "postgres", must.Must(builtin.New())))
 			c.Assert(converted.Fields, qt.Not(qt.HasLen), 0)
 			_, err = setupDB.ExecContext(ctx,
 				"CREATE TABLE logs_again (records "+converted.Fields[0].Type+" NOT NULL)")

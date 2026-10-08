@@ -1,0 +1,107 @@
+{
+  "$id": "ptah.run/ydb/changefeed/v1",
+  "$defs": {
+    "consumer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {"type": "string"},
+        "important": {"type": "boolean"},
+        "read_from": {"type": "string"},
+        "supported_codecs": {"type": "array", "items": {"type": "string"}, "ordering": "set"},
+        "availability_period": {"type": "string"}
+      }
+    },
+    "replication_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "destination_path",
+        "item_id",
+        "supports_topic_autopartitioning"
+      ],
+      "properties": {
+        "destination_path": {
+          "type": "string",
+          "pattern": "^/.+"
+        },
+        "item_id": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "supports_topic_autopartitioning": {
+          "type": "boolean"
+        }
+      },
+      "meaning": "Observed replica-table destination and item number; not a replication object identity or a creation instruction."
+    },
+    "changefeed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "mode", "format"],
+      "properties": {
+        "name": {"type": "string"},
+        "mode": {"type": "string"},
+        "format": {"type": "string"},
+        "virtual_timestamps": {"type": "boolean"},
+        "resolved_timestamps": {"type": "string"},
+        "initial_scan": {"type": "boolean"},
+        "user_sids": {"type": "boolean"},
+        "schema_changes": {"type": "boolean"},
+        "topic_min_active_partitions": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615},
+        "topic_auto_partitioning": {"type": "boolean"},
+        "retention_period": {"type": "string"},
+        "consumers": {"type": "array", "items": {"$ref": "#/$defs/consumer"}, "ordering": "set-by-name"},
+        "disabled": {"type": "boolean"}
+      }
+    }
+  },
+  "values": {
+    "desired": {
+      "ptah.run/ydb/changefeed": {
+        "type": "object", "additionalProperties": false, "required": ["spec"],
+        "properties": {
+          "spec": {"$ref": "#/$defs/changefeed"},
+          "retained_replication": {"$ref": "#/$defs/replication_binding"}
+        }
+      }
+    },
+    "observed": {
+      "ptah.run/ydb/changefeed": {
+        "type": "object", "additionalProperties": false, "required": ["spec"],
+        "properties": {
+          "spec": {"$ref": "#/$defs/changefeed"},
+          "replication": {"$ref": "#/$defs/replication_binding"}
+        }
+      }
+    }
+  },
+  "changes": {
+    "ptah.run/ydb/changefeed-change": {
+      "type": "object", "additionalProperties": false, "required": ["before", "after"],
+      "properties": {
+        "before": {"anyOf": [{"type": "null"}, {"$ref": "#/values/observed/ptah.run~1ydb~1changefeed"}]},
+        "after": {"anyOf": [{"type": "null"}, {"$ref": "#/values/desired/ptah.run~1ydb~1changefeed"}]}
+      },
+      "constraint": "At least one side is non-null; both sides must name the same stream."
+    }
+  },
+  "operations": {
+    "ptah.run/ydb/add-changefeed": {
+      "type": "object", "additionalProperties": false, "required": ["changefeed"],
+      "properties": {"changefeed": {"$ref": "#/$defs/changefeed"}}
+    },
+    "ptah.run/ydb/drop-changefeed": {
+      "type": "object", "additionalProperties": false, "required": ["name"],
+      "properties": {"name": {"type": "string"}}
+    },
+    "ptah.run/ydb/alter-changefeed-topic": {
+      "type": "object", "additionalProperties": false, "required": ["changefeed", "previous"],
+      "properties": {
+        "changefeed": {"$ref": "#/$defs/changefeed"},
+        "previous": {"$ref": "#/$defs/changefeed"}
+      }
+    }
+  }
+}

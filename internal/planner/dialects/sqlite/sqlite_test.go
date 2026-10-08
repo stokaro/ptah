@@ -1,16 +1,20 @@
 package sqlite_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
+	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -46,9 +50,12 @@ func TestPlannerCreatesTableWithInlineConstraints(t *testing.T) {
 			},
 		},
 	}
-	diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(desired, "users")}
+	diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("sqlite"), "users")}
 
-	nodes, err := planner.GenerateSchemaDiffAST(withDeclaredTable(diff, desired), platform.SQLite)
+	nodes, err := planner.GenerateSchemaDiffAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredTable(diff, desired), platform.SQLite,
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
 
@@ -56,7 +63,10 @@ func TestPlannerCreatesTableWithInlineConstraints(t *testing.T) {
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(table.Constraints, qt.HasLen, 2)
 
-	sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, desired), platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredTable(diff, desired), platform.SQLite,
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `CREATE TABLE "users"`)
 	c.Assert(sql, qt.Contains, `CONSTRAINT "users_email_check" CHECK (email <> '')`)
@@ -89,7 +99,7 @@ func TestPlannerCreatesAddedTablesWithQualifiedConstraintDiffs(t *testing.T) {
 		}},
 	}
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableCreationsFor(desired, "posts", "users"),
+		TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("sqlite"), "posts", "users"),
 		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 			Name:          "fk_posts_user",
 			TableName:     "posts",
@@ -100,7 +110,10 @@ func TestPlannerCreatesAddedTablesWithQualifiedConstraintDiffs(t *testing.T) {
 		}},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, desired), platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredTable(diff, desired), platform.SQLite,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `CREATE TABLE "users"`)
@@ -111,7 +124,7 @@ func TestPlannerCreatesAddedTablesWithQualifiedConstraintDiffs(t *testing.T) {
 func TestPlannerDropsTablesWithQualifiedConstraintDiffs(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		TablesRemoved: []string{"posts"},
+		TablesRemoved: difftypes.TableRemovals{{Name: "posts"}},
 		ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{{
 			Name:      "fk_posts_user",
 			TableName: "posts",
@@ -119,7 +132,10 @@ func TestPlannerDropsTablesWithQualifiedConstraintDiffs(t *testing.T) {
 		}},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.SQLite,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `DROP TABLE IF EXISTS "posts";`)
@@ -150,7 +166,10 @@ func TestPlannerAddsColumnsAndIndexes(t *testing.T) {
 		IndexesAdded: difftypes.IndexAdditionsFor(desired, difftypes.IndexRef{Name: "idx_users_display_name", TableName: "users"}),
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, desired), platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredTable(diff, desired), platform.SQLite,
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `ALTER TABLE "users" ADD COLUMN "display_name" TEXT`)
 	c.Assert(sql, qt.Contains, `CREATE UNIQUE INDEX IF NOT EXISTS "idx_users_display_name" ON "users" ("display_name") WHERE display_name IS NOT NULL`)
@@ -184,7 +203,10 @@ func TestPlannerRebuildsTableWhenDroppingColumn(t *testing.T) {
 		ColumnsRemoved: difftypes.ColumnChanges{{Name: "name"}},
 	}}}
 
-	sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, desired), platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredTable(diff, desired), platform.SQLite,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users"`)
@@ -223,7 +245,10 @@ func TestPlannerRebuildStepsAsideFromADeclaredTableName(t *testing.T) {
 		DeclaredTables: desired.Tables,
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, desired), platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredTable(diff, desired), platform.SQLite,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users_1"`)
@@ -261,7 +286,10 @@ func TestPlannerRejectsUnsafeTableRebuildPreconditions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := planner.GenerateSchemaDiffAST(withDeclaredTable(diff, tt.desired), platform.SQLite)
+			nodes, err := planner.GenerateSchemaDiffAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredTable(diff, tt.desired), platform.SQLite,
+			)
 			c.Assert(nodes, qt.IsNil)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, tt.want)
@@ -325,7 +353,10 @@ func TestPlannerRebuildsATableOtherTablesReferTo(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, tt.desired), platform.SQLite)
+			sql, err := planner.GenerateSchemaDiffSQL(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredTable(diff, tt.desired), platform.SQLite,
+			)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, "PRAGMA foreign_keys = off;")
 			c.Assert(sql, qt.Contains, "PRAGMA foreign_keys = on;")
@@ -361,14 +392,17 @@ func TestPlannerRebuildStepsAsideFromARemovedTableName(t *testing.T) {
 		Fields: []schemamodel.Field{{Name: "id", Type: "INTEGER", StructName: "User", Primary: true}},
 	}
 	diff := &difftypes.SchemaDiff{
-		TablesRemoved: []string{"__ptah_rebuild_users"},
+		TablesRemoved: difftypes.TableRemovals{{Name: "__ptah_rebuild_users"}},
 		TablesModified: []difftypes.TableDiff{{
 			TableName:      "users",
 			ColumnsRemoved: difftypes.ColumnChanges{{Name: "name"}},
 		}},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, desired), platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredTable(diff, desired), platform.SQLite,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users_1"`)
@@ -431,7 +465,10 @@ func TestPlannerRebuildsForAddColumnShapesAlterCannotExpress(t *testing.T) {
 				ColumnsAdded: difftypes.ColumnChanges{tt.field},
 			}}}
 
-			sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, desired), platform.SQLite)
+			sql, err := planner.GenerateSchemaDiffSQL(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredTable(diff, desired), platform.SQLite,
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users"`)
@@ -465,7 +502,10 @@ func TestPlannerRefusesRebuiltNotNullAddWithoutDefault(t *testing.T) {
 		ColumnsAdded: difftypes.ColumnChanges{field},
 	}}}
 
-	nodes, err := planner.GenerateSchemaDiffAST(withDeclaredTable(diff, desired), platform.SQLite)
+	nodes, err := planner.GenerateSchemaDiffAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredTable(diff, desired), platform.SQLite,
+	)
 
 	c.Assert(nodes, qt.IsNil)
 	var planErr *ptaherr.PlanError
@@ -503,10 +543,13 @@ func TestPlannerDropsIndexesAndTables(t *testing.T) {
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_users_email", TableName: "users"},
 		},
-		TablesRemoved: []string{"old_users"},
+		TablesRemoved: difftypes.TableRemovals{{Name: "old_users"}},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.SQLite,
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `DROP INDEX IF EXISTS "idx_users_email"`)
 	c.Assert(sql, qt.Contains, `DROP TABLE IF EXISTS "old_users"`)
@@ -681,7 +724,10 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(test.diff, test.desired), platform.SQLite)
+			sql, err := planner.GenerateSchemaDiffSQL(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredTable(test.diff, test.desired), platform.SQLite,
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users"`)
@@ -717,7 +763,10 @@ func TestPlannerRebuildRefusesAddedNotNullColumnWithoutDefault(t *testing.T) {
 		ColumnsRemoved: difftypes.ColumnChanges{{Name: "legacy"}},
 	}}}
 
-	nodes, err := planner.GenerateSchemaDiffAST(withDeclaredTable(diff, desired), platform.SQLite)
+	nodes, err := planner.GenerateSchemaDiffAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredTable(diff, desired), platform.SQLite,
+	)
 
 	c.Assert(nodes, qt.IsNil)
 	var planErr *ptaherr.PlanError
@@ -770,7 +819,10 @@ func TestPlannerRebuildEmitsIndexesAndTriggersOnce(t *testing.T) {
 		}},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, desired), platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredTable(diff, desired), platform.SQLite,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Count(sql, `CREATE INDEX IF NOT EXISTS "idx_users_name"`), qt.Equals, 1)
@@ -818,7 +870,10 @@ func TestPlannerEmitsTriggerChangesWithoutRebuild(t *testing.T) {
 		}},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, desired), platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredTable(diff, desired), platform.SQLite,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Count(sql, `CREATE TRIGGER "trg_users_insert"`), qt.Equals, 1)
@@ -829,7 +884,10 @@ func TestPlannerRejectsUnqualifiedExistingTableConstraintChanges(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "users_name_key"}}}
 
-	nodes, err := planner.GenerateSchemaDiffAST(diff, platform.SQLite)
+	nodes, err := planner.GenerateSchemaDiffAST(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.SQLite,
+	)
 
 	c.Assert(nodes, qt.IsNil)
 	var planErr *ptaherr.PlanError
@@ -845,7 +903,10 @@ func TestPlannerRejectsExtensionPlacementChanges(t *testing.T) {
 		Name: "pgcrypto", FromSchema: "public", ToSchema: "extensions",
 	}}}
 
-	nodes, err := planner.GenerateSchemaDiffAST(diff, platform.SQLite)
+	nodes, err := planner.GenerateSchemaDiffAST(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.SQLite,
+	)
 
 	c.Assert(nodes, qt.IsNil)
 	var planErr *ptaherr.PlanError
@@ -872,9 +933,12 @@ func TestPlannerRejectsSQLiteExcludeConstraint(t *testing.T) {
 			ExcludeElements: "room_id WITH =",
 		}},
 	}
-	diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(desired, "bookings")}
+	diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("sqlite"), "bookings")}
 
-	nodes, err := planner.GenerateSchemaDiffAST(withDeclaredTable(diff, desired), platform.SQLite)
+	nodes, err := planner.GenerateSchemaDiffAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredTable(diff, desired), platform.SQLite,
+	)
 
 	c.Assert(nodes, qt.IsNil)
 	var planErr *ptaherr.PlanError
@@ -923,7 +987,10 @@ func TestPlannerRebuildExcludesColumnsAddedBesideAConstraintChange(t *testing.T)
 		}},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, desired), platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredTable(diff, desired), platform.SQLite,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains,
@@ -956,7 +1023,10 @@ func TestPlanner_RefusesAColumnOnARelationTheSchemaDoesNotDeclare(t *testing.T) 
 		ColumnsAdded: difftypes.ColumnChanges{{StructName: "User", Name: "note", Type: "TEXT"}},
 	}}}
 
-	sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, desired), platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredTable(diff, desired), platform.SQLite,
+	)
 
 	c.Assert(err, qt.ErrorMatches, `.*requires its desired definition.*`)
 	c.Assert(sql, qt.Equals, "",
@@ -983,7 +1053,7 @@ func withDeclaredTable(diff *difftypes.SchemaDiff, desired *schemamodel.Database
 			continue
 		}
 		if table, ok := declaredTableNamed(desired, tableDiff.TableName); ok {
-			completed.TablesModified[i].Desired = difftypes.TableDeclarationFor(desired, table)
+			completed.TablesModified[i].Desired = difftypes.TableDeclarationFor(desired, table, identifier.ForDialect("sqlite"))
 		}
 	}
 	if len(completed.DeclaredTables) == 0 {
@@ -1031,14 +1101,14 @@ func declaringTheOnlyTable(diff *difftypes.SchemaDiff, desired *schemamodel.Data
 	completed.TablesModified = make([]difftypes.TableDiff, len(diff.TablesModified))
 	copy(completed.TablesModified, diff.TablesModified)
 	for i := range completed.TablesModified {
-		completed.TablesModified[i].Desired = difftypes.TableDeclarationFor(desired, desired.Tables[0])
+		completed.TablesModified[i].Desired = difftypes.TableDeclarationFor(desired, desired.Tables[0], identifier.ForDialect("sqlite"))
 	}
 	completed.DeclaredTables = desired.Tables
 	// The one table is the only host a constraint change here can name, and
 	// naming it by identity is the whole point of the fixtures that use this:
 	// the diff and the constraint spell the table differently on purpose.
-	completed.DeclaredConstraintHosts = []difftypes.TableDeclaration{
-		difftypes.TableDeclarationFor(desired, desired.Tables[0]),
+	completed.DeclaredConstraintHosts = []schemacapture.TableDeclaration{
+		difftypes.TableDeclarationFor(desired, desired.Tables[0], identifier.ForDialect("sqlite")),
 	}
 	return &completed
 }
@@ -1064,16 +1134,19 @@ func TestPlannerInlineConstraintsComeFromTheCreation(t *testing.T) {
 			Tables: []schemamodel.Table{{Name: "bookings", StructName: "Booking"}},
 			Fields: []schemamodel.Field{{Name: "code", Type: "TEXT", StructName: "Booking"}},
 		}
-		diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(desired, "bookings")}
+		diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("sqlite"), "bookings")}
 		diff.TablesAdded[0].Constraints = []schemamodel.Constraint{{
 			Name: "uq_bookings_code", Type: "UNIQUE", StructName: "Booking",
 			Table: "bookings", Columns: []string{"code"},
 		}}
 
-		nodes, err := planner.GenerateSchemaDiffAST(diff, platform.SQLite)
+		nodes, err := planner.GenerateSchemaDiffAST(
+			context.Background(), must.Must(builtin.New()),
+			diff, platform.SQLite,
+		)
 
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL(platform.SQLite, nodes...)
+		sql, err := builtin.RenderSQL(platform.SQLite, nodes...)
 		c.Assert(err, qt.IsNil)
 		c.Assert(sql, qt.Contains, `CONSTRAINT "uq_bookings_code" UNIQUE ("code")`)
 	})
@@ -1094,10 +1167,13 @@ func TestPlannerInlineConstraintsComeFromTheCreation(t *testing.T) {
 			Name: "bookings", Table: desired.Tables[0], Fields: desired.Fields,
 		}}}
 
-		nodes, err := planner.GenerateSchemaDiffAST(diff, platform.SQLite)
+		nodes, err := planner.GenerateSchemaDiffAST(
+			context.Background(), must.Must(builtin.New()),
+			diff, platform.SQLite,
+		)
 
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL(platform.SQLite, nodes...)
+		sql, err := builtin.RenderSQL(platform.SQLite, nodes...)
 		c.Assert(err, qt.IsNil)
 		c.Assert(sql, qt.Contains, `CREATE TABLE "bookings"`)
 		c.Assert(sql, qt.Not(qt.Contains), "uq_bookings_code")

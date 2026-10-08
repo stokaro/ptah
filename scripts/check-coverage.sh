@@ -6,7 +6,7 @@ profile="${PTAH_COVERAGE_PROFILE:-coverage.out}"
 
 packages="$(
 	go list ./config/... ./core/... ./migration/... ./dbschema/... ./internal/... |
-		grep -vE '/core/ast/mocks$|/core/goschema/testutil$|/core/renderer/internal/dialects/internal/bufwriter$|/internal/dbschema/dbtest$|/internal/examples(/|$)|/internal/testutils$|/migration/generator/example$|/migration/internal/typechange$'
+		grep -vE '/core/ast/mocks$|/core/goschema/testutil$|/engine/builtin/internal/dialects/internal/bufwriter$|/internal/dbschema/dbtest$|/internal/examples(/|$)|/internal/testutils$|/migration/generator/example$|/migration/internal/typechange$'
 )"
 
 go test -covermode=atomic -coverprofile="$profile" $packages

@@ -1,14 +1,17 @@
 package postgres_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -73,7 +76,10 @@ func TestPlanner_RLSPolicyRefs_CreatesThePolicyOnTheNamedTable(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{RLSPoliciesAdded: test.added}
 
-			nodes, err := postgres.New().GenerateMigrationAST(diff)
+			nodes, err := postgres.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				diff,
+			)
 			c.Assert(err, qt.IsNil)
 
 			var tables []string
@@ -158,7 +164,10 @@ func TestPlanner_RLSPolicyRefs_RefusesAPolicyTheDesiredSchemaDoesNotHold(t *test
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := postgres.New().GenerateMigrationAST(test.diff)
+			nodes, err := postgres.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				test.diff,
+			)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
@@ -182,7 +191,10 @@ func TestPlanner_RLSPolicyRefs_PlansARemovalThatNeedsNoDeclaration(t *testing.T)
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff)
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
@@ -237,14 +249,17 @@ func TestCompare_AnRLSPolicyResolvesTheDefaultSchemaSpelling(t *testing.T) {
 				}},
 			}
 
-			diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 
 			c.Assert(diff.RLSPoliciesAdded, qt.HasLen, 0,
 				qt.Commentf("the two spellings are one policy, not one to create and one to drop"))
 			c.Assert(diff.RLSPoliciesRemoved, qt.HasLen, 0)
 			c.Assert(diff.RLSPoliciesModified, qt.HasLen, 1)
 
-			nodes, err := postgres.New().GenerateMigrationAST(diff)
+			nodes, err := postgres.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				diff,
+			)
 
 			c.Assert(err, qt.IsNil)
 			// A note naming the change, then the policy.

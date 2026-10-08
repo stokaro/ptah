@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -31,7 +32,7 @@ func ExampleTableCreationsFor() {
 		},
 	}
 
-	creations := difftypes.TableCreationsFor(desired, "users", "not_declared")
+	creations := difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "users", "not_declared")
 	fmt.Println("creations:", creations.Names())
 	for _, creation := range creations {
 		for _, field := range creation.Fields {
@@ -62,7 +63,7 @@ func ExampleTableChanges_InDependencyOrder() {
 		},
 	}
 
-	creations := difftypes.TableCreationsFor(desired, "posts", "users")
+	creations := difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "posts", "users")
 	fmt.Println("as stated:", creations.Names())
 	fmt.Println("ordered:  ", creations.InDependencyOrder().Names())
 
@@ -83,7 +84,7 @@ func ExampleSchemaDiff_HasChanges() {
 		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
 		Fields: []schemamodel.Field{{StructName: "User", Name: "id", Type: "SERIAL", Primary: true}},
 	}
-	diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(desired, "users")}
+	diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "users")}
 	fmt.Println(diff.HasChanges())
 
 	// Output:

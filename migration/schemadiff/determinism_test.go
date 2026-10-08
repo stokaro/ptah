@@ -5,9 +5,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -113,7 +115,7 @@ func TestCompare_Deterministic(t *testing.T) {
 	c := qt.New(t)
 
 	gen, db := driftedSchemas()
-	first := schemadiff.Compare(gen, db)
+	first := must.Must(schemadiff.Compare(t.Context(), gen, db, must.Must(builtin.New())))
 
 	// Sanity-check that the fixtures actually exercise every category this
 	// test is guarding, so a fixture regression can't silently hollow it out.
@@ -133,7 +135,7 @@ func TestCompare_Deterministic(t *testing.T) {
 	c.Assert(len(first.ConstraintsRemoved) > 1, qt.IsTrue)
 
 	for i := range 100 {
-		c.Assert(schemadiff.Compare(gen, db), qt.DeepEquals, first,
+		c.Assert(must.Must(schemadiff.Compare(t.Context(), gen, db, must.Must(builtin.New()))), qt.DeepEquals, first,
 			qt.Commentf("iteration %d produced a different diff", i))
 	}
 }
@@ -144,7 +146,7 @@ func TestCompare_ModifiedListsSorted(t *testing.T) {
 	c := qt.New(t)
 
 	gen, db := driftedSchemas()
-	diff := schemadiff.Compare(gen, db)
+	diff := must.Must(schemadiff.Compare(t.Context(), gen, db, must.Must(builtin.New())))
 
 	c.Assert(sort.SliceIsSorted(diff.TablesModified, func(i, j int) bool {
 		return diff.TablesModified[i].TableName < diff.TablesModified[j].TableName

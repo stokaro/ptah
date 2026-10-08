@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
@@ -16,6 +17,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -87,7 +89,7 @@ func TestPlanGeneratedMigrationSpecs_SkipDropIndexPreservesPostgresSchemaMove(t 
 		},
 	}
 
-	specs, _, err := planGeneratedMigrationSpecs(
+	specs, _, err := planGeneratedMigrationSpecs(t.Context(), must.Must(builtin.New()),
 		diff,
 		desired,
 		&catalog.Database{
@@ -134,7 +136,9 @@ func TestReverseSchemaDiff_PreservesTableQualifiedIndexIdentity(t *testing.T) {
 		{Name: "idx_legacy", TableName: "audit.events"},
 	})
 
-	got := reverseSchemaDiff(diff)
+	got := reverseForTest(t,
+		diff, nil, nil, "postgres",
+	)
 
 	c.Assert(got.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_legacy", TableName: "audit.events"},
@@ -178,7 +182,9 @@ func TestIndexTransforms_PreserveIdentifierSemantics(t *testing.T) {
 	}
 
 	cloned := cloneSchemaDiff(diff)
-	reversed := reverseSchemaDiffWithSchema(diff, nil, nil)
+	reversed := reverseForTest(t,
+		diff, nil, nil, "postgres",
+	)
 	split := splitConcurrentIndexDiff(diff, diff.IndexAdditions(), nil)
 
 	c.Assert(cloned.IdentifierSemantics, qt.DeepEquals, &semantics)
@@ -236,7 +242,7 @@ func TestGenerateDownMigrationSQL_SQLServerPreservesFilteredIndexPredicate(t *te
 		},
 	}
 
-	sql, err := generateDownMigrationSQL(
+	sql, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
 		diff,
 		desired,
 		database,

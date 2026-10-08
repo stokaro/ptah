@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -63,7 +65,7 @@ func TestCompareWithDialect_SQLiteRowidAliasNullability_HappyPath(t *testing.T) 
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(tt.desired, tt.database, "sqlite")
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), tt.desired, tt.database, "sqlite", must.Must(builtin.New())))
 
 			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))
 		})
@@ -95,7 +97,7 @@ func TestCompareWithDialect_SQLiteKeyNullability_FailurePath(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(tt.desired, tt.database, "sqlite")
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), tt.desired, tt.database, "sqlite", must.Must(builtin.New())))
 
 			c.Assert(diff.TablesModified, qt.HasLen, 1, qt.Commentf("diff: %#v", diff))
 			c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)

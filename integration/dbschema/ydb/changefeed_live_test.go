@@ -5,22 +5,26 @@ package ydb_test
 import (
 	"context"
 	"path"
-	"slices"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/ydb-platform/ydb-go-genproto/Ydb_Table_V1"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Table"
 	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
 
+	"ptah.run/catalog"
 	"ptah.run/core/ast"
-	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
+	"ptah.run/migration/schemadiff"
 )
 
 // changefeedSchema is the directory the changefeed tests write into.
@@ -30,10 +34,15 @@ var changefeedSchemas = []string{changefeedSchema}
 
 // changefeedDeclaration is table events, keyed on a Uint64 so its changefeed's
 // topic may start with several partitions, carrying changefeeds.
-func changefeedDeclaration(changefeeds ...ast.ChangefeedSpec) *schemamodel.Database {
+func changefeedDeclaration(changefeeds ...ydbschema.ChangefeedSpec) *schemamodel.Database {
+	var objects []schemaext.Object
+	for _, stream := range changefeeds {
+		objects = append(objects, ydbschema.DesiredObject(changefeedSchema, "events", stream))
+	}
 	db := &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "Event", Name: "events", Schema: changefeedSchema,
-			Changefeeds: changefeeds}},
+		FeatureObjects:  must.Must(schemaext.NewObjects(objects...)),
+		FeatureCoverage: must.Must(ydbschema.ChangefeedCoverage(schemaext.Desired, nil)),
+		Tables:          []schemamodel.Table{{StructName: "Event", Name: "events", Schema: changefeedSchema}},
 		Fields: []schemamodel.Field{
 			{StructName: "Event", Name: "id", Type: "BIGINT UNSIGNED", Primary: true},
 			{StructName: "Event", Name: "payload", Type: "TEXT", Nullable: true},
@@ -51,8 +60,8 @@ func changefeedDeclaration(changefeeds ...ast.ChangefeedSpec) *schemamodel.Datab
 // the options that came later -- user SIDs, schema changes, an
 // auto-partitioned topic and a consumer's availability period -- are declared
 // too.
-func lineChangefeeds(caps capability.Capabilities) []ast.ChangefeedSpec {
-	audit := ast.ChangefeedSpec{
+func lineChangefeeds(caps capability.Capabilities) []ydbschema.ChangefeedSpec {
+	audit := ydbschema.ChangefeedSpec{
 		Name: "audit", Mode: "NEW_AND_OLD_IMAGES", Format: "DEBEZIUM_JSON", RetentionPeriod: "PT12H",
 		InitialScan: true, TopicMinActivePartitions: 2,
 		Consumers: []ast.TopicConsumerSpec{
@@ -60,20 +69,20 @@ func lineChangefeeds(caps capability.Capabilities) []ast.ChangefeedSpec {
 			{Name: "search"},
 		},
 	}
-	keys := ast.ChangefeedSpec{Name: "keys", Mode: "KEYS_ONLY", Format: "JSON", VirtualTimestamps: true,
+	keys := ydbschema.ChangefeedSpec{Name: "keys", Mode: "KEYS_ONLY", Format: "JSON", VirtualTimestamps: true,
 		ResolvedTimestamps: "PT10S"}
 	keys.UserSIDs = caps.Has(capability.ChangefeedUserSIDs)
 	keys.SchemaChanges = caps.Has(capability.ChangefeedSchemaChanges)
 	keys.TopicAutoPartitioning = caps.Has(capability.ChangefeedTopicAutoPartitioning)
 	late := map[bool][]ast.TopicConsumerSpec{true: {{Name: "late", AvailabilityPeriod: "PT1H"}}}
 	keys.Consumers = late[caps.Has(capability.TopicConsumerAvailabilityPeriod)]
-	return []ast.ChangefeedSpec{audit, keys}
+	return []ydbschema.ChangefeedSpec{audit, keys}
 }
 
 // changefeedsOf reads table events' changefeeds back from the server.
-func changefeedsOf(c *qt.C, conn *dbschema.DatabaseConnection) []ast.ChangefeedSpec {
+func changefeedsOf(c *qt.C, conn *dbschema.DatabaseConnection) []ydbschema.ChangefeedSpec {
 	c.Helper()
-	return tableNamed(c, readScoped(c, conn, changefeedSchemas), changefeedSchema, "events").Changefeeds
+	return observedChangefeeds(c, readScoped(c, conn, changefeedSchemas), changefeedSchema, "events")
 }
 
 // TestYDBChangefeeds_RoundTrip applies a table whose changefeeds use every
@@ -100,6 +109,36 @@ func TestYDBChangefeeds_RoundTrip(t *testing.T) {
 	}
 }
 
+// TestYDBChangefeeds_SwapAtLimit requires a dependency even when the added
+// stream sorts before the removed one. Adding first would exceed YDB's limit.
+func TestYDBChangefeeds_SwapAtLimit(t *testing.T) {
+	for _, line := range ydbLines {
+		t.Run(line.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := openYDB(c, line)
+			dropTables(c, conn, changefeedSchemas)
+			c.Cleanup(func() { dropTables(c, conn, changefeedSchemas) })
+			var streams []ydbschema.ChangefeedSpec
+			for _, name := range []string{"b0", "b1", "b2", "b3", "z_old"} {
+				streams = append(streams, ydbschema.ChangefeedSpec{Name: name, Mode: "UPDATES", Format: "JSON"})
+			}
+			apply(c, conn, planAgainst(c, conn, changefeedDeclaration(streams...), changefeedSchemas))
+			c.Assert(changefeedsOf(c, conn), qt.HasLen, 5)
+			streams[4].Name = "a_new"
+			declared := changefeedDeclaration(streams...)
+			plan := planAgainst(c, conn, declared, changefeedSchemas)
+			c.Assert(plan, qt.HasLen, 2)
+			c.Assert(plan[0], qt.Contains, "DROP CHANGEFEED `z_old`")
+			c.Assert(plan[1], qt.Contains, "ADD CHANGEFEED `a_new`")
+			apply(c, conn, plan)
+			actual := changefeedsOf(c, conn)
+			c.Assert(actual, qt.HasLen, 5)
+			c.Assert(actual[0].Name, qt.Equals, "a_new")
+			c.Assert(planAgainst(c, conn, declared, changefeedSchemas), qt.HasLen, 0)
+		})
+	}
+}
+
 // TestYDBChangefeeds_ChangesInPlace changes what YDB changes in place -- the
 // retention, and the consumers, added, changed and dropped -- by ALTER TOPIC
 // alone, and what it does not -- an option of the changefeed, and a
@@ -108,12 +147,12 @@ func TestYDBChangefeeds_RoundTrip(t *testing.T) {
 func TestYDBChangefeeds_ChangesInPlace(t *testing.T) {
 	topic := "`" + changefeedSchema + "/events/feed`"
 	table := "`" + changefeedSchema + "/events`"
-	feed := func(mode, retention string, consumers ...ast.TopicConsumerSpec) ast.ChangefeedSpec {
-		return ast.ChangefeedSpec{Name: "feed", Mode: mode, Format: "JSON", RetentionPeriod: retention, Consumers: consumers}
+	feed := func(mode, retention string, consumers ...ast.TopicConsumerSpec) ydbschema.ChangefeedSpec {
+		return ydbschema.ChangefeedSpec{Name: "feed", Mode: mode, Format: "JSON", RetentionPeriod: retention, Consumers: consumers}
 	}
 	steps := []struct {
 		name string
-		feed ast.ChangefeedSpec
+		feed ydbschema.ChangefeedSpec
 		want []string
 	}{
 		{name: "the changefeed added", feed: feed("UPDATES", "PT6H",
@@ -168,7 +207,7 @@ func TestYDBChangefeeds_ChangesInPlace(t *testing.T) {
 				c.Assert(planned, qt.DeepEquals, step.want, qt.Commentf("step: %s", step.name))
 				apply(c, conn, planned)
 				c.Assert(planAgainst(c, conn, declared, changefeedSchemas), qt.HasLen, 0, qt.Commentf("step: %s", step.name))
-				c.Assert(changefeedsOf(c, conn), qt.DeepEquals, []ast.ChangefeedSpec{step.feed}, qt.Commentf("step: %s", step.name))
+				c.Assert(changefeedsOf(c, conn), qt.DeepEquals, []ydbschema.ChangefeedSpec{step.feed}, qt.Commentf("step: %s", step.name))
 			}
 
 			removed := planAgainst(c, conn, changefeedDeclaration(), changefeedSchemas)
@@ -225,13 +264,16 @@ func TestYDBChangefeeds_LeavesWhatItDoesNotModel(t *testing.T) {
 
 			live := readScoped(c, conn, changefeedSchemas)
 
-			c.Assert(tableNamed(c, live, changefeedSchema, "events").Changefeeds, qt.IsNil)
-			c.Assert(slices.ContainsFunc(live.NotDescribed.Objects, func(object coverage.Object) bool {
-				return object.Kind == coverage.Changefeed && object.Name == changefeedSchema+".events/tagged"
-			}), qt.IsTrue)
-			c.Assert(planAgainst(c, conn, changefeedDeclaration(), changefeedSchemas), qt.HasLen, 0)
-			c.Assert(planAgainst(c, conn, changefeedDeclaration(ast.ChangefeedSpec{Name: "tagged", Mode: "UPDATES",
-				Format: "JSON"}), changefeedSchemas), qt.HasLen, 0)
+			c.Assert(observedChangefeeds(c, live, changefeedSchema, "events"), qt.IsNil)
+			c.Assert(live.FeatureCoverage.Lookup(ydbschema.ChangefeedKind, ydbschema.ChangefeedRef(changefeedSchema, "events", "tagged")).State, qt.Equals, schemaext.Unrepresentable)
+			for _, desired := range []*schemamodel.Database{
+				changefeedDeclaration(),
+				changefeedDeclaration(ydbschema.ChangefeedSpec{Name: "tagged", Mode: "UPDATES", Format: "JSON"}),
+			} {
+				diff, err := schemadiff.CompareWithDatabase(c.Context(), conn, desired, live, nil, must.Must(builtin.New()))
+				c.Assert(err, qt.ErrorIs, schemadiff.ErrIncompleteComparison)
+				c.Assert(diff, qt.IsNil)
+			}
 		})
 	}
 }
@@ -242,9 +284,13 @@ func TestYDBChangefeeds_LeavesWhatItDoesNotModel(t *testing.T) {
 // its consumer to the new table. The rows survive, the changefeed reads back
 // as declared, and nothing is left to plan.
 func TestYDBChangefeeds_RebuildCarriesThem(t *testing.T) {
-	feed := ast.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", RetentionPeriod: "PT6H",
+	feed := ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", RetentionPeriod: "PT6H",
 		Consumers: []ast.TopicConsumerSpec{{Name: "audit", Important: true}}}
-	withFeed := func(db *schemamodel.Database) { db.Tables[0].Changefeeds = []ast.ChangefeedSpec{feed} }
+	withFeed := func(db *schemamodel.Database) {
+		table := db.Tables[0]
+		db.FeatureObjects = must.Must(schemaext.NewObjects(ydbschema.DesiredObject(table.Schema, table.Name, feed)))
+		db.FeatureCoverage = must.Must(ydbschema.ChangefeedCoverage(schemaext.Desired, nil))
+	}
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -267,8 +313,16 @@ func TestYDBChangefeeds_RebuildCarriesThem(t *testing.T) {
 			c.Assert(planAgainst(c, conn, after, rebuildSchemas), qt.HasLen, 0)
 			live := readScoped(c, conn, rebuildSchemas)
 			c.Assert(tableNames(live), qt.DeepEquals, []string{rebuildSchema + "|items"})
-			c.Assert(tableNamed(c, live, rebuildSchema, "items").Changefeeds, qt.DeepEquals, []ast.ChangefeedSpec{feed})
+			c.Assert(observedChangefeeds(c, live, rebuildSchema, "items"), qt.DeepEquals, []ydbschema.ChangefeedSpec{feed})
 			c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+rebuildSchema+"/items`"), qt.Equals, int64(2))
 		})
 	}
+}
+
+func observedChangefeeds(c *qt.C, database *catalog.Database, schema, table string) []ydbschema.ChangefeedSpec {
+	c.Helper()
+	tableNamed(c, database, schema, table)
+	streams, err := ydbschema.ObservedChangefeeds(database.FeatureObjects, schema, table)
+	c.Assert(err, qt.IsNil)
+	return streams
 }

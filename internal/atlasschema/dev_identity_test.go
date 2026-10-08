@@ -6,9 +6,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/migratesum"
@@ -79,7 +81,7 @@ func TestRehearsePlanStatements_RefusesADevDatabaseThatIsTheTargetBeforeArmingIt
 	err := atlasschema.RehearsePlanStatements(c.Context(), conn,
 		[]string{"CREATE TABLE sim_added (id INTEGER PRIMARY KEY)"},
 		&schemamodel.Database{},
-		atlasschema.PlanRehearsalOptions{DevURL: atlasurl.SQLiteURLFromPath(dbPath)})
+		atlasschema.PlanRehearsalOptions{DevURL: atlasurl.SQLiteURLFromPath(dbPath), Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.ErrorMatches, targetRefusal)
 	c.Assert(keptRows(c, dbPath), qt.Equals, 1)
@@ -107,10 +109,10 @@ func TestPrepareApply_RefusesADevDatabaseThatIsTheTargetBeforeReplayingADirector
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 
 	plan, err := atlasschema.PrepareApply(c.Context(), conn, atlasschema.ApplyRuntimeOptions{
-		ToURLs: []string{"file://" + dir},
-		DevURL: atlasurl.SQLiteURLFromPath(dbPath),
-		TxMode: migrator.MigrationTxModeAll,
-	})
+		ToURLs:  []string{"file://" + dir},
+		DevURL:  atlasurl.SQLiteURLFromPath(dbPath),
+		TxMode:  migrator.MigrationTxModeAll,
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.ErrorMatches, `load --to schema: --dev-url must not point at the target database: the dev database is reset destructively before the migration directory is replayed on it`)
 	c.Assert(plan.HasChanges(), qt.IsFalse)

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/schemacapture"
 	"ptah.run/internal/ydbfamily"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -78,7 +79,7 @@ func (p *Planner) refuseFamilyChange(tableDiff difftypes.TableDiff) error {
 // write: a family the target has no key for, a declaration YDB refuses, read
 // against the declared columns and key, and a family that keeps its columns
 // in memory (see [ydbfamily.CreateRefusal]).
-func (p *Planner) refuseRebuiltFamilies(declaration difftypes.TableDeclaration, subject string) error {
+func (p *Planner) refuseRebuiltFamilies(declaration schemacapture.TableDeclaration, subject string) error {
 	families := declaration.Table.YDBColumnFamilies
 	for _, requirement := range ydbfamily.Requirements(families) {
 		if !p.caps.Has(requirement.Key) {
@@ -97,7 +98,7 @@ func (p *Planner) refuseRebuiltFamilies(declaration difftypes.TableDeclaration, 
 
 // declaredColumns are the columns a declared table names and its key: the
 // key the table names, or its key fields.
-func declaredColumns(declaration difftypes.TableDeclaration) (columns, key []string) {
+func declaredColumns(declaration schemacapture.TableDeclaration) (columns, key []string) {
 	for _, field := range declaration.Fields {
 		if field.StructName != declaration.Table.StructName {
 			continue

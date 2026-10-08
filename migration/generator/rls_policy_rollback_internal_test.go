@@ -10,9 +10,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -110,10 +112,13 @@ func TestGenerateDownMigrationSQL_RestoresAModifiedRLSPolicyAcrossSpellings(t *t
 			desired := desiredPolicyOnOrders(test.desired)
 			database := introspectedPolicyOnOrders(test.database)
 
-			diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+				desired, database, "postgres", must.Must(builtin.New()),
+			))
 			c.Assert(diff.RLSPoliciesModified, qt.HasLen, 1)
 
-			downSQL, err := generateDownMigrationSQL(diff, desired, database, "postgres")
+			downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+				diff, desired, database, "postgres")
 			c.Assert(err, qt.IsNil)
 
 			// The rollback drops the changed policy and recreates it from the

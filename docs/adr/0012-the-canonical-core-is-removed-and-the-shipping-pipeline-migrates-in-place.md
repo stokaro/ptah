@@ -18,7 +18,7 @@ ADR 0001 asked of them is there: one model for both sides, identity off source
 metadata, typed changes carrying risk and required facts, one dependency graph.
 
 **They have no non-test importer anywhere in the tree.** `go list -deps
-./cmd/...` reaches `internal/objectidentity` and `internal/deporder`, and
+./cmd/...` reaches `core/objectidentity` and `internal/deporder`, and
 neither of these two. The product plans and applies through
 `schemamodel.Database`, `difftypes.SchemaDiff` and `migration/planner`, exactly
 as it did before ADR 0001 landed.
@@ -76,11 +76,11 @@ production consumer. **None of them is the sole holder of one.**
 
 | Invariant | Held in production by |
 | --- | --- |
-| Identity and references: distinct objects never collapse; dangling, ambiguous and normalized-collision references are refused | `internal/objectidentity` — a separate package, reached from `cmd/` |
+| Identity and references: distinct objects never collapse; dangling, ambiguous and normalized-collision references are refused | `core/objectidentity` — a separate package, reached from `cmd/` |
 | Dependency ordering, including view-like objects that read each other | `internal/deporder` — separate, used by the shipping planner |
 | Coverage: not-inspected never becomes absent | `core/coverage` — separate, used by the shipping comparison |
 | Routine overload identity | `recordedRoutineSignature` and the signature-carrying removal lists in the shipping comparator |
-| A composite key is a key, for a foreign key's referenced columns | `renderer.tableHasUniqueKey`, which accepts a primary key, a unique field, a unique constraint or a unique index, each compared as a full column list |
+| A composite key is a key, for a foreign key's referenced columns | `builtin.tableHasUniqueKey`, which accepts a primary key, a unique field, a unique constraint or a unique index, each compared as a full column list |
 
 The last two rows are the ones
 [architecture boundaries](../architecture_boundaries.md) recorded as closed and

@@ -15,7 +15,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/sqlschema"
 )
@@ -37,7 +37,7 @@ func TestSchemaRenderCreatesARoutineAfterABareTableOnCockroachDBLive(t *testing.
 	_, db := newCockroachRoutineOrderDatabase(c, ctx)
 	database, _, err := sqlschema.Read([]byte(routineBeforeBareTable), platform.CockroachDB)
 	c.Assert(err, qt.IsNil)
-	statements, err := renderer.GetOrderedCreateStatements(&database, platform.CockroachDB)
+	statements, err := builtin.GetOrderedCreateStatements(&database, platform.CockroachDB)
 	c.Assert(err, qt.IsNil)
 
 	for _, statement := range statements {

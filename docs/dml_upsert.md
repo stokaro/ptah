@@ -45,7 +45,7 @@ node := ast.NewUpsert("dbo.users").
     AddUpdateAssignment("updated_at", "source.[updated_at]").
     SetComment("upsert user")
 
-sql, err := renderer.RenderSQL("sqlserver", node)
+sql, err := builtin.RenderSQL("sqlserver", node)
 ```
 
 The generated SQL is:

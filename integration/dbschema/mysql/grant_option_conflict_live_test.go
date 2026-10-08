@@ -8,10 +8,12 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/schemadiff"
@@ -68,7 +70,7 @@ func TestGrantOptionConflict_LiveRefusesBeforeGranting(t *testing.T) {
 
 			live, err := conn.Reader().ReadSchemaContext(c.Context())
 			c.Assert(err, qt.IsNil)
-			diff, err := schemadiff.CompareWithDatabase(c.Context(), conn, desired, live, nil)
+			diff, err := schemadiff.CompareWithDatabase(c.Context(), conn, desired, live, nil, must.Must(builtin.New()))
 
 			c.Assert(err, qt.ErrorMatches, `.*is granted INSERT on TABLE orders WITH GRANT OPTION and SELECT on the same object without it.*`)
 			c.Assert(diff, qt.IsNil)

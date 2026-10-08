@@ -13,6 +13,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/atlasmigrateimport"
 	"ptah.run/internal/atlassource"
@@ -45,13 +46,18 @@ func TestGooseNoTransactionArtifactImportsAppliesAndRollsBack(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { dbschema.CloseAndWarn(dev) })
 
-	generated, err := atlasmigrate.GenerateDiff(context.Background(), dev, atlasmigrate.DiffOptions{
-		Dir:               sourceDir,
-		Desired:           desired,
-		Name:              "widgets",
-		DirFormat:         atlasmigrateimport.FormatGoose,
-		LockTimeout:       time.Second,
-		PlanBidirectional: gooseWholeFileNoTransactionPlan,
+	selected, err := builtin.New()
+	c.Assert(err, qt.IsNil)
+	generated, err := atlasmigrate.GenerateDiff(t.Context(), dev, atlasmigrate.DiffOptions{
+		Runtime:     selected,
+		Dir:         sourceDir,
+		Desired:     desired,
+		Name:        "widgets",
+		DirFormat:   atlasmigrateimport.FormatGoose,
+		LockTimeout: time.Second,
+		PlanBidirectional: func(ctx context.Context, input atlasmigrate.BidirectionalPlanInput) (atlasmigrate.BidirectionalPlan, error) {
+			return gooseWholeFileNoTransactionPlan(ctx, selected, input)
+		},
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(generated.MigrationPaths, qt.HasLen, 1)
@@ -68,7 +74,7 @@ func TestGooseNoTransactionArtifactImportsAppliesAndRollsBack(t *testing.T) {
 	parser, err := importer.ParserByName("goose")
 	c.Assert(err, qt.IsNil)
 
-	result, err := importer.Import(os.DirFS(sourceDir), parser, out, importer.Options{})
+	result, err := importer.Import(c.Context(), os.DirFS(sourceDir), parser, out, importer.Options{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Files, qt.HasLen, 2)
 	c.Assert(result.Remapped, qt.IsTrue)
@@ -99,9 +105,11 @@ func TestGooseNoTransactionArtifactImportsAppliesAndRollsBack(t *testing.T) {
 }
 
 func gooseWholeFileNoTransactionPlan(
+	ctx context.Context,
+	runtime generator.Runtime,
 	input atlasmigrate.BidirectionalPlanInput,
 ) (atlasmigrate.BidirectionalPlan, error) {
-	planned, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
+	planned, err := generator.PlanBidirectionalSchemaDiff(ctx, generator.BidirectionalSchemaPlanOptions{
 		Diff:          input.Diff,
 		DesiredSchema: input.DesiredSchema,
 		CurrentSchema: input.CurrentSchema,
@@ -111,7 +119,7 @@ func gooseWholeFileNoTransactionPlan(
 			Create: generator.ConcurrentIndexDisabled,
 			Drop:   generator.ConcurrentIndexDisabled,
 		},
-	})
+		Runtime: runtime})
 	if err != nil {
 		return atlasmigrate.BidirectionalPlan{}, err
 	}

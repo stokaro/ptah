@@ -16,9 +16,12 @@ package undecidednote
 import (
 	"fmt"
 	"io"
+	"slices"
+	"strings"
 
 	"ptah.run/core/coverage"
 	"ptah.run/migration/safety"
+	"ptah.run/migration/schemadiff"
 )
 
 // FindingCategory is the category [Findings] reports undecided objects under.
@@ -28,20 +31,26 @@ const FindingCategory = "undecided"
 // finding, counting them, at [safety.Warning]. It is empty when nothing was
 // withheld.
 //
-// The severity is a warning because the check could not look, which a reader
-// has to act on, and because nothing it could not see is a destructive change:
-// a withheld object is one Ptah would create. So a drift threshold of "all"
-// fails on one, and a threshold of "destructive" does not.
-func Findings(undecided []coverage.Object) []safety.Finding {
-	if len(undecided) == 0 {
+// The severity describes missing evidence. It does not classify any withheld
+// operation as safe. A drift threshold of "all" fails on a limit; a threshold
+// of "destructive" continues to count only established destructive changes.
+func Findings(undecided schemadiff.Diagnostics) []safety.Finding {
+	if undecided.Empty() {
 		return nil
 	}
-	return []safety.Finding{{Category: FindingCategory, Count: len(undecided), Severity: safety.Warning}}
+	return []safety.Finding{{Category: FindingCategory, Count: undecided.Count(), Severity: safety.Warning}}
 }
 
 // Summary says how many declared objects could not be decided, as a clause a
 // sentence can carry: "1 declared object could not be decided".
-func Summary(count int) string {
+func Summary(undecided schemadiff.Diagnostics) string {
+	count := undecided.Count()
+	if len(undecided.Features) > 0 {
+		if count == 1 {
+			return "1 comparison limit remains unresolved"
+		}
+		return fmt.Sprintf("%d comparison limits remain unresolved", count)
+	}
 	noun := "objects"
 	if count == 1 {
 		noun = "object"
@@ -62,14 +71,14 @@ func Summary(count int) string {
 // may be nil, which drops the report.
 func Report(
 	diagnostics io.Writer,
-	undecided []coverage.Object,
+	undecided schemadiff.Diagnostics,
 	currentDescription,
 	desiredDescription string,
 ) {
 	if diagnostics == nil {
 		return
 	}
-	for _, object := range undecided {
+	for _, object := range undecided.Common {
 		_, _ = fmt.Fprintf(diagnostics,
 			"Warning: %s %q is declared by %s but no change was planned for it:"+
 				" %s, so this comparison cannot tell it apart from one that already exists,"+
@@ -77,6 +86,43 @@ func Report(
 			object.Kind, object.Name, desiredDescription,
 			Cause(object, currentDescription))
 	}
+	for _, entry := range Entries(schemadiff.Diagnostics{Features: undecided.Features}, currentDescription) {
+		_, _ = fmt.Fprintf(diagnostics, "Warning: %s %s could not be compared between %s and %s: %s.\n",
+			entry.Kind, entry.Name, currentDescription, desiredDescription, entry.Reason)
+	}
+}
+
+// Entry is a display-only row. Machine reports retain [schemadiff.Diagnostics]
+// with its structured subjects; these strings must never be used as keys.
+type Entry struct {
+	Kind   string
+	Name   string
+	Reason string
+}
+
+// Entries formats and sorts knowledge limits for text and HTML reports.
+// Quoted components keep a literal dot distinct from a qualification boundary.
+func Entries(undecided schemadiff.Diagnostics, currentDescription string) []Entry {
+	entries := make([]Entry, 0, undecided.Count())
+	for _, object := range undecided.Common {
+		entries = append(entries, Entry{Kind: string(object.Kind), Name: object.Name, Reason: Cause(object, currentDescription)})
+	}
+	for _, diagnostic := range undecided.Features {
+		ref := diagnostic.Subject
+		name := fmt.Sprintf("(catalog %q, schema %q, parent %q, %s %q, signature %q)",
+			ref.Catalog.Source, ref.Schema.Source, ref.Parent.Source, ref.Kind, ref.Name.Source, ref.Signature)
+		entries = append(entries, Entry{Kind: string(diagnostic.Kind), Name: name, Reason: diagnostic.Reason})
+	}
+	slices.SortFunc(entries, func(a, b Entry) int {
+		if compared := strings.Compare(a.Kind, b.Kind); compared != 0 {
+			return compared
+		}
+		if compared := strings.Compare(a.Name, b.Name); compared != 0 {
+			return compared
+		}
+		return strings.Compare(a.Reason, b.Reason)
+	})
+	return entries
 }
 
 // Cause says why the current side could not decide the object, in the most

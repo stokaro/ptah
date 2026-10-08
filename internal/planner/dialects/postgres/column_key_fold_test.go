@@ -1,12 +1,15 @@
 package postgres_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/renderer"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -51,12 +54,15 @@ func TestPlanner_ColumnKeyOverThePrimaryKeyFollowsTheTable(t *testing.T) {
 			c := qt.New(t)
 			desired := columnKeyTable(test.unique)
 			diff := &difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableChanges{difftypes.TableCreationFor(desired, desired.Tables[0], "c")},
+				TablesAdded: difftypes.TableChanges{difftypes.TableCreationFor(desired, desired.Tables[0], "c", identifier.ForDialect("postgres"))},
 			}
 
-			nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
+			nodes, err := postgres.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(diff, desired),
+			)
 			c.Assert(err, qt.IsNil)
-			sql, err := renderer.RenderSQL("postgres", nodes...)
+			sql, err := builtin.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(sql, qt.Contains, test.want)

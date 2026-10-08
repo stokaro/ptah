@@ -84,7 +84,7 @@ func TestSchemaInspectJSONNeverInventsTheConnectedSchema(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			report := atlasreport.NewSchemaInspectReport(
+			report := newInspectReport(c,
 				&schemamodel.Database{},
 				test.schema,
 				test.info,
@@ -148,7 +148,7 @@ func TestSchemaInspectJSONReportsABackedUniqueConstraintOnce(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			report := atlasreport.NewSchemaInspectReport(
+			report := newInspectReport(c,
 				&schemamodel.Database{},
 				&catalog.Database{
 					Schemas: []catalog.Schema{{Name: "main"}},

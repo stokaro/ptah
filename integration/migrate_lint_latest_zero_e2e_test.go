@@ -161,6 +161,7 @@ func TestMigrationLintReportAtlasExplicitZeroAllowsExplicitGitSelectorE2E(t *tes
 	c := qt.New(t)
 
 	_, err := migrationlintreport.Build(t.Context(), migrationlintreport.Options{
+		Runtime:       lintFeatureRuntime(c),
 		Dir:           t.TempDir(),
 		FS:            fstest.MapFS{"1_init.sql": {Data: []byte("CREATE TABLE users (id int);\n")}},
 		DirFormat:     string(migrationfile.DirFormatAtlas),

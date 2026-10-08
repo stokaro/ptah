@@ -9,8 +9,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/migrationfile"
 )
@@ -38,8 +40,7 @@ type Widget struct {
 }`)
 	output := makeDir(c, root, "migrations")
 
-	files, err := generator.GenerateMigration(context.Background(), generator.GenerateMigrationOptions{
-		GoEntitiesDir: entities,
+	files, err := generator.GenerateMigration(context.Background(), generator.GenerateMigrationOptions{Runtime: must.Must(builtin.New()), GoEntitiesDir: entities,
 		DatabaseURL:   "sqlite://" + filepath.Join(root, "target.db"),
 		MigrationName: "create_widgets",
 		OutputDir:     output,
@@ -80,10 +81,9 @@ type Widget struct {
 }`)
 	output := makeDir(c, root, "migrations")
 
-	files, err := generator.GenerateMigration(context.Background(), generator.GenerateMigrationOptions{
-		GoEntitiesDir: entities,
-		DatabaseURL:   "sqlite://" + filepath.Join(root, "target.db"),
-		OutputDir:     output,
+	files, err := generator.GenerateMigration(context.Background(), generator.GenerateMigrationOptions{Runtime: must.Must(builtin.New()), GoEntitiesDir: entities,
+		DatabaseURL: "sqlite://" + filepath.Join(root, "target.db"),
+		OutputDir:   output,
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -109,8 +109,7 @@ func TestGenerateMigration_AMissingEntitiesDirectoryIsRefusedByName(t *testing.T
 	root := t.TempDir()
 	missing := filepath.Join(root, "no-such-entities")
 
-	_, err := generator.GenerateMigration(context.Background(), generator.GenerateMigrationOptions{
-		GoEntitiesDir: missing,
+	_, err := generator.GenerateMigration(context.Background(), generator.GenerateMigrationOptions{Runtime: must.Must(builtin.New()), GoEntitiesDir: missing,
 		DatabaseURL:   "sqlite://" + filepath.Join(root, "target.db"),
 		MigrationName: "create_widgets",
 		OutputDir:     makeDir(c, root, "migrations"),
@@ -128,8 +127,7 @@ func TestPlanMigrationRejectsMalformedSQLiteVirtualDropToggleBeforeDesiredSchema
 	c := qt.New(t)
 	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
 
-	_, err := generator.PlanMigration(context.Background(), generator.GenerateMigrationOptions{
-		GoEntitiesDir: filepath.Join(t.TempDir(), "missing"),
+	_, err := generator.PlanMigration(context.Background(), generator.GenerateMigrationOptions{Runtime: must.Must(builtin.New()), GoEntitiesDir: filepath.Join(t.TempDir(), "missing"),
 		DatabaseURL:   "sqlite://" + filepath.Join(t.TempDir(), "target.db"),
 		MigrationName: "toggle-order",
 		OutputDir:     t.TempDir(),
@@ -145,8 +143,7 @@ func TestPlanMigrationRejectsMalformedSQLiteVirtualDropToggleBeforeOutputPath(t 
 	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
 	root := t.TempDir()
 
-	_, err := generator.PlanMigration(context.Background(), generator.GenerateMigrationOptions{
-		DatabaseURL:       "sqlite://" + filepath.Join(t.TempDir(), "target.db"),
+	_, err := generator.PlanMigration(context.Background(), generator.GenerateMigrationOptions{Runtime: must.Must(builtin.New()), DatabaseURL: "sqlite://" + filepath.Join(t.TempDir(), "target.db"),
 		MigrationName:     "toggle-order",
 		OutputDir:         filepath.Join(root, "..", "outside"),
 		AllowedOutputRoot: root,
@@ -168,8 +165,7 @@ func TestPlanMigrationRejectsMalformedSQLiteConnectionToggleBeforeOutputPath(t *
 	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
 	root := t.TempDir()
 
-	_, err = generator.PlanMigration(context.Background(), generator.GenerateMigrationOptions{
-		DBConn:            connection,
+	_, err = generator.PlanMigration(context.Background(), generator.GenerateMigrationOptions{Runtime: must.Must(builtin.New()), DBConn: connection,
 		MigrationName:     "toggle-order",
 		OutputDir:         filepath.Join(root, "..", "outside"),
 		AllowedOutputRoot: root,
@@ -185,8 +181,7 @@ func TestPlanMigrationDoesNotApplySQLiteToggleToPostgresOutputPath(t *testing.T)
 	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
 	root := t.TempDir()
 
-	_, err := generator.PlanMigration(context.Background(), generator.GenerateMigrationOptions{
-		DatabaseURL:       "postgres://localhost/database",
+	_, err := generator.PlanMigration(context.Background(), generator.GenerateMigrationOptions{Runtime: must.Must(builtin.New()), DatabaseURL: "postgres://localhost/database",
 		MigrationName:     "toggle-isolation",
 		OutputDir:         filepath.Join(root, "..", "outside"),
 		AllowedOutputRoot: root,
@@ -231,9 +226,8 @@ type TestTable struct {
 
 	// Test with absolute path (like integration tests use)
 	// This should NOT fail with "invalid argument" error
-	opts := generator.GenerateMigrationOptions{
-		GoEntitiesDir: entitiesDir, // Absolute path like /tmp/ptah_integration_test_*/entities
-		GoEntitiesFS:  nil,         // This should trigger the default filesystem setup
+	opts := generator.GenerateMigrationOptions{Runtime: must.Must(builtin.New()), GoEntitiesDir: entitiesDir, // Absolute path like /tmp/ptah_integration_test_*/entities
+		GoEntitiesFS:  nil, // This should trigger the default filesystem setup
 		DatabaseURL:   "memory://test",
 		MigrationName: "test_filesystem_path",
 		OutputDir:     migrationsDir,
@@ -303,9 +297,8 @@ type TestTable struct {
 	c.Assert(err, qt.IsNil)
 
 	// Test with relative path
-	opts := generator.GenerateMigrationOptions{
-		GoEntitiesDir: entitiesDir, // Relative path like "./entities"
-		GoEntitiesFS:  nil,         // This should trigger the default filesystem setup
+	opts := generator.GenerateMigrationOptions{Runtime: must.Must(builtin.New()), GoEntitiesDir: entitiesDir, // Relative path like "./entities"
+		GoEntitiesFS:  nil, // This should trigger the default filesystem setup
 		DatabaseURL:   "memory://test",
 		MigrationName: "test_relative_path",
 		OutputDir:     migrationsDir,

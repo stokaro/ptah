@@ -5,6 +5,7 @@
 package dbschematogo
 
 import (
+	"context"
 	"maps"
 	"slices"
 	"strings"
@@ -13,9 +14,11 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/catalogfield"
+	"ptah.run/internal/convert/features"
 	"ptah.run/internal/indexbacking"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/pgname"
@@ -30,13 +33,15 @@ import (
 // dialect names the server the catalog was read from, and decides which
 // constraint kinds that server enforces with an index the reader also reports;
 // [ptah.run/internal/indexbacking] holds that answer for this converter
-// and for migration/schemadiff alike. It may be empty, because
-// [catalog.Database] carries no dialect and the stable
-// atlascompat.DBSchemaToGoSchema takes none. An empty dialect answers only what
-// every server does, which is what this path has always produced -- stated at
-// the shared declaration rather than implied by an arm nobody wrote.
-func ConvertDBSchemaToGoSchema(dbSchema *catalog.Database, dialect string) *schemamodel.Database {
+// and for migration/schemadiff alike. The caller must supply a target selected
+// by runtime. Feature conversion runs as a batch and propagates cancellation
+// and service errors without publishing a partial schema.
+func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, dialect string, runtime schemaext.ConversionRuntime) (*schemamodel.Database, error) {
+	if dbSchema == nil {
+		dbSchema = &catalog.Database{}
+	}
 	database := newDatabase()
+	database.Facets = dbSchema.Facets
 	convertSchemas(database, dbSchema.Schemas)
 	convertEnums(database, dbSchema.Enums)
 
@@ -89,12 +94,21 @@ func ConvertDBSchemaToGoSchema(dbSchema *catalog.Database, dialect string) *sche
 	// conversion after it was recorded (stokaro/ptah#1276).
 	database.NotDescribed = dbSchema.NotDescribed
 
-	return database
+	if err := features.RequireFacetPreservation(dbSchema.FacetSlots(), database.FacetSlots()); err != nil {
+		return nil, err
+	}
+	objects, coverage, err := features.Convert(ctx, runtime, dialect, schemaext.Observed, schemaext.Desired, dbSchema.FeatureObjects, dbSchema.FeatureCoverage, database.FacetSlots())
+	if err != nil {
+		return nil, err
+	}
+	database.FeatureObjects, database.FeatureCoverage = objects, coverage
+	return database, nil
 }
 
 func convertSchemas(database *schemamodel.Database, schemas []catalog.Schema) {
 	for _, schema := range schemas {
 		database.Schemas = append(database.Schemas, schemamodel.Schema{
+			Facets:  schema.Facets,
 			Name:    schema.Name,
 			Comment: schema.Comment,
 			Charset: schema.Charset,
@@ -141,6 +155,7 @@ func newDatabase() *schemamodel.Database {
 func convertEnums(database *schemamodel.Database, dbEnums []catalog.Enum) {
 	for _, dbEnum := range dbEnums {
 		database.Enums = append(database.Enums, schemamodel.Enum{
+			Facets:  dbEnum.Facets,
 			Name:    dbEnum.Name,
 			Schema:  dbEnum.Schema,
 			Values:  dbEnum.Values,
@@ -163,6 +178,7 @@ func convertTablesAndFields(
 		primaryKey := tablePrimaryKeys[dbTable.QualifiedName()]
 
 		table := schemamodel.Table{
+			Facets:     dbTable.Facets,
 			StructName: structName,
 			Name:       dbTable.Name,
 			Schema:     dbTable.Schema,
@@ -192,7 +208,6 @@ func convertTablesAndFields(
 			RowTTL:            dbTable.RowTTL.Clone(),
 			RowDeletionPolicy: dbTable.RowDeletionPolicy.Clone(),
 			YDBColumnFamilies: ast.CloneYDBColumnFamilies(dbTable.YDBColumnFamilies),
-			Changefeeds:       ast.CloneChangefeeds(dbTable.Changefeeds),
 			YDBPartitioning:   dbTable.YDBPartitioning.Clone(),
 			YDBColumnTable:    dbTable.YDBColumnTable.Clone(),
 			Overrides:         tableStorageOverrides(dbTable),
@@ -308,6 +323,7 @@ func convertIndexes(
 		}
 
 		index := schemamodel.Index{
+			Facets:        dbIndex.Facets,
 			StructName:    structNameForTable(tableStructNames, dbIndex.QualifiedTableName(), dbIndex.TableName),
 			Name:          dbIndex.Name,
 			TableName:     dbIndex.QualifiedTableName(),
@@ -424,6 +440,7 @@ func convertRLSPolicies(
 func convertFunctions(database *schemamodel.Database, dbFunctions []catalog.Function) {
 	for _, dbFunction := range dbFunctions {
 		function := schemamodel.Function{
+			Facets:     dbFunction.Facets,
 			StructName: "", // Functions are not associated with specific structs in DB schema
 			Name:       dbFunction.QualifiedName(),
 			// The kind travels with the routine. Dropping it here would turn
@@ -446,6 +463,7 @@ func convertFunctions(database *schemamodel.Database, dbFunctions []catalog.Func
 func convertUserTypes(database *schemamodel.Database, dbSchema *catalog.Database) {
 	for _, domain := range dbSchema.Domains {
 		converted := schemamodel.Domain{
+			Facets:   domain.Facets,
 			Name:     domain.Name,
 			Schema:   domain.Schema,
 			BaseType: domain.BaseType,
@@ -462,6 +480,7 @@ func convertUserTypes(database *schemamodel.Database, dbSchema *catalog.Database
 			fields = append(fields, schemamodel.CompositeField{Name: field.Name, Type: field.Type})
 		}
 		database.CompositeTypes = append(database.CompositeTypes, schemamodel.CompositeType{
+			Facets:  composite.Facets,
 			Name:    composite.Name,
 			Schema:  composite.Schema,
 			Fields:  fields,
@@ -470,6 +489,7 @@ func convertUserTypes(database *schemamodel.Database, dbSchema *catalog.Database
 	}
 	for _, rangeType := range dbSchema.Ranges {
 		database.Ranges = append(database.Ranges, schemamodel.Range{
+			Facets:  rangeType.Facets,
 			Name:    rangeType.Name,
 			Schema:  rangeType.Schema,
 			Subtype: rangeType.Subtype,
@@ -493,6 +513,7 @@ func convertUserTypes(database *schemamodel.Database, dbSchema *catalog.Database
 func convertSequences(database *schemamodel.Database, dbSequences []catalog.Sequence) {
 	for _, dbSequence := range dbSequences {
 		database.Sequences = append(database.Sequences, schemamodel.Sequence{
+			Facets:    dbSequence.Facets,
 			Name:      dbSequence.Name,
 			Schema:    dbSequence.Schema,
 			AsType:    dbSequence.DataType,
@@ -725,6 +746,7 @@ func convertExtendedProperties(
 func convertViews(database *schemamodel.Database, dbViews []catalog.View) {
 	for _, dbView := range dbViews {
 		database.Views = append(database.Views, schemamodel.View{
+			Facets:     dbView.Facets,
 			Name:       dbView.QualifiedName(),
 			Body:       dbView.Body,
 			WithCheck:  sqlutil.CheckOptionRequestsCheck(dbView.CheckOption),
@@ -737,6 +759,7 @@ func convertViews(database *schemamodel.Database, dbViews []catalog.View) {
 func convertMaterializedViews(database *schemamodel.Database, dbViews []catalog.MaterializedView) {
 	for _, dbView := range dbViews {
 		materializedView := schemamodel.MaterializedView{
+			Facets:  dbView.Facets,
 			Name:    dbView.QualifiedName(),
 			Body:    dbView.Body,
 			Comment: dbView.Comment,
@@ -749,6 +772,7 @@ func convertMaterializedViews(database *schemamodel.Database, dbViews []catalog.
 func convertTriggers(database *schemamodel.Database, dbTriggers []catalog.Trigger) {
 	for _, dbTrigger := range dbTriggers {
 		trigger := schemamodel.Trigger{
+			Facets:  dbTrigger.Facets,
 			Name:    dbTrigger.Name,
 			Table:   dbTrigger.QualifiedTable(),
 			Timing:  dbTrigger.Timing,
@@ -807,6 +831,7 @@ func convertRoles(database *schemamodel.Database, dbRoles []catalog.Role, member
 	}
 	for _, dbRole := range dbRoles {
 		role := schemamodel.Role{
+			Facets:      dbRole.Facets,
 			StructName:  "", // Roles are not associated with specific structs in DB schema
 			Name:        dbRole.Name,
 			Login:       dbRole.Login,
@@ -1116,6 +1141,7 @@ func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[str
 	}
 
 	return schemamodel.Constraint{
+		Facets:          dbConstraint.Facets,
 		StructName:      structNameForTable(tableStructNames, dbConstraint.QualifiedTableName(), dbConstraint.TableName),
 		Name:            dbConstraint.Name,
 		Type:            constraintType,

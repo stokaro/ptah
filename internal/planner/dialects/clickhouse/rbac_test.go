@@ -1,13 +1,17 @@
 package clickhouse_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/clickhouse"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -37,7 +41,10 @@ func nodeTypes(nodes []ast.Node) []string {
 }
 
 func planClickHouse(c *qt.C, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	nodes, err := clickhouse.New().GenerateMigrationAST(withDeclaredTables(diff, desired))
+	nodes, err := clickhouse.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredTables(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 	return nodes
 }
@@ -215,7 +222,7 @@ func TestGenerateMigrationAST_ClickHouseRolesArePlannedBeforeTheGrantsThatNameTh
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		TablesAdded:         difftypes.TableCreationsFor(mkDB(), "events"),
+		TablesAdded:         difftypes.TableCreationsFor(mkDB(), identifier.ForDialect("clickhouse"), "events"),
 		RolesAdded:          difftypes.RoleChanges{{Name: "reporting"}},
 		GrantsRemoved:       []difftypes.GrantRef{rbacGrant("DROP")},
 		GrantOptionsRevoked: []difftypes.GrantRef{rbacGrant("ALTER")},

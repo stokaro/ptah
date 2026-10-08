@@ -45,7 +45,7 @@ func parallelCases(n int) []dbtest.Case {
 func TestRunTest_ParallelCasesKeepTheirOwnDatabase(t *testing.T) {
 	c := qt.New(t)
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		Cases: parallelCases(12),
 	})
 
@@ -64,7 +64,7 @@ func TestRunTest_ParallelCasesKeepTheirOwnDatabase(t *testing.T) {
 func TestRunTest_AParallelReportKeepsDocumentOrder(t *testing.T) {
 	c := qt.New(t)
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		Cases: parallelCases(12),
 	})
 
@@ -85,7 +85,7 @@ func TestRunTest_AParallelReportKeepsDocumentOrder(t *testing.T) {
 func TestRunTest_EveryParallelCaseProducesAResult(t *testing.T) {
 	c := qt.New(t)
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		Cases: parallelCases(12),
 	})
 
@@ -105,7 +105,7 @@ func TestRunTest_EveryParallelCaseProducesAResult(t *testing.T) {
 func TestRunTest_ParallelAndSerialCasesMix(t *testing.T) {
 	c := qt.New(t)
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		Cases: []dbtest.Case{
 			{Name: "first", Parallel: true, Steps: []dbtest.Step{{Exec: "CREATE TABLE a (id INTEGER)"}}},
 			{Name: "second", Steps: []dbtest.Step{{Exec: "CREATE TABLE a (id INTEGER)"}}},
@@ -142,7 +142,7 @@ func TestRunTest_ParallelAndSerialCasesMix(t *testing.T) {
 func TestRunTest_ParallelAgainstANamedServerIsolatesEachCase(t *testing.T) {
 	c := qt.New(t)
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		DBURL: "sqlite://" + filepath.Join(t.TempDir(), "server.db"),
 		Cases: parallelCases(6),
 	})
@@ -162,7 +162,7 @@ func TestRunTest_ParallelAgainstANamedServerIsolatesEachCase(t *testing.T) {
 func TestRunTest_ParallelIsRefusedWhereItCannotBeIsolated_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		DBURL: "clickhouse://localhost:9000/dev",
 		Cases: []dbtest.Case{
 			{Name: "ordinary", Steps: []dbtest.Step{{Exec: "SELECT 1"}}},
@@ -184,7 +184,7 @@ func TestRunTest_ParallelIsRefusedWhereItCannotBeIsolated_FailurePath(t *testing
 func TestRunTest_ASharedDatabaseStillRunsSerialCases(t *testing.T) {
 	c := qt.New(t)
 
-	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Runtime: selectedRuntime(c),
 		DBURL: "sqlite://" + t.TempDir() + "/shared.db",
 		Cases: []dbtest.Case{
 			{Name: "ordinary", Steps: []dbtest.Step{{Exec: "SELECT 1"}}},

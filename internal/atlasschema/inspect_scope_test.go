@@ -28,7 +28,7 @@ func TestInspect_EmptyDatabaseReportsItsSchema(t *testing.T) {
 	conn := connectSQLite(c, filepath.Join(t.TempDir(), "inspect-empty.db"))
 	defer dbschema.CloseAndWarn(conn)
 
-	renderedResult, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
+	renderedResult, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{Runtime: inspectFeatureRuntime(c),
 		Format: "json",
 	})
 
@@ -48,7 +48,7 @@ func TestInspect_EmptyDatabaseRendersItsSchemaBlock(t *testing.T) {
 	conn := connectSQLite(c, filepath.Join(t.TempDir(), "inspect-empty-hcl.db"))
 	defer dbschema.CloseAndWarn(conn)
 
-	renderedResult, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
+	renderedResult, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{Runtime: inspectFeatureRuntime(c),
 		Format: "hcl",
 	})
 
@@ -68,7 +68,7 @@ func TestInspect_SQLOutputHasNoStatementForTheDefaultNamespace(t *testing.T) {
 	defer dbschema.CloseAndWarn(conn)
 	createInspectSchema(c, conn)
 
-	renderedResult, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
+	renderedResult, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{Runtime: inspectFeatureRuntime(c),
 		Format: "sql",
 	})
 

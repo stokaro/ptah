@@ -22,6 +22,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/goschema"
+	"ptah.run/core/manageddata"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dataorder"
@@ -404,13 +405,13 @@ func readColumnCatalog(
 // the file is the answer.
 //
 // The two forms resolve to the same values for the same declaration, which is
-// [schemamodel.ResolveManagedRows]'s contract, so an artifact-sourced run and a
+// [manageddata.ResolveRows]'s contract, so an artifact-sourced run and a
 // root-sourced run of one declaration report the same drift.
 func desiredRows(rootDir string, md schemamodel.ManagedData) ([]map[string]any, error) {
 	if md.Rows != nil {
-		return schemamodel.ResolveManagedRows(md)
+		return manageddata.ResolveRows(md)
 	}
-	return schemamodel.LoadManagedRows(rootDir, md)
+	return manageddata.LoadRows(rootDir, md)
 }
 
 // schemaScope returns the schema allow-list to introspect for a managed table:

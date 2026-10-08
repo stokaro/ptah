@@ -10,12 +10,14 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/sijms/go-ora/v3" // registers the Oracle driver for database/sql
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -63,9 +65,12 @@ func TestOracleRoutinesPlanAndConvergeE2E(t *testing.T) {
 
 	before, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, before, nil)
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, before, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities},
+	)
 	c.Assert(err, qt.IsNil)
 
 	// Only the statements naming these three routines are executed. The
@@ -114,7 +119,7 @@ func TestOracleRoutinesPlanAndConvergeE2E(t *testing.T) {
 	// The loop closes: a second comparison against the same declaration plans
 	// nothing. This is the assertion a missing reader, a missing fold or a
 	// mis-taken body all fail.
-	settled, err := schemadiff.CompareWithDatabase(ctx, conn, declared, after, nil)
+	settled, err := schemadiff.CompareWithDatabase(ctx, conn, declared, after, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	c.Assert(settled.FunctionsAdded, qt.HasLen, 0)
 	c.Assert(settled.FunctionsRemoved, qt.HasLen, 0)
@@ -123,9 +128,12 @@ func TestOracleRoutinesPlanAndConvergeE2E(t *testing.T) {
 
 	// And the removal direction, whose verb has to match the object: measured,
 	// DROP FUNCTION on a procedure answers ORA-04043.
-	teardown, err := schemadiff.CompareWithDatabase(ctx, conn, &schemamodel.Database{}, after, nil)
+	teardown, err := schemadiff.CompareWithDatabase(ctx, conn, &schemamodel.Database{}, after, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	teardownStatements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(teardown, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
+	teardownStatements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		teardown, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities},
+	)
 	c.Assert(err, qt.IsNil)
 	drops := oracleStatementsNamingRoutines(teardownStatements)
 	c.Assert(drops, qt.HasLen, 3)
@@ -262,9 +270,12 @@ func TestOracleTriggerCompilesE2E(t *testing.T) {
 
 	live, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, live, nil)
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, live, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities},
+	)
 	c.Assert(err, qt.IsNil)
 
 	triggers := oracleStatementsNaming(statements, "CREATE TRIGGER")

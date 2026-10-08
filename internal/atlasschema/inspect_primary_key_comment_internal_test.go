@@ -8,9 +8,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlschema"
 	"ptah.run/migration/schemadiff"
 )
@@ -42,7 +44,7 @@ func TestRenderInspectSchema_PreservesPrimaryKeyComment(t *testing.T) {
 					}},
 				}
 
-				result, err := renderInspectSchema(current, catalog.ServerInfo{Dialect: dialect}, InspectOptions{Format: "sql"})
+				result, err := renderInspectSchema(c.Context(), current, catalog.ServerInfo{Dialect: dialect}, InspectOptions{Runtime: inspectFeatureRuntime(c), Format: "sql"})
 
 				c.Assert(err, qt.IsNil)
 				c.Assert(result.Rendered, qt.Contains, "COMMENT 'account identity'")
@@ -52,7 +54,7 @@ func TestRenderInspectSchema_PreservesPrimaryKeyComment(t *testing.T) {
 				c.Assert(result.Schema.Tables[0].PrimaryKeyBlockSize, qt.Equals, test.size)
 				desired, _, err := sqlschema.Read([]byte(result.Rendered), dialect)
 				c.Assert(err, qt.IsNil)
-				c.Assert(schemadiff.CompareWithDialect(&desired, current, dialect).HasChanges(), qt.IsFalse)
+				c.Assert(must.Must(schemadiff.CompareWithDialect(t.Context(), &desired, current, dialect, must.Must(builtin.New()))).HasChanges(), qt.IsFalse)
 			})
 		}
 	}

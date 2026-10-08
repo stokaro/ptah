@@ -81,7 +81,7 @@ func TestLiquibaseImportEndToEnd(t *testing.T) {
 	c := qt.New(t)
 	out := t.TempDir()
 
-	result, err := importer.Import(liquibaseFS(), nil, out, importer.Options{})
+	result, err := importer.Import(c.Context(), liquibaseFS(), nil, out, importer.Options{})
 	c.Assert(err, qt.IsNil)
 	// 3 changesets -> 3 up + 3 down Ptah files.
 	c.Assert(result.Files, qt.HasLen, 6)

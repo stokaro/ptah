@@ -11,10 +11,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
-	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/cmdutil"
@@ -35,6 +35,7 @@ import (
 	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/migrationfile"
+	"ptah.run/migration/schemadiff"
 )
 
 const (
@@ -419,6 +420,10 @@ func resolveGenerateDatabases(
 }
 
 func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
+	runtime, err := builtin.New()
+	if err != nil {
+		return err
+	}
 	variables, err := resolveGenerateVariables()
 	if err != nil {
 		return err
@@ -628,6 +633,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	}
 
 	generateOpts := generator.GenerateMigrationOptions{
+		Runtime: runtime,
 		CompareOptions: dbcli.CompareOptionsIgnoringExtensions(
 			cmd, ignoreExtensions, projectCfg, nil,
 		),
@@ -680,12 +686,12 @@ type generateOutcome struct {
 	// current names the side the comparison read: the target, or in a replay
 	// the replayed directory.
 	current   string
-	undecided []coverage.Object
+	undecided schemadiff.Diagnostics
 }
 
 // collect is [generator.GenerateMigrationOptions.OnUndecided].
-func (o *generateOutcome) collect(objects []coverage.Object) {
-	o.undecided = objects
+func (o *generateOutcome) collect(objects schemadiff.Diagnostics) {
+	o.undecided = objects.Clone()
 }
 
 // report explains each withheld object once planning is over, whether or not
@@ -720,10 +726,10 @@ func (o *generateOutcome) report(
 // It says the schema is synced only when the comparison withheld nothing. With
 // an undecided object the read did not look at something the desired schema
 // declares, and "synced" would claim a check that did not run.
-func reportNothingToGenerate(out io.Writer, targetURL string, undecided []coverage.Object) {
-	if len(undecided) > 0 {
+func reportNothingToGenerate(out io.Writer, targetURL string, undecided schemadiff.Diagnostics) {
+	if !undecided.Empty() {
 		fmt.Fprintf(out, "No migration files generated for %s, but %s.\n",
-			dburldisplay.Format(targetURL), undecidednote.Summary(len(undecided)))
+			dburldisplay.Format(targetURL), undecidednote.Summary(undecided))
 		return
 	}
 	fmt.Fprintf(out, "Schema is synced with %s, no migration files generated.\n",

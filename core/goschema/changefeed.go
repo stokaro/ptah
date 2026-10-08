@@ -9,7 +9,9 @@ import (
 	ptahast "ptah.run/core/ast"
 	"ptah.run/core/goschema/internal/parseutils"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/ydbchangefeed"
 )
 
@@ -18,7 +20,7 @@ import (
 type pendingChangefeed struct {
 	structName string
 	table      string
-	spec       ptahast.ChangefeedSpec
+	spec       ydbschema.ChangefeedSpec
 	ctx        annotationErrorContext
 }
 
@@ -108,13 +110,13 @@ func (s *schemaParseState) attachChangefeeds() error {
 			return err
 		}
 		table := &s.tableDirectives[index]
-		if slices.ContainsFunc(table.Changefeeds, func(have ptahast.ChangefeedSpec) bool {
-			return have.Name == pending.spec.Name
-		}) {
-			return s.placementError(pending.ctx, "ptah:schema:changefeed",
-				fmt.Sprintf("table %q declares changefeed %q twice", table.Name, pending.spec.Name))
+		s.featureObjects, err = s.featureObjects.With(ydbschema.DesiredObject(table.Schema, table.Name, pending.spec))
+		if errors.Is(err, schemaext.ErrDuplicate) {
+			return s.placementError(pending.ctx, "ptah:schema:changefeed", fmt.Sprintf("table %q declares changefeed %q twice", table.Name, pending.spec.Name))
 		}
-		table.Changefeeds = append(table.Changefeeds, pending.spec)
+		if err != nil {
+			return err
+		}
 	}
 	for _, pending := range s.consumers {
 		index, err := s.changefeedTable(pending.structName, pending.table, pending.ctx, "ptah:schema:changefeed:consumer")
@@ -122,17 +124,28 @@ func (s *schemaParseState) attachChangefeeds() error {
 			return err
 		}
 		table := &s.tableDirectives[index]
-		feed := slices.IndexFunc(table.Changefeeds, func(have ptahast.ChangefeedSpec) bool {
-			return have.Name == pending.changefeed
-		})
-		if feed < 0 {
-			return s.placementError(pending.ctx, "ptah:schema:changefeed:consumer",
-				fmt.Sprintf("table %q declares no changefeed %q for consumer %q", table.Name, pending.changefeed,
-					pending.consumer.Name))
+		ref := ydbschema.ChangefeedRef(table.Schema, table.Name, pending.changefeed)
+		object, found, err := s.featureObjects.Get(ref)
+		if err != nil {
+			return err
 		}
-		table.Changefeeds[feed].Consumers = append(table.Changefeeds[feed].Consumers, pending.consumer)
+		if !found {
+			return s.placementError(pending.ctx, "ptah:schema:changefeed:consumer",
+				fmt.Sprintf("table %q declares no changefeed %q for consumer %q", table.Name, pending.changefeed, pending.consumer.Name))
+		}
+		value, ok := object.Value.(*ydbschema.DesiredChangefeed)
+		if !ok {
+			return fmt.Errorf("%w: changefeed consumer requires a desired changefeed", schemaext.ErrInvalidValue)
+		}
+		value.Spec.Consumers = append(value.Spec.Consumers, pending.consumer)
+		s.featureObjects, err = s.featureObjects.Replace(object)
+		if err != nil {
+			return err
+		}
 	}
-	return nil
+	var err error
+	s.featureCoverage, err = ydbschema.ChangefeedCoverage(schemaext.Desired, nil)
+	return err
 }
 
 // changefeedTable finds the table a changefeed annotation belongs to: the one

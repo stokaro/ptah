@@ -1,12 +1,14 @@
 package schemadiff_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mysql"
 	"ptah.run/migration/schemadiff"
 )
@@ -22,7 +24,7 @@ func TestCompare_FieldLevelForeignKeyActionDrift_MySQL(t *testing.T) {
 	c := qt.New(t)
 
 	gen := exportsSchema("SET NULL")
-	diff := schemadiff.CompareWithDialect(gen, exportsDBSchema("NO ACTION"), "mysql")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), gen, exportsDBSchema("NO ACTION"), "mysql", must.Must(builtin.New())))
 	c.Assert(diff.HasChanges(), qt.IsTrue)
 	c.Assert(diff.ConstraintsAdded.Names(), qt.Contains, "fk_export_file")
 	c.Assert(diff.ConstraintsRemoved.Names(), qt.Contains, "fk_export_file")
@@ -32,9 +34,12 @@ func TestCompare_FieldLevelForeignKeyActionDrift_MySQL(t *testing.T) {
 	c.Assert(diff.ConstraintsRemoved[0].TableName, qt.Equals, "exports")
 	c.Assert(diff.ConstraintsRemoved[0].Type, qt.Equals, "FOREIGN KEY")
 
-	nodes, err := mysql.New().GenerateMigrationAST(diff)
+	nodes, err := mysql.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("mysql", nodes...)
+	sql, err := builtin.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 
@@ -71,13 +76,13 @@ func TestCompare_FieldLevelForeignKeyActionIdempotency_MySQL(t *testing.T) {
 	for _, dialect := range []string{"mysql", "mariadb"} {
 		t.Run(dialect+" SET NULL is a no-op", func(t *testing.T) {
 			cc := qt.New(t)
-			diff := schemadiff.CompareWithDialect(exportsSchema("SET NULL"), exportsDBSchema("SET NULL"), dialect)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), exportsSchema("SET NULL"), exportsDBSchema("SET NULL"), dialect, must.Must(builtin.New())))
 			cc.Assert(diff.HasChanges(), qt.IsFalse)
 		})
 
 		t.Run(dialect+" empty action vs NO ACTION default is a no-op", func(t *testing.T) {
 			cc := qt.New(t)
-			diff := schemadiff.CompareWithDialect(exportsSchema(""), exportsDBSchema("NO ACTION"), dialect)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), exportsSchema(""), exportsDBSchema("NO ACTION"), dialect, must.Must(builtin.New())))
 			cc.Assert(diff.HasChanges(), qt.IsFalse)
 		})
 	}
@@ -85,7 +90,7 @@ func TestCompare_FieldLevelForeignKeyActionIdempotency_MySQL(t *testing.T) {
 	// MariaDB reports the default action as RESTRICT; InnoDB treats RESTRICT and
 	// NO ACTION identically, so an FK declared without an action must round-trip
 	// to no change against a RESTRICT-reporting database.
-	mariaDiff := schemadiff.CompareWithDialect(exportsSchema(""), exportsDBSchema("RESTRICT"), "mariadb")
+	mariaDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), exportsSchema(""), exportsDBSchema("RESTRICT"), "mariadb", must.Must(builtin.New())))
 	c.Assert(mariaDiff.HasChanges(), qt.IsFalse,
 		qt.Commentf("MariaDB RESTRICT default must fold to NO ACTION; got %+v", mariaDiff))
 }
@@ -100,13 +105,13 @@ func TestCompare_ForeignKeyRestrictIsRealOnPostgres(t *testing.T) {
 
 	// Entity declares ON DELETE RESTRICT, database has the default NO ACTION:
 	// this is a genuine change on PostgreSQL and must be detected.
-	diff := schemadiff.CompareWithDialect(exportsSchema("RESTRICT"), exportsDBSchema("NO ACTION"), "postgres")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), exportsSchema("RESTRICT"), exportsDBSchema("NO ACTION"), "postgres", must.Must(builtin.New())))
 	c.Assert(diff.HasChanges(), qt.IsTrue,
 		qt.Commentf("PostgreSQL RESTRICT != NO ACTION must be detected; got %+v", diff))
 
 	// On MySQL/MariaDB the same pair is intentionally a no-op.
 	for _, dialect := range []string{"mysql", "mariadb"} {
-		mysqlDiff := schemadiff.CompareWithDialect(exportsSchema("RESTRICT"), exportsDBSchema("NO ACTION"), dialect)
+		mysqlDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), exportsSchema("RESTRICT"), exportsDBSchema("NO ACTION"), dialect, must.Must(builtin.New())))
 		c.Assert(mysqlDiff.HasChanges(), qt.IsFalse,
 			qt.Commentf("%s RESTRICT == NO ACTION must be a no-op; got %+v", dialect, mysqlDiff))
 	}

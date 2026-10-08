@@ -11,6 +11,9 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
+
+	"ptah.run/engine/builtin"
 )
 
 // TestConnectContextForSpendsTheBudgetOnTheConnect pins that ConnectTimeout
@@ -47,7 +50,7 @@ func TestConnectContextForSpendsTheBudgetOnTheConnect(t *testing.T) {
 			c := qt.New(t)
 
 			ctx, cancel := connectContextFor(
-				context.Background(), GenerateMigrationOptions{ConnectTimeout: test.timeout})
+				context.Background(), GenerateMigrationOptions{Runtime: must.Must(builtin.New()), ConnectTimeout: test.timeout})
 			defer cancel()
 
 			_, hasDeadline := ctx.Deadline()
@@ -67,7 +70,7 @@ func TestConnectContextForLeavesTheRunUnbounded(t *testing.T) {
 	c := qt.New(t)
 
 	run := context.Background()
-	connect, cancel := connectContextFor(run, GenerateMigrationOptions{ConnectTimeout: time.Second})
+	connect, cancel := connectContextFor(run, GenerateMigrationOptions{Runtime: must.Must(builtin.New()), ConnectTimeout: time.Second})
 	defer cancel()
 
 	_, connectBounded := connect.Deadline()

@@ -22,9 +22,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/migration/migrator"
 )
@@ -302,9 +304,9 @@ func prepareUserTypeRecreatePlan(
 	c.Helper()
 
 	plan, err := atlasschema.PrepareApply(c.Context(), target, atlasschema.ApplyRuntimeOptions{
-		ToURLs: []string{desiredURL},
-		TxMode: migrator.MigrationTxModeFile,
-	})
+		ToURLs:  []string{desiredURL},
+		TxMode:  migrator.MigrationTxModeFile,
+		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 
 	return plan

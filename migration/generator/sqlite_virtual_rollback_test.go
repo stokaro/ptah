@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/envbool/envbooltest"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/migration/generator"
@@ -111,12 +113,12 @@ func TestPlanBidirectionalSchemaDiffGatesTheRollbackItGenerates(t *testing.T) {
 			c := qt.New(t)
 			tt.env(t)
 
-			_, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
-				Diff:          tt.diff,
-				DesiredSchema: tt.desired,
-				CurrentSchema: rollbackFTS4Database(),
-				Dialect:       "sqlite",
-			})
+			_, err := generator.PlanBidirectionalSchemaDiff(t.Context(),
+				generator.BidirectionalSchemaPlanOptions{Runtime: must.Must(builtin.New()), Diff: tt.diff,
+					DesiredSchema: tt.desired,
+					CurrentSchema: rollbackFTS4Database(),
+					Dialect:       "sqlite",
+				})
 
 			c.Assert(err != nil, qt.Equals, tt.wantErr)
 			for _, fragment := range tt.wantContains {

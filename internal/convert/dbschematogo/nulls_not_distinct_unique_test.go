@@ -4,7 +4,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -19,7 +21,7 @@ func TestConvert_KeepsAColumnsUniqueThatTreatsNullsAsEqual(t *testing.T) {
 	schema := uniqueSchema("customers_email_key")
 	schema.Constraints[0].NullsDistinct = new(false)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(schema, "")
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), schema, "postgres", must.Must(builtin.New())))
 
 	c.Assert(database.Constraints, qt.HasLen, 1)
 	c.Assert(database.Constraints[0].Name, qt.Equals, "customers_email_key")
@@ -34,7 +36,7 @@ func TestConvert_LeavesAColumnsUniqueThatTreatsNullsAsDistinctToTheColumn(t *tes
 	schema := uniqueSchema("customers_email_key")
 	schema.Constraints[0].NullsDistinct = new(true)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(schema, "")
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), schema, "postgres", must.Must(builtin.New())))
 
 	c.Assert(database.Constraints, qt.HasLen, 0)
 	c.Assert(emailField(c, database).Unique, qt.IsTrue)

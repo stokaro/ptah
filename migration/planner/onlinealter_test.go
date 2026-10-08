@@ -1,13 +1,16 @@
 package planner_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -44,6 +47,7 @@ func TestOnlineAlter_MySQLAsksTheServerToApplyItInPlace(t *testing.T) {
 			c := qt.New(t)
 
 			sql, err := planner.GenerateSchemaDiffSQLWithOptions(
+				context.Background(), must.Must(builtin.New()),
 				onlineAlterDiff(), test.dialect,
 				planner.Options{Capabilities: test.caps, OnlineAlter: true},
 			)
@@ -60,6 +64,7 @@ func TestOnlineAlter_MySQLWritesNoClauseWhenNothingAsked(t *testing.T) {
 	c := qt.New(t)
 
 	sql, err := planner.GenerateSchemaDiffSQLWithOptions(
+		context.Background(), must.Must(builtin.New()),
 		onlineAlterDiff(), "mysql",
 		planner.Options{Capabilities: capability.MySQL84()},
 	)
@@ -87,6 +92,7 @@ func TestOnlineAlter_WritesNoClauseWhereTheGrammarIsAbsent(t *testing.T) {
 			c := qt.New(t)
 
 			sql, err := planner.GenerateSchemaDiffSQLWithOptions(
+				context.Background(), must.Must(builtin.New()),
 				onlineAlterDiff(), test.dialect,
 				planner.Options{Capabilities: test.caps, OnlineAlter: true},
 			)
@@ -127,6 +133,7 @@ func TestOnlineAlter_PostgresAddsTheConstraintWithoutItsScan(t *testing.T) {
 			c := qt.New(t)
 
 			sql, err := planner.GenerateSchemaDiffSQLWithOptions(
+				context.Background(), must.Must(builtin.New()),
 				&difftypes.SchemaDiff{ConstraintsAdded: difftypes.ConstraintAdditions{test.constraint}},
 				"postgres",
 				planner.Options{Capabilities: capability.Postgres18(), OnlineAlter: true},
@@ -146,6 +153,7 @@ func TestOnlineAlter_PostgresLeavesAnIndexBackedConstraintAlone(t *testing.T) {
 	c := qt.New(t)
 
 	sql, err := planner.GenerateSchemaDiffSQLWithOptions(
+		context.Background(), must.Must(builtin.New()),
 		&difftypes.SchemaDiff{ConstraintsAdded: difftypes.ConstraintAdditions{{
 			Name: "uq_email", TableName: "users", Type: "UNIQUE", Columns: []string{"email"},
 		}}},
@@ -183,8 +191,11 @@ func TestOnlineAlter_MySQLAsksOnEveryStatementShape(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			sql, err := planner.GenerateSchemaDiffSQLWithOptions(test.diff, "mysql",
-				planner.Options{Capabilities: capability.MySQL84(), OnlineAlter: true})
+			sql, err := planner.GenerateSchemaDiffSQLWithOptions(
+				context.Background(), must.Must(builtin.New()),
+				test.diff, "mysql",
+				planner.Options{Capabilities: capability.MySQL84(), OnlineAlter: true},
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, ", ALGORITHM=INPLACE, LOCK=NONE;")

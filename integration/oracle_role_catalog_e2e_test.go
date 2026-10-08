@@ -11,6 +11,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/sijms/go-ora/v3" // registers the Oracle driver for database/sql
 
 	"ptah.run/catalog"
@@ -18,6 +19,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -75,19 +77,25 @@ func TestOracleRoleCatalogIsNotDescribedWithoutPrivilegeE2E(t *testing.T) {
 	read, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 
-	// Three assertions, and the third is the one a wrong reader passes the
-	// first two without.
+	// Empty collections do not establish absence when the account cannot
+	// inspect the role catalog.
 	c.Assert(read.Roles, qt.HasLen, 0)
 	c.Assert(read.Grants, qt.HasLen, 0)
 	c.Assert(read.NotDescribed.Describes(coverage.Role, role), qt.IsFalse)
 
-	// And the consequence, at the seam that decides what happens next: a
-	// declaration naming the role plans nothing, rather than planning a
-	// CREATE ROLE this account cannot execute.
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, oracleRoleDeclaration(role, "", nil), read, nil)
+	// A partial comparison withholds the role and reports the missing evidence.
+	diff, diagnostics, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(ctx, conn, oracleRoleDeclaration(role, "", nil), read, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.RolesAdded, qt.HasLen, 0)
 	c.Assert(diff.RolesRemoved, qt.HasLen, 0)
+	withheld := coverage.Refused(coverage.Role)
+	withheld.Name = role
+	c.Assert(diagnostics, qt.DeepEquals, schemadiff.Diagnostics{Common: []coverage.Object{withheld}})
+
+	// The non-reporting API must not expose an apparently complete diff.
+	diff, err = schemadiff.CompareWithDatabase(ctx, conn, oracleRoleDeclaration(role, "", nil), read, nil, must.Must(builtin.New()))
+	c.Assert(err, qt.ErrorIs, schemadiff.ErrIncompleteComparison)
+	c.Assert(diff, qt.IsNil)
 }
 
 // TestOracleRolesAndGrantsAreReadWithPrivilegeE2E is the other half: the same
@@ -159,7 +167,7 @@ func TestOracleRolesAndGrantsAreReadWithPrivilegeE2E(t *testing.T) {
 		{table: "rc_docs", privileges: []string{"SELECT", "INSERT"}},
 		{table: "rc_titles", privileges: []string{"SELECT"}},
 	})
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, read, nil)
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, read, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	c.Assert(oracleRoleDiffSummary(diff), qt.DeepEquals, []string(nil))
 }
@@ -345,8 +353,11 @@ func TestOracleRoleManagementPlansAndConvergesE2E(t *testing.T) {
 
 	before, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
-	diff := schemadiff.CompareWithDialect(declared, before, platform.Oracle)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), declared, before, platform.Oracle, must.Must(builtin.New())))
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities},
+	)
 	c.Assert(err, qt.IsNil)
 
 	// Non-vacuity: the plan really carries the role and the grants. Without
@@ -369,12 +380,15 @@ func TestOracleRoleManagementPlansAndConvergesE2E(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(oracleRoleNames(after.Roles), qt.Contains, role)
 
-	settled := schemadiff.CompareWithDialect(declared, after, platform.Oracle)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), declared, after, platform.Oracle, must.Must(builtin.New())))
 	c.Assert(oracleRoleDiffSummary(settled), qt.DeepEquals, []string(nil))
 
 	// And the plan the settled comparison produces is empty, which is the
 	// statement-level form of the same claim.
-	settledStatements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(settled, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
+	settledStatements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		settled, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities},
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(oracleStatementsNaming(settledStatements, "ROLE"), qt.HasLen, 0)
 	c.Assert(oracleStatementsNaming(settledStatements, "GRANT"), qt.HasLen, 0)

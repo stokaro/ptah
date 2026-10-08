@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 )
 
@@ -163,5 +165,5 @@ func coverageDiffOptions(c *qt.C, from, to string, diagnostics *bytes.Buffer) at
 		ToURLs:      []string{"file://" + toPath},
 		DevURL:      "postgres://localhost/dev",
 		Diagnostics: diagnostics,
-	}
+		Runtime:     must.Must(builtin.New())}
 }

@@ -13,6 +13,7 @@ import (
 
 	"ptah.run/core/coverage"
 	"ptah.run/internal/cli/internal/schemaops"
+	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -24,7 +25,7 @@ func TestRender_NamesWhatTheComparisonCouldNotCheck(t *testing.T) {
 	c := qt.New(t)
 	withheld := coverage.Refused(coverage.Role)
 	withheld.Name = "reporter"
-	result := &schemaops.CompareResult{Diff: &difftypes.SchemaDiff{}, Undecided: []coverage.Object{withheld}}
+	result := &schemaops.CompareResult{Diff: &difftypes.SchemaDiff{}, Undecided: schemadiff.Diagnostics{Common: []coverage.Object{withheld}}}
 	s := &server{opts: Options{DatabaseURL: "mysql://app@db/app", Now: time.Now}}
 
 	page := s.render(observationOf(result, time.Unix(0, 0)))

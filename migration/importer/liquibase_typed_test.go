@@ -5,8 +5,10 @@ import (
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/importer"
 )
 
@@ -16,9 +18,9 @@ func parseLiquibaseFor(c *qt.C, dialect string, files fstest.MapFS) (*importer.P
 	c.Helper()
 	parser, err := importer.ParserByName("liquibase")
 	c.Assert(err, qt.IsNil)
-	rendering, err := importer.WithDialect(parser, dialect)
+	rendering, err := importer.WithRendering(parser, dialect, capability.ForDialect(dialect), must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	return rendering.Parse(files)
+	return rendering.Parse(c.Context(), files)
 }
 
 // liquibaseXMLOneChangeSet wraps changes in a changelog holding one changeset.
@@ -374,7 +376,7 @@ func TestLiquibaseTyped_SQLFileIsReadAndAccountedFor_HappyPath(t *testing.T) {
 	parser, err := importer.ParserByName("liquibase")
 	c.Assert(err, qt.IsNil)
 
-	parsed, err := parser.Parse(files)
+	parsed, err := parser.Parse(c.Context(), files)
 	c.Assert(err, qt.IsNil)
 	declined, err := importer.AccountForSource(files, parser, parsed)
 
@@ -566,7 +568,7 @@ func TestLiquibaseTyped_DocumentRollbackReference_FailurePath(t *testing.T) {
 	c.Assert(parsed, qt.IsNil)
 }
 
-func TestWithDialect_FailurePath(t *testing.T) {
+func TestWithRendering_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	flyway, err := importer.ParserByName("flyway")
 	c.Assert(err, qt.IsNil)
@@ -583,7 +585,7 @@ func TestWithDialect_FailurePath(t *testing.T) {
 			name: "a tool whose migrations are SQL", parser: flyway, dialect: "postgres",
 			message: `a target dialect applies only to a Liquibase source; flyway migrations are SQL already`,
 		},
-		{name: "an unknown dialect", parser: liquibase, dialect: "db2", message: `unsupported dialect "db2"`},
+		{name: "no target", parser: liquibase, dialect: " ", message: `a rendering target is required`},
 		{
 			name: "no parser", parser: nil, dialect: "postgres",
 			message: `a target dialect needs a source tool: choose or detect the parser first`,
@@ -593,7 +595,7 @@ func TestWithDialect_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, err := importer.WithDialect(test.parser, test.dialect)
+			got, err := importer.WithRendering(test.parser, test.dialect, capability.ForDialect(test.dialect), must.Must(builtin.New()))
 
 			c.Assert(err, qt.ErrorMatches, test.message)
 			c.Assert(got, qt.IsNil)
@@ -601,18 +603,18 @@ func TestWithDialect_FailurePath(t *testing.T) {
 	}
 }
 
-// WithDialect returns a new parser and leaves its argument as it was: the
+// WithRendering returns a new parser and leaves its argument as it was: the
 // parser it was handed still refuses a typed change.
-func TestWithDialect_LeavesItsArgumentUnchanged_HappyPath(t *testing.T) {
+func TestWithRendering_LeavesItsArgumentUnchanged_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	parser, err := importer.ParserByName("liquibase")
 	c.Assert(err, qt.IsNil)
 	files := liquibaseXMLOneChangeSet(`<createTable tableName="t"><column name="id" type="int"/></createTable>`)
 
-	rendering, err := importer.WithDialect(parser, "postgres")
+	rendering, err := importer.WithRendering(parser, "postgres", capability.ForDialect("postgres"), must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
-	_, renderedErr := rendering.Parse(files)
-	_, originalErr := parser.Parse(files)
+	_, renderedErr := rendering.Parse(c.Context(), files)
+	_, originalErr := parser.Parse(c.Context(), files)
 
 	c.Assert(renderedErr, qt.IsNil)
 	c.Assert(originalErr, qt.ErrorMatches, `(?s).*pass --dialect.*`)
@@ -639,14 +641,14 @@ func liquibaseForeignKeyChangelog() fstest.MapFS {
 // The changes are rendered against the preset the caller handed over, not the
 // dialect default: the reference that converts under the default is refused
 // under a preset without foreign keys.
-func TestWithDialectCapabilities_RendersAgainstItsPreset_FailurePath(t *testing.T) {
+func TestWithRendering_RendersAgainstItsPreset_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	parser, err := importer.ParserByName("liquibase")
 	c.Assert(err, qt.IsNil)
-	rendering, err := importer.WithDialectCapabilities(parser, "postgres", postgresWithoutForeignKeys())
+	rendering, err := importer.WithRendering(parser, "postgres", postgresWithoutForeignKeys(), must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 
-	parsed, err := rendering.Parse(liquibaseForeignKeyChangelog())
+	parsed, err := rendering.Parse(c.Context(), liquibaseForeignKeyChangelog())
 
 	c.Assert(err, qt.ErrorMatches, `(?s).*postgres does not support foreign keys.*`)
 	c.Assert(parsed, qt.IsNil)
@@ -654,31 +656,31 @@ func TestWithDialectCapabilities_RendersAgainstItsPreset_FailurePath(t *testing.
 
 // The parser keeps its own copy of the preset. Restoring foreign keys in the
 // caller's map afterwards does not reach it, so it still refuses the reference.
-func TestWithDialectCapabilities_KeepsItsOwnCopy_FailurePath(t *testing.T) {
+func TestWithRendering_KeepsItsOwnCopy_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	caps := postgresWithoutForeignKeys()
 	parser, err := importer.ParserByName("liquibase")
 	c.Assert(err, qt.IsNil)
-	rendering, err := importer.WithDialectCapabilities(parser, "postgres", caps)
+	rendering, err := importer.WithRendering(parser, "postgres", caps, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	caps[capability.ForeignKeys] = true
 	caps[capability.ForeignKeysRequireUniqueReference] = true
 
-	parsed, err := rendering.Parse(liquibaseForeignKeyChangelog())
+	parsed, err := rendering.Parse(c.Context(), liquibaseForeignKeyChangelog())
 
 	c.Assert(err, qt.ErrorMatches, `(?s).*postgres does not support foreign keys.*`)
 	c.Assert(parsed, qt.IsNil)
 }
 
 // A preset that contradicts itself is refused before anything is parsed.
-func TestWithDialectCapabilities_InvalidPreset_FailurePath(t *testing.T) {
+func TestWithRendering_InvalidPreset_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	caps := capability.ForDialect("postgres").Clone()
 	delete(caps, capability.ForeignKeys)
 	parser, err := importer.ParserByName("liquibase")
 	c.Assert(err, qt.IsNil)
 
-	got, err := importer.WithDialectCapabilities(parser, "postgres", caps)
+	got, err := importer.WithRendering(parser, "postgres", caps, must.Must(builtin.New()))
 
 	c.Assert(err, qt.ErrorMatches, `invalid capabilities for postgres: .*requires "foreign_keys".*`)
 	c.Assert(got, qt.IsNil)

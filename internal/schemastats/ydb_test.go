@@ -6,7 +6,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbschema"
 )
 
 func TestCollect_YDBFamilies(t *testing.T) {
@@ -16,10 +18,7 @@ func TestCollect_YDBFamilies(t *testing.T) {
 			{Spec: ast.TopicSpec{Consumers: make([]ast.TopicConsumerSpec, 2)}},
 			{Spec: ast.TopicSpec{Consumers: make([]ast.TopicConsumerSpec, 3)}},
 		},
-		Tables: []schemamodel.Table{
-			{Changefeeds: []ast.ChangefeedSpec{{Consumers: make([]ast.TopicConsumerSpec, 2)}, {}}},
-			{Changefeeds: []ast.ChangefeedSpec{{Consumers: make([]ast.TopicConsumerSpec, 4)}}},
-		},
+		Tables: []schemamodel.Table{{Name: "orders"}, {Name: "users"}},
 		ExternalTables: []schemamodel.ExternalTable{
 			{Columns: make([]schemamodel.ExternalColumn, 2)},
 			{Columns: make([]schemamodel.ExternalColumn, 3)},
@@ -34,6 +33,13 @@ func TestCollect_YDBFamilies(t *testing.T) {
 		ExternalDataSources:     make([]schemamodel.ExternalDataSource, 10),
 		StreamingQueries:        make([]schemamodel.StreamingQuery, 11),
 	}
+	var err error
+	db.FeatureObjects, err = schemaext.NewObjects(
+		ydbschema.DesiredObject("", "orders", ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", Consumers: []ast.TopicConsumerSpec{{Name: "a"}, {Name: "b"}}}),
+		ydbschema.DesiredObject("", "orders", ydbschema.ChangefeedSpec{Name: "keys", Mode: "KEYS_ONLY", Format: "JSON"}),
+		ydbschema.DesiredObject("", "users", ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", Consumers: []ast.TopicConsumerSpec{{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"}}}),
+	)
+	c.Assert(err, qt.IsNil)
 	body := render(c, db, nil)
 	for _, test := range []struct{ name, want string }{
 		{"tables", "2"}, {"columns", "0"},

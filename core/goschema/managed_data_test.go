@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/goschema"
+	"ptah.run/core/manageddata"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 )
@@ -185,7 +186,7 @@ type Country struct {
 	c.Assert(db.ManagedData, qt.HasLen, 1)
 	c.Assert(db.ManagedData[0].SourceDir, qt.Equals, sub)
 
-	rows, err := schemamodel.LoadManagedRows("", db.ManagedData[0])
+	rows, err := manageddata.LoadRows("", db.ManagedData[0])
 	c.Assert(err, qt.IsNil)
 	c.Assert(rows, qt.DeepEquals, []map[string]any{{"code": "US", "name": "United States"}})
 }
@@ -225,9 +226,9 @@ type Country struct {
 	c.Assert(merged.ManagedData[0].SourceDir, qt.Equals, referenceA)
 	c.Assert(merged.ManagedData[1].SourceDir, qt.Equals, referenceB)
 
-	firstRows, err := schemamodel.LoadManagedRows("", merged.ManagedData[0])
+	firstRows, err := manageddata.LoadRows("", merged.ManagedData[0])
 	c.Assert(err, qt.IsNil)
-	secondRows, err := schemamodel.LoadManagedRows("", merged.ManagedData[1])
+	secondRows, err := manageddata.LoadRows("", merged.ManagedData[1])
 	c.Assert(err, qt.IsNil)
 	c.Assert(firstRows, qt.DeepEquals, []map[string]any{{"code": "US"}})
 	c.Assert(secondRows, qt.DeepEquals, []map[string]any{{"code": "CZ"}})
@@ -283,7 +284,7 @@ func TestLoadManagedRows(t *testing.T) {
   rank: 2
 `), 0o600), qt.IsNil)
 
-	rows, err := schemamodel.LoadManagedRows(dir, schemamodel.ManagedData{
+	rows, err := manageddata.LoadRows(dir, schemamodel.ManagedData{
 		Table: "countries",
 		Keys:  []string{"code"},
 		File:  "countries.yaml",
@@ -298,7 +299,7 @@ func TestLoadManagedRows(t *testing.T) {
 func TestLoadManagedRows_MissingFileReturnsError(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := schemamodel.LoadManagedRows(t.TempDir(), schemamodel.ManagedData{
+	_, err := manageddata.LoadRows(t.TempDir(), schemamodel.ManagedData{
 		Table: "countries",
 		Keys:  []string{"code"},
 		File:  "does-not-exist.yaml",
@@ -312,7 +313,7 @@ func TestLoadManagedRows_MalformedYAMLReturnsError(t *testing.T) {
 	dir := t.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(dir, "bad.yaml"), []byte("this: is: not a list of rows"), 0o600), qt.IsNil)
 
-	_, err := schemamodel.LoadManagedRows(dir, schemamodel.ManagedData{
+	_, err := manageddata.LoadRows(dir, schemamodel.ManagedData{
 		Table: "countries",
 		Keys:  []string{"code"},
 		File:  "bad.yaml",

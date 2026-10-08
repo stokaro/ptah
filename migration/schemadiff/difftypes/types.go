@@ -16,7 +16,10 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemacapture"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/planner/objectlookup"
@@ -793,6 +796,7 @@ func ConstraintAdditionsFor(desired *schemamodel.Database, names ...string) Cons
 			Match:           declared.Match,
 			NotEnforced:     declared.NotEnforced,
 			NotValid:        declared.NotValid,
+			Comment:         declared.Comment,
 		})
 	}
 	return additions
@@ -1014,11 +1018,8 @@ type ConstraintAdditionInfo struct {
 	// author described and the database holds one nobody did
 	// (stokaro/ptah#2611, the shape of #2216).
 	//
-	// It rides along with a constraint that is being ADDED. A comment changed
-	// on a constraint that already exists is a different change, and one this
-	// comparator cannot see: no catalog reader fills
-	// [ptah.run/core/schemamodel.Constraint.Comment], so the observed
-	// side carries none and there is nothing to compare against.
+	// A comment change on an existing constraint is carried separately in
+	// [SchemaDiff.ConstraintCommentsChanged].
 	Comment string `json:"comment,omitempty"`
 	// CheckExpression is the CHECK predicate body (CHECK only).
 	CheckExpression string `json:"check_expression,omitempty"`
@@ -1104,6 +1105,8 @@ type RoutineRemoval struct {
 // desired schema by the constructor family: [TableCreationsFor],
 // [IndexAdditionsFor] and [ConstraintAdditionsFor].
 type SchemaDiff struct {
+	// FeatureChanges holds changes to standalone feature objects. Table-owned changes stay with their table.
+	FeatureChanges []schemaext.ChangeRecord `json:"feature_changes,omitzero"`
 	// IdentifierSemantics records live catalog identifier rules used to produce
 	// this diff. It is absent for dialect-only comparisons, whose planners use
 	// conservative offline defaults.
@@ -1131,13 +1134,12 @@ type SchemaDiff struct {
 	// TablesAdded is the tables that exist in the target schema and not in
 	// the current database, each carried as the [TableCreation] CREATE TABLE
 	// renders from. Names gives the table spellings, and the JSON stays the
-	// array of names it has always been. TablesRemoved stays []string because
-	// DROP TABLE is written from the name.
+	// array of names used by a diff report.
 	TablesAdded TableChanges `json:"tables_added"`
 
-	// TablesRemoved contains names of tables that exist in the current database
-	// but not in the target schema (potentially dangerous - data loss)
-	TablesRemoved []string `json:"tables_removed"`
+	// TablesRemoved captures tables that exist only in the current database,
+	// including the child state that a drop would destroy.
+	TablesRemoved TableRemovals `json:"tables_removed"`
 
 	// TablesModified contains detailed information about tables that exist in both
 	// schemas but have structural differences (columns, constraints, etc.)
@@ -1674,7 +1676,11 @@ type SchemaDiff struct {
 	// [DeclaredTables] is: the comparison from the declaration and the
 	// reversal from the pre-change schema, because a rollback rebuilds the
 	// table that database had.
-	DeclaredConstraintHosts []TableDeclaration `json:"-"`
+	DeclaredConstraintHosts []schemacapture.TableDeclaration `json:"-"`
+
+	// ObservedConstraintHosts captures the other operand for constraint-only
+	// table rebuilds. An absent capture never implies an empty feature namespace.
+	ObservedConstraintHosts []schemacapture.TableObservation `json:"-"`
 
 	// DeclaredTableDependencies is the table dependency graph of the schema
 	// this plan runs against, keyed by qualified table name and carried once
@@ -1963,10 +1969,13 @@ func (d *SchemaDiff) EffectiveIdentifierSemantics(dialect string) identifier.Sem
 //
 // # Example Usage
 //
-//	diff := schemadiff.Compare(generated, database)
+//	runtime, err := builtin.New()
+//	if err != nil { return err }
+//	diff, err := schemadiff.CompareWithDialect(ctx, generated, database, "postgres", runtime)
+//	if err != nil { return err }
 //	if diff.HasChanges() {
 //		log.Println("Schema changes detected, generating migration...")
-//		statements, err := planner.GenerateSchemaDiffAST(diff, "postgres")
+//		statements, err := planner.GenerateSchemaDiffAST(ctx, runtime, diff, "postgres")
 //		if err != nil {
 //			return err
 //	}
@@ -1975,7 +1984,8 @@ func (d *SchemaDiff) EffectiveIdentifierSemantics(dialect string) identifier.Sem
 //		log.Println("No schema changes detected")
 //	}
 func (d *SchemaDiff) HasChanges() bool {
-	return d.hasSchemaChanges() ||
+	return d.hasFeatureChanges() ||
+		d.hasSchemaChanges() ||
 		d.hasTableChanges() ||
 		d.hasEnumChanges() ||
 		d.hasIndexChanges() ||
@@ -1985,16 +1995,17 @@ func (d *SchemaDiff) HasChanges() bool {
 		d.hasUserTypeChanges() ||
 		d.hasViewChanges() ||
 		d.hasSynonymChanges() ||
-		d.hasYDBObjectChanges() ||
-		d.hasHypertableChanges() ||
-		d.hasContinuousAggregateChanges() ||
-		d.hasExtendedPropertyChanges() ||
 		d.hasMaterializedViewChanges() ||
 		d.hasTriggerChanges() ||
 		d.hasRLSChanges() ||
 		d.hasRoleChanges() ||
 		d.hasConstraintChanges() ||
 		len(d.ObjectCommentsChanged) > 0
+}
+
+func (d *SchemaDiff) hasFeatureChanges() bool {
+	return len(d.FeatureChanges) > 0 || d.hasYDBObjectChanges() ||
+		d.hasHypertableChanges() || d.hasContinuousAggregateChanges() || d.hasExtendedPropertyChanges()
 }
 
 // SchemaChange is a schema whose attributes a whole-server comparison
@@ -2439,7 +2450,10 @@ type TableDiff struct {
 	//
 	// Off the wire: `tables_modified` reports what CHANGED, and this is the
 	// table it changed.
-	Desired TableDeclaration `json:"-"`
+	Desired schemacapture.TableDeclaration `json:"-"`
+
+	// Current captures the table and its observed children before the change.
+	Current schemacapture.TableObservation `json:"-"`
 
 	// ColumnsModified contains detailed information about columns that exist in both
 	// schemas but have different properties (type, constraints, defaults, etc.)
@@ -2484,10 +2498,8 @@ type TableDiff struct {
 	// See [YDBColumnFamiliesChange].
 	YDBColumnFamiliesChange *YDBColumnFamiliesChange `json:"ydb_column_families_change,omitzero"`
 
-	// ChangefeedsChange carries the table's YDB changefeeds when the
-	// declaration and the database disagree about them, and is nil when
-	// they agree. See [ChangefeedsChange].
-	ChangefeedsChange *ChangefeedsChange `json:"changefeeds_change,omitzero"`
+	// FeatureChanges carries owner-defined changes to individual table-owned subjects.
+	FeatureChanges []schemaext.ChangeRecord `json:"feature_changes,omitzero"`
 
 	// YDBPartitioningChange is YDB's, and only the YDB planner plans it: a YDB
 	// row table's settings transition -- how it splits into partitions, its
@@ -2532,24 +2544,6 @@ type YDBColumnFamiliesChange struct {
 	Desired []ast.YDBColumnFamilySpec `json:"desired,omitempty"`
 	// Current is the families the database holds.
 	Current []ast.YDBColumnFamilySpec `json:"current,omitempty"`
-}
-
-// ChangefeedsChange is one table's YDB changefeeds on both sides of the
-// comparison, each list whole.
-//
-// Whole lists travel rather than the changefeeds that differ, because a plan
-// that changes the table in other ways needs the ones that do not: YDB moves
-// no table that carries a changefeed (`Cannot move table with cdc streams`),
-// so a table rebuild drops every changefeed the table holds and adds every
-// one the declaration names. A planner pairs the two lists by name. A
-// changefeed the read did not describe is in neither list, so no plan drops
-// or adds it, and one the declaration does not describe is the database's on
-// both sides, so a rebuild adds it back as it was.
-type ChangefeedsChange struct {
-	// Desired is the changefeeds the declaration states.
-	Desired []ast.ChangefeedSpec `json:"desired,omitempty"`
-	// Current is the changefeeds the database carries.
-	Current []ast.ChangefeedSpec `json:"current,omitempty"`
 }
 
 // RowDeletionPolicyChange is one table's row deletion policy transition.
@@ -3559,6 +3553,10 @@ type RoleDiff struct {
 // from a schema means filtering it. That filtering happens once, where the
 // schema is already in hand, and its result travels here with the change.
 type TableCreation struct {
+	// OwnedObjects captures the named feature children created with this table.
+	OwnedObjects schemaext.Objects
+	// FeatureCoverage preserves the source claims used to capture the children.
+	FeatureCoverage schemaext.Coverage
 	// Name is the spelling the diff carries for this table, which is the one a
 	// plan and a report name it by. It is not derived from Table: the
 	// comparison qualifies a name per dialect, and MySQL's answer differs from
@@ -3844,7 +3842,7 @@ func ConstraintHostDeclarationsOf(
 	additions []ConstraintAdditionInfo,
 	removals []ConstraintRemovalInfo,
 	semantics identifier.Semantics,
-) []TableDeclaration {
+) []schemacapture.TableDeclaration {
 	if db == nil {
 		return nil
 	}
@@ -3861,7 +3859,7 @@ func ConstraintHostDeclarationsOf(
 	// `main.widget` are one table and two strings. Sorted so the carry does not
 	// depend on the order the comparators ran in.
 	slices.Sort(hosts)
-	declarations := make([]TableDeclaration, 0, len(hosts))
+	declarations := make([]schemacapture.TableDeclaration, 0, len(hosts))
 	seen := make(map[string]struct{}, len(hosts))
 	for _, host := range hosts {
 		if host == "" {
@@ -3876,7 +3874,7 @@ func ConstraintHostDeclarationsOf(
 		if table == nil {
 			continue
 		}
-		declarations = append(declarations, TableDeclarationFor(db, *table))
+		declarations = append(declarations, TableDeclarationFor(db, *table, semantics))
 	}
 	if len(declarations) == 0 {
 		return nil
@@ -4045,7 +4043,7 @@ func IndexDeclarationsOf(db *schemamodel.Database) IndexChanges {
 	owners := schemamodel.ResolveIndexOwners(db.Indexes, db.Tables, db.MaterializedViews)
 	declarations := make(IndexChanges, 0, len(db.Indexes))
 	for position, index := range db.Indexes {
-		declarations = append(declarations, IndexChange{Index: index, TableName: owners[position]})
+		declarations = append(declarations, IndexChange{Index: index.Clone(), TableName: owners[position]})
 	}
 	return declarations
 }
@@ -4097,20 +4095,26 @@ func (v UserTypeVocabulary) declared() schemaprep.DeclaredUserTypes {
 //
 // name is the spelling the diff carries, which the caller decides: a comparison
 // qualifies it per dialect, and this function has no dialect to do that with.
-func TableCreationFor(desired *schemamodel.Database, table schemamodel.Table, name string) TableCreation {
-	creation := TableCreation{Name: name, Table: table}
+func TableCreationFor(desired *schemamodel.Database, table schemamodel.Table, name string, semantics identifier.Semantics) TableCreation {
+	parent := objectidentity.NewBuilder(semantics).TableParts(table.Schema, table.Name)
+	creation := TableCreation{Name: name, Table: table.Clone()}
 	if desired == nil {
 		return creation
 	}
+	creation.OwnedObjects = desired.FeatureObjects.ForParent(parent)
+	creation.FeatureCoverage = desired.FeatureCoverage.ForParent(parent)
 	all := schemamodel.ProcessEmbeddedFields(desired.EmbeddedFields, desired.Fields)
 	owned := make([]schemamodel.Field, 0, len(all))
 	for _, field := range all {
 		if field.StructName == table.StructName {
-			owned = append(owned, field)
+			owned = append(owned, field.Clone())
 		}
 	}
 	creation.Fields = owned
 	creation.Enums = schemaprep.EnumsFor(owned, desired.Enums)
+	for i := range creation.Enums {
+		creation.Enums[i] = creation.Enums[i].Clone()
+	}
 	// Derived rather than read out of desired.Dependencies, because that map is
 	// filled by [schemamodel.Finalize] and a declaration assembled in memory has
 	// not necessarily been through it. The carry's promise is that everything the
@@ -4157,40 +4161,10 @@ func constraintsOfTable(constraints []schemamodel.Constraint, table schemamodel.
 		if constraint.StructName == table.StructName ||
 			constraint.Table == qualified ||
 			constraint.Table == table.Name {
-			owned = append(owned, constraint)
+			owned = append(owned, constraint.Clone())
 		}
 	}
 	return nilWhenEmpty(owned)
-}
-
-// TableDeclaration is everything the declaration says about one table.
-//
-// It is the bundle a rebuild needs. [TableCreation] is the narrower one a
-// CREATE TABLE needs: a creation renders the table and its columns, and its
-// constraints, indexes and triggers are planned as their own additions. A
-// rebuild cannot do that -- the table it replaces already has them, and they
-// have to come back with it -- so this carries all four.
-type TableDeclaration struct {
-	// Table is the declared table.
-	Table schemamodel.Table
-	// Fields are this table's columns, with embedded fields folded in.
-	Fields []schemamodel.Field
-	// Enums are the declared enum types Fields name.
-	Enums []schemamodel.Enum
-	// Constraints are the table-level constraints declared on it.
-	Constraints []schemamodel.Constraint
-	// Indexes are the indexes declared on it.
-	Indexes []schemamodel.Index
-	// Triggers are the triggers declared on it.
-	Triggers []schemamodel.Trigger
-}
-
-// HasTable reports whether a declaration was assembled at all.
-//
-// A modification naming a table the declaration does not hold carries none, and
-// a planner that rebuilds has to say so rather than rebuild nothing.
-func (d TableDeclaration) HasTable() bool {
-	return d.Table.Name != ""
 }
 
 // TableDeclarationFor assembles what the declaration says about one table.
@@ -4199,22 +4173,28 @@ func (d TableDeclaration) HasTable() bool {
 // the table's Go struct with embedded fields folded in, constraints by the
 // table they name, indexes by the table they name or the struct they were
 // declared on, and triggers by the table they fire on.
-func TableDeclarationFor(desired *schemamodel.Database, table schemamodel.Table) TableDeclaration {
-	declaration := TableDeclaration{Table: table}
+func TableDeclarationFor(desired *schemamodel.Database, table schemamodel.Table, semantics identifier.Semantics) schemacapture.TableDeclaration {
+	declaration := schemacapture.TableDeclaration{Table: table.Clone()}
 	if desired == nil {
 		return declaration
 	}
+	parent := objectidentity.NewBuilder(semantics).TableParts(table.Schema, table.Name)
+	declaration.OwnedObjects = desired.FeatureObjects.ForParent(parent)
+	declaration.FeatureCoverage = desired.FeatureCoverage.ForParent(parent)
 	qualified := table.QualifiedName()
 
 	all := schemamodel.ProcessEmbeddedFields(desired.EmbeddedFields, desired.Fields)
 	owned := make([]schemamodel.Field, 0, len(all))
 	for _, field := range all {
 		if field.StructName == table.StructName {
-			owned = append(owned, field)
+			owned = append(owned, field.Clone())
 		}
 	}
 	declaration.Fields = nilWhenEmpty(owned)
 	declaration.Enums = schemaprep.EnumsFor(owned, desired.Enums)
+	for i := range declaration.Enums {
+		declaration.Enums[i] = declaration.Enums[i].Clone()
+	}
 
 	declaration.Constraints = nilWhenEmpty(constraintsOfTable(desired.Constraints, table))
 
@@ -4222,7 +4202,7 @@ func TableDeclarationFor(desired *schemamodel.Database, table schemamodel.Table)
 	for _, index := range desired.Indexes {
 		named := strings.TrimSpace(index.TableName)
 		if named == qualified || named == table.Name || (named == "" && index.StructName == table.StructName) {
-			indexes = append(indexes, index)
+			indexes = append(indexes, index.Clone())
 		}
 	}
 	declaration.Indexes = nilWhenEmpty(indexes)
@@ -4230,7 +4210,7 @@ func TableDeclarationFor(desired *schemamodel.Database, table schemamodel.Table)
 	triggers := make([]schemamodel.Trigger, 0, len(desired.Triggers))
 	for _, trigger := range desired.Triggers {
 		if trigger.Table == qualified || trigger.Table == table.Name {
-			triggers = append(triggers, trigger)
+			triggers = append(triggers, trigger.Clone())
 		}
 	}
 	declaration.Triggers = nilWhenEmpty(triggers)
@@ -4261,7 +4241,7 @@ func TableDeclarationFor(desired *schemamodel.Database, table schemamodel.Table)
 // table `data` in schema `tenant` answer to the same string, and this takes the
 // first declared one; a caller holding two such tables has to say which it
 // means, with [TableCreationFor].
-func TableCreationsFor(desired *schemamodel.Database, names ...string) TableChanges {
+func TableCreationsFor(desired *schemamodel.Database, semantics identifier.Semantics, names ...string) TableChanges {
 	if desired == nil || len(names) == 0 {
 		return nil
 	}
@@ -4271,7 +4251,7 @@ func TableCreationsFor(desired *schemamodel.Database, names ...string) TableChan
 			if table.QualifiedName() != name && table.Name != name {
 				continue
 			}
-			creations = append(creations, TableCreationFor(desired, table, name))
+			creations = append(creations, TableCreationFor(desired, table, name, semantics))
 			break
 		}
 	}

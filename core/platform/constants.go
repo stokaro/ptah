@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"slices"
 	"strings"
 )
 
@@ -38,51 +39,43 @@ const (
 // including the ones that cannot handle it yet: a renderer, a reader and a
 // planner each carry their own list, and none of them is derived from this one.
 func NormalizeDialect(dialect string) string {
-	switch strings.ToLower(strings.TrimSpace(dialect)) {
-	case "pgx", "postgresql", "postgres":
-		return Postgres
-	// The `+unix` spellings are a transport, not a dialect, as `libsql+ws`
-	// below is: the pinned community binary v1.3.0 opens each over a Unix
-	// socket with the same MySQL driver as the plain scheme, so only the
-	// connection differs (stokaro/ptah#3755).
-	case "mysql", "mysql+unix":
-		return MySQL
-	// `maria` is a MariaDB spelling the pinned community binary v1.3.0
-	// accepts as a URL scheme, on every verb that opens a database, and as a
-	// docker dev-URL engine (stokaro/ptah#3744).
-	case "mariadb", "maria", "mariadb+unix", "maria+unix":
-		return MariaDB
-	case "clickhouse", "ch":
-		return ClickHouse
-	case "sqlite", "sqlite3":
-		return SQLite
-	// libsql is a transport, not a dialect. The pinned community binary v1.3.0
-	// resolves both spellings onto its SQLite driver -- the errors it answers
-	// with are prefixed `sqlite:` and the HCL it inspects is SQLite HCL -- so
-	// the renderer, planner and reader are SQLite's and only the connection
-	// differs (stokaro/ptah#1615).
-	case "libsql", "libsql+ws":
-		return SQLite
-	case "mssql", "sqlserver", "sql-server", "sql_server", "tsql":
-		return SQLServer
-	case "cockroach", "cockroachdb", "crdb":
-		return CockroachDB
-	case "yugabyte", "yugabytedb", "ysql":
-		return YugabyteDB
-	case "spanner", "cloudspanner", "google-spanner", "google_spanner":
-		return Spanner
-	case "oracle", "oracledb":
-		return Oracle
-	// ydbs is a transport, as libsql+ws is: the URL scheme of a YDB server
-	// reached over TLS, where ydb is the plaintext one. Neither grpc nor
-	// grpcs is a spelling, although the YDB SDK uses them: they name the
-	// protocol, and any gRPC URL would become a database URL
-	// (stokaro/ptah#4015).
-	case "ydb", "ydbs":
-		return YDB
-	default:
-		return ""
+	spelling := strings.ToLower(strings.TrimSpace(dialect))
+	for _, target := range dialectNames {
+		if slices.Contains(target, spelling) {
+			return target[0]
+		}
 	}
+	return ""
+}
+
+// DialectSpellings returns every built-in target name and alias accepted by
+// NormalizeDialect. Each call returns an independent slice. Composition uses
+// this declaration so registered aliases cannot drift from normalization.
+func DialectSpellings() []string {
+	var names []string
+	for _, target := range dialectNames {
+		names = append(names, target...)
+	}
+	return names
+}
+
+// Each row starts with its canonical target name. Transport spellings select
+// the same schema semantics: +unix uses the MySQL/MariaDB socket transport
+// (#3755), libsql+ws uses SQLite (#1615), and ydbs uses YDB over TLS (#4015).
+// grpc and grpcs identify a protocol, not a database, and are not aliases.
+// The maria spelling is accepted by the pinned Atlas binary (#3744).
+var dialectNames = [][]string{
+	{Postgres, "pgx", "postgresql"},
+	{MySQL, "mysql+unix"},
+	{MariaDB, "maria", "mariadb+unix", "maria+unix"},
+	{ClickHouse, "ch"},
+	{SQLite, "sqlite3", "libsql", "libsql+ws"},
+	{SQLServer, "mssql", "sql-server", "sql_server", "tsql"},
+	{CockroachDB, "cockroach", "crdb"},
+	{YugabyteDB, "yugabyte", "ysql"},
+	{Spanner, "cloudspanner", "google-spanner", "google_spanner"},
+	{Oracle, "oracledb"},
+	{YDB, "ydbs"},
 }
 
 // IsPostgresFamily reports whether a target speaks the PostgreSQL wire protocol

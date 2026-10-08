@@ -17,6 +17,7 @@ import (
 
 	"ptah.run/internal/cli/internal/diffreport"
 	"ptah.run/internal/cli/internal/exitcode"
+	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -40,6 +41,7 @@ var nonCategoryFields = map[string]string{
 	"DeclaredViewLikes":          "every declared view and materialized view, carried so a DROP that cascades can be resolved to the views it reaches -- usually views this diff does not touch. Like the two above it is an input to rendering rather than a difference, and reporting it would print the whole document's views as though they had changed (stokaro/ptah#2315)",
 	"DeclaredForeignKeys":        "every foreign key the schema the plan runs against holds, carried so a column type change can drop its keys and put them back -- keys this diff does not touch, under a column it does. Like the three above it is an input to rendering rather than a difference, and reporting it would print the whole document's foreign keys as though they had changed (stokaro/ptah#2315)",
 	"DeclaredConstraintHosts":    "the whole declaration of every table a constraint change names, carried so a target that rebuilds a table to change one of its constraints can render the table entire. Like the four above it is an input to rendering rather than a difference, and reporting it would print those tables as though they had changed (stokaro/ptah#2315)",
+	"ObservedConstraintHosts":    "the observed operand for constraint-only rebuilds is planning context, not an additional change to report",
 	"DeclaredTableDependencies":  "the table dependency graph of the schema the plan runs against, carried so the removals can be ordered child-before-parent. Like the four above it is an input to rendering rather than a difference, and reporting it would print an edge for every table in the document as though something had changed (stokaro/ptah#2315)",
 	"DeclaredFunctions":          "the declaration order and call graph of the declared functions, carried so the ones this diff creates can be ordered caller-after-callee. Like the five above it is an input to rendering rather than a difference, and reporting it would print every function in the document as though it had changed (stokaro/ptah#2315)",
 	"DeclaredSecrets":            "every YDB secret the declaration holds, carried so a rotation request can find the variable a secret's value comes from. It is an input rather than a difference, and reporting it would print every secret in the document as though it had changed",
@@ -80,12 +82,12 @@ func TestWriteComparisonReportsEveryDiffCategory(t *testing.T) {
 			stdout := &bytes.Buffer{}
 			stderr := &bytes.Buffer{}
 
-			writeComparison(stdout, stderr, diff, nil, "", "postgres")
+			writeComparison(stdout, stderr, diff, schemadiff.Diagnostics{}, "", "postgres")
 
 			c.Assert(stdout.String(), qt.Contains, diffCategoryJSONName(field)+" (1):")
 			c.Assert(stdout.String(), qt.Contains, "Reconciling SQL: none.")
 			c.Assert(stderr.String(), qt.Contains, diffCategoryJSONName(field))
-			c.Assert(exitcode.Code(nonEmptyDiffExitCode(diff, nil), 0), qt.Equals, 1)
+			c.Assert(exitcode.Code(nonEmptyDiffExitCode(diff, schemadiff.Diagnostics{}), 0), qt.Equals, 1)
 		})
 	}
 }
@@ -141,7 +143,7 @@ func TestWriteComparisonReportsNoDifferences(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	writeComparison(stdout, stderr, &difftypes.SchemaDiff{}, nil, "", "postgres")
+	writeComparison(stdout, stderr, &difftypes.SchemaDiff{}, schemadiff.Diagnostics{}, "", "postgres")
 
 	c.Assert(stdout.String(), qt.Equals, "No schema differences detected.\n")
 	c.Assert(stderr.String(), qt.Equals, "")
@@ -159,7 +161,7 @@ func TestWriteComparisonPrintsCategoriesAndSQL(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	writeComparison(stdout, stderr, diff, nil, "ALTER TABLE \"other\".\"secured\" ENABLE ROW LEVEL SECURITY;\n", "postgres")
+	writeComparison(stdout, stderr, diff, schemadiff.Diagnostics{}, "ALTER TABLE \"other\".\"secured\" ENABLE ROW LEVEL SECURITY;\n", "postgres")
 
 	c.Assert(stdout.String(), qt.Equals, `Differences detected (2 categories):
   rls_enabled_tables_added (1): other.secured

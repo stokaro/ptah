@@ -1,14 +1,17 @@
 package schemadiff_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -42,7 +45,7 @@ func TestCompare_OracleKeyDeferral_Synced(t *testing.T) {
 	desired := deferralDesired(true, "deferred")
 	desired.Constraints = desired.Constraints[:1]
 
-	diff := schemadiff.CompareWithDialect(desired, oracleSlotsCatalog(true, "deferred"), platform.Oracle)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, oracleSlotsCatalog(true, "deferred"), platform.Oracle, must.Must(builtin.New())))
 
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
 	c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
@@ -54,10 +57,12 @@ func TestCompare_OracleKeyDeferral_Changed(t *testing.T) {
 	c := qt.New(t)
 	desired := deferralDesired(true, "deferred")
 	desired.Constraints = desired.Constraints[:1]
-	diff := schemadiff.CompareWithDialect(desired, oracleSlotsCatalog(false, ""), platform.Oracle)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, oracleSlotsCatalog(false, ""), platform.Oracle, must.Must(builtin.New())))
 
 	plan, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
-		diff, platform.Oracle, planner.Options{Capabilities: capability.ForDialect(platform.Oracle)})
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Oracle, planner.Options{Capabilities: capability.ForDialect(platform.Oracle)},
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(plan, "\n"), qt.Contains, "ADD PRIMARY KEY (id) DEFERRABLE INITIALLY DEFERRED")

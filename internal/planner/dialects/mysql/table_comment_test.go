@@ -1,12 +1,15 @@
 package mysql_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -22,7 +25,10 @@ func TestPlanner_MySQLFamilyPlansATableCommentChange(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := test.planner.GenerateMigrationAST(tableCommentDiff("customers of record"))
+			nodes, err := test.planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				tableCommentDiff("customers of record"),
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(setCommentOperations(nodes), qt.DeepEquals,
@@ -39,7 +45,10 @@ func TestPlanner_MySQLFamilyPlansATableCommentRemoval(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := test.planner.GenerateMigrationAST(tableCommentDiff(""))
+			nodes, err := test.planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				tableCommentDiff(""),
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(setCommentOperations(nodes), qt.DeepEquals,
@@ -55,7 +64,10 @@ func TestPlanner_MySQLFamilyPlansNoCommentWithoutAChange(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := test.planner.GenerateMigrationAST(&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{TableName: "users"}}})
+			nodes, err := test.planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{TableName: "users"}}},
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(setCommentOperations(nodes), qt.HasLen, 0)
@@ -113,7 +125,10 @@ func TestPlanner_MySQLFamilyCarriesAColumnCommentInTheModify(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := test.planner.GenerateMigrationAST(columnCommentOnlyDiff())
+			nodes, err := test.planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				columnCommentOnlyDiff(),
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(setCommentOperations(nodes), qt.HasLen, 0)

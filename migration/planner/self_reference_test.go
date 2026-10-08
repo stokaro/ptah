@@ -1,12 +1,16 @@
 package planner_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -23,9 +27,12 @@ func TestGenerate_ASelfReferencingForeignKeyIsPlannedWithoutFinalize(t *testing.
 	c := qt.New(t)
 	desired := selfReferencingDeclaration()
 
-	sql, err := planner.GenerateSchemaDiffSQL(&difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableCreationsFor(desired, "nodes"),
-	}, platform.Postgres)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		&difftypes.SchemaDiff{
+			TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "nodes"),
+		}, platform.Postgres,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "fk_nodes_parent")
@@ -42,9 +49,12 @@ func TestGenerate_AFinalizedDeclarationPlansItOnce(t *testing.T) {
 	desired := selfReferencingDeclaration()
 	schemamodel.Finalize(desired)
 
-	sql, err := planner.GenerateSchemaDiffSQL(&difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableCreationsFor(desired, "nodes"),
-	}, platform.Postgres)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		&difftypes.SchemaDiff{
+			TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "nodes"),
+		}, platform.Postgres,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(countOccurrences(sql, "fk_nodes_parent"), qt.Equals, 1)

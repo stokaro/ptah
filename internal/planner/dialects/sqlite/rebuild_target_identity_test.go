@@ -1,12 +1,15 @@
 package sqlite_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -63,6 +66,7 @@ func TestRebuildResolvesTheRetainedTableAcrossSchemaSpellings(t *testing.T) {
 			}}}
 			declared := identityRebuildSchema(test.tableSchema)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
 				declaringTheOnlyTable(diff, declared),
 
 				"sqlite",
@@ -157,7 +161,10 @@ func TestRebuiltTableDoesNotAlsoGetItsIndexAndTriggerRecreated(t *testing.T) {
 				}},
 			}
 
-			statements, err := planner.GenerateSchemaDiffSQLStatements(declaringTheOnlyTable(diff, desired), "sqlite")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				declaringTheOnlyTable(diff, desired), "sqlite",
+			)
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(strings.Count(plan, "CREATE INDEX"), qt.Equals, 1, qt.Commentf("plan:\n%s", plan))
@@ -180,6 +187,9 @@ func TestRebuildDoesNotResolveATableInAnotherSchema(t *testing.T) {
 			Changes:    map[string]string{"type": "TEXT -> BLOB"},
 		}},
 	}}}
-	_, err := planner.GenerateSchemaDiffSQLStatements(diff, "sqlite")
+	_, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, "sqlite",
+	)
 	c.Assert(err, qt.ErrorMatches, `(?s).*requires its desired definition, and the diff carries none for it.*`)
 }

@@ -1,13 +1,16 @@
 package compare_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 	"ptah.run/migration/schemadiff/internal/compare"
@@ -426,7 +429,10 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 			}
 
 			if len(tt.wantSQL) > 0 {
-				statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "postgres")
+				statements, err := planner.GenerateSchemaDiffSQLStatements(
+					context.Background(), must.Must(builtin.New()),
+					diff, "postgres",
+				)
 				c.Assert(err, qt.IsNil)
 				sql := strings.Join(statements, "\n")
 				for _, expected := range tt.wantSQL {

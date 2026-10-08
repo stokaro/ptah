@@ -1,13 +1,16 @@
 package postgres_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -47,8 +50,8 @@ func downColumnDatabase(tableSchema string) *catalog.Database {
 // database converted back to a schema.
 func planDownStatements(c *qt.C, desired *schemamodel.Database, current *catalog.Database) []string {
 	c.Helper()
-	diff := schemadiff.CompareWithDialect(desired, current, "postgres")
-	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
+	diff := must.Must(schemadiff.CompareWithDialect(c.Context(), desired, current, "postgres", must.Must(builtin.New())))
+	plan, err := generator.PlanBidirectionalSchemaDiff(c.Context(), generator.BidirectionalSchemaPlanOptions{Runtime: must.Must(builtin.New()),
 		Diff:          diff,
 		DesiredSchema: desired,
 		CurrentSchema: current,
@@ -60,6 +63,7 @@ func planDownStatements(c *qt.C, desired *schemamodel.Database, current *catalog
 	})
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
 		plan.Reverse.Diff,
 
 		"postgres",
@@ -184,8 +188,11 @@ func TestPlannerColumnLookupDoesNotGuessBetweenSchemas(t *testing.T) {
 				},
 			},
 		}
-		diff := schemadiff.CompareWithDialect(desired, database, "postgres")
-		statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "postgres")
+		diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
+		statements, err := planner.GenerateSchemaDiffSQLStatements(
+			context.Background(), must.Must(builtin.New()),
+			diff, "postgres",
+		)
 		c.Assert(err, qt.IsNil)
 		c.Assert(
 			containsStatement(statements, `ALTER TABLE "app"."users" ADD COLUMN "note"`),
@@ -202,6 +209,7 @@ func TestPlannerColumnLookupDoesNotGuessBetweenSchemas(t *testing.T) {
 	t.Run("a table the schema does not declare gets no column DDL", func(t *testing.T) {
 		c := qt.New(t)
 		statements, err := planner.GenerateSchemaDiffSQLStatements(
+			context.Background(), must.Must(builtin.New()),
 			&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:    "reporting.users",
 				ColumnsAdded: difftypes.ColumnChanges{{StructName: "AppUser", Name: "note", Type: "TEXT"}},

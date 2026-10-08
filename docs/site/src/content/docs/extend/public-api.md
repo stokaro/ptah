@@ -33,25 +33,44 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `core/ast` | Typed schema DDL AST nodes. |
 | `core/astbuilder` | Fluent builders that construct `core/ast` DDL nodes without hand-written struct literals. |
 | `core/coverage` | Schema description scope facts, so an absent object is not read as a removed one. |
+| `core/objectidentity` | Structured object identities, target-aware name comparison, and reference resolution. |
+| `core/plangraph` | Owner-contributed steps, object effects, and validated dependency ordering. |
+| `core/featureplan` | Contextual feature-planning batches, captured parents, and typed graph contributions. |
 | `core/goschema` | Go annotation parser. Produces a `schemamodel.Database`. |
+| `core/manageddata` | YAML row-data loading and resolution, separate from captured declarations. |
 | `core/schemamodel` | The desired-schema model every authoring source produces: Go annotations, HCL, YAML, SQL, DBML and live-catalog conversion. |
 | `core/platform` | Dialect and platform constants. |
 | `core/platform/capability` | Capability flags for dialect/version behavior. |
 | `core/platform/identifier` | Catalog identifier comparison and namespace semantics. |
 | `core/ptaherr` | Typed public errors and sentinel errors. |
 | `core/query` | Fluent builder for parameterized, dialect-aware SELECT, INSERT, UPDATE, DELETE and YDB UPSERT statements. |
-| `core/renderer` | Dialect-aware SQL rendering from AST/schema IR, including fail-closed two-phase foreign key ordering. |
+| `core/renderer` | Selected AST and whole-schema rendering services, omission records, and local visitor contracts. |
+| `core/schemacapture` | Independent desired and observed table captures for contextual services. |
+| `core/schemaext` | Typed immutable feature values, positive source coverage, versioned codecs, and conservative operation effects. |
+| `core/schemaprojection` | Target-owned constraint effects and independent table-state predictions. |
+| `core/schemavalidation` | Whole-schema validation services with structured diagnostics and explicit completion. |
+| `engine` | Explicit provider registration, model codecs, and batched service dispatch. |
+| `engine/builtin` | Dialect-aware SQL rendering from AST/schema IR, including fail-closed two-phase foreign key ordering. |
 | `core/schemasource` | Runs an external desired-schema program and parses its output into schema IR. |
 | `core/sqlutil` | SQL utility helpers used by public paths. |
 | `core/yamlschema` | Reads Ptah's YAML authoring format into the schema IR, strictly. |
 | `dbschema` | Live database schema introspection connection layer. |
+| `dialect/postgres/pgproject` | PostgreSQL constraint backing-index and column effects. |
+| `dialect/ydb/ydbast` | Typed YDB changefeed operations carried by AST extension envelopes. |
+| `dialect/ydb/ydbcompare` | Coverage-aware comparison of individual YDB feature objects. |
+| `dialect/ydb/ydbconvert` | YDB feature representation conversion. |
+| `dialect/ydb/ydbdiff` | Directional YDB feature changes. |
+| `dialect/ydb/ydbreport` | Inventory and omission reports for captured YDB feature values. |
+| `dialect/ydb/ydbreverse` | Changefeed reversal and recovery limits. |
+| `dialect/ydb/ydbplan` | Captured-state validation and graph contributions for changefeed changes. |
+| `dialect/ydb/ydbschema` | YDB feature values and model codecs. |
 | `catalog` | Shared database schema types. |
 | `docs` | Ptah's own documentation embedded in the binary as an `embed.FS`. |
 | `migration/datadiff` | Row-level diffing between declared managed data and live table rows. |
 | `migration/dbtest` | Declarative migration/schema test cases, runners, and reports. |
 | `migration/diffpolicy` | Declarative policy for which destructive changes a planner may emit. |
 | `migration/generator` | Migration file generation. |
-| `migration/importer` | Converts migration directories from other versioned-migration tools into Ptah's native layout. |
+| `migration/importer` | Converts migration directories with caller context and explicit rendering services for typed changes. |
 | `migration/lint` | Migration SQL linting rules, immutable analysis snapshots, and findings. |
 | `migration/migrationfile` | Migration file names, directory formats, directives, and per-file transaction modes. |
 | `migration/migrator` | Migration providers, revision metadata, dry-run plans, and execution. |
@@ -66,11 +85,115 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 Import paths use the module prefix:
 
 ```go
-import "ptah.run/core/renderer"
+import "ptah.run/engine/builtin"
 ```
+
+`engine.New` assembles only the providers the caller supplies. Registration
+rejects duplicate target ownership and aliases. `Runtime.Render` sends each
+batch to one owner, propagates errors and cancellation, and returns no partial
+SQL on failure. Each result has one `Fragments` entry per input node. Empty
+entries account for nodes that emit nothing; other entries may contain several
+statements. `Result.SQL()` joins them without adding separators.
+`renderer.Render` validates this contract when calling a service directly.
+`builtin.New` explicitly selects the bundled rendering providers.
+
+Completed validation diagnostics become `schemavalidation.RefusalError` through
+`Result.Err`. The error retains a snapshot of the report and exposes its schema
+and capability causes through `errors.Is` and `errors.As`. A service error or
+invalid completion receipt supplies no completed refusal. Common declaration
+checks before comparison use `schemadiff.RefusalError` with the original cause.
+The schema census discards its measurement when any selected service fails,
+including after earlier cells completed.
+
+`Provider.Conversions` registers a batched conversion service for explicit target
+and feature-kind pairs. `Runtime.ConvertFeatures` validates each ordered batch,
+propagates cancellation and service errors, and returns no partial result.
+Both desired and observed codecs must belong to the registering provider.
+`Registry.ConvertCoverage` retains unknown source state during conversion;
+installing another codec does not make the source authoritative for that kind.
+
+`Provider.Comparisons` assigns named object and change kinds to a comparison
+service. `Runtime.CompareObjects` requires an explicit completion receipt and returns typed changes, effective desired
+objects for captures, and structured diagnostics for undecided state. It
+rejects dropped declarations and duplicate child changes during parent creation
+or removal. Service errors and cancellation return no partial result. The YDB
+service preserves inspected changefeeds omitted by an incomplete desired source.
+
+`Provider.FacetComparisons` registers comparison of settings attached to common
+objects. `Runtime.CompareFacets` keeps their common owner identity and source
+knowledge. Explicit knowledge limits prevent a partial value from authorizing
+a change. Parent creation or removal captures attached settings without a
+separate facet operation. A provider checks `FacetComparisonRequest.Includes`
+for each model and owner. Source scope may exclude one setting while retaining
+another on the same object. The runtime refuses changes and diagnostics for
+excluded pairs, even when source coverage is complete.
+
+`Runtime.CompareFeatures` combines named objects and attached facets. It validates
+both sources before dispatch and discards all output if either comparison fails.
+Replies must set `Complete`. The migration comparator captures table facets and
+applies effective desired settings before capturing common table changes. Other
+attachment points currently refuse because they lack comparison identity capture.
+Adding a provider does not add coverage claims to an existing source.
+
+Table selection preserves the selected tables' feature children and their source
+coverage. `Coverage.SelectSubjects` keeps kind-wide knowledge while filtering
+explicit records. Use it with the same object projection; removing an override
+alone changes which knowledge a lookup returns.
+Unrepresentable enrolled state and explicit subject limits require a selected
+comparison handler even without concrete values. An uninspected namespace alone
+makes no claim about target applicability; the runtime preserves that knowledge.
+A known empty namespace alone does not require target support for its model.
+
+`Provider.Reporting` registers omission labels and count metrics for a model
+representation. `Runtime.ReportFeatures` validates the complete batch, calls
+each selected service once, and preserves value order. Metadata is frozen when
+the runtime is built. Missing handlers, malformed replies, service failures,
+and cancellation return no partial report.
+
+Reporting is independent of target support. It can describe feature values
+from Go declarations without choosing a database. The optional target supplies
+source context only. Metrics count captured values, so zero does not establish
+inspected absence. Statistics and DBML or JSON omission reports use these model
+services. Counts from YDB's owner include disabled changefeeds and their consumers.
+
+Every `schemadiff` entry point takes a context and a selected
+`schemaext.ComparisonRuntime`. Non-reporting calls return no diff when evidence
+is incomplete; `ErrIncompleteComparison` identifies that refusal, and
+`IncompleteComparisonError` retains the structured diagnostics. Reporting calls
+return established changes, `Diagnostics`, and an error. Reports must retain
+both `Diagnostics.Common` and `Diagnostics.Features`; an empty diff with a
+knowledge limit does not establish agreement.
+
+Feature providers register their local model codecs through `Provider.Codecs`.
+`Runtime.Codecs` exposes context-aware batch encoding, decoding, and canonical
+fingerprints. A document records its provider, kind, representation, version,
+and model-definition hash. Unknown or incompatible definitions are errors;
+registering a codec alone does not grant a target support for that feature.
+
+`schemaext.Facets` captures one typed value per kind. `schemaext.Objects` captures
+individually named objects with structured references, including parentage.
+Both clone inputs and returned values and refuse duplicates. Use the registry
+to serialize them: ordinary JSON encoding refuses interface payloads.
+
+Use `Facets.WithTargetScope` for a source binding and `ForTarget` with the
+runtime's selected target. An excluded value keeps its target binding without
+its payload. `DeclaredKinds` includes these exclusions; `Kinds` and `Len` count
+concrete values. Repeated projection, codec round trips, snapshots, and schema
+conversion preserve the binding. `EncodedFacet` carries it separately from the
+owner's payload. An excluded payload needs no codec. Select from the original
+source when another target needs a value already excluded from a capture.
+
+`schemaext.Coverage` records only definitions the source explicitly enrolled.
+Its empty value is uninspected, so a newly installed provider cannot turn an
+older document's omission into a removal request. Subject claims distinguish
+absence, defaults, complete inspection, and state the source cannot represent.
+Local `Value.Equal` and canonical fingerprints have separate purposes from a
+provider's target-aware comparison of desired and observed state.
 
 The `migration/dbtest` package is the embeddable engine behind the native test
 commands, including regular-expression case selection through `FilterCases`.
+Its `Options.Runtime` and `SchemaOptions.Runtime` require a selected
+`schemaext.ComparisonRuntime`, reused for every case's schema convergence.
 See [Test migrations and schemas](../../testing/migrations-and-schema/) for
 its case model and [Database test commands](../../reference/test-cases/) for CLI behavior.
 
@@ -101,7 +224,7 @@ no-op name with its kind and source location, and `projectconfig.Merge`
 preserves the collection. Ptah's CLI reports each entry; embedders decide how
 to expose the same metadata.
 
-`renderer.ValidateSchema` and `renderer.ValidateSchemaWithCapabilities` check
+`builtin.ValidateSchema` and `builtin.ValidateSchemaWithCapabilities` check
 a complete `schemamodel.Database` without rendering SQL. They use the same
 foreign-key and capability validation as ordered schema rendering and migration
 planning.
@@ -116,7 +239,7 @@ different PostgreSQL tables remain separate constraints.
 declaration order. The builders return AST types and nothing of their own, so a
 chain and a hand-written literal mix freely. They validate nothing — an unknown
 type or an unresolved foreign key reaches the AST and is reported by
-`core/renderer` or by the database.
+`engine/builtin` or by the database.
 
 `core/yamlschema` reads Ptah's YAML authoring format: `Parse` from bytes,
 `ParseFile` from a path, both returning the `*schemamodel.Database` that Go
@@ -324,6 +447,30 @@ canonical `[]IndexRef` fields. Every index reference includes its owning
 table. Live comparisons snapshot catalog identifier semantics into the diff so
 comparison, policy, forward planning, and reverse planning share one source of
 truth.
+
+Bidirectional planning projects accepted index additions, removals, renames,
+visibility, and comments into the reverse table capture. Skipped removals retain
+their captured indexes and comments. Captured index definitions own their mutable
+fields, so changing a source document cannot change an accepted index addition.
+Index partitioning still needs an owner projection before it can accompany a
+feature reversal.
+
+Named CHECK creation and removal, constraint comments, and constraint validation
+also update the reverse table capture. Simultaneous column changes appear in the
+same capture. Validation remains in effect during rollback. Key, foreign-key, and
+exclusion-constraint creation and removal use the selected `Target.Constraints`
+service for backing-index and column effects. The service returns complete state
+or an explicit unavailable reason. A feature reversal that needs an unavailable
+prediction is refused.
+
+The PostgreSQL service projects primary and unique backing indexes, column key
+flags, and foreign-key defaults. Partition descendants, exclusion-index
+expressions, and uncaptured server-generated NOT NULL names remain unavailable.
+
+Table captures own their nested mutable definitions and catalog metadata. The
+`Clone` methods on catalog tables, columns, constraints, and indexes, and on schema
+model tables, fields, constraints, indexes, enums, and triggers provide the same
+isolation to callers.
 
 `SchemaDiff.ExtensionsModified` contains `ExtensionDiff` values with the name
 and `FromSchema`/`ToSchema` placement. Default-schema normalization follows the

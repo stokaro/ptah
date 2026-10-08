@@ -121,7 +121,7 @@ func TestLiquibaseChangesetAttributes_FailurePath(t *testing.T) {
 			parser, err := importer.ParserByName("liquibase")
 			c.Assert(err, qt.IsNil)
 
-			parsed, err := parser.Parse(fstest.MapFS{test.file: {Data: []byte(test.content)}})
+			parsed, err := parser.Parse(c.Context(), fstest.MapFS{test.file: {Data: []byte(test.content)}})
 
 			c.Assert(err, qt.ErrorMatches, test.message)
 			c.Assert(parsed, qt.IsNil)
@@ -161,7 +161,7 @@ func TestLiquibaseChangesetAttributes_NoTransaction_HappyPath(t *testing.T) {
 			parser, err := importer.ParserByName("liquibase")
 			c.Assert(err, qt.IsNil)
 
-			parsed, err := parser.Parse(fstest.MapFS{test.file: {Data: []byte(test.content)}})
+			parsed, err := parser.Parse(c.Context(), fstest.MapFS{test.file: {Data: []byte(test.content)}})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(parsed.Migrations, qt.HasLen, 1)
@@ -217,7 +217,7 @@ func TestLiquibaseChangesetAttributes_Ignore_HappyPath(t *testing.T) {
 			parser, err := importer.ParserByName("liquibase")
 			c.Assert(err, qt.IsNil)
 
-			parsed, err := parser.Parse(fstest.MapFS{test.file: {Data: []byte(test.content)}})
+			parsed, err := parser.Parse(c.Context(), fstest.MapFS{test.file: {Data: []byte(test.content)}})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(parsed.Migrations, qt.HasLen, 1)
@@ -271,7 +271,7 @@ func TestLiquibaseChangesetAttributes_NoEffect_HappyPath(t *testing.T) {
 			parser, err := importer.ParserByName("liquibase")
 			c.Assert(err, qt.IsNil)
 
-			parsed, err := parser.Parse(fstest.MapFS{test.file: {Data: []byte(test.content)}})
+			parsed, err := parser.Parse(c.Context(), fstest.MapFS{test.file: {Data: []byte(test.content)}})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(parsed.Migrations, qt.HasLen, 1)
@@ -292,7 +292,7 @@ func TestImport_ReportsSkippedChangesets_HappyPath(t *testing.T) {
 	parser, err := importer.ParserByName("liquibase")
 	c.Assert(err, qt.IsNil)
 
-	result, err := importer.Import(source, parser, c.TempDir(), importer.Options{DryRun: true})
+	result, err := importer.Import(c.Context(), source, parser, c.TempDir(), importer.Options{DryRun: true})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Files, qt.HasLen, 2)

@@ -9,10 +9,11 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
@@ -80,7 +81,7 @@ func TestPostgresLiveRoutineReturnAliasConverges(t *testing.T) {
 	description, err := atlashcl.Parse(returnAliasDocument(schemaName), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	for _, statement := range statements {
 		_, execErr := conn.ExecContext(ctx, statement)
@@ -91,7 +92,7 @@ func TestPostgresLiveRoutineReturnAliasConverges(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(live.Functions, qt.HasLen, 3)
 
-	settled := schemadiff.CompareWithDialect(description, live, platform.Postgres)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(settled.FunctionsAdded, qt.HasLen, 0)
 	c.Assert(settled.FunctionsModified, qt.HasLen, 0)
 	c.Assert(settled.FunctionsRemoved, qt.HasLen, 0)
@@ -137,7 +138,7 @@ function "scalar" {
 	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 
-	diff := schemadiff.CompareWithDialect(wanted, live, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), wanted, live, platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.FunctionsModified, qt.HasLen, 1)
 	c.Assert(diff.FunctionsModified[0].Changes["returns"], qt.Equals, "integer -> bigint")

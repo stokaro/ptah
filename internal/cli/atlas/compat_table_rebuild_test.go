@@ -15,31 +15,19 @@ import (
 // take --allow-table-rebuild.
 const tableRebuildVar = "PTAH_ALLOW_TABLE_REBUILD"
 
-// writeRebuildDiffFiles writes two HCL documents for one YDB table that differ
+// writeRebuildDiffFiles writes two SQL documents for one YDB table that differ
 // by a column type, a change YDB makes only by rebuilding the table, and
 // returns them as file:// URLs.
 func writeRebuildDiffFiles(c *qt.C) (from, to string) {
 	c.Helper()
 	dir := c.TempDir()
 	document := func(columnType string) []byte {
-		return []byte(`table "rb" {
-  column "id" {
-    type = Int64
-  }
-  column "v" {
-    type = ` + columnType + `
-    null = true
-  }
-  primary_key {
-    columns = [column.id]
-  }
-}
-`)
+		return []byte("CREATE TABLE rb (id Int64 NOT NULL, v " + columnType + ", PRIMARY KEY (id));")
 	}
-	c.Assert(os.WriteFile(filepath.Join(dir, "from.hcl"), document("Int32"), 0o600), qt.IsNil)
-	c.Assert(os.WriteFile(filepath.Join(dir, "to.hcl"), document("Int64"), 0o600), qt.IsNil)
-	return "file://" + filepath.ToSlash(filepath.Join(dir, "from.hcl")),
-		"file://" + filepath.ToSlash(filepath.Join(dir, "to.hcl"))
+	c.Assert(os.WriteFile(filepath.Join(dir, "from.sql"), document("Int32"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "to.sql"), document("Int64"), 0o600), qt.IsNil)
+	return "file://" + filepath.ToSlash(filepath.Join(dir, "from.sql")),
+		"file://" + filepath.ToSlash(filepath.Join(dir, "to.sql"))
 }
 
 // rebuildDiffArgs diffs the two documents on YDB. A diff between two files

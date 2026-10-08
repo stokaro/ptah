@@ -5,11 +5,11 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/columnkey"
 	"ptah.run/internal/constraintowner"
-	"ptah.run/internal/objectidentity"
 	"ptah.run/internal/tableref"
 )
 

@@ -1,13 +1,16 @@
 package postgres_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/renderer"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -28,12 +31,15 @@ func TestPlanner_GenerateMigrationAST_MultiSchemaTablesAndFKs(t *testing.T) {
 		SelfReferencingForeignKeys: make(map[string][]schemamodel.SelfReferencingFK),
 	}
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableCreationsFor(desired, "auth.users", "billing.invoices"),
+		TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "auth.users", "billing.invoices"),
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 
@@ -61,12 +67,15 @@ func TestPlanner_GenerateMigrationAST_TrimsSchemaPreconditions(t *testing.T) {
 		SelfReferencingForeignKeys: make(map[string][]schemamodel.SelfReferencingFK),
 	}
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableCreationsFor(desired, "auth.users", "auth.accounts", "blank"),
+		TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "auth.users", "auth.accounts", "blank"),
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 
@@ -94,12 +103,15 @@ func TestPlanner_GenerateMigrationAST_DoesNotQualifyAmbiguousLeafFK(t *testing.T
 		SelfReferencingForeignKeys: make(map[string][]schemamodel.SelfReferencingFK),
 	}
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableCreationsFor(desired, "auth.users", "crm.users", "billing.invoices"),
+		TablesAdded: difftypes.TableCreationsFor(desired, identifier.ForDialect("postgres"), "auth.users", "crm.users", "billing.invoices"),
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 
@@ -154,9 +166,12 @@ func TestPlanner_SchemaPreconditionsSkipTheNamesATargetOwns(t *testing.T) {
 			diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: test.schema + ".users"}}}
 
 			nodes, err := postgres.NewForDialect(test.dialect, nil).
-				GenerateMigrationAST(withDeclaredObjects(diff, desired))
+				GenerateMigrationAST(
+					context.Background(), must.Must(builtin.New()),
+					withDeclaredObjects(diff, desired),
+				)
 			c.Assert(err, qt.IsNil)
-			sql, err := renderer.RenderSQL(test.dialect, nodes...)
+			sql, err := builtin.RenderSQL(test.dialect, nodes...)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(strings.Contains(sql, "CREATE SCHEMA"), qt.Equals, test.wantsPre,

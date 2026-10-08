@@ -7,12 +7,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/schemaload"
 	"ptah.run/migration/schemadiff"
 )
@@ -69,7 +70,7 @@ func TestComposite_BareAndDefaultSchemaTable_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	database := loadSpellingComposite(c)
 
-	statements, err := renderer.GetOrderedCreateStatements(database, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(database, platform.Postgres)
 
 	c.Assert(err, qt.ErrorMatches, `(?s).*table "accounts" is declared twice, once without a schema and once as "public\.accounts".*`)
 	c.Assert(statements, qt.IsNil)
@@ -81,10 +82,10 @@ func TestComposite_BareAndDefaultSchemaTableCompared_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	database := loadSpellingComposite(c)
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(database, &catalog.Database{}, catalog.ServerInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), database, &catalog.Database{}, catalog.ServerInfo{
 		Dialect:             platform.Postgres,
 		IdentifierSemantics: identifier.ForDialect(platform.Postgres),
-	}, nil)
+	}, nil, must.Must(builtin.New()))
 
 	c.Assert(err, qt.ErrorMatches, `(?s).*table "accounts" is declared twice.*`)
 	c.Assert(diff, qt.IsNil)
@@ -99,10 +100,10 @@ func TestComposite_BareAndDefaultSchemaTableOnAnotherSearchPath_HappyPath(t *tes
 	semantics := identifier.ForDialect(platform.Postgres)
 	semantics.DefaultSchema = "app"
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(database, &catalog.Database{}, catalog.ServerInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), database, &catalog.Database{}, catalog.ServerInfo{
 		Dialect:             platform.Postgres,
 		IdentifierSemantics: semantics,
-	}, nil)
+	}, nil, must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.TablesAdded, qt.HasLen, 2)
@@ -114,7 +115,7 @@ func TestComposite_BareAndQualifiedTableOnMySQL_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	database := loadSpellingComposite(c)
 
-	statements, err := renderer.GetOrderedCreateStatements(database, platform.MySQL)
+	statements, err := builtin.GetOrderedCreateStatements(database, platform.MySQL)
 
 	c.Assert(err, qt.IsNil)
 	rendered := strings.Join(statements, "")

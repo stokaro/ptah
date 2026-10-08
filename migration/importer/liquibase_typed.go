@@ -1,6 +1,7 @@
 package importer
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -63,7 +64,9 @@ type liquibaseConverted struct {
 
 // liquibaseConverter converts the changes of one changelog file.
 type liquibaseConverter struct {
-	fsys fs.FS
+	ctx       context.Context
+	rendering renderer.Service
+	fsys      fs.FS
 	// file is the changelog the changes came from, for sqlFile paths and for
 	// messages.
 	file string
@@ -847,13 +850,13 @@ func (c *liquibaseConverter) addForeignKeyConstraint(change liquibaseChange) (li
 // render writes one node for the target, refusing a render that left out
 // something the node declared.
 func (c *liquibaseConverter) render(node ast.Node) (string, error) {
-	sql, omissions, err := renderer.RenderSQLReportingOmissions(c.dialect, c.caps, node)
+	result, err := renderer.Render(c.ctx, c.rendering, renderer.Request{Target: c.dialect, Capabilities: c.caps, Nodes: []ast.Node{node}})
 	if err != nil {
 		return "", err
 	}
-	if len(omissions) > 0 {
-		lost := make([]string, 0, len(omissions))
-		for _, omission := range omissions {
+	if len(result.Omissions) > 0 {
+		lost := make([]string, 0, len(result.Omissions))
+		for _, omission := range result.Omissions {
 			entry := fmt.Sprintf("%s %s: %s", omission.Kind, omission.Name, omission.Message())
 			if omission.Remedy != "" {
 				entry += " (" + omission.Remedy + ")"
@@ -862,7 +865,7 @@ func (c *liquibaseConverter) render(node ast.Node) (string, error) {
 		}
 		return "", fmt.Errorf("%s cannot carry the whole change: %s", c.dialect, strings.Join(lost, "; "))
 	}
-	return strings.TrimSpace(sql), nil
+	return strings.TrimSpace(result.SQL()), nil
 }
 
 // ------------------------------------------------------------------ helpers

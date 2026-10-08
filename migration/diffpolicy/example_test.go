@@ -21,7 +21,7 @@ import (
 // rather than composing a second wording.
 func ExampleApply() {
 	diff := &difftypes.SchemaDiff{
-		TablesRemoved: []string{"legacy_orders"},
+		TablesRemoved: difftypes.TableRemovals{{Name: "legacy_orders"}},
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_legacy_orders_ref", TableName: "legacy_orders"},
 			{Name: "idx_users_email", TableName: "users"},

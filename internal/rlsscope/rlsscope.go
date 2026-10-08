@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemavalidation"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -82,12 +83,15 @@ func validateRefs(operation string, refs []difftypes.RLSPolicyRef) error {
 
 func validateRef(operation string, position int, ref difftypes.RLSPolicyRef) error {
 	if strings.TrimSpace(ref.PolicyName) == "" || strings.TrimSpace(ref.TableName) == "" {
-		return fmt.Errorf(
-			"%w: %s RLS policy reference at position %d requires a policy name and owning table",
+		message := fmt.Sprintf(
+			"%s: %s RLS policy reference at position %d requires a policy name and owning table",
 			ptaherr.ErrInvalidSchemaDiff,
 			operation,
 			position,
 		)
+		return (schemavalidation.Result{Complete: true, Diagnostics: []schemavalidation.Diagnostic{{
+			Code: schemavalidation.InvalidSchema, Kind: "policy", Object: ref.PolicyName, Message: message,
+		}}}).Err("")
 	}
 	return nil
 }

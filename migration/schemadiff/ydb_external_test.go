@@ -4,11 +4,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/config"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -69,7 +72,7 @@ func TestCompare_YDBExternalObjectsAsDescribed(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			held := heldWarehouse()
-			diff := schemadiff.CompareWithDialect(test.desired, &held, platform.YDB)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), test.desired, &held, platform.YDB, must.Must(builtin.New())))
 			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("%+v", diff))
 			c.Assert(diff.DeclaredExternalTables, qt.DeepEquals, test.desired.ExternalTables)
 		})
@@ -93,7 +96,7 @@ func TestCompare_YDBExternalObjectChanges(t *testing.T) {
 	held.ExternalTables = append(held.ExternalTables, catalog.ExternalTable{Name: "stale", DataSource: "old",
 		Location: "x/", Columns: []catalog.ExternalColumn{{Name: "id", Type: "Int64"}}})
 
-	diff := schemadiff.CompareWithDialect(desired, &held, platform.YDB)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, &held, platform.YDB, must.Must(builtin.New())))
 
 	c.Assert(namesOf(diff.ExternalDataSourcesAdded), qt.Equals, `["ch"]`)
 	c.Assert(namesOf(diff.ExternalDataSourcesRemoved), qt.Equals, `["old"]`)
@@ -137,7 +140,7 @@ func TestCompare_YDBExternalObjectsKeptWhereTheDesiredStateCannotNameThem(t *tes
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			held := heldWarehouse()
-			diff := schemadiff.CompareWithDialect(test.desired, &held, platform.YDB)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), test.desired, &held, platform.YDB, must.Must(builtin.New())))
 			c.Assert(diff.ExternalDataSourcesRemoved, qt.HasLen, test.wantSources)
 			c.Assert(diff.ExternalTablesRemoved, qt.HasLen, test.wantTables)
 		})
@@ -157,7 +160,9 @@ func TestCompare_YDBExternalObjectsNotCreatedWhereTheReadDidNotLook(t *testing.T
 			Provenance: coverage.Observed},
 	)}
 
-	diff := schemadiff.CompareWithDialect(declaredWarehouse(), held, platform.YDB)
+	diff, diagnostics, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), declaredWarehouse(), held, &config.CompareOptions{Dialect: platform.YDB}, must.Must(builtin.New()))
+	c.Assert(err, qt.IsNil)
+	c.Assert(diagnostics.Common, qt.HasLen, 2)
 
 	c.Assert(namesOf(diff.ExternalDataSourcesAdded), qt.Equals, `["ext.pg"]`)
 	c.Assert(diff.ExternalTablesAdded, qt.HasLen, 0)

@@ -80,7 +80,7 @@ write_repo core/ast dbschema <<'PAGE'
 
 ## Guardrails
 
-The gates below run over `core/renderer` as well, though it is not a stable
+The gates below run over `engine/builtin` as well, though it is not a stable
 package.
 
 | Script | Purpose |

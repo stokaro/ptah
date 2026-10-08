@@ -60,7 +60,7 @@ func TestYDBCompatBinary_HCLKeepsTheChangefeedsItCannotSpell(t *testing.T) {
 			} {
 				c.Assert(conn.Writer().ExecuteSQL(ctx, statement), qt.IsNil, qt.Commentf("%s", statement))
 			}
-			held := tableNamed(c, readScoped(c, conn, []string{compatDir}), compatDir, "cf").Changefeeds
+			held := observedChangefeeds(c, readScoped(c, conn, []string{compatDir}), compatDir, "cf")
 			c.Assert(held, qt.HasLen, 1)
 			c.Assert(held[0].Consumers, qt.HasLen, 1)
 			kept := "file://" + writeCompatFile(c, c.TempDir(), "kept.hcl", compatChangefeedDesired("Int32"))
@@ -77,9 +77,10 @@ func TestYDBCompatBinary_HCLKeepsTheChangefeedsItCannotSpell(t *testing.T) {
 			c.Assert(rebuilt, qt.Contains, "ALTER TABLE `"+compatDir+"/cf` DROP CHANGEFEED `feed`;\n")
 			c.Assert(rebuilt, qt.Contains, "ALTER TABLE `"+compatDir+"/cf` ADD CHANGEFEED `feed` WITH "+
 				"(MODE = 'UPDATES', FORMAT = 'JSON');\nALTER TOPIC `"+compatDir+"/cf/feed` ADD CONSUMER `reader`;\n")
-			table := tableNamed(c, readScoped(c, conn, []string{compatDir}), compatDir, "cf")
+			live := readScoped(c, conn, []string{compatDir})
+			table := tableNamed(c, live, compatDir, "cf")
 			c.Assert(columnNamed(c, table, "v").DataType, qt.Equals, "Int64")
-			c.Assert(table.Changefeeds, qt.DeepEquals, held)
+			c.Assert(observedChangefeeds(c, live, compatDir, "cf"), qt.DeepEquals, held)
 			c.Assert(scalar(c, conn, "SELECT COUNT(*) FROM `"+compatDir+"/cf`"), qt.Equals, int64(2))
 		})
 	}

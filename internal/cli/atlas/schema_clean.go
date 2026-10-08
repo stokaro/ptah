@@ -14,7 +14,9 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasreport"
@@ -28,6 +30,7 @@ import (
 )
 
 type atlasSchemaCleanOptions struct {
+	runtime     schemaext.ConversionRuntime
 	url         string
 	dryRun      bool
 	format      string
@@ -110,6 +113,10 @@ func runAtlasSchemaClean(
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	opts.runtime, err = builtin.New()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	formatOutput := cmd.Flags().Changed("format")
 	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
 	if err != nil {
@@ -179,7 +186,7 @@ func runAtlasSchemaClean(
 		return cmdutil.Fail(cmd, errAtlasServerCleanSelectors)
 	}
 
-	plan, err := inspectAtlasSchemaCleanPlan(cmd.Context(), policy, conn)
+	plan, err := inspectAtlasSchemaCleanPlan(cmd.Context(), policy, conn, opts.runtime)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -296,7 +303,7 @@ func applyAtlasSchemaClean(
 				if executor != nil {
 					validationConn = conn.WithExecutor(executor)
 				}
-				fresh, err := inspectAtlasSchemaCleanPlan(cmd.Context(), policy, validationConn)
+				fresh, err := inspectAtlasSchemaCleanPlan(cmd.Context(), policy, validationConn, opts.runtime)
 				if err != nil {
 					return err
 				}
@@ -317,6 +324,7 @@ func inspectAtlasSchemaCleanPlan(
 	ctx context.Context,
 	policy atlascompatpolicy.Policy,
 	conn *dbschema.DatabaseConnection,
+	runtime schemaext.ConversionRuntime,
 ) (schemaclean.Plan, error) {
 	inspectOpts := schemaclean.InspectOptions{}
 	if policy.IsStrictCE() {
@@ -326,7 +334,11 @@ func inspectAtlasSchemaCleanPlan(
 				conn.Info().Dialect,
 				conn.Info().Schema,
 			)
-			return policy.ValidateSchemaCleanSnapshot(dbschematogo.ConvertDBSchemaToGoSchema(owned, conn.Info().Dialect))
+			converted, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, owned, conn.Info().Dialect, runtime)
+			if err != nil {
+				return err
+			}
+			return policy.ValidateSchemaCleanSnapshot(converted)
 		}
 	}
 	plan, err := schemaclean.InspectWithOptions(ctx, conn, inspectOpts)

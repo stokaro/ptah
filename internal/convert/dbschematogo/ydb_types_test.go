@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/ydbtype"
 )
@@ -61,7 +63,7 @@ func TestConvertDBSchemaToGoSchema_YDBTypeIsItsOwnDeclaration(t *testing.T) {
 			column := catalog.Column{Name: "c", DataType: test.ydbType, ColumnType: test.ydbType, IsNullable: "YES"}
 			db := &catalog.Database{Tables: []catalog.Table{{Name: "t", Columns: []catalog.Column{column}}}}
 
-			model := dbschematogo.ConvertDBSchemaToGoSchema(db, platform.YDB)
+			model := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), db, platform.YDB, must.Must(builtin.New())))
 
 			c.Assert(model.Fields, qt.HasLen, 1)
 			c.Assert(model.Fields[0].Type, qt.Equals, test.ydbType)
@@ -83,7 +85,7 @@ func TestConvertDBSchemaToGoSchema_YDBSerialColumn(t *testing.T) {
 	}
 	db := &catalog.Database{Tables: []catalog.Table{{Name: "t", Columns: []catalog.Column{column}}}}
 
-	model := dbschematogo.ConvertDBSchemaToGoSchema(db, platform.YDB)
+	model := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), db, platform.YDB, must.Must(builtin.New())))
 
 	c.Assert(model.Fields, qt.HasLen, 1)
 	c.Assert(model.Fields[0].Type, qt.Equals, "Int64")

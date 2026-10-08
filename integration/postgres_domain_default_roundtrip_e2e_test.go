@@ -10,11 +10,13 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/config"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
@@ -70,9 +72,9 @@ func TestPostgresDomainDefaultConvergesE2E(t *testing.T) {
 
 	// The description of the database compared against the database it
 	// describes. Nothing about it should differ.
-	described := dbschematogo.ConvertDBSchemaToGoSchema(read, "postgres")
+	described := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), read, "postgres", must.Must(builtin.New())))
 	diff, err := schemadiff.CompareWithDatabase(
-		ctx, conn, described, read, config.DefaultCompareOptions())
+		ctx, conn, described, read, config.DefaultCompareOptions(), must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.DomainsModified, qt.HasLen, 0,

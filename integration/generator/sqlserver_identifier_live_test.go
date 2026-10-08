@@ -12,10 +12,12 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/generator"
 )
@@ -42,6 +44,7 @@ CREATE INDEX [idx_users_status] ON [dbo].[users] ([status] ASC);`)
 	targetSchema := sqlServerGeneratorTargetSchema()
 
 	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+		Runtime:           must.Must(builtin.New()),
 		Generated:         targetSchema,
 		DBConn:            target,
 		MigrationName:     "index_status_desc",

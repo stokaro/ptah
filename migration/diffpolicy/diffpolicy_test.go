@@ -56,7 +56,7 @@ func TestApplyNilOrEmptyReturnsInput(t *testing.T) {
 	c.Assert(got, qt.IsNil)
 	c.Assert(skipped, qt.HasLen, 0)
 
-	diff := &difftypes.SchemaDiff{TablesRemoved: []string{"users"}}
+	diff := &difftypes.SchemaDiff{TablesRemoved: difftypes.TableRemovals{{Name: "users"}}}
 	got, skipped = diffpolicy.Apply(diff, nil)
 	c.Assert(got, qt.Equals, diff)
 	c.Assert(skipped, qt.HasLen, 0)
@@ -66,7 +66,7 @@ func TestApplyDropTableRemovesDependents(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		TablesRemoved: []string{"users"},
+		TablesRemoved: difftypes.TableRemovals{{Name: "users"}},
 		TablesModified: []difftypes.TableDiff{
 			{TableName: "orders", ColumnsRemoved: difftypes.ColumnChanges{{Name: "note"}}},
 		},
@@ -98,7 +98,7 @@ func TestApplyDropTableRemovesDependents(t *testing.T) {
 
 	// The dropped table and only its dependents are removed; the kept table's
 	// removals (orders) and the schema-level grant survive.
-	c.Assert(got.TablesRemoved, qt.HasLen, 0)
+	c.Assert(got.TablesRemoved.Names(), qt.HasLen, 0)
 	c.Assert(got.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_orders_total", TableName: "orders"},
 	})
@@ -116,7 +116,7 @@ func TestApplyDropTableRemovesDependents(t *testing.T) {
 	c.Assert(skipped[0].Object, qt.Equals, "users")
 
 	// The input diff must not be mutated.
-	c.Assert(diff.TablesRemoved, qt.DeepEquals, []string{"users"})
+	c.Assert(diff.TablesRemoved.Names(), qt.DeepEquals, []string{"users"})
 	c.Assert(diff.GrantsRemoved, qt.HasLen, 3)
 }
 

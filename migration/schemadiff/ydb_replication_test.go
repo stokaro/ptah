@@ -4,13 +4,18 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/ydb/ydbdiff"
+	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -58,9 +63,9 @@ func TestCompare_YDBReplicationReadsBackAsDeclared(t *testing.T) {
 		name string
 		diff *difftypes.SchemaDiff
 	}{
-		{name: "against the database", diff: schemadiff.CompareWithDialect(declaration,
-			replicationCatalog([]catalog.AsyncReplication{mirrorRead}, ingestRead), platform.YDB)},
-		{name: "against the same document", diff: schemadiff.CompareSchemas(declaration, declaration, platform.YDB)},
+		{name: "against the database", diff: must.Must(schemadiff.CompareWithDialect(t.Context(), declaration,
+			replicationCatalog([]catalog.AsyncReplication{mirrorRead}, ingestRead), platform.YDB, must.Must(builtin.New())))},
+		{name: "against the same document", diff: must.Must(schemadiff.CompareSchemas(t.Context(), declaration, declaration, platform.YDB, must.Must(builtin.New())))},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -85,7 +90,7 @@ func TestCompare_YDBReplicationChange(t *testing.T) {
 	desired := replicationDeclaration([]schemamodel.AsyncReplication{moved}, added)
 	current := replicationCatalog([]catalog.AsyncReplication{mirrorRead, stale}, ingestRead)
 
-	diff := schemadiff.CompareWithDialect(desired, current, platform.YDB)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, current, platform.YDB, must.Must(builtin.New())))
 
 	c.Assert(diff.AsyncReplicationsAdded, qt.HasLen, 0)
 	c.Assert(diff.AsyncReplicationsRemoved.Names(), qt.DeepEquals, []string{"dr.old"})
@@ -119,19 +124,20 @@ func TestCompare_YDBReplicationCoverage(t *testing.T) {
 	opts := config.DefaultCompareOptions()
 	opts.Dialect = platform.YDB
 
-	withheld, undecided := schemadiff.CompareReportingUndecidedAdditions(
-		replicationDeclaration([]schemamodel.AsyncReplication{mirrorDeclared}), unread, opts)
-	kept := schemadiff.CompareWithDialect(undeclared,
-		replicationCatalog([]catalog.AsyncReplication{mirrorRead}, ingestRead), platform.YDB)
+	withheld, undecided, err := schemadiff.CompareReportingUndecidedAdditions(
+		t.Context(), replicationDeclaration([]schemamodel.AsyncReplication{mirrorDeclared}), unread, opts, must.Must(builtin.New()))
+	c.Assert(err, qt.IsNil)
+	kept := must.Must(schemadiff.CompareWithDialect(t.Context(), undeclared,
+		replicationCatalog([]catalog.AsyncReplication{mirrorRead}, ingestRead), platform.YDB, must.Must(builtin.New())))
 
 	c.Assert(withheld.HasChanges(), qt.IsFalse)
-	c.Assert(undecided, qt.DeepEquals, []coverage.Object{{Kind: coverage.Replication, Name: "mirror",
+	c.Assert(undecided.Common, qt.DeepEquals, []coverage.Object{{Kind: coverage.Replication, Name: "mirror",
 		Reason: coverage.Unsupported, Provenance: coverage.Observed}})
 	c.Assert(kept.HasChanges(), qt.IsFalse)
 }
 
 // transferFeed is the changefeed a transfer reads, as declared.
-var transferFeed = ast.ChangefeedSpec{Name: "feed", Mode: "UPDATES", Format: "JSON"}
+var transferFeed = ydbschema.ChangefeedSpec{Name: "feed", Mode: "UPDATES", Format: "JSON"}
 
 // transferDeclaration declares table events with transferFeed and a transfer
 // that reads it through no consumer it names.
@@ -170,10 +176,51 @@ func TestCompare_YDBTransferConsumerIsAdopted(t *testing.T) {
 	c := qt.New(t)
 	desired := transferDeclaration()
 
-	diff := schemadiff.CompareWithDialect(desired, transferCatalog(generated), platform.YDB)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, transferCatalog(generated), platform.YDB, must.Must(builtin.New())))
 
 	c.Assert(diff.HasChanges(), qt.IsFalse)
-	c.Assert(desired.Tables[0].Changefeeds, qt.DeepEquals, []ast.ChangefeedSpec{transferFeed})
+	c.Assert(must.Must(ydbschema.DesiredChangefeeds(desired.FeatureObjects, "", "events")), qt.DeepEquals, []ydbschema.ChangefeedSpec{transferFeed})
+}
+
+func TestTransferConsumerAdoptionPreservesReplicationBinding(t *testing.T) {
+	c := qt.New(t)
+	desired, current := transferDeclaration(), transferCatalog(generated)
+	ref := ydbschema.ChangefeedRef("", "events", transferFeed.Name)
+	observed := &ydbschema.ObservedChangefeed{Spec: transferFeed.Clone(),
+		Replication: &ydbschema.ReplicationBinding{DestinationPath: "/remote/replica", ItemID: "1"}}
+	retained := observed.Desired()
+	observed.Spec.Consumers = []ast.TopicConsumerSpec{generated}
+	var err error
+	desired.FeatureObjects, err = schemaext.NewObjects(schemaext.Object{Ref: ref, Value: retained})
+	c.Assert(err, qt.IsNil)
+	current.FeatureObjects, err = schemaext.NewObjects(schemaext.Object{Ref: ref, Value: observed})
+	c.Assert(err, qt.IsNil)
+	diff, err := schemadiff.CompareWithDialect(t.Context(), desired, current, platform.YDB, must.Must(builtin.New()))
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.HasChanges(), qt.IsFalse)
+	unchanged, _, err := desired.FeatureObjects.Get(ref)
+	c.Assert(err, qt.IsNil)
+	c.Assert(unchanged.Value.Equal(retained), qt.IsTrue)
+}
+
+func TestTableChangeCapturesRetainedReplicationState(t *testing.T) {
+	c := qt.New(t)
+	desired, current := changefeedDeclaration(), changefeedCatalog()
+	desired.Fields = append(desired.Fields, schemamodel.Field{StructName: "Event", Name: "extra", Type: "TEXT", Nullable: true})
+	observed := &ydbschema.ObservedChangefeed{Spec: transferFeed.Clone(),
+		Replication: &ydbschema.ReplicationBinding{DestinationPath: "/remote/replica", ItemID: "1"}}
+	ref := ydbschema.ChangefeedRef("", "events", transferFeed.Name)
+	var err error
+	current.FeatureObjects, err = schemaext.NewObjects(schemaext.Object{Ref: ref, Value: observed})
+	c.Assert(err, qt.IsNil)
+	diff, err := schemadiff.CompareWithDialect(t.Context(), desired, current, platform.YDB, must.Must(builtin.New()))
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.TablesModified, qt.HasLen, 1)
+	c.Assert(diff.TablesModified[0].FeatureChanges, qt.HasLen, 0)
+	captured, found, err := diff.TablesModified[0].Desired.OwnedObjects.Get(ref)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(captured.Value.Equal(observed.Desired()), qt.IsTrue)
 }
 
 // TestCompare_YDBTransferConsumerAdoptionKeepsOthersCompared still compares a
@@ -186,13 +233,10 @@ func TestCompare_YDBTransferConsumerAdoptionKeepsOthersCompared(t *testing.T) {
 	held := transferFeed
 	held.Consumers = []ast.TopicConsumerSpec{generated, audit}
 
-	diff := schemadiff.CompareWithDialect(transferDeclaration(), transferCatalog(generated, audit), platform.YDB)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), transferDeclaration(), transferCatalog(generated, audit), platform.YDB, must.Must(builtin.New())))
 
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
-	c.Assert(diff.TablesModified[0].ChangefeedsChange, qt.DeepEquals, &difftypes.ChangefeedsChange{
-		Desired: []ast.ChangefeedSpec{adopted},
-		Current: []ast.ChangefeedSpec{held},
-	})
+	c.Assert(diff.TablesModified[0].FeatureChanges, qt.DeepEquals, []schemaext.ChangeRecord{{Subject: ydbschema.ChangefeedRef("", "events", held.Name), Value: &ydbdiff.Changefeed{Before: &ydbschema.ObservedChangefeed{Spec: held}, After: &ydbschema.DesiredChangefeed{Spec: adopted}}}})
 }
 
 // TestCompare_YDBTransferConsumerIsAdoptedOnATopic keeps the consumer YDB
@@ -213,7 +257,7 @@ func TestCompare_YDBTransferConsumerIsAdoptedOnATopic(t *testing.T) {
 		Transfers: []catalog.Transfer{{Name: "ingest", State: catalog.ReplicationRunning, Spec: held}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, current, platform.YDB)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, current, platform.YDB, must.Must(builtin.New())))
 
 	c.Assert(diff.TopicsModified, qt.HasLen, 0)
 	c.Assert(diff.HasChanges(), qt.IsFalse)

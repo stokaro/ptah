@@ -7,9 +7,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -40,7 +42,7 @@ func clickHouseOverrides(c *qt.C, database *schemamodel.Database) map[string]str
 func TestConvert_CarriesEveryClickHouseEngineClause(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(engineTable(catalog.Table{
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), engineTable(catalog.Table{
 		ClickHouseEngine:       "ReplacingMergeTree(ver)",
 		ClickHouseOrderBy:      "day, id",
 		ClickHousePartitionKey: "toYYYYMM(day)",
@@ -48,7 +50,7 @@ func TestConvert_CarriesEveryClickHouseEngineClause(t *testing.T) {
 		ClickHouseSamplingKey:  "id",
 		ClickHouseTTL:          "day + toIntervalDay(90)",
 		ClickHouseSettings:     "index_granularity = 4096",
-	}), "clickhouse")
+	}), "clickhouse", must.Must(builtin.New())))
 
 	c.Assert(clickHouseOverrides(c, database), qt.DeepEquals, map[string]string{
 		"engine":       "ReplacingMergeTree(ver)",
@@ -76,7 +78,7 @@ func TestConvert_EveryClickHouseTableFieldReachesTheOverrides(t *testing.T) {
 
 	c.Assert(len(carried) > 0, qt.IsTrue, qt.Commentf("the walk found no ClickHouse fields at all"))
 
-	overrides := clickHouseOverrides(c, dbschematogo.ConvertDBSchemaToGoSchema(engineTable(table), "clickhouse"))
+	overrides := clickHouseOverrides(c, must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), engineTable(table), "clickhouse", must.Must(builtin.New()))))
 
 	c.Assert(markedFields(overrides), qt.DeepEquals, carried,
 		qt.Commentf("a ClickHouse table field has no override key, so the clause is read and dropped"))
@@ -133,14 +135,14 @@ func markedFields(overrides map[string]string) []string {
 func TestConvert_CarriesTheOrderByEvenWhenItMatchesThePrimaryKey(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(engineTable(catalog.Table{
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), engineTable(catalog.Table{
 		ClickHouseEngine:  "MergeTree",
 		ClickHouseOrderBy: "day, id",
 		// Empty on purpose: this is what the reader reports when the sorting key
 		// is nothing beyond the primary key, which is the case that lost the
 		// order.
 		ClickHouseSortingKey: "",
-	}), "clickhouse")
+	}), "clickhouse", must.Must(builtin.New())))
 
 	c.Assert(clickHouseOverrides(c, database)["order_by"], qt.Equals, "day, id")
 }
@@ -153,7 +155,7 @@ func TestConvert_CarriesTheOrderByEvenWhenItMatchesThePrimaryKey(t *testing.T) {
 func TestConvert_LeavesATableWithNoEngineFactsAlone(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(engineTable(catalog.Table{}), "clickhouse")
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), engineTable(catalog.Table{}), "clickhouse", must.Must(builtin.New())))
 
 	c.Assert(database.Tables, qt.HasLen, 1)
 	c.Assert(database.Tables[0].Overrides, qt.HasLen, 0)

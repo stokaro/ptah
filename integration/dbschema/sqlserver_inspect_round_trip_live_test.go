@@ -8,9 +8,11 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/dbtarget"
@@ -68,7 +70,7 @@ func TestSQLServerLiveInspectDescribesSynonymsAndProperties(t *testing.T) {
 	c.Assert(live.ExtendedProperties, qt.HasLen, 2)
 
 	rendered, err := atlashclrender.RenderInspected(
-		dbschematogo.ConvertDBSchemaToGoSchema(live, "sqlserver"), platform.SQLServer, schemaName)
+		must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), live, "sqlserver", must.Must(builtin.New()))), platform.SQLServer, schemaName)
 	c.Assert(err, qt.IsNil)
 	document := string(rendered.Data)
 

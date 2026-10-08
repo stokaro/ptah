@@ -14,6 +14,8 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbcoordination"
@@ -136,7 +138,11 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	}
 	defer end()
 
-	db := &catalog.Database{DatabasePath: "/" + strings.Trim(r.database, "/")}
+	featureCoverage, err := ydbschema.ChangefeedCoverage(schemaext.Observed, nil)
+	if err != nil {
+		return nil, err
+	}
+	db := &catalog.Database{FeatureCoverage: featureCoverage, DatabasePath: "/" + strings.Trim(r.database, "/")}
 	if err := r.walk(ctx, source, "", db); err != nil {
 		return nil, err
 	}

@@ -3,14 +3,17 @@
 package gonative_test
 
 import (
+	"context"
 	"database/sql"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbschema/mysql"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -126,8 +129,11 @@ func applyPlannedSQL(c *qt.C, db *sql.DB, dialect string, desired *schemamodel.D
 	live, err := reader.ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
 
-	diff := schemadiff.Compare(desired, live)
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, dialect)
+	diff := must.Must(schemadiff.Compare(c.Context(), desired, live, must.Must(builtin.New())))
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, dialect,
+	)
 	c.Assert(err, qt.IsNil)
 
 	for _, statement := range statements {
@@ -144,7 +150,7 @@ func readBackDiff(c *qt.C, db *sql.DB, desired *schemamodel.Database) *difftypes
 	reader := mysql.NewMySQLReader(db, "")
 	live, err := reader.ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
-	return schemadiff.Compare(desired, live)
+	return must.Must(schemadiff.Compare(c.Context(), desired, live, must.Must(builtin.New())))
 }
 
 // TestFunctionRoundTrip_MySQLFamily_Integration is the acceptance for

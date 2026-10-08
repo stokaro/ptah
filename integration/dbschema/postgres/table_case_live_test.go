@@ -12,11 +12,12 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/jackc/pgx/v5"
 
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/schemadiff"
@@ -104,7 +105,7 @@ func (f tableCaseFixture) compare(c *qt.C, desired *schemamodel.Database) *difft
 	c.Helper()
 	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), f.conn, []string{f.schema})
 	c.Assert(err, qt.IsNil)
-	return schemadiff.CompareWithDialect(desired, live, f.dialect)
+	return must.Must(schemadiff.CompareWithDialect(c.Context(), desired, live, f.dialect, must.Must(builtin.New())))
 }
 
 // assertNothingPlannedForTheFile checks the parts of a comparison the file
@@ -114,7 +115,7 @@ func (f tableCaseFixture) compare(c *qt.C, desired *schemamodel.Database) *difft
 func assertNothingPlannedForTheFile(c *qt.C, diff *difftypes.SchemaDiff) {
 	c.Helper()
 	c.Assert(diff.TablesAdded, qt.HasLen, 0)
-	c.Assert(diff.TablesRemoved, qt.HasLen, 0)
+	c.Assert(diff.TablesRemoved.Names(), qt.HasLen, 0)
 	c.Assert(diff.TablesModified, qt.HasLen, 0, qt.Commentf("%+v", diff.TablesModified))
 	c.Assert(diff.IndexesAdded, qt.HasLen, 0)
 	c.Assert(diff.IndexesRemoved, qt.HasLen, 0, qt.Commentf("%+v", diff.IndexesRemoved))
@@ -147,7 +148,7 @@ func TestTableCase_LiveRenderedFileApplies(t *testing.T) {
 			c := qt.New(t)
 			f := newTableCaseFixture(c, row.engine, row.quote)
 			desired := f.load(c)
-			statements, err := renderer.GetOrderedCreateStatements(desired, f.dialect)
+			statements, err := builtin.GetOrderedCreateStatements(desired, f.dialect)
 			c.Assert(err, qt.IsNil)
 			f.execute(c, statements)
 

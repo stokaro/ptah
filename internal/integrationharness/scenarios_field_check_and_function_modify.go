@@ -123,7 +123,7 @@ func testDynamicFunctionAttributeModification(ctx context.Context, conn *dbschem
 		if err != nil {
 			return fmt.Errorf("failed to read database schema: %w", err)
 		}
-		diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, dbSchema, nil)
+		diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, dbSchema, nil, vem.runtime)
 		if err != nil {
 			return fmt.Errorf("failed to compare schemas: %w", err)
 		}

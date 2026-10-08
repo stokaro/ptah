@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -177,7 +179,7 @@ func TestCompare_NotValid_ARecreatedConstraintIsNotValidated(t *testing.T) {
 func TestCompareSchemas_ValidatesWhatTheOtherDeclarationLeavesNotValid(t *testing.T) {
 	c := qt.New(t)
 
-	diff := schemadiff.CompareSchemas(validatedCheckTable(false), validatedCheckTable(true), platform.Postgres)
+	diff := must.Must(schemadiff.CompareSchemas(t.Context(), validatedCheckTable(false), validatedCheckTable(true), platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.ConstraintsValidated, qt.DeepEquals,
 		[]difftypes.ConstraintValidation{{TableName: "t", Name: "t_n_positive"}})

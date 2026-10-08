@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -41,9 +43,9 @@ func TestConvert_ResourcePools(t *testing.T) {
 			classifier := catalog.ResourcePoolClassifier{Name: "etl",
 				Spec: ast.ResourcePoolClassifierSpec{ResourcePool: "batch", MemberName: "etl", Rank: 10}}
 
-			converted := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{
+			converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), &catalog.Database{
 				ResourcePools: test.read, ResourcePoolClassifiers: []catalog.ResourcePoolClassifier{classifier},
-			}, "ydb")
+			}, "ydb", must.Must(builtin.New())))
 
 			c.Assert(converted.ResourcePools, qt.DeepEquals, test.want)
 			c.Assert(converted.ResourcePoolClassifiers, qt.DeepEquals, []schemamodel.ResourcePoolClassifier{

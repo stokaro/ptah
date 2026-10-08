@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/agentgate"
 	"ptah.run/internal/agentpolicy"
 	"ptah.run/internal/agentworkspace"
@@ -48,7 +50,7 @@ func scopeFor(
 // runner builds the gate runner every test uses.
 func runner(c *qt.C) *agentgate.Runner {
 	c.Helper()
-	built, err := agentgate.New(agentgate.Options{Dialect: "postgres"})
+	built, err := agentgate.New(agentgate.Options{Validation: must.Must(builtin.New()), Rendering: must.Must(builtin.New()), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 	return built
 }

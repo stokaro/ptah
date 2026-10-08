@@ -10,12 +10,14 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/jackc/pgx/v5"
 
 	"ptah.run/config"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/sqlschema"
 	"ptah.run/migration/planner"
@@ -130,14 +132,17 @@ func (f routineGrantFixture) compare(c *qt.C, ctx context.Context, desired *sche
 	c.Assert(err, qt.IsNil)
 	opts := config.DefaultCompareOptions()
 	opts.Dialect = f.conn.Info().Dialect
-	return schemadiff.CompareWithOptions(desired, read, opts)
+	return must.Must(schemadiff.CompareWithOptions(ctx, desired, read, opts, must.Must(builtin.New())))
 }
 
 // apply compares, plans and executes the plan, and returns the diff it ran.
 func (f routineGrantFixture) apply(c *qt.C, ctx context.Context, desired *schemamodel.Database) *difftypes.SchemaDiff {
 	c.Helper()
 	diff := f.compare(c, ctx, desired)
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.Postgres)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Postgres,
+	)
 	c.Assert(err, qt.IsNil)
 	f.exec(c, ctx, statements...)
 	return diff

@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -99,7 +101,7 @@ func TestConvert_TableIdentity_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{Tables: test.tables}, "postgres")
+			database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), &catalog.Database{Tables: test.tables}, "postgres", must.Must(builtin.New())))
 
 			c.Assert(columnsByTable(database), qt.DeepEquals, test.want)
 		})
@@ -127,7 +129,7 @@ func TestConvert_TableIdentity_StructNamesDoNotFollowCatalogOrder(t *testing.T) 
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{Tables: test.tables}, "postgres")
+			database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), &catalog.Database{Tables: test.tables}, "postgres", must.Must(builtin.New())))
 
 			c.Assert(structNames(database), qt.DeepEquals, map[string]string{
 				"app.Docs": "Docs", "app.docs": "Docs2", "app.orders": "Orders",
@@ -147,7 +149,7 @@ func TestConvert_TableIdentity_IndexStaysWithItsTable(t *testing.T) {
 		}},
 	}
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(schema, "postgres")
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), schema, "postgres", must.Must(builtin.New())))
 
 	c.Assert(database.Indexes, qt.HasLen, 1)
 	c.Assert(database.Indexes[0].StructName, qt.Equals, structNames(database)["app.docs"])

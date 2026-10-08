@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlschema"
 	"ptah.run/migration/schemadiff"
 )
@@ -19,7 +21,7 @@ func TestCompare_YQLOmittedReplicationRequestsRemoval(t *testing.T) {
 	held := &catalog.Database{
 		AsyncReplications: []catalog.AsyncReplication{{Name: "copy"}},
 	}
-	diff := schemadiff.CompareWithDialect(&desired, held, "ydb")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), &desired, held, "ydb", must.Must(builtin.New())))
 	c.Assert(diff.AsyncReplicationsRemoved, qt.HasLen, 1)
 }
 
@@ -28,7 +30,7 @@ func TestCompare_YQLOmittedTTLRequestsRemoval(t *testing.T) {
 	desired, _, err := sqlschema.Read([]byte("CREATE TABLE events (id Int64 NOT NULL, ts Timestamp64, expires Uint64, PRIMARY KEY (id));"), "ydb")
 	c.Assert(err, qt.IsNil)
 	held := ydbTTLCatalog(&ast.RowDeletionPolicySpec{Column: "ts", Interval: "PT1H"})
-	diff := schemadiff.CompareWithDialect(&desired, held, "ydb")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), &desired, held, "ydb", must.Must(builtin.New())))
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 }
 
@@ -37,7 +39,7 @@ func TestCompare_YQLOmittedViewsAndTopicsRequestRemoval(t *testing.T) {
 	desired, _, err := sqlschema.Read(nil, "ydb")
 	c.Assert(err, qt.IsNil)
 	held := &catalog.Database{Topics: []catalog.Topic{readTopic("events")}, Views: []catalog.View{{Name: "summary"}}}
-	diff := schemadiff.CompareWithDialect(&desired, held, "ydb")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), &desired, held, "ydb", must.Must(builtin.New())))
 	c.Assert(diff.ViewsRemoved, qt.HasLen, 1)
 	c.Assert(diff.TopicsRemoved, qt.HasLen, 1)
 }
@@ -56,7 +58,7 @@ func TestCompare_YQLSecretsDeclaredAndOmitted(t *testing.T) {
 			desired, _, err := sqlschema.Read([]byte(test.source), "ydb")
 			c.Assert(err, qt.IsNil)
 			held := &catalog.Database{Secrets: []catalog.Secret{{Name: "credential"}}}
-			diff := schemadiff.CompareWithDialect(&desired, held, "ydb")
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), &desired, held, "ydb", must.Must(builtin.New())))
 			c.Assert(diff.SecretsRemoved.Names(), qt.DeepEquals, test.removed)
 			c.Assert(diff.SecretsAdded, qt.HasLen, 0)
 			c.Assert(diff.SecretsRotated, qt.HasLen, 0)
@@ -72,17 +74,17 @@ func TestCompare_YQLPrincipals(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	held := ydbAccessCatalog()
 	held.Tables, held.Constraints, held.Grants = nil, nil, nil
-	c.Assert(schemadiff.CompareWithDialect(&desired, held, "ydb").HasChanges(), qt.IsFalse)
+	c.Assert(must.Must(schemadiff.CompareWithDialect(t.Context(), &desired, held, "ydb", must.Must(builtin.New()))).HasChanges(), qt.IsFalse)
 	changed, _, err := sqlschema.Read([]byte("CREATE USER app NOLOGIN; CREATE GROUP readers;"), "ydb")
 	c.Assert(err, qt.IsNil)
-	diff := schemadiff.CompareWithDialect(&changed, held, "ydb")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), &changed, held, "ydb", must.Must(builtin.New())))
 	c.Assert(diff.RolesModified, qt.HasLen, 1)
 	c.Assert(diff.RolesModified[0].RoleName, qt.Equals, "app")
 	c.Assert(diff.RoleMembershipsRemoved, qt.HasLen, 1)
 	c.Assert(diff.RoleMembershipsRemoved[0].Role, qt.Equals, "readers")
 	empty, _, err := sqlschema.Read(nil, "ydb")
 	c.Assert(err, qt.IsNil)
-	c.Assert(schemadiff.CompareWithDialect(&empty, held, "ydb").HasChanges(), qt.IsFalse)
+	c.Assert(must.Must(schemadiff.CompareWithDialect(t.Context(), &empty, held, "ydb", must.Must(builtin.New()))).HasChanges(), qt.IsFalse)
 }
 
 func TestCompare_YQLPrivileges(t *testing.T) {
@@ -94,10 +96,10 @@ func TestCompare_YQLPrivileges(t *testing.T) {
 	desired, _, err := sqlschema.ReadOnto([]byte(objects+grants), "ydb", document)
 	c.Assert(err, qt.IsNil)
 	held := ydbAccessCatalog()
-	c.Assert(schemadiff.CompareWithDialect(&desired, held, "ydb").HasChanges(), qt.IsFalse)
+	c.Assert(must.Must(schemadiff.CompareWithDialect(t.Context(), &desired, held, "ydb", must.Must(builtin.New()))).HasChanges(), qt.IsFalse)
 	omitted, _, err := sqlschema.Read([]byte(objects), "ydb")
 	c.Assert(err, qt.IsNil)
-	diff := schemadiff.CompareWithDialect(&omitted, held, "ydb")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), &omitted, held, "ydb", must.Must(builtin.New())))
 	c.Assert(diff.GrantsRemoved, qt.HasLen, 4)
 	c.Assert(diff.RolesRemoved, qt.HasLen, 0)
 }

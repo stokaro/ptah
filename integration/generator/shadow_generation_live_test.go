@@ -8,8 +8,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/shadow"
 )
@@ -38,6 +40,7 @@ func TestGenerateMigrationShadowVerificationWithRealDB(t *testing.T) {
 		prepareShadowTargetDB(c, ctx, conn)
 
 		files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+			Runtime:           must.Must(builtin.New()),
 			GoEntitiesDir:     entitiesDir,
 			DatabaseURL:       dbURL,
 			MigrationName:     "add_email",
@@ -69,6 +72,7 @@ func TestGenerateMigrationShadowVerificationWithRealDB(t *testing.T) {
 		prepareShadowTargetDB(c, ctx, conn)
 
 		files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+			Runtime:           must.Must(builtin.New()),
 			GoEntitiesDir:     entitiesDir,
 			DatabaseURL:       dbURL,
 			MigrationName:     "add_email",

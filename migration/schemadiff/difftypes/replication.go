@@ -5,6 +5,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/ydbreplication"
 )
@@ -146,6 +147,10 @@ func NewTransferDiff(name string, desired, current ast.TransferSpec, state strin
 // depend on: the replica tables a replication owns, the table and the topic a
 // transfer reads and writes, and the state that decides what YDB can change.
 type ReplicationContext struct {
+	// DesiredObjects retains named dependencies, including unchanged streams.
+	DesiredObjects schemaext.Objects
+	// CurrentCoverage retains explicit records of unreadable dependencies.
+	CurrentCoverage schemaext.Coverage
 	// CurrentReplications are the replications the database holds.
 	CurrentReplications []catalog.AsyncReplication
 	// CurrentTransfers are the transfers the database holds.

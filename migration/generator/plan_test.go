@@ -8,9 +8,11 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/migrationsnapshot"
@@ -344,21 +346,20 @@ func newSQLiteMigrationOptions(
 	c.Cleanup(func() {
 		c.Check(conn.Close(), qt.IsNil)
 	})
-	return generator.GenerateMigrationOptions{
-		Generated: &schemamodel.Database{
-			Tables: []schemamodel.Table{
-				{StructName: "User", Name: "users"},
-			},
-			Fields: []schemamodel.Field{
-				{
-					StructName: "User",
-					FieldName:  "ID",
-					Name:       "id",
-					Type:       "INTEGER",
-					Primary:    true,
-				},
+	return generator.GenerateMigrationOptions{Runtime: must.Must(builtin.New()), Generated: &schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "User", Name: "users"},
+		},
+		Fields: []schemamodel.Field{
+			{
+				StructName: "User",
+				FieldName:  "ID",
+				Name:       "id",
+				Type:       "INTEGER",
+				Primary:    true,
 			},
 		},
+	},
 		DBConn:        conn,
 		MigrationName: "create_users",
 		OutputDir:     outputDir,

@@ -5,9 +5,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/modelast"
 )
 
@@ -41,8 +42,8 @@ func userTypeOrderDatabase() schemamodel.Database {
 func TestCollectDatabase_CreatesUserTypesBeforeTheTypesThatNameThem(t *testing.T) {
 	c := qt.New(t)
 
-	statements := modelast.CollectDatabase(userTypeOrderDatabase(), "postgres")
-	sql, err := renderer.RenderSQL("postgres", statements.Statements...)
+	statements := must.Must(modelast.CollectDatabase(userTypeOrderDatabase(), "postgres"))
+	sql, err := builtin.RenderSQL("postgres", statements.Statements...)
 	c.Assert(err, qt.IsNil)
 
 	tests := []struct {

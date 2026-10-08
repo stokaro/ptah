@@ -1,14 +1,16 @@
 package mysql_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mysql"
 	"ptah.run/migration/schemadiff"
 )
@@ -51,10 +53,13 @@ func TestPlanner_ModifiesAColumnDeclaredInsideAnEmbeddedStruct(t *testing.T) {
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, platform.MySQL)
-	nodes, err := mysql.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, platform.MySQL, must.Must(builtin.New())))
+	nodes, err := mysql.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL(platform.MySQL, nodes...)
+	sql, err := builtin.RenderSQL(platform.MySQL, nodes...)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(sql, qt.Contains, "MODIFY COLUMN `revision` BIGINT",

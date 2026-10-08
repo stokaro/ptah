@@ -8,8 +8,10 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/exitcode"
@@ -164,12 +166,17 @@ func runAtlasSchemaPlanTest(cmd *cobra.Command, opts atlasSchemaPlanTestOptions)
 		return cmdutil.Fail(cmd, err)
 	}
 
+	runtime, err := builtin.New()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	report, err := dbtest.RunSchemaTest(cmd.Context(), dbtest.SchemaOptions{
+		Runtime:               runtime,
 		Cases:                 cases,
 		DBURL:                 devURL,
 		ReportKind:            "PLAN",
 		ResolveSchema:         atlasPlanTestSchemaResolver(dir),
-		ApplyPlan:             atlasPlanTestPlanApplier(dir),
+		ApplyPlan:             atlasPlanTestPlanApplier(dir, runtime),
 		AllowExternalCommands: allowExternal,
 	})
 	if err != nil {
@@ -220,6 +227,7 @@ func atlasPlanTestSchemaResolver(dir string) func(string) (*schemamodel.Database
 // catch.
 func atlasPlanTestPlanApplier(
 	dir string,
+	runtime schemaext.ModelRuntime,
 ) func(context.Context, *dbschema.DatabaseConnection, string) error {
 	return func(ctx context.Context, conn *dbschema.DatabaseConnection, url string) error {
 		path, err := atlasPlanTestLocalPath(dir, url, "apply")
@@ -231,7 +239,7 @@ func atlasPlanTestPlanApplier(
 			return err
 		}
 		if atlasschema.IsNativeFingerprint(plan.FromFingerprint) {
-			if err := atlasschema.VerifyPlanTarget(ctx, conn, plan); err != nil {
+			if err := atlasschema.VerifyPlanTarget(ctx, conn, plan, runtime); err != nil {
 				return err
 			}
 		}

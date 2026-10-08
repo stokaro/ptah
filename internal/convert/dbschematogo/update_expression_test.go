@@ -4,8 +4,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -19,7 +21,7 @@ import (
 func TestConvert_TheUpdateExpressionSurvivesTheConversion(t *testing.T) {
 	c := qt.New(t)
 
-	converted := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{
+	converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), &catalog.Database{
 		Tables: []catalog.Table{{
 			Name: "person", Schema: "sweep",
 			Columns: []catalog.Column{{
@@ -27,7 +29,7 @@ func TestConvert_TheUpdateExpressionSurvivesTheConversion(t *testing.T) {
 				UpdateExpression: "CURRENT_TIMESTAMP",
 			}},
 		}},
-	}, "")
+	}, "postgres", must.Must(builtin.New())))
 
 	c.Assert(converted.Fields, qt.HasLen, 1)
 	c.Assert(converted.Fields[0].Name, qt.Equals, "updated_at")
@@ -40,14 +42,14 @@ func TestConvert_TheUpdateExpressionSurvivesTheConversion(t *testing.T) {
 func TestConvert_AColumnWithoutTheClauseCarriesNothing(t *testing.T) {
 	c := qt.New(t)
 
-	converted := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{
+	converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), &catalog.Database{
 		Tables: []catalog.Table{{
 			Name: "person", Schema: "sweep",
 			Columns: []catalog.Column{{
 				Name: "created_at", DataType: "timestamp", IsNullable: "NO",
 			}},
 		}},
-	}, "")
+	}, "postgres", must.Must(builtin.New())))
 
 	c.Assert(converted.Fields, qt.HasLen, 1)
 	c.Assert(converted.Fields[0].UpdateExpression, qt.Equals, "")

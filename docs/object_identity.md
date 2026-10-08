@@ -2,7 +2,7 @@
 
 This page is the canonical statement of what makes two schema objects the same
 object in Ptah, and of how a reference to an object is resolved or refused. The
-model lives in `internal/objectidentity`; this page owns the invariants, and the
+model lives in `core/objectidentity`; this page owns the invariants, and the
 package's tests are where each one is pinned.
 
 Read it before adding a map keyed on a schema object, before adding a new object
@@ -123,7 +123,7 @@ match would target another object, and the plan would then act on that one.
 | Diagnostics | `internal/atlasfilter` scope validation | Migrated. Lookups use `Key`, messages quote `Source`. |
 | Filtering | `internal/atlasfilter` exclusion state | Migrated, under exact semantics — see below. |
 | Planning | `internal/planner/dialects/postgres`, `.../mysql` | Migrated, under verbatim semantics — see below. |
-| Rendering | `core/renderer` routine-collision validation | Migrated. It emits `Source` spellings elsewhere and now shares the key it once rebuilt privately. |
+| Rendering | `engine/builtin` routine-collision validation | Migrated. It emits `Source` spellings elsewhere and now shares the key it once rebuilt privately. |
 | Dependency ordering | `internal/schemafile`, `migration/generator` | Not migrated. |
 | Parse-time deduplication | `core/goschema` | Not migrated. |
 | Catalog readers | `internal/dbschema/*` | Not migrated, and not a target: those keys index rows of a result set rather than schema objects. |
@@ -182,7 +182,7 @@ once.
 vocabulary — that is, when a reader of `compare` would not be surprised to see
 `objectidentity.Key` in a signature. Deleting an alias is a mechanical rename
 with no behavior change, and the equivalence tests in
-`internal/objectidentity/equivalence_test.go` are what make that safe to assert.
+`core/objectidentity/equivalence_test.go` are what make that safe to assert.
 
 **Verbatim constructors.** `TablePartsVerbatim` builds an identity without
 folding or trimming.

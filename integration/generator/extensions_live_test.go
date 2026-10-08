@@ -8,8 +8,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 )
 
@@ -43,6 +45,7 @@ type TestTable struct {
 	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
 
 	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+		Runtime:       must.Must(builtin.New()),
 		GoEntitiesDir: root,
 		DatabaseURL:   targetURL,
 		MigrationName: "extensions",

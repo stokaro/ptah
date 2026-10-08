@@ -15,7 +15,7 @@ func cloneSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 	clone := *diff
 	clone.IdentifierSemantics = cloneIdentifierSemantics(diff.IdentifierSemantics)
 	clone.TablesAdded = slices.Clone(diff.TablesAdded)
-	clone.TablesRemoved = slices.Clone(diff.TablesRemoved)
+	clone.TablesRemoved = diff.TablesRemoved.Clone()
 	clone.TablesModified = slices.Clone(diff.TablesModified)
 	clone.EnumsAdded = slices.Clone(diff.EnumsAdded)
 	clone.EnumsRemoved = slices.Clone(diff.EnumsRemoved)

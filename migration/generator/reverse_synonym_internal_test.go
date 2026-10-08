@@ -7,9 +7,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -44,10 +46,13 @@ func TestGenerateDownMigrationSQL_RecreatesASynonymTheUpMigrationDropped(t *test
 		}},
 	}
 
-	upDiff := schemadiff.CompareWithDialect(schema, db, "sqlserver")
+	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		schema, db, "sqlserver", must.Must(builtin.New()),
+	))
 	c.Assert(upDiff.SynonymsRemoved.Names(), qt.DeepEquals, []string{"dbo.s_users"})
 
-	downSQL, err := generateDownMigrationSQL(upDiff, schema, db, "sqlserver")
+	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+		upDiff, schema, db, "sqlserver")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(downSQL, qt.Contains, "CREATE SYNONYM",

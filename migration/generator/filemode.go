@@ -25,7 +25,7 @@ func planMigrationFiles(
 	qualifier atlasmigrate.Qualifier,
 ) ([]generatedMigrationSpec, []safety.StatementAssessment, error) {
 	specs, assessments, err := planGeneratedMigrationSpecs(
-		diff, desired, current, conn.Info(), version, opts.MigrationName, opts.DiffPolicy, qualifier,
+		ctx, opts.Runtime, diff, desired, current, conn.Info(), version, opts.MigrationName, opts.DiffPolicy, qualifier,
 	)
 	if err != nil || len(specs) == 0 {
 		return specs, assessments, err

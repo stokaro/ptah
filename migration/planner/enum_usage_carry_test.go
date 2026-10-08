@@ -1,14 +1,17 @@
 package planner_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -57,11 +60,14 @@ func TestGenerateSchemaDiffSQL_AnEnumRemovalConvertsTheColumnsTheComparisonFound
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(diff.EnumsModified, qt.HasLen, 1)
 	c.Assert(diff.EnumsModified[0].ValuesRemoved, qt.DeepEquals, []string{"archived"})
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.Postgres)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Postgres,
+	)
 	c.Assert(err, qt.IsNil)
 
 	// The conversion, and the default put back around it. Without the carried

@@ -1,12 +1,20 @@
 package renderer
 
 import (
-	"ptah.run/core/ast"
-	"ptah.run/core/platform"
-	"ptah.run/core/platform/capability"
-	"ptah.run/core/schemamodel"
-	"ptah.run/internal/renderdiag"
+	"fmt"
+	"strings"
 )
+
+// validateOmissions keeps AST and whole-schema replies on the same reporting
+// contract, so a provider cannot lose required fields at one boundary only.
+func validateOmissions(omissions []Omission) error {
+	for _, omission := range omissions {
+		if strings.TrimSpace(omission.Dialect) == "" || strings.TrimSpace(omission.Kind) == "" || strings.TrimSpace(omission.Reason) == "" {
+			return fmt.Errorf("%w: omission requires target, kind, and reason", ErrInvalidResult)
+		}
+	}
+	return nil
+}
 
 // Omission is one declaration a target did not render.
 //
@@ -59,139 +67,4 @@ func (o Omission) Message() string {
 		subject += "=" + o.Detail
 	}
 	return subject + " would be skipped"
-}
-
-// GetOrderedCreateStatementsReportingOmissions renders ordered create
-// statements and reports every declaration the target could not carry.
-//
-// The statements are exactly what GetOrderedCreateStatementsWithCapabilities
-// produces for the same arguments, from the same pipeline: this is that
-// function with a diagnostic sink attached, not a second rendering path. A
-// caller that only needs the SQL should keep using that function.
-//
-// The omissions are ordered deterministically and do not depend on the walk
-// order of the schema. A refusal is an error rather than an omission, so a
-// non-nil error means no statement list and no omission list: the target
-// refused the schema outright and nothing was rendered to have a loss.
-//
-// Reporting is not exhaustive over every property every dialect drops. It
-// covers the declarations a renderer names as skipped, the table options a
-// target cannot carry, the comments a target does not store, an index's partial
-// condition and operator class, a column's identity clauses, and the length or
-// precision a YDB column type does not keep; stokaro/ptah#2983 records what
-// remains.
-func GetOrderedCreateStatementsReportingOmissions(
-	r *schemamodel.Database,
-	dialect string,
-	caps capability.Capabilities,
-) ([]string, []Omission, error) {
-	sink := &renderdiag.Sink{}
-	statements, err := orderedCreateStatements(r, dialect, caps, sink)
-	if err != nil {
-		return nil, nil, err
-	}
-	return statements, publicOmissions(platform.NormalizeDialect(dialect), sink), nil
-}
-
-// RenderSQLReportingOmissions renders nodes the way
-// [RenderSQLWithCapabilities] does and reports every declaration the target
-// could not carry.
-//
-// It is the node-level counterpart of
-// [GetOrderedCreateStatementsReportingOmissions]: the same renderer and the
-// same preparation, with a diagnostic sink attached. A caller that converts a
-// description written for another tool reads the omissions to refuse a
-// conversion that would lose something, rather than write SQL that is quietly
-// smaller than its input.
-//
-// The SQL is exactly what RenderSQLWithCapabilities returns for the same
-// arguments. The omissions are ordered deterministically, and their coverage is
-// the one that function documents: it is not exhaustive. A non-nil error means
-// an empty string and no omissions.
-func RenderSQLReportingOmissions(
-	dialect string,
-	caps capability.Capabilities,
-	nodes ...ast.Node,
-) (string, []Omission, error) {
-	r, err := NewRendererWithCapabilities(dialect, caps)
-	if err != nil {
-		return "", nil, err
-	}
-	sink := &renderdiag.Sink{}
-	if reporter, ok := r.(omissionReporter); ok {
-		reporter.ReportOmissionsTo(sink)
-	}
-	output, err := visitorRenderSQL(r, nodes...)
-	if err != nil {
-		return "", nil, err
-	}
-	return output, publicOmissions(platform.NormalizeDialect(dialect), sink), nil
-}
-
-// publicOmissions stamps the target onto each record and converts it.
-//
-// The target is stamped here because this is the one place that holds the
-// normalized dialect name; a renderer that spelled it again would be a second
-// answer to what dialect a render was for.
-func publicOmissions(dialect string, sink *renderdiag.Sink) []Omission {
-	recorded := sink.Omissions()
-	if len(recorded) == 0 {
-		return nil
-	}
-	out := make([]Omission, 0, len(recorded))
-	for _, omission := range recorded {
-		out = append(out, Omission{
-			Dialect:  dialect,
-			Reason:   string(omission.Reason),
-			Kind:     omission.Kind,
-			Name:     omission.Name,
-			Property: omission.Property,
-			Detail:   omission.Detail,
-			Remedy:   omission.Remedy,
-		})
-	}
-	return out
-}
-
-// omissionReporter is a dialect renderer that can name what it did not emit.
-//
-// It is deliberately not part of [RenderVisitor]: that interface is exported
-// and an embedder may implement it, so a method added there is a breaking
-// change for a capability no embedder has to provide.
-type omissionReporter interface {
-	ReportOmissionsTo(sink *renderdiag.Sink)
-}
-
-// ReportOmissionsTo passes the sink to the wrapped dialect renderer.
-//
-// The wrapper holds [RenderVisitor] as a named field, so a method the interface
-// does not declare is not promoted; without this the assertion below would
-// always fail and every render would report nothing.
-func (r *validatingRenderer) ReportOmissionsTo(sink *renderdiag.Sink) {
-	if reporter, ok := r.inner.(omissionReporter); ok {
-		reporter.ReportOmissionsTo(sink)
-	}
-}
-
-// renderNodeReporting renders one node, attaching sink to the renderer built
-// for it.
-//
-// The ordered path builds a renderer per node and discards it, so a sink held
-// by the renderer would never span a schema. Passing it in per node is what
-// makes one sink collect the whole render, and it is also why no state leaks
-// between statements: the renderer that could leak does not outlive the node.
-func renderNodeReporting(
-	dialect string,
-	caps capability.Capabilities,
-	sink *renderdiag.Sink,
-	node ast.Node,
-) (string, error) {
-	r, err := NewRendererWithCapabilities(dialect, caps)
-	if err != nil {
-		return "", err
-	}
-	if reporter, ok := r.(omissionReporter); ok {
-		reporter.ReportOmissionsTo(sink)
-	}
-	return visitorRenderSQL(r, node)
 }

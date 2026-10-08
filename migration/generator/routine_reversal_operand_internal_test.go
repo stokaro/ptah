@@ -9,11 +9,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
+	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -50,7 +53,9 @@ func TestReverseSchemaDiff_RoutineOperandsComeFromThePriorSchema(t *testing.T) {
 			Name: "audit", Returns: "VOID", Language: "plpgsql",
 			Body: "BEGIN RAISE NOTICE 'x'; END;",
 		},
-	}}, current, platform.Postgres)
+	}}, current, must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(),
+		current, platform.Postgres, must.Must(builtin.New()))),
+	)
 	c.Assert(functions, qt.HasLen, 1)
 	c.Assert(functions[0].Desired.Body, qt.Equals, "BEGIN END;",
 		qt.Commentf("the rollback replaces the function with the body the database held"))

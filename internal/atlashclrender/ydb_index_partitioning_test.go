@@ -1,14 +1,17 @@
 package atlashclrender_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/convert/goschematodb"
@@ -38,11 +41,14 @@ func TestYDBIndexPartitioning_HCLRoundTrip(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(parsed.Indexes, qt.HasLen, 1)
 			c.Assert(parsed.Indexes[0].Partitioning, qt.DeepEquals, test.spec)
-			current := goschematodb.ToDBSchema(original, "ydb")
+			current := must.Must(goschematodb.ToDBSchema(t.Context(), original, "ydb", must.Must(builtin.New())))
 			caps := capability.YDB262()
-			diff, err := schemadiff.CompareWithDatabaseInfo(parsed, current, catalog.ServerInfo{Dialect: "ydb", Capabilities: caps}, nil)
+			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), parsed, current, catalog.ServerInfo{Dialect: "ydb", Capabilities: caps}, nil, must.Must(builtin.New()))
 			c.Assert(err, qt.IsNil)
-			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, "ydb", planner.Options{Capabilities: caps})
+			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+				context.Background(), must.Must(builtin.New()),
+				diff, "ydb", planner.Options{Capabilities: caps},
+			)
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements, qt.HasLen, 0)
 		})

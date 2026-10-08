@@ -5,20 +5,26 @@ package ydb_test
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/url"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -40,6 +46,21 @@ func selfConnection(c *qt.C, conn *dbschema.DatabaseConnection) string {
 	connection, err := connector.SelfConnectionString(c.Context())
 	c.Assert(err, qt.IsNil)
 	return connection
+}
+
+// alternateSelfConnection addresses the same single-node fixture from inside
+// its container. Discovery can advertise a remote host, localhost, or an IP;
+// the alternative must differ without changing the database or listener port.
+func alternateSelfConnection(c *qt.C, connection string) string {
+	c.Helper()
+	address, err := url.Parse(connection)
+	c.Assert(err, qt.IsNil)
+	host := "127.0.0.1"
+	if address.Hostname() == host {
+		host = "localhost"
+	}
+	address.Host = net.JoinHostPort(host, address.Port())
+	return address.String()
 }
 
 // replicationDeclaration declares the source table src in the replication
@@ -141,20 +162,23 @@ func replicationState(state string) func(*catalog.Database) bool {
 func planError(c *qt.C, conn *dbschema.DatabaseConnection, declared *schemamodel.Database) error {
 	c.Helper()
 	info := conn.Info()
-	diff, err := schemadiff.CompareWithDatabaseInfo(declared, readScoped(c, conn, replicationSchemas), info, nil)
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, readScoped(c, conn, replicationSchemas), info, nil, must.Must(builtin.New()))
 	if err != nil {
 		return err
 	}
-	_, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, info.Dialect,
-		planner.Options{Capabilities: info.Capabilities})
+	_, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		diff, info.Dialect,
+		planner.Options{Capabilities: info.Capabilities},
+	)
 	return err
 }
 
 // TestYDBReplication_RoundTrip creates a replication of a table of the same
 // database, and plans nothing once it runs: the replica table YDB created is
-// recorded rather than described, and so is the changefeed the replication
-// added to its source, so neither reaches the plan and the schema declares
-// neither. Removing the replication from the schema drops it with CASCADE,
+// recorded rather than described. Its source changefeed is inspected with its
+// replication binding and retained without a separate declaration or operation.
+// Removing the replication from the schema drops it with CASCADE,
 // which takes the replica table, and plans nothing after.
 func TestYDBReplication_RoundTrip(t *testing.T) {
 	for _, line := range ydbLines {
@@ -178,6 +202,7 @@ func TestYDBReplication_RoundTrip(t *testing.T) {
 				Items:      []ast.AsyncReplicationItem{{Source: "ptah_ydb_repl/src", Target: "ptah_ydb_repl/rep"}},
 			})
 			c.Assert(tableNames(live), qt.DeepEquals, []string{"ptah_ydb_repl|src"})
+			assertReplicationBinding(c, live)
 			c.Assert(planAgainst(c, conn, declared, replicationSchemas), qt.HasLen, 0)
 			c.Assert(planAgainst(c, conn, declared, replicationSchemas), qt.HasLen, 0)
 
@@ -192,6 +217,18 @@ func TestYDBReplication_RoundTrip(t *testing.T) {
 			c.Assert(planAgainst(c, conn, replicationDeclaration(""), replicationSchemas), qt.HasLen, 0)
 		})
 	}
+}
+
+func assertReplicationBinding(c *qt.C, live *catalog.Database) {
+	c.Helper()
+	objects, err := live.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.HasLen, 1)
+	observed := objects[0].Value.(*ydbschema.ObservedChangefeed)
+	c.Assert(observed.Replication, qt.IsNotNil)
+	c.Assert(observed.Replication.DestinationPath, qt.Equals, "/local/ptah_ydb_repl/rep")
+	c.Assert(observed.Replication.ItemID, qt.Equals, "1")
+	c.Assert(live.FeatureCoverage.Lookup(ydbschema.ChangefeedKind, objects[0].Ref).State, qt.Equals, schemaext.Complete)
 }
 
 // TestYDBReplication_RefusesATableAtAReplica refuses a schema that declares a
@@ -283,7 +320,7 @@ func TestYDBReplication_ConnectionChangesWhilePaused(t *testing.T) {
 			settledRead(c, conn, "the replica recorded", replicaRecorded)
 			// The same server through its loopback address: another
 			// connection string that still reaches the database.
-			moved := strings.Replace(connection, "localhost", "127.0.0.1", 1)
+			moved := alternateSelfConnection(c, connection)
 			c.Assert(moved, qt.Not(qt.Equals), connection)
 
 			running := planError(c, conn, replicationDeclaration(moved))
@@ -311,9 +348,10 @@ func TestYDBReplication_ConnectionChangesWhilePaused(t *testing.T) {
 // changefeed's topic through lambda, or no transfer for an empty lambda.
 func transferDeclaration(lambda string) *schemamodel.Database {
 	db := &schemamodel.Database{
+		FeatureObjects:  must.Must(schemaext.NewObjects(ydbschema.DesiredObject(replicationSchema, "orders", ydbschema.ChangefeedSpec{Name: "feed", Mode: "NEW_IMAGE", Format: "JSON"}))),
+		FeatureCoverage: must.Must(ydbschema.ChangefeedCoverage(schemaext.Desired, nil)),
 		Tables: []schemamodel.Table{
-			{StructName: "Orders", Name: "orders", Schema: replicationSchema,
-				Changefeeds: []ast.ChangefeedSpec{{Name: "feed", Mode: "NEW_IMAGE", Format: "JSON"}}},
+			{StructName: "Orders", Name: "orders", Schema: replicationSchema},
 			{StructName: "Log", Name: "order_log", Schema: replicationSchema},
 		},
 		Fields: []schemamodel.Field{

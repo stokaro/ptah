@@ -4,8 +4,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlschema"
 	"ptah.run/migration/schemadiff"
 )
@@ -28,7 +30,7 @@ func TestCompare_YQLExternalObjectsDeclaredAndOmitted(t *testing.T) {
 				ExternalDataSources: []catalog.ExternalDataSource{{Name: "bucket", SourceType: "ObjectStorage", Location: "https://storage.invalid/", AuthMethod: "NONE"}},
 				ExternalTables:      []catalog.ExternalTable{{Name: "events", DataSource: "bucket", Location: "/", Columns: []catalog.ExternalColumn{{Name: "id", Type: "Int64"}}}},
 			}
-			diff := schemadiff.CompareWithDialect(&desired, held, "ydb")
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), &desired, held, "ydb", must.Must(builtin.New())))
 			var removedSources, removedTables []string
 			for _, source := range diff.ExternalDataSourcesRemoved {
 				removedSources = append(removedSources, source.QualifiedName())

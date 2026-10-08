@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/ydbstream"
 	"ptah.run/migration/safety"
 )
@@ -28,7 +30,7 @@ func TestStreamingQueryCreateGuardsAgreeAcrossAssessments(t *testing.T) {
 				Spec: ast.StreamingQuerySpec{Text: "INSERT INTO sink SELECT * FROM source;"}}
 			assessed := safety.Assess([]ast.Node{node})
 			c.Assert(assessed[0].Severity, qt.Equals, test.severity)
-			rendered, err := safety.AssessRenderedWithCapabilities([]ast.Node{node}, "ydb", capability.YDB262().With(capability.StreamingQueries, true))
+			rendered, err := safety.AssessRenderedWithCapabilities(c.Context(), must.Must(builtin.New()), []ast.Node{node}, "ydb", capability.YDB262().With(capability.StreamingQueries, true))
 			c.Assert(err, qt.IsNil)
 			c.Assert(rendered[0].Severity, qt.Equals, test.severity)
 			c.Assert(safety.AssessSQL(ydbstream.Create(node.Name, node.Spec, test.options)).Severity, qt.Equals, test.severity)

@@ -920,6 +920,10 @@ snapshot, cleans the dev database again, and only then writes Atlas-style
 also runs after replay, introspection, comparison, or context-cancellation
 failures.
 
+If the replayed state does not establish whether a declared object exists,
+Ptah reports the missing evidence and exits with an error. It does not report
+the schemas as synchronized or publish migration files or a checksum.
+
 Use a disposable dev database: one that holds a table is refused before
 anything is dropped, as the pinned binary refuses it, and so is one holding
 anything else the reset would drop

@@ -8,11 +8,13 @@ import (
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/atlascompat"
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/migrationfile"
 )
 
@@ -78,7 +80,7 @@ func TestParseSQL(t *testing.T) {
 
 func TestSchemaToAST(t *testing.T) {
 	c := qt.New(t)
-	list := atlascompat.SchemaToAST(schemamodel.Database{
+	list, err := atlascompat.SchemaToAST(schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
 		Fields: []schemamodel.Field{{
 			StructName: "User",
@@ -89,14 +91,24 @@ func TestSchemaToAST(t *testing.T) {
 		}},
 	}, "sqlite")
 
+	c.Assert(err, qt.IsNil)
 	c.Assert(list.Statements, qt.HasLen, 1)
 	_, ok := list.Statements[0].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue)
 }
 
+func TestSchemaToAST_PropagatesIdentityRefusal(t *testing.T) {
+	c := qt.New(t)
+	list, err := atlascompat.SchemaToAST(schemamodel.Database{Tables: []schemamodel.Table{
+		{StructName: "Bare", Name: "items"}, {StructName: "Qualified", Schema: "public", Name: "items"},
+	}}, "postgres")
+	c.Assert(err, qt.ErrorMatches, `table "items" is declared twice.*`)
+	c.Assert(list, qt.IsNil)
+}
+
 func TestDBSchemaToGoSchema(t *testing.T) {
 	c := qt.New(t)
-	db := atlascompat.DBSchemaToGoSchema(&catalog.Database{
+	db, err := atlascompat.DBSchemaToGoSchema(t.Context(), &catalog.Database{
 		Tables: []catalog.Table{{
 			Name: "users",
 			Columns: []catalog.Column{{
@@ -106,7 +118,8 @@ func TestDBSchemaToGoSchema(t *testing.T) {
 				IsPrimaryKey: true,
 			}},
 		}},
-	})
+	}, "sqlite", must.Must(builtin.New()))
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Fields, qt.HasLen, 1)

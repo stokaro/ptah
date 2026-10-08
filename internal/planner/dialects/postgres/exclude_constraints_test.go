@@ -1,14 +1,16 @@
 package postgres_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -32,9 +34,12 @@ func TestPlanner_GenerateMigrationAST_CompositeForeignKeyAddition(t *testing.T) 
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff)
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 
@@ -191,11 +196,14 @@ func TestPlanner_GenerateMigrationAST_ConstraintsAdded(t *testing.T) {
 			c := qt.New(t)
 
 			planner := postgres.New()
-			nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(tt.diff, tt.desired))
+			nodes, err := planner.GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredObjects(tt.diff, tt.desired),
+			)
 			c.Assert(err, qt.IsNil)
 
 			// Convert AST nodes to SQL for verification
-			sql, err := renderer.RenderSQL("postgres", nodes...)
+			sql, err := builtin.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
 			sql = legacyRenderedSQL(sql)
 
@@ -251,9 +259,12 @@ func TestPlanner_GenerateMigrationAST_ModifiedFK_ScopesDropToHostTable(t *testin
 			},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationAST(diff)
+		nodes, err := postgres.New().GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			diff,
+		)
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("postgres", nodes...)
+		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -303,9 +314,12 @@ func TestPlanner_GenerateMigrationAST_ModifiedFK_ScopesDropToHostTable(t *testin
 			},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationAST(diff)
+		nodes, err := postgres.New().GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			diff,
+		)
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("postgres", nodes...)
+		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -349,9 +363,12 @@ func TestPlanner_GenerateMigrationAST_ModifiedNonFKConstraint_ScopesDropToHostTa
 			},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
+		nodes, err := postgres.New().GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			withDeclaredObjects(diff, desired),
+		)
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("postgres", nodes...)
+		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -391,7 +408,10 @@ func TestPlanner_GenerateMigrationAST_ModifiedNonFKConstraint_ScopesDropToHostTa
 			ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "legacy_check"}},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationAST(diff)
+		nodes, err := postgres.New().GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			diff,
+		)
 
 		c.Assert(nodes, qt.IsNil)
 		c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -433,9 +453,12 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 			},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationAST(diff)
+		nodes, err := postgres.New().GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			diff,
+		)
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("postgres", nodes...)
+		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -488,9 +511,12 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 			},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
+		nodes, err := postgres.New().GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			withDeclaredObjects(diff, desired),
+		)
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("postgres", nodes...)
+		sql, err := builtin.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -543,9 +569,12 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_ScopesToTheRecordedHost(t *test
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff)
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
+	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 
@@ -570,7 +599,10 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved(t *testing.T) {
 	desired := &schemamodel.Database{}
 
 	pl := postgres.New()
-	nodes, err := pl.GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := pl.GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 
 	// One DO block per removed constraint. The previous implementation emitted
@@ -580,7 +612,7 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved(t *testing.T) {
 	// leaves no temporary functions behind.
 	c.Assert(nodes, qt.HasLen, 1)
 
-	sql, err := renderer.RenderSQL("postgres", nodes[0])
+	sql, err := builtin.RenderSQL("postgres", nodes[0])
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "DO $ptah$")
@@ -607,7 +639,10 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_MultipleSplitCleanly(t 
 	diff := &difftypes.SchemaDiff{
 		ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "first_constraint"}, {Name: "second_constraint"}},
 	}
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "postgres")
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, "postgres",
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2,
 		qt.Commentf("each DO block must end up as its own statement after SQL splitting; got %d statements:\n%s",
@@ -627,11 +662,14 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_EscapesSingleQuoteInNam
 		ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "don't_drop"}},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff)
+	nodes, err := postgres.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
 
-	sql, err := renderer.RenderSQL("postgres", nodes[0])
+	sql, err := builtin.RenderSQL("postgres", nodes[0])
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "'don''t_drop'", qt.Commentf("single quote in constraint name must be SQL-escaped"))
@@ -670,11 +708,14 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_RejectsUnsafeName(t *te
 		t.Run(tc.input, func(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: tc.input}}}
-			nodes, err := postgres.New().GenerateMigrationAST(diff)
+			nodes, err := postgres.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				diff,
+			)
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)
 
-			sql, err := renderer.RenderSQL("postgres", nodes[0])
+			sql, err := builtin.RenderSQL("postgres", nodes[0])
 			c.Assert(err, qt.IsNil)
 			sql = legacyRenderedSQL(sql)
 			c.Assert(sql, qt.Contains, "RAISE EXCEPTION",

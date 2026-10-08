@@ -7,8 +7,8 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/parser"
 	"ptah.run/internal/sqlschema"
@@ -209,7 +209,7 @@ func TestPostgresIndexDDLSurvivesItsOwnSQLSurface(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 			index := parseOneIndex(c, tt.ddl)
-			rendered, err := renderer.RenderSQL(platform.Postgres, modelast.FromIndex(index))
+			rendered, err := builtin.RenderSQL(platform.Postgres, modelast.FromIndex(index))
 			c.Assert(err, qt.IsNil)
 			c.Assert(rendered, qt.Equals, tt.ddl+"\n")
 		})

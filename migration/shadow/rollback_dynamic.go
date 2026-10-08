@@ -9,7 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
+	"ptah.run/engine"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/devlock"
@@ -19,6 +21,8 @@ import (
 
 // DynamicRollbackOptions configures PlanDynamicRollback.
 type DynamicRollbackOptions struct {
+	// Runtime selects feature services and codecs for planning. It is required.
+	Runtime engine.SchemaRuntime
 	// TargetConnection is the live database the plan would be applied to. It is
 	// read, never written, by planning.
 	TargetConnection *dbschema.DatabaseConnection
@@ -75,6 +79,9 @@ type DynamicRollbackOptions struct {
 // the reset would drop is refused before anything resets it, and it is emptied again before
 // planning returns; a failure to empty it fails the planning.
 func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) (statements []string, resultErr error) {
+	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
+		return nil, err
+	}
 	if opts.TargetConnection == nil {
 		return nil, fmt.Errorf("dynamic rollback planning failed: a target database connection is required")
 	}
@@ -131,6 +138,7 @@ func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) (stat
 	// planned a rebuild of all of them. Two database sources avoid the
 	// conversion entirely, and this path already knows how to compare them.
 	diff, err := atlasschema.Diff(ctx, atlasschema.DiffOptions{
+		Runtime:  opts.Runtime,
 		FromURLs: []string{opts.TargetConnection.Info().URL},
 		ToURLs:   []string{opts.DevDatabaseURL},
 		// Both sides are databases, so no third database is needed to

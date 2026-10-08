@@ -250,7 +250,7 @@ func TestLiquibaseRunConditions_FailurePath(t *testing.T) {
 			parser, err := importer.ParserByName("liquibase")
 			c.Assert(err, qt.IsNil)
 
-			parsed, err := parser.Parse(fstest.MapFS{test.file: {Data: []byte(test.content)}})
+			parsed, err := parser.Parse(c.Context(), fstest.MapFS{test.file: {Data: []byte(test.content)}})
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Contains, test.message)
@@ -360,7 +360,7 @@ func TestLiquibaseRunConditions_HappyPath(t *testing.T) {
 			parser, err := importer.ParserByName("liquibase")
 			c.Assert(err, qt.IsNil)
 
-			parsed, err := parser.Parse(fstest.MapFS{test.file: {Data: []byte(test.content)}})
+			parsed, err := parser.Parse(c.Context(), fstest.MapFS{test.file: {Data: []byte(test.content)}})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(parsed.Migrations, qt.HasLen, 1)

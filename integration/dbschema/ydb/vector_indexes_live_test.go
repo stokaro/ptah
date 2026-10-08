@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
@@ -14,6 +15,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -220,7 +222,7 @@ func TestYDBVectorIndexes_FollowTheirKeys(t *testing.T) {
 			bits.Indexes[0].Vector = &ast.VectorIndexSpec{Distance: "manhattan", VectorType: "bit", Dimension: 8, Levels: 1, Clusters: 2}
 			withoutBits := conn.Info()
 			withoutBits.Capabilities = caps.With(capability.VectorBitType, false)
-			diff, err := schemadiff.CompareWithDatabaseInfo(bits, readScoped(c, conn, vectorSchemas), withoutBits, nil)
+			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), bits, readScoped(c, conn, vectorSchemas), withoutBits, nil, must.Must(builtin.New()))
 			c.Assert(err, qt.ErrorMatches, `.*index "docs_emb" stores bit vectors, which requires target capability vector_bit_type, .*`)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(diff, qt.IsNil)

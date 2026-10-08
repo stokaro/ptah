@@ -6,10 +6,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -33,10 +34,10 @@ func TestYDBEmptyDefaults_ExportRecreatesTheStoredDefaults(t *testing.T) {
 			c.Assert(textDefault, qt.Equals, "''u")
 			c.Assert(bytesDefault, qt.Equals, "''")
 			// Export only the owned table, without the catalog's global grants.
-			model := dbschematogo.ConvertDBSchemaToGoSchema(
-				&catalog.Database{Tables: []catalog.Table{before}}, platform.YDB,
-			)
-			statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(model, platform.YDB, conn.Info().Capabilities)
+			model := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(
+				t.Context(), &catalog.Database{Tables: []catalog.Table{before}}, platform.YDB, must.Must(builtin.New()),
+			))
+			statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(model, platform.YDB, conn.Info().Capabilities)
 			c.Assert(err, qt.IsNil)
 			c.Assert(planAgainst(c, conn, model, schemas), qt.HasLen, 0)
 			dropTables(c, conn, schemas)

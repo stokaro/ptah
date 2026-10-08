@@ -1,16 +1,20 @@
 package ydb_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
+	"ptah.run/core/schemacapture"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -26,8 +30,8 @@ func keyField(name string) schemamodel.Field {
 }
 
 // itemsDeclaration is the desired table every modification below names.
-func itemsDeclaration(fields ...schemamodel.Field) difftypes.TableDeclaration {
-	return difftypes.TableDeclaration{
+func itemsDeclaration(fields ...schemamodel.Field) schemacapture.TableDeclaration {
+	return schemacapture.TableDeclaration{
 		Table:  schemamodel.Table{StructName: "S", Name: "items"},
 		Fields: append([]schemamodel.Field{keyField("id")}, fields...),
 	}
@@ -37,9 +41,12 @@ func itemsDeclaration(fields ...schemamodel.Field) difftypes.TableDeclaration {
 // statement per line, the way an apply would see it.
 func render(c *qt.C, caps capability.Capabilities, diff *difftypes.SchemaDiff) string {
 	c.Helper()
-	nodes, err := ydb.NewWithCapabilities(caps).GenerateMigrationAST(diff)
+	nodes, err := ydb.NewWithCapabilities(caps).GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQLWithCapabilities("ydb", caps, nodes...)
+	sql, err := builtin.RenderSQLWithCapabilities("ydb", caps, nodes...)
 	c.Assert(err, qt.IsNil)
 	return sql
 }
@@ -61,7 +68,7 @@ func TestGenerateMigrationAST_Order_HappyPath(t *testing.T) {
 			Table:  schemamodel.Table{StructName: "T", Name: "tags"},
 			Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "BIGINT", Primary: true}, {StructName: "T", Name: "label", Type: "TEXT", Nullable: true}},
 		}},
-		TablesRemoved: []string{"legacy"},
+		TablesRemoved: difftypes.TableRemovals{{Name: "legacy", Current: observedFeeds(t, "", "legacy")}},
 		TablesModified: []difftypes.TableDiff{{
 			TableName:      "items",
 			Desired:        itemsDeclaration(field("note", "TEXT", true), field("qty", "INTEGER", true)),
@@ -218,34 +225,34 @@ func TestGenerateMigrationAST_RefusesByCapability_FailurePath(t *testing.T) {
 		wantErr string
 	}{
 		{name: "a key change", caps: capability.YDB262(),
-			diff: modified(difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(),
+			diff: modified(t, difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(),
 				ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "id", Changes: map[string]string{"primary_key": "false -> true"}}}}),
 			wantKey: capability.PrimaryKeyAlterable, wantErr: `changing whether column "id" of table "items" is part of the key \(false -> true\), which requires target capability primary_key_alterable, .*`},
 		{name: "a key constraint dropped", caps: capability.YDB262(),
 			diff:    &difftypes.SchemaDiff{ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "pk", TableName: "items", Type: "PRIMARY KEY"}}},
 			wantKey: capability.PrimaryKeyAlterable, wantErr: `dropping constraint pk, the primary key, which requires target capability primary_key_alterable, .*`},
 		{name: "a desired table with no key", caps: capability.YDB262(),
-			diff: modified(difftypes.TableDiff{TableName: "items",
-				Desired: difftypes.TableDeclaration{Table: schemamodel.Table{StructName: "S", Name: "items"}, Fields: []schemamodel.Field{field("a", "TEXT", true)}}}),
+			diff: modified(t, difftypes.TableDiff{TableName: "items",
+				Desired: schemacapture.TableDeclaration{Table: schemamodel.Table{StructName: "S", Name: "items"}, Fields: []schemamodel.Field{field("a", "TEXT", true)}}}),
 			wantKey: capability.PrimaryKeyRequired, wantErr: `table "items" declares no primary key, which requires target capability primary_key_required, .*`},
 		{name: "a type change", caps: capability.YDB262(),
-			diff: modified(difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(),
+			diff: modified(t, difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(),
 				ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "int32 -> int64"}}}}),
 			wantKey: capability.AlterColumnType, wantErr: `changing the type of column "n" of table "items" \(int32 -> int64\), which requires target capability alter_column_type, .*`},
 		{name: "a column made NOT NULL", caps: capability.YDB262(),
-			diff: modified(difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(),
+			diff: modified(t, difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(),
 				ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"nullable": "true -> false"}}}}),
 			wantKey: capability.AlterColumnSetNotNull, wantErr: `making column "n" of table "items" NOT NULL, which requires target capability alter_column_set_not_null, .*`},
 		{name: "a default changed on 26.1", caps: capability.YDB261(),
-			diff: modified(difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(),
+			diff: modified(t, difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(),
 				ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"default": "1 -> 2"}}}}),
 			wantKey: capability.AlterColumnDefault, wantErr: `changing the default of column "n" of table "items" \(1 -> 2\), which requires target capability alter_column_default, .*`},
 		{name: "an expression default", caps: capability.YDB262(),
-			diff: modified(difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(),
+			diff: modified(t, difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(),
 				ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "ts", Changes: map[string]string{"default_expr": " -> CURRENT_TIMESTAMP"}, Desired: expressionDefault}}}),
 			wantKey: capability.ExpressionDefaults, wantErr: `column "ts" of table "items" defaults to the expression CURRENT_TIMESTAMP, which requires target capability expression_defaults, .*`},
 		{name: "a column added with a default before 26.1", caps: capability.YDB253(),
-			diff:    modified(difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(notNullTwo), ColumnsAdded: difftypes.ColumnChanges{notNullTwo}}),
+			diff:    modified(t, difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(notNullTwo), ColumnsAdded: difftypes.ColumnChanges{notNullTwo}}),
 			wantKey: capability.AddColumnWithDefault, wantErr: `adding column "n" to table "items" with a default, which requires target capability add_column_with_default, .*`},
 		{name: "a unique index added to a table that exists", caps: capability.YDB262(),
 			diff:    &difftypes.SchemaDiff{IndexesAdded: difftypes.IndexChanges{{TableName: "items", Index: schemamodel.Index{Name: "u", Fields: []string{"a"}, Unique: true}}}},
@@ -272,7 +279,10 @@ func TestGenerateMigrationAST_RefusesByCapability_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := ydb.NewWithCapabilities(test.caps).GenerateMigrationAST(test.diff)
+			nodes, err := ydb.NewWithCapabilities(test.caps).GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				test.diff,
+			)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			var capabilityErr *ptaherr.CapabilityError
@@ -293,27 +303,27 @@ func TestGenerateMigrationAST_RefusesWhatYDBCannotDo_FailurePath(t *testing.T) {
 		wantErr string
 	}{
 		{name: "a NOT NULL column added without a default",
-			diff:    modified(difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(field("n", "INTEGER", false)), ColumnsAdded: difftypes.ColumnChanges{field("n", "INTEGER", false)}}),
+			diff:    modified(t, difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(field("n", "INTEGER", false)), ColumnsAdded: difftypes.ColumnChanges{field("n", "INTEGER", false)}}),
 			wantErr: `adding column "n" to table "items": YDB adds a NOT NULL column only with a default .*`},
 		{name: "a serial added to a table that exists",
-			diff:    modified(difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(serial), ColumnsAdded: difftypes.ColumnChanges{serial}}),
+			diff:    modified(t, difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(serial), ColumnsAdded: difftypes.ColumnChanges{serial}}),
 			wantErr: `adding column "s" to table "items": YDB adds no Serial column to an existing table .*`},
 		{name: "an index over a Double column of a table the plan changes",
-			diff:    withIndex(field("score", "DOUBLE", true), schemamodel.Index{Name: "items_score", Fields: []string{"score"}}),
+			diff:    withIndex(t, field("score", "DOUBLE", true), schemamodel.Index{Name: "items_score", Fields: []string{"score"}}),
 			wantErr: `adding index "items_score" to table "items": column "score" is Double, which YDB refuses as an index key`},
 		{name: "an index over the key of a table the plan changes",
-			diff:    withIndex(field("score", "DOUBLE", true), schemamodel.Index{Name: "items_id", Fields: []string{"id"}}),
+			diff:    withIndex(t, field("score", "DOUBLE", true), schemamodel.Index{Name: "items_id", Fields: []string{"id"}}),
 			wantErr: `adding index "items_id" to table "items": its columns are the table's key, .*`},
 		{name: "an index covering the key of a table the plan changes",
-			diff: withIndex(field("note", "TEXT", true),
+			diff: withIndex(t, field("note", "TEXT", true),
 				schemamodel.Index{Name: "items_note", Fields: []string{"note"}, IncludeColumns: []string{"id"}}),
 			wantErr: `adding index "items_note" to table "items": it covers key column "id", .*`},
 		{name: "a table constraint",
-			diff: modified(difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(),
+			diff: modified(t, difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(),
 				ConstraintsAdded: []string{"items_n_check"}}),
 			wantErr: `table "items": YDB has no constraint but the key, and the key never changes`},
 		{name: "a change the planner does not know",
-			diff: modified(difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(),
+			diff: modified(t, difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(),
 				ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"collation": "a -> b"}}}}),
 			wantErr: `column "n" of table "items": YDB cannot change collation of a column in place \(a -> b\)`},
 		{name: "a default privilege",
@@ -327,7 +337,10 @@ func TestGenerateMigrationAST_RefusesWhatYDBCannotDo_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := ydb.New().GenerateMigrationAST(test.diff)
+			nodes, err := ydb.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				test.diff,
+			)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(nodes, qt.IsNil)
@@ -351,11 +364,14 @@ func TestGenerateMigrationAST_EveryNodeRendersAlone(t *testing.T) {
 		},
 	}
 
-	nodes, err := ydb.New().GenerateMigrationAST(diff)
+	nodes, err := ydb.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		diff,
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 4)
 	for _, node := range nodes {
-		sql, err := renderer.RenderSQL("ydb", node)
+		sql, err := builtin.RenderSQL("ydb", node)
 		c.Assert(err, qt.IsNil)
 		c.Assert(strings.Count(sql, ";\n"), qt.Equals, 1, qt.Commentf("%T renders %q", node, sql))
 	}
@@ -363,15 +379,26 @@ func TestGenerateMigrationAST_EveryNodeRendersAlone(t *testing.T) {
 	c.Assert(isIndex, qt.IsTrue)
 }
 
-// modified wraps one table modification in a diff.
-func modified(tableDiff difftypes.TableDiff) *difftypes.SchemaDiff {
+// modified wraps a fixture whose starting table has a known empty stream
+// namespace unless the fixture supplies another observation. It never copies
+// desired streams into the current operand.
+func modified(t *testing.T, tableDiff difftypes.TableDiff) *difftypes.SchemaDiff {
+	t.Helper()
+	if tableDiff.Desired.HasTable() {
+		if tableDiff.Desired.FeatureCoverage.IsZero() {
+			tableDiff.Desired.FeatureCoverage = feedCoverage(t, schemaext.Desired)
+		}
+		if !tableDiff.Current.HasTable() {
+			tableDiff.Current = observedFeeds(t, tableDiff.Desired.Table.Schema, tableDiff.Desired.Table.Name)
+		}
+	}
 	return &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{tableDiff}}
 }
 
 // withIndex is a plan that adds column to items and an index to the same
 // table, so the plan carries the table's declaration.
-func withIndex(column schemamodel.Field, index schemamodel.Index) *difftypes.SchemaDiff {
-	diff := modified(difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(column),
+func withIndex(t *testing.T, column schemamodel.Field, index schemamodel.Index) *difftypes.SchemaDiff {
+	diff := modified(t, difftypes.TableDiff{TableName: "items", Desired: itemsDeclaration(column),
 		ColumnsAdded: difftypes.ColumnChanges{column}})
 	diff.IndexesAdded = difftypes.IndexChanges{{TableName: "items", Index: index}}
 	return diff
@@ -386,7 +413,7 @@ func withIndex(column schemamodel.Field, index schemamodel.Index) *difftypes.Sch
 func TestGenerateMigrationAST_DropsATableWithItsKey(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		TablesRemoved: []string{"app.obsolete"},
+		TablesRemoved: difftypes.TableRemovals{{Name: "app.obsolete", Current: observedFeeds(t, "app", "obsolete")}},
 		ConstraintsRemoved: difftypes.ConstraintRemovals{
 			{Name: "obsolete_pkey", TableName: "app.obsolete", Type: "PRIMARY KEY"},
 		},

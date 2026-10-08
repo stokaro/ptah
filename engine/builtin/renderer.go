@@ -1,0 +1,4652 @@
+// Package builtin assembles the database implementations bundled with Ptah.
+//
+// This package serves as the main entry point for converting AST nodes to SQL statements
+// across different database dialects. It implements a factory pattern to create appropriate
+// dialect renderers and provides a unified interface for SQL generation.
+//
+// The package renders for every dialect SupportedDialects names: PostgreSQL,
+// MySQL, MariaDB, ClickHouse, SQLite, SQL Server, CockroachDB, YugabyteDB,
+// Spanner, Oracle and YDB, plus the alias spellings each of those accepts.
+// CockroachDB, YugabyteDB, and Spanner are rendered by the PostgreSQL renderer
+// constructed for that dialect, so their capability presets decide what each
+// one emits. Unsupported dialects are reported as errors instead of falling
+// back to a generic renderer. Each dialect renderer dispatches on the node's
+// concrete type and refuses one it does not recognize, and
+// ptah.run/internal/astrouteguard holds every renderer to a decision about
+// every node kind.
+//
+// Example usage:
+//
+//	r, err := NewRenderer("postgresql")
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//
+//	sql, err := r.Render(astNode)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//
+//	fmt.Println(sql)
+//
+// The renderer automatically handles dialect-specific SQL generation, including:
+//   - Data type mappings
+//   - Constraint syntax differences
+//   - Enum handling (PostgreSQL vs MySQL inline enums)
+//   - Index creation syntax
+//   - Table options and engine specifications
+package builtin
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"maps"
+	"reflect"
+	"slices"
+	"strings"
+
+	"ptah.run/core/ast"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin/internal/dialects/clickhouse"
+	"ptah.run/engine/builtin/internal/dialects/mariadb"
+	"ptah.run/engine/builtin/internal/dialects/mssql"
+	"ptah.run/engine/builtin/internal/dialects/mysql"
+	"ptah.run/engine/builtin/internal/dialects/mysqllike"
+	"ptah.run/engine/builtin/internal/dialects/oracle"
+	"ptah.run/engine/builtin/internal/dialects/postgres"
+	"ptah.run/engine/builtin/internal/dialects/sqlite"
+	"ptah.run/engine/builtin/internal/dialects/ydb"
+	"ptah.run/internal/accessscope"
+	"ptah.run/internal/clickhouserbac"
+	"ptah.run/internal/crdbttl"
+	"ptah.run/internal/foreignkeyscope"
+	"ptah.run/internal/modelast"
+	"ptah.run/internal/mysqlindex"
+	"ptah.run/internal/mysqlroutine"
+	"ptah.run/internal/nullsdistinct"
+	"ptah.run/internal/renderdiag"
+	"ptah.run/internal/reservedrole"
+	"ptah.run/internal/routineargs"
+	"ptah.run/internal/schemaprep"
+	"ptah.run/internal/systemschema"
+	"ptah.run/internal/tablelookup"
+	"ptah.run/internal/tableref"
+	"ptah.run/internal/usertypescope"
+	"ptah.run/internal/ydbcoordination"
+	"ptah.run/internal/ydbfamily"
+	"ptah.run/internal/ydbindex"
+	"ptah.run/internal/ydbpartition"
+	"ptah.run/internal/ydbreplication"
+	"ptah.run/internal/ydbstream"
+)
+
+// SupportedDialects returns a list of all supported database dialects.
+//
+// The list holds the canonical dialect names declared in [platform] together
+// with common alias spellings for them, so one target can appear under more
+// than one name. Every entry folds onto a canonical name through
+// [platform.NormalizeDialect], which also accepts aliases this list does not
+// repeat: normalize a caller-supplied dialect rather than comparing it
+// against these entries literally. Each call returns a fresh slice the caller
+// may keep or mutate.
+func SupportedDialects() []string {
+	// docs/feature-inventory.json derives its dialect rows from this list
+	// folded through platform.NormalizeDialect, so editing it is a
+	// documented-surface change.
+	return []string{"postgresql", "postgres", "mysql", "mariadb", "clickhouse", "sqlite", "sqlite3", "sqlserver", "mssql", "cockroachdb", "yugabytedb", "spanner", "oracle", "ydb"}
+}
+
+// NewRenderer creates a new renderer for the specified database dialect.
+//
+// The dialect parameter should be one of the supported dialects returned by
+// SupportedDialects(). The function performs case-insensitive matching and
+// handles common dialect aliases (e.g., "postgres" for "postgresql").
+//
+// An unsupported dialect returns a [ptaherr.RenderError] satisfying
+// errors.Is(err, [ptaherr.ErrUnsupportedDialect]), so embedders can branch on
+// the sentinel without matching message text.
+func NewRenderer(dialect string) (renderer.RenderVisitor, error) {
+	return NewRendererWithCapabilities(dialect, capability.ForDialect(dialect))
+}
+
+// NewRendererWithCapabilities creates a renderer for a concrete server
+// capability set. Use this on live database paths where capabilities were
+// resolved from DBInfo.Version; NewRenderer remains the offline default.
+//
+// A capability set that fails caps.Validate is refused with a
+// [ptaherr.CapabilityError] wrapping the validation error; an unsupported
+// dialect is refused the way NewRenderer describes. The renderer does not
+// alias caps: mutating the argument after construction does not change what
+// the renderer accepts.
+func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (renderer.RenderVisitor, error) {
+	if err := caps.Validate(); err != nil {
+		return nil, &ptaherr.CapabilityError{
+			Dialect: dialect,
+			Feature: "capability set",
+			Err:     err,
+			Message: fmt.Sprintf("invalid capabilities for %s: %s", platform.NormalizeDialect(dialect), err),
+		}
+	}
+	normalizedDialect := platform.NormalizeDialect(dialect)
+	var raw renderer.RenderVisitor
+
+	switch normalizedDialect {
+	case platform.Postgres:
+		raw = postgres.NewWithCapabilities(caps, normalizedDialect)
+	case platform.MySQL:
+		raw = mysql.NewWithCapabilities(caps)
+	case platform.MariaDB:
+		raw = mariadb.NewWithCapabilities(caps)
+	case platform.ClickHouse:
+		raw = clickhouse.NewWithCapabilities(caps)
+	case platform.SQLite:
+		raw = sqlite.NewWithCapabilities(caps)
+	case platform.SQLServer:
+		raw = mssql.NewWithCapabilities(caps)
+	case platform.Oracle:
+		raw = oracle.NewWithCapabilities(caps)
+	case platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+		raw = postgres.NewWithCapabilities(caps, normalizedDialect)
+	case platform.YDB:
+		raw = ydb.NewWithCapabilities(caps)
+	default:
+		return nil, &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrUnsupportedDialect,
+			Message: fmt.Sprintf("unsupported database dialect: %s", dialect),
+		}
+	}
+	return &validatingRenderer{
+		inner:        raw,
+		dialect:      dialect,
+		capabilities: caps.Clone(),
+	}, nil
+}
+
+// validatingRenderer prepares a node before the dialect renderer sees it.
+//
+// The inner renderer is a NAMED field rather than an embedded one. Embedding
+// would promote every method the interface declares, so the moment the
+// interface gains one this wrapper would satisfy it without a line of code and
+// the preparation below would stop running -- with no compile error, at exit 0,
+// and with the AST-level refusals this type owns silently gone.
+type validatingRenderer struct {
+	inner        renderer.RenderVisitor
+	dialect      string
+	capabilities capability.Capabilities
+}
+
+// Dialect, Reset, Output, GetDialect and GetOutput reach the inner renderer
+// unchanged. They are written out because the field is named; that is the price
+// of the paragraph above, and it is one the compiler collects rather than one a
+// reader has to remember.
+func (r *validatingRenderer) Dialect() string    { return r.inner.Dialect() }
+func (r *validatingRenderer) Reset()             { r.inner.Reset() }
+func (r *validatingRenderer) Output() string     { return r.inner.Output() }
+func (r *validatingRenderer) GetDialect() string { return r.inner.GetDialect() }
+func (r *validatingRenderer) GetOutput() string  { return r.inner.GetOutput() }
+
+// VisitNode prepares node and hands the prepared one to the dialect renderer.
+//
+// Preparation is where every AST-level refusal in the product lives: a column
+// with no name, a foreign key whose column lists disagree in arity, a
+// referential action the target has no spelling for, an INCLUDE list on a
+// target without covering indexes. Two preparations rewrite rather than refuse
+// -- a MySQL table carrying a foreign key gains ENGINE=InnoDB, and SQL Server
+// RESTRICT becomes NO ACTION -- and neither has a second implementation below
+// this wrapper.
+//
+// A failure clears the buffer, so an error never returns a partial statement
+// and the renderer is reusable afterwards.
+//
+// Every entry point prepares through [prepareNode] and nothing else: Render
+// is this method followed by Output, and RenderSQL prepares its whole node
+// list through the same function before it visits. A refusal written into the
+// preparation therefore reaches every caller, and a node kind cannot be
+// prepared for one entry point and passed through unchecked by another.
+func (r *validatingRenderer) VisitNode(node ast.Node) error {
+	prepared, err := prepareNode(r.dialect, r.capabilities, node)
+	if err != nil {
+		r.Reset()
+		return nodeRefusal(r.dialect, node, err)
+	}
+	if list, ok := prepared.(*ast.StatementList); ok {
+		return nodeRefusal(r.dialect, node, r.renderPreparedList(list))
+	}
+	if err := r.inner.VisitNode(prepared); err != nil {
+		r.Reset()
+		return nodeRefusal(r.dialect, node, err)
+	}
+	return nil
+}
+
+// renderPreparedList emits an already-prepared list, statement by statement.
+//
+// The whole list is prepared before any of it renders, which is what makes a
+// list whose last statement is unrenderable produce nothing rather than a
+// prefix. Each statement then goes straight to the inner renderer: preparing it
+// again here would run every preparation twice and make idempotence a silent
+// requirement.
+func (r *validatingRenderer) renderPreparedList(list *ast.StatementList) error {
+	for _, statement := range list.Statements {
+		if err := r.inner.VisitNode(statement); err != nil {
+			r.Reset()
+			return err
+		}
+	}
+	return nil
+}
+
+// Render clears the buffer, visits node and returns what the visit wrote. It
+// is VisitNode and Output and nothing else, so the two entry points cannot
+// answer one node two ways.
+func (r *validatingRenderer) Render(node ast.Node) (string, error) {
+	r.Reset()
+	if err := r.VisitNode(node); err != nil {
+		return "", err
+	}
+	return r.Output(), nil
+}
+
+// RenderSQL is a convenience function that creates a renderer and renders an AST node in one call.
+//
+// This function is useful for one-off SQL generation where you don't need to reuse the renderer.
+// For multiple operations, it's more efficient to create a renderer once and reuse it.
+func RenderSQL(dialect string, nodes ...ast.Node) (string, error) {
+	return RenderSQLWithCapabilities(dialect, capability.ForDialect(dialect), nodes...)
+}
+
+// RenderSQLWithCapabilities renders SQL for a concrete server capability set.
+//
+// Every node is validated and prepared before anything renders, so a
+// construct the capability set does not carry is refused rather than emitted
+// or quietly downgraded. The input nodes are never mutated. On any failure
+// the result is an empty string and the error — never a partial script.
+//
+// The errors are typed, and the sentinel is the part to branch on. A refused
+// feature satisfies errors.Is(err, [ptaherr.ErrUnsupportedFeature]); an
+// unsupported dialect satisfies errors.Is with
+// [ptaherr.ErrUnsupportedDialect], and a malformed node with
+// [ptaherr.ErrInvalidSchemaDiff]. A [renderer.BatchRefusalError] preserves
+// declaration diagnostics and unwraps to the typed cause. A [ptaherr.RenderError]
+// identifies the caller's input node. Local declaration errors retain their
+// messages and satisfy the schema sentinel on visitor and batch entry points;
+// branch on the sentinel rather than the message text.
+func RenderSQLWithCapabilities(dialect string, caps capability.Capabilities, nodes ...ast.Node) (string, error) {
+	runtime, err := New()
+	if err != nil {
+		return "", err
+	}
+	result, err := runtime.Render(context.Background(), renderer.Request{
+		Target: renderTarget(dialect), Capabilities: caps, Nodes: nodes,
+	})
+	return result.SQL(), err
+}
+
+// renderNodes preserves each input node's output boundary in a single batch.
+// Preparation keeps the outer node count and order; nested statements remain
+// within their parent's fragment and imply no transaction boundary.
+func renderNodes(ctx context.Context, r renderer.RenderVisitor, nodes ...ast.Node) (renderer.Result, error) {
+	r.Reset()
+	if err := ctx.Err(); err != nil {
+		return renderer.Result{}, err
+	}
+	if validating, ok := r.(*validatingRenderer); ok {
+		prepared, err := prepareNodes(validating.dialect, validating.capabilities, nodes)
+		if err != nil {
+			return renderer.Result{}, err
+		}
+		nodes = prepared
+	}
+	ends := make([]int, 0, len(nodes))
+	for position, node := range nodes {
+		if err := ctx.Err(); err != nil {
+			r.Reset()
+			return renderer.Result{}, err
+		}
+		if err := node.Accept(r); err != nil {
+			r.Reset()
+			if _, ok := errors.AsType[*ptaherr.RenderError](err); ok {
+				return renderer.Result{}, &renderFailure{input: position, cause: err}
+			}
+			return renderer.Result{}, &renderFailure{input: position, cause: &ptaherr.RenderError{
+				Dialect: r.GetDialect(), Node: node, Err: err, Message: err.Error(),
+			}}
+		}
+		ends = append(ends, len(r.Output()))
+	}
+	if err := ctx.Err(); err != nil {
+		r.Reset()
+		return renderer.Result{}, err
+	}
+	output := r.Output()
+	result := renderer.Result{Complete: true, Fragments: make([]string, 0, len(nodes))}
+	start := 0
+	for _, end := range ends {
+		if end < start || end > len(output) {
+			r.Reset()
+			return renderer.Result{}, fmt.Errorf("%w: renderer replaced accumulated output", renderer.ErrInvalidResult)
+		}
+		result.Fragments = append(result.Fragments, output[start:end])
+		start = end
+	}
+	return result, nil
+}
+
+func prepareNodes(
+	dialect string,
+	caps capability.Capabilities,
+	nodes []ast.Node,
+) ([]ast.Node, error) {
+	prepared := make([]ast.Node, len(nodes))
+	for i, node := range nodes {
+		cloned, err := prepareNode(dialect, caps, node)
+		if err != nil {
+			return nil, &renderFailure{input: i, cause: nodeRefusal(dialect, node, err)}
+		}
+		prepared[i] = cloned
+	}
+	return prepared, nil
+}
+
+// prepareNode applies the preparation node's kind asks for, and returns the
+// node unchanged for a kind that asks for none. It is the one preparation the
+// renderer has; see [validatingRenderer.VisitNode].
+//
+// An absent node is refused here, for every target alike, whether it is a nil
+// interface or a nil pointer of a node type, and before the switch below: an
+// arm reads its node's fields, and so does the dialect handler the node's
+// type selects, so neither may be handed a nil pointer.
+func prepareNode(
+	dialect string,
+	caps capability.Capabilities,
+	node ast.Node,
+) (ast.Node, error) {
+	if node == nil {
+		return nil, nilNodeError(dialect, "AST node")
+	}
+	if isNilInterface(node) {
+		return nil, nilNodeError(dialect, fmt.Sprintf("%T", node))
+	}
+	switch typed := node.(type) {
+	case *ast.ExtensionStatement:
+		return prepareExtensionStatement(dialect, caps, typed)
+	case *ast.ExtensionAlterOperation:
+		return prepareExtensionAlter(dialect, caps, nil, typed)
+	case *ast.StatementList:
+		return prepareStatementListNode(dialect, caps, typed)
+	case *ast.CreateTableNode:
+		return prepareCreateTableNode(dialect, caps, typed)
+	case *ast.AlterTableNode:
+		return prepareAlterTableNode(dialect, caps, typed)
+	case *ast.ConstraintNode:
+		return prepareConstraintNode(dialect, caps, typed)
+	case *ast.ColumnNode:
+		return prepareColumnNode(dialect, caps, "", typed)
+	case *ast.IndexNode:
+		return prepareIndexNode(dialect, caps, typed)
+	case *ast.ExtensionNode:
+		return prepareExtensionNode(dialect, typed)
+	case *ast.CreateMaterializedViewNode:
+		return prepareCreateMaterializedViewNode(dialect, typed)
+	case *ast.CreateTopicNode, *ast.AddTopicConsumerNode, *ast.AlterTopicNode, *ast.DropTopicNode:
+		return node, refuseTopicNode(dialect, caps, node)
+	case *ast.CreateRoleNode, *ast.DropRoleNode, *ast.GrantPrivilegeNode, *ast.RevokePrivilegeNode:
+		return node, refuseAccessNode(dialect, caps, node)
+	case *ast.CreateResourcePoolNode, *ast.AlterResourcePoolNode, *ast.DropResourcePoolNode,
+		*ast.CreateResourcePoolClassifierNode, *ast.AlterResourcePoolClassifierNode,
+		*ast.DropResourcePoolClassifierNode:
+		return node, refuseResourcePoolNode(dialect, caps, node)
+	case *ast.CreateAsyncReplicationNode, *ast.AlterAsyncReplicationNode, *ast.DropAsyncReplicationNode,
+		*ast.CreateTransferNode, *ast.AlterTransferNode, *ast.DropTransferNode:
+		key, subject := replicationNodeSubject(typed)
+		return node, refuseReplicationFamily(dialect, caps, key, subject)
+	case *ast.CreateCoordinationNodeNode, *ast.AlterCoordinationNodeNode, *ast.DropCoordinationNodeNode:
+		return node, refuseCoordinationNode(dialect, caps, node)
+	case *ydbstream.Node:
+		return node, ydbstream.Refuse(dialect, caps, "streaming query "+typed.Name)
+	case *ast.CreateSecretNode, *ast.AlterSecretNode, *ast.DropSecretNode, *ast.CreateExternalDataSourceNode,
+		*ast.DropExternalDataSourceNode, *ast.CreateExternalTableNode, *ast.DropExternalTableNode:
+		return node, refuseYDBObject(dialect, caps, node)
+	default:
+		return prepareStandaloneFragment(dialect, caps, node)
+	}
+}
+
+// prepareStandaloneFragment answers a fragment that arrived without the
+// statement that carries it: an alter operation without its ALTER TABLE, a
+// type definition without its CREATE TYPE, a type operation without its ALTER
+// TYPE. Any other node is returned unchanged.
+//
+// Every dialect renderer refuses such a fragment by saying that the statement
+// carrying it renders it. That is true only where the statement would: a
+// changefeed on PostgreSQL is refused inside an ALTER TABLE as well, for a
+// capability the target lacks, and an enum value on YDB inside an ALTER TYPE,
+// which YDB does not have. Answering that the fragment needs its parent
+// sends the caller to a wrapper that cannot help. So the fragment is first
+// rendered inside its statement, naming nothing, by a renderer built for the
+// same target and then discarded. That statement goes through the whole path a
+// real one takes -- this package's preparation, then the dialect's own
+// handler -- so the refusal it returns carries the sentinel and the reason the
+// real one would. Only a fragment that renders there continues to the
+// dialect, which then says it needs its parent.
+//
+// The check is here, once, rather than in each dialect's needs-parent arm: the
+// capability checks a dialect relies on live in this package, and a check in
+// the dialect could not see them.
+func prepareStandaloneFragment(
+	dialect string,
+	caps capability.Capabilities,
+	node ast.Node,
+) (ast.Node, error) {
+	carrier, ok := fragmentCarrier(node)
+	if !ok {
+		return node, nil
+	}
+	probe, err := NewRendererWithCapabilities(dialect, caps)
+	if err != nil {
+		return nil, err
+	}
+	if err := probe.VisitNode(carrier); err != nil {
+		return nil, err
+	}
+	return node, nil
+}
+
+// fragmentCarrier is the statement that carries fragment, naming no object,
+// and false for a node that is a statement of its own.
+//
+// The three cases are the three marker interfaces core/ast declares for a
+// statement's parts. A fourth kind of fragment needs a case here; the
+// entry-point test in this package fails for one a renderer refuses as a part
+// of a statement while this switch does not know it.
+func fragmentCarrier(fragment ast.Node) (ast.Node, bool) {
+	switch typed := fragment.(type) {
+	case ast.AlterOperation:
+		return &ast.AlterTableNode{Operations: []ast.AlterOperation{typed}}, true
+	case ast.TypeDefinition:
+		return &ast.CreateTypeNode{TypeDef: typed}, true
+	case ast.TypeOperation:
+		return &ast.AlterTypeNode{Operations: []ast.TypeOperation{typed}}, true
+	default:
+		return nil, false
+	}
+}
+
+// refuseAccessNode refuses a group, or a grant or revoke on the database
+// itself, on a target without the key that holds it, and returns nil for every
+// other role or grant node. The declaration gate refuses the same in a schema;
+// this is the half that sees a node built by hand.
+func refuseAccessNode(dialect string, caps capability.Capabilities, node ast.Node) error {
+	var (
+		key     capability.Capability
+		subject string
+	)
+	switch typed := node.(type) {
+	case *ast.CreateRoleNode:
+		if !typed.Group {
+			return nil
+		}
+		key, subject = capability.GroupPrincipals, "CREATE GROUP "+typed.Name
+	case *ast.DropRoleNode:
+		if !typed.Group {
+			return nil
+		}
+		key, subject = capability.GroupPrincipals, "DROP GROUP "+typed.Name
+	case *ast.GrantPrivilegeNode:
+		if !strings.EqualFold(strings.TrimSpace(typed.ObjectType), "DATABASE") {
+			return nil
+		}
+		key, subject = capability.DatabaseGrants, "GRANT on the database to "+typed.Role
+	case *ast.RevokePrivilegeNode:
+		if !strings.EqualFold(strings.TrimSpace(typed.ObjectType), "DATABASE") {
+			return nil
+		}
+		key, subject = capability.DatabaseGrants, "REVOKE on the database from "+typed.Role
+	default:
+		return nil
+	}
+	if caps.Has(key) {
+		return nil
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: string(key),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
+			subject, key, normalized),
+	}
+}
+
+func prepareCreateMaterializedViewNode(
+	dialect string,
+	node *ast.CreateMaterializedViewNode,
+) (*ast.CreateMaterializedViewNode, error) {
+	if node == nil {
+		return nil, &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrInvalidSchemaDiff,
+			Message: "materialized view node is nil",
+		}
+	}
+	return new(*node), nil
+}
+
+func prepareExtensionNode(dialect string, node *ast.ExtensionNode) (*ast.ExtensionNode, error) {
+	if node == nil {
+		return nil, &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrInvalidSchemaDiff,
+			Message: "extension node is nil",
+		}
+	}
+	if !extensionInstallationSchemaRejected(dialect) || node.Schema == "" {
+		return new(*node), nil
+	}
+	return nil, unsupportedExtensionInstallationSchema(dialect, node.Name, node.Schema)
+}
+
+func extensionInstallationSchemaRejected(dialect string) bool {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.CockroachDB, platform.Spanner:
+		return true
+	default:
+		return false
+	}
+}
+
+func unsupportedExtensionInstallationSchema(dialect, name, schema string) error {
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: "PostgreSQL extension installation schemas",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf(
+			"%s does not support PostgreSQL extension installation schema %q for extension %q",
+			normalized,
+			schema,
+			name,
+		),
+	}
+}
+
+func prepareIndexNode(dialect string, caps capability.Capabilities, node *ast.IndexNode) (*ast.IndexNode, error) {
+	if node == nil {
+		return nil, &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrInvalidSchemaDiff,
+			Message: "index node is nil",
+		}
+	}
+	facets, err := prepareFacets(dialect, node.Facets)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateIndexInclude(dialect, caps, node.Name, node.Type, node.IncludeColumns); err != nil {
+		return nil, err
+	}
+	if err := validateIndexKeyParts(dialect, node); err != nil {
+		return nil, err
+	}
+	if err := nullsdistinct.Validate(dialect, caps, node.NullsDistinct); err != nil {
+		return nil, err
+	}
+	if err := validateIndexBlockSize(dialect, node.Name, node.KeyBlockSize); err != nil {
+		return nil, err
+	}
+	if err := refuseInvisibleIndexNode(dialect, caps, node); err != nil {
+		return nil, err
+	}
+	if !node.Partitioning.IsZero() {
+		if err := refuseIndexPartitioning(dialect, caps, fmt.Sprintf("index %q declares its partitioning", node.Name)); err != nil {
+			return nil, err
+		}
+	}
+	if node.Vector != nil {
+		if err := refuseVectorIndex(dialect, caps, node.Name); err != nil {
+			return nil, err
+		}
+	}
+	cloned := *node
+	cloned.Facets = facets
+	return &cloned, nil
+}
+
+func prepareStatementListNode(
+	dialect string,
+	caps capability.Capabilities,
+	list *ast.StatementList,
+) (*ast.StatementList, error) {
+	if list == nil {
+		return nil, nilNodeError(dialect, "statement list")
+	}
+	prepared, err := prepareNodes(dialect, caps, list.Statements)
+	if err != nil {
+		return nil, err
+	}
+	return &ast.StatementList{Statements: prepared}, nil
+}
+
+func prepareCreateTableNode(
+	dialect string,
+	caps capability.Capabilities,
+	node *ast.CreateTableNode,
+) (*ast.CreateTableNode, error) {
+	if node == nil {
+		return nil, nilNodeError(dialect, "create-table node")
+	}
+	cloned := *node
+	cloned.Columns = slices.Clone(node.Columns)
+	cloned.Constraints = slices.Clone(node.Constraints)
+	cloned.Options = maps.Clone(node.Options)
+
+	for i, column := range cloned.Columns {
+		prepared, err := prepareColumnNode(dialect, caps, node.Name, column)
+		if err != nil {
+			return nil, err
+		}
+		cloned.Columns[i] = prepared
+	}
+	for i, constraint := range cloned.Constraints {
+		prepared, err := prepareConstraintNode(dialect, caps, constraint)
+		if err != nil {
+			return nil, err
+		}
+		cloned.Constraints[i] = prepared
+	}
+	// An index the statement carries is held to what a standalone one is: a
+	// target that writes a new table's indexes inside CREATE TABLE would
+	// otherwise skip every index refusal for exactly those indexes.
+	cloned.Indexes = slices.Clone(node.Indexes)
+	for i, index := range cloned.Indexes {
+		prepared, err := prepareIndexNode(dialect, caps, index)
+		if err != nil {
+			return nil, err
+		}
+		cloned.Indexes[i] = prepared
+	}
+	if err := validateNamedFeatures(dialect, caps, node.OwnedObjects); err != nil {
+		return nil, err
+	}
+	facets, err := prepareFacets(dialect, node.Facets)
+	if err != nil {
+		return nil, err
+	}
+	cloned.Facets = facets
+	if err := refuseColumnFamilies(dialect, caps, declaringFamilies(node.Name), node.YDBColumnFamilies); err != nil {
+		return nil, err
+	}
+	cloned.YDBColumnFamilies = ast.CloneYDBColumnFamilies(node.YDBColumnFamilies)
+	if err := validateCreateTableForeignKeyColumns(dialect, &cloned); err != nil {
+		return nil, err
+	}
+	if err := ensureASTForeignKeyTableEngine(dialect, &cloned); err != nil {
+		return nil, err
+	}
+	if err := requirePrimaryKey(dialect, caps, &cloned); err != nil {
+		return nil, err
+	}
+	if err := refuseRowDeletionPolicy(dialect, caps, node.Name, node.RowDeletionPolicy); err != nil {
+		return nil, err
+	}
+	if err := refuseTablePartitioning(dialect, caps, declaring(node.Name), node.YDBPartitioning); err != nil {
+		return nil, err
+	}
+	if node.YDBColumnTable != nil && !caps.Has(capability.ColumnStoreTables) {
+		return nil, &ptaherr.RenderError{Dialect: dialect, Err: ptaherr.ErrUnsupportedFeature, Message: "column-oriented table requires column_store_tables"}
+	}
+	return &cloned, nil
+}
+
+// refuseColumnFamilies refuses a YDB row table's column families on a target
+// without the capability key each needs; see [ydbfamily.Requirements]. A
+// renderer that has no column families writes the table without them, and
+// every column then sits in one storage pool, uncompressed, with nothing
+// reporting the difference. A table declaring none passes, and so does one
+// declaring only the default family stating no setting. subject names what is
+// refused from the settings a requirement names.
+func refuseColumnFamilies(
+	dialect string,
+	caps capability.Capabilities,
+	subject func(settings string) string,
+	families []ast.YDBColumnFamilySpec,
+) error {
+	for _, requirement := range ydbfamily.Requirements(families) {
+		if caps.Has(requirement.Key) {
+			continue
+		}
+		normalized := platform.NormalizeDialect(dialect)
+		return &ptaherr.CapabilityError{
+			Dialect: normalized,
+			Feature: string(requirement.Key),
+			Err:     ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
+				subject(requirement.Settings), requirement.Key, normalized),
+		}
+	}
+	return nil
+}
+
+// refuseColumnFamilyChange refuses a change of a table's column families on a
+// target without the key what the change writes needs; see
+// [ydbfamily.ChangeRequirements].
+func refuseColumnFamilyChange(
+	dialect string,
+	caps capability.Capabilities,
+	table string,
+	change *ast.SetYDBColumnFamiliesOperation,
+) error {
+	for _, requirement := range ydbfamily.ChangeRequirements(change.Families, change.Previous) {
+		if caps.Has(requirement.Key) {
+			continue
+		}
+		normalized := platform.NormalizeDialect(dialect)
+		return &ptaherr.CapabilityError{
+			Dialect: normalized,
+			Feature: string(requirement.Key),
+			Err:     ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf("changing the %s of %s, which requires target capability %s, unavailable on this %s target",
+				requirement.Settings, tableref.Phrase(table), requirement.Key, normalized),
+		}
+	}
+	return nil
+}
+
+// declaringFamilies names a table's column families as the table declares
+// them, for [refuseColumnFamilies].
+func declaringFamilies(table string) func(string) string {
+	return func(settings string) string { return fmt.Sprintf("table %q declares %s", table, settings) }
+}
+
+// refuseDeclaredColumnFamilies refuses the first declared table whose column
+// families the target cannot carry; see [refuseColumnFamilies].
+func refuseDeclaredColumnFamilies(dialect string, caps capability.Capabilities, tables []schemamodel.Table) error {
+	for _, table := range tables {
+		if err := refuseColumnFamilies(dialect, caps, declaringFamilies(table.QualifiedName()), table.YDBColumnFamilies); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// refuseDeclaredRowDeletionPolicies refuses the first declared table whose row
+// deletion policy the target cannot carry; see [refuseRowDeletionPolicy].
+func refuseDeclaredRowDeletionPolicies(dialect string, caps capability.Capabilities, tables []schemamodel.Table) error {
+	for _, table := range tables {
+		if err := refuseRowDeletionPolicy(dialect, caps, table.Name, table.RowDeletionPolicy); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// refuseTablePartitioning refuses subject's YDB settings -- how a row table
+// splits into partitions, its read replicas and its key bloom filter -- on a
+// target without the capability key each needs; see
+// [ydbpartition.Requirements]. A renderer that has no such setting writes the
+// table without it, and the table then splits, replicates and filters as the
+// server's defaults say, with nothing reporting the difference. A table
+// declaring none of them passes. subject names what is refused from the
+// settings a requirement names.
+func refuseTablePartitioning(
+	dialect string,
+	caps capability.Capabilities,
+	subject func(settings string) string,
+	spec *ast.YDBTablePartitioningSpec,
+) error {
+	for _, requirement := range ydbpartition.Requirements(spec) {
+		if caps.Has(requirement.Key) {
+			continue
+		}
+		normalized := platform.NormalizeDialect(dialect)
+		return &ptaherr.CapabilityError{
+			Dialect: normalized,
+			Feature: string(requirement.Key),
+			Err:     ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
+				subject(requirement.Settings), requirement.Key, normalized),
+		}
+	}
+	return nil
+}
+
+// refuseTablePartitioningChange refuses a change of a table's YDB settings on a
+// target without the key a setting either side holds needs: a change that
+// removes read replicas needs [capability.ReadReplicas] as one that adds them
+// does.
+func refuseTablePartitioningChange(
+	dialect string,
+	caps capability.Capabilities,
+	table string,
+	change *ast.SetYDBTablePartitioningOperation,
+) error {
+	subject := func(settings string) string { return "changing the " + settings + " of " + tableref.Phrase(table) }
+	if err := refuseTablePartitioning(dialect, caps, subject, change.Partitioning); err != nil {
+		return err
+	}
+	return refuseTablePartitioning(dialect, caps, subject, change.Previous)
+}
+
+// declaring names a table's settings as the table declares them, for
+// [refuseTablePartitioning].
+func declaring(table string) func(string) string {
+	return func(settings string) string { return fmt.Sprintf("table %q declares its %s", table, settings) }
+}
+
+// validateDeclaredPartitioning refuses the first declared table whose YDB
+// partitioning, read replicas or key bloom filter the target cannot carry; see
+// [refuseTablePartitioning].
+func validateDeclaredPartitioning(dialect string, caps capability.Capabilities, tables []schemamodel.Table) error {
+	for _, table := range tables {
+		if table.YDBColumnTable != nil && !caps.Has(capability.ColumnStoreTables) {
+			return &ptaherr.RenderError{Dialect: dialect, Err: ptaherr.ErrUnsupportedFeature, Message: "column-oriented table requires column_store_tables"}
+		}
+		if err := refuseTablePartitioning(dialect, caps, declaring(table.QualifiedName()), table.YDBPartitioning); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// refuseRowDeletionPolicy refuses a table's row deletion policy on a target
+// without [capability.RowDeletionPolicy], and one that reads an integer column
+// on a target without [capability.RowDeletionPolicyEpochColumn]. A renderer
+// that has no such clause writes the table without it, and the server then
+// keeps every row the declaration said to delete, so the refusal is here,
+// where every target meets it. A table declaring no policy passes.
+func refuseRowDeletionPolicy(dialect string, caps capability.Capabilities, table string, spec *ast.RowDeletionPolicySpec) error {
+	if spec.IsZero() {
+		return nil
+	}
+	key, subject := capability.RowDeletionPolicy, tableref.Phrase(table)+" declares a row deletion policy"
+	if caps.Has(key) {
+		if strings.TrimSpace(spec.Unit) == "" {
+			return nil
+		}
+		key, subject = capability.RowDeletionPolicyEpochColumn, fmt.Sprintf(
+			"%s declares a row deletion policy on an integer column counting %s", tableref.Phrase(table), spec.Unit)
+		if caps.Has(key) {
+			return nil
+		}
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: string(key),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
+			subject, key, normalized),
+	}
+}
+
+// requirePrimaryKey refuses a keyless table on a target that refuses one
+// itself. Without it the render succeeds and the server answers at apply time,
+// after the statements before this one have already run: YDB says `Primary
+// key is required for ydb tables.`
+func requirePrimaryKey(dialect string, caps capability.Capabilities, node *ast.CreateTableNode) error {
+	if !caps.Has(capability.PrimaryKeyRequired) || createTableHasPrimaryKey(node) {
+		return nil
+	}
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: "table without a primary key",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf(
+			"%s requires a primary key and table %q declares none",
+			platform.NormalizeDialect(dialect),
+			node.Name,
+		),
+	}
+}
+
+func createTableHasPrimaryKey(node *ast.CreateTableNode) bool {
+	for _, column := range node.Columns {
+		if column.Primary {
+			return true
+		}
+	}
+	for _, constraint := range node.Constraints {
+		if constraint.Type == ast.PrimaryKeyConstraint {
+			return true
+		}
+	}
+	return false
+}
+
+func ensureASTForeignKeyTableEngine(dialect string, node *ast.CreateTableNode) error {
+	normalizedDialect := platform.NormalizeDialect(dialect)
+	if normalizedDialect != platform.MySQL && normalizedDialect != platform.MariaDB {
+		return nil
+	}
+	if !createTableContainsForeignKey(node) {
+		return nil
+	}
+
+	optionKey, engine := tableOption(node.Options, "ENGINE")
+	if strings.TrimSpace(engine) == "" {
+		if optionKey == "" {
+			optionKey = "ENGINE"
+		}
+		if node.Options == nil {
+			node.Options = make(map[string]string)
+		}
+		node.Options[optionKey] = "InnoDB"
+		return nil
+	}
+	if !strings.EqualFold(strings.TrimSpace(engine), "InnoDB") {
+		return invalidASTForeignKeyError(
+			dialect,
+			fmt.Sprintf(
+				"table %q uses storage engine %q; %s foreign keys require InnoDB",
+				node.Name,
+				strings.TrimSpace(engine),
+				normalizedDialect,
+			),
+		)
+	}
+	return nil
+}
+
+func createTableContainsForeignKey(node *ast.CreateTableNode) bool {
+	for _, column := range node.Columns {
+		if column.ForeignKey != nil {
+			return true
+		}
+	}
+	for _, constraint := range node.Constraints {
+		if constraint.Type == ast.ForeignKeyConstraint {
+			return true
+		}
+	}
+	return false
+}
+
+func tableOption(options map[string]string, target string) (optionKey, optionValue string) {
+	for key, value := range options {
+		if strings.EqualFold(key, target) {
+			return key, value
+		}
+	}
+	return "", ""
+}
+
+func prepareAlterTableNode(
+	dialect string,
+	caps capability.Capabilities,
+	node *ast.AlterTableNode,
+) (*ast.AlterTableNode, error) {
+	if node == nil {
+		return nil, nilNodeError(dialect, "alter-table node")
+	}
+	cloned := *node
+	cloned.Operations = slices.Clone(node.Operations)
+	for i, operation := range cloned.Operations {
+		prepared, err := prepareAlterOperation(dialect, caps, node, operation)
+		if err != nil {
+			return nil, err
+		}
+		cloned.Operations[i] = prepared
+	}
+	return &cloned, nil
+}
+
+func prepareAlterOperation(
+	dialect string,
+	caps capability.Capabilities,
+	parent *ast.AlterTableNode,
+	operation ast.AlterOperation,
+) (ast.AlterOperation, error) {
+	table := parent.Name
+	if operation == nil {
+		return nil, nilNodeError(dialect, "alter-table operation")
+	}
+	switch typed := operation.(type) {
+	case *ast.AddConstraintOperation:
+		return prepareAddConstraintOperation(dialect, caps, typed)
+	case *ast.AddColumnOperation:
+		if typed == nil {
+			return nil, nilNodeError(dialect, "add-column operation")
+		}
+		if typed.IfNotExists && !rendersAddColumnIfNotExists(dialect) {
+			return nil, columnExistenceGuardUnsupportedError(dialect, "ADD COLUMN IF NOT EXISTS")
+		}
+		cloned := *typed
+		column, err := prepareColumnNode(dialect, caps, table, typed.Column)
+		if err != nil {
+			return nil, err
+		}
+		cloned.Column = column
+		return &cloned, nil
+	case *ast.ModifyColumnOperation:
+		if typed == nil {
+			return nil, nilNodeError(dialect, "modify-column operation")
+		}
+		cloned := *typed
+		column, err := prepareColumnNode(dialect, caps, table, typed.Column)
+		if err != nil {
+			return nil, err
+		}
+		cloned.Column = column
+		return &cloned, nil
+	case *ast.DropColumnOperation, *ast.AlterColumnOperation:
+		// One arm for both, so this switch keeps its complexity budget;
+		// validateColumnOperation re-selects between them.
+		if err := validateColumnOperation(dialect, operation); err != nil {
+			return nil, err
+		}
+		return operation, nil
+	case *ast.AddIndexOperation, *ast.ReplaceIndexOperation, *ast.AlterIndexVisibilityOperation,
+		*ast.SetIndexPartitioningOperation:
+		// One arm for the four, for the reason the arm above gives.
+		if err := validateIndexOperation(dialect, caps, operation); err != nil {
+			return nil, err
+		}
+		return operation, nil
+	case *ast.ExtensionAlterOperation:
+		return prepareExtensionAlter(dialect, caps, parent, typed)
+	case *ast.SetRowDeletionPolicyOperation, *ast.SetYDBColumnFamiliesOperation, *ast.SetYDBTablePartitioningOperation:
+		// One arm for a table's YDB settings, for the reason the column arm
+		// gives.
+		if err := validateTableSettingOperation(dialect, caps, table, operation); err != nil {
+			return nil, err
+		}
+		return operation, nil
+	default:
+		if isNilInterface(operation) {
+			return nil, nilNodeError(dialect, "alter-table operation")
+		}
+		return operation, nil
+	}
+}
+
+func prepareAddConstraintOperation(dialect string, caps capability.Capabilities, operation *ast.AddConstraintOperation) (ast.AlterOperation, error) {
+	if operation == nil {
+		return nil, nilNodeError(dialect, "add-constraint operation")
+	}
+	constraint, err := prepareConstraintNode(dialect, caps, operation.Constraint)
+	if err != nil {
+		return nil, err
+	}
+	cloned := *operation
+	cloned.Constraint = constraint
+	return &cloned, nil
+}
+
+// validateTableSettingOperation refuses a table's row deletion policy, YDB
+// column families, partitioning, read replicas, or key bloom filter when the
+// target cannot carry the setting.
+func validateTableSettingOperation(
+	dialect string,
+	caps capability.Capabilities,
+	table string,
+	operation ast.AlterOperation,
+) error {
+	if families, ok := operation.(*ast.SetYDBColumnFamiliesOperation); ok {
+		return refuseColumnFamilyChange(dialect, caps, table, families)
+	}
+	switch typed := operation.(type) {
+	case *ast.SetRowDeletionPolicyOperation:
+		spec := &ast.RowDeletionPolicySpec{Column: typed.Column, Interval: typed.Interval, Unit: typed.Unit}
+		return refuseRowDeletionPolicy(dialect, caps, table, spec)
+	case *ast.SetYDBTablePartitioningOperation:
+		return refuseTablePartitioningChange(dialect, caps, table, typed)
+	default:
+		return fmt.Errorf("%w: unexpected table setting operation %T", ptaherr.ErrInvalidSchemaDiff, operation)
+	}
+}
+
+// validateIndexOperation refuses an index operation that asks for an
+// invisible index on a target without one.
+func validateIndexOperation(dialect string, caps capability.Capabilities, operation ast.AlterOperation) error {
+	switch typed := operation.(type) {
+	case *ast.AddIndexOperation:
+		_, err := prepareIndexNode(dialect, caps, typed.Index)
+		return err
+	case *ast.ReplaceIndexOperation:
+		_, err := prepareIndexNode(dialect, caps, typed.Index)
+		return err
+	case *ast.AlterIndexVisibilityOperation:
+		return refuseInvisibleIndex(dialect, caps, typed.IndexName)
+	case *ast.SetIndexPartitioningOperation:
+		return refuseIndexPartitioning(dialect, caps, fmt.Sprintf("changing the partitioning of index %q", typed.IndexName))
+	}
+	return nil
+}
+
+// refuseIndexPartitioning refuses subject, an index's partitioning, which only
+// YDB's global indexes carry, on a target without
+// [capability.IndexPartitioning]. Built without it, the index would split as
+// the server's defaults say rather than as declared, and nothing would report
+// the difference.
+func refuseIndexPartitioning(dialect string, caps capability.Capabilities, subject string) error {
+	if caps.Has(capability.IndexPartitioning) {
+		return nil
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: string(capability.IndexPartitioning),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
+			subject, capability.IndexPartitioning, normalized),
+	}
+}
+
+// refuseVectorIndex refuses the vector settings of index name, which only
+// YDB's vector index carries, on a target without
+// [capability.VectorIndexes]. Rendered without them, the index would be a
+// plain one over the vector column, which answers no nearest-neighbour search,
+// and nothing would report the difference.
+func refuseVectorIndex(dialect string, caps capability.Capabilities, name string) error {
+	if caps.Has(capability.VectorIndexes) {
+		return nil
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: string(capability.VectorIndexes),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("index %q declares vector settings, which requires target capability %s, unavailable on this %s target",
+			name, capability.VectorIndexes, normalized),
+	}
+}
+
+// validateDeclaredYDBObjects refuses the YDB table settings and objects a
+// declaration holds that the target cannot write: a table's row deletion
+// policy and changefeeds, the secrets, and the external data sources and
+// tables.
+func validateDeclaredYDBObjects(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
+	if err := validateDeclaredTableSettings(dialect, caps, database); err != nil {
+		return err
+	}
+	if err := validateDeclaredSecrets(dialect, caps, database); err != nil {
+		return err
+	}
+	for _, query := range database.StreamingQueries {
+		if err := ydbstream.Refuse(dialect, caps, "streaming query "+query.QualifiedName()); err != nil {
+			return err
+		}
+		if err := ydbstream.Validate(query.Spec); err != nil {
+			return err
+		}
+	}
+	return validateDeclaredExternalObjects(dialect, caps, database)
+}
+
+// refuseYDBObject refuses node, a YDB secret or external object statement, on
+// a target without the key it needs, naming the object.
+func refuseYDBObject(dialect string, caps capability.Capabilities, node ast.Node) error {
+	switch typed := node.(type) {
+	case *ast.CreateSecretNode:
+		return refuseSecret(dialect, caps, "secret "+typed.Name)
+	case *ast.AlterSecretNode:
+		return refuseSecret(dialect, caps, "ALTER SECRET "+typed.Name)
+	case *ast.DropSecretNode:
+		return refuseSecret(dialect, caps, "DROP SECRET "+typed.Name)
+	case *ast.CreateExternalDataSourceNode:
+		return refuseExternal(dialect, caps, "external data source "+typed.Name)
+	case *ast.DropExternalDataSourceNode:
+		return refuseExternal(dialect, caps, "DROP EXTERNAL DATA SOURCE "+typed.Name)
+	case *ast.CreateExternalTableNode:
+		return refuseExternal(dialect, caps, "external table "+typed.Name)
+	case *ast.DropExternalTableNode:
+		return refuseExternal(dialect, caps, "DROP EXTERNAL TABLE "+typed.Name)
+	default:
+		return nil
+	}
+}
+
+// refuseExternal refuses subject, a YDB external data source or external
+// table, on a target without [capability.ExternalDataSources].
+func refuseExternal(dialect string, caps capability.Capabilities, subject string) error {
+	if caps.Has(capability.ExternalDataSources) {
+		return nil
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: string(capability.ExternalDataSources),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
+			subject, capability.ExternalDataSources, normalized),
+	}
+}
+
+// validateDeclaredExternalObjects refuses a declared external data source or
+// external table the target cannot create, before any statement is emitted:
+// on a target without [capability.ExternalDataSources]; on YDB one whose path
+// another declared object holds, since a path names one object (measured on
+// 25.1.4.7 and 26.2.1.14: `unexpected path type`); and an external table over
+// a declared data source that is not object storage, which the server refuses
+// (`Only ObjectStorage source type supported but got PostgreSQL`).
+func validateDeclaredExternalObjects(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
+	paths := make(map[string]string)
+	for _, table := range database.Tables {
+		paths[table.QualifiedName()] = "table"
+	}
+	for _, secret := range database.Secrets {
+		paths[secret.QualifiedName()] = "secret"
+	}
+	sourceTypes := make(map[string]string, len(database.ExternalDataSources))
+	claim := func(name, kind string) error {
+		if other, taken := paths[name]; taken {
+			return &ptaherr.RenderError{
+				Dialect: platform.NormalizeDialect(dialect),
+				Err:     ptaherr.ErrUnsupportedFeature,
+				Message: fmt.Sprintf("%s %s has the path of a declared %s, and YDB keeps one object at a path "+
+					"(`unexpected path type`)", kind, name, other),
+			}
+		}
+		paths[name] = kind
+		return nil
+	}
+	for _, source := range database.ExternalDataSources {
+		name := source.QualifiedName()
+		if err := refuseExternal(dialect, caps, "external data source "+name); err != nil {
+			return err
+		}
+		if err := claim(name, "external data source"); err != nil {
+			return err
+		}
+		sourceTypes[strings.Trim(source.Schema+"/"+source.Name, "/")] = source.SourceType
+	}
+	for _, table := range database.ExternalTables {
+		name := table.QualifiedName()
+		if err := refuseExternal(dialect, caps, "external table "+name); err != nil {
+			return err
+		}
+		if err := claim(name, "external table"); err != nil {
+			return err
+		}
+		sourceType, declared := sourceTypes[strings.Trim(table.DataSource, "/")]
+		if declared && sourceType != "ObjectStorage" {
+			return &ptaherr.RenderError{
+				Dialect: platform.NormalizeDialect(dialect),
+				Err:     ptaherr.ErrUnsupportedFeature,
+				Message: fmt.Sprintf("external table %s reads data source %s, a %s source; an external table reads "+
+					"files, from an ObjectStorage source (`Only ObjectStorage source type supported`)",
+					name, table.DataSource, sourceType),
+			}
+		}
+	}
+	return nil
+}
+
+// refuseSecret refuses subject, a YDB secret, on a target without
+// [capability.Secrets]: a target that built nothing for it would report the
+// declaration applied, and an external data source that names the secret
+// would then fail at its first read.
+func refuseSecret(dialect string, caps capability.Capabilities, subject string) error {
+	if caps.Has(capability.Secrets) {
+		return nil
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: string(capability.Secrets),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
+			subject, capability.Secrets, normalized),
+	}
+}
+
+// validateDeclaredSecrets refuses a declared secret the target cannot create,
+// before any statement is emitted: on a target without [capability.Secrets],
+// and on YDB a secret whose path a declared table holds, since a path names
+// one object (measured on 26.2.1.14: CREATE SECRET over a table's path answers
+// `unexpected path type ... EPathTypeTable`).
+func validateDeclaredSecrets(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
+	tables := make(map[string]bool, len(database.Tables))
+	for _, table := range database.Tables {
+		tables[table.QualifiedName()] = true
+	}
+	for _, secret := range database.Secrets {
+		name := secret.QualifiedName()
+		if err := refuseSecret(dialect, caps, "secret "+name); err != nil {
+			return err
+		}
+		if tables[name] {
+			return &ptaherr.RenderError{
+				Dialect: platform.NormalizeDialect(dialect),
+				Err:     ptaherr.ErrUnsupportedFeature,
+				Message: fmt.Sprintf("secret %s has the path of a declared table, and YDB keeps one object "+
+					"at a path (`unexpected path type`)", name),
+			}
+		}
+	}
+	return nil
+}
+
+// refuseReplicationFamily refuses subject, an async replication or a
+// transfer, on a target without key: both are YDB's, and a target that built
+// nothing for one would report the declaration applied.
+func refuseReplicationFamily(dialect string, caps capability.Capabilities, key capability.Capability, subject string) error {
+	if caps.Has(key) {
+		return nil
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: string(key),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
+			subject, key, normalized),
+	}
+}
+
+// replicationNodeSubject names an async replication or transfer node with the
+// capability it needs.
+func replicationNodeSubject(node ast.Node) (capability.Capability, string) {
+	switch typed := node.(type) {
+	case *ast.CreateAsyncReplicationNode:
+		return capability.AsyncReplication, "async replication " + typed.Name
+	case *ast.AlterAsyncReplicationNode:
+		return capability.AsyncReplication, "ALTER ASYNC REPLICATION " + typed.Name
+	case *ast.DropAsyncReplicationNode:
+		return capability.AsyncReplication, "DROP ASYNC REPLICATION " + typed.Name
+	case *ast.CreateTransferNode:
+		return capability.Transfers, "transfer " + typed.Name
+	case *ast.AlterTransferNode:
+		return capability.Transfers, "ALTER TRANSFER " + typed.Name
+	default:
+		return capability.Transfers, "DROP TRANSFER " + node.(*ast.DropTransferNode).Name
+	}
+}
+
+// validateDeclaredReplications refuses a declared async replication or
+// transfer the target cannot create, before any statement is emitted: on a
+// target without its key, and on YDB a declaration YDB would refuse or keep
+// differently. It also refuses a declared table at a replica's path: YDB
+// creates each replica table itself, and a replication whose target a table
+// already holds is accepted and then fails (measured: `Create dst error:
+// StatusSchemeError, Empty replication config`).
+func validateDeclaredReplications(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
+	for _, replication := range database.AsyncReplications {
+		name := replication.QualifiedName()
+		if err := refuseReplicationFamily(dialect, caps, capability.AsyncReplication,
+			"async replication "+name); err != nil {
+			return err
+		}
+		if err := declaredReplicationRefusal(dialect,
+			ydbreplication.CheckReplication(name, replication.Spec, caps)); err != nil {
+			return err
+		}
+		targets := ydbreplication.Targets(replication.Spec)
+		for _, table := range database.Tables {
+			if ydbreplication.UnderTarget(ydbreplication.TablePath(table.Schema, table.Name), targets) {
+				return &ptaherr.RenderError{
+					Dialect: platform.NormalizeDialect(dialect),
+					Err:     ptaherr.ErrUnsupportedFeature,
+					Message: fmt.Sprintf("table %s lies at a target of async replication %s, which creates its "+
+						"replica tables itself; declare the replication without the table", table.QualifiedName(), name),
+				}
+			}
+		}
+	}
+	for _, transfer := range database.Transfers {
+		name := transfer.QualifiedName()
+		if err := refuseReplicationFamily(dialect, caps, capability.Transfers, "transfer "+name); err != nil {
+			return err
+		}
+		if err := declaredReplicationRefusal(dialect,
+			ydbreplication.CheckTransfer(name, transfer.Spec, caps)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// declaredReplicationRefusal turns a replication or transfer refusal into the
+// render error a declaration gets.
+func declaredReplicationRefusal(dialect string, refusal *ydbreplication.Refusal) error {
+	switch {
+	case refusal == nil:
+		return nil
+	case refusal.Key != "":
+		return refuseReplicationFamily(dialect, capability.Capabilities{}, refusal.Key, refusal.Subject)
+	default:
+		return &ptaherr.RenderError{
+			Dialect: platform.NormalizeDialect(dialect),
+			Err:     ptaherr.ErrUnsupportedFeature,
+			Message: refusal.Subject + ": " + refusal.Reason,
+		}
+	}
+}
+
+// validateDeclaredTableSettings refuses a declared table's row deletion
+// policy, column families, changefeeds, or YDB partitioning, read replicas or
+// key bloom filter, on a target that cannot write them.
+func validateDeclaredTableSettings(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
+	if err := refuseDeclaredRowDeletionPolicies(dialect, caps, database.Tables); err != nil {
+		return err
+	}
+	if err := refuseDeclaredColumnFamilies(dialect, caps, database.Tables); err != nil {
+		return err
+	}
+	if err := validateDeclaredFeatures(dialect, caps, database); err != nil {
+		return err
+	}
+	return validateDeclaredPartitioning(dialect, caps, database.Tables)
+}
+
+func validateDeclaredFeatures(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
+	for _, facets := range database.FacetSlots() {
+		if _, err := prepareFacets(dialect, *facets); err != nil {
+			return err
+		}
+	}
+	if err := validateNamedFeatures(dialect, caps, database.FeatureObjects); err != nil {
+		return err
+	}
+	return schemaprep.ValidateFeatureParents(database, dialect)
+}
+
+func refuseTopicNode(dialect string, caps capability.Capabilities, node ast.Node) error {
+	subject := "a topic"
+	switch typed := node.(type) {
+	case *ast.CreateTopicNode:
+		subject = "topic " + typed.Name
+	case *ast.AddTopicConsumerNode:
+		subject = "ALTER TOPIC " + typed.Name + " ADD CONSUMER " + typed.Consumer.Name
+	case *ast.AlterTopicNode:
+		subject = "ALTER TOPIC " + typed.Name
+	case *ast.DropTopicNode:
+		subject = "DROP TOPIC " + typed.Name
+	}
+	return refuseTopic(dialect, caps, subject)
+}
+
+// refuseTopic refuses subject, a topic, on a target without
+// [capability.Topics]: a topic is YDB's, and a target that built nothing for
+// it would report the declaration applied.
+func refuseTopic(dialect string, caps capability.Capabilities, subject string) error {
+	if caps.Has(capability.Topics) {
+		return nil
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: string(capability.Topics),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
+			subject, capability.Topics, normalized),
+	}
+}
+
+// validateDeclaredTopics refuses a topic on a target that cannot create one.
+// Shared scheme paths are checked by validateDeclaredSchemePaths.
+func validateDeclaredTopics(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
+	for _, topic := range database.Topics {
+		if err := refuseTopic(dialect, caps, "topic "+topic.QualifiedName()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// The kinds of declared object YDB keeps at a path of its scheme tree, as a
+// refusal names them.
+const (
+	pathTable            = "table"
+	pathView             = "view"
+	pathTopic            = "topic"
+	pathCoordinationNode = "coordination node"
+)
+
+// declaredPaths maps the qualified name of every declared table, view, topic
+// and coordination node to the kinds declared under it, in that order. It is
+// the one answer to which declared objects share a path, for
+// [validateDeclaredSchemePaths]: on YDB
+// a path names one object, so a name that carries two kinds is a declaration
+// the server cannot hold. A view's name is parsed as the YDB renderer reads
+// it, so `app.v` is the view v in the directory app.
+func declaredPaths(database *schemamodel.Database) map[string][]string {
+	paths := make(map[string][]string)
+	add := func(name, kind string) {
+		name = declaredSchemePath(name)
+		paths[name] = append(paths[name], kind)
+	}
+	for _, table := range database.Tables {
+		add(table.QualifiedName(), pathTable)
+	}
+	for _, view := range database.Views {
+		add(view.Name, pathView)
+	}
+	for _, topic := range database.Topics {
+		add(topic.QualifiedName(), pathTopic)
+	}
+	for _, node := range database.CoordinationNodes {
+		add(node.QualifiedName(), pathCoordinationNode)
+	}
+	return paths
+}
+
+// A slash inside the final name still names a directory in YDB. Use the path
+// the renderer writes, while keeping a literal dot distinct from a qualifier.
+func declaredSchemePath(name string) string {
+	ref, ok := tableref.Parse(name)
+	if !ok {
+		return name
+	}
+	full := ref.Name
+	if strings.TrimSpace(ref.Schema) != "" {
+		full = strings.TrimRight(ref.Schema, "/") + "/" + full
+	}
+	if slash := strings.LastIndex(full, "/"); slash >= 0 {
+		return tableref.Canonical(full[:slash], full[slash+1:])
+	}
+	return tableref.Canonical("", full)
+}
+
+// validateDeclaredSchemePaths refuses declarations that assign multiple kinds
+// to one scheme path. CoordinationNodes denotes YDB's scheme objects; other
+// dialects use their own namespace rules. Check every path even when no
+// coordination node is declared, since tables, views and topics also share it.
+func validateDeclaredSchemePaths(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
+	if !caps.Has(capability.CoordinationNodes) {
+		return nil
+	}
+	paths := declaredPaths(database)
+	for _, name := range slices.Sorted(maps.Keys(paths)) {
+		kinds := slices.Compact(paths[name])
+		if len(kinds) < 2 {
+			continue
+		}
+		return &ptaherr.RenderError{
+			Dialect: platform.NormalizeDialect(dialect), Err: ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf("%s %s has the path of a declared %s, and YDB keeps one object at a path (`unexpected path type`)", kinds[len(kinds)-1], name, kinds[0]),
+		}
+	}
+	return nil
+}
+
+// refuseCoordinationNode refuses node, a coordination node statement, on a
+// target without [capability.CoordinationNodes]: a coordination node is YDB's
+// own object, and another engine has nothing to create.
+func refuseCoordinationNode(dialect string, caps capability.Capabilities, node ast.Node) error {
+	if caps.Has(capability.CoordinationNodes) {
+		return nil
+	}
+	var name string
+	switch typed := node.(type) {
+	case *ast.CreateCoordinationNodeNode:
+		name = typed.Name
+	case *ast.AlterCoordinationNodeNode:
+		name = typed.Name
+	case *ast.DropCoordinationNodeNode:
+		name = typed.Name
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: string(capability.CoordinationNodes),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("coordination node %s, which requires target capability %s, unavailable on this %s target",
+			name, capability.CoordinationNodes, normalized),
+	}
+}
+
+// refuseInvisibleIndexNode refuses index when the optimizer is not to use it
+// and the target has no such index. A nil or visible index passes.
+func refuseInvisibleIndexNode(dialect string, caps capability.Capabilities, index *ast.IndexNode) error {
+	if index == nil || !index.Invisible {
+		return nil
+	}
+	return refuseInvisibleIndex(dialect, caps, index.Name)
+}
+
+// refuseInvisibleIndex refuses the index name, which the optimizer is not to
+// use, on a target without such an index. Built visible, it would change the
+// query plans its author held back from it (stokaro/ptah#3853).
+func refuseInvisibleIndex(dialect string, caps capability.Capabilities, name string) error {
+	if caps.Has(capability.InvisibleIndexes) {
+		return nil
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: "invisible indexes",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("index %q is invisible, which requires target capability %s, unavailable on this %s target",
+			name, capability.InvisibleIndexes, normalized),
+	}
+}
+
+// validateDeclaredIndexOptions checks index visibility and block-size hints over a
+// whole declaration, before the first statement is rendered, for the reason
+// validateDeclaredNullsDistinct gives.
+func validateDeclaredIndexOptions(
+	dialect string,
+	caps capability.Capabilities,
+	database *schemamodel.Database,
+) error {
+	for _, index := range database.Indexes {
+		if err := validateIndexBlockSize(dialect, index.Name, index.KeyBlockSize); err != nil {
+			return err
+		}
+		if !index.Partitioning.IsZero() {
+			if err := refuseIndexPartitioning(dialect, caps, fmt.Sprintf("index %q declares its partitioning", index.Name)); err != nil {
+				return err
+			}
+		}
+		if index.Vector != nil {
+			if err := refuseVectorIndex(dialect, caps, index.Name); err != nil {
+				return err
+			}
+		}
+		if !index.Invisible {
+			continue
+		}
+		if err := refuseInvisibleIndex(dialect, caps, index.Name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateColumnOperation refuses a DROP COLUMN guard the target cannot
+// render and an ALTER COLUMN action that cannot be rendered at all.
+func validateColumnOperation(dialect string, operation ast.AlterOperation) error {
+	if isNilInterface(operation) {
+		return nilNodeError(dialect, "alter-table operation")
+	}
+	switch typed := operation.(type) {
+	case *ast.DropColumnOperation:
+		if typed.IfExists && !rendersDropColumnIfExists(dialect) {
+			return columnExistenceGuardUnsupportedError(dialect, "DROP COLUMN IF EXISTS")
+		}
+	case *ast.AlterColumnOperation:
+		return validateAlterColumnOperation(dialect, typed)
+	}
+	return nil
+}
+
+// validateAlterColumnOperation refuses an ALTER COLUMN action that carries
+// no value to set, or one no renderer spells.
+func validateAlterColumnOperation(dialect string, operation *ast.AlterColumnOperation) error {
+	invalid := func(message string) error {
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrInvalidSchemaDiff,
+			Message: fmt.Sprintf("ALTER COLUMN %s: %s", operation.ColumnName, message),
+		}
+	}
+	switch operation.Action {
+	case ast.AlterColumnSetDefault:
+		if operation.Default == nil || (!operation.Default.HasLiteral() && operation.Default.Expression == "") {
+			return invalid("SET DEFAULT carries no default")
+		}
+	case ast.AlterColumnSetType:
+		if strings.TrimSpace(operation.Type) == "" {
+			return invalid("SET DATA TYPE carries no type")
+		}
+	case ast.AlterColumnDropDefault, ast.AlterColumnSetNotNull, ast.AlterColumnDropNotNull:
+	default:
+		return invalid(fmt.Sprintf("unknown action %q", operation.Action))
+	}
+	return nil
+}
+
+func isNilInterface(value any) bool {
+	if value == nil {
+		return true
+	}
+	reflected := reflect.ValueOf(value)
+	return reflected.Kind() == reflect.Pointer && reflected.IsNil()
+}
+
+// prepareColumnNode validates one column against the target. table names the
+// column's owning table where the caller knows it, and is empty where the
+// column is rendered on its own.
+func prepareColumnNode(
+	dialect string,
+	caps capability.Capabilities,
+	table string,
+	node *ast.ColumnNode,
+) (*ast.ColumnNode, error) {
+	if node == nil {
+		return nil, nilNodeError(dialect, "column node")
+	}
+	facets, err := prepareFacets(dialect, node.Facets)
+	if err != nil {
+		return nil, err
+	}
+	cloned := *node
+	cloned.Facets = facets
+	if node.Name == "" {
+		return nil, unnamedColumnError(dialect, table)
+	}
+	if node.Check != "" && node.CheckNotEnforced {
+		if err := refuseNotEnforcedCheck(dialect, caps, checkIdentity(node.CheckName, node.Name)); err != nil {
+			return nil, err
+		}
+	}
+	if node.ForeignKey == nil {
+		return &cloned, nil
+	}
+	if !caps.Has(capability.ForeignKeys) {
+		return nil, foreignKeysUnsupportedError(dialect)
+	}
+
+	cloned.ForeignKey = cloneForeignKeyRef(node.ForeignKey)
+	if err := validateASTForeignKey(dialect, []string{node.Name}, cloned.ForeignKey); err != nil {
+		return nil, err
+	}
+	if err := validateForeignKeyClauses(
+		dialect, caps, foreignKeyClauses{match: cloned.ForeignKey.Match, notEnforced: cloned.ForeignKey.NotEnforced},
+		foreignKeyIdentity(cloned.ForeignKey.Name, node.Name),
+	); err != nil {
+		return nil, err
+	}
+	cloned.ForeignKey.OnDelete, cloned.ForeignKey.OnUpdate, err = normalizeReferentialActions(
+		dialect,
+		cloned.ForeignKey.OnDelete,
+		cloned.ForeignKey.OnUpdate,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateDeleteColumnList(
+		dialect, caps, []string{cloned.Name}, cloned.ForeignKey.OnDelete, cloned.ForeignKey.OnDeleteColumns,
+	); err != nil {
+		return nil, err
+	}
+	if !cloned.Nullable && foreignKeySetsColumnNull(cloned.ForeignKey, cloned.Name) {
+		return nil, invalidASTForeignKeyError(
+			dialect,
+			fmt.Sprintf("column %q uses SET NULL but is NOT NULL", cloned.Name),
+		)
+	}
+	return &cloned, nil
+}
+
+func validateCreateTableForeignKeyColumns(dialect string, node *ast.CreateTableNode) error {
+	for _, constraint := range node.Constraints {
+		if constraint.Type != ast.ForeignKeyConstraint {
+			continue
+		}
+		for _, columnName := range constraint.Columns {
+			column := createTableColumn(node.Columns, columnName)
+			if column == nil {
+				return invalidASTForeignKeyError(
+					dialect,
+					fmt.Sprintf("table %q has no local foreign-key column %q", node.Name, columnName),
+				)
+			}
+			if !column.Nullable && foreignKeySetsColumnNull(constraint.Reference, columnName) {
+				return invalidASTForeignKeyError(
+					dialect,
+					fmt.Sprintf(
+						"foreign key on %q.%q uses SET NULL but the local column is NOT NULL",
+						node.Name,
+						columnName,
+					),
+				)
+			}
+		}
+	}
+	return nil
+}
+
+func createTableColumn(columns []*ast.ColumnNode, name string) *ast.ColumnNode {
+	for _, column := range columns {
+		if column != nil && column.Name == name {
+			return column
+		}
+	}
+	return nil
+}
+
+// foreignKeySetsColumnNull reports whether a referential action of reference
+// can set column to NULL. ON UPDATE SET NULL sets every referencing column;
+// ON DELETE SET NULL sets the listed ones, or every one when there is no list.
+// A NOT NULL column the delete action leaves alone is a valid declaration:
+// PostgreSQL 18.6 applies `FOREIGN KEY (x, a) ... ON DELETE SET NULL (a)` over
+// a NOT NULL x and clears only a.
+func foreignKeySetsColumnNull(reference *ast.ForeignKeyRef, column string) bool {
+	if reference == nil {
+		return false
+	}
+	return reference.OnUpdate == "SET NULL" ||
+		deleteActionSetsColumnNull(reference.OnDelete, reference.OnDeleteColumns, column)
+}
+
+// deleteActionSetsColumnNull is the ON DELETE half of the question above,
+// shared by the AST and the schema-model validation so the two cannot come to
+// read the list differently.
+func deleteActionSetsColumnNull(onDelete string, onDeleteColumns []string, column string) bool {
+	return onDelete == "SET NULL" && (len(onDeleteColumns) == 0 || slices.Contains(onDeleteColumns, column))
+}
+
+// validateDeleteColumnList refuses an ON DELETE column list the target cannot
+// write or that no engine would accept.
+//
+// A target without the clause refuses the list rather than render the action
+// without it: that would set every referencing column to NULL or its default
+// where the declaration asked for some. The list follows only SET NULL and
+// SET DEFAULT, and names referencing columns of the same key, as PostgreSQL
+// requires.
+func validateDeleteColumnList(
+	dialect string,
+	caps capability.Capabilities,
+	localColumns []string,
+	onDelete string,
+	onDeleteColumns []string,
+) error {
+	if len(onDeleteColumns) == 0 {
+		return nil
+	}
+	if !caps.Has(capability.ForeignKeyDeleteColumnList) {
+		return &ptaherr.CapabilityError{
+			Dialect: dialect,
+			Feature: "foreign key ON DELETE column list",
+			Err:     ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf(
+				"%s does not support a column list on ON DELETE %s",
+				platform.NormalizeDialect(dialect),
+				onDelete,
+			),
+		}
+	}
+	if onDelete != "SET NULL" && onDelete != "SET DEFAULT" {
+		return invalidASTForeignKeyError(
+			dialect,
+			fmt.Sprintf("an ON DELETE column list needs SET NULL or SET DEFAULT, not %q", referentialActionOrDefault(onDelete)),
+		)
+	}
+	for _, column := range onDeleteColumns {
+		if !slices.Contains(localColumns, column) {
+			return invalidASTForeignKeyError(
+				dialect,
+				fmt.Sprintf("ON DELETE %s names column %q, which is not one of the key's columns %v", onDelete, column, localColumns),
+			)
+		}
+	}
+	return nil
+}
+
+func prepareConstraintNode(
+	dialect string,
+	caps capability.Capabilities,
+	node *ast.ConstraintNode,
+) (*ast.ConstraintNode, error) {
+	if node == nil {
+		return nil, nilNodeError(dialect, "constraint node")
+	}
+	facets, err := prepareFacets(dialect, node.Facets)
+	if err != nil {
+		return nil, err
+	}
+	cloned := *node
+	cloned.Facets = facets
+	// Before the foreign-key early return, not after it: a UNIQUE or PRIMARY KEY
+	// constraint takes that return, and its INCLUDE payload is exactly what was
+	// being dropped in silence (stokaro/ptah#2538).
+	if err := validateConstraintInclude(
+		dialect,
+		node.Type.String(),
+		node.Name,
+		node.IncludeColumns,
+	); err != nil {
+		return nil, err
+	}
+	if err := validateConstraintBlockSize(dialect, node.Type.String(), node.Name, node.KeyBlockSize); err != nil {
+		return nil, err
+	}
+	if err := validateConstraintKeyParts(dialect, node); err != nil {
+		return nil, err
+	}
+	if err := nullsdistinct.Validate(dialect, caps, node.NullsDistinct); err != nil {
+		return nil, err
+	}
+	if node.Type == ast.CheckConstraint && node.NotEnforced {
+		if err := refuseNotEnforcedCheck(dialect, caps, checkIdentity(node.Name, "")); err != nil {
+			return nil, err
+		}
+	}
+	// A foreign key carries its deferral on its reference, so a constraint
+	// node that defers is a key.
+	if node.Deferrable {
+		if err := refuseDeferrableKey(dialect, caps, node.Type.String(), keyIdentity(node.Name, "")); err != nil {
+			return nil, err
+		}
+	}
+	if node.Type != ast.ForeignKeyConstraint {
+		return &cloned, nil
+	}
+	if !caps.Has(capability.ForeignKeys) {
+		return nil, foreignKeysUnsupportedError(dialect)
+	}
+
+	cloned.Columns = slices.Clone(node.Columns)
+	cloned.Reference = cloneForeignKeyRef(node.Reference)
+	if err := validateASTForeignKey(dialect, cloned.Columns, cloned.Reference); err != nil {
+		return nil, err
+	}
+	if err := validateForeignKeyClauses(
+		dialect, caps, foreignKeyClauses{match: cloned.Reference.Match, notEnforced: cloned.Reference.NotEnforced},
+		foreignKeyIdentity(node.Name, strings.Join(node.Columns, ", ")),
+	); err != nil {
+		return nil, err
+	}
+	cloned.Reference.OnDelete, cloned.Reference.OnUpdate, err = normalizeReferentialActions(
+		dialect,
+		cloned.Reference.OnDelete,
+		cloned.Reference.OnUpdate,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateDeleteColumnList(
+		dialect, caps, cloned.Columns, cloned.Reference.OnDelete, cloned.Reference.OnDeleteColumns,
+	); err != nil {
+		return nil, err
+	}
+	return &cloned, nil
+}
+
+func cloneForeignKeyRef(reference *ast.ForeignKeyRef) *ast.ForeignKeyRef {
+	if reference == nil {
+		return nil
+	}
+	cloned := *reference
+	cloned.Columns = slices.Clone(reference.Columns)
+	cloned.OnDeleteColumns = slices.Clone(reference.OnDeleteColumns)
+	return &cloned
+}
+
+func validateASTForeignKey(
+	dialect string,
+	localColumns []string,
+	reference *ast.ForeignKeyRef,
+) error {
+	if reference == nil || strings.TrimSpace(reference.Table) == "" {
+		return invalidASTForeignKeyError(dialect, "referenced table is empty")
+	}
+	referencedColumns := reference.ReferencedColumns()
+	if err := validateForeignKeyColumnLists(localColumns, referencedColumns); err != nil {
+		return invalidASTForeignKeyError(dialect, err.Error())
+	}
+	return nil
+}
+
+func validateForeignKeyColumnLists(localColumns, referencedColumns []string) error {
+	if len(localColumns) == 0 || len(referencedColumns) == 0 || len(localColumns) != len(referencedColumns) {
+		return fmt.Errorf(
+			"foreign key has %d local columns and %d referenced columns",
+			len(localColumns),
+			len(referencedColumns),
+		)
+	}
+	if err := validateForeignKeyColumns("local", localColumns); err != nil {
+		return err
+	}
+	return validateForeignKeyColumns("referenced", referencedColumns)
+}
+
+func validateForeignKeyColumns(kind string, columns []string) error {
+	seen := make(map[string]struct{}, len(columns))
+	for _, column := range columns {
+		if strings.TrimSpace(column) == "" {
+			return fmt.Errorf("%s foreign-key column is empty", kind)
+		}
+		if _, duplicate := seen[column]; duplicate {
+			return fmt.Errorf("%s foreign-key column %q is duplicated", kind, column)
+		}
+		seen[column] = struct{}{}
+	}
+	return nil
+}
+
+// unnamedColumnError refuses a column whose name is the empty string.
+//
+// A column reaches a renderer with no name when the declaration lost one -- an
+// empty YAML mapping key is the reachable spelling -- and a target that does
+// not refuse it writes an empty delimited identifier at exit 0. Measured 2026-08-30
+// against the DDL that was produced: PostgreSQL 18 answers `zero-length
+// delimited identifier`, MySQL 8.4 and MariaDB 11.8.9 answer `Incorrect column
+// name` naming the empty one, and SQLite 3.53.1 is the one engine that stores
+// it -- exactly one per table, since a second answers `duplicate column name`.
+// Comparison keys a column by its name, so a target taking two would leave this
+// pipeline nothing to tell them apart with.
+//
+// The refusal sits in prepareColumnNode rather than in a schema reader because
+// every column reaches that function: CREATE TABLE, ADD COLUMN, MODIFY COLUMN,
+// and a bare VisitColumn on the public renderer (stokaro/ptah#2608).
+func unnamedColumnError(dialect, table string) error {
+	subject := "a column"
+	if table != "" {
+		subject = fmt.Sprintf("table %q declares a column that", table)
+	}
+	return &ptaherr.RenderError{
+		Dialect: dialect,
+		Err:     ptaherr.ErrInvalidSchemaDiff,
+		Message: fmt.Sprintf(
+			"%s has no name; a column name is not optional, and an empty identifier is not a name this pipeline can address again",
+			subject,
+		),
+	}
+}
+
+// nilNodeError refuses an absent node, naming what is absent: "AST node" for a
+// statement, or the part a statement carries.
+func nilNodeError(dialect, subject string) error {
+	return &ptaherr.RenderError{
+		Dialect: dialect,
+		Err:     ptaherr.ErrInvalidSchemaDiff,
+		Message: subject + " is nil",
+	}
+}
+
+func invalidASTForeignKeyError(dialect, message string) error {
+	return &ptaherr.RenderError{
+		Dialect: dialect,
+		Err:     ptaherr.ErrInvalidSchemaDiff,
+		Message: "invalid foreign key: " + message,
+	}
+}
+
+// rendersAddColumnIfNotExists names the dialects whose ALTER TABLE takes
+// ADD COLUMN IF NOT EXISTS and whose renderer writes it.
+//
+// Spanner is one of them. Measured on the Cloud Spanner emulator behind
+// PGAdapter v0.55.3: the guarded ADD adds the column once, and repeating it,
+// or naming a column the table already has, is accepted and changes nothing
+// (stokaro/ptah#3637).
+func rendersAddColumnIfNotExists(dialect string) bool {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+		return true
+	default:
+		return false
+	}
+}
+
+// rendersDropColumnIfExists names the dialects whose ALTER TABLE takes
+// DROP COLUMN IF EXISTS and whose renderer writes it.
+//
+// Spanner takes the guard on ADD and not here. Measured on the same emulator,
+// DROP COLUMN IF EXISTS answers `<IF [NOT] EXISTS> is not supported in <ALTER>
+// statement operations`, for a column the table has and for one it does not.
+func rendersDropColumnIfExists(dialect string) bool {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
+		return true
+	default:
+		return false
+	}
+}
+
+func columnExistenceGuardUnsupportedError(dialect, clause string) error {
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: clause,
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s does not render %s", normalized, clause),
+	}
+}
+
+func foreignKeysUnsupportedError(dialect string) error {
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: "foreign keys",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s does not support foreign keys", platform.NormalizeDialect(dialect)),
+	}
+}
+
+// GetOrderedCreateStatements renders a complete schema for the default
+// capability preset of dialect. Non-SQLite targets emit all tables before
+// phase-two foreign key constraints, so mutually dependent tables remain
+// executable. SQLite keeps foreign keys inline because it cannot add them
+// after table creation.
+//
+// The schema is scoped to dialect through [schemamodel.ScopeToTarget] before
+// it is validated: an object the document declares for other dialects only is
+// excluded from the output rather than refused, and it is never checked
+// against this target's capabilities either. Statement counts therefore differ
+// legitimately across dialects. The input Database is not mutated.
+//
+// Output is deterministic: two calls over the same schema return identical
+// statements, ordered so that each object is created before the objects that
+// depend on it. The relative order of objects that do not depend on one
+// another is stable for a given input but is not otherwise promised — it is
+// derived from the schema's dependencies, not from the order the caller
+// declared things in.
+//
+// The function validates foreign key shape, actions, and target capabilities
+// before rendering. Unsupported or malformed constraints return an error and
+// no partial statement list.
+//
+// A table-owned declaration that names no host is refused with an error
+// satisfying errors.Is(err, [ptaherr.ErrInvalidSchemaDiff]). A constraint, an
+// index, a row-level security enablement or policy, a trigger and a hypertable
+// each reach a target through the table they name, in StructName or in the
+// table field; a declaration carrying neither is otherwise dropped or rendered
+// against an empty identifier (stokaro/ptah#2612).
+//
+// An index that names no column and no expression, a UNIQUE or PRIMARY KEY
+// constraint that names no column, and a CHECK constraint carrying no
+// expression are refused the same way. No dialect can render those as
+// anything, so there is no target for which the shape would have been valid
+// (stokaro/ptah#2790).
+func GetOrderedCreateStatements(r *schemamodel.Database, dialect string) ([]string, error) {
+	return GetOrderedCreateStatementsWithCapabilities(r, dialect, capability.ForDialect(dialect))
+}
+
+// declaredExtensionNames is what a document says the target will have.
+func declaredExtensionNames(r *schemamodel.Database) []string {
+	if r == nil {
+		return nil
+	}
+	names := make([]string, 0, len(r.Extensions))
+	for _, extension := range r.Extensions {
+		names = append(names, extension.Name)
+	}
+	return names
+}
+
+// ValidateSchema validates a complete schema against the default capability
+// preset for dialect without rendering SQL. It applies the schema-level
+// validation GetOrderedCreateStatements applies before it emits anything, and
+// refuses the same schemas.
+//
+// A nil schema is refused with a [ptaherr.RenderError] satisfying
+// errors.Is(err, [ptaherr.ErrInvalidSchemaDiff]), and so is a table-owned
+// declaration that names no host. A declaration the target
+// cannot carry — a foreign key, a referential action, an extension
+// installation schema, an index INCLUDE list, a table without a primary key
+// on a target that requires one — is refused with an error satisfying
+// errors.Is(err, [ptaherr.ErrUnsupportedFeature]). Other
+// declaration refusals carry no sentinel of their own, so treat any non-nil
+// error as a refusal and branch with errors.Is on the sentinels rather than
+// errors.As on a single concrete type.
+func ValidateSchema(r *schemamodel.Database, dialect string) error {
+	return ValidateSchemaWithCapabilities(r, dialect, capability.ForDialect(dialect))
+}
+
+// ValidateSchemaWithCapabilities validates a complete schema against a
+// concrete server capability set without rendering SQL.
+func ValidateSchemaWithCapabilities(
+	r *schemamodel.Database,
+	dialect string,
+	caps capability.Capabilities,
+) error {
+	return validateSchemaWithCapabilities(context.Background(), r, dialect, caps)
+}
+
+func validateSchemaWithCapabilities(ctx context.Context, r *schemamodel.Database, dialect string, caps capability.Capabilities) error {
+	if _, err := NewRendererWithCapabilities(dialect, caps); err != nil {
+		return err
+	}
+	if r == nil {
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrInvalidSchemaDiff,
+			Message: "cannot validate a nil database schema",
+		}
+	}
+	prepared, err := prepareDatabaseForRendering(r, dialect, caps)
+	if err != nil {
+		return err
+	}
+	if err := validateDeclaredPrimaryKeys(dialect, caps, prepared); err != nil {
+		return err
+	}
+	return validateTablesWithInlineIndexes(ctx, dialect, caps, prepared)
+}
+
+// validateTablesWithInlineIndexes renders every table on a target that writes a
+// new table's indexes inside its CREATE TABLE, so validation refuses what the
+// render of the table refuses. There an index is held to rules about its table
+// -- YDB refuses an index whose columns are the key, a covered key column, and
+// an index column of a type it cannot order -- and the render checks them with
+// the table, because the index is part of the table's statement. A plan that
+// adds such an index to a table that exists sees the index alone, so without
+// this a schema that validates would plan an ADD INDEX the server refuses
+// partway through a migration.
+//
+// Which target that is, is asked of the dialect's default preset rather than
+// of caps, because that is the set the walk below asks when it puts the indexes
+// into the table: the tables validated here are the ones the walk builds.
+func validateTablesWithInlineIndexes(ctx context.Context, dialect string, caps capability.Capabilities, database schemamodel.Database) error {
+	if !schemaprep.DeclaresIndexesInCreateTable(capability.ForDialect(dialect)) {
+		return nil
+	}
+	return modelast.WalkDatabase(database, dialect, func(node ast.Node) error {
+		table, ok := node.(*ast.CreateTableNode)
+		if !ok {
+			return nil
+		}
+		// Validation already runs inside the selected built-in provider. Its
+		// renderer checks the table without constructing another runtime and
+		// canonicalizing every registered codec for each table.
+		_, err := renderer.Render(ctx, renderingService{}, renderer.Request{
+			Target: renderTarget(dialect), Capabilities: caps, Nodes: []ast.Node{table},
+		})
+		return err
+	})
+}
+
+// validateDeclaredPrimaryKeys refuses a table without a key on a target that
+// requires one, before anything is emitted, so validation refuses the schemas
+// the render refuses.
+//
+// It lowers the tables the way the render does and asks each one the question
+// requirePrimaryKey asks. A key reaches a table from a field, from a composite
+// key on the table, or from a PRIMARY KEY constraint, and a second reading of
+// that from the model would be a second answer that can drift from the first;
+// this one cannot, because it is the same function over the same nodes.
+func validateDeclaredPrimaryKeys(dialect string, caps capability.Capabilities, database schemamodel.Database) error {
+	if !caps.Has(capability.PrimaryKeyRequired) {
+		return nil
+	}
+	return modelast.WalkDatabase(database, dialect, func(node ast.Node) error {
+		table, ok := node.(*ast.CreateTableNode)
+		if !ok {
+			return nil
+		}
+		return requirePrimaryKey(dialect, caps, table)
+	})
+}
+
+// GetOrderedCreateStatementsWithCapabilities renders ordered create statements
+// for a concrete server capability set. It has the same dialect-scoping,
+// two-phase, and fail-closed guarantees as GetOrderedCreateStatements.
+func GetOrderedCreateStatementsWithCapabilities(
+	r *schemamodel.Database,
+	dialect string,
+	caps capability.Capabilities,
+) ([]string, error) {
+	// A nil sink drops what it is given, so the reporting variant and this one
+	// are the same render rather than two that can drift apart.
+	return orderedCreateStatements(context.Background(), r, dialect, caps, nil)
+}
+
+func orderedCreateStatements(
+	ctx context.Context,
+	r *schemamodel.Database,
+	dialect string,
+	caps capability.Capabilities,
+	sink *renderdiag.Sink,
+) ([]string, error) {
+	var statements []string
+
+	if _, err := NewRendererWithCapabilities(dialect, caps); err != nil {
+		return nil, err
+	}
+	if r == nil {
+		return nil, &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrInvalidSchemaDiff,
+			Message: "cannot render a nil database schema",
+		}
+	}
+	// A render has no connection to ask which extensions the target has, and
+	// the schema in front of it declares them. Without this a document that
+	// declares the timescaledb extension and a hypertable rendered the CREATE
+	// EXTENSION and then skipped the call that needs it.
+	caps = capability.WithDeclaredExtensions(caps, declaredExtensionNames(r))
+	database, err := prepareDatabaseForRendering(r, dialect, caps)
+	if err != nil {
+		return nil, err
+	}
+	err = modelast.WalkDatabase(database, dialect, func(node ast.Node) error {
+		sql, err := renderNodeReporting(ctx, dialect, caps, sink, node)
+		if err != nil {
+			return err
+		}
+		// A node a dialect renders as nothing is not a statement. Keeping it
+		// put a bare `;` in front of the script — SQLite renders no statement
+		// for its `main` namespace, which an introspected database now
+		// describes as a schema (stokaro/ptah#1264).
+		if strings.TrimSpace(sql) == "" {
+			return nil
+		}
+		statements = append(statements, sql)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return statements, nil
+}
+
+func prepareDatabaseForRendering(
+	database *schemamodel.Database,
+	dialect string,
+	caps capability.Capabilities,
+) (schemamodel.Database, error) {
+	// The declared scope is resolved before anything else looks at the schema.
+	// An object this target was not declared for is not part of the desired
+	// state here, so it must not be validated against this target's
+	// capabilities either: refusing a declaration the operator already excluded
+	// from this dialect is the refusal the scope exists to remove.
+	//
+	// This is the render half of the seam. The compare half is in
+	// [ptah.run/migration/schemadiff.CompareReportingUndecidedAdditions],
+	// and both go through [schemamodel.ScopeToTarget] so `schema render` and
+	// `schema apply` cannot disagree about which objects a target has.
+	projected, err := prepareScopedDatabase(database, dialect, caps)
+	if err != nil {
+		return schemamodel.Database{}, err
+	}
+	database = projected
+
+	prepared := *database
+	prepared.Tables = slices.Clone(database.Tables)
+	prepared.Fields = slices.Clone(database.Fields)
+	prepared.EmbeddedFields = slices.Clone(database.EmbeddedFields)
+	prepared.Constraints = slices.Clone(database.Constraints)
+	// Resolve shorthand owners against the complete table set before a
+	// constraint is matched to an individual table during validation or DDL
+	// lowering. Only the cloned constraint slice is normalized here.
+	schemamodel.NormalizeTableScopedNames(&schemamodel.Database{
+		Tables: prepared.Tables, Constraints: prepared.Constraints,
+	})
+
+	hasForeignKeys := false
+	for i := range prepared.Fields {
+		field := &prepared.Fields[i]
+		if field.Foreign == "" {
+			continue
+		}
+		hasForeignKeys = true
+		if err := validateFieldForeignKey(*field, dialect); err != nil {
+			return schemamodel.Database{}, err
+		}
+		var err error
+		field.OnDelete, field.OnUpdate, err = normalizeReferentialActions(dialect, field.OnDelete, field.OnUpdate)
+		if err != nil {
+			return schemamodel.Database{}, err
+		}
+	}
+	for i := range prepared.EmbeddedFields {
+		embedded := &prepared.EmbeddedFields[i]
+		if embedded.Mode != "relation" || embedded.Ref == "" {
+			continue
+		}
+		hasForeignKeys = true
+		if err := validateForeignKeyReference(embedded.Ref); err != nil {
+			return schemamodel.Database{}, &ptaherr.RenderError{
+				Dialect: dialect,
+				Err:     ptaherr.ErrInvalidSchemaDiff,
+				Message: fmt.Sprintf("invalid embedded foreign key on field %q: %s", embedded.Field, err),
+			}
+		}
+		var err error
+		embedded.OnDelete, embedded.OnUpdate, err = normalizeReferentialActions(dialect, embedded.OnDelete, embedded.OnUpdate)
+		if err != nil {
+			return schemamodel.Database{}, err
+		}
+	}
+	for i := range prepared.Constraints {
+		constraint := &prepared.Constraints[i]
+		if !strings.EqualFold(strings.TrimSpace(constraint.Type), "FOREIGN KEY") {
+			continue
+		}
+		hasForeignKeys = true
+		if err := validateTableForeignKey(*constraint, dialect); err != nil {
+			return schemamodel.Database{}, err
+		}
+		var err error
+		constraint.OnDelete, constraint.OnUpdate, err = normalizeReferentialActions(dialect, constraint.OnDelete, constraint.OnUpdate)
+		if err != nil {
+			return schemamodel.Database{}, err
+		}
+		if err := validateDeleteColumnList(
+			dialect, caps, constraint.Columns, constraint.OnDelete, constraint.OnDeleteColumns,
+		); err != nil {
+			return schemamodel.Database{}, err
+		}
+	}
+	if hasForeignKeys && !caps.Has(capability.ForeignKeys) {
+		return schemamodel.Database{}, foreignKeysUnsupportedError(dialect)
+	}
+	if err := validateSchemaForeignKeys(prepared, dialect, caps); err != nil {
+		return schemamodel.Database{}, err
+	}
+	if hasForeignKeys {
+		makeMySQLForeignKeyTableEnginesExplicit(&prepared, dialect)
+	}
+	return prepared, nil
+}
+
+func validateDatabaseDeclarations(
+	dialect string,
+	caps capability.Capabilities,
+	database *schemamodel.Database,
+) error {
+	if err := systemschema.ValidateDeclaredPostgresSystemSchemas(dialect, database.Schemas); err != nil {
+		return err
+	}
+	if err := validateDeclaredHosts(dialect, database); err != nil {
+		return err
+	}
+	if err := validateDeclaredColumns(dialect, database); err != nil {
+		return err
+	}
+	if err := validateExtensionInstallationSchemas(dialect, database.Extensions); err != nil {
+		return err
+	}
+	if err := validateDeclaredRoleNames(dialect, caps, database); err != nil {
+		return err
+	}
+	// A domain, composite or range type the target cannot create is refused
+	// here rather than skipped, because skipping it leaves the declaration's
+	// own columns naming a type the server has no definition of
+	// (stokaro/ptah#1717).
+	if err := usertypescope.ValidateDeclared(dialect, caps, database); err != nil {
+		return err
+	}
+	// A coordination node is YDB's own object; anywhere else it is refused
+	// here, before anything is rendered, with the words a plan uses.
+	if err := ydbcoordination.ValidateDeclared(dialect, caps, database.CoordinationNodes); err != nil {
+		return err
+	}
+	if err := validateDeclaredSchemePaths(dialect, caps, database); err != nil {
+		return err
+	}
+	if err := validateDeclaredAccess(dialect, caps, database); err != nil {
+		return err
+	}
+	if err := validateDeclaredResourcePools(dialect, caps, database); err != nil {
+		return err
+	}
+	// Row-level TTL is refused here as well as at the table it belongs to,
+	// because these are the refusals that must arrive before ANY statement is
+	// emitted: a knob without an enabler, or a value the server stores
+	// differently from how it was written, is a property of the declaration
+	// rather than of the one CREATE TABLE that carries it. The per-table gate
+	// in the PostgreSQL renderer catches the dialect case; this catches the
+	// rest, whole-schema, before the first statement (stokaro/ptah#1027).
+	if err := crdbttl.ValidateDeclared(dialect, caps, crdbttl.DeclaredIn(rowTTLTables(database))); err != nil {
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     err,
+			Message: err.Error(),
+		}
+	}
+	// A row deletion policy, a changefeed and a YDB table's other settings are
+	// refused here for the same reason: a target without them must refuse
+	// before the first statement, not at the CREATE TABLE that carries one.
+	if err := validateDeclaredYDBObjects(dialect, caps, database); err != nil {
+		return err
+	}
+	if err := validateRoutineIdentityCollisions(dialect, database.Functions); err != nil {
+		return err
+	}
+	if err := validateRoutineOverloads(dialect, database.Functions); err != nil {
+		return err
+	}
+	if err := validateDeclaredKeysAndConstraints(dialect, caps, database); err != nil {
+		return err
+	}
+	if err := validateDeclaredTopics(dialect, caps, database); err != nil {
+		return err
+	}
+	if err := validateDeclaredReplications(dialect, caps, database); err != nil {
+		return err
+	}
+	return validateDeclaredIndexIncludes(dialect, caps, database.Indexes)
+}
+
+// validateDeclaredKeysAndConstraints refuses the index, key and constraint
+// options of a declaration the target cannot write, in the order
+// [validateDatabaseDeclarations] reports them.
+func validateDeclaredKeysAndConstraints(
+	dialect string,
+	caps capability.Capabilities,
+	database *schemamodel.Database,
+) error {
+	if err := validateDeclaredConstraintIncludes(dialect, database); err != nil {
+		return err
+	}
+	if err := validateDeclaredIndexOptions(dialect, caps, database); err != nil {
+		return err
+	}
+	if err := validateDeclaredNullsDistinct(dialect, caps, database); err != nil {
+		return err
+	}
+	if err := validateDeclaredKeyDeferral(dialect, caps, database); err != nil {
+		return err
+	}
+	if err := validateDeclaredPrimaryKeyOptions(dialect, database); err != nil {
+		return err
+	}
+	if err := validateDeclaredConstraintMethods(dialect, database); err != nil {
+		return err
+	}
+	return validateDeclaredEnforcementAndMatch(dialect, caps, database)
+}
+
+// validateDeclaredRoleNames refuses a role whose name or attributes the
+// target cannot create.
+func validateDeclaredRoleNames(
+	dialect string,
+	caps capability.Capabilities,
+	database *schemamodel.Database,
+) error {
+	// A reserved PostgreSQL role name renders into a CREATE ROLE the server is
+	// guaranteed to reject, so it is refused here, in the validation phase both
+	// whole-schema rendering and migration planning run before they emit
+	// anything (stokaro/ptah#1312).
+	if err := reservedrole.ValidateDeclared(dialect, database.Roles); err != nil {
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     err,
+			Message: err.Error(),
+		}
+	}
+	if err := mysqllike.ValidateDeclaredRoles(dialect, caps, database.Roles); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateDeclaredAccess refuses the roles, memberships and grants the target
+// cannot hold together.
+func validateDeclaredAccess(
+	dialect string,
+	caps capability.Capabilities,
+	database *schemamodel.Database,
+) error {
+	// ClickHouse roles and grants are real, and a narrower set of declarations
+	// is representable there than in PostgreSQL: a role carries no attributes
+	// at all, and the server absorbs a narrower grant into a broader one, so a
+	// schema declaring both can never converge. The empty default database is
+	// deliberate — a render is offline and has no current database, so an
+	// unqualified on_table is refused rather than attached to a database
+	// nobody named. See internal/clickhouserbac (stokaro/ptah#1025).
+	if err := clickhouserbac.ValidateDeclared(dialect, database.Roles, database.Grants, ""); err != nil {
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     err,
+			Message: err.Error(),
+		}
+	}
+	// A group, a membership of one role in another and a grant on the
+	// database are refused where the target cannot hold them, and on YDB
+	// whatever its users, groups and permissions cannot carry: before any
+	// statement, because a skipped principal leaves the grants that name it
+	// without one.
+	if err := accessscope.ValidateDeclared(dialect, caps, database); err != nil {
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     err,
+			Message: err.Error(),
+		}
+	}
+	return nil
+}
+
+// validateDeclaredPrimaryKeyOptions refuses options the target cannot write,
+// whether a table or a PRIMARY KEY constraint carries them. The MySQL family
+// keeps access methods and index hints that other dialects cannot express.
+func validateDeclaredPrimaryKeyOptions(dialect string, database *schemamodel.Database) error {
+	for _, table := range database.Tables {
+		if err := validatePrimaryKeyOptions(dialect, table.QualifiedName(), table.PrimaryKeyComment, table.PrimaryKeyBlockSize); err != nil {
+			return err
+		}
+		if err := primaryKeyMethodError(dialect, table.QualifiedName(), table.PrimaryKeyMethod); err != nil {
+			return err
+		}
+	}
+	for _, constraint := range database.Constraints {
+		if constraint.KeyBlockSize != 0 && !strings.EqualFold(strings.TrimSpace(constraint.Type), ast.PrimaryKeyConstraint.String()) {
+			return fmt.Errorf("%w: KEY_BLOCK_SIZE on %s constraint %q is not supported; declare a unique index for a UNIQUE key", ptaherr.ErrUnsupportedFeature, constraint.Type, constraint.Name)
+		}
+		if !strings.EqualFold(strings.TrimSpace(constraint.Type), ast.PrimaryKeyConstraint.String()) {
+			continue
+		}
+		owner := constraintOwnerName(database.Tables, constraint)
+		if err := validateIndexBlockSize(dialect, owner, constraint.KeyBlockSize); err != nil {
+			return err
+		}
+		if err := primaryKeyMethodError(dialect, owner, constraint.UsingMethod); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateDeclaredConstraintMethods refuses an access method on a UNIQUE,
+// CHECK or FOREIGN KEY constraint. Every schema source accepts `using` on any
+// constraint, and only an EXCLUDE constraint and a primary key take a method;
+// on the other kinds the constraint was built without it and nothing said so
+// (stokaro/ptah#3958). A primary key's method is
+// [validateDeclaredPrimaryKeyOptions]'s.
+func validateDeclaredConstraintMethods(dialect string, database *schemamodel.Database) error {
+	for _, constraint := range database.Constraints {
+		kind := strings.ToUpper(strings.TrimSpace(constraint.Type))
+		method := strings.TrimSpace(constraint.UsingMethod)
+		if method == "" || kind == ast.ExcludeConstraint.String() || kind == ast.PrimaryKeyConstraint.String() {
+			continue
+		}
+		return fmt.Errorf("%w: %s: the %s constraint %q on %q asks for USING %s, and a %s constraint takes no access method",
+			ptaherr.ErrUnsupportedFeature, platform.NormalizeDialect(dialect), kind, constraint.Name,
+			constraintOwnerName(database.Tables, constraint), method, kind)
+	}
+	return nil
+}
+
+// primaryKeyMethodError answers why dialect cannot build the primary key of
+// table asking for method, and nil where it can.
+func primaryKeyMethodError(dialect, table, method string) error {
+	method = strings.TrimSpace(method)
+	normalized := platform.NormalizeDialect(dialect)
+	switch {
+	case method == "":
+		return nil
+	case normalized != platform.MySQL && normalized != platform.MariaDB:
+		return fmt.Errorf("%w: %s: the primary key of %q asks for USING %s, which only MySQL and MariaDB write",
+			ptaherr.ErrUnsupportedFeature, normalized, table, method)
+	case mysqlindex.Method(method) == "" && !strings.EqualFold(method, "BTREE"):
+		return fmt.Errorf("%w: %s: the primary key of %q asks for USING %s; a primary key is built USING BTREE or USING HASH",
+			ptaherr.ErrUnsupportedFeature, normalized, table, method)
+	default:
+		return nil
+	}
+}
+
+// constraintOwnerName is what a refusal calls the table a constraint belongs
+// to: the table it resolves to, or failing that the name it was declared with.
+func constraintOwnerName(tables []schemamodel.Table, constraint schemamodel.Constraint) string {
+	if owner := constraintOwnerTable(tables, constraint); owner != nil {
+		return owner.QualifiedName()
+	}
+	if constraint.Table != "" {
+		return constraint.Table
+	}
+	return constraint.StructName
+}
+
+// validateDeclaredKeyDeferral refuses a deferrable PRIMARY KEY, UNIQUE or
+// EXCLUDE the target cannot write, before any statement is built, for the
+// reason validateDeclaredNullsDistinct gives.
+func validateDeclaredKeyDeferral(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
+	for _, table := range database.Tables {
+		if !table.PrimaryKeyDeferrable {
+			continue
+		}
+		if err := refuseDeferrableKey(dialect, caps, "PRIMARY KEY", keyIdentity(table.PrimaryKeyName, table.Name)); err != nil {
+			return err
+		}
+	}
+	for _, constraint := range database.Constraints {
+		if !constraint.Deferrable || strings.EqualFold(constraint.Type, "FOREIGN KEY") {
+			continue
+		}
+		if err := refuseDeferrableKey(dialect, caps, constraint.Type, keyIdentity(constraint.Name, constraint.Table)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// refuseDeferrableKey refuses a deferrable key on a target without
+// [capability.DeferrableKeys]. Written without the clause, the key would
+// reject at once the rows its author arranged to fix before commit, so the
+// declaration is refused rather than weakened. A foreign key has a capability
+// of its own and is not asked here.
+func refuseDeferrableKey(dialect string, caps capability.Capabilities, kind, identity string) error {
+	if caps.Has(capability.DeferrableKeys) {
+		return nil
+	}
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: "deferrable keys",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s does not support a DEFERRABLE %s; %s declares one",
+			platform.NormalizeDialect(dialect), kind, identity),
+	}
+}
+
+// validateDeclaredEnforcementAndMatch refuses a NOT ENFORCED CHECK or foreign
+// key, and a MATCH type, the target cannot write, before any statement is
+// built, for the reason validateDeclaredNullsDistinct gives.
+func validateDeclaredEnforcementAndMatch(
+	dialect string, caps capability.Capabilities, database *schemamodel.Database,
+) error {
+	for _, field := range database.Fields {
+		if field.Check != "" && field.CheckNotEnforced {
+			if err := refuseNotEnforcedCheck(dialect, caps, checkIdentity(field.CheckName, field.Name)); err != nil {
+				return err
+			}
+		}
+		if field.Foreign == "" {
+			continue
+		}
+		if err := validateForeignKeyClauses(
+			dialect, caps, foreignKeyClauses{match: field.ForeignKeyMatch, notEnforced: field.ForeignKeyNotEnforced},
+			foreignKeyIdentity(field.ForeignKeyName, field.Name),
+		); err != nil {
+			return err
+		}
+	}
+	for _, constraint := range database.Constraints {
+		switch {
+		case strings.EqualFold(constraint.Type, "CHECK") && constraint.NotEnforced:
+			if err := refuseNotEnforcedCheck(dialect, caps, checkIdentity(constraint.Name, "")); err != nil {
+				return err
+			}
+		case strings.EqualFold(constraint.Type, "FOREIGN KEY"):
+			if err := validateForeignKeyClauses(
+				dialect, caps, foreignKeyClauses{match: constraint.Match, notEnforced: constraint.NotEnforced},
+				foreignKeyIdentity(constraint.Name, strings.Join(constraint.Columns, ", ")),
+			); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// refuseNotEnforcedCheck refuses a CHECK declared NOT ENFORCED on a target
+// without [capability.NotEnforcedChecks]. Written without the clause, the
+// CHECK would reject rows its author chose to keep, so the declaration is
+// refused rather than hardened (stokaro/ptah#3853).
+func refuseNotEnforcedCheck(dialect string, caps capability.Capabilities, identity string) error {
+	if caps.Has(capability.NotEnforcedChecks) {
+		return nil
+	}
+	return enforcementError(dialect, fmt.Sprintf(
+		"%s declares a NOT ENFORCED CHECK, which requires target capability %s, unavailable on this %s target",
+		identity, capability.NotEnforcedChecks, platform.NormalizeDialect(dialect),
+	))
+}
+
+// foreignKeyClauses are the clauses of a foreign key that change how it
+// checks its rows.
+type foreignKeyClauses struct {
+	match       string
+	notEnforced bool
+}
+
+// validateForeignKeyClauses refuses a foreign key's NOT ENFORCED and MATCH
+// type on a target without the capability for each, for the reason
+// refuseNotEnforcedCheck gives: a key written without them checks rows its
+// author said it does not, or lets through rows MATCH FULL refuses.
+func validateForeignKeyClauses(
+	dialect string, caps capability.Capabilities, clauses foreignKeyClauses, identity string,
+) error {
+	normalized := platform.NormalizeDialect(dialect)
+	match := clauses.match
+	if clauses.notEnforced && !caps.Has(capability.NotEnforcedForeignKeys) {
+		return enforcementError(dialect, fmt.Sprintf(
+			"%s declares a NOT ENFORCED foreign key, which requires target capability %s, unavailable on this %s target",
+			identity, capability.NotEnforcedForeignKeys, normalized,
+		))
+	}
+	var keeps capability.Capability
+	switch strings.ToUpper(strings.TrimSpace(match)) {
+	case "":
+		return nil
+	case "FULL":
+		keeps = capability.ForeignKeyMatchFull
+	case "PARTIAL":
+		keeps = capability.ForeignKeyMatchPartial
+	default:
+		return fmt.Errorf("%s declares MATCH %s, which is neither FULL nor PARTIAL", identity, match)
+	}
+	if caps.Has(keeps) {
+		return nil
+	}
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: "foreign key match type",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s declares MATCH %s, which requires target capability %s, unavailable on this %s target",
+			identity, strings.ToUpper(strings.TrimSpace(match)), keeps, normalized),
+	}
+}
+
+// enforcementError is the refusal of a NOT ENFORCED constraint.
+func enforcementError(dialect, message string) error {
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: "not enforced constraints",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: message,
+	}
+}
+
+// checkIdentity names a CHECK in a refusal: by its name, or by the column it
+// is written on.
+func checkIdentity(name, column string) string {
+	switch {
+	case name != "":
+		return fmt.Sprintf("constraint %q", name)
+	case column != "":
+		return fmt.Sprintf("the CHECK of column %q", column)
+	default:
+		return "an unnamed CHECK"
+	}
+}
+
+// foreignKeyIdentity names a foreign key in a refusal: by its name, or by the
+// columns it is written on.
+func foreignKeyIdentity(name, columns string) string {
+	switch {
+	case name != "":
+		return fmt.Sprintf("constraint %q", name)
+	case columns != "":
+		return fmt.Sprintf("the foreign key over %s", columns)
+	default:
+		return "an unnamed foreign key"
+	}
+}
+
+// keyIdentity names a key in a refusal: by its name, or by its table when
+// the key has none.
+func keyIdentity(name, table string) string {
+	switch {
+	case name != "":
+		return fmt.Sprintf("constraint %q", name)
+	case table != "":
+		return fmt.Sprintf("an unnamed key of table %q", table)
+	default:
+		return "an unnamed key"
+	}
+}
+
+// validateDeclaredNullsDistinct runs the NULLS [NOT] DISTINCT refusal over a
+// whole declaration, before the first statement is rendered.
+//
+// It is not redundant with the AST check in prepareIndexNode and
+// prepareConstraintNode, and the relationship is the one
+// validateDeclaredConstraintIncludes already has with validateConstraintInclude:
+// a declaration reaches the renderer through more than one path, and a
+// refusal that fires only once a node has been built reports the first
+// offending statement rather than the schema. Refusing here means a run that
+// cannot be rendered writes nothing at all.
+func validateDeclaredNullsDistinct(
+	dialect string,
+	caps capability.Capabilities,
+	database *schemamodel.Database,
+) error {
+	for _, index := range database.Indexes {
+		if err := nullsdistinct.Validate(dialect, caps, index.NullsDistinct); err != nil {
+			return err
+		}
+	}
+	for _, constraint := range database.Constraints {
+		if err := nullsdistinct.Validate(dialect, caps, constraint.NullsDistinct); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateRoutineIdentityCollisions refuses two function declarations the
+// target cannot tell apart.
+//
+// The duplicate-definition check in core/goschema keys functions by their exact
+// name, which is right for PostgreSQL, where routine names ARE case-sensitive
+// and `Foo` and `foo` are two functions. On MySQL and MariaDB they are one
+// routine, and the comparator folds them accordingly -- so the two keyings
+// disagreed, and the disagreement lost a declaration rather than reporting it:
+// both names passed validation, the comparator's map kept whichever came last,
+// and an apply against an empty database created ONE function from TWO
+// declarations and exited 0. Measured on MySQL 26.7.0 and MariaDB 12.3.2:
+//
+//	declared 2 functions -> diff.FunctionsAdded = [ptah_dup_fn]
+//	                     -> 1 statement planned
+//	                     -> 1 row in information_schema.ROUTINES
+//
+// The identity is [mysqlroutine.IdentityKey], the same function the comparator
+// folds with, so the check and the behavior it guards cannot drift apart. This
+// lives in the dialect-aware validation seam rather than in the dialect-blind
+// duplicate check because the collision only exists on targets that fold; both
+// `schema render` and the migration planner pass through here.
+//
+// Only names that differ in spelling are reported. Two declarations of the
+// SAME name are the existing duplicate-definition case, which
+// core/goschema already answers -- and answers better, because it allows
+// byte-identical repeats.
+func validateRoutineIdentityCollisions(dialect string, functions []schemamodel.Function) error {
+	if !routineNamesAreCaseInsensitive(dialect) {
+		return nil
+	}
+	seen := make(map[objectidentity.Key]string, len(functions))
+	for _, function := range functions {
+		ref, ok := tableref.Parse(function.Name)
+		if !ok {
+			continue
+		}
+		// The shared identity model rather than a private struct: a private one
+		// is what let this check and the comparator key the same routine two
+		// ways in the first place. The name is folded by mysqlroutine before it
+		// arrives, so the builder is asked to fold nothing on top of it.
+		key := routineIdentities.
+			SchemaScopedParts(objectidentity.KindFunction, ref.Schema, mysqlroutine.IdentityKey(ref.Name)).
+			Key()
+		previous, collides := seen[key]
+		if collides && previous != function.Name {
+			return &ptaherr.RenderError{
+				Dialect: dialect,
+				Err:     ptaherr.ErrUnsupportedFeature,
+				Message: fmt.Sprintf(
+					"functions %q and %q differ only by case, and stored-routine names are "+
+						"case-insensitive on %s, so the target cannot hold both: %s. "+
+						"Rename one of them",
+					previous, function.Name, dialect, routineCollisionConsequence(dialect)),
+			}
+		}
+		seen[key] = function.Name
+	}
+	return nil
+}
+
+// validateRoutineOverloads refuses two routines of one kind and one name with
+// different argument lists on a target that has no routine overloading.
+//
+// PostgreSQL tells overloads apart by their argument types, so the model keeps
+// both declarations (stokaro/ptah#3672). MySQL, MariaDB, SQL Server and Oracle
+// keep one routine per name, and what each does with the second declaration is
+// [routineOverloadConsequence]. On none of them does the plan end with both,
+// so a document declaring both is refused before any statement is planned. A
+// function and a procedure of one name are left to the server: MySQL keeps
+// them in two namespaces, and the others refuse the second by name.
+func validateRoutineOverloads(dialect string, functions []schemamodel.Function) error {
+	consequence, refused := routineOverloadConsequence(dialect)
+	if !refused {
+		return nil
+	}
+	// The schema keeps its spelling. The routine's own name is folded where
+	// the target folds it, as validateRoutineIdentityCollisions keys it, and
+	// kept as written on SQL Server, whose collation decides.
+	type routineName struct {
+		procedure    bool
+		schema, name string
+	}
+	seen := make(map[routineName]schemamodel.Function, len(functions))
+	for _, function := range functions {
+		ref, ok := tableref.Parse(function.Name)
+		if !ok {
+			continue
+		}
+		name := ref.Name
+		if routineNamesAreCaseInsensitive(dialect) {
+			name = mysqlroutine.IdentityKey(name)
+		}
+		key := routineName{procedure: function.IsProcedure(), schema: ref.Schema, name: name}
+		previous, declared := seen[key]
+		if !declared {
+			seen[key] = function
+			continue
+		}
+		if routineargs.InputTypes(previous.Parameters) == routineargs.InputTypes(function.Parameters) {
+			continue
+		}
+		kind := schemamodel.FunctionKindFunction
+		if function.IsProcedure() {
+			kind = schemamodel.FunctionKindProcedure
+		}
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf(
+				"%s %q is declared twice, as %s(%s) and %s(%s), and %s has no routine overloading, "+
+					"so the target cannot hold both: %s. Keep one of them",
+				kind, function.Name, previous.Name, previous.Parameters, function.Name, function.Parameters,
+				dialect, consequence),
+		}
+	}
+	return nil
+}
+
+// routineOverloadConsequence names what a target without routine overloading
+// does with the second of two same-named routines, applied as Ptah writes
+// them, and reports false for a target that holds both.
+//
+// Measured with two functions and two procedures of one name each:
+//
+//   - MySQL 8.4.11 and MariaDB 11.8.9 answer the second CREATE with Error 1304,
+//     "FUNCTION ptah_ovl already exists", and keep the first.
+//   - SQL Server 2022 (16.0.4295.3) takes the second CREATE OR ALTER without an
+//     error and keeps it in place of the first, so a call with the first one's
+//     arguments answers Msg 313.
+//   - Oracle 23.26.3.0.0 takes the second CREATE OR REPLACE without an error
+//     and keeps it in place of the first: one FUNCTION or PROCEDURE object is
+//     left, holding the second body, and a call with the first one's arguments
+//     answers PLS-00306, "wrong number or types of arguments".
+//
+// A function and a procedure of one name are a different case, left to the
+// server: Oracle 23.26.3.0.0 answers the second CREATE OR REPLACE with
+// ORA-00955, "name is already used by an existing object", and keeps the first.
+func routineOverloadConsequence(dialect string) (string, bool) {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.MySQL, platform.MariaDB:
+		return "the second CREATE fails with Error 1304, after the statements before it have run, " +
+			"and the first stays", true
+	case platform.SQLServer:
+		return "Ptah writes CREATE OR ALTER, so the second replaces the first without an error, " +
+			"and a call with the first one's arguments fails", true
+	case platform.Oracle:
+		return "Ptah writes CREATE OR REPLACE, so the second replaces the first without an error, " +
+			"and a call with the first one's arguments fails", true
+	default:
+		return "", false
+	}
+}
+
+// routineIdentities folds nothing of its own: the routine name arrives already
+// folded by [mysqlroutine.IdentityKey], which is the rule the comparator uses,
+// and folding again here would be the second application invariant 4 of
+// docs/object_identity.md refuses.
+var routineIdentities = objectidentity.NewBuilder(identifier.Semantics{})
+
+// routineCollisionConsequence names what the target actually does with the
+// second of two declarations it cannot tell apart.
+//
+// The two answers are different in kind and the message should not flatten
+// them. MySQL and MariaDB REFUSE the second create, so the operator sees an
+// error at apply time even without this check. Oracle does not refuse it:
+// measured on 23.26.2.0.0, `CREATE OR REPLACE FUNCTION zz_case` followed by
+// `CREATE OR REPLACE FUNCTION ZZ_CASE` reports "Function created" twice and
+// leaves ONE routine carrying the SECOND body. There the check is the only
+// thing standing between two declarations and one silently discarded.
+func routineCollisionConsequence(dialect string) string {
+	if platform.NormalizeDialect(dialect) == platform.Oracle {
+		return "the second silently replaces the first and its body is what survives"
+	}
+	return "creating the second is Error 1304 on the first"
+}
+
+// routineNamesAreCaseInsensitive reports whether dialect folds stored-routine
+// names. PostgreSQL and its family do not, which is why this is not applied
+// everywhere.
+func routineNamesAreCaseInsensitive(dialect string) bool {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.MySQL, platform.MariaDB, platform.Oracle:
+		return true
+	default:
+		return false
+	}
+}
+
+func validateExtensionInstallationSchemas(dialect string, extensions []schemamodel.Extension) error {
+	if !extensionInstallationSchemaRejected(dialect) {
+		return nil
+	}
+	for _, extension := range extensions {
+		if extension.Schema != "" {
+			return unsupportedExtensionInstallationSchema(dialect, extension.Name, extension.Schema)
+		}
+	}
+	return nil
+}
+
+func validateDeclaredIndexIncludes(
+	dialect string,
+	caps capability.Capabilities,
+	indexes []schemamodel.Index,
+) error {
+	for _, index := range indexes {
+		if err := validateIndexInclude(dialect, caps, index.Name, index.Type, index.IncludeColumns); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// indexIncludeTargets names the default dialects whose preset carries
+// [capability.IndexCoveringColumns], so a refusal can say where the payload is
+// rendered. It does not decide anything: validateIndexInclude reads the
+// caller's own capability set, so a server resolved onto another release line
+// is judged by what that line has. It is the index twin of
+// constraintIncludeTargets, and the two disagree on two dialects rather than
+// being one list read twice.
+//
+// CockroachDB spells the payload STORING and takes INCLUDE as a synonym for it,
+// which a refusal here would deny. Measured on v26.3.1, one
+// CREATE INDEX per row:
+//
+//	CREATE INDEX i1 ON a (email) INCLUDE (name)               CREATE INDEX
+//	CREATE UNIQUE INDEX i2 ON a (email) INCLUDE (name)        CREATE INDEX
+//	CREATE INDEX i3 ON a USING BTREE (email) INCLUDE (name)   CREATE INDEX
+//	CREATE INDEX i7 ON a (email) INCLUDE (name) WHERE ...     CREATE INDEX
+//	CREATE INDEX i8 ON a (email) INCLUDE (name, doc)          CREATE INDEX
+//	CREATE INDEX i4 ON a USING GIN (doc) INCLUDE (name)
+//	                   ERROR: inverted indexes don't support stored columns
+//	CREATE INDEX i5 ON a USING GIST (geo) INCLUDE (name)
+//	                   ERROR: inverted indexes don't support stored columns
+//
+// The payload is stored rather than swallowed -- SHOW CREATE TABLE reports
+// `INDEX i1 (email ASC) STORING (name)` -- and it reads back through
+// pg_index.indnkeyatts and pg_get_indexdef exactly as PostgreSQL's does, so no
+// reader arm is needed for it.
+//
+// Spanner is the reverse pair: allowed here and refused for a constraint, in
+// the server's own words. See constraintIncludeTargets for that half.
+func indexIncludeTargets() []string {
+	var targets []string
+	for _, dialect := range capability.DefaultDialects() {
+		if capability.ForDialect(dialect).Has(capability.IndexCoveringColumns) {
+			targets = append(targets, dialect)
+		}
+	}
+	return targets
+}
+
+func validateIndexInclude(
+	dialect string,
+	caps capability.Capabilities,
+	indexName, indexType string,
+	includeColumns []string,
+) error {
+	if len(includeColumns) == 0 {
+		return nil
+	}
+	for i, column := range includeColumns {
+		if strings.TrimSpace(column) != "" {
+			continue
+		}
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrInvalidSchemaDiff,
+			Message: fmt.Sprintf("index %q has an empty INCLUDE column at position %d", indexName, i+1),
+		}
+	}
+	trimmedIndexType := strings.TrimSpace(indexType)
+	if trimmedIndexType != indexType {
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrInvalidSchemaDiff,
+			Message: fmt.Sprintf(
+				"index %q access method %q has leading or trailing whitespace",
+				indexName,
+				indexType,
+			),
+		}
+	}
+
+	normalizedDialect := platform.NormalizeDialect(dialect)
+	if !caps.Has(capability.IndexCoveringColumns) {
+		return &ptaherr.CapabilityError{
+			Dialect: dialect,
+			Feature: "index INCLUDE columns",
+			Err:     ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf(
+				"%s does not support INCLUDE columns on index %q; target %s",
+				normalizedDialect,
+				indexName,
+				englishAlternatives(indexIncludeTargets()),
+			),
+		}
+	}
+
+	method := strings.ToUpper(trimmedIndexType)
+	allowed, supportedMethods := indexIncludeAccessMethod(normalizedDialect, method, trimmedIndexType, caps)
+	if allowed {
+		return nil
+	}
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: "index INCLUDE access method",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf(
+			"%s INCLUDE columns on index %q require %s; access method %q is not supported",
+			normalizedDialect,
+			indexName,
+			supportedMethods,
+			method,
+		),
+	}
+}
+
+// indexIncludeAccessMethod answers whether dialect takes an INCLUDE payload on
+// an index of access method, upper-cased, and names the methods it does take
+// for the refusal. indexType is the declared spelling, which YDB reads as an
+// index kind rather than an access method.
+func indexIncludeAccessMethod(
+	dialect, method, indexType string,
+	caps capability.Capabilities,
+) (allowed bool, supportedMethods string) {
+	switch dialect {
+	case platform.Postgres:
+		allowed = method == "" || method == "BTREE" || method == "GIST" ||
+			(method == "SPGIST" && caps.Has(capability.IndexIncludeSPGiST))
+		supportedMethods = "the default, BTREE, or GIST access method"
+		if caps.Has(capability.IndexIncludeSPGiST) {
+			supportedMethods = "the default, BTREE, GIST, or SPGIST access method"
+		}
+	case platform.YugabyteDB:
+		allowed = method == "" || method == "LSM" || method == "BTREE"
+		supportedMethods = "the default, LSM, or BTREE access method"
+	case platform.CockroachDB:
+		// GIST is not a spatial arm waiting to be added: CockroachDB answers
+		// `inverted indexes don't support stored columns` for GIN and GIST
+		// alike, because GIST is how it spells an inverted index. HASH is not
+		// an access method there at all -- `unimplemented: this syntax` -- so
+		// refusing it here gives the same answer the server would.
+		allowed = method == "" || method == "BTREE"
+		supportedMethods = "the default or BTREE access method"
+	case platform.Spanner:
+		allowed = method == ""
+		supportedMethods = "the default access method"
+	case platform.SQLServer:
+		// Ptah writes every SQL Server index as a nonclustered rowstore index,
+		// which takes INCLUDE, and reports any other declared access method as
+		// lost. The payload is accepted beside the methods that describe what
+		// is built, so it never rides on a declaration the render discards. A
+		// clustered index refuses one, `Cannot specify included columns for a
+		// clustered index` (Msg 10601, measured on 16.0.4295.3 and 17.0.5005.3),
+		// and no declaration renders one.
+		allowed = method == "" || method == "BTREE"
+		supportedMethods = "the default or BTREE access method"
+	case platform.YDB:
+		// COVER is a clause of a global index, synchronous or asynchronous,
+		// and of nothing else a YDB row table has.
+		_, err := ydbindex.KindOf(indexType)
+		allowed = err == nil
+		supportedMethods = "a global index, synchronous or asynchronous"
+	default:
+		// A target whose capability set carries the key and has no arm here
+		// is refused rather than waved through: which access methods take a
+		// payload is a per-engine fact this switch has to be told.
+		supportedMethods = "an access method this renderer knows for it"
+	}
+	return allowed, supportedMethods
+}
+
+// constraintIncludeTargets names the dialects that attach an INCLUDE payload to
+// the constraint kind carrying it, and returns nil for a kind that carries none.
+//
+// This is deliberately NOT validateIndexInclude's set. The two questions have
+// different answers on three dialects, and each cell below is one CREATE TABLE
+// against a live server, measured 2026-08-30, paired with a control that drops
+// only the INCLUDE clause so a refusal cannot be the rest of the statement:
+//
+//	dialect                  UNIQUE ... INCLUDE            PRIMARY KEY ... INCLUDE
+//	postgres 18              kept                          kept
+//	yugabytedb 2026.1.0.0    kept                          kept
+//	cockroachdb v26.3.1      kept, as UNIQUE INDEX          ERROR: at or near
+//	                         ... STORING (name)             "include": syntax error
+//	spanner (pgadapter        ERROR: <UNIQUE> constraint    ERROR: <INCLUDE> clause is
+//	  emulator v0.55.2)      is not supported               not supported in constraints.
+//	mysql 26.7               ERROR 1064 syntax             ERROR 1064 syntax
+//	mariadb 12.3             ERROR 1064 syntax             ERROR 1064 syntax
+//	sqlserver 2025           Msg 102 syntax                Msg 102 syntax
+//	oracle 23.9              ORA-03075 unexpected item     ORA-03075
+//	                         INCLUDE in an out-of-line
+//	                         constraint
+//	sqlite 3.51              near "INCLUDE": syntax error  near "INCLUDE": syntax error
+//	clickhouse 26.7          no UNIQUE constraint at all (Expected one of: CHECK, ASSUME)
+//
+// Two rows are worth reading twice, because copying the index set would get
+// both wrong:
+//
+//   - Spanner is allowed for an INDEX and refused here. A Spanner unique index
+//     takes INCLUDE -- `CREATE UNIQUE INDEX ... INCLUDE (name)` is accepted --
+//     while a Spanner constraint does not, and the server draws that exact line
+//     in its own words. Spanner refuses the UNIQUE constraint spelling outright
+//     as well, which is stokaro/ptah#2585.
+//   - CockroachDB is the mirror image: allowed on a UNIQUE constraint, where it
+//     is a synonym for STORING, and refused on a primary key. It is also refused
+//     for an INDEX by validateIndexInclude, which the same measurement shows to
+//     be an over-refusal; widening that needs the reader and comparator to
+//     follow, so it is recorded in stokaro/ptah#2584 rather than done here.
+//
+// ClickHouse reaches the default arm and is refused, which is narrower than the
+// truth: it drops the whole UNIQUE constraint with no diagnostic, INCLUDE or not
+// (stokaro/ptah#2586). Refusing the payload reports less than that defect, and
+// strictly more than the silence it replaces.
+func constraintIncludeTargets(constraintKind string) []string {
+	switch constraintKind {
+	case ast.UniqueConstraint.String():
+		return []string{platform.Postgres, platform.YugabyteDB, platform.CockroachDB}
+	case ast.PrimaryKeyConstraint.String():
+		return []string{platform.Postgres, platform.YugabyteDB}
+	default:
+		return nil
+	}
+}
+
+// validateConstraintInclude refuses an INCLUDE payload the target cannot attach
+// to the constraint carrying it.
+//
+// Without it the clause was dropped in silence on five dialects and the render
+// exited 0, so an author who asked for a covering constraint was handed one that
+// covers nothing and told nothing (stokaro/ptah#2538). The MySQL-family planner
+// already refused the same shape when it reached a migration; this is the check
+// at the point a declaration meets a target, which is every producer rather than
+// that one path.
+func validateConstraintInclude(
+	dialect, constraintKind, constraintName string,
+	includeColumns []string,
+) error {
+	if len(includeColumns) == 0 {
+		return nil
+	}
+	for i, column := range includeColumns {
+		if strings.TrimSpace(column) != "" {
+			continue
+		}
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrInvalidSchemaDiff,
+			Message: fmt.Sprintf(
+				"%s constraint %q has an empty INCLUDE column at position %d",
+				constraintKind,
+				constraintName,
+				i+1,
+			),
+		}
+	}
+
+	targets := constraintIncludeTargets(constraintKind)
+	if len(targets) == 0 {
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrInvalidSchemaDiff,
+			Message: fmt.Sprintf(
+				"%s constraint %q carries INCLUDE columns; only a PRIMARY KEY or UNIQUE constraint can",
+				constraintKind,
+				constraintName,
+			),
+		}
+	}
+
+	normalizedDialect := platform.NormalizeDialect(dialect)
+	if slices.Contains(targets, normalizedDialect) {
+		return nil
+	}
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: "constraint INCLUDE columns",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf(
+			"%s does not support INCLUDE columns on %s constraint %q; target %s",
+			normalizedDialect,
+			constraintKind,
+			constraintName,
+			englishAlternatives(targets),
+		),
+	}
+}
+
+// englishAlternatives renders a target list the way the refusal messages read
+// them out, deriving the sentence from the allowed set so the two cannot drift.
+func englishAlternatives(names []string) string {
+	switch len(names) {
+	case 0:
+		return ""
+	case 1:
+		return names[0]
+	case 2:
+		return names[0] + " or " + names[1]
+	default:
+		return strings.Join(names[:len(names)-1], ", ") + ", or " + names[len(names)-1]
+	}
+}
+
+// validateDeclaredConstraintIncludes runs the same refusal over a whole
+// declaration, before any statement is emitted.
+//
+// It is not redundant with the AST check in prepareConstraintNode, and what it
+// alone catches was established by deleting this call and seeing which tests
+// reddened rather than by reasoning about the call graph:
+//
+//   - a payload on a kind that cannot carry one. FromConstraint builds a CHECK,
+//     FOREIGN KEY or EXCLUDE node without copying IncludeColumns, so the payload
+//     is already gone by the time a node exists and the AST gate has nothing to
+//     refuse.
+//   - a table-carried primary key with no declared name, which reaches the AST
+//     gate as "" and produces a sentence naming nothing. Here the table is still
+//     in hand, so the refusal can say which one.
+//
+// Everything else is caught by both, which is the same overlap
+// validateDeclaredIndexIncludes has with validateIndexInclude.
+func validateDeclaredConstraintIncludes(dialect string, database *schemamodel.Database) error {
+	for _, table := range database.Tables {
+		if err := validateConstraintInclude(
+			dialect,
+			ast.PrimaryKeyConstraint.String(),
+			declaredPrimaryKeyName(table),
+			table.PrimaryKeyInclude,
+		); err != nil {
+			return err
+		}
+	}
+	for _, constraint := range database.Constraints {
+		if err := validateConstraintInclude(
+			dialect,
+			strings.ToUpper(strings.TrimSpace(constraint.Type)),
+			constraint.Name,
+			constraint.IncludeColumns,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// declaredPrimaryKeyName answers what a refusal should call a table's primary
+// key. A declaration that named the constraint is reported by that name; one
+// that did not is reported by the table it belongs to, because "" in the middle
+// of a sentence names nothing.
+func declaredPrimaryKeyName(table schemamodel.Table) string {
+	if name := strings.TrimSpace(table.PrimaryKeyName); name != "" {
+		return name
+	}
+	return table.QualifiedName()
+}
+
+func makeMySQLForeignKeyTableEnginesExplicit(database *schemamodel.Database, dialect string) {
+	normalizedDialect := platform.NormalizeDialect(dialect)
+	if normalizedDialect != platform.MySQL && normalizedDialect != platform.MariaDB {
+		return
+	}
+
+	participants := mysqlForeignKeyTableParticipants(*database)
+	for i := range database.Tables {
+		table := &database.Tables[i]
+		if _, participates := participants[table.QualifiedName()]; !participates {
+			continue
+		}
+		engine, overridden := configuredTableEngine(*table, normalizedDialect)
+		if strings.TrimSpace(engine) != "" {
+			continue
+		}
+		if overridden {
+			table.Overrides = maps.Clone(table.Overrides)
+			table.Overrides[normalizedDialect] = maps.Clone(table.Overrides[normalizedDialect])
+			table.Overrides[normalizedDialect]["engine"] = "InnoDB"
+			continue
+		}
+		table.Engine = "InnoDB"
+	}
+}
+
+// mysqlForeignKeyTableParticipants names the described tables a foreign key
+// joins. A key into another database has a participant this description does
+// not hold, and whose engine it cannot set; the server refuses the key if that
+// table is not InnoDB.
+func mysqlForeignKeyTableParticipants(database schemamodel.Database) map[string]struct{} {
+	participants := make(map[string]struct{})
+	add := func(table *schemamodel.Table) {
+		if table != nil {
+			participants[table.QualifiedName()] = struct{}{}
+		}
+	}
+	fields := schemamodel.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
+	for _, field := range fields {
+		if field.Foreign == "" {
+			continue
+		}
+		owner := tableByStructName(database.Tables, field.StructName)
+		if owner == nil {
+			continue
+		}
+		add(owner)
+		add(referencedTable(
+			database.Tables,
+			*owner,
+			schemaprep.ParseForeignKeyReference(field.Foreign).Table,
+		))
+	}
+	for _, constraint := range database.Constraints {
+		if !strings.EqualFold(strings.TrimSpace(constraint.Type), "FOREIGN KEY") {
+			continue
+		}
+		owner := constraintOwnerTable(database.Tables, constraint)
+		add(owner)
+		add(referencedTable(database.Tables, *owner, constraint.ForeignTable))
+	}
+	return participants
+}
+
+func configuredTableEngine(table schemamodel.Table, dialect string) (string, bool) {
+	if overrides := table.Overrides[dialect]; overrides != nil {
+		if engine, found := overrides["engine"]; found {
+			return engine, true
+		}
+	}
+	return table.Engine, false
+}
+
+func validateFieldForeignKey(field schemamodel.Field, dialect string) error {
+	if err := validateForeignKeyReference(field.Foreign); err != nil {
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrInvalidSchemaDiff,
+			Message: fmt.Sprintf("invalid foreign key on field %q: %s", field.Name, err),
+		}
+	}
+	return nil
+}
+
+func validateForeignKeyReference(reference string) error {
+	parsed := schemaprep.ParseForeignKeyReference(reference)
+	if parsed == nil || strings.TrimSpace(parsed.Table) == "" {
+		return fmt.Errorf("malformed reference %q", reference)
+	}
+	columns := parsed.ReferencedColumns()
+	if len(columns) != 1 || strings.TrimSpace(columns[0]) == "" || strings.Contains(columns[0], ",") {
+		return fmt.Errorf("reference %q must name exactly one column", reference)
+	}
+	return nil
+}
+
+func validateTableForeignKey(constraint schemamodel.Constraint, dialect string) error {
+	localColumns := constraint.Columns
+	foreignColumns := constraint.ForeignColumnsOrDefault()
+	if strings.TrimSpace(constraint.ForeignTable) == "" || len(localColumns) == 0 || len(foreignColumns) == 0 || len(localColumns) != len(foreignColumns) {
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrInvalidSchemaDiff,
+			Message: fmt.Sprintf(
+				"invalid foreign key constraint %q: %d local columns and %d referenced columns",
+				constraint.Name,
+				len(localColumns),
+				len(foreignColumns),
+			),
+		}
+	}
+	return nil
+}
+
+func normalizeReferentialActions(
+	dialect, onDelete, onUpdate string,
+) (normalizedDelete, normalizedUpdate string, err error) {
+	normalizedDelete, err = normalizeReferentialAction(dialect, "ON DELETE", onDelete)
+	if err != nil {
+		return "", "", err
+	}
+	normalizedUpdate, err = normalizeReferentialAction(dialect, "ON UPDATE", onUpdate)
+	if err != nil {
+		return "", "", err
+	}
+	return normalizedDelete, normalizedUpdate, nil
+}
+
+func normalizeReferentialAction(dialect, clause, action string) (string, error) {
+	action = strings.ReplaceAll(action, "_", " ")
+	action = strings.ToUpper(strings.Join(strings.Fields(action), " "))
+	if action == "" {
+		return "", nil
+	}
+	if !slices.Contains([]string{"NO ACTION", "RESTRICT", "CASCADE", "SET NULL", "SET DEFAULT"}, action) {
+		return "", invalidReferentialActionError(dialect, clause, action)
+	}
+
+	normalizedDialect := platform.NormalizeDialect(dialect)
+	switch normalizedDialect {
+	case platform.MySQL, platform.MariaDB:
+		if action == "SET DEFAULT" {
+			return "", invalidReferentialActionError(dialect, clause, action)
+		}
+	case platform.SQLServer:
+		if action == "RESTRICT" {
+			return "NO ACTION", nil
+		}
+	case platform.Spanner:
+		if clause == "ON UPDATE" || !slices.Contains([]string{"NO ACTION", "CASCADE"}, action) {
+			return "", invalidReferentialActionError(dialect, clause, action)
+		}
+	}
+	return action, nil
+}
+
+func invalidReferentialActionError(dialect, clause, action string) error {
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: "foreign key referential actions",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s does not support %s %s", platform.NormalizeDialect(dialect), clause, action),
+	}
+}
+
+func validateSchemaForeignKeys(
+	database schemamodel.Database,
+	dialect string,
+	caps capability.Capabilities,
+) error {
+	validation := foreignKeyValidation{
+		database:      database,
+		dialect:       dialect,
+		caps:          caps,
+		fields:        schemamodel.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields),
+		explicitNames: make(map[string]map[string]struct{}),
+	}
+	fieldBindings, err := validation.fieldKeys()
+	if err != nil {
+		return err
+	}
+	constraintBindings, err := validation.constraintKeys()
+	if err != nil {
+		return err
+	}
+	if platform.NormalizeDialect(dialect) == platform.SQLServer {
+		return validateSQLServerCascadeGraph(dialect, append(fieldBindings, constraintBindings...))
+	}
+	return nil
+}
+
+// foreignKeyValidation is what the two halves of validateSchemaForeignKeys
+// share: the schema, its target, and the key names the keys already checked
+// have taken. The field half runs first, so its keys claim their names first.
+type foreignKeyValidation struct {
+	database      schemamodel.Database
+	dialect       string
+	caps          capability.Capabilities
+	fields        []schemamodel.Field
+	explicitNames map[string]map[string]struct{}
+}
+
+// fieldKeys checks the keys declared on a column, as its foreign attribute.
+func (v foreignKeyValidation) fieldKeys() ([]foreignKeyBinding, error) {
+	bindings := make([]foreignKeyBinding, 0)
+	for _, field := range v.fields {
+		if field.Foreign == "" {
+			continue
+		}
+		owner := tableByStructName(v.database.Tables, field.StructName)
+		if owner == nil {
+			if isEmbeddedHelperStruct(v.database.EmbeddedFields, field.StructName) {
+				continue
+			}
+			return nil, invalidSchemaForeignKeyError(
+				v.dialect,
+				fmt.Sprintf("field %q has no owning table for struct %q", field.Name, field.StructName),
+			)
+		}
+		if err := reserveExplicitForeignKeyName(v.explicitNames, v.dialect, *owner, field.ForeignKeyName); err != nil {
+			return nil, invalidSchemaForeignKeyError(v.dialect, err.Error())
+		}
+		reference := schemaprep.ParseForeignKeyReference(field.Foreign)
+		target := referencedTable(v.database.Tables, *owner, reference.Table)
+		if target == nil && referencesUndescribedSchema(v.database, v.dialect, reference.Table) {
+			continue
+		}
+		if target == nil {
+			return nil, invalidSchemaForeignKeyError(
+				v.dialect,
+				fmt.Sprintf("field %q references unknown table %q", field.Name, reference.Table),
+			)
+		}
+		referencedColumns := reference.ReferencedColumns()
+		if err := validateSchemaForeignKeyColumns(
+			v.fields,
+			v.dialect,
+			*owner,
+			[]string{field.Name},
+			*target,
+			referencedColumns,
+			field.OnDelete,
+			field.OnUpdate,
+			nil,
+		); err != nil {
+			return nil, err
+		}
+		if err := validateReferencedKeyPolicy(v.database, v.dialect, v.caps, *target, referencedColumns); err != nil {
+			return nil, err
+		}
+		bindings = append(bindings, foreignKeyBinding{
+			owner:    owner.QualifiedName(),
+			target:   target.QualifiedName(),
+			onDelete: field.OnDelete,
+			onUpdate: field.OnUpdate,
+		})
+	}
+	return bindings, nil
+}
+
+// constraintKeys checks the keys declared as table constraints.
+func (v foreignKeyValidation) constraintKeys() ([]foreignKeyBinding, error) {
+	bindings := make([]foreignKeyBinding, 0)
+	for _, constraint := range v.database.Constraints {
+		if !strings.EqualFold(strings.TrimSpace(constraint.Type), "FOREIGN KEY") {
+			continue
+		}
+		owner := constraintOwnerTable(v.database.Tables, constraint)
+		if owner == nil {
+			return nil, invalidSchemaForeignKeyError(
+				v.dialect,
+				fmt.Sprintf("constraint %q has no owning table", constraint.Name),
+			)
+		}
+		if err := reserveExplicitForeignKeyName(v.explicitNames, v.dialect, *owner, constraint.Name); err != nil {
+			return nil, invalidSchemaForeignKeyError(v.dialect, err.Error())
+		}
+		columns := constraint.ForeignColumnsOrDefault()
+		target := referencedTable(v.database.Tables, *owner, constraint.ForeignTable)
+		if target == nil && referencesUndescribedSchema(v.database, v.dialect, constraint.ForeignTable) {
+			continue
+		}
+		if target == nil {
+			return nil, invalidSchemaForeignKeyError(
+				v.dialect,
+				fmt.Sprintf("constraint %q references unknown table %q", constraint.Name, constraint.ForeignTable),
+			)
+		}
+		if err := validateSchemaForeignKeyColumns(
+			v.fields,
+			v.dialect,
+			*owner,
+			constraint.Columns,
+			*target,
+			columns,
+			constraint.OnDelete,
+			constraint.OnUpdate,
+			constraint.OnDeleteColumns,
+		); err != nil {
+			return nil, err
+		}
+		if err := validateReferencedKeyPolicy(v.database, v.dialect, v.caps, *target, columns); err != nil {
+			return nil, err
+		}
+		bindings = append(bindings, foreignKeyBinding{
+			owner:    owner.QualifiedName(),
+			target:   target.QualifiedName(),
+			onDelete: constraint.OnDelete,
+			onUpdate: constraint.OnUpdate,
+		})
+	}
+	return bindings, nil
+}
+
+// referencesUndescribedSchema reports whether a foreign key names a table in a
+// schema the description holds nothing of, which the renderer writes as
+// declared and leaves to the server: the columns and the key it references are
+// in the other schema, so there is nothing here to check them against.
+// Refusing it as an unknown table would leave `db read`, `schema inspect
+// --format sql` and `schema compare` unable to describe a schema holding such a
+// key at all. [foreignkeyscope.Outside] decides which keys those are, and the
+// comparison asks it too.
+func referencesUndescribedSchema(database schemamodel.Database, dialect, reference string) bool {
+	_, outside := foreignkeyscope.Outside(database, dialect, reference)
+	return outside
+}
+
+func isEmbeddedHelperStruct(embeddedFields []schemamodel.EmbeddedField, structName string) bool {
+	for _, embedded := range embeddedFields {
+		if embedded.StructName == structName || embedded.EmbeddedTypeName == structName {
+			return true
+		}
+	}
+	return false
+}
+
+func reserveExplicitForeignKeyName(
+	reserved map[string]map[string]struct{},
+	dialect string,
+	table schemamodel.Table,
+	name string,
+) error {
+	if name == "" {
+		return nil
+	}
+	if err := validateExplicitForeignKeyName(dialect, name); err != nil {
+		return err
+	}
+	scope, normalizedName := foreignKeyNameScope(dialect, table, name)
+	if reserved[scope] == nil {
+		reserved[scope] = make(map[string]struct{})
+	}
+	if _, duplicate := reserved[scope][normalizedName]; duplicate {
+		return fmt.Errorf("foreign-key name %q is duplicated in %s", name, scope)
+	}
+	reserved[scope][normalizedName] = struct{}{}
+	return nil
+}
+
+// validateExplicitForeignKeyName refuses a name the target would reject or
+// truncate.
+//
+// The limit and its unit come from [capability.Identifiers] rather than from a
+// dialect switch here. The switch this replaced carried the numbers 63, 64 and
+// 128 and, more importantly, carried the byte-versus-character rule that
+// decides whether a multibyte name fits.
+//
+// That removes this file's copy of the rule. One other remains:
+// internal/schemaprep carries its own three-arm switch because it
+// truncates a generated name to fit rather than refusing it, and the truncation
+// needs a budget in the limit's unit that IdentifierLimit does not expose. Its
+// predicate agrees with capability.Identifiers today — 144 verdicts across
+// every boundary shape, zero disagreements — so what remains is a drift hazard
+// rather than a wrong answer. Do not add a third copy.
+func validateExplicitForeignKeyName(dialect, name string) error {
+	normalizedDialect := platform.NormalizeDialect(dialect)
+	limit := capability.Identifiers(normalizedDialect)
+	if !limit.Exceeds(name) {
+		return nil
+	}
+	return fmt.Errorf("foreign-key name %q exceeds the %s identifier limit of %s", name, normalizedDialect, limit)
+}
+
+func foreignKeyNameScope(dialect string, table schemamodel.Table, name string) (scope, normalizedName string) {
+	normalizedDialect := platform.NormalizeDialect(dialect)
+	switch normalizedDialect {
+	case platform.MySQL, platform.MariaDB:
+		return "database constraint namespace", strings.ToLower(name)
+	case platform.SQLServer, platform.Spanner:
+		schema := strings.TrimSpace(table.Schema)
+		if schema == "" {
+			schema = identifier.ForDialect(dialect).DefaultSchema
+		}
+		schema = strings.ToLower(schema)
+		return fmt.Sprintf("schema %q constraint namespace", schema), strings.ToLower(name)
+	default:
+		return fmt.Sprintf("table %q constraint namespace", table.QualifiedName()), name
+	}
+}
+
+type foreignKeyBinding struct {
+	owner    string
+	target   string
+	onDelete string
+	onUpdate string
+}
+
+func validateSchemaForeignKeyColumns(
+	fields []schemamodel.Field,
+	dialect string,
+	owner schemamodel.Table,
+	localColumns []string,
+	target schemamodel.Table,
+	referencedColumns []string,
+	onDelete,
+	onUpdate string,
+	onDeleteColumns []string,
+) error {
+	if err := validateForeignKeyColumnLists(localColumns, referencedColumns); err != nil {
+		return invalidSchemaForeignKeyError(dialect, err.Error())
+	}
+	if missing := firstMissingTableColumn(fields, owner, localColumns); missing != "" {
+		return invalidSchemaForeignKeyError(
+			dialect,
+			fmt.Sprintf("table %q has no local foreign-key column %q", owner.QualifiedName(), missing),
+		)
+	}
+	if missing := firstMissingTableColumn(fields, target, referencedColumns); missing != "" {
+		return invalidSchemaForeignKeyError(
+			dialect,
+			fmt.Sprintf("referenced table %q has no column %q", target.QualifiedName(), missing),
+		)
+	}
+	if err := validateForeignKeyTableStorage(dialect, owner, target); err != nil {
+		return err
+	}
+	for i, localColumn := range localColumns {
+		localField := tableColumn(fields, owner, localColumn)
+		referencedField := tableColumn(fields, target, referencedColumns[i])
+		if err := validateForeignKeyColumnCompatibility(
+			dialect,
+			owner,
+			localField,
+			target,
+			referencedField,
+			onDelete,
+			onUpdate,
+			onDeleteColumns,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateForeignKeyTableStorage(dialect string, owner, target schemamodel.Table) error {
+	normalizedDialect := platform.NormalizeDialect(dialect)
+	if normalizedDialect != platform.MySQL && normalizedDialect != platform.MariaDB {
+		return nil
+	}
+	for _, table := range []schemamodel.Table{owner, target} {
+		engine := effectiveTableEngine(table, normalizedDialect)
+		if !strings.EqualFold(engine, "InnoDB") {
+			return invalidSchemaForeignKeyError(
+				dialect,
+				fmt.Sprintf(
+					"table %q uses storage engine %q; %s foreign keys require InnoDB",
+					table.QualifiedName(),
+					engine,
+					normalizedDialect,
+				),
+			)
+		}
+	}
+	return nil
+}
+
+func effectiveTableEngine(table schemamodel.Table, dialect string) string {
+	configured, _ := configuredTableEngine(table, dialect)
+	engine := strings.TrimSpace(configured)
+	if engine == "" {
+		return "InnoDB"
+	}
+	return engine
+}
+
+func validateForeignKeyColumnCompatibility(
+	dialect string,
+	owner schemamodel.Table,
+	local schemamodel.Field,
+	target schemamodel.Table,
+	referenced schemamodel.Field,
+	onDelete,
+	onUpdate string,
+	onDeleteColumns []string,
+) error {
+	normalizedDialect := platform.NormalizeDialect(dialect)
+	local = schemaprep.EffectiveFieldForPlatform(local, normalizedDialect)
+	referenced = schemaprep.EffectiveFieldForPlatform(referenced, normalizedDialect)
+	if (onUpdate == "SET NULL" || deleteActionSetsColumnNull(onDelete, onDeleteColumns, local.Name)) && !local.Nullable {
+		return invalidSchemaForeignKeyError(
+			dialect,
+			fmt.Sprintf(
+				"foreign key on %q.%q uses SET NULL but the local column is NOT NULL",
+				owner.QualifiedName(),
+				local.Name,
+			),
+		)
+	}
+	if normalizedDialect == platform.SQLite {
+		return nil
+	}
+	if normalizedDialect == platform.MySQL || normalizedDialect == platform.MariaDB {
+		if err := validateMySQLFamilyGeneratedForeignKey(
+			dialect,
+			owner,
+			local,
+			target,
+			referenced,
+			onDelete,
+			onUpdate,
+		); err != nil {
+			return err
+		}
+	}
+	localType := normalizeForeignKeyColumnType(local.Type, normalizedDialect)
+	referencedType := normalizeForeignKeyColumnType(referenced.Type, normalizedDialect)
+	if localType == "" || referencedType == "" ||
+		!foreignKeyColumnTypesCompatible(localType, referencedType, normalizedDialect) {
+		return incompatibleForeignKeyColumnTypesError(dialect, owner, local, target, referenced)
+	}
+	if normalizedDialect == platform.MySQL || normalizedDialect == platform.MariaDB {
+		if mysqlForeignKeyTypeUsesCharset(localType) || mysqlForeignKeyTypeUsesCharset(referencedType) {
+			if err := validateMySQLForeignKeyTextMetadata(
+				dialect,
+				owner,
+				local,
+				target,
+				referenced,
+			); err != nil {
+				return err
+			}
+		}
+		if mysqlForeignKeyTypeBase(localType) == "ENUM" && !slices.Equal(local.Enum, referenced.Enum) {
+			return incompatibleForeignKeyColumnTypesError(dialect, owner, local, target, referenced)
+		}
+	}
+	if normalizedDialect == platform.Spanner && isSpannerNonKeyType(localType) {
+		return invalidSchemaForeignKeyError(
+			dialect,
+			fmt.Sprintf(
+				"Spanner type %s cannot participate in foreign keys: %q.%q references %q.%q",
+				local.Type,
+				owner.QualifiedName(),
+				local.Name,
+				target.QualifiedName(),
+				referenced.Name,
+			),
+		)
+	}
+	return nil
+}
+
+func incompatibleForeignKeyColumnTypesError(
+	dialect string,
+	owner schemamodel.Table,
+	local schemamodel.Field,
+	target schemamodel.Table,
+	referenced schemamodel.Field,
+) error {
+	return invalidSchemaForeignKeyError(
+		dialect,
+		fmt.Sprintf(
+			"foreign-key columns %q.%q (%s) and %q.%q (%s) have incompatible types",
+			owner.QualifiedName(),
+			local.Name,
+			local.Type,
+			target.QualifiedName(),
+			referenced.Name,
+			referenced.Type,
+		),
+	)
+}
+
+func validateMySQLFamilyGeneratedForeignKey(
+	dialect string,
+	owner schemamodel.Table,
+	local schemamodel.Field,
+	target schemamodel.Table,
+	referenced schemamodel.Field,
+	onDelete,
+	onUpdate string,
+) error {
+	desired := local.GeneratedExpression != "" || referenced.GeneratedExpression != ""
+	if !desired {
+		return nil
+	}
+	normalizedDialect := platform.NormalizeDialect(dialect)
+	if normalizedDialect == platform.MariaDB ||
+		!generatedForeignKeyColumnsAreStored(local, referenced) {
+		return invalidSchemaForeignKeyError(
+			dialect,
+			fmt.Sprintf(
+				"generated columns cannot participate in portable %s foreign keys: %q.%q references %q.%q",
+				normalizedDialect,
+				owner.QualifiedName(),
+				local.Name,
+				target.QualifiedName(),
+				referenced.Name,
+			),
+		)
+	}
+	if slices.Contains([]string{"CASCADE", "SET NULL", "SET DEFAULT"}, onUpdate) ||
+		slices.Contains([]string{"SET NULL", "SET DEFAULT"}, onDelete) {
+		return invalidSchemaForeignKeyError(
+			dialect,
+			fmt.Sprintf(
+				"stored generated foreign-key columns do not support ON DELETE %s ON UPDATE %s",
+				referentialActionOrDefault(onDelete),
+				referentialActionOrDefault(onUpdate),
+			),
+		)
+	}
+	return nil
+}
+
+func generatedForeignKeyColumnsAreStored(fields ...schemamodel.Field) bool {
+	for _, field := range fields {
+		if field.GeneratedExpression == "" {
+			continue
+		}
+		kind := strings.ToUpper(strings.TrimSpace(field.GeneratedKind))
+		if kind != "STORED" {
+			return false
+		}
+	}
+	return true
+}
+
+func referentialActionOrDefault(action string) string {
+	if action == "" {
+		return "NO ACTION"
+	}
+	return action
+}
+
+func validateMySQLForeignKeyTextMetadata(
+	dialect string,
+	owner schemamodel.Table,
+	local schemamodel.Field,
+	target schemamodel.Table,
+	referenced schemamodel.Field,
+) error {
+	localCharset := effectiveColumnMetadata(local.Charset, effectiveTableMetadata(owner, dialect, "charset"))
+	referencedCharset := effectiveColumnMetadata(
+		referenced.Charset,
+		effectiveTableMetadata(target, dialect, "charset"),
+	)
+	if localCharset != referencedCharset {
+		return incompatibleForeignKeyTextMetadataError(
+			dialect,
+			"character sets",
+			owner,
+			local,
+			localCharset,
+			target,
+			referenced,
+			referencedCharset,
+		)
+	}
+	localCollation := effectiveColumnMetadata(local.Collate, effectiveTableMetadata(owner, dialect, "collate"))
+	referencedCollation := effectiveColumnMetadata(
+		referenced.Collate,
+		effectiveTableMetadata(target, dialect, "collate"),
+	)
+	if localCollation != referencedCollation {
+		return incompatibleForeignKeyTextMetadataError(
+			dialect,
+			"collations",
+			owner,
+			local,
+			localCollation,
+			target,
+			referenced,
+			referencedCollation,
+		)
+	}
+	return nil
+}
+
+func effectiveTableMetadata(table schemamodel.Table, dialect, key string) string {
+	value := table.Charset
+	if key == "collate" {
+		value = table.Collate
+	}
+	if overrides := table.Overrides[platform.NormalizeDialect(dialect)]; overrides != nil {
+		if override, found := overrides[key]; found {
+			value = override
+		}
+	}
+	return value
+}
+
+func effectiveColumnMetadata(columnValue, tableValue string) string {
+	value := strings.TrimSpace(columnValue)
+	if value == "" {
+		value = strings.TrimSpace(tableValue)
+	}
+	return strings.ToLower(value)
+}
+
+func incompatibleForeignKeyTextMetadataError(
+	dialect,
+	metadata string,
+	owner schemamodel.Table,
+	local schemamodel.Field,
+	localValue string,
+	target schemamodel.Table,
+	referenced schemamodel.Field,
+	referencedValue string,
+) error {
+	return invalidSchemaForeignKeyError(
+		dialect,
+		fmt.Sprintf(
+			"foreign-key columns %q.%q and %q.%q have incompatible %s %q and %q",
+			owner.QualifiedName(),
+			local.Name,
+			target.QualifiedName(),
+			referenced.Name,
+			metadata,
+			localValue,
+			referencedValue,
+		),
+	)
+}
+
+func normalizeForeignKeyColumnType(fieldType, dialect string) string {
+	normalized := strings.ToUpper(strings.Join(strings.Fields(fieldType), " "))
+	normalized = strings.TrimSpace(strings.ReplaceAll(normalized, " AUTO_INCREMENT", ""))
+	unsigned := strings.Contains(normalized, " UNSIGNED") || strings.Contains(normalized, " ZEROFILL")
+	normalized = strings.TrimSpace(strings.ReplaceAll(normalized, " UNSIGNED", ""))
+	normalized = strings.TrimSpace(strings.ReplaceAll(normalized, " ZEROFILL", ""))
+	normalized = normalizeForeignKeyColumnTypeAlias(normalized, dialect)
+	if unsigned {
+		normalized += " UNSIGNED"
+	}
+	return normalized
+}
+
+func normalizeForeignKeyColumnTypeAlias(fieldType, dialect string) string {
+	if dialect == platform.MySQL || dialect == platform.MariaDB {
+		fieldType = stripMySQLIntegerDisplayWidth(fieldType)
+	}
+	switch {
+	case strings.HasPrefix(fieldType, "CHARACTER VARYING("):
+		return "VARCHAR" + strings.TrimPrefix(fieldType, "CHARACTER VARYING")
+	case strings.HasPrefix(fieldType, "CHARACTER("):
+		return "CHAR" + strings.TrimPrefix(fieldType, "CHARACTER")
+	case strings.HasPrefix(fieldType, "DECIMAL("):
+		return "NUMERIC" + strings.TrimPrefix(fieldType, "DECIMAL")
+	}
+	switch fieldType {
+	case "SMALLSERIAL", "SERIAL2", "INT2":
+		return "SMALLINT"
+	case "SERIAL", "SERIAL4", "INT", "INT4":
+		return "INTEGER"
+	case "BIGSERIAL", "SERIAL8", "INT8":
+		return "BIGINT"
+	case "CHARACTER VARYING":
+		return "VARCHAR"
+	case "CHARACTER":
+		return "CHAR"
+	case "DECIMAL":
+		return "NUMERIC"
+	default:
+		return fieldType
+	}
+}
+
+func foreignKeyColumnTypesCompatible(localType, referencedType, dialect string) bool {
+	if localType == referencedType {
+		return !mysqlFamilyForeignKeyTypeUnsupported(localType, dialect)
+	}
+	if dialect == platform.Postgres {
+		family := postgresForeignKeyTypeFamily(localType)
+		return family != "" && family == postgresForeignKeyTypeFamily(referencedType)
+	}
+	if dialect != platform.MySQL && dialect != platform.MariaDB {
+		return false
+	}
+	if mysqlFamilyForeignKeyTypeUnsupported(localType, dialect) ||
+		mysqlFamilyForeignKeyTypeUnsupported(referencedType, dialect) {
+		return false
+	}
+	return mysqlStringTypeFamily(localType) != "" &&
+		mysqlStringTypeFamily(localType) == mysqlStringTypeFamily(referencedType)
+}
+
+// postgresForeignKeyTypeFamily recognizes comparable types whose declarations
+// need not be identical. PostgreSQL's integer equality operators compare all
+// integer widths; varchar length modifiers do not change its equality type.
+// This does not infer a cast between unrelated or user-defined types.
+func postgresForeignKeyTypeFamily(fieldType string) string {
+	if slices.Contains([]string{"SMALLINT", "INTEGER", "BIGINT"}, fieldType) {
+		return "integer"
+	}
+	base, modifier, hasModifier := strings.Cut(fieldType, "(")
+	if strings.TrimSpace(base) == "VARCHAR" && (!hasModifier || strings.HasSuffix(modifier, ")")) {
+		return "varchar"
+	}
+	return ""
+}
+
+func mysqlStringTypeFamily(fieldType string) string {
+	base := mysqlForeignKeyTypeBase(fieldType)
+	if slices.Contains([]string{"CHAR", "VARCHAR", "BINARY", "VARBINARY"}, base) {
+		return base
+	}
+	return ""
+}
+
+func mysqlForeignKeyTypeUsesCharset(fieldType string) bool {
+	return slices.Contains([]string{
+		"CHAR", "VARCHAR", "TINYTEXT", "TEXT", "MEDIUMTEXT", "LONGTEXT", "ENUM", "SET",
+	}, mysqlForeignKeyTypeBase(fieldType))
+}
+
+func mysqlForeignKeyTypeBase(fieldType string) string {
+	base, _, _ := strings.Cut(fieldType, "(")
+	return strings.TrimSuffix(base, " UNSIGNED")
+}
+
+func mysqlFamilyForeignKeyTypeUnsupported(fieldType, dialect string) bool {
+	if dialect != platform.MySQL && dialect != platform.MariaDB {
+		return false
+	}
+	base := mysqlForeignKeyTypeBase(fieldType)
+	return slices.Contains([]string{
+		"TINYTEXT", "TEXT", "MEDIUMTEXT", "LONGTEXT",
+		"TINYBLOB", "BLOB", "MEDIUMBLOB", "LONGBLOB", "JSON",
+	}, base)
+}
+
+func stripMySQLIntegerDisplayWidth(fieldType string) string {
+	for _, integerType := range []string{"TINYINT", "SMALLINT", "MEDIUMINT", "INT", "INTEGER", "BIGINT"} {
+		prefix := integerType + "("
+		if strings.HasPrefix(fieldType, prefix) && strings.HasSuffix(fieldType, ")") {
+			return integerType
+		}
+	}
+	return fieldType
+}
+
+func isSpannerNonKeyType(fieldType string) bool {
+	return slices.Contains([]string{"FLOAT32", "FLOAT4", "REAL", "NUMERIC", "JSON", "JSONB", "STRUCT"}, fieldType) ||
+		strings.HasPrefix(fieldType, "ARRAY<") || strings.HasSuffix(fieldType, "[]")
+}
+
+func tableColumn(fields []schemamodel.Field, table schemamodel.Table, column string) schemamodel.Field {
+	for _, field := range fields {
+		if field.StructName == table.StructName && field.Name == column {
+			return field
+		}
+	}
+	return schemamodel.Field{}
+}
+
+func firstMissingTableColumn(fields []schemamodel.Field, table schemamodel.Table, columns []string) string {
+	available := make(map[string]struct{})
+	for _, field := range fields {
+		if field.StructName == table.StructName {
+			available[field.Name] = struct{}{}
+		}
+	}
+	for _, column := range columns {
+		if _, found := available[column]; !found {
+			return column
+		}
+	}
+	return ""
+}
+
+func validateReferencedKeyPolicy(
+	database schemamodel.Database,
+	dialect string,
+	caps capability.Capabilities,
+	target schemamodel.Table,
+	columns []string,
+) error {
+	switch {
+	case caps.Has(capability.ForeignKeysRequireUniqueReference):
+		if !tableHasUniqueKey(database, dialect, target, columns) {
+			return uniqueReferenceError(dialect, target, columns)
+		}
+	case caps.Has(capability.ForeignKeysRequireIndexedReference):
+		if !tableHasIndexedKey(database, target, columns) {
+			return indexedReferenceError(dialect, target, columns)
+		}
+	case caps.Has(capability.ForeignKeysCreateBackingIndex):
+		return nil
+	}
+	return nil
+}
+
+func tableByStructName(tables []schemamodel.Table, structName string) *schemamodel.Table {
+	for i := range tables {
+		if tables[i].StructName == structName {
+			return &tables[i]
+		}
+	}
+	return nil
+}
+
+func constraintOwnerTable(tables []schemamodel.Table, constraint schemamodel.Constraint) *schemamodel.Table {
+	for i := range tables {
+		if schemaprep.ConstraintBelongsToTable(constraint, tables[i]) {
+			return &tables[i]
+		}
+	}
+	return nil
+}
+
+func referencedTable(tables []schemamodel.Table, owner schemamodel.Table, reference string) *schemamodel.Table {
+	resolved := tablelookup.ResolveReference(tables, owner, reference)
+	for i := range tables {
+		if tables[i].QualifiedName() == resolved {
+			return &tables[i]
+		}
+	}
+	return nil
+}
+
+func tableHasUniqueKey(database schemamodel.Database, dialect string, table schemamodel.Table, columns []string) bool {
+	return tablePrimaryKeyEquals(table, columns) ||
+		tableFieldsHaveUniqueKey(allDatabaseFields(database), table, columns) ||
+		tableConstraintsHaveUniqueKey(database, table, columns) ||
+		tableIndexesHaveUniqueKey(database, dialect, table, columns)
+}
+
+func tablePrimaryKeyEquals(table schemamodel.Table, columns []string) bool {
+	return slices.Equal(table.PrimaryKey, columns) ||
+		(primaryKeyPartsAreFullColumns(table.PrimaryKeyParts) &&
+			slices.Equal(primaryKeyPartNames(table.PrimaryKeyParts), columns))
+}
+
+func tableFieldsHaveUniqueKey(fields []schemamodel.Field, table schemamodel.Table, columns []string) bool {
+	var primaryFields []string
+	for _, field := range fields {
+		if field.StructName != table.StructName {
+			continue
+		}
+		if field.Primary {
+			primaryFields = append(primaryFields, field.Name)
+		}
+		if len(columns) == 1 && field.Name == columns[0] && field.Unique {
+			return true
+		}
+	}
+	return slices.Equal(primaryFields, columns)
+}
+
+func tableConstraintsHaveUniqueKey(
+	database schemamodel.Database,
+	table schemamodel.Table,
+	columns []string,
+) bool {
+	for _, constraint := range database.Constraints {
+		owner := constraintOwnerTable(database.Tables, constraint)
+		if owner != nil && owner.QualifiedName() == table.QualifiedName() &&
+			(strings.EqualFold(constraint.Type, "PRIMARY KEY") || strings.EqualFold(constraint.Type, "UNIQUE")) &&
+			slices.Equal(constraint.Columns, columns) {
+			return true
+		}
+	}
+	return false
+}
+
+func tableIndexesHaveUniqueKey(
+	database schemamodel.Database,
+	dialect string,
+	table schemamodel.Table,
+	columns []string,
+) bool {
+	// SQLite's IR does not preserve per-index-part collation. Accepting a
+	// standalone unique index could therefore produce a deferred
+	// "foreign key mismatch" at DML time. Inline keys remain verifiable.
+	if platform.NormalizeDialect(dialect) == platform.SQLite {
+		return false
+	}
+	indexOwners := schemamodel.ResolveIndexTableNames(database.Indexes, database.Tables)
+	for i, index := range database.Indexes {
+		indexColumns, valid := fullIndexColumnNames(index)
+		if index.Unique && valid && strings.TrimSpace(index.Condition) == "" &&
+			indexOwners[i] == table.QualifiedName() && slices.Equal(indexColumns, columns) {
+			return true
+		}
+	}
+	return false
+}
+
+func tableHasIndexedKey(database schemamodel.Database, table schemamodel.Table, columns []string) bool {
+	if isColumnPrefix(table.PrimaryKey, columns) ||
+		(primaryKeyPartsAreFullColumns(table.PrimaryKeyParts) &&
+			isColumnPrefix(primaryKeyPartNames(table.PrimaryKeyParts), columns)) {
+		return true
+	}
+
+	var primaryFields []string
+	for _, field := range allDatabaseFields(database) {
+		if field.StructName != table.StructName {
+			continue
+		}
+		if field.Primary {
+			primaryFields = append(primaryFields, field.Name)
+		}
+		if len(columns) == 1 && field.Name == columns[0] && field.Unique {
+			return true
+		}
+	}
+	if isColumnPrefix(primaryFields, columns) {
+		return true
+	}
+
+	for _, constraint := range database.Constraints {
+		owner := constraintOwnerTable(database.Tables, constraint)
+		if owner != nil && owner.QualifiedName() == table.QualifiedName() &&
+			(strings.EqualFold(constraint.Type, "PRIMARY KEY") || strings.EqualFold(constraint.Type, "UNIQUE")) &&
+			isColumnPrefix(constraint.Columns, columns) {
+			return true
+		}
+	}
+	indexOwners := schemamodel.ResolveIndexTableNames(database.Indexes, database.Tables)
+	for i, index := range database.Indexes {
+		if indexOwners[i] == table.QualifiedName() && indexHasFullColumnPrefix(index, columns) {
+			return true
+		}
+	}
+	return false
+}
+
+func allDatabaseFields(database schemamodel.Database) []schemamodel.Field {
+	return schemamodel.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
+}
+
+func isColumnPrefix(keyColumns, referencedColumns []string) bool {
+	return len(referencedColumns) > 0 && len(keyColumns) >= len(referencedColumns) &&
+		slices.Equal(keyColumns[:len(referencedColumns)], referencedColumns)
+}
+
+func primaryKeyPartsAreFullColumns(parts []schemamodel.PrimaryKeyPart) bool {
+	if len(parts) == 0 {
+		return false
+	}
+	for _, part := range parts {
+		if strings.TrimSpace(part.Name) == "" || strings.TrimSpace(part.Prefix) != "" {
+			return false
+		}
+	}
+	return true
+}
+
+func primaryKeyPartNames(parts []schemamodel.PrimaryKeyPart) []string {
+	names := make([]string, 0, len(parts))
+	for _, part := range parts {
+		names = append(names, part.Name)
+	}
+	return names
+}
+
+func fullIndexColumnNames(index schemamodel.Index) ([]string, bool) {
+	if len(index.Parts) == 0 {
+		return index.Fields, len(index.Fields) > 0
+	}
+	names := make([]string, 0, len(index.Parts))
+	for _, part := range index.Parts {
+		if strings.TrimSpace(part.Name) == "" || strings.TrimSpace(part.Expr) != "" ||
+			strings.TrimSpace(part.Prefix) != "" || strings.TrimSpace(part.Operator) != "" {
+			return nil, false
+		}
+		names = append(names, part.Name)
+	}
+	return names, true
+}
+
+func indexHasFullColumnPrefix(index schemamodel.Index, columns []string) bool {
+	if strings.TrimSpace(index.Condition) != "" || len(columns) == 0 {
+		return false
+	}
+	indexType := strings.ToUpper(strings.TrimSpace(index.Type))
+	if (indexType != "" && indexType != "BTREE") || strings.TrimSpace(index.Parser) != "" {
+		return false
+	}
+	if len(index.Parts) == 0 {
+		return isColumnPrefix(index.Fields, columns)
+	}
+	if len(index.Parts) < len(columns) {
+		return false
+	}
+	for i, column := range columns {
+		part := index.Parts[i]
+		if part.Name != column || strings.TrimSpace(part.Expr) != "" ||
+			strings.TrimSpace(part.Prefix) != "" || strings.TrimSpace(part.Operator) != "" {
+			return false
+		}
+	}
+	return true
+}
+
+func uniqueReferenceError(dialect string, table schemamodel.Table, columns []string) error {
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: "foreign key referenced key uniqueness",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf(
+			"%s requires referenced columns %s on table %q to be declared unique",
+			platform.NormalizeDialect(dialect),
+			strings.Join(columns, ", "),
+			table.QualifiedName(),
+		),
+	}
+}
+
+func indexedReferenceError(dialect string, table schemamodel.Table, columns []string) error {
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: "foreign key referenced key index",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf(
+			"%s requires referenced columns %s on table %q to be the full leftmost prefix of an index",
+			platform.NormalizeDialect(dialect),
+			strings.Join(columns, ", "),
+			table.QualifiedName(),
+		),
+	}
+}
+
+func invalidSchemaForeignKeyError(dialect, message string) error {
+	return &ptaherr.RenderError{
+		Dialect: dialect,
+		Err:     ptaherr.ErrInvalidSchemaDiff,
+		Message: "invalid foreign key: " + message,
+	}
+}
+
+func validateSQLServerCascadeGraph(dialect string, bindings []foreignKeyBinding) error {
+	deleteGraph := make(map[string][]string)
+	updateGraph := make(map[string][]string)
+	for _, binding := range bindings {
+		if isCascadingReferentialAction(binding.onDelete) {
+			deleteGraph[binding.target] = append(deleteGraph[binding.target], binding.owner)
+		}
+		if isCascadingReferentialAction(binding.onUpdate) {
+			updateGraph[binding.target] = append(updateGraph[binding.target], binding.owner)
+		}
+	}
+	if err := validateSQLServerCascadeActionGraph(dialect, "ON DELETE", deleteGraph); err != nil {
+		return err
+	}
+	return validateSQLServerCascadeActionGraph(dialect, "ON UPDATE", updateGraph)
+}
+
+func isCascadingReferentialAction(action string) bool {
+	return action != "" && action != "NO ACTION"
+}
+
+func validateSQLServerCascadeActionGraph(
+	dialect,
+	clause string,
+	graph map[string][]string,
+) error {
+	for start := range graph {
+		seen := map[string]struct{}{start: {}}
+		queue := []string{start}
+		for len(queue) > 0 {
+			current := queue[0]
+			queue = queue[1:]
+			for _, next := range graph[current] {
+				if _, duplicatePath := seen[next]; duplicatePath {
+					return &ptaherr.CapabilityError{
+						Dialect: dialect,
+						Feature: "SQL Server cascading referential actions",
+						Err:     ptaherr.ErrUnsupportedFeature,
+						Message: fmt.Sprintf(
+							"sqlserver does not allow %s cycles or multiple cascade paths reaching table %q",
+							clause,
+							next,
+						),
+					}
+				}
+				seen[next] = struct{}{}
+				queue = append(queue, next)
+			}
+		}
+	}
+	return nil
+}
+
+// rowTTLTables projects the schema's tables into the pairs internal/crdbttl
+// validates, so that package needs no knowledge of goschema.
+func rowTTLTables(database *schemamodel.Database) []crdbttl.TableTTL {
+	tables := make([]crdbttl.TableTTL, 0, len(database.Tables))
+	for _, table := range database.Tables {
+		tables = append(tables, crdbttl.TableTTL{Name: table.Name, RowTTL: table.RowTTL})
+	}
+	return tables
+}

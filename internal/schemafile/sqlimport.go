@@ -153,7 +153,9 @@ func loadSQLWithImports(
 	if err != nil {
 		return err
 	}
-	appendDatabase(document, own)
+	if err := appendDatabase(document, own); err != nil {
+		return err
+	}
 	for _, value := range imports {
 		resolved, err := resolveSQLImport(root, path, value)
 		if err != nil {

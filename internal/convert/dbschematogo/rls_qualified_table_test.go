@@ -4,8 +4,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -56,7 +58,7 @@ func rlsSchema(schemaName string) *catalog.Database {
 func TestConvert_EnablesRLSOnTheSchemaQualifiedTable(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(rlsSchema("app"), "")
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), rlsSchema("app"), "postgres", must.Must(builtin.New())))
 
 	c.Assert(database.RLSEnabledTables, qt.HasLen, 1)
 	c.Assert(database.RLSEnabledTables[0].Table, qt.Equals, "app.users")
@@ -75,7 +77,7 @@ func TestConvert_EnablesRLSOnTheSchemaQualifiedTable(t *testing.T) {
 func TestConvert_LeavesAnUnqualifiedRLSTableAlone(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(rlsSchema(""), "")
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), rlsSchema(""), "postgres", must.Must(builtin.New())))
 
 	c.Assert(database.RLSEnabledTables, qt.HasLen, 1)
 	c.Assert(database.RLSEnabledTables[0].Table, qt.Equals, "users")
@@ -105,7 +107,7 @@ func TestConvert_KeepsForceAndRestrictive(t *testing.T) {
 			schema.Tables[0].RLSForced = test.forced
 			schema.RLSPolicies[0].Restrictive = test.restrictive
 
-			database := dbschematogo.ConvertDBSchemaToGoSchema(schema, "")
+			database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), schema, "postgres", must.Must(builtin.New())))
 
 			c.Assert(database.RLSEnabledTables, qt.HasLen, 1)
 			c.Assert(database.RLSEnabledTables[0].Forced, qt.Equals, test.wantForced)

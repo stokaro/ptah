@@ -1,12 +1,15 @@
 package planner_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -29,7 +32,10 @@ func deleteListAdditionDiff() *difftypes.SchemaDiff {
 func TestGenerateSchemaDiffSQLStatements_AddsTheDeleteColumnList(t *testing.T) {
 	c := qt.New(t)
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(deleteListAdditionDiff(), "postgres")
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		deleteListAdditionDiff(), "postgres",
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 1)
@@ -42,7 +48,10 @@ func TestGenerateSchemaDiffSQLStatements_AddsTheDeleteColumnList(t *testing.T) {
 func TestGenerateSchemaDiffSQLStatements_RefusesTheDeleteColumnListOnMySQL(t *testing.T) {
 	c := qt.New(t)
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(deleteListAdditionDiff(), "mysql")
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		deleteListAdditionDiff(), "mysql",
+	)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, `.*mysql does not support a column list on ON DELETE SET NULL.*`)

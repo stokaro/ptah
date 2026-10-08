@@ -1,14 +1,17 @@
 package planner_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -45,8 +48,11 @@ func selfReferenceTable(columns, foreignColumns []string, foreignTable string) *
 // key, which is the number the object should appear as.
 func countForeignKeyStatements(c *qt.C, desired *schemamodel.Database, dialect string) (int, string) {
 	c.Helper()
-	diff := schemadiff.CompareWithDialect(desired, &catalog.Database{}, dialect)
-	sql, err := planner.GenerateSchemaDiffSQL(diff, dialect)
+	diff := must.Must(schemadiff.CompareWithDialect(c.Context(), desired, &catalog.Database{}, dialect, must.Must(builtin.New())))
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, dialect,
+	)
 	c.Assert(err, qt.IsNil)
 	count := 0
 	for line := range strings.SplitSeq(sql, "\n") {

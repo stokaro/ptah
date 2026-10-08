@@ -4,11 +4,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -89,7 +91,7 @@ func TestCompareWithDialect_RoutineAndRelationCommentDifferenceIsAChange(t *test
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(commentedRoutines(test.declared), reportedRoutines(test.inDatabase), platform.Postgres)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), commentedRoutines(test.declared), reportedRoutines(test.inDatabase), platform.Postgres, must.Must(builtin.New())))
 
 			c.Assert(diff.ObjectCommentsChanged, qt.DeepEquals, test.want)
 		})
@@ -147,10 +149,10 @@ func TestCompareWithDatabaseInfo_RoutineCommentsFollowTheTargetsCapabilities(t *
 			c := qt.New(t)
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				commentedRoutines("new"),
+				t.Context(), commentedRoutines("new"),
 				reportedRoutines("old"),
 				catalog.ServerInfo{Dialect: test.dialect, Capabilities: test.caps},
-				nil,
+				nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -183,7 +185,7 @@ func TestCompareWithDialect_OverloadCommentNamesItsOverload(t *testing.T) {
 		},
 	}}
 
-	diff := schemadiff.CompareWithDialect(overloadedRoutines("new"), database, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), overloadedRoutines("new"), database, platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.ObjectCommentsChanged, qt.DeepEquals, []difftypes.ObjectCommentChange{
 		{Kind: difftypes.CommentedFunction, Name: "app.f", Arguments: new("a integer"), Current: "old", Desired: "new"},
@@ -199,7 +201,7 @@ func TestCompareWithDialect_RoutineCommentKeepsItsKind(t *testing.T) {
 		Language: "sql", Body: "SELECT 1", Comment: "old",
 	}}}
 
-	diff := schemadiff.CompareWithDialect(overloadedRoutines("new"), database, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), overloadedRoutines("new"), database, platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.ObjectCommentsChanged, qt.HasLen, 0)
 }

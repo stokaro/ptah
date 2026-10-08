@@ -58,6 +58,7 @@ func TestBuild_GitBaseAcceptsARepositoryReachedThroughASymlink(t *testing.T) {
 	linkedMigrations := filepath.Join(link, "migrations")
 
 	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
+		Runtime:   selectedRuntime(c),
 		Dir:       linkedMigrations,
 		DirFormat: string(migrationfile.DirFormatAtlas),
 		Dialect:   "sqlite",

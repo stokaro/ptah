@@ -22,7 +22,7 @@ import (
 // wrong shape.
 func handler(c *qt.C) http.Handler {
 	c.Helper()
-	built, err := schemaserve.Handler(schemaserve.Options{
+	built, err := schemaserve.Handler(c.Context(), schemaserve.Options{Runtime: selectedRuntime(c),
 		DatabaseURL: "postgres://unreachable.invalid:1/none?sslmode=disable",
 		Title:       "Test dashboard",
 	})
@@ -86,7 +86,7 @@ func TestHandler_SaysWhenItCannotReachTheDatabase(t *testing.T) {
 func TestHandler_RefusesWithoutADatabase(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := schemaserve.Handler(schemaserve.Options{})
+	_, err := schemaserve.Handler(c.Context(), schemaserve.Options{Runtime: selectedRuntime(c)})
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "database URL is required")
@@ -96,7 +96,7 @@ func TestHandler_RefusesWithoutADatabase(t *testing.T) {
 // JavaScript, the same way the exported document renders without any.
 func TestHandler_CarriesNoScript(t *testing.T) {
 	c := qt.New(t)
-	built, err := schemaserve.Handler(schemaserve.Options{
+	built, err := schemaserve.Handler(c.Context(), schemaserve.Options{Runtime: selectedRuntime(c),
 		DatabaseURL: "postgres://unreachable.invalid:1/none?sslmode=disable",
 		Refresh:     15_000_000_000,
 	})
@@ -115,7 +115,7 @@ func TestHandler_CarriesNoScript(t *testing.T) {
 // dashboard that printed one would put it in every screenshot of itself.
 func TestHandler_KeepsCredentialsOffThePage(t *testing.T) {
 	c := qt.New(t)
-	built, err := schemaserve.Handler(schemaserve.Options{
+	built, err := schemaserve.Handler(c.Context(), schemaserve.Options{Runtime: selectedRuntime(c),
 		DatabaseURL: "postgres://someone:hunter2@db.invalid:5432/app?sslmode=disable",
 	})
 	c.Assert(err, qt.IsNil)
@@ -185,7 +185,7 @@ func TestHandler_RefusesARegistrySchemaSource_FailurePath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			built, err := schemaserve.Handler(schemaserve.Options{
+			built, err := schemaserve.Handler(c.Context(), schemaserve.Options{Runtime: selectedRuntime(c),
 				DatabaseURL: "postgres://unreachable.invalid:1/none?sslmode=disable",
 				SchemaFiles: row.schemaFiles,
 			})
@@ -214,7 +214,7 @@ func TestHandler_AcceptsALocalSchemaFile_HappyPath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			built, err := schemaserve.Handler(schemaserve.Options{
+			built, err := schemaserve.Handler(c.Context(), schemaserve.Options{Runtime: selectedRuntime(c),
 				DatabaseURL: "postgres://unreachable.invalid:1/none?sslmode=disable",
 				SchemaFiles: row.schemaFiles,
 			})
@@ -237,7 +237,7 @@ func writeSchemaFile(c *qt.C, dir, body string) string {
 // every table the file declares is drift the page has to show.
 func fileBackedHandler(c *qt.C, schemaFile string) http.Handler {
 	c.Helper()
-	built, err := schemaserve.Handler(schemaserve.Options{
+	built, err := schemaserve.Handler(c.Context(), schemaserve.Options{Runtime: selectedRuntime(c),
 		DatabaseURL: atlasurl.SQLiteURLFromPath(filepath.Join(c.TempDir(), "app.db")),
 		SchemaFiles: []string{schemaFile},
 	})
@@ -317,7 +317,7 @@ func writeAnnotationRoot(c *qt.C, table string) string {
 func TestHandler_MergesASchemaFileWithAnAnnotationRoot_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	schemaFile := writeSchemaFile(c, c.TempDir(), "CREATE TABLE invoices (id INTEGER PRIMARY KEY);\n")
-	built, err := schemaserve.Handler(schemaserve.Options{
+	built, err := schemaserve.Handler(c.Context(), schemaserve.Options{Runtime: selectedRuntime(c),
 		DatabaseURL: atlasurl.SQLiteURLFromPath(filepath.Join(c.TempDir(), "app.db")),
 		RootDirs:    []string{writeAnnotationRoot(c, "products")},
 		SchemaFiles: []string{schemaFile},

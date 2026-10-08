@@ -3,18 +3,20 @@
 package gonative_test
 
 import (
+	"context"
 	"database/sql"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbschema/postgres"
 	"ptah.run/internal/modelast"
 	"ptah.run/migration/planner"
@@ -36,8 +38,8 @@ func TestGeneratedColumnAndPartialIndex_RoundTrip_Postgres(t *testing.T) {
 	defer func() { _, _ = db.Exec("DROP SCHEMA IF EXISTS " + schemaName + " CASCADE") }()
 
 	target := generatedPartialIndexSchema(schemaName, "lower(email)")
-	createAST := modelast.CollectDatabase(*target, platform.Postgres)
-	createSQL, err := renderer.RenderSQL(platform.Postgres, createAST.Statements...)
+	createAST := must.Must(modelast.CollectDatabase(*target, platform.Postgres))
+	createSQL, err := builtin.RenderSQL(platform.Postgres, createAST.Statements...)
 	c.Assert(err, qt.IsNil)
 	c.Assert(createSQL, qt.Contains, "GENERATED ALWAYS AS (lower(email)) STORED")
 	c.Assert(createSQL, qt.Contains, "WHERE deleted_at IS NULL")
@@ -54,12 +56,15 @@ func TestGeneratedColumnAndPartialIndex_RoundTrip_Postgres(t *testing.T) {
 	c.Assert(expressionIndex.Columns, qt.DeepEquals, []string{"\"left\"(email, 2)", "deleted_at"})
 	c.Assert(expressionIndex.Condition, qt.Equals, "(deleted_at IS NULL)")
 
-	roundTripDiff := schemadiff.CompareWithDialect(target, liveSchema, platform.Postgres)
+	roundTripDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), target, liveSchema, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(roundTripDiff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", roundTripDiff))
 
 	changed := generatedPartialIndexSchema(schemaName, "upper(email)")
-	changedDiff := schemadiff.CompareWithDialect(changed, liveSchema, platform.Postgres)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(changedDiff, platform.Postgres, planner.Options{Capabilities: capability.Postgres17()})
+	changedDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), changed, liveSchema, platform.Postgres, must.Must(builtin.New())))
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
+		changedDiff, platform.Postgres, planner.Options{Capabilities: capability.Postgres17()},
+	)
 	c.Assert(err, qt.IsNil)
 	plannedSQL := strings.Join(statements, "\n")
 	c.Assert(plannedSQL, qt.Contains, `ALTER COLUMN "email_lc" SET EXPRESSION AS (upper(email))`)

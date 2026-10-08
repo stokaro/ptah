@@ -37,8 +37,9 @@ CREATE TABLE sim_existing (
 `), qt.IsNil)
 
 	plan, err := atlasschema.PrepareApply(c.Context(), conn, atlasschema.ApplyRuntimeOptions{
-		ToURLs: []string{"file://" + schemaPath},
-		TxMode: migrator.MigrationTxModeAll,
+		Runtime: inspectFeatureRuntime(c),
+		ToURLs:  []string{"file://" + schemaPath},
+		TxMode:  migrator.MigrationTxModeAll,
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.HasChanges(), qt.IsTrue)
@@ -362,17 +363,6 @@ func TestSimulateOnDev_FailurePath(t *testing.T) {
 		})
 		c.Assert(err, qt.ErrorMatches, `connect to --dev-url: .*`)
 	})
-}
-
-// sqliteObjectCount counts the catalog entries of any type named name.
-func sqliteObjectCount(c *qt.C, dbPath, name string) int {
-	c.Helper()
-	conn := connectSQLite(c, dbPath)
-	defer dbschema.CloseAndWarn(conn)
-	var count int
-	c.Assert(conn.QueryRowContext(c.Context(),
-		"SELECT count(*) FROM sqlite_master WHERE name = ?", name).Scan(&count), qt.IsNil)
-	return count
 }
 
 // TestSimulateOnDev_RefusesADevDatabaseThatHoldsATable rehearses a plan on a

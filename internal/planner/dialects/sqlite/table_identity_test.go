@@ -1,12 +1,16 @@
 package sqlite_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -92,6 +96,7 @@ func TestRebuildCarriesAddedColumnsAcrossSchemaSpellings(t *testing.T) {
 			}
 			declared := identityRebuildSchema(test.tableSchema)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
 				declaringTheOnlyTable(diff, declared),
 
 				"sqlite",
@@ -140,7 +145,7 @@ func TestConstraintOnACreatedTableIsNotAlsoRebuilt(t *testing.T) {
 			// spelling this row is about: the diff and the constraint name the
 			// same table differently, and the planner has to see one table.
 			declared := identityRebuildSchema("")
-			creations := difftypes.TableCreationsFor(declared, "notes")
+			creations := difftypes.TableCreationsFor(declared, identifier.ForDialect("sqlite"), "notes")
 			creations[0].Name = test.addedTableName
 			diff := &difftypes.SchemaDiff{
 				TablesAdded: creations,
@@ -151,7 +156,10 @@ func TestConstraintOnACreatedTableIsNotAlsoRebuilt(t *testing.T) {
 					CheckExpression: "length(body) > 0",
 				}},
 			}
-			statements, err := planner.GenerateSchemaDiffSQLStatements(withDeclaredTable(diff, declared), "sqlite")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredTable(diff, declared), "sqlite",
+			)
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(plan, qt.Not(qt.Contains), "__ptah_rebuild_notes")

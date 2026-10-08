@@ -10,8 +10,11 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
+	"ptah.run/core/platform/capability"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/embedcatchup"
 	"ptah.run/internal/embedgen"
@@ -66,7 +69,7 @@ func TestEmbedPGOutboxE2E(t *testing.T) {
 	outbox, err := embedpg.NewOutbox(db, spec)
 	c.Assert(err, qt.IsNil)
 	store := embedpg.NewStore(db)
-	c.Assert(store.EnsureSchema(ctx), qt.IsNil)
+	c.Assert(store.EnsureSchema(ctx, must.Must(builtin.New()), capability.ForDialect(embedpg.Dialect)), qt.IsNil)
 
 	assertNothingIsCapturedBeforeInstall(c, ctx, db, outbox)
 	c.Assert(outbox.InstallForIsolatedSource(ctx), qt.IsNil)

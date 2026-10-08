@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/migration/schemadiff"
 )
@@ -51,7 +53,7 @@ func TestConvert_KeepsEveryForeignKeyOverOneColumn(t *testing.T) {
 		t.Run(order[0]+" first", func(t *testing.T) {
 			c := qt.New(t)
 
-			database := dbschematogo.ConvertDBSchemaToGoSchema(twoKeysOverOneColumn(order...), platform.Postgres)
+			database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), twoKeysOverOneColumn(order...), platform.Postgres, must.Must(builtin.New())))
 
 			column := fieldNamed(c, database, "c")
 			c.Assert(column.ForeignKeyName, qt.Equals, "ord_c_fkey")
@@ -73,7 +75,7 @@ func TestConvert_KeepsEveryForeignKeyOverOneColumn(t *testing.T) {
 func TestConvert_LeavesALoneForeignKeyToItsColumn(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(twoKeysOverOneColumn("ord_c_fkey1"), platform.Postgres)
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), twoKeysOverOneColumn("ord_c_fkey1"), platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(fieldNamed(c, database, "c").ForeignKeyName, qt.Equals, "ord_c_fkey1")
 	c.Assert(database.Constraints, qt.HasLen, 0)
@@ -86,9 +88,9 @@ func TestCompare_ADatabaseWithTwoForeignKeysOverOneColumnIsSynced(t *testing.T) 
 	c := qt.New(t)
 	live := twoKeysOverOneColumn("ord_c_fkey", "ord_c_fkey1")
 
-	diff := schemadiff.CompareWithDialect(
-		dbschematogo.ConvertDBSchemaToGoSchema(live, platform.Postgres), live, platform.Postgres,
-	)
+	diff := must.Must(schemadiff.CompareWithDialect(
+		t.Context(), must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), live, platform.Postgres, must.Must(builtin.New()))), live, platform.Postgres, must.Must(builtin.New()),
+	))
 
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
 	c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
@@ -100,11 +102,11 @@ func TestCompare_ADatabaseWithTwoForeignKeysOverOneColumnIsSynced(t *testing.T) 
 func TestCompare_ADatabaseMissingTheSecondForeignKeyIsPlannedIt(t *testing.T) {
 	c := qt.New(t)
 
-	diff := schemadiff.CompareWithDialect(
-		dbschematogo.ConvertDBSchemaToGoSchema(twoKeysOverOneColumn("ord_c_fkey", "ord_c_fkey1"), platform.Postgres),
+	diff := must.Must(schemadiff.CompareWithDialect(
+		t.Context(), must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), twoKeysOverOneColumn("ord_c_fkey", "ord_c_fkey1"), platform.Postgres, must.Must(builtin.New()))),
 		twoKeysOverOneColumn("ord_c_fkey"),
-		platform.Postgres,
-	)
+		platform.Postgres, must.Must(builtin.New()),
+	))
 
 	c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
 	c.Assert(diff.ConstraintsAdded.Names(), qt.DeepEquals, []string{"ord_c_fkey1"})

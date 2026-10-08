@@ -1,18 +1,23 @@
 package planner_test
 
 import (
+	"context"
 	"fmt"
 	"sync/atomic"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/featureplan"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mysql"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/safety"
@@ -160,7 +165,10 @@ func TestGetPlannerRejectsFactoryReturningNil(t *testing.T) {
 func TestGenerateSchemaDiffSQL_UnsupportedDialectReturnsError(t *testing.T) {
 	c := qt.New(t)
 
-	nodes, err := planner.GenerateSchemaDiffAST(&difftypes.SchemaDiff{}, "db2")
+	nodes, err := planner.GenerateSchemaDiffAST(
+		context.Background(), must.Must(builtin.New()),
+		&difftypes.SchemaDiff{}, "db2",
+	)
 	c.Assert(nodes, qt.IsNil)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
 
@@ -168,7 +176,10 @@ func TestGenerateSchemaDiffSQL_UnsupportedDialectReturnsError(t *testing.T) {
 	c.Assert(err, qt.ErrorAs, &astPlanErr)
 	c.Assert(astPlanErr.Dialect, qt.Equals, "db2")
 
-	sql, err := planner.GenerateSchemaDiffSQL(&difftypes.SchemaDiff{}, "db2")
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		&difftypes.SchemaDiff{}, "db2",
+	)
 	c.Assert(sql, qt.Equals, "")
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
 
@@ -193,7 +204,10 @@ func TestGenerateSchemaDiffSQL_PlansYDB(t *testing.T) {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			sql, err := planner.GenerateSchemaDiffSQL(diff, dialect)
+			sql, err := planner.GenerateSchemaDiffSQL(
+				context.Background(), must.Must(builtin.New()),
+				diff, dialect,
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, want)
@@ -208,7 +222,10 @@ func TestGenerateSchemaDiffAST_WrapsPlannerFailures(t *testing.T) {
 		{TableName: "users", ColumnsRemoved: difftypes.ColumnChanges{{Name: "name"}}},
 	}}
 
-	nodes, err := planner.GenerateSchemaDiffAST(diff, platform.SQLite)
+	nodes, err := planner.GenerateSchemaDiffAST(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.SQLite,
+	)
 
 	c.Assert(nodes, qt.IsNil)
 	var planErr *ptaherr.PlanError
@@ -281,7 +298,8 @@ func nextExternalPlannerDialect(prefix string) string {
 	return fmt.Sprintf("%s_%d", prefix, externalPlannerDialectSeq.Add(1))
 }
 
-func (p externalPlanner) GenerateMigrationAST(_ *difftypes.SchemaDiff,
+func (p externalPlanner) GenerateMigrationAST(
+	_ context.Context, _ featureplan.Runtime, _ *difftypes.SchemaDiff,
 ) ([]ast.Node, error) {
 	return []ast.Node{ast.NewComment("external planner")}, nil
 }
@@ -308,14 +326,17 @@ func TestGeneratedNarrowingTypeChangeIsDestructive(t *testing.T) {
 		},
 	}
 
-	diff := schemadiff.Compare(desired, database)
+	diff := must.Must(schemadiff.Compare(t.Context(), desired, database, must.Must(builtin.New())))
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified[0].Changes["type"], qt.Equals, "VARCHAR(255) -> VARCHAR(100)")
 
-	nodes, err := planner.GenerateSchemaDiffAST(diff, platform.Postgres)
+	nodes, err := planner.GenerateSchemaDiffAST(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Postgres,
+	)
 	c.Assert(err, qt.IsNil)
-	assessments, err := safety.AssessRendered(nodes, platform.Postgres)
+	assessments, err := safety.AssessRendered(c.Context(), must.Must(builtin.New()), nodes, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	c.Assert(safety.HasDestructiveAssessment(assessments), qt.IsTrue)
 }
@@ -329,9 +350,12 @@ func TestGeneratedRLSPolicyRemovalIsDestructive(t *testing.T) {
 		},
 	}
 
-	nodes, err := planner.GenerateSchemaDiffAST(diff, platform.Postgres)
+	nodes, err := planner.GenerateSchemaDiffAST(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Postgres,
+	)
 	c.Assert(err, qt.IsNil)
-	assessments, err := safety.AssessRendered(nodes, platform.Postgres)
+	assessments, err := safety.AssessRendered(c.Context(), must.Must(builtin.New()), nodes, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	c.Assert(safety.HasDestructiveAssessment(assessments), qt.IsTrue)
 	c.Assert(assessments[0].Severity, qt.Equals, safety.Destructive)
@@ -385,9 +409,12 @@ func TestGenerateMigrationAST(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			tt.diff.TablesAdded = difftypes.TableCreationsFor(tt.desired, tt.tablesAdded...)
+			tt.diff.TablesAdded = difftypes.TableCreationsFor(tt.desired, identifier.ForDialect(tt.dialect), tt.tablesAdded...)
 
-			nodes, err := planner.GenerateSchemaDiffAST(tt.diff, tt.dialect)
+			nodes, err := planner.GenerateSchemaDiffAST(
+				context.Background(), must.Must(builtin.New()),
+				tt.diff, tt.dialect,
+			)
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.IsNotNil)
 			c.Assert(nodes, qt.HasLen, 1) // Should have one CREATE TABLE statement

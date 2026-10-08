@@ -10,10 +10,11 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
@@ -70,7 +71,7 @@ func TestPostgresLiveRoutinePlannerPropertiesConverge(t *testing.T) {
   parallel  = SAFE`), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	joined := strings.Join(statements, "\n")
 	c.Assert(joined, qt.Contains, "LEAKPROOF")
@@ -86,7 +87,7 @@ func TestPostgresLiveRoutinePlannerPropertiesConverge(t *testing.T) {
 	c.Assert(live.Functions[0].Leakproof, qt.IsTrue)
 	c.Assert(live.Functions[0].Parallel, qt.Equals, "SAFE")
 
-	settled := schemadiff.CompareWithDialect(description, live, platform.Postgres)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(settled.FunctionsAdded, qt.HasLen, 0)
 	c.Assert(settled.FunctionsModified, qt.HasLen, 0)
 	c.Assert(settled.FunctionsRemoved, qt.HasLen, 0)
@@ -119,7 +120,7 @@ func TestPostgresLiveRoutineWithoutPlannerPropertiesConverges(t *testing.T) {
 	description, err := atlashcl.Parse(plannerPropertiesDocument(schemaName, `volatility = STABLE`), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 
-	statements, err := renderer.GetOrderedCreateStatements(description, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(description, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	joined := strings.Join(statements, "\n")
 	c.Assert(joined, qt.Not(qt.Contains), "LEAKPROOF")
@@ -136,7 +137,7 @@ func TestPostgresLiveRoutineWithoutPlannerPropertiesConverges(t *testing.T) {
 	// The server names the default even though the declaration did not.
 	c.Assert(live.Functions[0].Parallel, qt.Equals, "UNSAFE")
 
-	settled := schemadiff.CompareWithDialect(description, live, platform.Postgres)
+	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(settled.FunctionsModified, qt.HasLen, 0)
 }
 
@@ -164,7 +165,7 @@ func TestPostgresLiveRoutinePlannerPropertyDifferenceIsPlanned(t *testing.T) {
 
 	plain, err := atlashcl.Parse(plannerPropertiesDocument(schemaName, `volatility = STABLE`), "schema.hcl")
 	c.Assert(err, qt.IsNil)
-	statements, err := renderer.GetOrderedCreateStatements(plain, platform.Postgres)
+	statements, err := builtin.GetOrderedCreateStatements(plain, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	for _, statement := range statements {
 		_, execErr := conn.ExecContext(ctx, statement)
@@ -180,7 +181,7 @@ func TestPostgresLiveRoutinePlannerPropertyDifferenceIsPlanned(t *testing.T) {
   parallel   = SAFE`), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 
-	diff := schemadiff.CompareWithDialect(wanted, live, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), wanted, live, platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.FunctionsModified, qt.HasLen, 1)
 	c.Assert(diff.FunctionsModified[0].Changes["leakproof"], qt.Equals, "false -> true")

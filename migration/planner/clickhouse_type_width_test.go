@@ -1,14 +1,17 @@
 package planner_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/chtype"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/safety"
@@ -93,9 +96,10 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseTypeWidth_HappyPath(t *testin
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(widDeclared(test.declared), widLive(test.live), platform.ClickHouse)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), widDeclared(test.declared), widLive(test.live), platform.ClickHouse, must.Must(builtin.New())))
 
 			got, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+				context.Background(), must.Must(builtin.New()),
 				diff, platform.ClickHouse, planner.Options{Capabilities: capability.ClickHouse2411()},
 			)
 
@@ -144,9 +148,10 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseTypeWidth_SameTypePlansNothin
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(widDeclared(test.declared), widLive(test.live), platform.ClickHouse)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), widDeclared(test.declared), widLive(test.live), platform.ClickHouse, must.Must(builtin.New())))
 
 			got, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+				context.Background(), must.Must(builtin.New()),
 				diff, platform.ClickHouse, planner.Options{Capabilities: capability.ClickHouse2411()},
 			)
 
@@ -177,13 +182,14 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseTypeWidthBetweenDeclarations(
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareSchemas(
-				widDeclared(schemamodel.Field{Type: test.desired}),
+			diff := must.Must(schemadiff.CompareSchemas(
+				t.Context(), widDeclared(schemamodel.Field{Type: test.desired}),
 				widDeclared(schemamodel.Field{Type: test.current}),
-				platform.ClickHouse,
-			)
+				platform.ClickHouse, must.Must(builtin.New()),
+			))
 
 			got, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+				context.Background(), must.Must(builtin.New()),
 				diff, platform.ClickHouse, planner.Options{Capabilities: capability.ClickHouse2411()},
 			)
 
@@ -217,9 +223,10 @@ func TestGenerateSchemaDiffAST_ClickHouseTypeNarrowingIsDestructive(t *testing.T
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(widDeclared(test.declared), widLive(test.live), platform.ClickHouse)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), widDeclared(test.declared), widLive(test.live), platform.ClickHouse, must.Must(builtin.New())))
 
 			nodes, err := planner.GenerateSchemaDiffASTWithOptions(
+				context.Background(), must.Must(builtin.New()),
 				diff, platform.ClickHouse, planner.Options{Capabilities: capability.ClickHouse2411()},
 			)
 

@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -161,9 +163,9 @@ func TestConvert_FoldsDefaultPrivilegeRowsByIdentity(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			converted := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{
+			converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), &catalog.Database{
 				DefaultPrivileges: test.rows,
-			}, platform.Postgres)
+			}, platform.Postgres, must.Must(builtin.New())))
 
 			c.Assert(converted.DefaultPrivileges, qt.DeepEquals, test.want)
 		})
@@ -176,7 +178,7 @@ func TestConvert_FoldsDefaultPrivilegeRowsByIdentity(t *testing.T) {
 func TestConvert_DescribesNoDefaultPrivilegeWhenTheReadFoundNone(t *testing.T) {
 	c := qt.New(t)
 
-	converted := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{}, platform.Postgres)
+	converted := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), &catalog.Database{}, platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(converted.DefaultPrivileges, qt.DeepEquals, make([]schemamodel.DefaultPrivilege, 0))
 }

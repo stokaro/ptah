@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
@@ -111,6 +112,10 @@ The command exits non-zero if any case fails.`,
 }
 
 func run(ctx context.Context, out, notice io.Writer, opts options) error {
+	runtime, err := builtin.New()
+	if err != nil {
+		return err
+	}
 	integrityPolicy, err := migrationintegrity.Resolve()
 	if err != nil {
 		return err
@@ -200,6 +205,7 @@ func run(ctx context.Context, out, notice io.Writer, opts options) error {
 	}
 
 	report, err := dbtest.RunMigrationTest(ctx, dbtest.Options{
+		Runtime:         runtime,
 		Cases:           cases,
 		MigrationsDir:   opts.migrationsDir,
 		MigrationsFS:    migrationsFS,

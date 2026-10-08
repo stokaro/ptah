@@ -5,10 +5,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -70,16 +71,16 @@ func TestTableChecks_RenderAndCompareAgree(t *testing.T) {
 
 	desired := checksDesired("price > 0", "stock >= 0")
 
-	statements, err := renderer.GetOrderedCreateStatements(desired, "postgres")
+	statements, err := builtin.GetOrderedCreateStatements(desired, "postgres")
 	c.Assert(err, qt.IsNil)
 	sql := strings.Join(statements, "\n")
 	c.Assert(sql, qt.Contains, `CONSTRAINT "products_check" CHECK (price > 0)`)
 	c.Assert(sql, qt.Contains, `CONSTRAINT "products_check1" CHECK (stock >= 0)`)
 
-	diff := schemadiff.CompareWithDialect(desired, checksCurrent(
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, checksCurrent(
 		checkConstraint("products_check", "((price > 0))"),
 		checkConstraint("products_check1", "((stock >= 0))"),
-	), "postgres")
+	), "postgres", must.Must(builtin.New())))
 
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
 	c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
@@ -92,11 +93,11 @@ func TestTableChecks_RenderAndCompareAgree(t *testing.T) {
 func TestTableChecks_AMissingCheckIsStillReported(t *testing.T) {
 	c := qt.New(t)
 
-	diff := schemadiff.CompareWithDialect(
-		checksDesired("price > 0"),
+	diff := must.Must(schemadiff.CompareWithDialect(
+		t.Context(), checksDesired("price > 0"),
 		checksCurrent(),
-		"postgres",
-	)
+		"postgres", must.Must(builtin.New()),
+	))
 
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 1)
 	c.Assert(diff.ConstraintsAdded[0].Name, qt.Equals, "products_check")
@@ -112,11 +113,11 @@ func TestTableChecks_AMissingCheckIsStillReported(t *testing.T) {
 func TestTableChecks_ANewTableSynthesizesNothing(t *testing.T) {
 	c := qt.New(t)
 
-	diff := schemadiff.CompareWithDialect(
-		checksDesired("price > 0"),
+	diff := must.Must(schemadiff.CompareWithDialect(
+		t.Context(), checksDesired("price > 0"),
 		&catalog.Database{},
-		"postgres",
-	)
+		"postgres", must.Must(builtin.New()),
+	))
 
 	c.Assert(diff.TablesAdded, qt.HasLen, 1)
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
@@ -137,9 +138,9 @@ func TestTableChecks_AnExplicitConstraintIsCompared(t *testing.T) {
 		CheckExpression: "price > 0",
 	}}
 
-	diff := schemadiff.CompareWithDialect(desired, checksCurrent(
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, checksCurrent(
 		checkConstraint("products_price_positive", "((price > 0))"),
-	), "postgres")
+	), "postgres", must.Must(builtin.New())))
 
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
 	c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)

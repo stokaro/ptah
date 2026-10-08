@@ -4,8 +4,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -15,11 +17,11 @@ import (
 func TestConvert_CarriesUserTypeComments(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), &catalog.Database{
 		Domains:    []catalog.Domain{{Name: "d", BaseType: "integer", Comment: "domain note"}},
 		Composites: []catalog.CompositeType{{Name: "c", Fields: []catalog.CompositeField{{Name: "n", Type: "integer"}}, Comment: "composite note"}},
 		Ranges:     []catalog.Range{{Name: "r", Subtype: "integer", Comment: "range note"}},
-	}, "postgres")
+	}, "postgres", must.Must(builtin.New())))
 
 	c.Assert(database.Domains, qt.HasLen, 1)
 	c.Assert(database.Domains[0].Comment, qt.Equals, "domain note")

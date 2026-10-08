@@ -5,11 +5,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/constraintscope"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -25,7 +27,7 @@ import (
 // add-path fans out per host and restores each host's PRIOR action.
 //
 // These run the REAL generator down-path (generateDownMigrationSQL ->
-// reverseSchemaDiffWithSchema -> reverseConstraintAdditions), not a hand-rolled
+// reverseSchemaDiffWithPrior -> reverseConstraintAdditions), not a hand-rolled
 // reversal, which is the gap that let the original bug ship.
 
 // multiHostMixinGenerated builds a generated schema with an "Ownable" inline
@@ -97,12 +99,15 @@ func TestGenerateDownMigration_MultiHostMixinFKModify_RestoresPriorActionPerHost
 	gen := multiHostMixinGenerated("CASCADE", hosts...)
 	dbSchema := multiHostMixinDB("NO ACTION", hosts...)
 
-	upDiff := schemadiff.CompareWithDialect(gen, dbSchema, "postgres")
+	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		gen, dbSchema, "postgres", must.Must(builtin.New()),
+	))
 	c.Assert(upDiff.HasChanges(), qt.IsTrue)
 	c.Assert(countConstraint(upDiff.ConstraintsAdded.Names(), "fk_entity_tenant"), qt.Equals, len(hosts))
 	c.Assert(countConstraint(upDiff.ConstraintsRemoved.Names(), "fk_entity_tenant"), qt.Equals, len(hosts))
 
-	downSQL, err := generateDownMigrationSQL(upDiff, gen, dbSchema, "postgres")
+	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+		upDiff, gen, dbSchema, "postgres")
 	c.Assert(err, qt.IsNil)
 	downSQL = legacyRenderedSQL(downSQL)
 
@@ -132,9 +137,12 @@ func TestGenerateDownMigration_MultiHostMixinFKModify_MySQLRejectsDuplicateNames
 	hosts := []string{"locations", "areas", "commodities"}
 	desired := multiHostMixinGenerated("CASCADE", hosts...)
 	dbSchema := multiHostMixinDB("NO ACTION", hosts...)
-	diff := schemadiff.CompareWithDialect(desired, dbSchema, "mysql")
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		desired, dbSchema, "mysql", must.Must(builtin.New()),
+	))
 
-	downSQL, err := generateDownMigrationSQL(diff, desired, dbSchema, "mysql")
+	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+		diff, desired, dbSchema, "mysql")
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(err, qt.ErrorMatches, `error generating down migration SQL: invalid foreign key: foreign-key name "fk_entity_tenant" is duplicated in database constraint namespace`)
@@ -152,9 +160,12 @@ func TestGenerateDownMigration_MultiHostMixinFKModify_NameOnlyCounterfactual(t *
 
 	gen := multiHostMixinGenerated("CASCADE", hosts...)
 	dbSchema := multiHostMixinDB("NO ACTION", hosts...)
-	upDiff := schemadiff.CompareWithDialect(gen, dbSchema, "postgres")
+	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		gen, dbSchema, "postgres", must.Must(builtin.New()),
+	))
 
-	downSQL, err := generateDownMigrationSQL(upDiff, gen, dbSchema, "postgres")
+	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+		upDiff, gen, dbSchema, "postgres")
 	c.Assert(err, qt.IsNil)
 	downSQL = legacyRenderedSQL(downSQL)
 

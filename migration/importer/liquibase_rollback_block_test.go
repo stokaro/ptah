@@ -85,7 +85,7 @@ func TestLiquibaseRollbackBlock_HappyPath(t *testing.T) {
 			parser, err := importer.ParserByName("liquibase")
 			c.Assert(err, qt.IsNil)
 
-			parsed, err := parser.Parse(fstest.MapFS{"changelog.sql": {Data: []byte(test.content)}})
+			parsed, err := parser.Parse(c.Context(), fstest.MapFS{"changelog.sql": {Data: []byte(test.content)}})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(parsed.Migrations, qt.DeepEquals, test.want)
@@ -146,7 +146,7 @@ func TestLiquibaseRollbackBlock_FailurePath(t *testing.T) {
 			parser, err := importer.ParserByName("liquibase")
 			c.Assert(err, qt.IsNil)
 
-			parsed, err := parser.Parse(fstest.MapFS{"changelog.sql": {Data: []byte(test.content)}})
+			parsed, err := parser.Parse(c.Context(), fstest.MapFS{"changelog.sql": {Data: []byte(test.content)}})
 
 			c.Assert(err, qt.ErrorMatches, test.message)
 			c.Assert(parsed, qt.IsNil)

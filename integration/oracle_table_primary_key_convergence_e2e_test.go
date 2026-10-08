@@ -10,11 +10,13 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
 )
@@ -67,7 +69,7 @@ func TestOracleTablePrimaryKeyConvergesE2E(t *testing.T) {
 
 	diff, err := schemadiff.CompareWithDatabase(
 		ctx, conn, oraclePrimaryKeyDeclaration(table, []string{"id"}),
-		read, config.DefaultCompareOptions())
+		read, config.DefaultCompareOptions(), must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
@@ -77,7 +79,7 @@ func TestOracleTablePrimaryKeyConvergesE2E(t *testing.T) {
 	// reported, so the silence above is not a comparison that stopped looking.
 	changed, err := schemadiff.CompareWithDatabase(
 		ctx, conn, oraclePrimaryKeyDeclaration(table, []string{"code"}),
-		read, config.DefaultCompareOptions())
+		read, config.DefaultCompareOptions(), must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(changed.ConstraintsAdded, qt.Not(qt.HasLen), 0)

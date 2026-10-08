@@ -6,6 +6,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Scheme"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Table"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Topic"
@@ -14,9 +15,10 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
-	ydbschema "ptah.run/internal/dbschema/ydb"
+	"ptah.run/core/schemaext"
+	"ptah.run/dialect/ydb/ydbschema"
+	ydbreader "ptah.run/internal/dbschema/ydb"
 )
 
 // changefeedSource is a table app/t carrying feed, whose topic topic
@@ -117,13 +119,13 @@ func TestReader_Changefeed_HappyPath(t *testing.T) {
 		name  string
 		feed  *Ydb_Table.ChangefeedDescription
 		topic *Ydb_Topic.DescribeTopicResult
-		want  ast.ChangefeedSpec
+		want  ydbschema.ChangefeedSpec
 	}{
 		{name: "a changefeed declaring nothing but its mode and format", feed: updates(), topic: plainTopic(),
-			want: ast.ChangefeedSpec{Name: "feed", Mode: "UPDATES", Format: "JSON"}},
+			want: ydbschema.ChangefeedSpec{Name: "feed", Mode: "UPDATES", Format: "JSON"}},
 		{
 			name: "every option and a topic holding consumers", feed: everything, topic: busyTopic,
-			want: ast.ChangefeedSpec{
+			want: ydbschema.ChangefeedSpec{
 				Name: "feed", Mode: "NEW_AND_OLD_IMAGES", Format: "JSON", VirtualTimestamps: true,
 				ResolvedTimestamps: "PT1H30M", InitialScan: true, UserSIDs: true, SchemaChanges: true,
 				TopicMinActivePartitions: 2, TopicAutoPartitioning: true, RetentionPeriod: "PT12H",
@@ -135,13 +137,13 @@ func TestReader_Changefeed_HappyPath(t *testing.T) {
 			},
 		},
 		{name: "a changefeed still scanning the table", feed: scanning, topic: plainTopic(),
-			want: ast.ChangefeedSpec{Name: "feed", Mode: "UPDATES", Format: "JSON", InitialScan: true}},
+			want: ydbschema.ChangefeedSpec{Name: "feed", Mode: "UPDATES", Format: "JSON", InitialScan: true}},
 		{name: "a disabled changefeed", feed: disabled, topic: plainTopic(),
-			want: ast.ChangefeedSpec{Name: "feed", Mode: "UPDATES", Format: "JSON", Disabled: true}},
+			want: ydbschema.ChangefeedSpec{Name: "feed", Mode: "UPDATES", Format: "JSON", Disabled: true}},
 		{
 			name: "streaming consumers as 26.2 reports them, in the order they were added",
 			feed: updates(), topic: plainTopic(withConsumerType(consumer("zeta"), 9), withConsumerType(consumer("alpha"), 9)),
-			want: ast.ChangefeedSpec{Name: "feed", Mode: "UPDATES", Format: "JSON",
+			want: ydbschema.ChangefeedSpec{Name: "feed", Mode: "UPDATES", Format: "JSON",
 				Consumers: []ast.TopicConsumerSpec{{Name: "alpha"}, {Name: "zeta"}}},
 		},
 	}
@@ -150,15 +152,11 @@ func TestReader_Changefeed_HappyPath(t *testing.T) {
 			c := qt.New(t)
 			db := readFrom(c, changefeedSource(test.feed, test.topic))
 			c.Assert(db.Tables, qt.HasLen, 1)
-			c.Assert(db.Tables[0].Changefeeds, qt.DeepEquals, []ast.ChangefeedSpec{test.want})
-			c.Assert(db.NotDescribed.Objects, qt.Not(qt.Contains), changefeedRecord)
+			c.Assert(must.Must(ydbschema.ObservedChangefeeds(db.FeatureObjects, db.Tables[0].Schema, db.Tables[0].Name)), qt.DeepEquals, []ydbschema.ChangefeedSpec{test.want})
+			c.Assert(db.FeatureCoverage.Lookup(ydbschema.ChangefeedKind, ydbschema.ChangefeedRef("app", "t", "feed")).State, qt.Equals, schemaext.Complete)
 		})
 	}
 }
-
-// changefeedRecord is the record a changefeed Ptah does not model leaves.
-var changefeedRecord = coverage.Object{Kind: coverage.Changefeed, Name: "app.t/feed",
-	Reason: coverage.Unsupported, Provenance: coverage.Observed}
 
 // TestReader_Changefeed_RecordsWhatItDoesNotModel records, rather than reads,
 // a changefeed holding anything Ptah does not model, so a plan neither drops
@@ -219,8 +217,8 @@ func TestReader_Changefeed_RecordsWhatItDoesNotModel(t *testing.T) {
 			c := qt.New(t)
 			db := readFrom(c, changefeedSource(test.feed, test.topic))
 			c.Assert(db.Tables, qt.HasLen, 1)
-			c.Assert(db.Tables[0].Changefeeds, qt.IsNil)
-			c.Assert(db.NotDescribed.Objects, qt.Contains, changefeedRecord)
+			c.Assert(must.Must(ydbschema.ObservedChangefeeds(db.FeatureObjects, db.Tables[0].Schema, db.Tables[0].Name)), qt.IsNil)
+			c.Assert(db.FeatureCoverage.Lookup(ydbschema.ChangefeedKind, ydbschema.ChangefeedRef("app", "t", "feed")).State, qt.Equals, schemaext.Unrepresentable)
 		})
 	}
 }
@@ -234,7 +232,7 @@ func TestReader_Changefeed_FailurePath(t *testing.T) {
 		Format: Ydb_Table.ChangefeedFormat_FORMAT_JSON, State: Ydb_Table.ChangefeedDescription_STATE_ENABLED}, plainTopic())
 	source.topics = nil
 
-	db, err := ydbschema.NewReaderFromSource(source, "/local", capability.YDB262()).ReadSchemaContext(context.Background())
+	db, err := ydbreader.NewReaderFromSource(source, "/local", capability.YDB262()).ReadSchemaContext(context.Background())
 
 	c.Assert(err, qt.ErrorMatches, `YDB table /local/app/t: changefeed "feed": described topic /local/app/t/feed, which the fixture does not hold`)
 	c.Assert(db, qt.IsNil)

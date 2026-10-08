@@ -1,12 +1,14 @@
 package safety_test
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -41,7 +43,7 @@ func ExampleAssessSQL() {
 func ExampleClassifySchemaDiff() {
 	diff := &difftypes.SchemaDiff{
 		TablesAdded:   difftypes.TableChanges{{Name: "audit_log"}},
-		TablesRemoved: []string{"legacy_sessions"},
+		TablesRemoved: difftypes.TableRemovals{{Name: "legacy_sessions"}},
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_orders_status", TableName: "orders"},
 		},
@@ -84,7 +86,7 @@ func ExampleAssessRendered() {
 		},
 	}
 
-	assessments, err := safety.AssessRendered(nodes, "postgres")
+	assessments, err := safety.AssessRendered(context.Background(), must.Must(builtin.New()), nodes, "postgres")
 	if err != nil {
 		fmt.Println("render failed:", err)
 		return
@@ -125,6 +127,7 @@ func ExampleRenderText() {
 // gate on the envelope without re-deriving them from the assessments.
 func ExampleNewReport() {
 	assessments := must.Must(safety.AssessRendered(
+		context.Background(), must.Must(builtin.New()),
 		[]ast.Node{ast.NewDropTable("legacy_sessions")}, "postgres"))
 
 	report := safety.NewReport(assessments)

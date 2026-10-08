@@ -17,12 +17,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/migrationfile"
 )
 
@@ -153,7 +155,8 @@ func checkpointSampleSchema() *schemamodel.Database {
 func TestGenerateCheckpoint_UpCreatesAndDownDropsInDependencyOrder(t *testing.T) {
 	c := qt.New(t)
 
-	up, down, err := generateCheckpoint(checkpointSampleSchema(), "postgres")
+	up, down, err := generateCheckpoint(t.Context(), must.Must(builtin.New()),
+		checkpointSampleSchema(), "postgres")
 	c.Assert(err, qt.IsNil)
 
 	// Up creates every table; the referenced table (users) comes before the
@@ -172,9 +175,11 @@ func TestGenerateCheckpoint_UpCreatesAndDownDropsInDependencyOrder(t *testing.T)
 func TestGenerateCheckpoint_DeterministicSchemaContent(t *testing.T) {
 	c := qt.New(t)
 
-	up1, down1, err := generateCheckpoint(checkpointSampleSchema(), "postgres")
+	up1, down1, err := generateCheckpoint(t.Context(), must.Must(builtin.New()),
+		checkpointSampleSchema(), "postgres")
 	c.Assert(err, qt.IsNil)
-	up2, down2, err := generateCheckpoint(checkpointSampleSchema(), "postgres")
+	up2, down2, err := generateCheckpoint(t.Context(), must.Must(builtin.New()),
+		checkpointSampleSchema(), "postgres")
 	c.Assert(err, qt.IsNil)
 
 	// The generated DDL is deterministic; only the generated-on timestamp
@@ -186,10 +191,12 @@ func TestGenerateCheckpoint_DeterministicSchemaContent(t *testing.T) {
 func TestGenerateCheckpoint_NilAndEmpty(t *testing.T) {
 	c := qt.New(t)
 
-	_, _, err := generateCheckpoint(nil, "postgres")
+	_, _, err := generateCheckpoint(t.Context(), must.Must(builtin.New()),
+		nil, "postgres")
 	c.Assert(err, qt.ErrorMatches, `checkpoint schema is required`)
 
-	up, down, err := generateCheckpoint(&schemamodel.Database{}, "postgres")
+	up, down, err := generateCheckpoint(t.Context(), must.Must(builtin.New()),
+		&schemamodel.Database{}, "postgres")
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Equals, "")
 	c.Assert(down, qt.Equals, "")
@@ -208,11 +215,12 @@ func TestGenerateCheckpointWithDatabaseInfo_SQLServerCaseSensitiveVariants(t *te
 		})
 	schema := sqlServerCaseVariantIndexSchema()
 
-	up, down, err := generateCheckpointWithDatabaseInfo(schema, catalog.ServerInfo{
-		Dialect:             "sqlserver",
-		Capabilities:        capability.SQLServer2022(),
-		IdentifierSemantics: semantics,
-	})
+	up, down, err := generateCheckpointWithDatabaseInfo(t.Context(), must.Must(builtin.New()),
+		schema, catalog.ServerInfo{
+			Dialect:             "sqlserver",
+			Capabilities:        capability.SQLServer2022(),
+			IdentifierSemantics: semantics,
+		})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Contains, "CREATE INDEX [idx_email]")
@@ -224,7 +232,7 @@ func TestGenerateCheckpointWithDatabaseInfo_SQLServerCaseSensitiveVariants(t *te
 func TestGenerateCheckpoint_SQLServerUnknownRejectsCaseVariants(t *testing.T) {
 	c := qt.New(t)
 
-	_, _, err := generateCheckpoint(
+	_, _, err := generateCheckpoint(t.Context(), must.Must(builtin.New()),
 		sqlServerCaseVariantIndexSchema(),
 		"sqlserver",
 	)
@@ -245,11 +253,12 @@ func TestGenerateCheckpointWithDatabaseInfo_SQLServerTableCollision_FailurePath(
 		{StructName: "LowerUser", Schema: "dbo", Name: "users"},
 	}}
 
-	up, down, err := generateCheckpointWithDatabaseInfo(schema, catalog.ServerInfo{
-		Dialect:             "sqlserver",
-		Capabilities:        capability.SQLServer2022(),
-		IdentifierSemantics: semantics,
-	})
+	up, down, err := generateCheckpointWithDatabaseInfo(t.Context(), must.Must(builtin.New()),
+		schema, catalog.ServerInfo{
+			Dialect:             "sqlserver",
+			Capabilities:        capability.SQLServer2022(),
+			IdentifierSemantics: semantics,
+		})
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(err, qt.ErrorMatches, `.*target tables dbo\.Users and dbo\.users may have the same catalog identity.*`)
@@ -267,11 +276,12 @@ func TestGenerateCheckpointWithDatabaseInfo_SQLServerIncompleteSnapshot_FailureP
 		{StructName: "User", Schema: "dbo", Name: "users"},
 	}}
 
-	up, down, err := generateCheckpointWithDatabaseInfo(schema, catalog.ServerInfo{
-		Dialect:             "sqlserver",
-		Capabilities:        capability.SQLServer2022(),
-		IdentifierSemantics: semantics,
-	})
+	up, down, err := generateCheckpointWithDatabaseInfo(t.Context(), must.Must(builtin.New()),
+		schema, catalog.ServerInfo{
+			Dialect:             "sqlserver",
+			Capabilities:        capability.SQLServer2022(),
+			IdentifierSemantics: semantics,
+		})
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(err, qt.ErrorMatches, `.*snapshot does not resolve "users".*`)

@@ -1,0 +1,4230 @@
+// Package postgres implements the PostgreSQL SQL renderer, turning Ptah AST
+// nodes into PostgreSQL DDL including enums, sequences, roles, row-level
+// security policies, and check constraints.
+package postgres
+
+import (
+	"fmt"
+	"maps"
+	"slices"
+	"strings"
+
+	"ptah.run/core/ast"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin/internal/dialects/internal/bufwriter"
+	"ptah.run/engine/builtin/internal/dialects/internal/coordinationrefusal"
+	"ptah.run/engine/builtin/internal/dialects/internal/grantrefusal"
+	"ptah.run/engine/builtin/internal/dialects/internal/nodedispatch"
+	"ptah.run/internal/defaultlit"
+	"ptah.run/internal/notnullfill"
+	"ptah.run/internal/renderdiag"
+	"ptah.run/internal/rlspolicy"
+	"ptah.run/internal/routineargs"
+)
+
+// Renderer provides PostgreSQL-specific SQL rendering
+type Renderer struct {
+	// currentEnums stores enum names available in the current rendering context
+	currentEnums []string
+	dialect      string
+	dialectUpper string
+	caps         capability.Capabilities
+	w            bufwriter.Writer
+	// sink receives a record for each declaration this target does not emit.
+	// It is nil unless a caller asked for the report, and a nil sink drops
+	// what it is given, so rendering costs nothing when nobody is listening.
+	sink *renderdiag.Sink
+}
+
+// ReportOmissionsTo directs this renderer's omission records to sink.
+//
+// The ordered-render path builds a renderer per statement, so the sink outlives
+// the renderer rather than the other way round; that is what lets one report
+// span a schema without any state surviving a statement.
+func (r *Renderer) ReportOmissionsTo(sink *renderdiag.Sink) {
+	r.sink = sink
+}
+
+func (r *Renderer) renderUpsert(_ *ast.UpsertNode) error {
+	return unsupportedFeaturef("upsert rendering is not implemented for %s", r.dialect)
+}
+
+func (r *Renderer) renderDropIndex(node *ast.DropIndexNode) error {
+	// Build DROP INDEX statement for PostgreSQL
+	var parts []string
+	parts = append(parts, "DROP INDEX")
+
+	// CONCURRENTLY precedes IF EXISTS in PostgreSQL's grammar:
+	// DROP INDEX CONCURRENTLY [ IF EXISTS ] name.
+	if node.Concurrently && r.capabilities().Has(capability.DropIndexConcurrently) {
+		parts = append(parts, "CONCURRENTLY")
+	}
+
+	if node.IfExists && r.capabilities().Has(capability.DropIndexIfExists) {
+		parts = append(parts, "IF EXISTS")
+	}
+
+	parts = append(parts, r.qualifiedIndexTarget(node.Table, node.Name))
+
+	if node.Cascade {
+		parts = append(parts, "CASCADE")
+	}
+
+	sql := strings.Join(parts, " ") + ";"
+
+	// Add comment if provided
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	r.w.WriteLine(sql)
+	return nil
+}
+
+// renderAlterIndex writes ALTER INDEX ... RENAME TO. Ptah plans no index
+// rename, so the node comes from parsed SQL, and only PostgreSQL's reading of
+// the statement is measured: the other engines this renderer serves refuse it.
+func (r *Renderer) renderAlterIndex(node *ast.AlterIndexNode) error {
+	if r.dialect != platform.Postgres {
+		return fmt.Errorf("%w: %s: ALTER INDEX %s RENAME TO %s is written for PostgreSQL only",
+			ptaherr.ErrUnsupportedFeature, r.dialect, node.Name, node.NewName)
+	}
+	guard := ""
+	if node.IfExists {
+		guard = "IF EXISTS "
+	}
+	r.w.WriteLinef("ALTER INDEX %s%s RENAME TO %s;",
+		guard, r.escapeQualifiedIdentifier(node.Name), r.escapeIdentifier(node.NewName))
+	return nil
+}
+
+// qualifiedIndexTarget spells an index the way a statement that names the index
+// itself -- DROP INDEX, COMMENT ON INDEX -- has to spell it.
+//
+// An index lives in its table's namespace, so the qualifier is borrowed from the
+// table rather than taken from the index name. CockroachDB does not address an
+// index by a schema-qualified name at all; it addresses it as table@index.
+func (r *Renderer) qualifiedIndexTarget(table, name string) string {
+	if r.dialect == platform.CockroachDB && table != "" {
+		return r.escapeQualifiedIdentifier(table) + "@" + r.escapeIdentifier(name)
+	}
+	tableParts := splitQualifiedIdentifier(table)
+	if len(tableParts) < 2 {
+		// No table namespace to borrow, so the index name is the only place a
+		// qualifier can be, and `DROP INDEX app.idx` puts one there. Escaping
+		// it whole would emit "app.idx" as a single identifier and name an
+		// index nobody created. See [ast.DropIndexNode.Name].
+		return r.escapeQualifiedIdentifier(name)
+	}
+	schemaParts := tableParts[:len(tableParts)-1]
+	return r.escapeQualifiedIdentifier(strings.Join(schemaParts, ".")) + "." + r.escapeIdentifier(name)
+}
+
+// renderCreateSchema renders a CREATE SCHEMA statement.
+func (r *Renderer) renderCreateSchema(node *ast.CreateSchemaNode) error {
+	// Only the MySQL family has a schema-level character set and collation, so
+	// a declared one reaches the output nowhere here.
+	r.sink.RecordLostProperty(renderdiag.SchemaKind, node.Name, renderdiag.CharsetProperty, node.Charset)
+	r.sink.RecordLostProperty(renderdiag.SchemaKind, node.Name, renderdiag.CollateProperty, node.Collate)
+	guard := ""
+	if node.IfNotExists {
+		guard = " IF NOT EXISTS"
+	}
+	schemaName := r.escapeIdentifier(node.Name)
+	r.w.WriteLinef("CREATE SCHEMA%s %s;", guard, schemaName)
+	if node.Comment == "" {
+		return nil
+	}
+	// The comment is gated where the schema is not. Spanner takes the
+	// `CREATE SCHEMA` and refuses the statement after it, so emitting both
+	// unconditionally makes a migration that creates the schema fail on the
+	// line below (stokaro/ptah#2651).
+	//
+	// Skipped rather than refused, and SAID rather than dropped: the schema is
+	// what the author asked for and the comment is metadata the target cannot
+	// hold, so the DDL carries a line naming what was left out.
+	if r.refuses(capability.SchemaComments, "schema comment", node.Name) {
+		return nil
+	}
+	r.w.WriteLinef("COMMENT ON SCHEMA %s IS %s;", schemaName, r.escapeValue(node.Comment))
+	return nil
+}
+
+// renderCreateDatabase renders a CREATE DATABASE statement.
+func (r *Renderer) renderCreateDatabase(node *ast.CreateDatabaseNode) error {
+	if node.IfNotExists {
+		return fmt.Errorf("create database if not exists is not supported in PostgreSQL")
+	}
+	r.w.WriteLinef("CREATE DATABASE %s;", r.escapeIdentifier(node.Name))
+	return nil
+}
+
+// refusesUserType reports whether this target declines the kind the node
+// carries, writing the named skip when it does.
+func (r *Renderer) refusesUserType(node *ast.CreateTypeNode) bool {
+	switch node.TypeDef.(type) {
+	case *ast.EnumTypeDef:
+		return r.refuses(capability.EnumCustomType, "enum type", node.Name)
+	case *ast.CompositeTypeDef:
+		return r.refuses(capability.CompositeTypes, "composite type", node.Name)
+	case *ast.DomainTypeDef:
+		return r.refuses(capability.DomainTypes, "domain", node.Name)
+	case *ast.RangeTypeDef:
+		return r.refuses(capability.RangeTypes, "range type", node.Name)
+	default:
+		return false
+	}
+}
+
+func (r *Renderer) renderCreateType(node *ast.CreateTypeNode) error {
+	// The node's comment is the type's own, written after the statement that
+	// creates it.
+
+	// Every branch below decides against the key for its own kind. The four
+	// user-type kinds do not travel together -- CockroachDB takes a composite
+	// and refuses a domain and a range -- so one key for "user types" would
+	// tell a target it cannot do something it does (stokaro/ptah#1717).
+	//
+	// Without this the visitor emitted the same DDL for every dialect, and a
+	// CockroachDB target learned it would not be taken when the server said
+	// so, mid-apply. Every other object kind names the omission before SQL.
+	if r.refusesUserType(node) {
+		return nil
+	}
+
+	// Handle different type definitions
+	switch typeDef := node.TypeDef.(type) {
+	case *ast.EnumTypeDef:
+		// CREATE TYPE name AS ENUM (value1, value2, ...)
+		values := make([]string, len(typeDef.Values))
+		for i, value := range typeDef.Values {
+			values[i] = r.escapeValue(value)
+		}
+		target := r.escapeQualifiedIdentifier(node.Name)
+		r.w.WriteLinef("CREATE TYPE %s AS ENUM (%s);", target, strings.Join(values, ", "))
+		r.writeCreatedObjectComment(ast.CommentedType, target, node.Name, node.Comment)
+
+	case *ast.CompositeTypeDef:
+		// CREATE TYPE name AS (field1 type1, field2 type2, ...)
+		fields := make([]string, len(typeDef.Fields))
+		for i, field := range typeDef.Fields {
+			fields[i] = fmt.Sprintf("%s %s", r.escapeIdentifier(field.Name), field.Type)
+		}
+		target := r.escapeQualifiedIdentifier(node.Name)
+		r.w.WriteLinef("CREATE TYPE %s AS (%s);", target, strings.Join(fields, ", "))
+		r.writeCreatedObjectComment(ast.CommentedType, target, node.Name, node.Comment)
+
+	case *ast.DomainTypeDef:
+		// CREATE DOMAIN name AS base_type [NOT NULL] [DEFAULT value] [CHECK (constraint)]
+		sql := fmt.Sprintf("CREATE DOMAIN %s AS %s", r.escapeQualifiedIdentifier(node.Name), typeDef.BaseType)
+
+		// Add NOT NULL if specified
+		if !typeDef.Nullable {
+			sql += " NOT NULL"
+		}
+
+		// Add DEFAULT if specified
+		if typeDef.Default != nil {
+			if typeDef.Default.HasLiteral() {
+				sql += fmt.Sprintf(" DEFAULT %s",
+					r.renderTypedDefaultLiteral(typeDef.BaseType, typeDef.Default.Value))
+			} else if typeDef.Default.Expression != "" {
+				sql += fmt.Sprintf(" DEFAULT %s", typeDef.Default.Expression)
+			}
+		}
+
+		// Add CHECK constraint if specified
+		if typeDef.Check != "" {
+			sql += fmt.Sprintf(" CHECK (%s)", typeDef.Check)
+		}
+
+		r.w.WriteLinef("%s;", sql)
+		r.writeCreatedObjectComment(ast.CommentedDomain, r.escapeQualifiedIdentifier(node.Name), node.Name, node.Comment)
+
+	case *ast.RangeTypeDef:
+		// CREATE TYPE name AS RANGE (SUBTYPE = ..., [SUBTYPE_OPCLASS = ...], ...)
+		options := []string{fmt.Sprintf("SUBTYPE = %s", typeDef.Subtype)}
+		if typeDef.SubtypeOpClass != "" {
+			options = append(options, fmt.Sprintf("SUBTYPE_OPCLASS = %s", typeDef.SubtypeOpClass))
+		}
+		if typeDef.Collation != "" {
+			options = append(options, fmt.Sprintf("COLLATION = %s", typeDef.Collation))
+		}
+		if typeDef.Canonical != "" {
+			options = append(options, fmt.Sprintf("CANONICAL = %s", typeDef.Canonical))
+		}
+		if typeDef.SubtypeDiff != "" {
+			options = append(options, fmt.Sprintf("SUBTYPE_DIFF = %s", typeDef.SubtypeDiff))
+		}
+		target := r.escapeQualifiedIdentifier(node.Name)
+		r.w.WriteLinef("CREATE TYPE %s AS RANGE (%s);", target, strings.Join(options, ", "))
+		r.writeCreatedObjectComment(ast.CommentedType, target, node.Name, node.Comment)
+
+	default:
+		return fmt.Errorf("unsupported type definition: %T", typeDef)
+	}
+
+	return nil
+}
+
+func (r *Renderer) renderAlterType(node *ast.AlterTypeNode) error {
+	// Process each operation
+	for _, operation := range node.Operations {
+		switch op := operation.(type) {
+		case *ast.AddEnumValueOperation:
+			// ALTER TYPE name ADD VALUE 'new_value' [BEFORE 'existing_value' | AFTER 'existing_value']
+			sql := fmt.Sprintf("ALTER TYPE %s ADD VALUE %s", r.escapeQualifiedIdentifier(node.Name), r.escapeValue(op.Value))
+
+			if op.Before != "" {
+				sql += fmt.Sprintf(" BEFORE %s", r.escapeValue(op.Before))
+			} else if op.After != "" {
+				sql += fmt.Sprintf(" AFTER %s", r.escapeValue(op.After))
+			}
+
+			r.w.WriteLinef("%s;", sql)
+
+		case *ast.RenameEnumValueOperation:
+			// ALTER TYPE name RENAME VALUE 'old_value' TO 'new_value'
+			r.w.WriteLinef("ALTER TYPE %s RENAME VALUE %s TO %s;",
+				r.escapeQualifiedIdentifier(node.Name), r.escapeValue(op.OldValue), r.escapeValue(op.NewValue))
+
+		case *ast.RenameTypeOperation:
+			// ALTER TYPE name RENAME TO new_name
+			r.w.WriteLinef("ALTER TYPE %s RENAME TO %s;", r.escapeQualifiedIdentifier(node.Name), r.escapeIdentifier(op.NewName))
+
+		// The three domain operations below share ALTER DOMAIN rather than
+		// ALTER TYPE. PostgreSQL accepts a domain under either spelling, but
+		// only ALTER DOMAIN carries the constraint, default and NOT NULL
+		// clauses, and it is the spelling the documentation gives for a domain.
+		//
+		// They exist because the alternative was drop and recreate, which
+		// PostgreSQL refuses for any domain a column uses -- so a changed
+		// CHECK was unreachable, not merely awkward (stokaro/ptah#1717).
+		case *ast.DomainConstraintOperation, *ast.DomainDefaultOperation, *ast.DomainNotNullOperation:
+			r.writeAlterDomain(node.Name, operation)
+
+		case *ast.CompositeAttributeOperation:
+			r.writeAlterCompositeAttribute(node.Name, op)
+
+		default:
+			return fmt.Errorf("unsupported alter type operation: %T", operation)
+		}
+	}
+
+	return nil
+}
+
+// writeAlterDomain renders one in-place ALTER DOMAIN operation.
+//
+// It decides against capability.DomainTypes, the same key the CREATE is behind:
+// a target that never took the domain must not be handed an ALTER for it
+// either, and the omission is named before SQL the way every other object kind
+// decides it (stokaro/ptah#1738).
+func (r *Renderer) writeAlterDomain(name string, operation ast.TypeOperation) {
+	if r.refuses(capability.DomainTypes, "domain", name) {
+		return
+	}
+	domain := r.escapeQualifiedIdentifier(name)
+	switch op := operation.(type) {
+	case *ast.DomainConstraintOperation:
+		// A replacement is both halves of one operation. Emitting only the drop
+		// leaves the domain unconstrained; only the add leaves it constrained
+		// twice, and the second of those fails on the next apply while the
+		// first fails silently.
+		if op.DropName != "" {
+			r.w.WriteLinef("ALTER DOMAIN %s DROP CONSTRAINT %s;", domain, r.escapeIdentifier(op.DropName))
+		}
+		if op.AddExpression != "" {
+			constraint := ""
+			if op.AddName != "" {
+				constraint = fmt.Sprintf("CONSTRAINT %s ", r.escapeIdentifier(op.AddName))
+			}
+			r.w.WriteLinef("ALTER DOMAIN %s ADD %sCHECK (%s);", domain, constraint, op.AddExpression)
+		}
+	case *ast.DomainDefaultOperation:
+		if op.Expression == "" {
+			r.w.WriteLinef("ALTER DOMAIN %s DROP DEFAULT;", domain)
+			return
+		}
+		r.w.WriteLinef("ALTER DOMAIN %s SET DEFAULT %s;", domain, op.Expression)
+	case *ast.DomainNotNullOperation:
+		if op.NotNull {
+			r.w.WriteLinef("ALTER DOMAIN %s SET NOT NULL;", domain)
+			return
+		}
+		r.w.WriteLinef("ALTER DOMAIN %s DROP NOT NULL;", domain)
+	}
+}
+
+// writeAlterCompositeAttribute renders one ALTER TYPE ... ATTRIBUTE operation.
+//
+// It decides against capability.CompositeTypes, the key the CREATE is behind,
+// so a target that never took the composite is not handed an ALTER for it
+// either (stokaro/ptah#1738).
+func (r *Renderer) writeAlterCompositeAttribute(name string, op *ast.CompositeAttributeOperation) {
+	if r.refuses(capability.CompositeTypes, "composite type", name) {
+		return
+	}
+	typeName := r.escapeQualifiedIdentifier(name)
+	if op.DropName != "" {
+		r.w.WriteLinef("ALTER TYPE %s DROP ATTRIBUTE %s;", typeName, r.escapeIdentifier(op.DropName))
+	}
+	if op.AddName != "" {
+		r.w.WriteLinef("ALTER TYPE %s ADD ATTRIBUTE %s %s;",
+			typeName, r.escapeIdentifier(op.AddName), op.AddType)
+	}
+}
+
+// New creates a new PostgreSQL renderer
+func New() *Renderer {
+	return NewWithCapabilities(capability.Postgres17(), platform.Postgres)
+}
+
+// NewWithCapabilities creates a PostgreSQL-family renderer configured for a
+// concrete target capability set. The dialect label controls diagnostics and
+// GetDialect output; SQL emission is controlled by caps.
+func NewWithCapabilities(caps capability.Capabilities, dialect string) *Renderer {
+	normalized := platform.NormalizeDialect(dialect)
+	if normalized == "" {
+		normalized = platform.Postgres
+	}
+	return &Renderer{
+		currentEnums: nil,
+		dialect:      normalized,
+		dialectUpper: strings.ToUpper(normalized),
+		caps:         caps.Clone(),
+	}
+}
+
+func (r *Renderer) Dialect() string {
+	return r.dialect
+}
+
+func (r *Renderer) capabilities() capability.Capabilities {
+	return r.caps
+}
+
+func (r *Renderer) Reset() {
+	r.w.Reset()
+}
+
+func (r *Renderer) Output() string {
+	return r.w.Output()
+}
+
+// Render renders an AST node to SQL and returns the result
+func (r *Renderer) Render(node ast.Node) (string, error) {
+	r.Reset()
+	if err := node.Accept(r); err != nil {
+		return "", err
+	}
+	return r.Output(), nil
+}
+
+// VisitNode renders node.
+//
+// The switch is the renderer's whole decision table, and every concrete node
+// kind appears in it as a named case. A visitor interface with one method
+// cannot ask which kinds a renderer answers, so
+// [ptah.run/internal/astrouteguard] asks: it reads these cases and fails the
+// build when a kind is missing from them. A bare default arm would answer that
+// question with silence, so the default arm here names the concrete type and
+// never returns nil -- a node that produces no output and no error cannot be
+// told apart from one this target skips on purpose.
+//
+// The table says which handler owns a kind, never what a target does with it.
+// One Renderer serves PostgreSQL, CockroachDB, YugabyteDB and the Spanner
+// PostgreSQL interface, and where they differ the handler reads the capability
+// set, writes the skip comment and records the omission. Lifting that decision
+// into the switch would give one kind four answers and leave the table unable
+// to state any of them.
+//
+// The last case is the fragments. An alter operation, a type definition and a
+// type operation have no object of their own: the ALTER or CREATE that carries
+// one names the table or the type, and that statement's handler renders the
+// fragment inside it, so a fragment arriving alone is a caller error. A nil
+// node and a non-nil interface holding a nil pointer are the same mistake and
+// get the same error ahead of the switch, because a handler reached with either
+// dereferences it.
+//
+//nolint:gocyclo // One arm per node kind is the point: astrouteguard reads the arms out of this function body, so moving them into helpers would hide what the gate measures.
+func (r *Renderer) VisitNode(node ast.Node) error {
+	if nodedispatch.IsAbsent(node) {
+		return fmt.Errorf("%w: %s: cannot render a nil AST node",
+			ptaherr.ErrInvalidSchemaDiff, r.dialect)
+	}
+
+	switch n := node.(type) {
+	// Schemas, tables and what a table is made of.
+	case *ast.CreateSchemaNode:
+		return r.renderCreateSchema(n)
+	case *ast.CreateDatabaseNode:
+		return r.renderCreateDatabase(n)
+	case *ast.CreateTableNode:
+		return r.renderCreateTable(n)
+	case *ast.AlterTableNode:
+		if err := nodedispatch.RefuseAlterExtensions(r.GetDialect(), n); err != nil {
+			return err
+		}
+		return r.renderAlterTable(n)
+	case *ast.DropTableNode:
+		return r.renderDropTable(n)
+	case *ast.ColumnNode:
+		return r.renderColumnNode(n)
+	case *ast.ConstraintNode:
+		return r.renderConstraintNode(n)
+	case *ast.IndexNode:
+		return r.renderIndex(n)
+	case *ast.DropIndexNode:
+		return r.renderDropIndex(n)
+	case *ast.AlterIndexNode:
+		return r.renderAlterIndex(n)
+	case *ast.CommentNode:
+		return r.renderComment(n)
+	case *ast.ObjectCommentNode:
+		return r.renderObjectComment(n)
+
+	// User-defined types.
+	case *ast.EnumNode:
+		return r.renderEnum(n)
+	case *ast.CreateTypeNode:
+		return r.renderCreateType(n)
+	case *ast.AlterTypeNode:
+		return r.renderAlterType(n)
+	case *ast.DropTypeNode:
+		return r.renderDropType(n)
+
+	// Views and materialized views.
+	case *ast.CreateViewNode:
+		return r.renderCreateView(n)
+	case *ast.DropViewNode:
+		return r.renderDropView(n)
+	case *ast.CreateMaterializedViewNode:
+		return r.renderCreateMaterializedView(n)
+	case *ast.DropMaterializedViewNode:
+		return r.renderDropMaterializedView(n)
+	case *ast.RefreshMaterializedViewNode:
+		return r.renderRefreshMaterializedView(n)
+	case *ast.AlterMaterializedViewRefreshNode:
+		return r.renderAlterMaterializedViewRefresh(n)
+
+	// Functions and triggers.
+	case *ast.CreateFunctionNode:
+		return r.renderCreateFunction(n)
+	case *ast.DropFunctionNode:
+		return r.renderDropFunction(n)
+	case *ast.CreateTriggerNode:
+		return r.renderCreateTrigger(n)
+	case *ast.DropTriggerNode:
+		return r.renderDropTrigger(n)
+
+	// Sequences.
+	case *ast.CreateSequenceNode:
+		return r.renderCreateSequence(n)
+	case *ast.AlterSequenceNode:
+		return r.renderAlterSequence(n)
+	case *ast.DropSequenceNode:
+		return r.renderDropSequence(n)
+	case *ast.AlterSerialSequenceNode:
+		return nodedispatch.RefuseSerialSequence(r.dialect, n)
+	case *ast.CreateAsyncReplicationNode, *ast.AlterAsyncReplicationNode, *ast.DropAsyncReplicationNode,
+		*ast.CreateTransferNode, *ast.AlterTransferNode, *ast.DropTransferNode:
+		return nodedispatch.RefuseReplication(r.dialect, n)
+	case *ast.CreateSecretNode, *ast.AlterSecretNode, *ast.DropSecretNode:
+		return nodedispatch.RefuseSecret(r.dialect, n)
+	case *ast.CreateExternalDataSourceNode, *ast.DropExternalDataSourceNode,
+		*ast.CreateExternalTableNode, *ast.DropExternalTableNode:
+		return nodedispatch.RefuseExternal(r.dialect, n)
+
+	// Extensions.
+	case *ast.ExtensionNode:
+		return r.renderExtension(n)
+	case *ast.DropExtensionNode:
+		return r.renderDropExtension(n)
+
+	// Roles, privileges and row-level security.
+	case *ast.CreateRoleNode:
+		return r.renderCreateRole(n)
+	case *ast.AlterRoleNode:
+		return r.renderAlterRole(n)
+	case *ast.DropRoleNode:
+		return r.renderDropRole(n)
+	case *ast.GrantPrivilegeNode:
+		return r.renderGrantPrivilege(n)
+	case *ast.RevokePrivilegeNode:
+		return r.renderRevokePrivilege(n)
+	case *ast.GrantRoleMembershipNode:
+		return grantrefusal.Membership(r.dialect, r.capabilities(), "ADD "+n.Member+" TO "+n.Role)
+	case *ast.RevokeRoleMembershipNode:
+		return grantrefusal.Membership(r.dialect, r.capabilities(), "DROP "+n.Member+" FROM "+n.Role)
+	case *ast.DefaultPrivilegeNode:
+		return r.renderDefaultPrivilege(n)
+	case *ast.RevokeDefaultPrivilegeNode:
+		return r.renderRevokeDefaultPrivilege(n)
+	case *ast.CreatePolicyNode:
+		return r.renderCreatePolicy(n)
+	case *ast.DropPolicyNode:
+		return r.renderDropPolicy(n)
+	case *ast.AlterTableEnableRLSNode:
+		return r.renderAlterTableEnableRLS(n)
+	case *ast.AlterTableDisableRLSNode:
+		return r.renderAlterTableDisableRLS(n)
+	case *ast.AlterTableForceRLSNode:
+		return r.renderAlterTableForceRLS(n)
+
+	// TimescaleDB objects, which only a PostgreSQL target carrying the
+	// extension can host.
+	case *ast.CreateHypertableNode:
+		return r.renderCreateHypertable(n)
+	case *ast.CreateContinuousAggregateNode:
+		return r.renderCreateContinuousAggregate(n)
+	case *ast.DropContinuousAggregateNode:
+		return r.renderDropContinuousAggregate(n)
+
+	// Objects another engine owns. Each handler writes the skip comment and
+	// records the omission rather than failing, so the declaration is reported
+	// instead of dropped.
+	case *ast.CreateSynonymNode:
+		return r.renderCreateSynonym(n)
+	case *ast.DropSynonymNode:
+		return r.renderDropSynonym(n)
+	case *ast.CreateTopicNode, *ast.AlterTopicNode, *ast.DropTopicNode, *ast.AddTopicConsumerNode:
+		return nodedispatch.RefuseTopic(r.dialect, n)
+	case *ast.CreateResourcePoolNode, *ast.AlterResourcePoolNode, *ast.DropResourcePoolNode,
+		*ast.CreateResourcePoolClassifierNode, *ast.AlterResourcePoolClassifierNode,
+		*ast.DropResourcePoolClassifierNode:
+		return nodedispatch.RefuseResourcePool(r.dialect, n)
+	case *ast.CreateCoordinationNodeNode, *ast.AlterCoordinationNodeNode, *ast.DropCoordinationNodeNode:
+		// A coordination node is YDB's own object.
+		return coordinationrefusal.Node(r.Dialect(), n)
+	case *ast.ExtendedPropertyNode:
+		return r.renderExtendedProperty(n)
+
+	// Statements carried as text. A routine node holds the whole executable
+	// statement beside the metadata the SQL parser recovered from it, and the
+	// renderer has no structured spelling for a routine body, so the text is
+	// what it emits.
+	case *ast.RawSQLNode:
+		return r.renderRawSQL(n)
+	case *ast.MySQLRoutineNode:
+		return r.renderRoutineSQL(n.SQL)
+	case *ast.OpaqueRoutineNode:
+		return r.renderRoutineSQL(n.SQL)
+	case *ast.PostgresDoBlockNode:
+		return r.renderRoutineSQL(n.SQL)
+	case *ast.PostgresRoutineNode:
+		return r.renderRoutineSQL(n.SQL)
+	case *ast.SQLServerRoutineNode:
+		return r.renderRoutineSQL(n.SQL)
+
+	// Data manipulation, which this renderer does not generate.
+	case *ast.UpsertNode:
+		return r.renderUpsert(n)
+
+	// A list of statements.
+	case *ast.ExtensionStatement, *ast.ExtensionAlterOperation:
+		return nodedispatch.RefuseExtension(r.GetDialect(), node)
+	case *ast.StatementList:
+		return r.renderStatementList(n)
+
+	// The fragments. An alter operation, a type definition and a type
+	// operation have no table or type name of their own: the ALTER or CREATE
+	// that carries one names the object, and that statement's handler renders
+	// the fragment inside it.
+	case *ast.AddColumnOperation,
+		*ast.AddConstraintOperation,
+		*ast.ValidateConstraintOperation,
+		*ast.AddEnumValueOperation,
+		*ast.AddIndexOperation,
+		*ast.AddSkippingIndexOperation,
+		*ast.AlterGeneratedColumnExpressionOperation,
+		*ast.AlterColumnOperation,
+		*ast.CompositeAttributeOperation,
+		*ast.CompositeTypeDef,
+		*ast.DomainConstraintOperation,
+		*ast.DomainDefaultOperation,
+		*ast.DomainNotNullOperation,
+		*ast.DomainTypeDef,
+		*ast.DropColumnOperation,
+		*ast.DropConstraintOperation,
+		*ast.DropRowDeletionPolicyOperation,
+		*ast.EnumTypeDef,
+		*ast.ModifyColumnOperation,
+		*ast.ModifyTTLOperation,
+		*ast.RangeTypeDef,
+		*ast.RenameColumnOperation,
+		*ast.RenameConstraintOperation,
+		*ast.RenameIndexOperation,
+		*ast.AlterIndexVisibilityOperation,
+		*ast.SetIndexPartitioningOperation,
+		*ast.SetYDBColumnFamiliesOperation,
+		*ast.SetYDBTablePartitioningOperation,
+		*ast.ReplaceIndexOperation,
+		*ast.RenameEnumValueOperation,
+		*ast.RenameTableOperation,
+		*ast.RenameTypeOperation,
+		*ast.ResetRowTTLOperation,
+		*ast.SetCommentOperation,
+		*ast.SetConstraintCommentOperation,
+		*ast.SetRowDeletionPolicyOperation,
+		*ast.SetRowTTLOperation:
+		return r.nodeNeedsParent(node)
+
+	default:
+		return r.unknownNode(node)
+	}
+}
+
+// renderRoutineSQL emits a routine statement the SQL parser produced.
+//
+// The parser keeps a routine's name, parameters and body as fields on the node,
+// and it keeps the statement it read alongside them. A caller that wants the
+// structure reads the node; a caller that wants DDL gets the statement back
+// unchanged, which is the only spelling that survives every routine language a
+// PostgreSQL server accepts.
+func (r *Renderer) renderRoutineSQL(sql string) error {
+	return r.renderRawSQL(&ast.RawSQLNode{SQL: sql})
+}
+
+// renderStatementList renders every statement in the list, in order.
+//
+// The first failure stops the walk, so a list whose last statement is
+// unrenderable leaves a prefix in the buffer; every entry point returns the
+// error and no output, which is what keeps that prefix from reaching a caller.
+// The renderer core prepares and splits a top-level list before it reaches a
+// dialect, so what arrives here is a list another node holds.
+func (r *Renderer) renderStatementList(list *ast.StatementList) error {
+	for index, statement := range list.Statements {
+		if err := r.VisitNode(statement); err != nil {
+			return fmt.Errorf("rendering statement %d of %d: %w", index+1, len(list.Statements), err)
+		}
+	}
+	return nil
+}
+
+// nodeNeedsParent refuses a node that is part of a statement rather than one.
+//
+// Rendering nothing would be the wrong answer twice over: the caller asked for
+// DDL and would receive an empty string, and the renderer would be unable to
+// tell that outcome apart from an object it skipped on purpose.
+func (r *Renderer) nodeNeedsParent(node ast.Node) error {
+	return fmt.Errorf("%w: %s: %T is rendered by the statement that carries it, not on its own",
+		ptaherr.ErrInvalidSchemaDiff, r.dialect, node)
+}
+
+// unknownNode refuses a node kind this renderer has no arm for.
+//
+// It names the concrete type, because a reader has to know which kind went
+// unanswered, and [ptah.run/internal/astrouteguard] is what keeps this arm
+// unreachable for a kind that exists.
+func (r *Renderer) unknownNode(node ast.Node) error {
+	return fmt.Errorf("%w: %s: no rendering rule for %T",
+		ptaherr.ErrInvalidSchemaDiff, r.dialect, node)
+}
+
+// escapeValue properly escapes a string value for use in SQL
+func (r *Renderer) escapeValue(value string) string {
+	// Escape single quotes by doubling them (PostgreSQL standard)
+	escaped := strings.ReplaceAll(value, "'", "''")
+	return "'" + escaped + "'"
+}
+
+// renderDefaultLiteral quotes value only when it is not already written as a
+// literal. A default reaches the renderer either bare, the way a struct tag
+// supplies it, or already quoted, the way the SQL parser read it; escaping the
+// second form a second time changes the value it stands for. See the defaultlit
+// package.
+func (r *Renderer) renderDefaultLiteral(value string) string {
+	return defaultlit.Render(value, r.escapeValue)
+}
+
+// renderTypedDefaultLiteral renders a default in the form the column's own type
+// takes, which for a number or a boolean is no quotes at all.
+//
+// PostgreSQL forgives the quoted form -- `DEFAULT '7'` on a bigint is cast on
+// the way in and reads back as 7 -- and that forgiveness is why every literal
+// was quoted here for as long as it was. Spanner does not forgive it: measured
+// on the PGAdapter emulator v0.55.2, `DEFAULT '7'` on a bigint column is
+// `Error parsing the default value ...: Expected type INT64; found STRING`, and
+// `DEFAULT 'true'` on a boolean is the same refusal for BOOL. A quoted literal
+// is also simply wrong about what it says, on every engine here.
+//
+// This renderer serves PostgreSQL, CockroachDB, YugabyteDB and Spanner, so the
+// decision is made once, from the column's declared type rather than from the
+// dialect.
+func (r *Renderer) renderTypedDefaultLiteral(columnType, value string) string {
+	trimmed := strings.TrimSpace(value)
+	if defaultlit.IsSQLLiteral(trimmed) {
+		return trimmed
+	}
+	if bare, unquoted := bareDefaultLiteral(columnType, trimmed); unquoted {
+		return bare
+	}
+	return r.escapeValue(value)
+}
+
+// bareDefaultLiteral answers with the unquoted spelling of a default whose
+// column type takes one, and reports whether the type does.
+//
+// Anything it does not recognize keeps the quoted form, which is what every
+// default got before: a type this does not classify is not a type whose bare
+// literal syntax is known, and guessing there would produce DDL the server
+// refuses rather than DDL it merely tolerates.
+func bareDefaultLiteral(columnType, value string) (string, bool) {
+	switch base := baseTypeName(columnType); {
+	case booleanTypeNames[base]:
+		lowered := strings.ToLower(value)
+		return lowered, lowered == "true" || lowered == "false"
+	case numericTypeNames[base]:
+		return value, defaultlit.IsPlainNumber(value)
+	default:
+		return "", false
+	}
+}
+
+// baseTypeName strips a size, a precision and any array suffix, so that
+// `numeric(18,2)` classifies the same way `numeric` does.
+//
+// An array type is deliberately NOT reduced to its element: `integer[]` takes a
+// default like `{1,2}` or `ARRAY[1,2]`, neither of which is a bare number.
+func baseTypeName(columnType string) string {
+	base := strings.TrimSpace(strings.ToLower(columnType))
+	if open := strings.IndexByte(base, '('); open >= 0 {
+		base = strings.TrimSpace(base[:open])
+	}
+	return base
+}
+
+// booleanTypeNames and numericTypeNames are the types whose literals need no
+// quotes, in every spelling this renderer's engines accept.
+var (
+	booleanTypeNames = map[string]bool{"bool": true, "boolean": true}
+	numericTypeNames = map[string]bool{
+		"smallint": true, "integer": true, "int": true, "bigint": true,
+		"int2": true, "int4": true, "int8": true,
+		"decimal": true, "numeric": true,
+		"real": true, "double precision": true, "float": true,
+		"float4": true, "float8": true,
+	}
+)
+
+// escapeIdentifier safely escapes SQL identifiers (table/column names) for PostgreSQL
+func (r *Renderer) escapeIdentifier(identifier string) string {
+	// Escape double quotes by doubling them and wrap in double quotes
+	unquoted := unquoteIdentifier(identifier)
+	escaped := strings.ReplaceAll(unquoted, `"`, `""`)
+	return `"` + escaped + `"`
+}
+
+func (r *Renderer) escapeQualifiedIdentifier(identifier string) string {
+	parts := splitQualifiedIdentifier(identifier)
+	for i, part := range parts {
+		parts[i] = r.escapeIdentifier(part)
+	}
+	return strings.Join(parts, ".")
+}
+
+func (r *Renderer) escapeIdentifierList(identifiers []string) []string {
+	escaped := make([]string, len(identifiers))
+	for i, identifier := range identifiers {
+		escaped[i] = r.escapeIdentifier(identifier)
+	}
+	return escaped
+}
+
+func (r *Renderer) escapeQualifiedIdentifierList(identifiers []string) []string {
+	escaped := make([]string, len(identifiers))
+	for i, identifier := range identifiers {
+		escaped[i] = r.escapeQualifiedIdentifier(identifier)
+	}
+	return escaped
+}
+
+func (r *Renderer) escapeFunctionSignature(name, parameters string) string {
+	signature := r.escapeQualifiedIdentifier(name)
+	if parameters == "" {
+		return signature + "()"
+	}
+	return signature + "(" + parameters + ")"
+}
+
+func (r *Renderer) escapeRoleTarget(role string) string {
+	role = strings.TrimSpace(role)
+	if isPostgreSQLRoleKeyword(role) {
+		return strings.ToUpper(role)
+	}
+	return r.escapeIdentifier(role)
+}
+
+func (r *Renderer) escapeRoleTargetList(roles string) string {
+	parts := strings.Split(roles, ",")
+	for i, role := range parts {
+		parts[i] = r.escapeRoleTarget(role)
+	}
+	return strings.Join(parts, ", ")
+}
+
+func isPostgreSQLRoleKeyword(role string) bool {
+	switch strings.ToUpper(strings.TrimSpace(role)) {
+	case "PUBLIC", "CURRENT_ROLE", "CURRENT_USER", "SESSION_USER":
+		return true
+	default:
+		return false
+	}
+}
+
+func unquoteIdentifier(identifier string) string {
+	if len(identifier) >= 2 && identifier[0] == '"' && identifier[len(identifier)-1] == '"' {
+		return strings.ReplaceAll(identifier[1:len(identifier)-1], `""`, `"`)
+	}
+	return identifier
+}
+
+// splitQualifiedIdentifier splits on the dots that separate name parts while
+// leaving dots inside a double-quoted part alone. A doubled quote is SQL's
+// escape for a literal quote and does not end the quoted part.
+//
+// Each part is a SLICE of the input, never a character-by-character copy. The
+// two delimiters this scan recognizes are ASCII, and UTF-8 is self
+// synchronizing -- no byte of a multi-byte sequence is ever below 0x80 -- so a
+// byte scan can find them without decoding, and slicing hands every other byte
+// back exactly as it arrived. The previous form accumulated `string(character)`
+// from a byte, which re-encodes each byte as its own code point: `Ä` (C3 84)
+// came back out as `Ã` plus U+0084, renaming every non-ASCII object. See
+// stokaro/ptah#1352.
+//
+// Decoding to runes would fix that case and introduce another: text that is not
+// valid UTF-8 -- a Latin-1 schema file, say -- decodes to U+FFFD per bad byte
+// and would be rewritten just as silently. A splitter owes its caller the bytes
+// it was given.
+func splitQualifiedIdentifier(identifier string) []string {
+	var parts []string
+	start := 0
+	inQuotes := false
+	for i := 0; i < len(identifier); i++ {
+		switch {
+		case identifier[i] == '"' && inQuotes && i+1 < len(identifier) && identifier[i+1] == '"':
+			i++
+		case identifier[i] == '"':
+			inQuotes = !inQuotes
+		case identifier[i] == '.' && !inQuotes:
+			parts = append(parts, identifier[start:i])
+			start = i + 1
+		}
+	}
+	return append(parts, identifier[start:])
+}
+
+// GetDialect returns the database dialect (alias for Dialect for compatibility)
+func (r *Renderer) GetDialect() string {
+	return r.Dialect()
+}
+
+// GetOutput returns the current generated SQL output (alias for Output for compatibility)
+func (r *Renderer) GetOutput() string {
+	return r.Output()
+}
+
+// unloggedKeyword returns the word that goes between CREATE and TABLE for a
+// table whose writes skip the write-ahead log, and the empty string otherwise.
+//
+// One function serves both write sites -- the column-list form and the AS
+// SELECT form -- because a keyword added to one and forgotten in the other
+// renders a table that is logged on a path nobody looked at.
+func unloggedKeyword(node *ast.CreateTableNode) string {
+	if node.Unlogged {
+		return " UNLOGGED"
+	}
+	return ""
+}
+
+// renderCreateTable renders CREATE TABLE with PostgreSQL-specific handling
+func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
+	// This target writes the identity clauses, UNIQUE, and -- where the server
+	// persists one -- the name on a NOT NULL, refusing the name rather than
+	// dropping it where it does not. What it has no clause for is the MySQL
+	// family's ON UPDATE and a per-column character set, and it renders no
+	// COLLATE even though the server has one.
+	for _, column := range node.Columns {
+		r.sink.RecordLostColumnProperties(
+			renderdiag.ColumnName(node.Name, column.Name),
+			renderdiag.ColumnProperties{
+				Charset:          column.Charset,
+				Collate:          column.Collate,
+				UpdateExpression: column.UpdateExpression,
+				AutoIncrement:    column.AutoInc && !generatesItsOwnValues(column),
+				// The one remedy in this group. It matters more than it looks:
+				// the table-level AUTO_INCREMENT option already tells the
+				// author to move the start onto identity_start, and on a column
+				// rendered as a plain integer that is advice about a key this
+				// target was not generating at all (stokaro/ptah#2969).
+				AutoIncrementRemedy: "declare the column type as SERIAL or BIGSERIAL, " +
+					"or give it an identity clause with identity_generation",
+			},
+		)
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s TABLE: %s (%s) --", r.dialectUpper, node.Name, node.Comment)
+	} else {
+		r.w.WriteLinef("-- %s TABLE: %s --", r.dialectUpper, node.Name)
+	}
+
+	guard := ""
+	if node.IfNotExists {
+		guard = " IF NOT EXISTS"
+	}
+
+	if node.SelectBody != "" {
+		return r.visitCreateTableAsSelect(node, guard)
+	}
+
+	// The lines are rendered before the CREATE TABLE header so that a foreign
+	// key this target cannot host is named on its own line rather than left as
+	// a hole in the column list.
+	lines, refused, err := r.renderCreateTableLines(node)
+	if err != nil {
+		return err
+	}
+	for _, name := range refused {
+		r.writeObjectSkipped(foreignKeyConstraintKind, name)
+	}
+	r.writeTableOptionsSkipped(node.Name, node.Options)
+
+	r.w.WriteLinef("CREATE%s TABLE%s %s (", unloggedKeyword(node), guard, r.escapeQualifiedIdentifier(node.Name))
+	for i, line := range lines {
+		if i == len(lines)-1 {
+			r.w.WriteLine(line) // Last line without comma
+		} else {
+			r.w.WriteLinef("%s,", line)
+		}
+	}
+
+	r.w.Write(")")
+
+	if node.Partition != nil {
+		partition, err := r.renderPartition(node.Partition)
+		if err != nil {
+			return err
+		}
+		r.w.Write(" ")
+		r.w.Write(partition)
+	}
+
+	// Row-level TTL is a storage parameter and takes the WITH position; the
+	// table options the node carries are named above the statement instead,
+	// because this target renders none of them (see writeTableOptionsSkipped),
+	// and a TTL is refused on a target that lacks the capability rather than
+	// filtered out of a map (stokaro/ptah#1027).
+	rowTTL, err := r.renderRowTTL(node)
+	if err != nil {
+		return err
+	}
+	r.w.Write(rowTTL)
+
+	// The row deletion policy is a clause rather than a storage parameter, so
+	// it follows the WITH position rather than sharing it.
+	rowDeletionPolicy, err := r.renderRowDeletionPolicy(node)
+	if err != nil {
+		return err
+	}
+	r.w.Write(rowDeletionPolicy)
+
+	// The author's own raw tail closes the statement. It goes last because it
+	// is unparsed text: nothing here knows which clause it is, so there is no
+	// position to interleave it with (stokaro/ptah#2590).
+	r.writeCustomSQL(node)
+
+	r.w.WriteLine(";")
+	r.w.WriteLine("")
+	r.renderTableComments(node)
+
+	return nil
+}
+
+// renderTableComments writes the comments a table and its columns carry.
+//
+// PostgreSQL has no inline COMMENT clause -- MySQL does, which is why the
+// MySQL renderer needs none of this -- so a comment is its own statement and
+// has to follow the table that owns it.
+//
+// Without them a comment reached the renderer and left as a `-- POSTGRES
+// TABLE: … (…)` header, which is a decoration for whoever reads the plan and
+// nothing the server stores. So `schema inspect` described a commented
+// database, the document carried the comment, and applying it produced a
+// database with no comments on it -- silently, because the comparison reads
+// both sides the same way and answered `Schema is synced` (stokaro/ptah#2101).
+func (r *Renderer) renderTableComments(node *ast.CreateTableNode) {
+	table := r.escapeQualifiedIdentifier(node.Name)
+	if node.Comment != "" {
+		r.w.WriteLinef("COMMENT ON TABLE %s IS %s;", table, r.escapeValue(node.Comment))
+	}
+	for _, column := range node.Columns {
+		if column.Comment == "" {
+			continue
+		}
+		r.w.WriteLinef("COMMENT ON COLUMN %s.%s IS %s;",
+			table, r.escapeIdentifier(column.Name), r.escapeValue(column.Comment))
+	}
+	for _, constraint := range node.Constraints {
+		r.writeConstraintComment(node.Name, constraint)
+	}
+	if node.Comment != "" ||
+		slices.ContainsFunc(node.Columns, columnHasComment) ||
+		slices.ContainsFunc(node.Constraints, constraintHasComment) {
+		r.w.WriteLine("")
+	}
+}
+
+// columnHasComment reports whether a column carries one, for the blank line the
+// block above ends with.
+func columnHasComment(column *ast.ColumnNode) bool {
+	return column.Comment != ""
+}
+
+// writeConstraintComment writes COMMENT ON CONSTRAINT for a constraint that
+// carries one, and nothing for a constraint that does not.
+func (r *Renderer) writeConstraintComment(table string, constraint *ast.ConstraintNode) {
+	if constraint == nil || !constraintHasComment(constraint) {
+		return
+	}
+	r.writeSetConstraintComment(table, constraint.Name, constraint.Comment)
+}
+
+// writeSetConstraintComment sets the comment of one constraint of table, with
+// NULL for none, or names the comment it left out where the target does not
+// store a constraint's comment. The Spanner interface answers `Unknown
+// statement` to COMMENT ON CONSTRAINT, so writing it there would fail the
+// whole plan for a comment (stokaro/ptah#3678).
+func (r *Renderer) writeSetConstraintComment(table, constraint, comment string) {
+	if r.refuses(capability.ConstraintComments, "constraint comment", constraint+" on "+table) {
+		return
+	}
+	r.w.WriteLinef("COMMENT ON CONSTRAINT %s ON %s IS %s;",
+		r.escapeIdentifier(constraint),
+		r.escapeQualifiedIdentifier(table),
+		r.commentLiteral(comment))
+}
+
+// constraintHasComment reports whether a constraint carries one that can be
+// addressed.
+//
+// COMMENT ON CONSTRAINT names the constraint, so an unnamed one has nothing to
+// address and is skipped rather than guessed at: the server's generated name is
+// not knowable from here, and a comment written onto the wrong constraint is
+// worse than one not written at all.
+func constraintHasComment(constraint *ast.ConstraintNode) bool {
+	return constraint.Comment != "" && constraint.Name != ""
+}
+
+// writeCustomSQL writes the raw SQL tail the author attached to CREATE TABLE,
+// preceded by one space, and writes nothing for a table declaring none.
+//
+// The text is emitted verbatim. Ptah does not parse it, so there is nothing to
+// validate it against and nothing to normalize -- see
+// [ptah.run/core/ast.CreateTableNode.CustomSQL].
+func (r *Renderer) writeCustomSQL(node *ast.CreateTableNode) {
+	if custom := strings.TrimSpace(node.CustomSQL); custom != "" {
+		r.w.Write(" " + custom)
+	}
+}
+
+func (r *Renderer) visitCreateTableAsSelect(node *ast.CreateTableNode, guard string) error {
+	if len(node.Columns) > 0 || len(node.Constraints) > 0 {
+		return fmt.Errorf("postgres: create table as select with explicit column definitions is not supported")
+	}
+
+	r.w.Writef("CREATE%s TABLE%s %s", unloggedKeyword(node), guard, r.escapeQualifiedIdentifier(node.Name))
+	// A raw tail belongs to the table, so it precedes the AS the query hangs
+	// off. No producer builds a node carrying both today, and writing it here
+	// is what keeps that from becoming a silent drop if one does.
+	r.writeCustomSQL(node)
+	r.w.WriteLine(" AS")
+	r.w.WriteLine(strings.TrimSpace(node.SelectBody))
+	r.w.WriteLine(";")
+	r.w.WriteLine("")
+	return nil
+}
+
+// renderCreateTableLines renders the body of a CREATE TABLE and, separately,
+// the identities of the foreign keys this target cannot host. The caller names
+// those on their own lines; returning them rather than writing them keeps the
+// skip comments out of the parenthesized column list.
+func (r *Renderer) renderCreateTableLines(node *ast.CreateTableNode) (lines, refused []string, err error) {
+	lines = make([]string, 0, len(node.Columns)+len(node.Constraints))
+	for _, column := range node.Columns {
+		line, err := r.renderColumn(column)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error rendering column %s: %w", column.Name, err)
+		}
+		lines = append(lines, line)
+	}
+
+	for _, constraint := range node.Constraints {
+		line, err := r.renderConstraint(constraint)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error rendering constraint: %w", err)
+		}
+		if line == "" {
+			refused = append(refused, foreignKeyIdentity(constraint))
+			continue
+		}
+		lines = append(lines, line)
+	}
+
+	return r.appendColumnForeignKeyLines(lines, refused, node.Columns)
+}
+
+func (r *Renderer) renderPartition(partition *ast.PartitionSpec) (string, error) {
+	partitionType := strings.ToUpper(strings.TrimSpace(partition.Type))
+	if partitionType == "" {
+		return "", fmt.Errorf("postgres partition requires type")
+	}
+	if len(partition.Parts) == 0 {
+		return "", fmt.Errorf("postgres partition requires at least one key")
+	}
+	parts := make([]string, 0, len(partition.Parts))
+	for _, part := range partition.Parts {
+		switch {
+		case part.Name != "" && part.Expr != "":
+			return "", fmt.Errorf("postgres partition key cannot set both column and expression")
+		case part.Name != "":
+			parts = append(parts, r.escapeIdentifier(part.Name))
+		case part.Expr != "":
+			parts = append(parts, renderPartitionExpression(part.Expr))
+		default:
+			return "", fmt.Errorf("postgres partition key cannot be empty")
+		}
+	}
+	return fmt.Sprintf("PARTITION BY %s (%s)", partitionType, strings.Join(parts, ", ")), nil
+}
+
+func renderPartitionExpression(expr string) string {
+	expr = strings.TrimSpace(expr)
+	if strings.HasPrefix(expr, "(") && strings.HasSuffix(expr, ")") {
+		return expr
+	}
+	return "(" + expr + ")"
+}
+
+func (r *Renderer) appendColumnForeignKeyLines(
+	lines, refused []string,
+	columns []*ast.ColumnNode,
+) (outLines, outRefused []string, err error) {
+	for _, column := range columns {
+		if column.ForeignKey == nil {
+			continue
+		}
+		constraint := columnForeignKeyConstraint(column)
+		line, err := r.renderConstraint(constraint)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error rendering foreign key constraint: %w", err)
+		}
+		// Appending an empty line here anyway puts a blank entry between two
+		// commas inside the column list of a target that cannot host foreign
+		// keys.
+		if line == "" {
+			refused = append(refused, foreignKeyIdentity(constraint))
+			continue
+		}
+		lines = append(lines, line)
+	}
+	return lines, refused, nil
+}
+
+// columnForeignKeyConstraint is the table constraint a column's foreign key is
+// written as. The whole reference is carried: a copy that picked fields left
+// the MATCH type, enforcement and deferral behind, and the key was built
+// without them.
+func columnForeignKeyConstraint(column *ast.ColumnNode) *ast.ConstraintNode {
+	reference := *column.ForeignKey
+	reference.Columns = slices.Clone(column.ForeignKey.Columns)
+	reference.OnDeleteColumns = slices.Clone(column.ForeignKey.OnDeleteColumns)
+	return &ast.ConstraintNode{
+		Type:      ast.ForeignKeyConstraint,
+		Name:      reference.Name,
+		Columns:   []string{column.Name},
+		Reference: &reference,
+	}
+}
+
+// notEnforcedClauses is the clause that follows a constraint, keyed by whether it is
+// NOT ENFORCED: kept by the server and not checked.
+var notEnforcedClauses = map[bool]string{true: " NOT ENFORCED", false: ""}
+
+// writeAddConstraint writes one ALTER TABLE ... ADD CONSTRAINT and the comment
+// that belongs to it.
+func (r *Renderer) writeAddConstraint(table string, constraint *ast.ConstraintNode) error {
+	constraintLine, err := r.renderConstraint(constraint)
+	if err != nil {
+		return fmt.Errorf("error rendering add constraint: %w", err)
+	}
+	if constraintLine == "" {
+		r.writeObjectSkipped(foreignKeyConstraintKind, foreignKeyIdentity(constraint))
+		return nil
+	}
+	// Remove the leading spaces from constraint rendering for ALTER
+	constraintLine = strings.TrimPrefix(constraintLine, "  ")
+	r.w.WriteLinef("ALTER TABLE %s ADD %s%s;",
+		r.escapeQualifiedIdentifier(table), constraintLine, r.notValidClause(constraint))
+	// The comment is a separate statement here for the same reason it is after
+	// CREATE TABLE, and it has to be written on BOTH paths. Measured on
+	// PostgreSQL 18: `schema apply` reaches an existing table through ALTER
+	// rather than CREATE, so a fix that taught only the CREATE path left the
+	// comment out of every applied database while `schema render` printed it.
+	r.writeConstraintComment(table, constraint)
+	return nil
+}
+
+// notValidClause renders the ` NOT VALID` suffix an added constraint asks for,
+// and is empty when it asks for nothing.
+//
+// Adding a constraint NOT VALID leaves the rows already in the table
+// unchecked, so it is half of a pair: the other half is a
+// [ast.ValidateConstraintOperation] in a later transaction, whose scan takes a
+// weaker lock than the one the plain ADD CONSTRAINT holds. A target without
+// the grammar records the loss and writes the plain form, which is correct and
+// takes the stronger lock.
+func (r *Renderer) notValidClause(constraint *ast.ConstraintNode) string {
+	if constraint == nil || !constraint.NotValid {
+		return ""
+	}
+	if !r.capabilities().Has(capability.AddConstraintNotValid) {
+		r.sink.RecordLostUnvalidatedConstraint(constraint.Name)
+		return ""
+	}
+	return " NOT VALID"
+}
+
+// addColumnClause is the ADD COLUMN keyword pair, guarded when the operation
+// asks for IF NOT EXISTS.
+func addColumnClause(op *ast.AddColumnOperation) string {
+	if op.IfNotExists {
+		return "ADD COLUMN IF NOT EXISTS"
+	}
+	return "ADD COLUMN"
+}
+
+// renderAlterTable renders PostgreSQL-specific ALTER TABLE statements
+func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
+	r.w.WriteLine("-- ALTER statements: --")
+
+	for _, operation := range node.Operations {
+		switch op := operation.(type) {
+		case *ast.AddColumnOperation:
+			line, err := r.renderColumn(op.Column)
+			if err != nil {
+				return fmt.Errorf("error rendering add column: %w", err)
+			}
+			// Remove the leading spaces from column rendering for ALTER
+			line = strings.TrimPrefix(line, "  ")
+			r.w.WriteLinef("ALTER TABLE %s %s %s;", r.escapeQualifiedIdentifier(node.Name), addColumnClause(op), line)
+		case *ast.AddConstraintOperation:
+			if err := r.writeAddConstraint(node.Name, op.Constraint); err != nil {
+				return err
+			}
+		case *ast.ValidateConstraintOperation:
+			r.w.WriteLinef("ALTER TABLE %s VALIDATE CONSTRAINT %s;",
+				r.escapeQualifiedIdentifier(node.Name), r.escapeIdentifier(op.ConstraintName))
+		case *ast.DropConstraintOperation:
+			dropSQL := fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT", r.escapeQualifiedIdentifier(node.Name))
+			if op.IfExists {
+				dropSQL += " IF EXISTS"
+			}
+			dropSQL += fmt.Sprintf(" %s", r.escapeIdentifier(op.ConstraintName))
+			r.w.WriteLinef("%s;", dropSQL)
+		case *ast.DropColumnOperation, *ast.AlterColumnOperation:
+			// One arm for both, so this switch keeps its complexity budget;
+			// writeColumnOperation re-selects between them.
+			r.writeColumnOperation(node.Name, operation)
+		case *ast.ModifyColumnOperation:
+			// PostgreSQL uses different syntax for modifying columns
+			r.renderPostgreSQLModifyColumn(node.Name, op)
+		case *ast.AlterGeneratedColumnExpressionOperation:
+			if !r.capabilities().Has(capability.AlterGeneratedColumnExpression) {
+				// Name the capability, not the version. The gate is the
+				// capability set, and the set says no on targets whose version
+				// number says nothing about it: a PostgreSQL-compatible engine,
+				// a managed provider that withholds the statement, a preset
+				// composed with .With(..., false). The release that added it
+				// stays in the sentence as the reason, not as the verdict.
+				r.w.WriteLinef(
+					"-- %s: ALTER COLUMN SET EXPRESSION requires target capability %s, unavailable on this target (PostgreSQL added it in 17); generated column %q was not changed.",
+					r.dialectUpper,
+					capability.AlterGeneratedColumnExpression,
+					op.ColumnName,
+				)
+				continue
+			}
+			expression := strings.TrimSpace(op.Expression)
+			if expression == "" {
+				return fmt.Errorf("postgres: generated column %q has empty expression", op.ColumnName)
+			}
+			r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET EXPRESSION AS (%s);",
+				r.escapeQualifiedIdentifier(node.Name),
+				r.escapeIdentifier(op.ColumnName),
+				expression,
+			)
+		case *ast.RenameColumnOperation, *ast.RenameTableOperation:
+			// Both renames share one arm so this switch keeps its complexity
+			// budget, the way the two TTL arms below already do; writeRename
+			// re-selects between them.
+			r.writeRename(node, operation)
+		case *ast.AddSkippingIndexOperation, *ast.ModifyTTLOperation:
+			// Two ClickHouse-specific constructs with no PostgreSQL equivalent,
+			// sharing one arm so this switch keeps its complexity budget. The
+			// ClickHouse table TTL is a different feature from the CockroachDB
+			// row-level TTL the next arm carries: that one is a column
+			// expression on a MergeTree table, this one a set of storage
+			// parameters.
+			r.writeClickHouseOnlyOperation(operation)
+		case *ast.SetRowTTLOperation, *ast.ResetRowTTLOperation,
+			*ast.SetRowDeletionPolicyOperation, *ast.DropRowDeletionPolicyOperation:
+			// Every row-expiry operation shares one branch so this switch keeps
+			// its complexity budget; writeRowExpiryOperation re-selects among
+			// them, which is a type switch of its own rather than four arms
+			// here (stokaro/ptah#1027, stokaro/ptah#2236).
+			if err := r.writeRowExpiryOperation(node, operation); err != nil {
+				return err
+			}
+		case *ast.SetCommentOperation, *ast.SetConstraintCommentOperation, *ast.RenameConstraintOperation,
+			*ast.AlterIndexVisibilityOperation:
+			// Each renders a complete statement of its own rather than an
+			// ALTER TABLE clause, and they share one branch for the same reason
+			// the row-expiry operations above do: this switch has a complexity
+			// budget, and writeStandaloneOperation re-selects between them
+			// (stokaro/ptah#2161).
+			if err := r.writeStandaloneOperation(node.Name, operation); err != nil {
+				return err
+			}
+		default:
+			return unsupportedFeaturef("%s: this renderer has no ALTER TABLE spelling for %T", r.dialect, operation)
+		}
+	}
+
+	r.w.WriteLine("")
+
+	return nil
+}
+
+// writeColumnOperation renders a DROP COLUMN or one ALTER COLUMN action.
+func (r *Renderer) writeColumnOperation(tableName string, operation ast.AlterOperation) {
+	table := r.escapeQualifiedIdentifier(tableName)
+	switch op := operation.(type) {
+	case *ast.DropColumnOperation:
+		dropSQL := fmt.Sprintf("ALTER TABLE %s DROP COLUMN", table)
+		if op.IfExists {
+			dropSQL += " IF EXISTS"
+		}
+		dropSQL += " " + r.escapeIdentifier(op.ColumnName)
+		if op.Cascade {
+			dropSQL += " CASCADE"
+		}
+		r.w.WriteLinef("%s;", dropSQL)
+	case *ast.AlterColumnOperation:
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s %s;", table, r.escapeIdentifier(op.ColumnName), r.alterColumnAction(op))
+	}
+}
+
+// alterColumnAction spells the action of one ALTER COLUMN clause.
+func (r *Renderer) alterColumnAction(op *ast.AlterColumnOperation) string {
+	switch op.Action {
+	case ast.AlterColumnSetDefault:
+		if op.Default != nil && op.Default.HasLiteral() {
+			return "SET DEFAULT " + r.renderDefaultLiteral(op.Default.Value)
+		}
+		if op.Default != nil {
+			return "SET DEFAULT " + op.Default.Expression
+		}
+		return "DROP DEFAULT"
+	case ast.AlterColumnSetType:
+		clause := "TYPE " + op.Type
+		if op.Using != "" {
+			clause += " USING " + op.Using
+		}
+		return clause
+	default:
+		return string(op.Action)
+	}
+}
+
+// writeRename renders either rename PostgreSQL accepts on ALTER TABLE.
+//
+// PostgreSQL has supported `ALTER TABLE x RENAME COLUMN old TO new` for a long
+// time, so both forms are emitted unconditionally.
+func (r *Renderer) writeRename(node *ast.AlterTableNode, operation ast.AlterOperation) {
+	table := r.escapeQualifiedIdentifier(node.Name)
+	switch op := operation.(type) {
+	case *ast.RenameColumnOperation:
+		r.w.WriteLinef("ALTER TABLE %s RENAME COLUMN %s TO %s;",
+			table, r.escapeIdentifier(op.OldName), r.escapeIdentifier(op.NewName))
+	case *ast.RenameTableOperation:
+		r.w.WriteLinef("ALTER TABLE %s RENAME TO %s;", table, r.escapeIdentifier(op.NewName))
+	}
+}
+
+// writeSetComment renders a comment transition as PostgreSQL spells it: a
+// statement of its own, outside ALTER TABLE.
+//
+// An empty comment becomes `IS NULL` rather than `IS ”`. PostgreSQL stores
+// them the same way, but only NULL is what the catalog reports for an object
+// with no comment, so writing the empty string would leave a comment the
+// reader brings back as absent and the comparison plans again on every run
+// (stokaro/ptah#2168).
+func (r *Renderer) writeSetComment(table string, op *ast.SetCommentOperation) {
+	target := r.escapeQualifiedIdentifier(table)
+	kind := "TABLE"
+	if op.Column != "" {
+		kind = "COLUMN"
+		target += "." + r.escapeIdentifier(op.Column)
+	}
+	r.w.WriteLinef("COMMENT ON %s %s IS %s;", kind, target, r.commentLiteral(op.Comment))
+}
+
+// writeStandaloneOperation renders an operation that is a statement in its own
+// right rather than a clause of the surrounding ALTER TABLE.
+func (r *Renderer) writeStandaloneOperation(table string, operation ast.AlterOperation) error {
+	switch op := operation.(type) {
+	case *ast.SetCommentOperation:
+		r.writeSetComment(table, op)
+	case *ast.SetConstraintCommentOperation:
+		r.writeSetConstraintComment(table, op.Constraint, op.Comment)
+	case *ast.RenameConstraintOperation:
+		r.writeRenameConstraint(table, op)
+	case *ast.AlterIndexVisibilityOperation:
+		return r.writeIndexVisibility(table, op)
+	}
+	return nil
+}
+
+// writeIndexVisibility shows or hides an index from the optimizer in place.
+//
+// CockroachDB is the one engine of this family with such an index, and it
+// changes one with ALTER INDEX; `ALTER TABLE t ALTER INDEX k NOT VISIBLE`, the
+// MySQL spelling, is a syntax error there. Measured on v26.3.2, `ALTER INDEX
+// t@k NOT VISIBLE` and `ALTER INDEX t@k VISIBLE` each flip
+// information_schema.statistics.is_visible. The renderer refuses the operation
+// by [capability.InvisibleIndexes] before it reaches here on any other target.
+func (r *Renderer) writeIndexVisibility(table string, op *ast.AlterIndexVisibilityOperation) error {
+	if r.dialect != platform.CockroachDB {
+		return fmt.Errorf("%w: %s: index %q cannot be shown or hidden from the optimizer on this engine",
+			ptaherr.ErrUnsupportedFeature, r.dialect, op.IndexName)
+	}
+	r.w.WriteLinef("ALTER INDEX %s %s;", r.qualifiedIndexTarget(table, op.IndexName), indexVisibilityClauses[op.Invisible])
+	return nil
+}
+
+// indexVisibilityClauses spell an index's visibility the way CockroachDB
+// prints it back in SHOW CREATE TABLE and pg_get_indexdef, keyed by whether
+// the index is hidden.
+var indexVisibilityClauses = map[bool]string{true: "NOT VISIBLE", false: "VISIBLE"}
+
+// writeRenameConstraint renames a constraint in place.
+//
+// One statement rather than a drop and an add, because for a NOT NULL the two
+// are not equivalent: PostgreSQL generates a name for an unnamed one, so the
+// re-add would land on the generated name rather than the declared one, and the
+// column is momentarily nullable in between (stokaro/ptah#2161).
+func (r *Renderer) writeRenameConstraint(table string, op *ast.RenameConstraintOperation) {
+	r.w.WriteLinef("ALTER TABLE %s RENAME CONSTRAINT %s TO %s;",
+		r.escapeQualifiedIdentifier(table),
+		r.escapeIdentifier(op.From),
+		r.escapeIdentifier(op.To))
+}
+
+// commentLiteral spells a comment for a COMMENT ON statement, with NULL for
+// none.
+func (r *Renderer) commentLiteral(comment string) string {
+	if comment == "" {
+		return "NULL"
+	}
+	return r.escapeValue(comment)
+}
+
+func (r *Renderer) renderColumnNode(node *ast.ColumnNode) error {
+	// This is typically called from within other visitors
+	// The actual rendering is done by RenderColumn
+	return nil
+}
+
+func (r *Renderer) renderConstraintNode(node *ast.ConstraintNode) error {
+	// This is typically called from within other visitors
+	// The actual rendering is done by RenderConstraint
+	return nil
+}
+
+func (r *Renderer) renderIndex(node *ast.IndexNode) error {
+	// The storage parameters are rendered below as WITH (key='value'), and the
+	// operator class and the partial condition have clauses here too. The
+	// FULLTEXT parser does not: it names a MySQL plugin and this family has no
+	// clause that could carry it.
+	r.sink.RecordLostProperty(renderdiag.IndexKind, node.Name, renderdiag.ParserProperty, node.Parser)
+	var parts []string
+
+	parts = append(parts, "CREATE")
+
+	if node.Unique {
+		parts = append(parts, "UNIQUE")
+	}
+	if node.NullsDistinct != nil && !node.Unique {
+		return fmt.Errorf("postgresql NULLS DISTINCT is only valid for unique indexes")
+	}
+
+	parts = append(parts, "INDEX")
+
+	// CONCURRENTLY precedes IF NOT EXISTS in the PostgreSQL grammar:
+	// CREATE [UNIQUE] INDEX [CONCURRENTLY] [IF NOT EXISTS] name ...
+	//
+	// CockroachDB and Spanner are in this family and have neither capability,
+	// so the declaration is recorded rather than dropped in silence: the
+	// statement below is an ordinary CREATE INDEX whichever way this goes.
+	if node.Concurrently {
+		if r.capabilities().Has(capability.CreateIndexConcurrently) {
+			parts = append(parts, "CONCURRENTLY")
+		} else {
+			r.sink.RecordLostConcurrentBuild(node.Name)
+		}
+	}
+
+	if node.IfNotExists {
+		parts = append(parts, "IF NOT EXISTS")
+	}
+
+	parts = append(parts, r.escapeIdentifier(node.Name))
+	parts = append(parts, "ON")
+	parts = append(parts, r.escapeQualifiedIdentifier(node.Table))
+
+	// Add index type (USING clause) for PostgreSQL.
+	//
+	// The btree comparison is case-insensitive because the access method now
+	// has two sources with different conventions: an annotation or HCL source
+	// spells it BTREE/GIN, while the live-database reader reports pg_am.amname
+	// verbatim, which PostgreSQL spells btree/gin. Both mean the default
+	// method, and emitting "USING btree" for every introspected index would be
+	// a gratuitous divergence from the pinned binary's output.
+	if node.Type != "" && !strings.EqualFold(node.Type, "BTREE") {
+		parts = append(parts, "USING")
+		parts = append(parts, node.Type)
+	}
+
+	// Add columns with optional operator class
+	var columnSpecs []string
+	for _, part := range node.EffectiveParts() {
+		columnSpec := r.renderIndexPart(part)
+		if part.Operator != "" {
+			columnSpec = fmt.Sprintf("%s %s", columnSpec, part.Operator)
+		} else if node.Operator != "" {
+			columnSpec = fmt.Sprintf("%s %s", columnSpec, node.Operator)
+		}
+		if part.Desc {
+			columnSpec += " DESC"
+		}
+		columnSpec += renderIndexPartNullsOrder(part)
+		columnSpecs = append(columnSpecs, columnSpec)
+	}
+	parts = append(parts, fmt.Sprintf("(%s)", strings.Join(columnSpecs, ", ")))
+
+	if len(node.IncludeColumns) > 0 {
+		parts = append(parts, fmt.Sprintf("INCLUDE (%s)", strings.Join(r.escapeIdentifierList(node.IncludeColumns), ", ")))
+	}
+
+	if node.NullsDistinct != nil {
+		parts = append(parts, renderNullsDistinctClause(node.NullsDistinct))
+	}
+
+	if len(node.StorageParams) > 0 {
+		storageParams, err := r.renderIndexStorageParams(node.StorageParams)
+		if err != nil {
+			return err
+		}
+		parts = append(parts, storageParams)
+	}
+
+	// Add WHERE condition for partial indexes
+	if node.Condition != "" {
+		parts = append(parts, "WHERE")
+		parts = append(parts, node.Condition)
+	}
+
+	// CockroachDB takes the visibility last, after WHERE: v26.3.2 refuses
+	// `NOT VISIBLE WHERE ...` with a syntax error. The renderer refuses an
+	// invisible index by [capability.InvisibleIndexes] before it reaches here
+	// on a target without one.
+	if node.Invisible {
+		parts = append(parts, indexVisibilityClauses[true])
+	}
+
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+
+	// An index comment is a separate statement: CREATE INDEX has no COMMENT
+	// clause in PostgreSQL's grammar, unlike MySQL's index definition. Emitting
+	// it here is what keeps the comment attached to the index the statement
+	// above just created. Without it the value is carried all the way from the
+	// annotation or the HCL document to this node and then dropped, and the
+	// index arrives with no comment at exit 0.
+	if node.Comment != "" {
+		r.w.WriteLinef(
+			"COMMENT ON INDEX %s IS %s;",
+			r.qualifiedIndexTarget(node.Table, node.Name),
+			r.escapeValue(node.Comment),
+		)
+	}
+
+	return nil
+}
+
+// renderIndexPartNullsOrder renders the NULLS clause for one index part.
+//
+// It renders whatever the part carries rather than second-guessing it. Deciding
+// that a clause is redundant belongs to whoever produced the part: PostgreSQL's
+// defaults are NULLS LAST for ASC and NULLS FIRST for DESC, and the live-
+// database reader already declines to record an ordering that matches its
+// direction's default, so nothing introspected reaches here with a redundant
+// value. A source that spelled one out explicitly gets it back.
+func renderIndexPartNullsOrder(part ast.IndexPart) string {
+	switch strings.ToUpper(part.NullsOrder) {
+	case ast.NullsOrderFirst:
+		return " NULLS FIRST"
+	case ast.NullsOrderLast:
+		return " NULLS LAST"
+	default:
+		return ""
+	}
+}
+
+func (r *Renderer) renderIndexStorageParams(params map[string]string) (string, error) {
+	keys := make([]string, 0, len(params))
+	for key := range params {
+		if !validIndexStorageParamName(key) {
+			return "", fmt.Errorf("invalid PostgreSQL index storage parameter %q", key)
+		}
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+
+	rendered := make([]string, 0, len(keys))
+	for _, key := range keys {
+		rendered = append(rendered, fmt.Sprintf("%s=%s", key, r.escapeValue(params[key])))
+	}
+	return fmt.Sprintf("WITH (%s)", strings.Join(rendered, ", ")), nil
+}
+
+func validIndexStorageParamName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i, ch := range name {
+		switch {
+		case ch >= 'a' && ch <= 'z':
+		case ch == '_':
+		case i > 0 && ch >= '0' && ch <= '9':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func (r *Renderer) renderIndexPart(part ast.IndexPart) string {
+	if part.Expr != "" {
+		return fmt.Sprintf("(%s)", part.Expr)
+	}
+	return r.escapeIdentifier(part.Name)
+}
+
+func (r *Renderer) renderExtension(node *ast.ExtensionNode) error {
+	// An altered extension is a different statement about the same object, and
+	// both spellings were measured on PostgreSQL 18 rather than read:
+	// `ALTER EXTENSION pg_trgm UPDATE TO '1.6'` moves 1.5 to 1.6 and answers
+	// `NOTICE: version "1.6" ... is already installed` when it is already
+	// there, so it is idempotent; `ALTER EXTENSION pg_trgm SET SCHEMA public`
+	// moves it and is idempotent on the schema it already occupies
+	// (stokaro/ptah#1718).
+	switch node.Alteration {
+	case ast.ExtensionUpdateVersion:
+		if node.Comment != "" {
+			r.w.WriteLinef("-- %s", node.Comment)
+		}
+		r.w.WriteLinef("ALTER EXTENSION %s UPDATE TO %s;",
+			r.escapeIdentifier(node.Name), r.escapeValue(node.Version))
+		return nil
+	case ast.ExtensionSetSchema:
+		if node.Comment != "" {
+			r.w.WriteLinef("-- %s", node.Comment)
+		}
+		r.w.WriteLinef("ALTER EXTENSION %s SET SCHEMA %s;",
+			r.escapeIdentifier(node.Name), r.escapeIdentifier(node.Schema))
+		return nil
+	case ast.ExtensionUnaltered:
+	}
+
+	var parts []string
+
+	parts = append(parts, "CREATE EXTENSION")
+
+	if node.IfNotExists {
+		parts = append(parts, "IF NOT EXISTS")
+	}
+
+	// Extension names are database-wide single identifiers. Treating a dot as
+	// a schema separator would render an extension named `audit.tools` as the
+	// invalid two-part identity `"audit"."tools"`, even though extension
+	// placement belongs exclusively to the separate SCHEMA option.
+	parts = append(parts, r.escapeIdentifier(node.Name))
+	if node.Schema != "" {
+		parts = append(parts, "WITH", "SCHEMA", r.escapeIdentifier(node.Schema))
+	}
+
+	// Add version specification if provided
+	if node.Version != "" {
+		parts = append(parts, fmt.Sprintf("VERSION %s", r.escapeValue(node.Version)))
+	}
+
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	r.writeCreatedObjectComment(ast.CommentedExtension, r.escapeIdentifier(node.Name), node.Name, node.Comment)
+	return nil
+}
+
+// renderEnum renders CREATE TYPE ... AS ENUM for PostgreSQL
+func (r *Renderer) renderEnum(node *ast.EnumNode) error {
+	if r.refuses(capability.EnumCustomType, "enum type", node.Name) {
+		return nil
+	}
+
+	values := make([]string, len(node.Values))
+	for i, value := range node.Values {
+		values[i] = r.escapeValue(value)
+	}
+
+	target := r.escapeQualifiedIdentifier(node.Name)
+	r.w.WriteLinef("CREATE TYPE %s AS ENUM (%s);", target, strings.Join(values, ", "))
+	r.writeCreatedObjectComment(ast.CommentedType, target, node.Name, node.Comment)
+	return nil
+}
+
+// renderComment renders a comment
+// renderComment writes a comment node -- a planner's note or warning -- as a
+// plain line comment. It is not closed with a trailing marker the way a table
+// banner is: a script writer may put a semicolon after a statement, and a note
+// that ends in " --" then reads as "--;" (stokaro/ptah#3903). An empty comment
+// is a separator line.
+func (r *Renderer) renderComment(node *ast.CommentNode) error {
+	if node.Text == "" {
+		r.w.WriteLine("--")
+		return nil
+	}
+	r.w.WriteLinef("-- %s", node.Text)
+	return nil
+}
+
+func (r *Renderer) renderDropTable(node *ast.DropTableNode) error {
+	// Build DROP TABLE statement with PostgreSQL-specific features
+	var parts []string
+	parts = append(parts, "DROP TABLE")
+
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+
+	parts = append(parts, strings.Join(r.escapeQualifiedIdentifierList(node.TableNames()), ", "))
+
+	if node.Cascade {
+		parts = append(parts, "CASCADE")
+	}
+
+	sql := strings.Join(parts, " ") + ";"
+
+	// Add comment if provided
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	r.w.WriteLine(sql)
+	return nil
+}
+
+// renderDropType renders PostgreSQL-specific DROP TYPE statements
+func (r *Renderer) renderDropType(node *ast.DropTypeNode) error {
+	// Build DROP TYPE / DROP DOMAIN statement (PostgreSQL-specific)
+	var parts []string
+	if node.Domain {
+		parts = append(parts, "DROP DOMAIN")
+	} else {
+		parts = append(parts, "DROP TYPE")
+	}
+
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+
+	parts = append(parts, r.escapeQualifiedIdentifier(node.Name))
+
+	if node.Cascade {
+		parts = append(parts, "CASCADE")
+	}
+
+	sql := strings.Join(parts, " ") + ";"
+
+	// Add comment if provided
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	r.w.WriteLine(sql)
+	return nil
+}
+
+// renderColumn overrides base column rendering with PostgreSQL-specific handling
+// columnKeyAndNullability spells the primary key, uniqueness and nullability of
+// one column, in the order PostgreSQL takes them.
+//
+// Extracted so each branch reads as one decision. It returns an error rather
+// than dropping anything, because every failure here is a declaration naming a
+// constraint that will not exist, and a silent drop is the failure this path
+// exists to prevent (stokaro/ptah#2161).
+func (r *Renderer) columnKeyAndNullability(column *ast.ColumnNode) ([]string, error) {
+	if column.Primary {
+		if column.NotNullConstraintName != "" {
+			// The NOT NULL emitted here is synthesized for comparison, not
+			// declared -- the primary key is the constraint the column actually
+			// has, and its own name is the addressable one. Naming a constraint
+			// Ptah invents would hand back a name no catalog answers to.
+			return nil, fmt.Errorf(
+				"postgres column %s: a NOT NULL constraint name (%s) cannot be kept on a "+
+					"primary-key column, whose NOT NULL is implied by the key; name the "+
+					"primary key instead",
+				column.Name, column.NotNullConstraintName)
+		}
+		// Primary keys are always NOT NULL in PostgreSQL, show it explicitly for
+		// schema comparison.
+		return []string{"PRIMARY KEY", "NOT NULL"}, nil
+	}
+
+	var parts []string
+	if column.Unique {
+		if !r.capabilities().Has(capability.UniqueConstraints) {
+			return nil, r.uniqueConstraintUnsupported("", []string{column.Name})
+		}
+		parts = append(parts, "UNIQUE")
+	}
+	if column.Nullable {
+		if column.NotNullConstraintName != "" {
+			// A name describes a constraint that is not there. Dropping it
+			// would render a nullable column and report success.
+			return nil, fmt.Errorf(
+				"postgres column %s: a NOT NULL constraint name (%s) is set on a nullable "+
+					"column, which names no constraint",
+				column.Name, column.NotNullConstraintName)
+		}
+		return parts, nil
+	}
+	clause, err := r.notNullClause(column)
+	if err != nil {
+		return nil, err
+	}
+	return append(parts, clause), nil
+}
+
+// notNullClause spells the column's NOT NULL, named when the declaration named
+// it and the target can keep the name.
+//
+// The gate is [capability.NamedNotNullConstraints], and it is about the target
+// PERSISTING the name rather than accepting the syntax. PostgreSQL 17 accepts
+// `CONSTRAINT c NOT NULL` and stores nothing, so rendering the name there would
+// produce DDL that applies, reads back bare, and leaves every later comparison
+// reporting a difference no apply can settle. PostgreSQL 18 records the name in
+// pg_constraint with contype 'n' and answers to it (stokaro/ptah#2161).
+//
+// A target that cannot keep it REFUSES rather than dropping the name, because
+// dropping it silently is the failure this whole path exists to prevent. The
+// default renderer resolves Postgres17(), so a caller that pinned no server
+// version is refused here and pins one.
+func (r *Renderer) notNullClause(column *ast.ColumnNode) (string, error) {
+	if column.NotNullConstraintName == "" {
+		return "NOT NULL", nil
+	}
+	if !r.capabilities().Has(capability.NamedNotNullConstraints) {
+		return "", fmt.Errorf(
+			"postgres column %s: this target does not keep a NOT NULL constraint name (%s); "+
+				"it accepts the syntax and records nothing, so the name would be lost on the "+
+				"way in. Write the constraint without a name, or target a server that persists "+
+				"one (PostgreSQL 18 and later)",
+			column.Name, column.NotNullConstraintName)
+	}
+	return fmt.Sprintf("CONSTRAINT %s NOT NULL", r.escapeIdentifier(column.NotNullConstraintName)), nil
+}
+
+func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
+	var parts []string
+
+	// Handle PostgreSQL-specific type conversions using current enum context
+	columnType, err := r.processFieldType(column.Type, r.currentEnums)
+	if err != nil {
+		return "", err
+	}
+
+	// Column name and type
+	parts = append(parts, fmt.Sprintf("  %s %s", r.escapeIdentifier(column.Name), columnType))
+
+	// Column constraints - PostgreSQL order: PRIMARY KEY, then NOT NULL, then UNIQUE
+	keyParts, err := r.columnKeyAndNullability(column)
+	if err != nil {
+		return "", err
+	}
+	parts = append(parts, keyParts...)
+
+	if column.IdentityGeneration != "" {
+		if column.GeneratedExpression != "" {
+			return "", fmt.Errorf("postgres column %s cannot be both identity and generated", column.Name)
+		}
+		identity, err := r.renderIdentity(column)
+		if err != nil {
+			return "", err
+		}
+		parts = append(parts, identity)
+	}
+
+	// Default value
+	switch {
+	case column.Default == nil:
+		// No default value
+	case column.Default.HasLiteral():
+		parts = append(parts, fmt.Sprintf("DEFAULT %s",
+			r.renderTypedDefaultLiteral(column.Type, column.Default.Value)))
+	case column.Default.Expression != "":
+		parts = append(parts, fmt.Sprintf("DEFAULT %s", column.Default.Expression))
+	}
+	if column.GeneratedExpression != "" {
+		if column.GeneratedKind != "" && !strings.EqualFold(column.GeneratedKind, "STORED") {
+			return "", fmt.Errorf("postgres does not support %s generated columns", column.GeneratedKind)
+		}
+		// This renderer serves YugabyteDB too, whose 2024 LTS line is still
+		// PostgreSQL 11 and answers `syntax error at or near "("`. Dropping the
+		// clause silently would turn a generated column into an ordinary one,
+		// which is a different table, so the refusal is the answer
+		// (stokaro/ptah#916).
+		if !r.capabilities().Has(capability.GeneratedColumns) {
+			return "", unsupportedFeaturef(
+				"%s does not support generated columns; column %q declares GENERATED ALWAYS AS",
+				r.dialect, column.Name)
+		}
+		parts = append(parts, fmt.Sprintf("GENERATED ALWAYS AS (%s) STORED", column.GeneratedExpression))
+	}
+
+	// Check constraint. Emit `CONSTRAINT <name> CHECK (...)` only when an
+	// explicit name was provided via `check_name=` on the field annotation.
+	// The unnamed form is named by the server, and the comparison looks for
+	// the name the server gives it (schemaprep.ColumnCheckNames), so no name
+	// is written on every column.
+	if column.Check != "" {
+		if column.CheckName != "" {
+			parts = append(parts, fmt.Sprintf("CONSTRAINT %s CHECK (%s)", r.escapeIdentifier(column.CheckName), column.Check))
+		} else {
+			parts = append(parts, fmt.Sprintf("CHECK (%s)", column.Check))
+		}
+		// The shared renderer has refused the clause on a target without it.
+		if column.CheckNotEnforced {
+			parts = append(parts, "NOT ENFORCED")
+		}
+	}
+
+	return strings.Join(parts, " "), nil
+}
+
+func (r *Renderer) renderIdentity(column *ast.ColumnNode) (string, error) {
+	generation, err := renderIdentityGeneration(column.IdentityGeneration)
+	if err != nil {
+		return "", err
+	}
+	if column.IdentityOptions != "" {
+		return fmt.Sprintf("GENERATED %s AS IDENTITY (%s)", generation, column.IdentityOptions), nil
+	}
+	options := make([]string, 0, 2)
+	if column.IdentityStart != "" {
+		options = append(options, fmt.Sprintf("START WITH %s", column.IdentityStart))
+	}
+	if column.IdentityIncrement != "" {
+		options = append(options, fmt.Sprintf("INCREMENT BY %s", column.IdentityIncrement))
+	}
+	if len(options) == 0 {
+		return fmt.Sprintf("GENERATED %s AS IDENTITY", generation), nil
+	}
+	return fmt.Sprintf("GENERATED %s AS IDENTITY (%s)", generation, strings.Join(options, " ")), nil
+}
+
+func renderIdentityGeneration(generation string) (string, error) {
+	switch strings.ToUpper(strings.ReplaceAll(generation, " ", "_")) {
+	case "ALWAYS":
+		return "ALWAYS", nil
+	case "BY_DEFAULT":
+		return "BY DEFAULT", nil
+	default:
+		return "", fmt.Errorf("postgres does not support %s identity generation", generation)
+	}
+}
+
+// processFieldType processes field type for PostgreSQL, handling enums appropriately
+func (r *Renderer) processFieldType(fieldType string, enums []string) (string, error) {
+	// For PostgreSQL, enum types are used directly (they're defined separately)
+	// Check if this type is an enum using the helper method
+	if r.isEnumType(fieldType, enums) {
+		return fieldType, nil // Use enum type directly
+	}
+
+	if strings.EqualFold(fieldType, "XML") && !r.capabilities().Has(capability.XMLType) {
+		return "", unsupportedFeaturef("%s does not support XML columns; use a platform-specific type override", r.dialect)
+	}
+	// A sequence-backed column is a narrower claim than a standalone sequence,
+	// and the two part company on a start-counter-only target. Spanner's
+	// PostgreSQL interface writes, reads and drops a standalone sequence -- all
+	// measured -- while a serial column is the one thing its reference gates
+	// behind the database option default_sequence_kind, which Ptah can neither
+	// set nor read from a schema. The emulator accepts a serial column without
+	// it, and that difference between the emulator and the reference is exactly
+	// what makes it the wrong thing to claim from an emulator measurement. So
+	// the standalone object is supported here and the shorthand keeps its
+	// refusal, which names itself (stokaro/ptah#1856, stokaro/ptah#1808).
+	if sequenceBackedType(fieldType) &&
+		(!r.capabilities().Has(capability.Sequences) || r.capabilities().Has(capability.SequenceStartCounterOnly)) {
+		return "", unsupportedFeaturef("%s does not support sequence-backed type %s; use a platform-specific type override", r.dialect, fieldType)
+	}
+
+	// Handle other PostgreSQL-specific type mappings if needed
+	switch fieldType {
+	case "AUTO_INCREMENT":
+		return "SERIAL", nil
+	case "BIGINT AUTO_INCREMENT":
+		return "BIGSERIAL", nil
+	default:
+		return fieldType, nil
+	}
+}
+
+// generatesItsOwnValues reports whether this renderer wrote something that
+// makes the server assign the column's value.
+//
+// The flag alone does not say: this target spells generation two ways and reads
+// neither off `AutoInc`. A sequence-backed type carries it -- `SERIAL` is a type
+// whose default draws from a sequence -- and an identity clause carries it,
+// which is the branch renderColumn takes on IdentityGeneration. A column with
+// neither is rendered as a plain integer, so a declaration that it generates its
+// own values reached the output nowhere and is reported as lost.
+//
+// It is one predicate rather than a condition repeated at the record and at the
+// render, because the two would agree until somebody taught renderColumn a third
+// spelling (stokaro/ptah#2983).
+func generatesItsOwnValues(column *ast.ColumnNode) bool {
+	return sequenceBackedType(column.Type) || column.IdentityGeneration != ""
+}
+
+func sequenceBackedType(fieldType string) bool {
+	switch strings.ToUpper(strings.TrimSpace(fieldType)) {
+	case "SMALLSERIAL", "SERIAL", "BIGSERIAL", "AUTO_INCREMENT", "BIGINT AUTO_INCREMENT":
+		return true
+	default:
+		return strings.Contains(strings.ToUpper(fieldType), "AUTO_INCREMENT")
+	}
+}
+
+// Helper method to check if a type is an enum
+func (r *Renderer) isEnumType(fieldType string, enums []string) bool {
+	return slices.Contains(enums, fieldType)
+}
+
+// RenderConstraint renders a table-level constraint
+func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, error) {
+	switch constraint.Type {
+	case ast.PrimaryKeyConstraint:
+		line := "  "
+		if constraint.Name != "" {
+			line += fmt.Sprintf("CONSTRAINT %s ", r.escapeIdentifier(constraint.Name))
+		}
+		line += fmt.Sprintf("PRIMARY KEY (%s)", strings.Join(r.escapeIdentifierList(constraint.Columns), ", "))
+		if len(constraint.IncludeColumns) > 0 {
+			line += fmt.Sprintf(" INCLUDE (%s)", strings.Join(r.escapeIdentifierList(constraint.IncludeColumns), ", "))
+		}
+		return r.withKeyDeferral(line, constraint)
+	case ast.UniqueConstraint:
+		if !r.capabilities().Has(capability.UniqueConstraints) {
+			return "", r.uniqueConstraintUnsupported(constraint.Name, constraint.Columns)
+		}
+		clause := "UNIQUE"
+		if constraint.NullsDistinct != nil {
+			clause += " " + renderNullsDistinctClause(constraint.NullsDistinct)
+		}
+		columns := fmt.Sprintf("(%s)", strings.Join(r.escapeIdentifierList(constraint.Columns), ", "))
+		if len(constraint.IncludeColumns) > 0 {
+			columns += fmt.Sprintf(" INCLUDE (%s)", strings.Join(r.escapeIdentifierList(constraint.IncludeColumns), ", "))
+		}
+		if constraint.Name != "" {
+			return r.withKeyDeferral(fmt.Sprintf("  CONSTRAINT %s %s %s", r.escapeIdentifier(constraint.Name), clause, columns), constraint)
+		}
+		return r.withKeyDeferral(fmt.Sprintf("  %s %s", clause, columns), constraint)
+	case ast.ForeignKeyConstraint:
+		// The empty string is this function's ONLY "the target cannot host
+		// it" answer, and a foreign key is the only constraint kind that can
+		// produce it: every other branch either renders text or returns an
+		// error. Callers turn it into one named skip comment via
+		// foreignKeyIdentity, so all three routes to a refused key -- table
+		// constraint, column reference, ALTER TABLE ADD -- say the same
+		// sentence (stokaro/ptah#929).
+		if !r.capabilities().Has(capability.ForeignKeys) {
+			return "", nil
+		}
+		return r.renderForeignKeyConstraint(constraint)
+	case ast.CheckConstraint:
+		check := fmt.Sprintf("  CHECK (%s)", constraint.Expression)
+		if constraint.Name != "" {
+			check = fmt.Sprintf("  CONSTRAINT %s CHECK (%s)", r.escapeIdentifier(constraint.Name), constraint.Expression)
+		}
+		return check + notEnforcedClauses[constraint.NotEnforced], nil
+	case ast.ExcludeConstraint:
+		return r.renderExcludeConstraint(constraint)
+	default:
+		return "", fmt.Errorf("unknown constraint type: %v", constraint.Type)
+	}
+}
+
+// foreignKeyConstraintKind is the object kind a refused foreign key is named
+// with. It is a table constraint rather than a schema object, so it says
+// "foreign key constraint" and not "foreign key".
+const foreignKeyConstraintKind = "foreign key constraint"
+
+// foreignKeyIdentity names a foreign key in a skip comment.
+//
+// A schema author need not name a foreign key, and `constraint ""` would tell
+// a reader nothing about what was dropped, so an unnamed key falls back to the
+// local columns and the referenced table -- the pair that identifies it.
+func foreignKeyIdentity(constraint *ast.ConstraintNode) string {
+	if constraint.Name != "" {
+		return constraint.Name
+	}
+	table := ""
+	if constraint.Reference != nil {
+		table = constraint.Reference.Table
+	}
+	return fmt.Sprintf("on (%s) references %s", strings.Join(constraint.Columns, ", "), table)
+}
+
+func renderNullsDistinctClause(nullsDistinct *bool) string {
+	if nullsDistinct != nil && *nullsDistinct {
+		return "NULLS DISTINCT"
+	}
+	return "NULLS NOT DISTINCT"
+}
+
+// renderForeignKeyConstraint renders a foreign key constraint
+func (r *Renderer) renderForeignKeyConstraint(constraint *ast.ConstraintNode) (string, error) {
+	if constraint.Reference == nil {
+		return "", fmt.Errorf("foreign key constraint missing reference")
+	}
+
+	ref := constraint.Reference
+	var result string
+	foreignKey := fmt.Sprintf("FOREIGN KEY (%s) REFERENCES %s(%s)",
+		strings.Join(r.escapeIdentifierList(constraint.Columns), ", "),
+		r.escapeQualifiedIdentifier(ref.Table),
+		strings.Join(r.escapeIdentifierList(ref.ReferencedColumns()), ", "))
+	// PostgreSQL takes the MATCH type right after the referenced columns.
+	if ref.Match != "" {
+		foreignKey += " MATCH " + ref.Match
+	}
+	if constraint.Name != "" {
+		result = fmt.Sprintf("  CONSTRAINT %s %s", r.escapeIdentifier(constraint.Name), foreignKey)
+	} else {
+		result = "  " + foreignKey
+	}
+
+	if ref.OnDelete != "" {
+		result += fmt.Sprintf(" ON DELETE %s", ref.OnDelete)
+		// The shared renderer has refused a list the target cannot take, so
+		// one that reaches here is written rather than dropped.
+		if len(ref.OnDeleteColumns) > 0 {
+			result += fmt.Sprintf(" (%s)", strings.Join(r.escapeIdentifierList(ref.OnDeleteColumns), ", "))
+		}
+	}
+
+	if ref.OnUpdate != "" {
+		result += fmt.Sprintf(" ON UPDATE %s", ref.OnUpdate)
+	}
+	deferrable, err := r.deferrableClause(ref, constraint.Name)
+	if err != nil {
+		return "", err
+	}
+	result += deferrable
+	// NOT ENFORCED follows the deferral clauses, where pg_get_constraintdef
+	// prints it on PostgreSQL 18.6.
+	result += notEnforcedClauses[ref.NotEnforced]
+
+	return result, nil
+}
+
+// deferrableClause renders DEFERRABLE and its timing, or refuses when the
+// target cannot host one.
+//
+// The refusal is an error rather than a dropped clause. A deferred check is the
+// reason a schema declares a circular reference or a bulk load that transiently
+// violates a constraint, so emitting the same foreign key without it produces a
+// constraint that rejects exactly the writes the author arranged for -- at
+// apply time, on data, rather than at plan time on a line of DDL
+// (stokaro/ptah#1624).
+func (r *Renderer) deferrableClause(ref *ast.ForeignKeyRef, name string) (string, error) {
+	if !ref.Deferrable && ref.Initially == "" {
+		return "", nil
+	}
+	if !r.capabilities().Has(capability.DeferrableConstraints) {
+		return "", unsupportedFeaturef(
+			"%s does not support DEFERRABLE foreign keys; constraint %q declares one",
+			r.dialect, name)
+	}
+	clause := " DEFERRABLE"
+	switch strings.ToLower(strings.TrimSpace(ref.Initially)) {
+	case "":
+		return clause, nil
+	case "deferred":
+		return clause + " INITIALLY DEFERRED", nil
+	case "immediate":
+		return clause + " INITIALLY IMMEDIATE", nil
+	default:
+		return "", fmt.Errorf(
+			"foreign key %q declares initially %q, which is neither deferred nor immediate", name, ref.Initially)
+	}
+}
+
+// renderExcludeConstraint renders an EXCLUDE constraint
+func (r *Renderer) renderExcludeConstraint(constraint *ast.ConstraintNode) (string, error) {
+	if constraint.UsingMethod == "" || constraint.ExcludeElements == "" {
+		return "", fmt.Errorf("exclude constraint missing using method or elements")
+	}
+
+	// Build the constraint string
+	var result string
+	if constraint.Name != "" {
+		result = fmt.Sprintf("  CONSTRAINT %s EXCLUDE USING %s (%s)", r.escapeIdentifier(constraint.Name), constraint.UsingMethod, constraint.ExcludeElements)
+	} else {
+		result = fmt.Sprintf("  EXCLUDE USING %s (%s)", constraint.UsingMethod, constraint.ExcludeElements)
+	}
+
+	// Add optional WHERE clause
+	if constraint.WhereCondition != "" {
+		result += fmt.Sprintf(" WHERE (%s)", constraint.WhereCondition)
+	}
+
+	return r.withKeyDeferral(result, constraint)
+}
+
+// withKeyDeferral appends the deferral of a PRIMARY KEY, UNIQUE or EXCLUDE to
+// line. A key that is not deferrable gets no clause, which is what the server
+// assumes. The shared renderer has refused a deferrable key on a target
+// without deferrable keys, so one that reaches here is written.
+func (r *Renderer) withKeyDeferral(line string, constraint *ast.ConstraintNode) (string, error) {
+	if !constraint.Deferrable {
+		return line, nil
+	}
+	switch strings.ToLower(strings.TrimSpace(constraint.Initially)) {
+	case "":
+		return line + " DEFERRABLE", nil
+	case "deferred":
+		return line + " DEFERRABLE INITIALLY DEFERRED", nil
+	case "immediate":
+		return line + " DEFERRABLE INITIALLY IMMEDIATE", nil
+	default:
+		return "", fmt.Errorf(
+			"constraint %q declares initially %q, which is neither deferred nor immediate", constraint.Name, constraint.Initially)
+	}
+}
+
+const (
+	tableOptionKind = renderdiag.TableOptionProperty
+	// autoIncrementOption is the one table option carrying a value the author
+	// would miss, so it is the one with a remedy on this family.
+	autoIncrementOption = "AUTO_INCREMENT"
+)
+
+// writeTableOptionsSkipped names every table option the node carries on a
+// skip line above the statement, in key order.
+//
+// The PostgreSQL family renders none of them. The four the MySQL family owns
+// -- ENGINE, AUTO_INCREMENT, CHARSET and COLLATE -- have no counterpart here,
+// and anything else in the map is a platform override this renderer has no
+// clause for: PostgreSQL's own table-level storage parameters are not
+// modeled, and the `KEY=value` spelling written after the column list is a
+// syntax error on every server of the family
+// (stokaro/ptah#2969). SQLite, SQL Server and Oracle leave the same options
+// out without a word; this target says so, the way it names a foreign key it
+// cannot host, so a render never loses a declaration in silence. The one
+// option that carries a value the author would miss, AUTO_INCREMENT, gets the
+// line that says where the value goes on this family. The order is sorted
+// because the options are a map, and a walk in map order produces a different
+// render on every run (stokaro/ptah#2968).
+func (r *Renderer) writeTableOptionsSkipped(table string, options map[string]string) {
+	for _, key := range slices.Sorted(maps.Keys(options)) {
+		r.writeObjectSkippedLine(tableOptionKind, key+"="+options[key])
+		remedy := ""
+		if key == autoIncrementOption {
+			remedy = "declare the start on the key column with identity_start"
+			r.w.WriteLinef("-- %s: %s to keep it.", r.dialectUpper, remedy)
+		}
+		r.sink.Record(renderdiag.TableOptionOmission(table, key, options[key], remedy))
+	}
+}
+
+// renderPostgreSQLModifyColumn renders a column modification as PostgreSQL
+// spells it: one ALTER COLUMN statement per property.
+//
+// Only the properties the operation names are written. A clause for a property
+// that did not change is not harmless: a TYPE clause naming the type the column
+// already has takes an ACCESS EXCLUSIVE lock on the table, and SET NOT NULL on
+// a column that is NOT NULL brings the NULL backfill with it, a DO block a
+// confined dev replay refuses. Atlas CE writes one SET DEFAULT for a
+// default-only change, and so does this (stokaro/ptah#3645). An operation that
+// does not say which properties changed restates every one, which is what a
+// parsed `ALTER TABLE ... MODIFY` asks for.
+func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, op *ast.ModifyColumnOperation) {
+	column := op.Column
+	changed := ast.ColumnProperties{Type: true, Nullability: true, Default: true}
+	if op.HasChanged {
+		changed = op.Changed
+	}
+	if changed.Type && !r.writeColumnTypeChange(tableName, column) {
+		return
+	}
+	if changed.Nullability {
+		r.writeColumnNullabilityChange(tableName, op)
+	}
+	if changed.Default {
+		r.writeColumnDefaultChange(tableName, column)
+	}
+}
+
+// writeColumnTypeChange writes the TYPE clause of a column modification, and
+// reports whether the type could be rendered at all.
+func (r *Renderer) writeColumnTypeChange(tableName string, column *ast.ColumnNode) bool {
+	// Process the column type with enum support
+	columnType, err := r.processFieldType(column.Type, r.currentEnums)
+	if err != nil {
+		r.w.WriteLinef("-- %s: %s", r.dialectUpper, err.Error())
+		return false
+	}
+
+	// Change the column type. An enum target needs an explicit USING cast:
+	// PostgreSQL has no assignment cast from varchar (or anything else) to an
+	// enum, so a bare `ALTER COLUMN ... TYPE <enum>` aborts the migration with
+	// `column "s" cannot be cast automatically to type ...` (SQLSTATE 42804).
+	//
+	// Whether the target is an enum comes from the schema declaration carried on
+	// the node, not from the type name. Testing
+	// strings.HasPrefix(type, "enum_") instead leaves an enum named
+	// "status_kind" with no cast and its migration dying at execution, while an
+	// otherwise identical one named "enum_status" applies cleanly
+	// (stokaro/ptah#931 item 1).
+	targetType := column.Type
+	if columnType != column.Type {
+		// Type was transformed (e.g., enum handling), use the processed type
+		targetType = columnType
+	}
+	if column.EnumType {
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s TYPE %s USING %s::%s;",
+			r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), targetType, r.escapeIdentifier(column.Name), targetType)
+	} else {
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s TYPE %s;",
+			r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), targetType)
+	}
+	return true
+}
+
+// writeColumnNullabilityChange writes the NOT NULL clause of a column
+// modification, with the NULL backfill that has to run before SET NOT NULL.
+func (r *Renderer) writeColumnNullabilityChange(tableName string, op *ast.ModifyColumnOperation) {
+	column := op.Column
+	// Change nullability.
+	//
+	// A primary key column is NOT NULL on every engine this renderer serves --
+	// PostgreSQL, CockroachDB, YugabyteDB and Spanner -- and PostgreSQL refuses
+	// to take that away: `ALTER TABLE "users" ALTER COLUMN "id" DROP NOT NULL`
+	// on a key column fails with `column "id" is in a primary key`
+	// (SQLSTATE 42P16), so emitting it makes the whole plan unappliable rather
+	// than merely verbose. ast.ColumnNode.Nullable does not carry the rule for
+	// the AST, because SQLite does not have it (stokaro/ptah#1235), so the
+	// dialects that do have it apply it where the dialect is known. The
+	// CREATE TABLE path above writes PRIMARY KEY and NOT NULL together for the
+	// same reason.
+	if column.Nullable && !column.Primary {
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s DROP NOT NULL;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
+	} else {
+		r.updateNullValuesBeforeNotNull(tableName, op)
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET NOT NULL;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
+	}
+}
+
+// writeColumnDefaultChange writes the SET DEFAULT or DROP DEFAULT clause of a
+// column modification.
+func (r *Renderer) writeColumnDefaultChange(tableName string, column *ast.ColumnNode) {
+	switch {
+	case column.Default == nil:
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s DROP DEFAULT;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
+	case column.Default.HasLiteral():
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s;",
+			r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name),
+			r.renderTypedDefaultLiteral(column.Type, column.Default.Value))
+	case column.Default.Expression != "":
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), column.Default.Expression)
+	}
+}
+
+// updateNullValuesBeforeNotNull fills a column's NULL rows with its declared
+// default before SET NOT NULL, the value the author wrote for a row that
+// states none.
+//
+// A column with no declared default is not filled. A value chosen by the
+// column's type, such as 0, false, CURRENT_TIMESTAMP or the empty string, is
+// data nobody wrote: filled with it, a change the server refuses reports
+// success and leaves the rows rewritten. Atlas CE v1.3.0 lets the statement
+// fail with SQLSTATE 23502, and so does this (stokaro/ptah#3648). Nor is a
+// column whose operation asks to omit the fill, which is how ptah-compat plans
+// under PTAH_ATLAS_STRICT_COMPAT=1: Atlas CE writes no fill even where the
+// column declares a default. Either way the plan says so in a comment beside
+// the statement.
+//
+// Whether to fill is [notnullfill.FillsNullRows], the answer migration/safety
+// judges the rendered statements by.
+func (r *Renderer) updateNullValuesBeforeNotNull(tableName string, op *ast.ModifyColumnOperation) {
+	column := op.Column
+	if !notnullfill.FillsNullRows(op) {
+		reason := "the column declares no default to fill it with"
+		if notnullfill.DeclaresDefault(column) {
+			reason = "this plan does not fill it with the column's default"
+		}
+		r.w.WriteLinef("-- %s: SET NOT NULL fails if any row of %s holds NULL in %s; %s.",
+			r.dialectUpper, r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), reason)
+		return
+	}
+	value := r.nullBackfillValue(column)
+	tableIdentifier := r.escapeQualifiedIdentifier(tableName)
+	columnIdentifier := r.escapeIdentifier(column.Name)
+	// First check if there are any NULL values to avoid unnecessary UPDATE operations
+	body := strings.Join([]string{
+		"BEGIN",
+		fmt.Sprintf("    IF EXISTS (SELECT 1 FROM %s WHERE %s IS NULL LIMIT 1) THEN", tableIdentifier, columnIdentifier),
+		fmt.Sprintf("        UPDATE %s SET %s = %s WHERE %s IS NULL;", tableIdentifier, columnIdentifier, value, columnIdentifier),
+		"    END IF;",
+		"END",
+	}, "\n")
+	// The default is the author's, and a default such as '$$' would end the
+	// block's quoting where it stands.
+	quote := dollarQuote(body)
+	r.w.WriteLinef("DO %s", quote)
+	r.w.WriteLine(body)
+	r.w.WriteLinef("%s;", quote)
+}
+
+// nullBackfillValue is the value updateNullValuesBeforeNotNull writes into a
+// NULL row: the column's declared default, or empty when it declares none.
+func (r *Renderer) nullBackfillValue(column *ast.ColumnNode) string {
+	if column.Default == nil {
+		return ""
+	}
+	if column.Default.Expression != "" {
+		return column.Default.Expression
+	}
+	if column.Default.HasLiteral() {
+		return r.renderDefaultLiteral(column.Default.Value)
+	}
+	return ""
+}
+
+func (r *Renderer) renderDropExtension(node *ast.DropExtensionNode) error {
+	var parts []string
+
+	parts = append(parts, "DROP EXTENSION")
+
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+
+	parts = append(parts, r.escapeIdentifier(node.Name))
+
+	if node.Cascade {
+		parts = append(parts, "CASCADE")
+	}
+
+	// Add comment if provided
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+
+	return nil
+}
+
+// renderRoutineSetting spells one setting as a SET clause.
+//
+// The stored form is the catalog's, `name=value`; `FROM CURRENT` keeps its own
+// words because the server resolved it and there is no value to write.
+func renderRoutineSetting(setting string) string {
+	name, value, found := strings.Cut(setting, "=")
+	if !found {
+		return "SET " + setting
+	}
+	return fmt.Sprintf("SET %s = %s", name, value)
+}
+
+// renderCreateFunction renders a CREATE FUNCTION statement for PostgreSQL
+// routineAttributes assembles the clauses that follow a routine's signature,
+// in the order PostgreSQL prints them back.
+//
+// Three of them are refused inside a procedure -- VOLATILE, LEAKPROOF and
+// PARALLEL. Measured on PostgreSQL, a procedure carrying any of them answers
+// `ERROR: invalid attribute in procedure definition`, while SECURITY is
+// accepted on both kinds (stokaro/ptah#2435).
+//
+// A clause the routine does not state is not written. UNSAFE is the server's
+// default PARALLEL level, so emitting it would change the DDL of every routine
+// that never asked about parallelism.
+func routineAttributes(node *ast.CreateFunctionNode) []string {
+	var attributes []string
+	if node.Language != "" {
+		attributes = append(attributes, fmt.Sprintf("LANGUAGE %s", node.Language))
+	}
+	if node.Security != "" {
+		attributes = append(attributes, fmt.Sprintf("SECURITY %s", node.Security))
+	}
+	if node.IsProcedure() {
+		return append(attributes, routineSettingClauses(node)...)
+	}
+	if node.Volatility != "" {
+		attributes = append(attributes, node.Volatility)
+	}
+	if node.Leakproof {
+		attributes = append(attributes, "LEAKPROOF")
+	}
+	if node.Strict {
+		attributes = append(attributes, "STRICT")
+	}
+	if node.Parallel != "" {
+		attributes = append(attributes, "PARALLEL "+node.Parallel)
+	}
+	return append(attributes, routineSettingClauses(node)...)
+}
+
+// routineSettingClauses renders the routine's own configuration settings.
+//
+// Without them Ptah emitted SECURITY DEFINER routines that no author could pin
+// a search_path on (stokaro/ptah#2356).
+func routineSettingClauses(node *ast.CreateFunctionNode) []string {
+	clauses := make([]string, 0, len(node.Settings))
+	for _, setting := range node.Settings {
+		clauses = append(clauses, renderRoutineSetting(setting))
+	}
+	return clauses
+}
+
+func (r *Renderer) renderCreateFunction(node *ast.CreateFunctionNode) error {
+	// A procedure decides against its own key. The two kinds are one catalog
+	// object and one node, and they are still two different claims: SQL Server
+	// hosts functions and no Ptah path reads a procedure back there
+	// (stokaro/ptah#1722).
+	if node.IsProcedure() {
+		if r.refuses(capability.Procedures, "procedure", node.Name) {
+			return nil
+		}
+	} else if r.refuses(capability.Functions, "function", node.Name) {
+		return nil
+	}
+	// The comment follows the statement, whichever of the endings below
+	// writes it.
+	defer r.writeCreatedRoutineComment(node)
+
+	// A plain CREATE for a routine the database does not have, and CREATE OR
+	// REPLACE for one it has, so a plan says which of the two it does. CREATE
+	// OR REPLACE also creates a routine that does not exist, so written for
+	// both it hides whether the plan rewrites code that policies, triggers and
+	// other roles already call. And a plain CREATE of a routine that does exist
+	// fails with SQLSTATE 42723 instead of overwriting a definition the plan did
+	// not know about. Measured on PostgreSQL 18.6.
+	create := "CREATE"
+	if node.Replace {
+		create = "CREATE OR REPLACE"
+	}
+	parts := []string{create + " " + routineWord(node)}
+
+	// Function parameters are raw SQL fragments; only the function identifier
+	// is quoted here.
+	parts = append(parts, r.escapeFunctionSignature(node.Name, node.Parameters))
+
+	// Return type. A procedure has none: `CREATE PROCEDURE ... RETURNS` does
+	// not parse, which is the property that separates the two statements.
+	if node.Returns != "" && !node.IsProcedure() {
+		parts = append(parts, "RETURNS", node.Returns)
+	}
+
+	attributes := routineAttributes(node)
+
+	if node.BodyKind == ast.FunctionBodyReturn || node.BodyKind == ast.FunctionBodyAtomic {
+		parts = append(parts, attributes...)
+		switch node.BodyKind {
+		case ast.FunctionBodyReturn:
+			r.w.WriteLinef("%s RETURN %s;", strings.Join(parts, " "), node.Body)
+		case ast.FunctionBodyAtomic:
+			r.w.WriteLinef("%s %s;", strings.Join(parts, " "), node.Body)
+		}
+		return nil
+	}
+
+	// Function body with dollar quoting
+	quote := dollarQuote(node.Body)
+	r.w.WriteLinef("%s AS %s", strings.Join(parts, " "), quote)
+	r.w.WriteLinef("%s", node.Body)
+
+	// Close the function with attributes
+	if len(attributes) > 0 {
+		r.w.WriteLinef("%s", quote)
+		r.w.WriteLinef("%s;", strings.Join(attributes, " "))
+		return nil
+	}
+	r.w.WriteLinef("%s;", quote)
+
+	return nil
+}
+
+// dollarQuote answers a dollar quote that does not occur in body: `$$` where
+// it can, and otherwise the first of `$ptah$`, `$ptah1$`, `$ptah2$`, ... that
+// the body does not hold.
+//
+// The body is written between two of them and the server ends the literal at
+// the first one it meets, so a body holding the quote is cut there and the
+// rest is read as SQL. A body declared as `$f$SELECT $$x$$$f$`, or as the
+// string `'SELECT $$x$$'`, holds `$$` (stokaro/ptah#3691).
+func dollarQuote(body string) string {
+	if !strings.Contains(body, "$$") {
+		return "$$"
+	}
+	for index := 0; ; index++ {
+		quote := "$ptah$"
+		if index > 0 {
+			quote = fmt.Sprintf("$ptah%d$", index)
+		}
+		if !strings.Contains(body, quote) {
+			return quote
+		}
+	}
+}
+
+// renderCreatePolicy renders a CREATE POLICY statement for PostgreSQL RLS
+func (r *Renderer) renderCreatePolicy(node *ast.CreatePolicyNode) error {
+	if r.refuses(capability.RowLevelSecurity, "policy", policyIdentity(node.Name, node.Table)) {
+		return nil
+	}
+
+	// If Replace is true, drop the policy first to avoid conflicts
+	if node.Replace {
+		r.w.WriteLinef("DROP POLICY IF EXISTS %s ON %s;", r.escapeIdentifier(node.Name), r.escapeQualifiedIdentifier(node.Table))
+	}
+
+	// Build CREATE POLICY statement
+	var parts []string
+	parts = append(parts, "CREATE POLICY", r.escapeIdentifier(node.Name), "ON", r.escapeQualifiedIdentifier(node.Table))
+
+	// AS clause. PERMISSIVE is the server default and is left unwritten, so a
+	// policy that never asked for restrictive renders exactly as before.
+	if node.Restrictive {
+		parts = append(parts, "AS", rlspolicy.AsClause(node.Restrictive))
+	}
+
+	// FOR clause
+	if node.PolicyFor != "" {
+		parts = append(parts, "FOR", node.PolicyFor)
+	}
+
+	// TO clause
+	if node.ToRoles != "" {
+		parts = append(parts, "TO", r.escapeRoleTargetList(node.ToRoles))
+	}
+
+	r.w.WriteLinef("%s", strings.Join(parts, " "))
+
+	// USING clause
+	if node.UsingExpression != "" {
+		r.w.WriteLinef("    USING (%s)", node.UsingExpression)
+	}
+
+	// WITH CHECK clause
+	if node.WithCheckExpression != "" {
+		r.w.WriteLinef("    WITH CHECK (%s)", node.WithCheckExpression)
+	}
+
+	r.w.WriteLinef(";")
+	r.writeCreatedObjectComment(ast.CommentedPolicy, r.scopedCommentTarget(node.Name, node.Table),
+		policyIdentity(node.Name, node.Table), node.Comment)
+	return nil
+}
+
+// renderAlterTableEnableRLS renders an ALTER TABLE ENABLE ROW LEVEL SECURITY statement
+func (r *Renderer) renderAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
+	if r.refuses(capability.RowLevelSecurity, "row-level security", "on "+node.Table) {
+		return nil
+	}
+
+	// Add comment if provided
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	// Build ALTER TABLE ENABLE ROW LEVEL SECURITY statement
+	r.w.WriteLinef("ALTER TABLE %s ENABLE ROW LEVEL SECURITY;", r.escapeQualifiedIdentifier(node.Table))
+
+	// FORCE is a second flag on the same relation rather than a stronger
+	// ENABLE, so it is a second statement. Without it the table's owner reads
+	// and writes past every policy.
+	if node.Force {
+		r.w.WriteLinef("ALTER TABLE %s FORCE ROW LEVEL SECURITY;", r.escapeQualifiedIdentifier(node.Table))
+	}
+
+	return nil
+}
+
+// renderDropFunction renders a DROP FUNCTION statement
+func (r *Renderer) renderDropFunction(node *ast.DropFunctionNode) error {
+	if node.IsProcedure() {
+		if r.refuses(capability.Procedures, "procedure", node.Name) {
+			return nil
+		}
+	} else if r.refuses(capability.Functions, "function", node.Name) {
+		return nil
+	}
+
+	// Add comment if provided
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	// Build DROP FUNCTION statement. The verb has to match the object: a
+	// server answers `DROP FUNCTION` aimed at a procedure with
+	// `could not find a function named ...`, so the kind travels on the drop
+	// as well as on the create (stokaro/ptah#1722).
+	var parts []string
+	if node.IsProcedure() {
+		parts = append(parts, "DROP PROCEDURE")
+	} else {
+		parts = append(parts, "DROP FUNCTION")
+	}
+
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+
+	// Function parameters are raw SQL fragments; only the function identifier
+	// is quoted here.
+	//
+	// A node that carries no argument list is dropped by its bare name rather
+	// than with `()`. The two are different targets: `f()` names the
+	// zero-argument overload specifically, so a drop of a routine that takes
+	// arguments matched nothing and -- with IF EXISTS in front of it -- reported
+	// success having removed nothing. PostgreSQL 10 and later accept the bare
+	// name and refuse it only when it is ambiguous, which is a louder failure
+	// than the silent one it replaces (stokaro/ptah#1722).
+	//
+	// An EMPTY argument list is the other case, and it renders `()`. That is
+	// how a routine taking no arguments is addressed where its name is
+	// overloaded; the bare name is refused there with `function name "f" is not
+	// unique`, and IF EXISTS does not help, because the refusal is about
+	// ambiguity rather than existence.
+	if node.Parameters == nil {
+		parts = append(parts, r.escapeQualifiedIdentifier(node.Name))
+	} else {
+		parts = append(parts, r.escapeFunctionSignature(node.Name, *node.Parameters))
+	}
+
+	if node.Cascade {
+		parts = append(parts, "CASCADE")
+	}
+
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+
+	return nil
+}
+
+// sequenceIdentifier returns the escaped, optionally schema-qualified sequence
+// identifier for name and schema.
+func (r *Renderer) sequenceIdentifier(name, schema string) string {
+	return r.escapeQualifiedIdentifier(schemamodel.QualifyTableName(schema, name))
+}
+
+// sequenceOwnedByClause renders the OWNED BY target: either NONE or a
+// schema-qualified table.column reference.
+func (r *Renderer) sequenceOwnedByClause(ownedBy string) string {
+	if strings.EqualFold(strings.TrimSpace(ownedBy), "NONE") {
+		return "NONE"
+	}
+	return r.escapeQualifiedIdentifier(ownedBy)
+}
+
+// sequenceOptions renders the shared CREATE/ALTER SEQUENCE option clauses in a
+// stable order. Only set options are emitted.
+func sequenceOptions(asType string, start, increment, minValue, maxValue, cache *int64, cycle *bool) []string {
+	var parts []string
+	if asType != "" {
+		parts = append(parts, "AS "+asType)
+	}
+	if increment != nil {
+		parts = append(parts, fmt.Sprintf("INCREMENT BY %d", *increment))
+	}
+	if minValue != nil {
+		parts = append(parts, fmt.Sprintf("MINVALUE %d", *minValue))
+	}
+	if maxValue != nil {
+		parts = append(parts, fmt.Sprintf("MAXVALUE %d", *maxValue))
+	}
+	if start != nil {
+		parts = append(parts, fmt.Sprintf("START WITH %d", *start))
+	}
+	if cache != nil {
+		parts = append(parts, fmt.Sprintf("CACHE %d", *cache))
+	}
+	if cycle != nil {
+		if *cycle {
+			parts = append(parts, "CYCLE")
+		} else {
+			parts = append(parts, "NO CYCLE")
+		}
+	}
+	return parts
+}
+
+// writeObjectSkipped records that a declared object is not emitted for this
+// target, naming both the object kind and the object.
+//
+// Both the offline renderer and the migration planner pass through this
+// renderer, so the skip diagnostic is the shared answer shape for a target that
+// cannot host an object kind (stokaro/ptah#929).
+func (r *Renderer) writeObjectSkipped(kind, name string) {
+	r.writeObjectSkippedLine(kind, name)
+	r.sink.Record(renderdiag.Omission{
+		Reason: renderdiag.ReasonUnsupported,
+		Kind:   kind,
+		Name:   name,
+	})
+}
+
+// writeObjectSkippedLine writes the skip comment without recording anything.
+//
+// A caller that has more identity in hand than this line carries -- a table
+// option knows the table it was declared on -- writes the line here and records
+// the fuller record itself, so one skip never arrives as two records.
+func (r *Renderer) writeObjectSkippedLine(kind, name string) {
+	r.w.WriteLinef("-- %s: %s %s is not supported by this target; skipped.",
+		r.dialectUpper, commentFragment(kind), commentFragment(name))
+}
+
+// commentFragment keeps diagnostic-only text inside one SQL line comment.
+func commentFragment(value string) string {
+	return strings.Join(strings.Fields(value), " ")
+}
+
+// refuses reports whether this target cannot host the named object, and writes
+// a skip comment when it cannot. Capability-gated visitors use this helper so
+// `schema render` and `schema apply --dry-run` cannot disagree by returning an
+// error on one path and silently dropping the same object on the other.
+func (r *Renderer) refuses(key capability.Capability, kind, name string) bool {
+	if r.capabilities().Has(key) {
+		return false
+	}
+	r.writeObjectSkipped(kind, name)
+	return true
+}
+
+// objectCommentKeys names the capability that says a target stores a comment
+// of each kind and reports it back. The statements are separate, and the
+// engines take different subsets of them (stokaro/ptah#3627).
+var objectCommentKeys = map[ast.CommentedObject]capability.Capability{
+	ast.CommentedView:             capability.ViewComments,
+	ast.CommentedSequence:         capability.SequenceComments,
+	ast.CommentedDomain:           capability.DomainComments,
+	ast.CommentedType:             capability.TypeComments,
+	ast.CommentedExtension:        capability.ExtensionComments,
+	ast.CommentedFunction:         capability.FunctionComments,
+	ast.CommentedProcedure:        capability.ProcedureComments,
+	ast.CommentedMaterializedView: capability.MaterializedViewComments,
+	ast.CommentedTrigger:          capability.TriggerComments,
+	ast.CommentedPolicy:           capability.PolicyComments,
+}
+
+// renderObjectComment sets the comment of an object that already exists.
+//
+// A target that does not store the comment gets the named skip rather than
+// the statement, as a create node's comment does: the comparison does not ask
+// for a comment there, so a node that reaches this point was built by hand.
+func (r *Renderer) renderObjectComment(node *ast.ObjectCommentNode) error {
+	switch node.Object {
+	case ast.CommentedExtension:
+		// An extension's name is database-wide, and splitting it on a dot
+		// would name an object that does not exist, for the reason
+		// renderExtension gives.
+		return r.writeObjectComment(node.Object, r.escapeIdentifier(node.Name), node.Name, node.Comment)
+	case ast.CommentedTrigger, ast.CommentedPolicy:
+		if node.Table == "" {
+			return fmt.Errorf("%w: %s: COMMENT ON %s %s names no table, and the statement addresses one ON its table",
+				ptaherr.ErrInvalidSchemaDiff, r.dialect, node.Object, node.Name)
+		}
+		return r.writeObjectComment(node.Object, r.scopedCommentTarget(node.Name, node.Table),
+			node.Name+" on "+node.Table, node.Comment)
+	case ast.CommentedFunction, ast.CommentedProcedure:
+		return r.writeObjectComment(node.Object, r.routineCommentTarget(node.Name, node.Arguments), node.Name, node.Comment)
+	default:
+		return r.writeObjectComment(node.Object, r.escapeQualifiedIdentifier(node.Name), node.Name, node.Comment)
+	}
+}
+
+// scopedCommentTarget spells a trigger or a policy for COMMENT ON: the object's
+// own name, which is scoped to its table, and the table after ON.
+func (r *Renderer) scopedCommentTarget(name, table string) string {
+	return r.escapeIdentifier(name) + " ON " + r.escapeQualifiedIdentifier(table)
+}
+
+// routineCommentTarget spells a function or a procedure for COMMENT ON. A
+// routine may be overloaded, so the argument list is what selects one; nil
+// leaves only the name, which a server resolves when the name has one
+// overload and refuses when it has several.
+func (r *Renderer) routineCommentTarget(name string, arguments *string) string {
+	if arguments == nil {
+		return r.escapeQualifiedIdentifier(name)
+	}
+	return r.escapeFunctionSignature(name, *arguments)
+}
+
+// writeCreatedRoutineComment writes the comment a function or a procedure is
+// created with. The declared parameters are reduced to the routine's identity
+// -- names, modes and types, without the defaults COMMENT ON refuses -- so the
+// statement addresses the overload the CREATE just wrote.
+func (r *Renderer) writeCreatedRoutineComment(node *ast.CreateFunctionNode) {
+	object := ast.CommentedFunction
+	if node.IsProcedure() {
+		object = ast.CommentedProcedure
+	}
+	arguments := routineargs.Signature(node.Parameters)
+	r.writeCreatedObjectComment(object, r.routineCommentTarget(node.Name, &arguments), node.Name, node.Comment)
+}
+
+// writeCreatedObjectComment writes the comment an object is created with,
+// right after the statement that creates it. PostgreSQL has no comment clause
+// on any of these statements, so the comment is a statement of its own; with
+// no comment there is nothing to write, since a new object has none.
+func (r *Renderer) writeCreatedObjectComment(object ast.CommentedObject, target, name, comment string) {
+	if comment == "" {
+		return
+	}
+	// The kinds passed here are the keys of objectCommentKeys, so the error
+	// an unknown kind would produce cannot arise.
+	_ = r.writeObjectComment(object, target, name, comment)
+}
+
+// writeObjectComment writes COMMENT ON for target, an escaped spelling of the
+// object name names, or the named skip where the target does not store the
+// kind's comment.
+func (r *Renderer) writeObjectComment(object ast.CommentedObject, target, name, comment string) error {
+	key, known := objectCommentKeys[object]
+	if !known {
+		return fmt.Errorf("%w: %s: COMMENT ON %q names no object kind this renderer comments",
+			ptaherr.ErrUnsupportedFeature, r.dialect, string(object))
+	}
+	if r.refuses(key, strings.ToLower(string(object))+" comment", name) {
+		return nil
+	}
+	r.w.WriteLinef("COMMENT ON %s %s IS %s;", object, target, r.commentLiteral(comment))
+	return nil
+}
+
+// renderCreateSequence renders a CREATE SEQUENCE statement for PostgreSQL.
+func (r *Renderer) renderCreateSequence(node *ast.CreateSequenceNode) error {
+	if r.refuses(capability.Sequences, "sequence", node.Name) {
+		return nil
+	}
+
+	parts := []string{"CREATE SEQUENCE"}
+	if node.IfNotExists {
+		parts = append(parts, "IF NOT EXISTS")
+	}
+	target := r.sequenceIdentifier(node.Name, node.Schema)
+	parts = append(parts, target)
+
+	var cycle *bool
+	if node.Cycle {
+		cycle = &node.Cycle
+	}
+
+	if r.capabilities().Has(capability.SequenceStartCounterOnly) {
+		refused := refusedSequenceClauses(node.AsType, node.Increment, node.MinValue, node.MaxValue, node.Cache, cycle, node.OwnedBy)
+		if len(refused) > 0 {
+			r.writeSequenceClausesSkipped(node.Name, refused)
+			return nil
+		}
+		if node.Start != nil {
+			parts = append(parts, fmt.Sprintf("START COUNTER WITH %d", *node.Start))
+		}
+		r.w.WriteLinef("%s;", strings.Join(parts, " "))
+		r.writeCreatedObjectComment(ast.CommentedSequence, target, node.Name, node.Comment)
+		return nil
+	}
+
+	parts = append(parts, sequenceOptions(node.AsType, node.Start, node.Increment, node.MinValue, node.MaxValue, node.Cache, cycle)...)
+
+	if node.OwnedBy != "" {
+		parts = append(parts, "OWNED BY "+r.sequenceOwnedByClause(node.OwnedBy))
+	}
+
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	r.writeCreatedObjectComment(ast.CommentedSequence, target, node.Name, node.Comment)
+	return nil
+}
+
+// refusedSequenceClauses lists the option clauses a node states that a
+// start-counter-only grammar has no room for.
+//
+// Measured 2026-08-21 against the Cloud Spanner emulator behind PGAdapter
+// 0.55.2, each on its own CREATE SEQUENCE: `INCREMENT BY` and `CACHE` and `AS`
+// answer `Optional clause <name> is not supported in <CREATE SEQUENCE>
+// statement`, `MINVALUE` answers the same for its clause, `CYCLE` answers
+// `Optional clause <cycle> only support ` + "`NO CYCLE`" + ` as the value`, and
+// `OWNED BY` answers the same shape for `NONE`. A bare sequence and
+// `START COUNTER WITH n` are accepted (stokaro/ptah#1856).
+//
+// They are named rather than dropped. Emitting the sequence without a clause
+// the declaration states would apply something the author did not write, and
+// silently: the object would exist with different behavior and nothing would
+// say so.
+func refusedSequenceClauses(asType string, increment, minValue, maxValue, cache *int64, cycle *bool, ownedBy string) []string {
+	var refused []string
+	// A declared type that names the one type this grammar produces is
+	// satisfied by leaving the clause off: the target's sequence is a 64-bit
+	// integer and its catalog says so, which is what the reader normalizes to
+	// bigint. Any other type is a different request and is named.
+	if asType != "" && !isBigintSpelling(asType) {
+		refused = append(refused, "AS")
+	}
+	if increment != nil {
+		refused = append(refused, "INCREMENT BY")
+	}
+	if minValue != nil {
+		refused = append(refused, "MINVALUE")
+	}
+	if maxValue != nil {
+		refused = append(refused, "MAXVALUE")
+	}
+	if cache != nil {
+		refused = append(refused, "CACHE")
+	}
+	if cycle != nil && *cycle {
+		refused = append(refused, "CYCLE")
+	}
+	if ownedBy != "" {
+		refused = append(refused, "OWNED BY")
+	}
+	return refused
+}
+
+// isBigintSpelling reports whether a declared sequence type names the 64-bit
+// integer a start-counter-only target produces, under any of the spellings Ptah
+// accepts for it.
+func isBigintSpelling(asType string) bool {
+	switch strings.ToLower(strings.TrimSpace(asType)) {
+	case "bigint", "int8", "int64":
+		return true
+	default:
+		return false
+	}
+}
+
+// writeSequenceClausesSkipped names the clauses that kept a sequence from being
+// rendered, in the shape writeObjectSkipped uses for a whole object.
+func (r *Renderer) writeSequenceClausesSkipped(name string, clauses []string) {
+	r.w.WriteLinef("-- %s: sequence %s states %s, which this target's CREATE SEQUENCE does not take; skipped.",
+		r.dialectUpper, commentFragment(name), commentFragment(strings.Join(clauses, ", ")))
+}
+
+// renderAlterSequence renders an ALTER SEQUENCE statement for PostgreSQL. Only
+// the set options are emitted; a node with no set options renders nothing.
+func (r *Renderer) renderAlterSequence(node *ast.AlterSequenceNode) error {
+	if r.refuses(capability.Sequences, "sequence", node.Name) {
+		return nil
+	}
+
+	if r.capabilities().Has(capability.SequenceStartCounterOnly) {
+		return r.renderStartCounterAlter(node)
+	}
+
+	options := sequenceOptions(node.AsType, node.Start, node.Increment, node.MinValue, node.MaxValue, node.Cache, node.Cycle)
+	if node.OwnedBy != "" {
+		options = append(options, "OWNED BY "+r.sequenceOwnedByClause(node.OwnedBy))
+	}
+	if len(options) == 0 {
+		return nil
+	}
+
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	r.w.WriteLinef("ALTER SEQUENCE %s %s;", r.sequenceIdentifier(node.Name, node.Schema), strings.Join(options, " "))
+	return nil
+}
+
+// renderStartCounterAlter renders an ALTER SEQUENCE for a start-counter-only
+// grammar, where the one accepted option moves the counter.
+//
+// Measured on the same endpoint: `ALTER SEQUENCE s RESTART COUNTER WITH 42` is
+// accepted and the catalog then reports `counter_start_value` as 42, while
+// `START COUNTER WITH` answers `Optional clause <start_counter> is not
+// supported in <ALTER SEQUENCE> statement`. So a changed start is applicable
+// and the comparison converges after it; every other option is named and
+// skipped rather than rewritten into something with a different meaning.
+func (r *Renderer) renderStartCounterAlter(node *ast.AlterSequenceNode) error {
+	if refused := refusedSequenceClauses(
+		node.AsType, node.Increment, node.MinValue, node.MaxValue, node.Cache, node.Cycle, node.OwnedBy,
+	); len(refused) > 0 {
+		r.writeSequenceClausesSkipped(node.Name, refused)
+		return nil
+	}
+	if node.Start == nil {
+		return nil
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	r.w.WriteLinef("ALTER SEQUENCE %s RESTART COUNTER WITH %d;",
+		r.sequenceIdentifier(node.Name, node.Schema), *node.Start)
+	return nil
+}
+
+// renderDropSequence renders a DROP SEQUENCE statement for PostgreSQL.
+func (r *Renderer) renderDropSequence(node *ast.DropSequenceNode) error {
+	if r.refuses(capability.Sequences, "sequence", node.Name) {
+		return nil
+	}
+
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	parts := []string{"DROP SEQUENCE"}
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+	parts = append(parts, r.sequenceIdentifier(node.Name, node.Schema))
+	// A start-counter-only target takes RESTRICT alone: measured, CASCADE
+	// answers `Only <RESTRICT> behavior is supported by <DROP> statement`
+	// (SQLSTATE 0A000). Dropping the keyword silently would widen a drop the
+	// author asked to cascade, so it is named instead (stokaro/ptah#1856).
+	if node.Cascade && r.capabilities().Has(capability.SequenceStartCounterOnly) {
+		r.writeSequenceClausesSkipped(node.Name, []string{"CASCADE"})
+		return nil
+	}
+	if node.Cascade {
+		parts = append(parts, "CASCADE")
+	}
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	return nil
+}
+
+// renderCreateView renders a CREATE VIEW statement.
+func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
+	if r.refuses(capability.Views, "view", node.Name) {
+		return nil
+	}
+
+	create := "CREATE VIEW"
+	if node.Replace {
+		create = "CREATE OR REPLACE VIEW"
+	}
+	target := r.escapeQualifiedIdentifier(node.Name)
+	r.w.WriteLinef("%s %s AS", create, target)
+	r.w.WriteLine(strings.TrimSpace(node.Body))
+	if node.WithCheck {
+		r.w.WriteLine("WITH CHECK OPTION")
+	}
+	r.w.WriteLine(";")
+	r.writeCreatedObjectComment(ast.CommentedView, target, node.Name, node.Comment)
+	return nil
+}
+
+// renderDropView renders a DROP VIEW statement.
+func (r *Renderer) renderDropView(node *ast.DropViewNode) error {
+	if r.refuses(capability.Views, "view", node.Name) {
+		return nil
+	}
+
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	parts := []string{"DROP VIEW"}
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+	parts = append(parts, r.escapeQualifiedIdentifier(node.Name))
+	if node.Cascade {
+		parts = append(parts, "CASCADE")
+	}
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	return nil
+}
+
+// renderCreateMaterializedView renders a CREATE MATERIALIZED VIEW statement.
+func (r *Renderer) renderCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
+	if r.refuses(capability.MaterializedViews, "materialized view", node.Name) {
+		return nil
+	}
+
+	// Refreshing is an operation on this target rather than a property of the
+	// view: there is no clause here that could schedule one, so a declared
+	// schedule reaches the output nowhere and the view is populated once.
+	r.sink.RecordLostRefresh(node.Name, node.Refresh)
+
+	target := r.escapeQualifiedIdentifier(node.Name)
+	r.w.WriteLinef("CREATE MATERIALIZED VIEW %s AS", target)
+	r.w.WriteLine(strings.TrimSpace(node.Body))
+	r.w.WriteLine(";")
+	r.writeCreatedObjectComment(ast.CommentedMaterializedView, target, node.Name, node.Comment)
+	return nil
+}
+
+// renderDropMaterializedView renders a DROP MATERIALIZED VIEW statement.
+func (r *Renderer) renderDropMaterializedView(node *ast.DropMaterializedViewNode) error {
+	if r.refuses(capability.MaterializedViews, "materialized view", node.Name) {
+		return nil
+	}
+
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	parts := []string{"DROP MATERIALIZED VIEW"}
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+	parts = append(parts, r.escapeQualifiedIdentifier(node.Name))
+	if node.Cascade {
+		parts = append(parts, "CASCADE")
+	}
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	return nil
+}
+
+// renderRefreshMaterializedView renders a REFRESH MATERIALIZED VIEW statement.
+// renderAlterMaterializedViewRefresh refuses: a refresh SCHEDULE is a ClickHouse
+// property, and PostgreSQL has no statement that carries one. Refreshing a
+// PostgreSQL materialized view is an operation someone runs, which is
+// renderRefreshMaterializedView below (stokaro/ptah#1625, stokaro/ptah#1802).
+func (r *Renderer) renderAlterMaterializedViewRefresh(node *ast.AlterMaterializedViewRefreshNode) error {
+	return fmt.Errorf(
+		"%w: postgres: materialized view %q cannot carry a refresh schedule; "+
+			"a scheduled refresh is a ClickHouse feature",
+		ptaherr.ErrUnsupportedFeature,
+		node.Name,
+	)
+}
+
+func (r *Renderer) renderRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
+	if r.refuses(capability.MaterializedViews, "materialized view", node.Name) {
+		return nil
+	}
+
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	parts := []string{"REFRESH MATERIALIZED VIEW"}
+	if node.Concurrently {
+		parts = append(parts, "CONCURRENTLY")
+	}
+	parts = append(parts, r.escapeQualifiedIdentifier(node.Name))
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	return nil
+}
+
+// routineWord is the keyword that names the routine a node creates.
+func routineWord(node *ast.CreateFunctionNode) string {
+	if node.IsProcedure() {
+		return "PROCEDURE"
+	}
+	return "FUNCTION"
+}
+
+// renderCreateTrigger renders PostgreSQL trigger creation plus its linked
+// trigger function.
+func (r *Renderer) renderCreateTrigger(node *ast.CreateTriggerNode) error {
+	// The linked trigger function below is part of the trigger rather than a
+	// function the schema declared, so one key answers for the pair and one
+	// comment names the object the author actually wrote.
+	if r.refuses(capability.Triggers, "trigger", node.Name) {
+		return nil
+	}
+
+	functionName := node.FunctionName
+	if functionName == "" {
+		functionName = schemamodel.Trigger{Table: node.Table, Name: node.Name}.FunctionName()
+	}
+
+	// An external function is referenced, never defined: emitting a body for it
+	// would overwrite whatever it already contains.
+	if !node.ExternalFunction {
+		body := renderPostgreSQLTriggerFunctionBody(node.Body)
+		quote := dollarQuote(body)
+		// The function is the trigger's own, so it exists exactly when the
+		// trigger does: a replaced trigger replaces it, and a new one creates
+		// it, for the reason renderCreateFunction gives.
+		create := "CREATE FUNCTION"
+		if node.Replace {
+			create = "CREATE OR REPLACE FUNCTION"
+		}
+		r.w.WriteLinef("%s %s()", create, r.escapeQualifiedIdentifier(functionName))
+		r.w.WriteLinef("RETURNS trigger AS %s", quote)
+		r.w.WriteLine(body)
+		r.w.WriteLinef("%s LANGUAGE plpgsql;", quote)
+	}
+
+	if node.Replace && !r.capabilities().Has(capability.CreateOrReplaceTrigger) {
+		r.w.WriteLinef("DROP TRIGGER IF EXISTS %s ON %s;", r.escapeIdentifier(node.Name), r.escapeQualifiedIdentifier(node.Table))
+	}
+
+	create := "CREATE TRIGGER"
+	if node.Replace && r.capabilities().Has(capability.CreateOrReplaceTrigger) {
+		create = "CREATE OR REPLACE TRIGGER"
+	}
+
+	forEach := node.ForEach
+	if forEach == "" {
+		forEach = "ROW"
+	}
+	r.w.WriteLinef("%s %s %s %s ON %s%s FOR EACH %s%s EXECUTE FUNCTION %s();",
+		create,
+		r.escapeIdentifier(node.Name),
+		node.Timing,
+		node.Event,
+		r.escapeQualifiedIdentifier(node.Table),
+		r.triggerReferencingClause(node),
+		forEach,
+		triggerWhenClause(node),
+		r.escapeQualifiedIdentifier(functionName))
+	r.writeCreatedObjectComment(ast.CommentedTrigger, r.scopedCommentTarget(node.Name, node.Table),
+		node.Name+" on "+node.Table, node.Comment)
+	return nil
+}
+
+// triggerReferencingClause is the REFERENCING clause naming a trigger's
+// transition tables, with a leading space, or "" when it declares none.
+func (r *Renderer) triggerReferencingClause(node *ast.CreateTriggerNode) string {
+	var tables []string
+	if node.OldTable != "" {
+		tables = append(tables, "OLD TABLE AS "+r.escapeIdentifier(node.OldTable))
+	}
+	if node.NewTable != "" {
+		tables = append(tables, "NEW TABLE AS "+r.escapeIdentifier(node.NewTable))
+	}
+	if len(tables) == 0 {
+		return ""
+	}
+	return " REFERENCING " + strings.Join(tables, " ")
+}
+
+// triggerWhenClause is a trigger's WHEN clause, with a leading space, or ""
+// when it fires unconditionally.
+func triggerWhenClause(node *ast.CreateTriggerNode) string {
+	if strings.TrimSpace(node.When) == "" {
+		return ""
+	}
+	return " WHEN (" + strings.TrimSpace(node.When) + ")"
+}
+
+func renderPostgreSQLTriggerFunctionBody(body string) string {
+	body = strings.TrimSpace(body)
+	upperBody := strings.ToUpper(body)
+	if strings.HasPrefix(upperBody, "BEGIN") {
+		return body
+	}
+	return "BEGIN\n" + body + "\nEND;"
+}
+
+// renderDropTrigger renders a DROP TRIGGER statement and drops the function Ptah
+// generated for the trigger. A trigger that runs a separately declared function
+// keeps it: that function is part of the schema in its own right.
+func (r *Renderer) renderDropTrigger(node *ast.DropTriggerNode) error {
+	if r.refuses(capability.Triggers, "trigger", node.Name) {
+		return nil
+	}
+
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	parts := []string{"DROP TRIGGER"}
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+	parts = append(parts, r.escapeIdentifier(node.Name), "ON", r.escapeQualifiedIdentifier(node.Table))
+	if node.Cascade {
+		parts = append(parts, "CASCADE")
+	}
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	if node.ExternalFunction {
+		return nil
+	}
+
+	functionName := node.FunctionName
+	if functionName == "" {
+		functionName = schemamodel.Trigger{Table: node.Table, Name: node.Name}.FunctionName()
+	}
+	r.w.WriteLinef("DROP FUNCTION IF EXISTS %s();", r.escapeQualifiedIdentifier(functionName))
+	return nil
+}
+
+// renderDropPolicy renders a DROP POLICY statement
+func (r *Renderer) renderDropPolicy(node *ast.DropPolicyNode) error {
+	if r.refuses(capability.RowLevelSecurity, "policy", policyIdentity(node.Name, node.Table)) {
+		return nil
+	}
+
+	// Add comment if provided
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	// Build DROP POLICY statement
+	var parts []string
+	parts = append(parts, "DROP POLICY")
+
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+
+	parts = append(parts, r.escapeIdentifier(node.Name), "ON", r.escapeQualifiedIdentifier(node.Table))
+
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+
+	return nil
+}
+
+// renderAlterTableForceRLS renders ALTER TABLE ... [NO] FORCE ROW LEVEL SECURITY.
+func (r *Renderer) renderAlterTableForceRLS(node *ast.AlterTableForceRLSNode) error {
+	if r.refuses(capability.RowLevelSecurity, "row-level security", "on "+node.Table) {
+		return nil
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	keyword := "FORCE"
+	if node.NoForce {
+		keyword = "NO FORCE"
+	}
+	r.w.WriteLinef("ALTER TABLE %s %s ROW LEVEL SECURITY;", r.escapeQualifiedIdentifier(node.Table), keyword)
+	return nil
+}
+
+// renderAlterTableDisableRLS renders an ALTER TABLE DISABLE ROW LEVEL SECURITY statement
+func (r *Renderer) renderAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
+	if r.refuses(capability.RowLevelSecurity, "row-level security", "on "+node.Table) {
+		return nil
+	}
+
+	// Add comment if provided
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	// Build ALTER TABLE DISABLE ROW LEVEL SECURITY statement
+	r.w.WriteLinef("ALTER TABLE %s DISABLE ROW LEVEL SECURITY;", r.escapeQualifiedIdentifier(node.Table))
+
+	return nil
+}
+
+// renderCreateRole renders a CREATE ROLE statement for PostgreSQL
+func (r *Renderer) renderCreateRole(node *ast.CreateRoleNode) error {
+	if r.refuses(capability.RoleManagement, "role", node.Name) {
+		return nil
+	}
+
+	// Build CREATE ROLE statement
+	var parts []string
+	parts = append(parts, "CREATE ROLE", r.escapeIdentifier(node.Name))
+
+	// Add role attributes
+	var attributes []string
+
+	if node.Login {
+		attributes = append(attributes, "LOGIN")
+	} else {
+		attributes = append(attributes, "NOLOGIN")
+	}
+
+	if node.Password != "" {
+		// Validate password appears to be encrypted
+		if !looksEncrypted(node.Password) {
+			// Add a comment warning about potential plaintext password
+			r.w.WriteLinef("-- WARNING: Password may not be encrypted - ensure passwords are properly hashed")
+		}
+		attributes = append(attributes, fmt.Sprintf("PASSWORD %s", r.escapeValue(node.Password)))
+	}
+
+	if node.Superuser {
+		attributes = append(attributes, "SUPERUSER")
+	} else {
+		attributes = append(attributes, "NOSUPERUSER")
+	}
+
+	if node.CreateDB {
+		attributes = append(attributes, "CREATEDB")
+	} else {
+		attributes = append(attributes, "NOCREATEDB")
+	}
+
+	if node.CreateRole {
+		attributes = append(attributes, "CREATEROLE")
+	} else {
+		attributes = append(attributes, "NOCREATEROLE")
+	}
+
+	if node.Inherit {
+		attributes = append(attributes, "INHERIT")
+	} else {
+		attributes = append(attributes, "NOINHERIT")
+	}
+
+	if node.Replication {
+		attributes = append(attributes, "REPLICATION")
+	} else {
+		attributes = append(attributes, "NOREPLICATION")
+	}
+
+	// Combine role name and attributes
+	if len(attributes) > 0 {
+		parts = append(parts, "WITH", strings.Join(attributes, " "))
+	}
+
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	if node.Comment != "" {
+		r.w.WriteLinef(
+			"COMMENT ON ROLE %s IS %s;",
+			r.escapeIdentifier(node.Name),
+			r.escapeValue(node.Comment),
+		)
+	}
+
+	return nil
+}
+
+// renderDropRole renders a DROP ROLE statement for PostgreSQL
+func (r *Renderer) renderDropRole(node *ast.DropRoleNode) error {
+	if r.refuses(capability.RoleManagement, "role", node.Name) {
+		return nil
+	}
+
+	// Add comment if provided
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	// Build DROP ROLE statement
+	var parts []string
+	parts = append(parts, "DROP ROLE")
+
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+
+	parts = append(parts, r.escapeIdentifier(node.Name))
+
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+
+	return nil
+}
+
+// renderGrantPrivilege renders a GRANT statement for PostgreSQL.
+func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
+	if err := grantrefusal.Path(r.dialect, "GRANT", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
+	privileges := r.privilegeList(node.Privileges, node.Columns)
+	if privileges == "" {
+		return fmt.Errorf("GRANT requires at least one privilege")
+	}
+	if node.Role == "" {
+		return fmt.Errorf("GRANT requires a role")
+	}
+	if node.ObjectType == "" || node.ObjectName == "" {
+		return fmt.Errorf("GRANT requires an object type and object name")
+	}
+	if r.refuses(capability.RoleManagement, "grant", grantIdentity("on", node.ObjectName, "to", node.Role)) {
+		return nil
+	}
+
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	grantOption := ""
+	if node.WithOption {
+		grantOption = " WITH GRANT OPTION"
+	}
+	r.w.WriteLinef("GRANT %s ON %s %s TO %s%s;",
+		privileges, node.ObjectType, r.grantTarget(node.ObjectType, node.ObjectName, node.Arguments),
+		r.escapeRoleTarget(node.Role), grantOption)
+	return nil
+}
+
+// grantTarget spells the object of a GRANT or REVOKE. A routine carries its
+// argument types in parentheses, because PostgreSQL resolves an overloaded
+// name by them; the types are written as the declaration or the catalog
+// spelled them, which PostgreSQL reads back either way.
+func (r *Renderer) grantTarget(objectType, objectName, arguments string) string {
+	target := r.escapeQualifiedIdentifier(objectName)
+	switch strings.ToUpper(objectType) {
+	case "FUNCTION", "PROCEDURE", "ROUTINE":
+		return target + "(" + strings.TrimSpace(arguments) + ")"
+	default:
+		return target
+	}
+}
+
+// privilegeList renders the privileges of a GRANT or REVOKE, each followed by
+// the column list it is limited to when there is one: UPDATE (a, b). It is
+// empty when there are no privileges.
+func (r *Renderer) privilegeList(privileges, columns []string) string {
+	if len(columns) == 0 {
+		return strings.Join(privileges, ", ")
+	}
+	quoted := make([]string, 0, len(columns))
+	for _, column := range columns {
+		quoted = append(quoted, r.escapeIdentifier(column))
+	}
+	list := " (" + strings.Join(quoted, ", ") + ")"
+	named := make([]string, 0, len(privileges))
+	for _, privilege := range privileges {
+		named = append(named, privilege+list)
+	}
+	return strings.Join(named, ", ")
+}
+
+// renderRevokePrivilege renders a REVOKE statement for PostgreSQL.
+func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
+	if err := grantrefusal.Path(r.dialect, "REVOKE", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
+	privileges := r.privilegeList(node.Privileges, node.Columns)
+	if privileges == "" {
+		return fmt.Errorf("REVOKE requires at least one privilege")
+	}
+	if node.Role == "" {
+		return fmt.Errorf("REVOKE requires a role")
+	}
+	if node.ObjectType == "" || node.ObjectName == "" {
+		return fmt.Errorf("REVOKE requires an object type and object name")
+	}
+	if r.refuses(capability.RoleManagement, "revoke", grantIdentity("on", node.ObjectName, "from", node.Role)) {
+		return nil
+	}
+
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	prefix := "REVOKE"
+	if node.GrantOptionFor {
+		prefix = "REVOKE GRANT OPTION FOR"
+	}
+	r.w.WriteLinef("%s %s ON %s %s FROM %s;",
+		prefix, privileges, node.ObjectType, r.grantTarget(node.ObjectType, node.ObjectName, node.Arguments),
+		r.escapeRoleTarget(node.Role))
+	return nil
+}
+
+// renderDefaultPrivilege renders an ALTER DEFAULT PRIVILEGES ... GRANT statement
+// for PostgreSQL.
+//
+// One statement per grantability. The catalog records WITH GRANT OPTION per
+// privilege, so a declaration mixing grantable and plain privileges for one
+// identity is two statements rather than one -- which is also how a reader
+// reports it back, so the two spellings fold to the same thing.
+//
+// IN SCHEMA is emitted when the node has a schema. A node without one is the
+// global default, which applies in every schema of the database, and the
+// statement leaves the clause out.
+func (r *Renderer) renderDefaultPrivilege(node *ast.DefaultPrivilegeNode) error {
+	if len(node.Privileges) == 0 {
+		return fmt.Errorf("ALTER DEFAULT PRIVILEGES requires at least one privilege")
+	}
+	if node.Grantor == "" {
+		return fmt.Errorf("ALTER DEFAULT PRIVILEGES requires a grantor role")
+	}
+	if node.ObjectType == "" {
+		return fmt.Errorf("ALTER DEFAULT PRIVILEGES requires an object type")
+	}
+	if node.Grantee == "" {
+		return fmt.Errorf("ALTER DEFAULT PRIVILEGES requires a grantee")
+	}
+	if r.refuses(capability.RoleManagement, "default privilege",
+		defaultPrivilegeIdentity(node.Grantor, node.Schema, node.ObjectType, node.Grantee)) {
+		return nil
+	}
+
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	plain, grantable := splitByGrantOption(node.Privileges)
+	prefix := fmt.Sprintf("ALTER DEFAULT PRIVILEGES FOR ROLE %s%s GRANT",
+		r.escapeRoleTarget(node.Grantor), r.inSchemaClause(node.Schema))
+	if len(plain) > 0 {
+		r.w.WriteLinef("%s %s ON %s TO %s;",
+			prefix, strings.Join(plain, ", "), node.ObjectType, r.escapeRoleTarget(node.Grantee))
+	}
+	if len(grantable) > 0 {
+		r.w.WriteLinef("%s %s ON %s TO %s WITH GRANT OPTION;",
+			prefix, strings.Join(grantable, ", "), node.ObjectType, r.escapeRoleTarget(node.Grantee))
+	}
+	return nil
+}
+
+// renderRevokeDefaultPrivilege renders an ALTER DEFAULT PRIVILEGES ... REVOKE
+// statement for PostgreSQL.
+func (r *Renderer) renderRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilegeNode) error {
+	privileges := strings.Join(node.Privileges, ", ")
+	if privileges == "" {
+		return fmt.Errorf("ALTER DEFAULT PRIVILEGES REVOKE requires at least one privilege")
+	}
+	if node.Grantor == "" {
+		return fmt.Errorf("ALTER DEFAULT PRIVILEGES REVOKE requires a grantor role")
+	}
+	if node.ObjectType == "" {
+		return fmt.Errorf("ALTER DEFAULT PRIVILEGES REVOKE requires an object type")
+	}
+	if node.Grantee == "" {
+		return fmt.Errorf("ALTER DEFAULT PRIVILEGES REVOKE requires a grantee")
+	}
+	if r.refuses(capability.RoleManagement, "default privilege",
+		defaultPrivilegeIdentity(node.Grantor, node.Schema, node.ObjectType, node.Grantee)) {
+		return nil
+	}
+
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	revoke := "REVOKE"
+	if node.GrantOptionFor {
+		revoke = "REVOKE GRANT OPTION FOR"
+	}
+	r.w.WriteLinef("ALTER DEFAULT PRIVILEGES FOR ROLE %s%s %s %s ON %s FROM %s;",
+		r.escapeRoleTarget(node.Grantor), r.inSchemaClause(node.Schema),
+		revoke, privileges, node.ObjectType, r.escapeRoleTarget(node.Grantee))
+	return nil
+}
+
+// inSchemaClause is the IN SCHEMA clause of an ALTER DEFAULT PRIVILEGES, with
+// its leading space, and nothing for the global default.
+func (r *Renderer) inSchemaClause(schema string) string {
+	if schema == "" {
+		return ""
+	}
+	return " IN SCHEMA " + r.escapeIdentifier(schema)
+}
+
+// splitByGrantOption separates the privileges that carry WITH GRANT OPTION from
+// the ones that do not, keeping each list in declaration order.
+func splitByGrantOption(privileges []ast.DefaultPrivilege) (plain, grantable []string) {
+	for _, privilege := range privileges {
+		if privilege.WithOption {
+			grantable = append(grantable, privilege.Privilege)
+			continue
+		}
+		plain = append(plain, privilege.Privilege)
+	}
+	return plain, grantable
+}
+
+// renderRawSQL renders a literal SQL fragment verbatim and appends a trailing
+// semicolon if the fragment doesn't already end with one. The caller owns
+// correctness of the embedded SQL. The trailing `;` is essential — downstream
+// SplitSQLStatements (used by the migrator to apply each statement separately
+// for MySQL compatibility) tokenizes on semicolons, and a dollar-quoted body
+// that ends with `$tag$\n` would otherwise merge with the following statement
+// into one chunk that Postgres rejects with `syntax error at or near "DO"`.
+func (r *Renderer) renderRawSQL(node *ast.RawSQLNode) error {
+	sql := node.SQL
+	if !strings.HasSuffix(strings.TrimRight(sql, "\r\n\t "), ";") {
+		sql += ";"
+	}
+	r.w.WriteLine(sql)
+	return nil
+}
+
+// renderAlterRole renders an ALTER ROLE statement for PostgreSQL
+func (r *Renderer) renderAlterRole(node *ast.AlterRoleNode) error {
+	if r.refuses(capability.RoleManagement, "role", node.Name) {
+		return nil
+	}
+
+	// Add comment if provided
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	// Process each operation
+	for _, operation := range node.Operations {
+		if err := r.renderRoleOperation(node.Name, operation); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// policyIdentity and grantIdentity name a row-level-security policy and a
+// privilege grant in a skip comment.
+//
+// Neither object is identified by a bare name. A policy called
+// "tenant_isolation" can exist on several tables at once, and a grant has no
+// name at all -- it is the pair (object, role). Both spellings are built from
+// only the fields BOTH paths carry identically: the offline converter emits one
+// grant node per declared grant with every privilege on it, while the planner
+// emits one per (grant, privilege) pair, so naming the privileges here would
+// make the two paths describe the same refused grant differently.
+func policyIdentity(name, table string) string {
+	return name + " on " + table
+}
+
+func grantIdentity(objectPreposition, objectName, rolePreposition, role string) string {
+	return objectPreposition + " " + objectName + " " + rolePreposition + " " + role
+}
+
+// defaultPrivilegeIdentity names one default-privilege object for a skip
+// comment.
+//
+// It is built only from the four fields that are the object's identity, and
+// from none of the payload: the render path emits one node per declaration
+// while the plan path emits one per privilege, so a name carrying the privilege
+// list would make the two surfaces disagree about an object neither of them
+// rendered. internal/modelast's render-and-plan agreement test is what measures
+// that.
+func defaultPrivilegeIdentity(grantor, schema, objectType, grantee string) string {
+	where := "in schema " + schema
+	if schema == "" {
+		where = "in every schema"
+	}
+	return "on " + objectType + " " + where + " for role " + grantor + " to " + grantee
+}
+
+// renderRoleOperation renders a single role operation as an ALTER ROLE statement
+func (r *Renderer) renderRoleOperation(roleName string, operation ast.RoleOperation) error {
+	var parts []string
+	parts = append(parts, "ALTER ROLE", r.escapeIdentifier(roleName))
+
+	switch op := operation.(type) {
+	case *ast.SetPasswordOperation:
+		// Validate password appears to be encrypted
+		if !looksEncrypted(op.Password) {
+			// Add a comment warning about potential plaintext password
+			r.w.WriteLinef("-- WARNING: Password may not be encrypted - ensure passwords are properly hashed")
+		}
+		parts = append(parts, fmt.Sprintf("PASSWORD %s", r.escapeValue(op.Password)))
+
+	case *ast.SetLoginOperation:
+		if op.Login {
+			parts = append(parts, "LOGIN")
+		} else {
+			parts = append(parts, "NOLOGIN")
+		}
+
+	case *ast.SetSuperuserOperation:
+		if op.Superuser {
+			parts = append(parts, "SUPERUSER")
+		} else {
+			parts = append(parts, "NOSUPERUSER")
+		}
+
+	case *ast.SetCreateDBOperation:
+		if op.CreateDB {
+			parts = append(parts, "CREATEDB")
+		} else {
+			parts = append(parts, "NOCREATEDB")
+		}
+
+	case *ast.SetCreateRoleOperation:
+		if op.CreateRole {
+			parts = append(parts, "CREATEROLE")
+		} else {
+			parts = append(parts, "NOCREATEROLE")
+		}
+
+	case *ast.SetInheritOperation:
+		if op.Inherit {
+			parts = append(parts, "INHERIT")
+		} else {
+			parts = append(parts, "NOINHERIT")
+		}
+
+	case *ast.SetReplicationOperation:
+		if op.Replication {
+			parts = append(parts, "REPLICATION")
+		} else {
+			parts = append(parts, "NOREPLICATION")
+		}
+
+	default:
+		return fmt.Errorf("unsupported alter role operation: %T", operation)
+	}
+
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	return nil
+}
+
+// looksEncrypted checks if a password appears to be encrypted/hashed
+// This is a heuristic check to help detect potential plaintext passwords
+func looksEncrypted(password string) bool {
+	// Empty passwords are considered "encrypted" (no warning needed)
+	if password == "" {
+		return true
+	}
+
+	// Check for common PostgreSQL password hash prefixes
+	if strings.HasPrefix(password, "md5") ||
+		strings.HasPrefix(password, "SCRAM-SHA-256$") ||
+		strings.HasPrefix(password, "$2a$") || // bcrypt
+		strings.HasPrefix(password, "$2b$") || // bcrypt
+		strings.HasPrefix(password, "$2y$") || // bcrypt
+		strings.HasPrefix(password, "$5$") || // SHA-256
+		strings.HasPrefix(password, "$6$") { // SHA-512
+		return true
+	}
+
+	// Check if it looks like a hash (long, contains mix of chars/numbers)
+	if len(password) >= 32 {
+		hasLower := strings.ContainsAny(password, "abcdefghijklmnopqrstuvwxyz")
+		hasUpper := strings.ContainsAny(password, "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+		hasDigit := strings.ContainsAny(password, "0123456789")
+		hasSpecial := strings.ContainsAny(password, "!@#$%^&*()_+-=[]{}|;:,.<>?/")
+
+		// If it has a good mix of character types and is long, likely encrypted
+		charTypeCount := 0
+		if hasLower {
+			charTypeCount++
+		}
+		if hasUpper {
+			charTypeCount++
+		}
+		if hasDigit {
+			charTypeCount++
+		}
+		if hasSpecial {
+			charTypeCount++
+		}
+
+		return charTypeCount >= 3
+	}
+
+	// If none of the above, likely plaintext
+	return false
+}
+
+// uniqueConstraintUnsupported is the refusal a target without
+// [capability.UniqueConstraints] gets. It names the remedy, because the target
+// that has this capability false is the one whose server names it too: Spanner
+// answers `<UNIQUE> constraint is not supported, create a unique index
+// instead.`
+//
+// Refused rather than lowered to that index. A declaration says constraint and
+// the author gets a constraint or an error, which is the same answer SERIAL
+// gets on the dialects that have no auto-increment: a construct the target
+// cannot host is not quietly replaced by a different object with a different
+// name in the catalog (stokaro/ptah#2585).
+func (r *Renderer) uniqueConstraintUnsupported(name string, columns []string) error {
+	subject := fmt.Sprintf("the UNIQUE constraint on (%s)", strings.Join(columns, ", "))
+	if name != "" {
+		subject = fmt.Sprintf("UNIQUE constraint %q", name)
+	}
+	return unsupportedFeaturef(
+		"%s: %s cannot be rendered: this target has no UNIQUE constraint and takes the same "+
+			"guarantee as a unique index — declare a unique index on those columns instead",
+		r.dialect, subject)
+}
+
+func unsupportedFeaturef(format string, args ...any) error {
+	return fmt.Errorf("%w: %s", ptaherr.ErrUnsupportedFeature, fmt.Sprintf(format, args...))
+}
+
+// writeClickHouseOnlyOperation names a ClickHouse construct this dialect has no
+// form for, as a comment rather than as a dropped operation: an operator
+// reading the plan has to be able to see that something was declined.
+func (r *Renderer) writeClickHouseOnlyOperation(operation ast.AlterOperation) {
+	switch operation.(type) {
+	case *ast.AddSkippingIndexOperation:
+		r.w.WriteLinef("-- %s: data-skipping indexes are ClickHouse-specific; ignored.", r.dialectUpper)
+	case *ast.ModifyTTLOperation:
+		r.w.WriteLinef("-- %s: table TTL is ClickHouse-specific; ignored.", r.dialectUpper)
+	}
+}
+
+// renderCreateContinuousAggregate renders the statement that creates a
+// TimescaleDB continuous aggregate.
+//
+// It is a CREATE MATERIALIZED VIEW carrying `WITH (timescaledb.continuous)`,
+// which is what makes the extension own it. A plain materialized view of the
+// same body is a different object: measured on 2.29.2, dropping a continuous
+// aggregate with `DROP VIEW` answers `cannot drop continuous aggregate using
+// DROP VIEW`, and there is no CREATE OR REPLACE form at all.
+//
+// `WITH NO DATA` is not optional here. Creating one WITH DATA materializes the
+// whole history the hypertable holds, which on a real table is a table scan and
+// a rewrite -- work an operator schedules rather than something a schema
+// migration does as a side effect. The first refresh is theirs to run.
+func (r *Renderer) renderCreateContinuousAggregate(node *ast.CreateContinuousAggregateNode) error {
+	if r.refuses(capability.ContinuousAggregates, "continuous aggregate", node.Name) {
+		return nil
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	options := []string{"timescaledb.continuous"}
+	if node.MaterializedOnly != nil {
+		options = append(options,
+			fmt.Sprintf("timescaledb.materialized_only = %t", *node.MaterializedOnly))
+	}
+	r.w.WriteLinef("CREATE MATERIALIZED VIEW %s WITH (%s) AS",
+		r.escapeQualifiedIdentifier(r.continuousAggregateName(node.Schema, node.Name)),
+		strings.Join(options, ", "))
+	r.w.WriteLine(continuousAggregateBody(node.Body))
+	if node.WithNoData {
+		r.w.WriteLine("WITH NO DATA")
+	}
+	r.w.WriteLine(";")
+	return nil
+}
+
+// continuousAggregateBody trims the terminator the catalog puts on a definition
+// it hands back.
+//
+// A description read from a server carries `view_definition` verbatim, and that
+// column ends in a semicolon. Writing it into the statement would put the
+// terminator BEFORE `WITH NO DATA`, and the server answers `syntax error at or
+// near "WITH"` -- so a document Ptah inspected could not be applied by Ptah.
+func continuousAggregateBody(body string) string {
+	return strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(body), ";"))
+}
+
+// renderDropContinuousAggregate renders the statement that removes one.
+//
+// DROP MATERIALIZED VIEW rather than DROP VIEW, which is the server's own
+// instruction rather than a preference: `cannot drop continuous aggregate using
+// DROP VIEW. HINT: Use DROP MATERIALIZED VIEW to drop a continuous aggregate.`
+func (r *Renderer) renderDropContinuousAggregate(node *ast.DropContinuousAggregateNode) error {
+	if r.refuses(capability.ContinuousAggregates, "continuous aggregate", node.Name) {
+		return nil
+	}
+	parts := []string{"DROP MATERIALIZED VIEW"}
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+	parts = append(parts, r.escapeQualifiedIdentifier(
+		r.continuousAggregateName(node.Schema, node.Name)))
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	return nil
+}
+
+// continuousAggregateName folds a separately-carried schema into the name, so
+// the identifier escaper sees the one qualified string every other object gives
+// it.
+func (r *Renderer) continuousAggregateName(schema, name string) string {
+	if strings.TrimSpace(schema) == "" {
+		return name
+	}
+	if strings.Contains(name, ".") {
+		return name
+	}
+	return schema + "." + name
+}
+
+// renderCreateHypertable renders the TimescaleDB call that turns an ordinary
+// table into a hypertable.
+//
+// It is a function call rather than DDL, because TimescaleDB has no CREATE
+// HYPERTABLE grammar. Measured on 2.29.2 / PostgreSQL 17:
+//
+//	SELECT create_hypertable('conditions', by_range('time'));                  -> (1,t)
+//	SELECT create_hypertable('conditions', by_range('time'));                  -> ERROR: already a hypertable
+//	SELECT create_hypertable('conditions', by_range('time'), if_not_exists => TRUE); -> (1,f), NOTICE
+//
+// The table is passed as a REGCLASS literal -- a quoted, possibly qualified
+// name -- and the column as a text literal inside `by_range`, which is the
+// signature the extension publishes. Both are escaped as string literals rather
+// than as identifiers for that reason: the argument is a string the server
+// resolves, not an identifier position.
+//
+// The key gates the emission rather than the declaration. A PostgreSQL target
+// without the extension has no such function, and a plan that called it would
+// fail on `function create_hypertable(unknown, unknown) does not exist` at
+// apply time instead of saying so in the plan (stokaro/ptah#1026).
+func (r *Renderer) renderCreateHypertable(node *ast.CreateHypertableNode) error {
+	if r.refuses(capability.Hypertables, "hypertable", node.Table) {
+		return nil
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	dimension := fmt.Sprintf("by_range(%s", r.escapeValue(node.Column))
+	if strings.TrimSpace(node.ChunkInterval) != "" {
+		dimension += fmt.Sprintf(", INTERVAL %s", r.escapeValue(node.ChunkInterval))
+	}
+	dimension += ")"
+
+	arguments := []string{r.escapeValue(node.Table), dimension}
+	if node.IfNotExists {
+		arguments = append(arguments, "if_not_exists => TRUE")
+	}
+	// The call creates an index on the dimension unless told not to, and that
+	// index is one nothing declared. Measured on 2.29.2: after
+	// `create_hypertable('readings', by_range('time'))` the table carries
+	// `readings_time_idx`, and the next comparison plans
+	// `DROP INDEX IF EXISTS "readings_time_idx"` -- Ptah dropping an index the
+	// server made a moment earlier, on every apply.
+	//
+	// `create_default_indexes => FALSE` is the answer rather than an exception
+	// in the comparator: measured on the same server the call then creates none
+	// at all, so the description stays the whole truth about which indexes
+	// exist, and an operator who wants one on the dimension declares it.
+	arguments = append(arguments, "create_default_indexes => FALSE")
+	r.w.WriteLinef("SELECT create_hypertable(%s);", strings.Join(arguments, ", "))
+	return nil
+}
+
+// renderCreateSynonym names the synonym as skipped.
+//
+// There is no capability key behind this refusal, and that is the difference
+// between a synonym and a sequence here. A capability varies: some servers on
+// this wire have the object and some do not, so the key records which. The
+// PostgreSQL family has no synonym object at all -- not in PostgreSQL, not in
+// CockroachDB, YugabyteDB or the Spanner interface this renderer also backs --
+// so a key would have exactly one value forever and would invite a preset to
+// turn it on.
+func (r *Renderer) renderCreateSynonym(node *ast.CreateSynonymNode) error {
+	r.writeObjectSkipped("synonym", node.Name)
+	return nil
+}
+
+// renderExtendedProperty refuses: an extended property is a SQL Server object,
+// and the PostgreSQL family has no catalog to attach one to.
+//
+// There is no capability key behind this refusal, for the reason
+// renderCreateSynonym gives: a key would have exactly one value forever and
+// would invite a preset to turn it on.
+func (r *Renderer) renderExtendedProperty(node *ast.ExtendedPropertyNode) error {
+	r.writeObjectSkipped("extended property", node.Name)
+	return nil
+}
+
+// renderDropSynonym names the synonym as skipped, for the same reason.
+func (r *Renderer) renderDropSynonym(node *ast.DropSynonymNode) error {
+	r.writeObjectSkipped("synonym", node.Name)
+	return nil
+}

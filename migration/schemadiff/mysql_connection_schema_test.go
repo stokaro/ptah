@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -119,10 +121,10 @@ func TestCompareWithDatabaseInfo_MySQLConnectionSchemaMatchesTheDesiredSchema(t 
 			c := qt.New(t)
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				implicitSchemaDesired(test.genSchema),
+				t.Context(), implicitSchemaDesired(test.genSchema),
 				implicitSchemaDatabase(test.dbSchema, test.dbTableName),
 				mysqlConnectionInfo(test.dialect, test.connSchema),
-				nil,
+				nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -156,16 +158,16 @@ func TestCompareWithDatabaseInfo_MySQLConnectionSchemaPlansNothingAtAll(t *testi
 			c := qt.New(t)
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				implicitSchemaDesired("shop"),
+				t.Context(), implicitSchemaDesired("shop"),
 				implicitSchemaDatabase("", "users"),
 				mysqlConnectionInfo(test.dialect, "shop"),
-				nil,
+				nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))
 			c.Assert(diff.TablesAdded, qt.HasLen, 0)
-			c.Assert(diff.TablesRemoved, qt.HasLen, 0)
+			c.Assert(diff.TablesRemoved.Names(), qt.HasLen, 0)
 			c.Assert(diff.TablesModified, qt.HasLen, 0)
 			c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
 			c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
@@ -201,10 +203,10 @@ func TestCompareWithDatabaseInfo_MySQLForeignKeyOnTheConnectionSchema(t *testing
 			c := qt.New(t)
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				mysqlForeignKeyDesired(test.genSchema),
+				t.Context(), mysqlForeignKeyDesired(test.genSchema),
 				mysqlForeignKeyDatabase(test.dbSchema),
 				mysqlConnectionInfo("mysql", "shop"),
-				nil,
+				nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -244,11 +246,11 @@ func TestCompareWithDialect_PrimaryKeyKeepsTheNameTheDatabaseGaveIt(t *testing.T
 			database := implicitSchemaDatabase("", "users")
 			database.Constraints[0].Name = test.constraintName
 
-			diff := schemadiff.CompareWithDialect(
-				implicitSchemaDesired(test.genSchema),
+			diff := must.Must(schemadiff.CompareWithDialect(
+				t.Context(), implicitSchemaDesired(test.genSchema),
 				database,
-				test.dialect,
-			)
+				test.dialect, must.Must(builtin.New()),
+			))
 
 			c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0, qt.Commentf("diff: %#v", diff))
 			c.Assert(diff.ConstraintsAdded, qt.HasLen, 0, qt.Commentf("diff: %#v", diff))

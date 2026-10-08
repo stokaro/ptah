@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/exitcode"
@@ -158,8 +159,16 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 	// The connection's own set rather than the dialect default: it is what the
 	// session resolved, so a rule gated on a capability this server refines is
 	// gated on what this server answered (stokaro/ptah#1230).
+	runtime, err := builtin.New()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	database, err := dbschematogo.ConvertDBSchemaToGoSchema(cmd.Context(), live, conn.Info().Dialect, runtime)
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("convert database schema: %w", err))
+	}
 	report := schemasecurity.Analyze(
-		dbschematogo.ConvertDBSchemaToGoSchema(live, conn.Info().Dialect),
+		database,
 		schemasecurity.Options{
 			Capabilities: conn.Info().Capabilities,
 			// Non-nil even when the server has no memberships: this caller DID

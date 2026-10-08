@@ -7,7 +7,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/parser"
 	"ptah.run/internal/sqlschema"
 )
@@ -115,7 +115,7 @@ func TestSQLSchemaWritesAMySQLCommentOnce(t *testing.T) {
 			database, _, err := sqlschema.Read([]byte("CREATE TABLE c (id int PRIMARY KEY, x int COMMENT 'it''s') COMMENT='tbl';"), dialect)
 			c.Assert(err, qt.IsNil)
 
-			rendered, err := renderer.GetOrderedCreateStatements(&database, dialect)
+			rendered, err := builtin.GetOrderedCreateStatements(&database, dialect)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(rendered, qt.HasLen, 1)

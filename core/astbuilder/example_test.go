@@ -7,7 +7,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/astbuilder"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 )
 
 // ExampleNewTable builds one CREATE TABLE and renders it for two dialects. The
@@ -22,7 +22,7 @@ func ExampleNewTable() {
 		Build()
 
 	for _, dialect := range []string{"postgresql", "mysql"} {
-		r := must.Must(renderer.NewRenderer(dialect))
+		r := must.Must(builtin.NewRenderer(dialect))
 		fmt.Print(must.Must(r.Render(table)))
 	}
 
@@ -56,7 +56,7 @@ func ExampleNewTable_tableLevelConstraints() {
 		Unique("uk_order_items_sku", "sku").
 		Build()
 
-	r := must.Must(renderer.NewRenderer("mysql"))
+	r := must.Must(builtin.NewRenderer("mysql"))
 	fmt.Print(must.Must(r.Render(table)))
 
 	// Output:
@@ -78,7 +78,7 @@ func ExampleNewIndex() {
 		IfNotExists().
 		Build()
 
-	r := must.Must(renderer.NewRenderer("postgresql"))
+	r := must.Must(builtin.NewRenderer("postgresql"))
 	for _, index := range []*ast.IndexNode{plain, unique} {
 		fmt.Print(must.Must(r.Render(index)))
 	}
@@ -102,7 +102,7 @@ func ExampleNewTable_mixedWithAst() {
 	table.AddConstraint(ast.NewExcludeConstraint(
 		"no_overlapping_bookings", "gist", "room_id WITH =, during WITH &&"))
 
-	r := must.Must(renderer.NewRenderer("postgresql"))
+	r := must.Must(builtin.NewRenderer("postgresql"))
 	fmt.Print(must.Must(r.Render(table)))
 
 	// Output:
@@ -127,7 +127,7 @@ func ExampleNewTable_generatedColumn() {
 		Build()
 
 	for _, dialect := range []string{"postgresql", "mysql"} {
-		r := must.Must(renderer.NewRenderer(dialect))
+		r := must.Must(builtin.NewRenderer(dialect))
 		fmt.Print(must.Must(r.Render(table)))
 	}
 
@@ -171,7 +171,7 @@ func ExampleNewSchema() {
 		fmt.Printf("%T\n", statement)
 	}
 
-	r := must.Must(renderer.NewRenderer("postgresql"))
+	r := must.Must(builtin.NewRenderer("postgresql"))
 	fmt.Print(must.Must(r.Render(schema)))
 
 	// Output:

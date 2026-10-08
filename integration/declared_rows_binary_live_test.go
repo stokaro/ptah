@@ -8,8 +8,10 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 )
 
@@ -33,7 +35,7 @@ func TestDeclaredRowsConvergeOnABinaryColumnLive(t *testing.T) {
 	desired := declaredBinarySchema("payload-one")
 	applyDeclaredRows(c, ctx, conn, desired)
 
-	plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{Desired: desired})
+	plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(declaredPlanSQL(plan), qt.DeepEquals, []string(nil))
 }
@@ -52,12 +54,12 @@ func TestDeclaredRowsChangeABinaryValueLive(t *testing.T) {
 	applyDeclaredRows(c, ctx, conn, declaredBinarySchema("payload-one"))
 
 	changed := declaredBinarySchema("payload-two")
-	plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{Desired: changed})
+	plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{Desired: changed, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(declaredPlanSQL(plan), qt.HasLen, 1)
 
 	applyDeclaredRows(c, ctx, conn, changed)
-	again, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{Desired: changed})
+	again, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{Desired: changed, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(declaredPlanSQL(again), qt.DeepEquals, []string(nil))
 }

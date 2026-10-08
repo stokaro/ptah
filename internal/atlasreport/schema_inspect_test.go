@@ -39,7 +39,7 @@ func TestNormalizeSchemaInspectFormat_HappyPath(t *testing.T) {
 
 func TestRenderSchemaInspect_JSONTemplate(t *testing.T) {
 	c := qt.New(t)
-	report := sampleSchemaInspectReport()
+	report := sampleSchemaInspectReport(c)
 
 	output, err := atlasreport.RenderSchemaInspect(`{{ json . }}`, report)
 
@@ -71,7 +71,7 @@ func TestSchemaInspectTemplateFunctionsFindsOnlyCallableIdentifiers(t *testing.T
 
 func TestRenderSchemaInspect_SQLTemplateRemainsStringCompatible(t *testing.T) {
 	c := qt.New(t)
-	report := sampleSchemaInspectReport()
+	report := sampleSchemaInspectReport(c)
 
 	output, err := atlasreport.RenderSchemaInspect(`{{ len (sql .) }}:{{ printf "%s" (sql .) }}`, report)
 
@@ -81,7 +81,7 @@ func TestRenderSchemaInspect_SQLTemplateRemainsStringCompatible(t *testing.T) {
 
 func TestRenderSchemaInspect_SQLTemplateJSONUsesStringValue(t *testing.T) {
 	c := qt.New(t)
-	report := sampleSchemaInspectReport()
+	report := sampleSchemaInspectReport(c)
 
 	output, err := atlasreport.RenderSchemaInspect(`{{ json (sql .) }}`, report)
 
@@ -92,7 +92,7 @@ func TestRenderSchemaInspect_SQLTemplateJSONUsesStringValue(t *testing.T) {
 
 func TestRenderSchemaInspect_SQLSplitRendersTxtar(t *testing.T) {
 	c := qt.New(t)
-	report := sampleSchemaInspectReport()
+	report := sampleSchemaInspectReport(c)
 
 	output, err := atlasreport.RenderSchemaInspect(`{{ sql . | split }}`, report)
 
@@ -105,7 +105,7 @@ func TestRenderSchemaInspect_SQLSplitRendersTxtar(t *testing.T) {
 
 func TestRenderSchemaInspect_SQLSplitObjectModeIsExplicit(t *testing.T) {
 	c := qt.New(t)
-	report := sampleSchemaInspectReport()
+	report := sampleSchemaInspectReport(c)
 
 	output, err := atlasreport.RenderSchemaInspect(`{{ sql . | split "object" }}`, report)
 
@@ -116,7 +116,7 @@ func TestRenderSchemaInspect_SQLSplitObjectModeIsExplicit(t *testing.T) {
 
 func TestRenderSchemaInspect_SQLSplitClassifiesPostgreSQLObjects(t *testing.T) {
 	c := qt.New(t)
-	report := sampleSchemaInspectReport()
+	report := sampleSchemaInspectReport(c)
 	format := `{{ "CREATE MATERIALIZED VIEW user_stats AS SELECT 1; CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_users_email ON users (email);" | split }}`
 
 	output, err := atlasreport.RenderSchemaInspect(format, report)
@@ -128,7 +128,7 @@ func TestRenderSchemaInspect_SQLSplitClassifiesPostgreSQLObjects(t *testing.T) {
 
 func TestRenderSchemaInspect_SQLSplitTypeModeGroupsByObjectType(t *testing.T) {
 	c := qt.New(t)
-	report := sampleSchemaInspectReport()
+	report := sampleSchemaInspectReport(c)
 	format := `{{ "CREATE TABLE users (id int); CREATE TABLE posts (id int); CREATE INDEX idx ON users (id);" | split "type" }}`
 
 	output, err := atlasreport.RenderSchemaInspect(format, report)
@@ -143,7 +143,7 @@ func TestRenderSchemaInspect_SQLSplitTypeModeGroupsByObjectType(t *testing.T) {
 
 func TestRenderSchemaInspect_SQLSplitSchemaModeGroupsBySchema(t *testing.T) {
 	c := qt.New(t)
-	report := sampleSchemaInspectReport()
+	report := sampleSchemaInspectReport(c)
 	format := `{{ "CREATE TABLE public.users (id int); CREATE TABLE audit.log (id int); CREATE TABLE sessions (id int);" | split "schema" }}`
 
 	output, err := atlasreport.RenderSchemaInspect(format, report)
@@ -159,7 +159,7 @@ func TestRenderSchemaInspect_SQLSplitSchemaModeGroupsBySchema(t *testing.T) {
 
 func TestRenderSchemaInspect_SQLSplitRejectsDuplicatePaths(t *testing.T) {
 	c := qt.New(t)
-	report := sampleSchemaInspectReport()
+	report := sampleSchemaInspectReport(c)
 	format := `{{ "CREATE TABLE users (id int); CREATE TABLE users (id int);" | split }}`
 
 	output, err := atlasreport.RenderSchemaInspect(format, report)
@@ -170,7 +170,7 @@ func TestRenderSchemaInspect_SQLSplitRejectsDuplicatePaths(t *testing.T) {
 
 func TestRenderSchemaInspect_HCLSplitRendersTxtar(t *testing.T) {
 	c := qt.New(t)
-	report := sampleSchemaInspectReport()
+	report := sampleSchemaInspectReport(c)
 
 	output, err := atlasreport.RenderSchemaInspect(`{{ hcl . | split }}`, report)
 
@@ -189,7 +189,7 @@ func TestRenderSchemaInspect_HCLSplitRendersTxtar(t *testing.T) {
 
 func TestRenderSchemaInspect_HCLSplitTypeModeGroupsByObjectType(t *testing.T) {
 	c := qt.New(t)
-	report := sampleSchemaInspectReport()
+	report := sampleSchemaInspectReport(c)
 
 	output, err := atlasreport.RenderSchemaInspect(`{{ hcl . | split "type" ".sqlite.hcl" }}`, report)
 
@@ -201,7 +201,7 @@ func TestRenderSchemaInspect_HCLSplitTypeModeGroupsByObjectType(t *testing.T) {
 
 func TestRenderSchemaInspect_HCLSplitSchemaModeGroupsBySchema(t *testing.T) {
 	c := qt.New(t)
-	report := sampleSchemaInspectReport()
+	report := sampleSchemaInspectReport(c)
 	hcl := `schema "public" {}
 schema "audit" {}
 table "users" {
@@ -223,7 +223,7 @@ table "log" {
 
 func TestRenderSchemaInspect_HCLSplitKeepsSchemaQualifiedTablesDistinct(t *testing.T) {
 	c := qt.New(t)
-	report := sampleSchemaInspectReport()
+	report := sampleSchemaInspectReport(c)
 	hcl := `schema "public" {}
 schema "audit" {}
 table "users" {
@@ -244,7 +244,7 @@ table "users" {
 
 func TestRenderSchemaInspect_SplitRejectsUnsupportedMode(t *testing.T) {
 	c := qt.New(t)
-	report := sampleSchemaInspectReport()
+	report := sampleSchemaInspectReport(c)
 
 	output, err := atlasreport.RenderSchemaInspect(`{{ sql . | split "table" }}`, report)
 
@@ -253,7 +253,8 @@ func TestRenderSchemaInspect_SplitRejectsUnsupportedMode(t *testing.T) {
 }
 
 func TestRenderSchemaInspect_SplitRejectsUnsafeExtension(t *testing.T) {
-	report := sampleSchemaInspectReport()
+	c := qt.New(t)
+	report := sampleSchemaInspectReport(c)
 
 	tests := []struct {
 		name      string
@@ -283,7 +284,7 @@ func TestRenderSchemaInspect_SplitRejectsUnsafeExtension(t *testing.T) {
 // and writes nothing itself.
 func TestRenderSchemaInspect_WritePlansFilesWithoutTouchingFilesystem(t *testing.T) {
 	c := qt.New(t)
-	report := sampleSchemaInspectReport()
+	report := sampleSchemaInspectReport(c)
 	outDir := filepath.Join(t.TempDir(), "schema")
 
 	output, err := atlasreport.RenderSchemaInspect(`{{ sql . | split | write `+strconv.Quote(outDir)+` }}`, report)
@@ -302,7 +303,7 @@ func TestRenderSchemaInspect_WritePlansFilesWithoutTouchingFilesystem(t *testing
 
 func TestRenderSchemaInspect_WriteDefaultsToCurrentDirectory(t *testing.T) {
 	c := qt.New(t)
-	report := sampleSchemaInspectReport()
+	report := sampleSchemaInspectReport(c)
 
 	output, err := atlasreport.RenderSchemaInspect(`{{ sql . | split | write }}`, report)
 
@@ -312,7 +313,8 @@ func TestRenderSchemaInspect_WriteDefaultsToCurrentDirectory(t *testing.T) {
 }
 
 func TestRenderSchemaInspect_SplitRejectsNonSchemaOutput(t *testing.T) {
-	report := sampleSchemaInspectReport()
+	c := qt.New(t)
+	report := sampleSchemaInspectReport(c)
 
 	tests := []struct {
 		name   string
@@ -396,7 +398,7 @@ func TestRenderSchemaInspect_JSONColumnTypeMatchesThePinnedBinary(t *testing.T) 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			report := atlasreport.NewSchemaInspectReport(
+			report := newInspectReport(c,
 				&schemamodel.Database{},
 				&catalog.Database{
 					Tables: []catalog.Table{{
@@ -422,8 +424,8 @@ func TestRenderSchemaInspect_JSONColumnTypeMatchesThePinnedBinary(t *testing.T) 
 	}
 }
 
-func sampleSchemaInspectReport() *atlasreport.SchemaInspectReport {
-	return atlasreport.NewSchemaInspectReport(
+func sampleSchemaInspectReport(c *qt.C) *atlasreport.SchemaInspectReport {
+	return newInspectReport(c,
 		&schemamodel.Database{
 			Tables: []schemamodel.Table{
 				{StructName: "User", Name: "users", Comment: "keeps { braces } in strings"},

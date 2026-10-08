@@ -12,9 +12,11 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/planner"
@@ -176,7 +178,10 @@ func TestPrimaryKeyIsPlannedOnceLiveMySQL(t *testing.T) {
 				}},
 			}
 
-			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "mysql")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()),
+				diff, "mysql",
+			)
 			c.Assert(err, qt.IsNil)
 			c.Logf("plan:\n%s", strings.Join(statements, "\n"))
 			executeMySQL(c, dbURL, statements)

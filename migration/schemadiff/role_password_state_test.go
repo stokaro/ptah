@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -48,13 +50,13 @@ func TestCompareWithDatabaseInfoRefusesUnknownRolePasswordStateFailurePath(t *te
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				&schemamodel.Database{Roles: []schemamodel.Role{{
+				t.Context(), &schemamodel.Database{Roles: []schemamodel.Role{{
 					Name:     test.roleName,
 					Password: declaredValue,
 				}}},
 				test.current,
 				postgresInfo(),
-				nil,
+				nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -69,13 +71,13 @@ func TestCompareWithDatabaseInfoRefusesUnknownRolePasswordStateFailurePath(t *te
 func TestCompareWithDatabaseInfoKnownAbsentRolePasswordPlansUpdateHappyPath(t *testing.T) {
 	c := qt.New(t)
 	diff, err := schemadiff.CompareWithDatabaseInfo(
-		&schemamodel.Database{Roles: []schemamodel.Role{{Name: "app_user", Password: "new-password"}}},
+		t.Context(), &schemamodel.Database{Roles: []schemamodel.Role{{Name: "app_user", Password: "new-password"}}},
 		&catalog.Database{Roles: []catalog.Role{{
 			Name:          "app_user",
 			PasswordState: catalog.RolePasswordAbsent,
 		}}},
 		postgresInfo(),
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -88,13 +90,13 @@ func TestCompareWithDatabaseInfoKnownAbsentRolePasswordPlansUpdateHappyPath(t *t
 func TestCompareWithDatabaseInfoKnownPresentRolePasswordPlansNothingHappyPath(t *testing.T) {
 	c := qt.New(t)
 	diff, err := schemadiff.CompareWithDatabaseInfo(
-		&schemamodel.Database{Roles: []schemamodel.Role{{Name: "app_user", Password: "new-password"}}},
+		t.Context(), &schemamodel.Database{Roles: []schemamodel.Role{{Name: "app_user", Password: "new-password"}}},
 		&catalog.Database{Roles: []catalog.Role{{
 			Name:          "app_user",
 			PasswordState: catalog.RolePasswordPresent,
 		}}},
 		postgresInfo(),
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -104,10 +106,10 @@ func TestCompareWithDatabaseInfoKnownPresentRolePasswordPlansNothingHappyPath(t 
 func TestCompareWithDatabaseInfoNewRoleMayDeclarePasswordHappyPath(t *testing.T) {
 	c := qt.New(t)
 	diff, err := schemadiff.CompareWithDatabaseInfo(
-		&schemamodel.Database{Roles: []schemamodel.Role{{Name: "new_user", Password: "new-password"}}},
+		t.Context(), &schemamodel.Database{Roles: []schemamodel.Role{{Name: "new_user", Password: "new-password"}}},
 		&catalog.Database{},
 		postgresInfo(),
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 
 	c.Assert(err, qt.IsNil)

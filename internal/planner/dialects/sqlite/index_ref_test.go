@@ -1,16 +1,18 @@
 package sqlite_test
 
 import (
+	"context"
 	"database/sql"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "modernc.org/sqlite" // registers the SQLite driver for database/sql
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/sqlite"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -34,7 +36,10 @@ func TestPlanner_IndexRefs_AttributesAdditionsToExactTables(t *testing.T) {
 		},
 	}
 
-	nodes, err := sqlite.New().GenerateMigrationAST(withDeclaredTable(diff, desired))
+	nodes, err := sqlite.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredTable(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -62,7 +67,10 @@ func TestPlanner_IndexRefs_PreservesAttachedSchema(t *testing.T) {
 		IndexesAdded: difftypes.IndexAdditionsFor(desired, difftypes.IndexRef{Name: "idx_users_email", TableName: "tenant.users"}),
 	}
 
-	nodes, err := sqlite.New().GenerateMigrationAST(withDeclaredTable(diff, desired))
+	nodes, err := sqlite.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredTable(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 1)
@@ -90,7 +98,10 @@ func TestPlanner_IndexRefs_DropsSameSchemaNameBeforeMovingIndex(t *testing.T) {
 		},
 	}
 
-	nodes, err := sqlite.New().GenerateMigrationAST(withDeclaredTable(diff, desired))
+	nodes, err := sqlite.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredTable(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -119,7 +130,10 @@ func TestPlanner_IndexRefs_ReplacesExactGlobalIndexBeforeCreate(t *testing.T) {
 		IndexesRemoved: []difftypes.IndexRef{{Name: "idx_users_email", TableName: "users"}},
 	}
 
-	nodes, err := sqlite.New().GenerateMigrationAST(withDeclaredTable(diff, desired))
+	nodes, err := sqlite.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredTable(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -155,7 +169,10 @@ func TestPlanner_IndexRefs_UsesCanonicalOwnerWithDuplicateStructNames(t *testing
 		IndexesAdded: difftypes.IndexAdditionsFor(desired, difftypes.IndexRef{Name: "idx_users_email", TableName: "tenant.users"}),
 	}
 
-	nodes, err := sqlite.New().GenerateMigrationAST(withDeclaredTable(diff, desired))
+	nodes, err := sqlite.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredTable(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
 
@@ -194,13 +211,16 @@ func TestPlanner_IndexRefs_CaseInsensitiveReplacementExecutesOnSQLite(t *testing
 		},
 	}
 
-	nodes, err := sqlite.New().GenerateMigrationAST(withDeclaredTable(diff, desired))
+	nodes, err := sqlite.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredTable(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
 
-	dropSQL, err := renderer.RenderSQL(platform.SQLite, nodes[0])
+	dropSQL, err := builtin.RenderSQL(platform.SQLite, nodes[0])
 	c.Assert(err, qt.IsNil)
-	createSQL, err := renderer.RenderSQL(platform.SQLite, nodes[1])
+	createSQL, err := builtin.RenderSQL(platform.SQLite, nodes[1])
 	c.Assert(err, qt.IsNil)
 	_, err = db.Exec(dropSQL)
 	c.Assert(err, qt.IsNil, qt.Commentf("execute replacement drop: %s", dropSQL))

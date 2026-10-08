@@ -5,6 +5,7 @@ package generator
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -75,12 +76,16 @@ func joinScriptStatements(statements []string) string {
 
 // generateUpMigrationSQL generates the SQL for the up migration.
 func generateUpMigrationSQL(
+	ctx context.Context, runtime Runtime,
 	diff *difftypes.SchemaDiff,
 	desired *schemamodel.Database,
 	dialect string,
 	capsOverride ...capability.Capabilities,
 ) (string, error) {
-	return generateUpMigrationSQLWithOptions(diff, desired, dialect, generatedDirectiveOptions{}, capsOverride...)
+	return generateUpMigrationSQLWithOptions(
+		ctx, runtime,
+		diff, desired, dialect, generatedDirectiveOptions{}, capsOverride...,
+	)
 }
 
 type generatedDirectiveOptions struct {
@@ -95,6 +100,7 @@ type generatedDirectiveOptions struct {
 }
 
 func generateUpMigrationSQLWithOptions(
+	ctx context.Context, runtime Runtime,
 	diff *difftypes.SchemaDiff,
 	desired *schemamodel.Database,
 	dialect string,
@@ -106,6 +112,7 @@ func generateUpMigrationSQLWithOptions(
 		caps = capsOverride[0]
 	}
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		ctx, runtime,
 		diff, dialect,
 		planner.Options{Capabilities: caps},
 	)
@@ -128,16 +135,20 @@ func generateUpMigrationSQLWithOptions(
 
 // generateDownMigrationSQL generates the SQL for the down migration by reversing the diff.
 func generateDownMigrationSQL(
+	ctx context.Context,
+	runtime Runtime,
 	diff *difftypes.SchemaDiff,
 	desired *schemamodel.Database,
 	dbSchema *catalog.Database,
 	dialect string,
 	capsOverride ...capability.Capabilities,
 ) (string, error) {
-	return generateDownMigrationSQLWithOptions(diff, desired, dbSchema, dialect, generatedDirectiveOptions{}, capsOverride...)
+	return generateDownMigrationSQLWithOptions(ctx, runtime, diff, desired, dbSchema, dialect, generatedDirectiveOptions{}, capsOverride...)
 }
 
 func generateDownMigrationSQLWithOptions(
+	ctx context.Context,
+	runtime Runtime,
 	diff *difftypes.SchemaDiff,
 	desired *schemamodel.Database,
 	dbSchema *catalog.Database,
@@ -149,7 +160,7 @@ func generateDownMigrationSQLWithOptions(
 	if len(capsOverride) > 0 {
 		opts.capabilities = capsOverride[0]
 	}
-	return generateDownMigrationSQLQualified(diff, desired, dbSchema, dialect, opts)
+	return generateDownMigrationSQLQualified(ctx, runtime, diff, desired, dbSchema, dialect, opts)
 }
 
 // downMigrationOptions carries the down-direction planning inputs that vary per
@@ -166,25 +177,47 @@ type downMigrationOptions struct {
 }
 
 func generateDownMigrationSQLQualified(
+	ctx context.Context,
+	runtime Runtime,
 	diff *difftypes.SchemaDiff,
 	desired *schemamodel.Database,
 	dbSchema *catalog.Database,
 	dialect string,
 	opts downMigrationOptions,
 ) (string, error) {
+	if normalized := platform.NormalizeDialect(dialect); normalized != "" {
+		dialect = normalized
+	}
 	directiveOpts := opts.directives
 	// For down migrations, we need to use the current database schema as the "generated" schema
 	// since we're reverting back to the current state
-	dbAsGoSchema := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, dialect)
+	current, err := restoreTableSource(diff, dbSchema, dialect)
+	if err != nil {
+		return "", err
+	}
+	dbSchema = current
+	dbAsGoSchema, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, dbSchema, dialect, runtime)
+	if err != nil {
+		return "", err
+	}
 
 	// Create a reverse diff to generate down migration. We pass the original
 	// generated schema to resolve table names for RLS policies, and the
 	// introspected database schema so the reversed constraint additions can
 	// rebuild the full prior body from the pre-change DB state — that is exactly
 	// the definition the down must restore.
-	reverseDiff := reverseSchemaDiffWithSchemaForDialect(diff, desired, dbSchema, dialect)
+	reverseDiff := reverseSchemaDiffWithPrior(diff, desired, dbSchema, dbAsGoSchema, dialect)
+	caps := opts.capabilities
+	if caps == nil {
+		caps = capability.ForDialect(dialect)
+	}
+	recovery, err := reverseFeatureChanges(ctx, diff, reverseDiff, dialect, caps, runtime)
+	if err != nil {
+		return "", err
+	}
 	if normalized := platform.NormalizeDialect(dialect); normalized == platform.MySQL || normalized == platform.MariaDB {
 		forwardNodes, err := planner.GenerateSchemaDiffASTWithOptions(
+			ctx, runtime,
 			diff, dialect, planner.Options{Capabilities: opts.capabilities},
 		)
 		if err != nil {
@@ -206,7 +239,14 @@ func generateDownMigrationSQLQualified(
 		ConcurrentIndexRefs:     opts.concurrentIndexRefs,
 		ConcurrentIndexDropRefs: opts.concurrentIndexDropRefs,
 	}
-	statements, err := planDownMigrationStatements(reverseDiff, dbAsGoSchema, dialect, plannerOpts, opts.qualifier)
+	statements, err := planDownMigrationStatements(
+		ctx, runtime,
+		reverseDiff, dbAsGoSchema, dialect, plannerOpts, opts.qualifier,
+	)
+	if err != nil {
+		return "", err
+	}
+	notes, err := renderer.Render(ctx, runtime, renderer.Request{Target: dialect, Capabilities: caps, Nodes: recoveryNotes(recovery)})
 	if err != nil {
 		return "", err
 	}
@@ -222,7 +262,7 @@ func generateDownMigrationSQLQualified(
 	header := fmt.Sprintf("-- Migration rollback\n-- Generated on: %s\n-- Direction: DOWN\n\n",
 		time.Now().Format(time.RFC3339))
 
-	return withGeneratedTimeoutDirectivesForOptions(header+joinScriptStatements(statements), dialect, directiveOpts), nil
+	return withGeneratedTimeoutDirectivesForOptions(header+notes.SQL()+joinScriptStatements(statements), dialect, directiveOpts), nil
 }
 
 // planDownMigrationStatements renders the reversed diff into ordered down
@@ -230,6 +270,7 @@ func generateDownMigrationSQLQualified(
 // with one, the plan is generated as AST first so the qualifier rewrite runs
 // before rendering, mirroring the up direction.
 func planDownMigrationStatements(
+	ctx context.Context, runtime Runtime,
 	reverseDiff *difftypes.SchemaDiff,
 	dbAsGoSchema *schemamodel.Database,
 	dialect string,
@@ -242,29 +283,35 @@ func planDownMigrationStatements(
 	// this the assertion would be made for one direction only
 	// (stokaro/ptah#2315).
 	if err := validateRollbackTarget(
-		dbAsGoSchema, reverseDiff, dialect, plannerOpts.CapabilitiesFor(dialect),
+		ctx, runtime, dbAsGoSchema, reverseDiff, dialect, plannerOpts.CapabilitiesFor(dialect),
 	); err != nil {
 		return nil, fmt.Errorf("error generating down migration SQL: %w", err)
 	}
 	if qualifier.IsZero() {
-		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(reverseDiff, dialect, plannerOpts)
+		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+			ctx, runtime,
+			reverseDiff, dialect, plannerOpts,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("error generating down migration SQL: %w", err)
 		}
 		return statements, nil
 	}
-	nodes, err := planner.GenerateSchemaDiffASTWithOptions(reverseDiff, dialect, plannerOpts)
+	nodes, err := planner.GenerateSchemaDiffASTWithOptions(
+		ctx, runtime,
+		reverseDiff, dialect, plannerOpts,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("error generating down migration SQL: %w", err)
 	}
 	if err := qualifier.ApplyToPlan(dialect, dbAsGoSchema, nodes); err != nil {
 		return nil, err
 	}
-	output, err := renderer.RenderSQLWithCapabilities(dialect, plannerOpts.CapabilitiesFor(dialect), nodes...)
+	output, err := renderer.Render(ctx, runtime, renderer.Request{Target: dialect, Capabilities: plannerOpts.CapabilitiesFor(dialect), Nodes: nodes})
 	if err != nil {
 		return nil, fmt.Errorf("error generating down migration SQL: %w", err)
 	}
-	return sqlutil.SplitSQLStatementsForDialect(output, dialect), nil
+	return sqlutil.SplitSQLStatementsForDialect(output.SQL(), dialect), nil
 }
 
 func withGeneratedTimeoutDirectivesForOptions(sql, dialect string, opts generatedDirectiveOptions) string {

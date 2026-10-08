@@ -13,7 +13,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/core/ast"
-	"ptah.run/core/renderer"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 )
 
@@ -49,7 +49,7 @@ func TestPostgreSQLRenderer_Integration(t *testing.T) {
 		IfExists: true,
 	}
 
-	dropSQL, err := renderer.RenderSQL("postgres", dropTable)
+	dropSQL, err := builtin.RenderSQL("postgres", dropTable)
 	c.Assert(err, qt.IsNil)
 	c.Assert(legacyRenderedSQL(dropSQL), qt.Contains, "DROP TABLE IF EXISTS test_users")
 
@@ -81,7 +81,7 @@ func TestPostgreSQLRenderer_Integration(t *testing.T) {
 		},
 	}
 
-	createSQL, err := renderer.RenderSQL("postgresql", table)
+	createSQL, err := builtin.RenderSQL("postgresql", table)
 	c.Assert(err, qt.IsNil)
 	c.Assert(legacyRenderedSQL(createSQL), qt.Contains, "CREATE TABLE test_users")
 
@@ -100,7 +100,7 @@ func TestPostgreSQLRenderer_Integration(t *testing.T) {
 		Name:     "test_users",
 		IfExists: false,
 	}
-	dropSQL, err = renderer.RenderSQL("postgresql", dropTable)
+	dropSQL, err = builtin.RenderSQL("postgresql", dropTable)
 	c.Assert(err, qt.IsNil)
 	c.Assert(legacyRenderedSQL(dropSQL), qt.Contains, "DROP TABLE test_users")
 
@@ -122,7 +122,7 @@ func TestMySQLRenderer_Integration(t *testing.T) {
 		IfExists: true,
 	}
 
-	dropSQL, err := renderer.RenderSQL("mysql", dropTable)
+	dropSQL, err := builtin.RenderSQL("mysql", dropTable)
 	c.Assert(err, qt.IsNil)
 	c.Assert(legacyRenderedSQL(dropSQL), qt.Contains, "DROP TABLE IF EXISTS test_users")
 
@@ -158,7 +158,7 @@ func TestMySQLRenderer_Integration(t *testing.T) {
 		},
 	}
 
-	createSQL, err := renderer.RenderSQL("mysql", table)
+	createSQL, err := builtin.RenderSQL("mysql", table)
 	c.Assert(err, qt.IsNil)
 	c.Assert(legacyRenderedSQL(createSQL), qt.Contains, "CREATE TABLE test_users")
 	c.Assert(createSQL, qt.Contains, "ENGINE=InnoDB")
@@ -179,7 +179,7 @@ func TestMySQLRenderer_Integration(t *testing.T) {
 		Name:     "test_users",
 		IfExists: false,
 	}
-	dropSQL, err = renderer.RenderSQL("mysql", dropTable)
+	dropSQL, err = builtin.RenderSQL("mysql", dropTable)
 	c.Assert(err, qt.IsNil)
 	c.Assert(legacyRenderedSQL(dropSQL), qt.Contains, "DROP TABLE test_users")
 
@@ -201,7 +201,7 @@ func TestMariaDBRenderer_Integration(t *testing.T) {
 		IfExists: true,
 	}
 
-	dropSQL, err := renderer.RenderSQL("mariadb", dropTable)
+	dropSQL, err := builtin.RenderSQL("mariadb", dropTable)
 	c.Assert(err, qt.IsNil)
 	c.Assert(legacyRenderedSQL(dropSQL), qt.Contains, "DROP TABLE IF EXISTS test_products")
 
@@ -236,7 +236,7 @@ func TestMariaDBRenderer_Integration(t *testing.T) {
 		},
 	}
 
-	createSQL, err := renderer.RenderSQL("mariadb", table)
+	createSQL, err := builtin.RenderSQL("mariadb", table)
 	c.Assert(err, qt.IsNil)
 	c.Assert(legacyRenderedSQL(createSQL), qt.Contains, "CREATE TABLE test_products")
 	c.Assert(createSQL, qt.Contains, "ENGINE=InnoDB")
@@ -257,7 +257,7 @@ func TestMariaDBRenderer_Integration(t *testing.T) {
 		Name:     "test_products",
 		IfExists: false,
 	}
-	dropSQL, err = renderer.RenderSQL("mariadb", dropTable)
+	dropSQL, err = builtin.RenderSQL("mariadb", dropTable)
 	c.Assert(err, qt.IsNil)
 	c.Assert(legacyRenderedSQL(dropSQL), qt.Contains, "DROP TABLE test_products")
 
@@ -342,7 +342,7 @@ func TestRenderer_DialectSpecificSQL(t *testing.T) {
 				}
 			}
 
-			sql, err := renderer.RenderSQL(tt.dialect, table)
+			sql, err := builtin.RenderSQL(tt.dialect, table)
 			c.Assert(err, qt.IsNil)
 
 			// Check for dialect-specific content
@@ -426,7 +426,7 @@ func TestRenderer_ReservedIdentifiersExecute(t *testing.T) {
 				})
 			index := ast.NewIndex("idx_user_order", "user", "order")
 
-			sqlText, err := renderer.RenderSQL(tt.dialect, table, index)
+			sqlText, err := builtin.RenderSQL(tt.dialect, table, index)
 			c.Assert(err, qt.IsNil)
 
 			for _, statement := range executableStatements(sqlText) {
@@ -537,7 +537,7 @@ func TestDropIndex_Integration(t *testing.T) {
 					SetComment("Test drop index")
 			}
 
-			dropSQL, err := renderer.RenderSQL(tt.dialect, dropIndex)
+			dropSQL, err := builtin.RenderSQL(tt.dialect, dropIndex)
 			c.Assert(err, qt.IsNil)
 
 			// Check for expected content
@@ -666,7 +666,7 @@ func TestCreateType_Integration(t *testing.T) {
 
 			// Test CREATE TYPE
 			createType := tt.createType()
-			createSQL, err := renderer.RenderSQL(tt.dialect, createType)
+			createSQL, err := builtin.RenderSQL(tt.dialect, createType)
 			c.Assert(err, qt.IsNil)
 
 			// Check for expected content
@@ -809,7 +809,7 @@ func TestAlterType_Integration(t *testing.T) {
 
 			// Test ALTER TYPE
 			alterType := tt.alterType()
-			alterSQL, err := renderer.RenderSQL(tt.dialect, alterType)
+			alterSQL, err := builtin.RenderSQL(tt.dialect, alterType)
 			c.Assert(err, qt.IsNil)
 
 			// Check for expected content

@@ -1,13 +1,17 @@
 package planner_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -69,13 +73,16 @@ func TestGenerateSchemaDiffSQLQualifiesDeclaredUserTypes(t *testing.T) {
 
 			schema := plannerUserTypeSchema(test.columnType)
 			diff := &difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableCreationsFor(schema, "t"),
+				TablesAdded: difftypes.TableCreationsFor(schema, identifier.ForDialect("postgres"), "t"),
 				// A hand-built diff carries the vocabulary itself; a comparison
 				// fills it in (stokaro/ptah#2315).
 				DeclaredUserTypes: difftypes.UserTypeVocabularyOf(schema),
 			}
 
-			sql, err := planner.GenerateSchemaDiffSQL(diff, platform.Postgres)
+			sql, err := planner.GenerateSchemaDiffSQL(
+				context.Background(), must.Must(builtin.New()),
+				diff, platform.Postgres,
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, test.want)
@@ -137,13 +144,16 @@ func TestGenerateSchemaDiffSQLLeavesABuiltInTypeAlone(t *testing.T) {
 				},
 			}
 			diff := &difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableCreationsFor(schema, "t"),
+				TablesAdded: difftypes.TableCreationsFor(schema, identifier.ForDialect("postgres"), "t"),
 				// A hand-built diff carries the vocabulary itself; a comparison
 				// fills it in (stokaro/ptah#2315).
 				DeclaredUserTypes: difftypes.UserTypeVocabularyOf(schema),
 			}
 
-			sql, err := planner.GenerateSchemaDiffSQL(diff, platform.Postgres)
+			sql, err := planner.GenerateSchemaDiffSQL(
+				context.Background(), must.Must(builtin.New()),
+				diff, platform.Postgres,
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, test.want)
@@ -185,12 +195,15 @@ func TestCompare_ACreatedColumnIsTypedByTheComparisonsVocabulary(t *testing.T) {
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, &catalog.Database{}, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, &catalog.Database{}, platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.DeclaredUserTypes.Domains, qt.HasLen, 1,
 		qt.Commentf("the comparison carries the declaration's type vocabulary"))
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.Postgres)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Postgres,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `"c" app.positive_int`,
@@ -224,12 +237,15 @@ func TestCompare_AForeignKeyResolvesAgainstTheComparisonsTables(t *testing.T) {
 		},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, &catalog.Database{}, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, &catalog.Database{}, platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.DeclaredTables, qt.HasLen, 2,
 		qt.Commentf("the comparison carries the declared tables a reference resolves against"))
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.Postgres)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Postgres,
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `REFERENCES "app"."parents"`,

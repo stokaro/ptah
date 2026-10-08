@@ -2,13 +2,13 @@
 package introspect
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/convert/dbschematogo"
@@ -90,7 +90,7 @@ func run(cmd *cobra.Command, opts options) error {
 		return cmdutil.Fail(cmd, err)
 	}
 
-	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
+	connectCtx, cancelConnect := dbcli.ConnectContext(cmd.Context(), connectTimeout)
 	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.dbURL)
 	cancelConnect()
 	if err != nil {
@@ -102,7 +102,14 @@ func run(cmd *cobra.Command, opts options) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("read database schema: %w", err))
 	}
-	goSchema := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, conn.Info().Dialect)
+	runtime, err := builtin.New()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	goSchema, err := dbschematogo.ConvertDBSchemaToGoSchema(cmd.Context(), dbSchema, conn.Info().Dialect, runtime)
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("convert database schema: %w", err))
+	}
 	files, err := goschematogo.Render(goSchema, goschematogo.Options{
 		PackageName:     opts.packageName,
 		PerTable:        opts.perTable,

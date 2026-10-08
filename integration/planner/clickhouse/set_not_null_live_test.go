@@ -11,11 +11,13 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/dbtarget"
 )
@@ -118,7 +120,7 @@ func TestSetNotNullWithADefault_HappyPath(t *testing.T) {
 	nullableTableWithANullRow(c, ctx, conn)
 	desired := declaredAsn(schemamodel.Field{Type: "INTEGER", Default: "7"})
 
-	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired})
+	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.Statements(), qt.DeepEquals, []string{
 		"ALTER TABLE asn UPDATE n = '7' WHERE n IS NULL SETTINGS mutations_sync = 2",
@@ -130,7 +132,7 @@ func TestSetNotNullWithADefault_HappyPath(t *testing.T) {
 	}
 
 	c.Assert(asnState(c, ctx, conn), qt.DeepEquals, []string{"n Int32", "1=7", "2=5"})
-	again, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired})
+	again, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(again.Statements(), qt.HasLen, 0)
 }
@@ -148,7 +150,7 @@ func TestSetNotNullWithoutADefault_FailurePath(t *testing.T) {
 
 	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{
 		Desired: declaredAsn(schemamodel.Field{Type: "INTEGER"}),
-	})
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, `(?s).*column asn\.n cannot be made NOT NULL without a default: .*`)
@@ -175,7 +177,7 @@ func TestMaterializedColumnMadeNotNull_HappyPath(t *testing.T) {
 	}
 	desired := declaredAsn(schemamodel.Field{Type: "INTEGER", GeneratedExpression: "id + 1", GeneratedKind: "MATERIALIZED"})
 
-	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired})
+	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.Statements(), qt.DeepEquals, []string{
 		"ALTER TABLE asn DROP COLUMN n",
@@ -187,7 +189,7 @@ func TestMaterializedColumnMadeNotNull_HappyPath(t *testing.T) {
 	}
 
 	c.Assert(asnState(c, ctx, conn), qt.DeepEquals, []string{"n Int32", "1=2", "2=3"})
-	again, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired})
+	again, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(again.Statements(), qt.HasLen, 0)
 }

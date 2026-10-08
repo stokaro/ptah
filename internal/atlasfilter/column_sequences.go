@@ -4,9 +4,9 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/columnsequence"
-	"ptah.run/internal/objectidentity"
 )
 
 // A sequence that is part of a column -- the one a serial or identity column

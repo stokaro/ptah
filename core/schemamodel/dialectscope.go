@@ -4,80 +4,49 @@ import (
 	"slices"
 	"sort"
 
-	"ptah.run/core/platform"
-	"ptah.run/internal/dialectscope"
+	"ptah.run/core/schemaext"
 )
 
-// ScopeToDialect returns db projected onto dialect: every declared object whose
-// `dialects=` scope excludes dialect is absent from the result.
+// ScopeToTarget projects db onto an explicitly resolved target. Every declared
+// object whose `dialects=` scope excludes that target is absent from the result.
+// An unresolved target is an error, never an empty or unchanged declaration.
 //
-// # Absent, not skipped and not refused
-//
-// Without a scope, a target that cannot host an object a schema declares leaves
-// Ptah two choices, and both are dishonest. Skipping the object with a named comment
-// keeps a multi-dialect schema working but never converges: the comparator
-// keeps the object in its added list, `schema apply` exits 0 having created
-// nothing, and the next run plans the same creation forever. Refusing the
-// object converges but makes one schema across postgres, mysql and mariadb
-// impossible. Measured on MariaDB 12.3.2 without it, one schema
-// declaring a plpgsql function, an extension, a sequence, a domain and an RLS
-// policy applied cleanly (exit 0) and then reported four permanently
-// unreconcilable categories on every later comparison, while a declared role
-// refused the apply outright.
-//
-// A scope makes the third answer expressible. The object is simply not part of
-// the desired state for a target it was not declared for, so nothing compares
-// it, nothing plans it, and nothing has to apologize for it.
-//
-// # An empty scope belongs to every dialect
-//
-// An object that declares no scope carries none, and it must reach every
-// target. The projection can therefore only narrow a
-// schema, never widen one: with no scope anywhere, ScopeToDialect returns a
-// database equal to its input.
-//
-// # The JSON tag on every Dialects field
-//
-// [Database]'s JSON encoding is the desired-state fingerprint that plan files
-// record and verify. A `Dialects` field without `json:",omitempty"` would
-// encode as `null` on every object of every schema and change the fingerprint
-// of every plan anyone has already saved. The tag is what keeps an unscoped
-// schema encoding as if the field were not there.
-func ScopeToDialect(db *Database, dialect string) *Database {
+// An excluded declaration does not describe this target. Comparison must also
+// suppress the corresponding observed identity rather than treating exclusion
+// as deletion intent. An empty declaration scope includes every resolved target.
+// The result retains unfiltered nested values as read-only data. Filtered slices
+// and derived dependency graphs belong to the result; the input is unchanged.
+func ScopeToTarget(db *Database, target schemaext.TargetSelection) (*Database, error) {
+	if err := target.Validate(); err != nil {
+		return nil, err
+	}
 	if db == nil {
-		return nil
+		return nil, nil
 	}
-	if platform.NormalizeDialect(dialect) == "" {
-		// An unrecognized target is refused by the renderer and by the
-		// connection with a message that names what is wrong. Projecting it
-		// first would empty the desired state and report a synced schema
-		// instead.
-		return db
-	}
-	if !hasDialectScope(db) {
+	if !hasDialectScope(db) && !slices.ContainsFunc(db.FacetSlots(), func(f *schemaext.Facets) bool { return f.HasTargetScopes() }) {
 		// Nothing is scoped, so the projection is the identity. Returning the
 		// original pointer keeps an unscoped schema out of the clone-and-
 		// finalize path entirely, which is where every behavior difference
 		// between a scoped and an unscoped run could otherwise creep in.
-		return db
+		return db, nil
 	}
 
 	scoped := *db
-	scoped.Extensions = keepScoped(db.Extensions, dialect, func(v Extension) []string { return v.Dialects })
-	scoped.Functions = keepScoped(db.Functions, dialect, func(v Function) []string { return v.Dialects })
-	scoped.Sequences = keepScoped(db.Sequences, dialect, func(v Sequence) []string { return v.Dialects })
-	scoped.Domains = keepScoped(db.Domains, dialect, func(v Domain) []string { return v.Dialects })
-	scoped.CompositeTypes = keepScoped(db.CompositeTypes, dialect, func(v CompositeType) []string { return v.Dialects })
-	scoped.Ranges = keepScoped(db.Ranges, dialect, func(v Range) []string { return v.Dialects })
-	scoped.Views = keepScoped(db.Views, dialect, func(v View) []string { return v.Dialects })
-	scoped.MaterializedViews = keepScoped(db.MaterializedViews, dialect, func(v MaterializedView) []string { return v.Dialects })
-	scoped.Triggers = keepScoped(db.Triggers, dialect, func(v Trigger) []string { return v.Dialects })
-	scoped.RLSPolicies = keepScoped(db.RLSPolicies, dialect, func(v RLSPolicy) []string { return v.Dialects })
-	scoped.RLSEnabledTables = keepScoped(db.RLSEnabledTables, dialect, func(v RLSEnabledTable) []string { return v.Dialects })
-	scoped.Roles = keepScoped(db.Roles, dialect, func(v Role) []string { return v.Dialects })
-	scoped.Grants = keepScoped(db.Grants, dialect, func(v Grant) []string { return v.Dialects })
-	scoped.DefaultPrivileges = keepScoped(db.DefaultPrivileges, dialect, func(v DefaultPrivilege) []string { return v.Dialects })
-	scoped.RevokedGrants = keepScoped(db.RevokedGrants, dialect, func(v Grant) []string { return v.Dialects })
+	scoped.Extensions = keepScoped(db.Extensions, target, func(v Extension) []string { return v.Dialects })
+	scoped.Functions = keepScoped(db.Functions, target, func(v Function) []string { return v.Dialects })
+	scoped.Sequences = keepScoped(db.Sequences, target, func(v Sequence) []string { return v.Dialects })
+	scoped.Domains = keepScoped(db.Domains, target, func(v Domain) []string { return v.Dialects })
+	scoped.CompositeTypes = keepScoped(db.CompositeTypes, target, func(v CompositeType) []string { return v.Dialects })
+	scoped.Ranges = keepScoped(db.Ranges, target, func(v Range) []string { return v.Dialects })
+	scoped.Views = keepScoped(db.Views, target, func(v View) []string { return v.Dialects })
+	scoped.MaterializedViews = keepScoped(db.MaterializedViews, target, func(v MaterializedView) []string { return v.Dialects })
+	scoped.Triggers = keepScoped(db.Triggers, target, func(v Trigger) []string { return v.Dialects })
+	scoped.RLSPolicies = keepScoped(db.RLSPolicies, target, func(v RLSPolicy) []string { return v.Dialects })
+	scoped.RLSEnabledTables = keepScoped(db.RLSEnabledTables, target, func(v RLSEnabledTable) []string { return v.Dialects })
+	scoped.Roles = keepScoped(db.Roles, target, func(v Role) []string { return v.Dialects })
+	scoped.Grants = keepScoped(db.Grants, target, func(v Grant) []string { return v.Dialects })
+	scoped.DefaultPrivileges = keepScoped(db.DefaultPrivileges, target, func(v DefaultPrivilege) []string { return v.Dialects })
+	scoped.RevokedGrants = keepScoped(db.RevokedGrants, target, func(v Grant) []string { return v.Dialects })
 
 	// Everything the projection does not filter is still shared with the
 	// caller's database by value, so the slices it can reorder are cloned
@@ -90,6 +59,14 @@ func ScopeToDialect(db *Database, dialect string) *Database {
 	scoped.EmbeddedFields = slices.Clone(db.EmbeddedFields)
 	scoped.Schemas = slices.Clone(db.Schemas)
 
+	for _, facets := range scoped.FacetSlots() {
+		projected, err := facets.ForTarget(target)
+		if err != nil {
+			return nil, err
+		}
+		*facets = projected
+	}
+
 	// The derived graphs name objects the projection may have removed, so they
 	// are dropped and recomputed rather than carried across. This is the same
 	// discipline the exclude filter follows for the same reason: a dependency
@@ -99,7 +76,7 @@ func ScopeToDialect(db *Database, dialect string) *Database {
 	scoped.FunctionDependencies = nil
 	scoped.SelfReferencingForeignKeys = nil
 	Finalize(&scoped)
-	return &scoped
+	return &scoped, nil
 }
 
 // ScopedObject names one declared object and the dialect scope it carries.
@@ -123,20 +100,20 @@ func ScopedObjects(db *Database) []ScopedObject {
 	return collectScopedObjects(db, func([]string) bool { return true })
 }
 
-// OmissionsForDialect names every object ScopeToDialect would remove from db
-// for dialect, in the same order as [ScopedObjects].
+// OmissionsForTarget names every object ScopeToTarget would remove from db
+// for the selected target, in the same order as [ScopedObjects].
 //
 // It answers the question a projection alone cannot: an object that is absent
 // looks exactly like an object that was never declared. Reporting the omission
 // is what turns "this target quietly does nothing with your declaration" into a
 // statement the author wrote on purpose.
-func OmissionsForDialect(db *Database, dialect string) []ScopedObject {
-	if platform.NormalizeDialect(dialect) == "" {
-		return nil
+func OmissionsForTarget(db *Database, target schemaext.TargetSelection) ([]ScopedObject, error) {
+	if err := target.Validate(); err != nil {
+		return nil, err
 	}
 	return collectScopedObjects(db, func(scope []string) bool {
-		return !dialectscope.Includes(scope, dialect)
-	})
+		return !target.Includes(scope)
+	}), nil
 }
 
 func collectScopedObjects(db *Database, want func(scope []string) bool) []ScopedObject {
@@ -239,10 +216,10 @@ func anyScoped[T any](values []T, scopeOf func(T) []string) bool {
 	return false
 }
 
-func keepScoped[T any](values []T, dialect string, scopeOf func(T) []string) []T {
+func keepScoped[T any](values []T, target schemaext.TargetSelection, scopeOf func(T) []string) []T {
 	kept := make([]T, 0, len(values))
 	for _, value := range values {
-		if dialectscope.Includes(scopeOf(value), dialect) {
+		if target.Includes(scopeOf(value)) {
 			kept = append(kept, value)
 		}
 	}

@@ -9,10 +9,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -42,7 +44,8 @@ func TestGenerateDownMigrationSQL_RestoresTheDatabasesOfAWholeServer(t *testing.
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			down, err := generateDownMigrationSQL(up, desired, server, dialect)
+			down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+				up, desired, server, dialect)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(down, qt.Contains, "CREATE SCHEMA IF NOT EXISTS `r3` DEFAULT CHARACTER SET latin1 COLLATE latin1_bin")

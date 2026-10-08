@@ -3,14 +3,17 @@
 package ydb_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -194,9 +197,10 @@ func TestYDBSerialSequence_RefusesWhatTheServerWouldBreak(t *testing.T) {
 func planErrorAgainst(c *qt.C, conn *dbschema.DatabaseConnection, declared *schemamodel.Database) error {
 	c.Helper()
 	info := conn.Info()
-	diff, err := schemadiff.CompareWithDatabaseInfo(declared, readScoped(c, conn, serialSchemas), info, nil)
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, readScoped(c, conn, serialSchemas), info, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		context.Background(), must.Must(builtin.New()),
 		diff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
 	)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)

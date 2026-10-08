@@ -1,14 +1,16 @@
 package postgres_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -62,9 +64,12 @@ func TestPlanner_CapabilityGatesRLSAndRoleManagement(t *testing.T) {
 		}},
 	}
 
-	nodes, err := postgres.NewForDialect(platform.Spanner, capability.SpannerPostgres()).GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := postgres.NewForDialect(platform.Spanner, capability.SpannerPostgres()).GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQLWithCapabilities(platform.Spanner, capability.SpannerPostgres(), nodes...)
+	sql, err := builtin.RenderSQLWithCapabilities(platform.Spanner, capability.SpannerPostgres(), nodes...)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Not(qt.Contains), "CREATE ROLE")

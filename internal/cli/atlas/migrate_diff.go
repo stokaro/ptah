@@ -13,6 +13,7 @@ import (
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasargs"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/atlasmigrate"
@@ -346,7 +347,12 @@ func runAtlasMigrateDiff(
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	runtime, err := builtin.New()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	diffResult, err := run(cmd.Context(), conn, atlasmigrate.DiffOptions{
+		Runtime:      runtime,
 		Dir:          migrationsDir,
 		ReplaySource: project.replaySource(localDir),
 		// The same handle the preflight gate captured through. Handing it to the
@@ -373,7 +379,7 @@ func runAtlasMigrateDiff(
 		// identity. The native Atlas layout omits this hook because it publishes
 		// no rollback half; its valid forward plan must not be refused for a
 		// capability an unpublished reverse would require.
-		PlanBidirectional:         compatBidirectionalPlannerForFormat(dirFormat),
+		PlanBidirectional:         compatBidirectionalPlannerForFormat(dirFormat, runtime),
 		Schemas:                   opts.schemas,
 		LockTimeout:               lockTimeout,
 		Policy:                    policy,
@@ -463,14 +469,19 @@ func validateAtlasMigrateDiffCurrentSource(
 
 func compatBidirectionalPlannerForFormat(
 	format atlasmigrateimport.Format,
-) func(atlasmigrate.BidirectionalPlanInput) (atlasmigrate.BidirectionalPlan, error) {
+	runtime generator.Runtime,
+) func(context.Context, atlasmigrate.BidirectionalPlanInput) (atlasmigrate.BidirectionalPlan, error) {
 	if atlasmigrate.ReadsNativeAtlasDir(format) {
 		return nil
 	}
-	return planCompatBidirectionalSchemaDiff
+	return func(ctx context.Context, input atlasmigrate.BidirectionalPlanInput) (atlasmigrate.BidirectionalPlan, error) {
+		return planCompatBidirectionalSchemaDiff(ctx, runtime, input)
+	}
 }
 
 func planCompatBidirectionalSchemaDiff(
+	ctx context.Context,
+	runtime generator.Runtime,
 	input atlasmigrate.BidirectionalPlanInput,
 ) (atlasmigrate.BidirectionalPlan, error) {
 	createMode := generator.ConcurrentIndexDisabled
@@ -481,7 +492,8 @@ func planCompatBidirectionalSchemaDiff(
 	if input.ConcurrentIndexDrop && platform.IsPostgresFamily(input.Dialect) {
 		dropMode = generator.ConcurrentIndexAll
 	}
-	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
+	plan, err := generator.PlanBidirectionalSchemaDiff(ctx, generator.BidirectionalSchemaPlanOptions{
+		Runtime:       runtime,
 		Diff:          input.Diff,
 		DesiredSchema: input.DesiredSchema,
 		CurrentSchema: input.CurrentSchema,

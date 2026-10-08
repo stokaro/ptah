@@ -1,13 +1,15 @@
 package mysql_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mysql"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -28,9 +30,12 @@ func TestPlannerOrdersABareNameForeignKeyAfterTheOtherKinds(t *testing.T) {
 		ConstraintsAdded: difftypes.ConstraintAdditionsFor(desired, "aaa_fk_child_parent", "zzz_ck_child_amount"),
 	}
 
-	nodes, err := mysql.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := mysql.New().GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("mysql", nodes...)
+	sql, err := builtin.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
 
 	check := strings.Index(sql, "zzz_ck_child_amount")

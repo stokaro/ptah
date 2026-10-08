@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
 
 	"ptah.run/catalog"
@@ -17,6 +18,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	ydbschema "ptah.run/internal/dbschema/ydb"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/migrator"
@@ -223,8 +225,8 @@ func TestYDBExternal_FailurePath_RefusedWithTheFlagOff(t *testing.T) {
 			info := conn.Info()
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				externalDeclaration(test, "https://storage.invalid/events/"),
-				readScoped(c, conn, externalSchemas), info, nil)
+				t.Context(), externalDeclaration(test, "https://storage.invalid/events/"),
+				readScoped(c, conn, externalSchemas), info, nil, must.Must(builtin.New()))
 
 			c.Assert(err, qt.ErrorMatches, "external data source ptah_ydb_external.warehouse, which requires target "+
 				"capability external_data_sources, unavailable on this ydb target")

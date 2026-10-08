@@ -4,11 +4,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -62,7 +64,7 @@ func TestCompare_YDBTablePartitioning_NothingToPlan(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(partitionedDeclaration(test.desired), partitionedCatalog(test.database), platform.YDB)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), partitionedDeclaration(test.desired), partitionedCatalog(test.database), platform.YDB, must.Must(builtin.New())))
 			c.Assert(diff.TablesModified, qt.HasLen, 0)
 			c.Assert(diff.HasChanges(), qt.IsFalse)
 		})
@@ -93,7 +95,7 @@ func TestCompare_YDBTablePartitioning_Change(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(partitionedDeclaration(test.desired), partitionedCatalog(test.database), test.dialect)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), partitionedDeclaration(test.desired), partitionedCatalog(test.database), test.dialect, must.Must(builtin.New())))
 			c.Assert(diff.TablesModified, qt.HasLen, 1)
 			c.Assert(diff.TablesModified[0].YDBPartitioningChange, qt.DeepEquals,
 				&difftypes.YDBTablePartitioningChange{Desired: test.desired, Current: test.database})
@@ -121,7 +123,7 @@ func TestCompare_YDBTablePartitioning_LeftOutKeepsTheDatabase(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := schemadiff.CompareWithDialect(test.desired, partitionedCatalog(held), platform.YDB)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), test.desired, partitionedCatalog(held), platform.YDB, must.Must(builtin.New())))
 			var got *difftypes.YDBTablePartitioningChange
 			for _, table := range diff.TablesModified {
 				got = table.YDBPartitioningChange
@@ -139,7 +141,7 @@ func TestCompare_YDBTablePartitioning_SameDocument(t *testing.T) {
 	document := func() *schemamodel.Database {
 		return partitionedDeclaration(&ast.YDBTablePartitioningSpec{UniformPartitions: 4, ReadReplicas: "PER_AZ:1"})
 	}
-	diff := schemadiff.CompareSchemas(document(), document(), platform.YDB)
+	diff := must.Must(schemadiff.CompareSchemas(t.Context(), document(), document(), platform.YDB, must.Must(builtin.New())))
 	c.Assert(diff.HasChanges(), qt.IsFalse)
 }
 
@@ -151,7 +153,7 @@ func TestCompare_YDBTablePartitioning_CarriesWhatTheTableHolds(t *testing.T) {
 	c := qt.New(t)
 	held := &ast.YDBTablePartitioningSpec{MinPartitions: 4, KeyBloomFilter: new(true)}
 
-	diff := schemadiff.CompareWithDialect(partitionedDeclaration(nil), partitionedCatalog(held), platform.YDB)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), partitionedDeclaration(nil), partitionedCatalog(held), platform.YDB, must.Must(builtin.New())))
 
 	c.Assert(diff.CurrentYDBSettings, qt.DeepEquals, []difftypes.YDBHeldSettings{{TableName: "items", Partitioning: held}})
 	c.Assert(diff.HasChanges(), qt.IsFalse)

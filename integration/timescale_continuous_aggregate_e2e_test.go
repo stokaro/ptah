@@ -10,10 +10,12 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbexprprobe"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
@@ -77,7 +79,7 @@ func TestTimescaleContinuousAggregateConvergesE2E(t *testing.T) {
 	c.Assert(describedAggregateDefinition(live, aggregate), qt.Contains, "01:00:00")
 
 	declared := timescaleDeclaration(table, aggregate, body)
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, live, nil)
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, live, nil, must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	// Scoped to the aggregate this test made. The server is shared, and a diff
@@ -92,7 +94,7 @@ func TestTimescaleContinuousAggregateConvergesE2E(t *testing.T) {
 		`SELECT time_bucket('1 day', "time") AS bucket, device, avg(temperature) AS avg_temp `+
 			`FROM %s GROUP BY bucket, device`, table)
 	changedDiff, err := schemadiff.CompareWithDatabase(
-		ctx, conn, timescaleDeclaration(table, aggregate, changed), live, nil)
+		ctx, conn, timescaleDeclaration(table, aggregate, changed), live, nil, must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(aggregateChanges(changedDiff, aggregate), qt.DeepEquals, []string{"modified:" + aggregate})

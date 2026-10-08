@@ -2,53 +2,28 @@ package modelast_test
 
 import (
 	"fmt"
-	"os"
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/platform"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/modelast"
 )
 
-// normalizeDialectSource is the file that decides which dialect spellings ptah
-// accepts. The spelling list below is read out of it rather than copied here, so
-// a spelling added to the switch is covered by this test without anyone editing
-// this file.
-const normalizeDialectSource = "../../core/platform/constants.go"
-
-// quotedLiteral deliberately requires a non-empty literal: the switch's default
-// arm returns "", which is the one string in the body that is not a spelling.
-var quotedLiteral = regexp.MustCompile(`"([^"]+)"`)
-
-// acceptedSpellings returns every dialect spelling that appears as a case in
-// platform.NormalizeDialect's switch, read from the switch body itself.
-//
-// The body holds no string literal other than the case spellings: the argument
-// is lowercased through strings helpers and every return is a named constant.
+// acceptedSpellings reads the declaration used by built-in normalization and
+// registration, so adding an alias automatically extends these sweeps.
 func acceptedSpellings(c *qt.C) []string {
-	source, err := os.ReadFile(normalizeDialectSource)
-	c.Assert(err, qt.IsNil)
-
-	_, afterSignature, foundSignature := strings.Cut(string(source), "func NormalizeDialect(dialect string) string {")
-	c.Assert(foundSignature, qt.IsTrue, qt.Commentf("NormalizeDialect signature moved in %s", normalizeDialectSource))
-
-	body, _, foundEnd := strings.Cut(afterSignature, "\n}")
-	c.Assert(foundEnd, qt.IsTrue, qt.Commentf("NormalizeDialect body is unterminated in %s", normalizeDialectSource))
-
-	matches := quotedLiteral.FindAllStringSubmatch(body, -1)
-	spellings := make([]string, 0, len(matches))
-	for _, match := range matches {
-		spellings = append(spellings, match[1])
-	}
+	spellings := platform.DialectSpellings()
 	slices.Sort(spellings)
-	return slices.Compact(spellings)
+	c.Assert(len(spellings) > 9, qt.IsTrue,
+		qt.Commentf("only %d spellings, so the sweep is incomplete", len(spellings)))
+	return spellings
 }
 
 // convertedStatements is the conversion this test compares: the AST that
@@ -57,10 +32,10 @@ func acceptedSpellings(c *qt.C) []string {
 // refuses part of the fixture still contributes a value both spellings of that
 // engine must agree on.
 func convertedStatements(database schemamodel.Database, dialect string) []string {
-	nodes := modelast.CollectDatabase(database, dialect)
+	nodes := must.Must(modelast.CollectDatabase(database, dialect))
 	rendered := make([]string, 0, len(nodes.Statements))
 	for _, node := range nodes.Statements {
-		sql, err := renderer.RenderSQL(dialect, node)
+		sql, err := builtin.RenderSQL(dialect, node)
 		rendered = append(rendered, fmt.Sprintf("%s | err=%v", sql, err))
 	}
 	return rendered
@@ -73,32 +48,25 @@ func spellingFixture(c *qt.C) schemamodel.Database {
 	return *database
 }
 
-// TestAcceptedSpellings_ExtractionControls proves the spelling list the parity
-// test iterates is really the switch's own list.
-//
-// Reverting the extraction (a renamed signature, a regexp that stops matching)
-// leaves acceptedSpellings empty, and an empty list makes the parity test below
-// pass while comparing nothing. This test prints the missing spelling name.
-func TestAcceptedSpellings_ExtractionControls(t *testing.T) {
+// TestAcceptedSpellings_DeclarationControls pins representative aliases and
+// canonical names so an incomplete declaration cannot vacate the sweeps.
+func TestAcceptedSpellings_DeclarationControls(t *testing.T) {
 	c := qt.New(t)
 
 	spellings := acceptedSpellings(c)
 
-	// Positive control: aliases that exist only inside the switch, one per
-	// engine family that has one.
+	// Positive control: representative aliases from each engine family.
 	for _, alias := range []string{"pgx", "ch", "sqlite3", "tsql", "sql-server", "crdb", "ysql", "google_spanner"} {
 		c.Assert(spellings, qt.Contains, alias)
 	}
-	// Positive control: every canonical name is a case of its own switch.
+	// Positive control: canonical names are accepted spellings too.
 	for _, canonical := range []string{
 		platform.Postgres, platform.MySQL, platform.MariaDB, platform.ClickHouse,
 		platform.SQLite, platform.SQLServer, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
 	} {
 		c.Assert(spellings, qt.Contains, canonical)
 	}
-	// Negative control: the extractor must not reach past the switch body. Every
-	// literal it collected has to be a spelling NormalizeDialect actually
-	// accepts, so a comment word or a neighboring function's literal fails here.
+	// Every enumerated spelling must resolve to a target.
 	for _, spelling := range spellings {
 		c.Assert(platform.NormalizeDialect(spelling), qt.Not(qt.Equals), "", qt.Commentf("collected %q, which is not an accepted spelling", spelling))
 	}
@@ -135,7 +103,7 @@ func TestCollectDatabase_EveryAcceptedSpellingConvertsLikeItsCanonicalName(t *te
 // were emitted, in which order. Rendering is deliberately not involved -- see
 // the test below for why.
 func nodeKinds(database schemamodel.Database, dialect string) []string {
-	nodes := modelast.CollectDatabase(database, dialect)
+	nodes := must.Must(modelast.CollectDatabase(database, dialect))
 	kinds := make([]string, 0, len(nodes.Statements))
 	for _, node := range nodes.Statements {
 		kinds = append(kinds, fmt.Sprintf("%T", node))

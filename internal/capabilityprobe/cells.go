@@ -451,7 +451,7 @@ var Cells = []Cell{
 	// 26.9 is newer than that reading and is the line the integration workflow
 	// now starts. 26.8 and 26.7 keep their cells: the probe fan-out still runs
 	// both, and 26.7 is the line the ClickHouse dialect's behavior is recorded
-	// against -- core/renderer/internal/dialects/clickhouse pins
+	// against -- engine/builtin/internal/dialects/clickhouse pins
 	// statement-level findings to a live 26.7.3.19 throughout.
 	{
 		Dialect: platform.ClickHouse, Line: "26.9",

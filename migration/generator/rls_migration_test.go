@@ -1,13 +1,16 @@
 package generator_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/goschema"
 	"ptah.run/core/platform"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -26,10 +29,15 @@ func TestRLSMigrationGeneration(t *testing.T) {
 	}
 
 	// Generate schema diff
-	diff := schemadiff.Compare(desired, dbSchema)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		desired, dbSchema, "postgres", must.Must(builtin.New()),
+	))
 
 	// Generate migration SQL
-	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.Postgres)
+	sql, err := planner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Postgres,
+	)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 

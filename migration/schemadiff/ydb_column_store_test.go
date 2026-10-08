@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -28,7 +30,7 @@ func TestCompare_YDBColumnStoreFormatLimit(t *testing.T) {
 			desired.NotDescribed = test.undescribed
 			current := ydbFamilyCatalog()
 			current.Tables[0].YDBColumnTable = &ast.YDBColumnTableSpec{HashColumns: []string{"id"}, Partitions: 8}
-			diff := schemadiff.CompareWithDialect(desired, current, platform.YDB)
+			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, current, platform.YDB, must.Must(builtin.New())))
 			c.Assert(diff.TablesModified, qt.HasLen, test.modifications)
 			c.Assert(desired.Tables[0].YDBColumnTable, qt.IsNil)
 		})

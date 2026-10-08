@@ -1,14 +1,17 @@
 package ydb_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer"
+	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -42,7 +45,7 @@ func changedItems(id schemamodel.Field, restart string, changes map[string]strin
 		CurrentDatabasePath: "/local",
 		TablesModified: []difftypes.TableDiff{{
 			TableName: "items",
-			Desired:   difftypes.TableDeclaration{Table: schemamodel.Table{StructName: "S", Name: "items"}, Fields: []schemamodel.Field{id}},
+			Desired:   schemacapture.TableDeclaration{Table: schemamodel.Table{StructName: "S", Name: "items"}, Fields: []schemamodel.Field{id}},
 			ColumnsModified: []difftypes.ColumnDiff{{
 				ColumnName: "id", Changes: changes, Desired: id, CurrentSequenceRestart: restart,
 			}},
@@ -176,7 +179,10 @@ func TestGenerateMigrationAST_SerialSequence_FailurePath(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := ydb.NewWithCapabilities(test.caps).GenerateMigrationAST(test.diff)
+			nodes, err := ydb.NewWithCapabilities(test.caps).GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				test.diff,
+			)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(nodes, qt.IsNil)
@@ -192,10 +198,13 @@ func TestGenerateMigrationAST_SerialSequence_FailurePath(t *testing.T) {
 func TestGenerateMigrationAST_SerialSequenceReportsNothingDropped(t *testing.T) {
 	c := qt.New(t)
 	nodes, err := ydb.NewWithCapabilities(capability.YDB262()).
-		GenerateMigrationAST(createdOrders(serialField("BIGSERIAL", "100", "5")))
+		GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			createdOrders(serialField("BIGSERIAL", "100", "5")),
+		)
 	c.Assert(err, qt.IsNil)
 
-	sql, omissions, err := renderer.RenderSQLReportingOmissions("ydb", capability.YDB262(), nodes...)
+	sql, omissions, err := builtin.RenderSQLReportingOmissions("ydb", capability.YDB262(), nodes...)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "START WITH 100 INCREMENT BY 5 RESTART WITH 100")

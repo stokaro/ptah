@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
@@ -106,6 +107,10 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 }
 
 func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
+	runtime, err := builtin.New()
+	if err != nil {
+		return err
+	}
 	out := cmd.OutOrStdout()
 	reportFormat := strings.ToLower(strings.TrimSpace(opts.reportFormat))
 
@@ -224,7 +229,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	info := conn.Info()
 	compareOpts := dbcli.CompareOptionsIgnoringExtensions(cmd, opts.ignoreExtensions, projectCfg, nil)
 	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(
-		cmd.Context(), conn, result, dbSchema, compareOpts,
+		cmd.Context(), conn, result, dbSchema, compareOpts, runtime,
 	)
 	if err != nil {
 		return fmt.Errorf("error comparing schemas: %w", err)
@@ -243,15 +248,18 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	if err := diff.RotateSecrets(rotateSecrets); err != nil {
 		return err
 	}
-	astNodes, err := planner.GenerateSchemaDiffASTWithOptions(diff, info.Dialect, planner.Options{
-		Capabilities:      info.Capabilities,
-		AllowTableRebuild: rebuild,
-	})
+	astNodes, err := planner.GenerateSchemaDiffASTWithOptions(
+		cmd.Context(), runtime,
+		diff, info.Dialect, planner.Options{
+			Capabilities:      info.Capabilities,
+			AllowTableRebuild: rebuild,
+		},
+	)
 
 	if err != nil {
 		return fmt.Errorf("error generating migration plan: %w", err)
 	}
-	assessments, err := safety.AssessRenderedWithCapabilities(astNodes, info.Dialect, info.Capabilities)
+	assessments, err := safety.AssessRenderedWithCapabilities(cmd.Context(), runtime, astNodes, info.Dialect, info.Capabilities)
 	if err != nil {
 		return fmt.Errorf("error assessing migration safety: %w", err)
 	}
@@ -301,7 +309,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	fmt.Fprintln(out, "=== MIGRATION SQL ===")
 	fmt.Fprintln(out)
 
-	migrationSQL, err := renderer.RenderSQLWithCapabilities(info.Dialect, info.Capabilities, astNodes...)
+	rendered, err := renderer.Render(cmd.Context(), runtime, renderer.Request{Target: info.Dialect, Capabilities: info.Capabilities, Nodes: astNodes})
 	if err != nil {
 		return fmt.Errorf("error rendering SQL: %w", err)
 	}
@@ -312,6 +320,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	fmt.Fprintf(out, "-- Target: %s\n", dburldisplay.Format(dbURL))
 	fmt.Fprintln(out)
 
+	migrationSQL := rendered.SQL()
 	fmt.Fprint(out, migrationSQL)
 	if !strings.HasSuffix(migrationSQL, "\n") {
 		fmt.Fprintln(out)

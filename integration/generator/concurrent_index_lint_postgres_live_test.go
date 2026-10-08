@@ -8,9 +8,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrator"
@@ -69,6 +71,7 @@ func TestGenerateMigration_ConcurrentIndexArtifactsPassPtahLintWithRealPostgres(
 	// Cycle 1 puts the table into the directory's history, verified on the
 	// shadow like every other cycle here.
 	baseFiles, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+		Runtime:           must.Must(builtin.New()),
 		GoEntitiesDir:     writeGeneratorEntities(c, filepath.Join(dir, "base"), membersEntitiesWithoutIndex),
 		DatabaseURL:       targetURL,
 		ShadowDatabaseURL: shadowURL,
@@ -94,6 +97,7 @@ func TestGenerateMigration_ConcurrentIndexArtifactsPassPtahLintWithRealPostgres(
 	c.Assert(err, qt.IsNil)
 
 	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+		Runtime:           must.Must(builtin.New()),
 		GoEntitiesDir:     writeGeneratorEntities(c, filepath.Join(dir, "indexed"), membersEntitiesWithIndex),
 		DatabaseURL:       targetURL,
 		ShadowDatabaseURL: shadowURL,

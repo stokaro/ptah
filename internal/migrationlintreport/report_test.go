@@ -83,6 +83,7 @@ func TestBuild_UsesProjectConfigWithoutCobra(t *testing.T) {
 	writeLintTestFile(c, dir, "0000000002_new.down.sql", "ALTER TABLE users ADD COLUMN legacy TEXT;\n")
 
 	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
+		Runtime:   selectedRuntime(c),
 		Dir:       dir,
 		DirFormat: string(migrationfile.DirFormatPtah),
 		FailOn:    migrationlintreport.FailOnNone,
@@ -112,6 +113,7 @@ migration:
 	c.Assert(err, qt.IsNil)
 
 	_, err = migrationlintreport.Build(context.Background(), migrationlintreport.Options{
+		Runtime:   selectedRuntime(c),
 		Dir:       t.TempDir(),
 		DirFormat: string(migrationfile.DirFormatAtlas),
 		Dialect:   "sqlite",
@@ -131,6 +133,7 @@ lint:
 	c.Assert(err, qt.IsNil)
 
 	_, err = migrationlintreport.Build(context.Background(), migrationlintreport.Options{
+		Runtime:   selectedRuntime(c),
 		Dir:       t.TempDir(),
 		FS:        fstest.MapFS{"1_init.sql": {Data: []byte("CREATE TABLE users (id int);")}},
 		DirFormat: string(migrationfile.DirFormatAtlas),
@@ -150,6 +153,7 @@ func TestBuild_ExplicitGitBaseSuppressesProjectLatest(t *testing.T) {
 	}
 
 	_, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
+		Runtime:   selectedRuntime(c),
 		Dir:       t.TempDir(),
 		FS:        fstest.MapFS{"1_init.sql": {Data: []byte("CREATE TABLE users (id int);")}},
 		DirFormat: string(migrationfile.DirFormatAtlas),
@@ -175,6 +179,7 @@ func TestBuild_ExplicitLatestSuppressesProjectGitSelector(t *testing.T) {
 	}
 
 	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
+		Runtime:   selectedRuntime(c),
 		Dir:       t.TempDir(),
 		FS:        fstest.MapFS{"1_init.sql": {Data: []byte("CREATE TABLE users (id int);")}},
 		DirFormat: string(migrationfile.DirFormatAtlas),
@@ -202,6 +207,7 @@ func TestBuild_LatestAndAnalysisShareOneSourceSnapshot(t *testing.T) {
 	}
 
 	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
+		Runtime:   selectedRuntime(c),
 		Dir:       t.TempDir(),
 		FS:        source,
 		DirFormat: string(migrationfile.DirFormatAtlas),
@@ -225,7 +231,8 @@ func TestBuild_LatestSelectsAtlasBareRepeatableAfterNumericMigrations(t *testing
 	c := qt.New(t)
 
 	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
-		Dir: t.TempDir(),
+		Runtime: selectedRuntime(c),
+		Dir:     t.TempDir(),
 		FS: fstest.MapFS{
 			"1_create_users.sql": {Data: []byte("CREATE TABLE users (id int);\n")},
 			"R__drop_users.sql":  {Data: []byte("DROP TABLE users;\n")},
@@ -264,6 +271,7 @@ func TestBuild_GitBaseSelectsAtlasRepeatableByRevisionKey(t *testing.T) {
 	runGit(c, repo, "commit", "-m", "repeatable")
 
 	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
+		Runtime:   selectedRuntime(c),
 		Dir:       migrationsDir,
 		DirFormat: string(migrationfile.DirFormatAtlas),
 		Dialect:   "sqlite",
@@ -293,6 +301,7 @@ func TestBuild_ProvidedSnapshotDoesNotRequireSourceDirectory(t *testing.T) {
 	c.Assert(os.RemoveAll(dir), qt.IsNil)
 
 	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
+		Runtime:   selectedRuntime(c),
 		Dir:       dir,
 		FS:        snapshot,
 		DirFormat: string(migrationfile.DirFormatAtlas),
@@ -314,6 +323,7 @@ func TestBuild_LoadsConventionalLintConfigFromSnapshot(t *testing.T) {
 	}
 
 	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
+		Runtime:   selectedRuntime(c),
 		Dir:       t.TempDir(),
 		FS:        source,
 		DirFormat: string(migrationfile.DirFormatAtlas),
@@ -338,6 +348,7 @@ func TestBuild_FailOnErrorDoesNotFailWarnings(t *testing.T) {
 	writeWarningMigration(c, dir)
 
 	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
+		Runtime:   selectedRuntime(c),
 		Dir:       dir,
 		DirFormat: string(migrationfile.DirFormatPtah),
 		Dialect:   "postgres",
@@ -356,6 +367,7 @@ func TestBuild_FailOnAnyFailsWarnings(t *testing.T) {
 	writeWarningMigration(c, dir)
 
 	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
+		Runtime:   selectedRuntime(c),
 		Dir:       dir,
 		DirFormat: string(migrationfile.DirFormatPtah),
 		Dialect:   "postgres",

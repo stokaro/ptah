@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/safety"
 )
 
@@ -19,16 +21,16 @@ func TestCheckDestructiveAllowed(t *testing.T) {
 		{Severity: safety.Warning, Reason: "CREATE UNIQUE INDEX can fail on existing duplicate values"},
 	}
 
-	err := checkDestructiveAllowed(GenerateMigrationOptions{CheckDestructive: true}, destructive)
+	err := checkDestructiveAllowed(GenerateMigrationOptions{Runtime: must.Must(builtin.New()), CheckDestructive: true}, destructive)
 	c.Assert(err, qt.ErrorMatches, "destructive migration statements require AllowDestructive")
 
-	err = checkDestructiveAllowed(GenerateMigrationOptions{CheckDestructive: true, AllowDestructive: true}, destructive)
+	err = checkDestructiveAllowed(GenerateMigrationOptions{Runtime: must.Must(builtin.New()), CheckDestructive: true, AllowDestructive: true}, destructive)
 	c.Assert(err, qt.IsNil)
 
-	err = checkDestructiveAllowed(GenerateMigrationOptions{CheckDestructive: false}, destructive)
+	err = checkDestructiveAllowed(GenerateMigrationOptions{Runtime: must.Must(builtin.New()), CheckDestructive: false}, destructive)
 	c.Assert(err, qt.IsNil)
 
-	err = checkDestructiveAllowed(GenerateMigrationOptions{CheckDestructive: true}, warning)
+	err = checkDestructiveAllowed(GenerateMigrationOptions{Runtime: must.Must(builtin.New()), CheckDestructive: true}, warning)
 	c.Assert(err, qt.IsNil)
 }
 

@@ -1,15 +1,18 @@
 package mysql_test
 
 import (
+	"context"
 	"regexp"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	migrationplanner "ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -19,7 +22,10 @@ var sqlCommentLineRE = regexp.MustCompile(`(?m)^\s*--.*\n?`)
 // planStatementsSQL renders a plan for dialect with comment lines removed, so a
 // test can pin the order of the statements a server receives.
 func planStatementsSQL(c *qt.C, diff *difftypes.SchemaDiff, dialect string) string {
-	sql, err := migrationplanner.GenerateSchemaDiffSQL(diff, dialect)
+	sql, err := migrationplanner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		diff, dialect,
+	)
 	c.Assert(err, qt.IsNil)
 	return strings.TrimSpace(sqlCommentLineRE.ReplaceAllString(legacyRenderedSQL(sql), ""))
 }
@@ -238,13 +244,16 @@ func TestPlanner_TriggerSwap_StatementOrder(t *testing.T) {
 // header in front of the block.
 func TestPlanner_TriggerSwap_HeldBackDropKeepsItsTableHeader(t *testing.T) {
 	c := qt.New(t)
-	sql, err := migrationplanner.GenerateSchemaDiffSQL(&difftypes.SchemaDiff{
-		TablesModified: []difftypes.TableDiff{{
-			TableName:      "mytable",
-			ColumnsRemoved: difftypes.ColumnChanges{{Name: "legacy", Type: "VARCHAR(100)"}},
-		}},
-		TriggersRemoved: []difftypes.TriggerRef{{TriggerName: "mytable_after_insert", TableName: "mytable"}},
-	}, platform.MySQL)
+	sql, err := migrationplanner.GenerateSchemaDiffSQL(
+		context.Background(), must.Must(builtin.New()),
+		&difftypes.SchemaDiff{
+			TablesModified: []difftypes.TableDiff{{
+				TableName:      "mytable",
+				ColumnsRemoved: difftypes.ColumnChanges{{Name: "legacy", Type: "VARCHAR(100)"}},
+			}},
+			TriggersRemoved: []difftypes.TriggerRef{{TriggerName: "mytable_after_insert", TableName: "mytable"}},
+		}, platform.MySQL,
+	)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 

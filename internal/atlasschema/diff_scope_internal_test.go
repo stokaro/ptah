@@ -10,16 +10,19 @@ package atlasschema
 // TestSchemaDiffIncludeMatchesLiveExtensionOutsideTheDefaultSchemaPostgres.
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/convert/dbschematogo"
@@ -35,10 +38,10 @@ func TestScopeDiffStatePreservesGeneratedDependencyValidation(t *testing.T) {
 	}
 	state := diffDatabaseState(database)
 
-	got := scopeDiffState(state, atlasfilter.Scope{
+	got := scopeDiffState(t.Context(), state, atlasfilter.Scope{
 		Include:       []string{"active_users"},
 		DefaultSchema: state.DefaultSchema,
-	}, "--to schema", "postgres")
+	}, "--to schema", "postgres", must.Must(builtin.New()))
 
 	var crossScope *atlasfilter.CrossScopeError
 	c.Assert(got.err, qt.ErrorAs, &crossScope)
@@ -69,10 +72,10 @@ func TestScopeDiffStatePreservesGeneratedDomainDependencies(t *testing.T) {
 	}
 	state := diffDatabaseState(database)
 
-	got := scopeDiffState(state, atlasfilter.Scope{
+	got := scopeDiffState(t.Context(), state, atlasfilter.Scope{
 		Include:       []string{"measurements"},
 		DefaultSchema: state.DefaultSchema,
-	}, "--to schema", "postgres")
+	}, "--to schema", "postgres", must.Must(builtin.New()))
 
 	c.Assert(got.err, qt.IsNil)
 	c.Assert(got.schema.Fields, qt.HasLen, 1)
@@ -99,10 +102,10 @@ func TestScopeDiffStatePreservesQualifiedDatabaseFunctionIdentity(t *testing.T) 
 	}
 	state := diffDatabaseState(database)
 
-	got := scopeDiffState(state, atlasfilter.Scope{
+	got := scopeDiffState(t.Context(), state, atlasfilter.Scope{
 		Include:       []string{"extra.fn"},
 		DefaultSchema: state.DefaultSchema,
-	}, "--to schema", "postgres")
+	}, "--to schema", "postgres", must.Must(builtin.New()))
 
 	c.Assert(got.err, qt.IsNil)
 	c.Assert(got.selectionErr, qt.IsNil)
@@ -121,11 +124,11 @@ func TestScopeDiffStateExcludesQualifiedDatabaseEnumSymmetrically(t *testing.T) 
 	}
 	state := diffDatabaseState(database)
 
-	got := scopeDiffState(state, atlasfilter.Scope{
+	got := scopeDiffState(t.Context(), state, atlasfilter.Scope{
 		Include:       []string{"app.color"},
 		Exclude:       []string{"app.color"},
 		DefaultSchema: state.DefaultSchema,
-	}, "--to schema", "postgres")
+	}, "--to schema", "postgres", must.Must(builtin.New()))
 
 	c.Assert(got.err, qt.IsNil)
 	c.Assert(got.selectionErr, qt.IsNil)
@@ -144,10 +147,10 @@ func TestScopeDiffStatesBareExcludePreservesCatalogSchemaSpelling(t *testing.T) 
 	scope := atlasfilter.Scope{Exclude: []string{"Sales"}, DefaultSchema: "dbo"}
 
 	from, to := scopeDiffStates(
-		diffDatabaseState(current),
+		t.Context(), diffDatabaseState(current),
 		atlassource.State{Schema: &schemamodel.Database{}, DefaultSchema: "dbo"},
 		scope,
-		platform.SQLServer,
+		platform.SQLServer, must.Must(builtin.New()),
 	)
 
 	c.Assert(from.err, qt.IsNil)
@@ -155,7 +158,7 @@ func TestScopeDiffStatesBareExcludePreservesCatalogSchemaSpelling(t *testing.T) 
 	c.Assert(from.report.Unmatched, qt.IsNil)
 	c.Assert(from.database.Schemas, qt.HasLen, 0)
 	c.Assert(from.database.Tables, qt.HasLen, 0)
-	diff := schemadiff.CompareWithDialect(to.schema, from.database, platform.SQLServer)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), to.schema, from.database, platform.SQLServer, must.Must(builtin.New())))
 	c.Assert(diff.HasChanges(), qt.IsFalse)
 }
 
@@ -180,10 +183,10 @@ func TestScopeDiffStateDoesNotMergeUnrelatedCatalogType(t *testing.T) {
 	}
 	state := diffDatabaseState(database)
 
-	got := scopeDiffState(state, atlasfilter.Scope{
+	got := scopeDiffState(t.Context(), state, atlasfilter.Scope{
 		Include:       []string{"public.users"},
 		DefaultSchema: state.DefaultSchema,
-	}, "--to schema", "postgres")
+	}, "--to schema", "postgres", must.Must(builtin.New()))
 
 	c.Assert(got.err, qt.IsNil)
 	c.Assert(got.selectionErr, qt.IsNil)
@@ -203,10 +206,10 @@ func TestScopeDiffStateUsesDatabaseIdentityForSelectionOutcome(t *testing.T) {
 	}
 	state := diffDatabaseState(database)
 
-	matched := scopeDiffState(state, atlasfilter.Scope{
+	matched := scopeDiffState(t.Context(), state, atlasfilter.Scope{
 		Include:       []string{"extensions.pgcrypto"},
 		DefaultSchema: state.DefaultSchema,
-	}, "--from schema", "postgres")
+	}, "--from schema", "postgres", must.Must(builtin.New()))
 	c.Assert(matched.err, qt.IsNil)
 	c.Assert(matched.selectionErr, qt.IsNil)
 	c.Assert(matched.database.Extensions, qt.DeepEquals, database.Extensions)
@@ -215,10 +218,10 @@ func TestScopeDiffStateUsesDatabaseIdentityForSelectionOutcome(t *testing.T) {
 	c.Assert(matched.schema.Extensions[0].Schema, qt.Equals, "extensions")
 	c.Assert(matched.schema.NotDescribed, qt.DeepEquals, coverage.Set{}.WithKind(coverage.Sequence))
 
-	missed := scopeDiffState(state, atlasfilter.Scope{
+	missed := scopeDiffState(t.Context(), state, atlasfilter.Scope{
 		Include:       []string{"extensions.typo"},
 		DefaultSchema: state.DefaultSchema,
-	}, "--from schema", "postgres")
+	}, "--from schema", "postgres", must.Must(builtin.New()))
 	c.Assert(missed.err, qt.IsNil)
 	var empty *atlasfilter.EmptySelectionError
 	c.Assert(missed.selectionErr, qt.ErrorAs, &empty)
@@ -243,11 +246,11 @@ func TestScopeDiffStatePreservesDatabaseWideExtensionsAcrossSchemaUniverse(t *te
 	}
 	state := diffDatabaseState(database)
 
-	got := scopeDiffState(state, atlasfilter.Scope{
+	got := scopeDiffState(t.Context(), state, atlasfilter.Scope{
 		Schemas:       []string{"app"},
 		Include:       []string{"app.users", "other.unrelated"},
 		DefaultSchema: state.DefaultSchema,
-	}, "--to schema", "postgres")
+	}, "--to schema", "postgres", must.Must(builtin.New()))
 
 	c.Assert(got.err, qt.IsNil)
 	c.Assert(got.selectionErr, qt.IsNil)
@@ -261,8 +264,11 @@ func TestScopeDiffStatePreservesDatabaseWideExtensionsAcrossSchemaUniverse(t *te
 	c.Assert(got.schema.Fields, qt.HasLen, 1)
 	c.Assert(got.schema.Fields[0].Type, qt.Equals, "extensions.citext")
 
-	diff := schemadiff.CompareWithDialect(got.schema, &catalog.Database{}, platform.Postgres)
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), got.schema, &catalog.Database{}, platform.Postgres, must.Must(builtin.New())))
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Postgres,
+	)
 	c.Assert(err, qt.IsNil)
 	sql := strings.Join(statements, ";\n")
 	c.Assert(sql, qt.Contains, `CREATE SCHEMA IF NOT EXISTS "extensions"`)
@@ -287,10 +293,10 @@ func TestNonExtensionScopeDoesNotRemoveUnmentionedCurrentExtension(t *testing.T)
 	scope := atlasfilter.Scope{Include: []string{"app.users"}, DefaultSchema: "public"}
 
 	from, to := scopeDiffStates(
-		diffDatabaseState(current),
+		t.Context(), diffDatabaseState(current),
 		atlassource.State{Schema: desired, DefaultSchema: "public"},
 		scope,
-		"postgres",
+		"postgres", must.Must(builtin.New()),
 	)
 
 	c.Assert(from.err, qt.IsNil)
@@ -303,7 +309,7 @@ func TestNonExtensionScopeDoesNotRemoveUnmentionedCurrentExtension(t *testing.T)
 		Reason:     coverage.OutsideScope,
 		Provenance: coverage.Configured,
 	}))
-	diff := schemadiff.CompareWithDialect(to.schema, from.database, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), to.schema, from.database, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(diff.ExtensionsAdded.Names(), qt.HasLen, 0)
 	c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, 0)
 }
@@ -317,10 +323,10 @@ func TestCurrentOnlyNonExtensionMatchDoesNotRemoveUnrelatedExtension(t *testing.
 	scope := atlasfilter.Scope{Include: []string{"app.users"}, DefaultSchema: "public"}
 
 	from, to := scopeDiffStates(
-		diffDatabaseState(current),
+		t.Context(), diffDatabaseState(current),
 		atlassource.State{Schema: &schemamodel.Database{}, DefaultSchema: "public"},
 		scope,
-		"postgres",
+		"postgres", must.Must(builtin.New()),
 	)
 
 	c.Assert(from.err, qt.IsNil)
@@ -328,8 +334,8 @@ func TestCurrentOnlyNonExtensionMatchDoesNotRemoveUnrelatedExtension(t *testing.
 	c.Assert(from.selection.NonExtensionMatched, qt.IsTrue)
 	c.Assert(to.selection.NonExtensionMatched, qt.IsFalse)
 	applyExtensionSupportCoverage(to.schema, from.selection, to.selection)
-	diff := schemadiff.CompareWithDialect(to.schema, from.database, platform.Postgres)
-	c.Assert(diff.TablesRemoved, qt.HasLen, 1)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), to.schema, from.database, platform.Postgres, must.Must(builtin.New())))
+	c.Assert(diff.TablesRemoved.Names(), qt.HasLen, 1)
 	c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, 0)
 }
 
@@ -343,10 +349,10 @@ func TestDesiredOnlyNonExtensionMatchStillAddsDeclaredExtension(t *testing.T) {
 	scope := atlasfilter.Scope{Include: []string{"app.users"}, DefaultSchema: "public"}
 
 	from, to := scopeDiffStates(
-		diffDatabaseState(current),
+		t.Context(), diffDatabaseState(current),
 		atlassource.State{Schema: desired, DefaultSchema: "public"},
 		scope,
-		"postgres",
+		"postgres", must.Must(builtin.New()),
 	)
 
 	c.Assert(from.err, qt.IsNil)
@@ -354,7 +360,7 @@ func TestDesiredOnlyNonExtensionMatchStillAddsDeclaredExtension(t *testing.T) {
 	c.Assert(from.database.Extensions, qt.DeepEquals, current.Extensions)
 	c.Assert(to.schema.Extensions, qt.DeepEquals, desired.Extensions)
 	applyExtensionSupportCoverage(to.schema, from.selection, to.selection)
-	diff := schemadiff.CompareWithDialect(to.schema, from.database, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), to.schema, from.database, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"citext"})
 	c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, 0)
 	c.Assert(diff.TablesAdded, qt.HasLen, 1)
@@ -379,10 +385,10 @@ func TestDesiredOnlyNonExtensionMatchDoesNotReAddCurrentSupportExtension(t *test
 	}
 
 	from, to := scopeDiffStates(
-		diffDatabaseState(current),
+		t.Context(), diffDatabaseState(current),
 		atlassource.State{Schema: desired, DefaultSchema: "public"},
 		scope,
-		"postgres",
+		"postgres", must.Must(builtin.New()),
 	)
 
 	c.Assert(from.err, qt.IsNil)
@@ -390,7 +396,7 @@ func TestDesiredOnlyNonExtensionMatchDoesNotReAddCurrentSupportExtension(t *test
 	c.Assert(from.database.Extensions, qt.DeepEquals, current.Extensions)
 	c.Assert(to.schema.Extensions, qt.DeepEquals, desired.Extensions)
 	applyExtensionSupportCoverage(to.schema, from.selection, to.selection)
-	diff := schemadiff.CompareWithDialect(to.schema, from.database, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), to.schema, from.database, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(diff.ExtensionsAdded.Names(), qt.HasLen, 0)
 	c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, 0)
 	c.Assert(diff.TablesAdded, qt.HasLen, 1)
@@ -403,10 +409,10 @@ func TestExtensionOnlyScopeStillRemovesSelectedExtension(t *testing.T) {
 	scope := atlasfilter.Scope{Include: []string{"pgcrypto"}, DefaultSchema: "public"}
 
 	from, to := scopeDiffStates(
-		diffDatabaseState(current),
+		t.Context(), diffDatabaseState(current),
 		atlassource.State{Schema: desired, DefaultSchema: "public"},
 		scope,
-		"postgres",
+		"postgres", must.Must(builtin.New()),
 	)
 
 	c.Assert(from.err, qt.IsNil)
@@ -415,7 +421,7 @@ func TestExtensionOnlyScopeStillRemovesSelectedExtension(t *testing.T) {
 	c.Assert(to.selectionErr, qt.ErrorAs, &empty)
 	applyExtensionSupportCoverage(to.schema, from.selection, to.selection)
 	c.Assert(to.schema.NotDescribed.IsZero(), qt.IsTrue)
-	diff := schemadiff.CompareWithDialect(to.schema, from.database, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), to.schema, from.database, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(diff.ExtensionsAdded.Names(), qt.HasLen, 0)
 	c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, []string{"pgcrypto"})
 }
@@ -540,7 +546,7 @@ func TestValidateDiffSystemSchemaStatesAllowsOrdinaryObservedStates(t *testing.T
 
 func diffDatabaseState(current *catalog.Database) atlassource.State {
 	return atlassource.State{
-		Schema:        dbschematogo.ConvertDBSchemaToGoSchema(current, ""),
+		Schema:        must.Must(dbschematogo.ConvertDBSchemaToGoSchema(context.Background(), current, "postgres", must.Must(builtin.New()))),
 		DB:            current,
 		DefaultSchema: "public",
 	}

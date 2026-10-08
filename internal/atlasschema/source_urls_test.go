@@ -7,8 +7,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/migratesum"
 	"ptah.run/migration/migrationfile"
@@ -52,7 +54,7 @@ CREATE TABLE users (
 	report, err := atlasschema.Diff(t.Context(), atlasschema.DiffOptions{
 		FromURLs: []string{"sqlite://" + sourcePath},
 		ToURLs:   []string{"file://" + to},
-	})
+		Runtime:  must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	sql, err := report.MarshalSQL()
@@ -70,7 +72,7 @@ func TestDiff_DatabaseToSource(t *testing.T) {
 	report, err := atlasschema.Diff(t.Context(), atlasschema.DiffOptions{
 		FromURLs: []string{"file://" + from},
 		ToURLs:   []string{"sqlite://" + sourcePath},
-	})
+		Runtime:  must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	sql, err := report.MarshalSQL()
@@ -87,7 +89,7 @@ func TestDiff_DatabaseSourcesSynced(t *testing.T) {
 	report, err := atlasschema.Diff(t.Context(), atlasschema.DiffOptions{
 		FromURLs: []string{"sqlite://" + fromPath},
 		ToURLs:   []string{"sqlite://" + toPath},
-	})
+		Runtime:  must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Changes, qt.HasLen, 0)
@@ -105,7 +107,7 @@ func TestDiff_MigrationDirToSource(t *testing.T) {
 		FromURLs: []string{"file://" + from},
 		ToURLs:   []string{"file://" + migrationsDir},
 		DevURL:   devURL,
-	})
+		Runtime:  must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	sql, err := report.MarshalSQL()
@@ -123,7 +125,7 @@ func TestDiff_MigrationDirRequiresDevURL(t *testing.T) {
 	_, err := atlasschema.Diff(t.Context(), atlasschema.DiffOptions{
 		FromURLs: []string{"file://" + from},
 		ToURLs:   []string{"file://" + migrationsDir},
-	})
+		Runtime:  must.Must(builtin.New())})
 
 	c.Assert(err, qt.ErrorMatches,
 		`--to "file://.*" is a migration directory; --dev-url is required to replay it on a dev database`)
@@ -135,7 +137,7 @@ func TestDiff_DatabaseDialectConflict(t *testing.T) {
 	_, err := atlasschema.Diff(t.Context(), atlasschema.DiffOptions{
 		FromURLs: []string{"postgres://localhost:1/app"},
 		ToURLs:   []string{"mysql://localhost:1/app"},
-	})
+		Runtime:  must.Must(builtin.New())})
 
 	c.Assert(err, qt.ErrorMatches, `--to database dialect "mysql" does not match --from dialect "postgres"`)
 }
@@ -147,7 +149,7 @@ func TestDiff_DevURLDialectConflictWithDatabaseSource(t *testing.T) {
 		FromURLs: []string{"postgres://localhost:1/app"},
 		ToURLs:   []string{"postgres://localhost:1/app"},
 		DevURL:   "sqlite://dev.db",
-	})
+		Runtime:  must.Must(builtin.New())})
 
 	c.Assert(err, qt.ErrorMatches, `--from database dialect "postgres" does not match --dev-url dialect "sqlite"`)
 }
@@ -161,7 +163,7 @@ func TestDiff_UnsupportedSchemeFails(t *testing.T) {
 	_, err := atlasschema.Diff(t.Context(), atlasschema.DiffOptions{
 		FromURLs: []string{"atlas://remote/app"},
 		ToURLs:   []string{"sqlite://a.db"},
-	})
+		Runtime:  must.Must(builtin.New())})
 
 	c.Assert(err, qt.ErrorMatches, `--from "atlas://remote/app": atlas:// registry URLs name a hosted namespace; set PTAH_ATLAS_REGISTRY.*`)
 }
@@ -174,9 +176,9 @@ func TestPrepareApply_DatabaseSource(t *testing.T) {
 	defer dbschema.CloseAndWarn(conn)
 
 	plan, err := atlasschema.PrepareApply(t.Context(), conn, atlasschema.ApplyRuntimeOptions{
-		ToURLs: []string{"sqlite://" + sourcePath},
-		TxMode: migrator.MigrationTxModeFile,
-	})
+		ToURLs:  []string{"sqlite://" + sourcePath},
+		TxMode:  migrator.MigrationTxModeFile,
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.HasChanges(), qt.IsTrue)
@@ -191,9 +193,9 @@ func TestPrepareApply_DatabaseSourceDialectMismatch(t *testing.T) {
 	defer dbschema.CloseAndWarn(conn)
 
 	_, err := atlasschema.PrepareApply(t.Context(), conn, atlasschema.ApplyRuntimeOptions{
-		ToURLs: []string{"postgres://localhost:1/app"},
-		TxMode: migrator.MigrationTxModeFile,
-	})
+		ToURLs:  []string{"postgres://localhost:1/app"},
+		TxMode:  migrator.MigrationTxModeFile,
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.ErrorMatches,
 		`load --to schema: --to database dialect "postgres" does not match --url dialect "sqlite"`)
@@ -208,10 +210,10 @@ func TestPrepareApply_MigrationDirSource(t *testing.T) {
 	defer dbschema.CloseAndWarn(conn)
 
 	plan, err := atlasschema.PrepareApply(t.Context(), conn, atlasschema.ApplyRuntimeOptions{
-		ToURLs: []string{"file://" + migrationsDir},
-		DevURL: devURL,
-		TxMode: migrator.MigrationTxModeFile,
-	})
+		ToURLs:  []string{"file://" + migrationsDir},
+		DevURL:  devURL,
+		TxMode:  migrator.MigrationTxModeFile,
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.HasChanges(), qt.IsTrue)
@@ -227,9 +229,9 @@ func TestPrepareApply_MigrationDirSourceRequiresDevURL(t *testing.T) {
 	defer dbschema.CloseAndWarn(conn)
 
 	_, err := atlasschema.PrepareApply(t.Context(), conn, atlasschema.ApplyRuntimeOptions{
-		ToURLs: []string{"file://" + migrationsDir},
-		TxMode: migrator.MigrationTxModeFile,
-	})
+		ToURLs:  []string{"file://" + migrationsDir},
+		TxMode:  migrator.MigrationTxModeFile,
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.ErrorMatches,
 		`load --to schema: --to "file://.*" is a migration directory; --dev-url is required to replay it on a dev database`)
@@ -247,8 +249,8 @@ func TestPlanApply_EmptyLocalDirectoryRefuses(t *testing.T) {
 	defer dbschema.CloseAndWarn(conn)
 
 	_, err := atlasschema.PlanApply(t.Context(), conn, atlasschema.ApplyOptions{
-		ToURLs: []string{"file://" + dir},
-	})
+		ToURLs:  []string{"file://" + dir},
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.ErrorMatches, `load --to schema: ".*" contains neither SQL nor HCL files`)
 }
@@ -268,8 +270,8 @@ func TestPlanApply_LocalDirectoryOfSQLFiles(t *testing.T) {
 	defer dbschema.CloseAndWarn(conn)
 
 	plan, err := atlasschema.PlanApply(t.Context(), conn, atlasschema.ApplyOptions{
-		ToURLs: []string{"file://" + dir},
-	})
+		ToURLs:  []string{"file://" + dir},
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.SQL(), qt.Contains, "plan_dir_users")
@@ -289,8 +291,8 @@ func TestPreparePlanFile_MigrationDirStaysLocalOnly(t *testing.T) {
 	defer dbschema.CloseAndWarn(conn)
 
 	_, err := atlasschema.PreparePlanFile(t.Context(), conn, atlasschema.PlanFileOptions{
-		ToURLs: []string{"file://" + migrationsDir},
-	})
+		ToURLs:  []string{"file://" + migrationsDir},
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.ErrorMatches,
 		`load --to schema: ".*" is a migration directory \(it contains atlas\.sum\), not a schema directory`)

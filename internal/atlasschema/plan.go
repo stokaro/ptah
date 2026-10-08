@@ -14,17 +14,20 @@ import (
 	digest "github.com/opencontainers/go-digest"
 
 	"ptah.run/catalog"
-	"ptah.run/core/coverage"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	"ptah.run/engine"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/schemafile"
+	"ptah.run/internal/schemafingerprint"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/sqlsafety"
 	"ptah.run/migration/risk"
 	"ptah.run/migration/safety"
+	"ptah.run/migration/schemadiff"
 )
 
 const (
@@ -92,6 +95,8 @@ type PlanRowSet struct {
 
 // PlanFileOptions configures PreparePlanFile.
 type PlanFileOptions struct {
+	// Runtime selects feature services and codecs for this operation. It is required.
+	Runtime engine.SchemaRuntime
 	// Name is the plan name recorded in the file. When empty, a deterministic
 	// name is derived from the source and target fingerprints.
 	Name string
@@ -165,8 +170,14 @@ func PreparePlanFile(
 	conn *dbschema.DatabaseConnection,
 	opts PlanFileOptions,
 ) (PlanFile, error) {
-	plan, _, err := PreparePlanFileReportingUndecided(ctx, conn, opts)
-	return plan, err
+	plan, diagnostics, err := PreparePlanFileReportingUndecided(ctx, conn, opts)
+	if err != nil {
+		return PlanFile{}, err
+	}
+	if err := diagnostics.Err(); err != nil {
+		return PlanFile{}, err
+	}
+	return plan, nil
 }
 
 // PreparePlanFileReportingUndecided is [PreparePlanFile], and it also returns
@@ -179,16 +190,17 @@ func PreparePlanFileReportingUndecided(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	opts PlanFileOptions,
-) (PlanFile, []coverage.Object, error) {
+) (PlanFile, schemadiff.Diagnostics, error) {
 	if conn == nil {
-		return PlanFile{}, nil, errors.New("schema plan requires database connection")
+		return PlanFile{}, schemadiff.Diagnostics{}, errors.New("schema plan requires database connection")
 	}
 	if err := atlasurl.ValidateDialectMatch(opts.DevURL, conn.Info().Dialect); err != nil {
-		return PlanFile{}, nil, err
+		return PlanFile{}, schemadiff.Diagnostics{}, err
 	}
 	reportPlanDevURLProvisionsNothing(opts.Diagnostics, opts.DevURL)
 
 	computation, err := computeApplyPlan(ctx, conn, ApplyOptions{
+		Runtime:         opts.Runtime,
 		ToURLs:          opts.ToURLs,
 		ToSources:       opts.ToSources,
 		Exclude:         opts.Exclude,
@@ -210,24 +222,24 @@ func PreparePlanFileReportingUndecided(
 		Diagnostics:           opts.Diagnostics,
 	})
 	if err != nil {
-		return PlanFile{}, nil, err
+		return PlanFile{}, schemadiff.Diagnostics{}, err
 	}
 
 	from, err := planSourceSchema(ctx, conn, computation, opts.Exclude)
 	if err != nil {
-		return PlanFile{}, nil, err
+		return PlanFile{}, schemadiff.Diagnostics{}, err
 	}
-	fromFingerprint, err := SchemaFingerprint(from)
+	fromFingerprint, err := SchemaFingerprint(ctx, from, opts.Runtime)
 	if err != nil {
-		return PlanFile{}, nil, fmt.Errorf("fingerprint current schema: %w", err)
+		return PlanFile{}, schemadiff.Diagnostics{}, fmt.Errorf("fingerprint current schema: %w", err)
 	}
-	toFingerprint, err := desiredSchemaFingerprint(computation.desired)
+	toFingerprint, err := schemafingerprint.Desired(ctx, opts.Runtime, computation.desired)
 	if err != nil {
-		return PlanFile{}, nil, fmt.Errorf("fingerprint desired schema: %w", err)
+		return PlanFile{}, schemadiff.Diagnostics{}, fmt.Errorf("fingerprint desired schema: %w", err)
 	}
 	rowsFingerprint, err := managedRowsFingerprint(ctx, conn, computation.rowSets)
 	if err != nil {
-		return PlanFile{}, nil, err
+		return PlanFile{}, schemadiff.Diagnostics{}, err
 	}
 	name := strings.TrimSpace(opts.Name)
 	if name == "" {
@@ -541,7 +553,10 @@ func decodePlanJSON(contents []byte, path string) (PlanFile, error) {
 // plan's source fingerprint. The schema is read at the connection URL's scope
 // together with the plan's [PlanFile.SchemasBeyondURL]. A fingerprint mismatch
 // returns *StalePlanError.
-func VerifyPlanTarget(ctx context.Context, conn *dbschema.DatabaseConnection, plan PlanFile) error {
+func VerifyPlanTarget(ctx context.Context, conn *dbschema.DatabaseConnection, plan PlanFile, runtime schemaext.ModelRuntime) error {
+	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
+		return err
+	}
 	if conn == nil {
 		return errors.New("plan verification requires database connection")
 	}
@@ -556,7 +571,7 @@ func VerifyPlanTarget(ctx context.Context, conn *dbschema.DatabaseConnection, pl
 	if err != nil {
 		return err
 	}
-	fingerprint, err := SchemaFingerprint(current)
+	fingerprint, err := SchemaFingerprint(ctx, current, runtime)
 	if err != nil {
 		return fmt.Errorf("fingerprint current schema: %w", err)
 	}
@@ -580,35 +595,13 @@ func VerifyPlanTarget(ctx context.Context, conn *dbschema.DatabaseConnection, pl
 	return nil
 }
 
-// SchemaFingerprint returns the deterministic fingerprint of an introspected
-// schema: the SHA-256 digest of its canonical JSON encoding (Go's
-// encoding/json emits struct fields in declaration order and map keys
-// sorted), in `sha256:<hex>` form. The same mechanism binds migration-plan
-// OCI attachments to live schema state (internal/planartifact).
-func SchemaFingerprint(schema *catalog.Database) (string, error) {
-	if schema == nil {
-		return "", errors.New("schema fingerprint requires schema")
-	}
-	payload, err := json.Marshal(schema)
-	if err != nil {
-		return "", fmt.Errorf("marshal schema fingerprint input: %w", err)
-	}
-	return digest.FromBytes(payload).String(), nil
-}
-
-// desiredSchemaFingerprint fingerprints the loaded desired schema model. It is
-// informational: apply --plan executes the recorded statements and only
-// verifies the source fingerprint, but the target fingerprint lets tooling
-// detect that a plan no longer corresponds to the desired sources.
-func desiredSchemaFingerprint(desired *schemamodel.Database) (string, error) {
-	if desired == nil {
-		return "", errors.New("desired schema fingerprint requires schema")
-	}
-	payload, err := json.Marshal(desired)
-	if err != nil {
-		return "", fmt.Errorf("marshal desired schema fingerprint input: %w", err)
-	}
-	return digest.FromBytes(payload).String(), nil
+// SchemaFingerprint returns a deterministic SHA-256 digest of the catalog,
+// including feature objects, facets, and source knowledge encoded by runtime.
+// Codec owner, representation, version, and definition identities are part of
+// the fingerprint. A missing codec or incompatible source definition refuses
+// the fingerprint instead of omitting feature data.
+func SchemaFingerprint(ctx context.Context, schema *catalog.Database, runtime schemaext.ModelRuntime) (string, error) {
+	return schemafingerprint.Observed(ctx, runtime, schema)
 }
 
 // defaultPlanName derives a plan's name from what it was computed between. The

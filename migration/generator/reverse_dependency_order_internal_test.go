@@ -11,9 +11,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/migration/schemadiff"
 )
@@ -35,11 +38,14 @@ func TestGenerateDownMigration_RecreatesDroppedTablesInDependencyOrder(t *testin
 	c := qt.New(t)
 	target, prior := dependencyOrderedDropFixtures()
 
-	upDiff := schemadiff.CompareWithDialect(target, prior, "postgres")
-	c.Assert(upDiff.TablesRemoved, qt.Contains, "aaa_orders")
-	c.Assert(upDiff.TablesRemoved, qt.Contains, "zzz_customers")
+	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
+		target, prior, "postgres", must.Must(builtin.New()),
+	))
+	c.Assert(upDiff.TablesRemoved.Names(), qt.Contains, "aaa_orders")
+	c.Assert(upDiff.TablesRemoved.Names(), qt.Contains, "zzz_customers")
 
-	down, err := generateDownMigrationSQL(upDiff, target, prior, "postgres")
+	down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
+		upDiff, target, prior, "postgres")
 	c.Assert(err, qt.IsNil)
 	rendered := legacyRenderedSQL(down)
 
@@ -61,23 +67,25 @@ func TestGenerateDownMigration_RecreatesDroppedTablesInDependencyOrder(t *testin
 // is a decision rather than a tidy-up.
 func TestPriorTableCreation_CarriesTheEdgeAndNotTheSelfReference(t *testing.T) {
 	_, catalogPrior := dependencyOrderedDropFixtures()
-	prior := dbschematogo.ConvertDBSchemaToGoSchema(catalogPrior, "")
+	prior := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(),
+		catalogPrior, "postgres", must.Must(builtin.New()),
+	))
 
 	t.Run("the edge to the referenced table is carried", func(t *testing.T) {
 		c := qt.New(t)
-		creation := priorTableCreation(prior, "aaa_orders")
+		creation := priorTableCreation(prior, "aaa_orders", identifier.ForDialect("postgres"))
 		c.Assert(creation.DependsOn, qt.DeepEquals, []string{"zzz_customers"})
 	})
 
 	t.Run("a table referencing nothing carries no edge", func(t *testing.T) {
 		c := qt.New(t)
-		creation := priorTableCreation(prior, "zzz_customers")
+		creation := priorTableCreation(prior, "zzz_customers", identifier.ForDialect("postgres"))
 		c.Assert(creation.DependsOn, qt.HasLen, 0)
 	})
 
 	t.Run("the self reference is left to the forward path", func(t *testing.T) {
 		c := qt.New(t)
-		creation := priorTableCreation(prior, "aaa_orders")
+		creation := priorTableCreation(prior, "aaa_orders", identifier.ForDialect("postgres"))
 		c.Assert(creation.SelfReferencingForeignKeys, qt.HasLen, 0)
 	})
 }

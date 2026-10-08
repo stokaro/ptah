@@ -4,12 +4,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -93,20 +94,20 @@ func TestPlanBidirectionalSchemaDiff_DeclaredConcurrentIndex(t *testing.T) {
 			diff := &difftypes.SchemaDiff{}
 			diff.SetIndexAdditions(difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_users_reference", Fields: []string{"reference"}}, TableName: "users"}})
 
-			plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
-				Diff:          diff,
-				DesiredSchema: usersSchemaDeclaring(test.declared),
-				CurrentSchema: emptyUsersTable(test.partitioned),
-				Dialect:       platform.Postgres,
-				Capabilities:  test.capabilities,
-				Policy: generator.BidirectionalPlanPolicy{
-					Create: test.mode,
-					Drop:   generator.ConcurrentIndexDisabled,
-				},
-			})
+			plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(),
+				generator.BidirectionalSchemaPlanOptions{Runtime: must.Must(builtin.New()), Diff: diff,
+					DesiredSchema: usersSchemaDeclaring(test.declared),
+					CurrentSchema: emptyUsersTable(test.partitioned),
+					Dialect:       platform.Postgres,
+					Capabilities:  test.capabilities,
+					Policy: generator.BidirectionalPlanPolicy{
+						Create: test.mode,
+						Drop:   generator.ConcurrentIndexDisabled,
+					},
+				})
 
 			c.Assert(err, qt.IsNil)
-			up, renderErr := renderer.RenderSQLWithCapabilities(
+			up, renderErr := builtin.RenderSQLWithCapabilities(
 				platform.Postgres, test.capabilities, plan.Forward.Nodes...)
 			c.Assert(renderErr, qt.IsNil)
 			c.Assert(up, qt.Equals, test.wantUp)
@@ -131,17 +132,17 @@ func TestPlanBidirectionalSchemaDiff_DeclaredConcurrentIndexIsPostgresOnly(t *te
 	diff := &difftypes.SchemaDiff{}
 	diff.SetIndexAdditions(difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_users_reference", Fields: []string{"reference"}}, TableName: "users"}})
 
-	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
-		Diff:          diff,
-		DesiredSchema: usersSchemaDeclaring(true),
-		CurrentSchema: emptyUsersTable(false),
-		Dialect:       platform.MySQL,
-		Capabilities:  capability.MySQL84().With(capability.CreateIndexConcurrently, true),
-		Policy: generator.BidirectionalPlanPolicy{
-			Create: generator.ConcurrentIndexAutomatic,
-			Drop:   generator.ConcurrentIndexDisabled,
-		},
-	})
+	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(),
+		generator.BidirectionalSchemaPlanOptions{Runtime: must.Must(builtin.New()), Diff: diff,
+			DesiredSchema: usersSchemaDeclaring(true),
+			CurrentSchema: emptyUsersTable(false),
+			Dialect:       platform.MySQL,
+			Capabilities:  capability.MySQL84().With(capability.CreateIndexConcurrently, true),
+			Policy: generator.BidirectionalPlanPolicy{
+				Create: generator.ConcurrentIndexAutomatic,
+				Drop:   generator.ConcurrentIndexDisabled,
+			},
+		})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.Forward.ConcurrentIndexRefs, qt.HasLen, 0)

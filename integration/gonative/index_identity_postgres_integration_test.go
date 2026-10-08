@@ -3,16 +3,19 @@
 package gonative_test
 
 import (
+	"context"
 	"database/sql"
 	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -50,7 +53,7 @@ func TestPostgreSQLSchemaScopedIndexIdentity_MoveAndRoundTrip(t *testing.T) {
 
 	target := postgresSchemaScopedIndexTarget()
 	live := readPostgresIndexIdentitySchema(c, t, dsn)
-	diff := schemadiff.CompareWithDialect(target, live, platform.Postgres)
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), target, live, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: postgresIndexIdentityName, TableName: postgresIndexIdentitySchemaA + ".orders"},
 	})
@@ -58,7 +61,10 @@ func TestPostgreSQLSchemaScopedIndexIdentity_MoveAndRoundTrip(t *testing.T) {
 		{Name: postgresIndexIdentityName, TableName: postgresIndexIdentitySchemaA + ".users"},
 	})
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.Postgres)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		diff, platform.Postgres,
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2)
 	c.Assert(statements[0], qt.Contains, "DROP INDEX")
@@ -69,7 +75,7 @@ func TestPostgreSQLSchemaScopedIndexIdentity_MoveAndRoundTrip(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("apply schema-scoped index create: %s", statements[1]))
 
 	live = readPostgresIndexIdentitySchema(c, t, dsn)
-	finalDiff := schemadiff.CompareWithDialect(target, live, platform.Postgres)
+	finalDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), target, live, platform.Postgres, must.Must(builtin.New())))
 	c.Assert(finalDiff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(finalDiff.IndexRemovals(), qt.HasLen, 0)
 	c.Assert(live.Indexes, qt.HasLen, 2)

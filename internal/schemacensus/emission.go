@@ -1,10 +1,13 @@
 package schemacensus
 
 import (
+	"context"
 	"regexp"
 	"sort"
 	"strings"
 
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
 	"ptah.run/internal/capabilityprobe"
 )
 
@@ -307,7 +310,10 @@ type CorpusEmissions struct {
 // refusal creates no object, so there is nothing for the invariant to be about,
 // and counting it would make the floor below depend on which targets happen to
 // accept which fixture.
-func MeasureEmissions() CorpusEmissions {
+func MeasureEmissions(ctx context.Context, service renderer.SchemaService) (CorpusEmissions, error) {
+	if err := schemaext.RequireRuntime(ctx, service); err != nil {
+		return CorpusEmissions{}, err
+	}
 	measured := CorpusEmissions{
 		Duplicates: make([]string, 0), Unclassified: make([]string, 0),
 		DarkCells: make([]string, 0), DarkFixtures: make([]string, 0),
@@ -328,8 +334,11 @@ func MeasureEmissions() CorpusEmissions {
 	}
 	for _, fixture := range Fixtures() {
 		for _, cell := range fixture.Cells(capabilityprobe.Cells) {
-			statements, err := RenderStatements(fixture.Schema, cell)
+			statements, err := RenderStatements(ctx, service, fixture.Schema, cell)
 			if err != nil {
+				if !completedSchemaRefusal(err) {
+					return CorpusEmissions{}, err
+				}
 				byFixture[fixture.Name]++
 				continue
 			}
@@ -353,7 +362,7 @@ func MeasureEmissions() CorpusEmissions {
 	}
 	sort.Strings(measured.Unclassified)
 	sort.Strings(measured.Duplicates)
-	return measured
+	return measured, nil
 }
 
 // silent names the tallies that stayed at zero, sorted.

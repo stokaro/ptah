@@ -81,6 +81,7 @@
 package ydb
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -89,11 +90,15 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
+	"ptah.run/core/featureplan"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemacapture"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemavalidation"
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/planner/columnchange"
@@ -150,7 +155,20 @@ func (p *Planner) WithTableRebuildRequest(request string) *Planner {
 // documentation gives. A change YDB cannot make is refused before any node is
 // returned, with an error satisfying errors.Is(err, ptaherr.ErrUnsupportedFeature)
 // that names the capability key the target lacks.
-func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
+func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff) (plannedNodes []ast.Node, planErr error) {
+	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := ctx.Err(); err != nil {
+			plannedNodes, planErr = nil, err
+		}
+	}()
+
+	return p.generateMigrationAST(ctx, runtime, diff)
+}
+
+func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff) ([]ast.Node, error) {
 	if diff == nil {
 		return nil, fmt.Errorf("%w: schema diff is nil", ptaherr.ErrInvalidSchemaDiff)
 	}
@@ -161,12 +179,16 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err := indexscope.ValidateDiffWithSemantics(platform.YDB, semantics, diff); err != nil {
 		return nil, err
 	}
-	removedTables := tableSet(diff.TablesRemoved, semantics)
+	removedTables := tableSet(diff.TablesRemoved.Names(), semantics)
 	addedTables := make(map[string]bool, len(diff.TablesAdded))
 	for _, creation := range diff.TablesAdded {
 		addedTables[semantics.TableIdentityKey(creation.Name)] = true
 	}
 	rebuilds, err := p.planRebuilds(diff, removedTables, addedTables, semantics)
+	if err != nil {
+		return nil, err
+	}
+	changefeeds, err := p.planFeatureChanges(ctx, runtime, diff, rebuilds, semantics)
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +271,8 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	result = append(result, sequences.changed...)
 	result = append(result, addIndexes(diff.IndexesAdded, ownIndexes, semantics)...)
 	result = append(result, indexComments(diff, removedTables, rebuilds, semantics)...)
-	result = append(result, changeChangefeeds(diff, rebuilds, semantics)...)
+	beforeChangefeeds := result
+	result = nil
 	result = append(result, removedTablesAfterSources(diff, external)...)
 	result = append(result, changeTopics(diff)...)
 	result = append(result, nodeChanges...)
@@ -264,7 +287,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	result = append(result, pools.nodes...)
 	result = append(result, streamAfter...)
 	result = append(result, access.last...)
-	return result, nil
+	return scheduleChangefeeds(ctx, beforeChangefeeds, result, changefeeds, diff)
 }
 
 // refuseUnplannableObjectChanges refuses every index addition, in-place index
@@ -280,9 +303,6 @@ func (p *Planner) refuseUnplannableObjectChanges(
 		return err
 	}
 	if err := p.refuseIndexChangesInPlace(diff); err != nil {
-		return err
-	}
-	if err := p.refuseChangefeedChanges(diff); err != nil {
 		return err
 	}
 	if err := p.refuseTopicsAndSecrets(diff); err != nil {
@@ -371,6 +391,7 @@ func (p *Planner) createTables(
 	nodes := make([]ast.Node, 0, len(creations))
 	for _, creation := range creations {
 		table := modelast.FromTableWithConstraints(creation.Table, creation.Fields, creation.Enums, platform.YDB, creation.Constraints)
+		table.OwnedObjects = creation.OwnedObjects
 		key := semantics.TableIdentityKey(creation.Name)
 		withoutPlannedSequenceSettings(table, sequences[key])
 		if inlineIndexes[key] {
@@ -587,7 +608,7 @@ func (p *Planner) refuseIndexAdditions(
 	inlineIndexes map[string]bool,
 	semantics identifier.Semantics,
 ) error {
-	declarations := make(map[string]difftypes.TableDeclaration, len(diff.TablesModified))
+	declarations := make(map[string]schemacapture.TableDeclaration, len(diff.TablesModified))
 	for _, tableDiff := range diff.TablesModified {
 		if tableDiff.Desired.HasTable() {
 			declarations[semantics.TableIdentityKey(tableDiff.TableName)] = tableDiff.Desired
@@ -619,7 +640,7 @@ func (p *Planner) refuseIndexAdditions(
 // refuses is answered as orderable, because that refusal is the column's and
 // is reported where the column is written. An index whose kind does not read
 // is left to the renderer, which refuses it by name.
-func (p *Planner) indexShapeRefusal(index schemamodel.Index, declaration difftypes.TableDeclaration) string {
+func (p *Planner) indexShapeRefusal(index schemamodel.Index, declaration schemacapture.TableDeclaration) string {
 	kind, err := ydbindex.KindOf(index.Type)
 	if err != nil {
 		return ""
@@ -713,7 +734,7 @@ func (p *Planner) refuseTableSettings(tableDiff difftypes.TableDiff, subject str
 
 // declaresKey reports whether a desired table names a key, on itself or on a
 // column.
-func declaresKey(declaration difftypes.TableDeclaration) bool {
+func declaresKey(declaration schemacapture.TableDeclaration) bool {
 	if len(declaration.Table.PrimaryKey) > 0 {
 		return true
 	}
@@ -801,7 +822,7 @@ func (p *Planner) refuseChangeKey(subject, key string, colDiff difftypes.ColumnD
 // gives, and it says how to ask for the rebuild.
 func (p *Planner) rebuildable(key capability.Capability, feature, subject string) error {
 	err := p.keyed(key, feature, subject)
-	refusal, ok := errors.AsType[*ptaherr.CapabilityError](err)
+	refusal, ok := errors.AsType[*schemavalidation.RefusalError](err)
 	if !ok || p.caps.Has(key) {
 		return err
 	}
@@ -809,8 +830,9 @@ func (p *Planner) rebuildable(key capability.Capability, feature, subject string
 	if request == "" {
 		request = TableRebuildFlag
 	}
-	refusal.Message += "; YDB makes it by rebuilding the table, which Ptah plans when asked with " + request
-	return refusal
+	diagnostics := refusal.Diagnostics()
+	diagnostics[0].Message += "; YDB makes it by rebuilding the table, which Ptah plans when asked with " + request
+	return (schemavalidation.Result{Complete: true, Diagnostics: diagnostics}).Err(platform.YDB)
 }
 
 // rebuildableFact refuses a change YDB makes only by rebuilding the table and
@@ -839,29 +861,20 @@ func (p *Planner) keyed(key capability.Capability, feature, subject string) erro
 }
 
 func refuseKey(key capability.Capability, subject string) error {
-	return &ptaherr.CapabilityError{
-		Dialect: platform.YDB,
-		Feature: string(key),
-		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
-			subject, key, platform.YDB),
-	}
+	return planningRefusal(string(key), fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
+		subject, key, platform.YDB))
 }
 
 func refuseUnplanned(feature, subject string) error {
-	return &ptaherr.CapabilityError{
-		Dialect: platform.YDB,
-		Feature: feature,
-		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf("%s: the %s planner plans no %s", subject, platform.YDB, feature),
-	}
+	return planningRefusal(feature, fmt.Sprintf("%s: the %s planner plans no %s", subject, platform.YDB, feature))
 }
 
 func refuseFact(subject, reason string) error {
-	return &ptaherr.CapabilityError{
-		Dialect: platform.YDB,
-		Feature: subject,
-		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf("%s: %s", subject, reason),
-	}
+	return planningRefusal(subject, fmt.Sprintf("%s: %s", subject, reason))
+}
+
+func planningRefusal(feature, message string) error {
+	return (schemavalidation.Result{Complete: true, Diagnostics: []schemavalidation.Diagnostic{{
+		Code: schemavalidation.UnsupportedFeature, Kind: "schema", Feature: feature, Message: message,
+	}}}).Err(platform.YDB)
 }

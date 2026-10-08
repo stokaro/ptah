@@ -457,7 +457,7 @@ func TestLiquibaseChangelog_ImportEndToEnd(t *testing.T) {
 	c := qt.New(t)
 	out := t.TempDir()
 
-	result, err := importer.Import(
+	result, err := importer.Import(c.Context(),
 		fstest.MapFS{"changelog.xml": {Data: []byte(liquibaseChangelogXML)}}, nil, out, importer.Options{})
 
 	c.Assert(err, qt.IsNil)

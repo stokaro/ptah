@@ -1,15 +1,17 @@
 package mysql_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
-	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mysql"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -564,9 +566,12 @@ func TestPlanner_ColumnTypeChange_MariaDBGuardsDrop(t *testing.T) {
 		},
 	}
 
-	nodes, err := mysql.NewWithCapabilities(capability.MariaDB1011()).GenerateMigrationAST(withDeclaredObjects(diff, desired))
+	nodes, err := mysql.NewWithCapabilities(capability.MariaDB1011()).GenerateMigrationAST(
+		context.Background(), must.Must(builtin.New()),
+		withDeclaredObjects(diff, desired),
+	)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQLWithCapabilities("mariadb", capability.MariaDB1011(), nodes...)
+	sql, err := builtin.RenderSQLWithCapabilities("mariadb", capability.MariaDB1011(), nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 
@@ -597,10 +602,13 @@ func TestPlanner_ColumnTypeChange_ForeignKeysComeFromTheDiff(t *testing.T) {
 			ForeignTable: "users", ForeignColumn: "id",
 		}}
 
-		nodes, err := mysql.New().GenerateMigrationAST(diff)
+		nodes, err := mysql.New().GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			diff,
+		)
 
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("mysql", nodes...)
+		sql, err := builtin.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
 		c.Assert(sql, qt.Contains, "ALTER TABLE `posts` DROP FOREIGN KEY `fk_posts_user_id`")
 		c.Assert(sql, qt.Contains, "MODIFY COLUMN `user_id`")
@@ -624,10 +632,13 @@ func TestPlanner_ColumnTypeChange_ForeignKeysComeFromTheDiff(t *testing.T) {
 		diff := typeChangeDiff("posts", "user_id", "INTEGER -> BIGINT")
 		diff.TablesModified[0].ColumnsModified[0].Desired = desired.Fields[1]
 
-		nodes, err := mysql.New().GenerateMigrationAST(diff)
+		nodes, err := mysql.New().GenerateMigrationAST(
+			context.Background(), must.Must(builtin.New()),
+			diff,
+		)
 
 		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("mysql", nodes...)
+		sql, err := builtin.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
 		c.Assert(sql, qt.Not(qt.Contains), "DROP FOREIGN KEY")
 		c.Assert(sql, qt.Contains, "MODIFY COLUMN `user_id`")

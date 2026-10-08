@@ -1,15 +1,18 @@
 package ydb_test
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -30,7 +33,7 @@ func TestGenerateMigrationAST_Secrets_HappyPath(t *testing.T) {
 			Table:  schemamodel.Table{StructName: "T", Name: "old_pw"},
 			Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "BIGINT", Primary: true}},
 		}},
-		TablesRemoved:  []string{"ext.pw"},
+		TablesRemoved:  difftypes.TableRemovals{{Name: "ext.pw", Current: observedFeeds(t, "ext", "pw")}},
 		SecretsRemoved: difftypes.SecretChanges{{Name: "old_pw"}},
 		SecretsAdded:   difftypes.SecretChanges{{Name: "pw", Schema: "ext", ValueEnv: "PTAH_SECRET_PW"}},
 		SecretsRotated: difftypes.SecretChanges{{Name: "token", ValueEnv: "PTAH_SECRET_TOKEN"}},
@@ -95,7 +98,10 @@ func TestGenerateMigrationAST_Secrets_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := ydb.NewWithCapabilities(test.caps).GenerateMigrationAST(test.diff)
+			nodes, err := ydb.NewWithCapabilities(test.caps).GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				test.diff,
+			)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			_, refused := errors.AsType[*ptaherr.CapabilityError](err)
 			c.Assert(refused, qt.IsTrue)

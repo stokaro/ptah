@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/schemavalidate"
 )
 
@@ -67,11 +69,11 @@ func newDatabaseWithUnsupportedIndexInclude() *schemamodel.Database {
 func TestCollectWithOptions_NoSkippedNamesEveryLostTableOption(t *testing.T) {
 	c := qt.New(t)
 
-	problems := schemavalidate.CollectWithOptions(
+	problems := must.Must(schemavalidate.CollectWithOptions(c.Context(), must.Must(builtin.New()),
 		tableWithMySQLOptions(),
 		platform.Postgres,
 		schemavalidate.Options{Capabilities: capability.Postgres17(), NoSkipped: true},
-	)
+	))
 
 	lines := make([]string, 0, len(problems))
 	for _, problem := range problems {
@@ -94,11 +96,11 @@ func TestCollectWithOptions_NoSkippedNamesEveryLostTableOption(t *testing.T) {
 func TestCollectWithOptions_TheDefaultIsUnchanged(t *testing.T) {
 	c := qt.New(t)
 
-	problems := schemavalidate.CollectWithOptions(
+	problems := must.Must(schemavalidate.CollectWithOptions(c.Context(), must.Must(builtin.New()),
 		tableWithMySQLOptions(),
 		platform.Postgres,
 		schemavalidate.Options{Capabilities: capability.Postgres17()},
-	)
+	))
 
 	c.Assert(problems, qt.HasLen, 0)
 }
@@ -113,11 +115,11 @@ func TestCollectWithOptions_TheDefaultIsUnchanged(t *testing.T) {
 func TestCollectWithOptions_ARenderRefusalIsAProblem(t *testing.T) {
 	c := qt.New(t)
 
-	problems := schemavalidate.CollectWithOptions(
+	problems := must.Must(schemavalidate.CollectWithOptions(c.Context(), must.Must(builtin.New()),
 		newDatabaseWithSerialColumn(),
 		platform.ClickHouse,
 		schemavalidate.Options{Capabilities: capability.ClickHouse24(), NoSkipped: true},
-	)
+	))
 
 	c.Assert(problems, qt.HasLen, 1)
 	c.Assert(problems[0].Kind, qt.Equals, "schema")
@@ -132,11 +134,11 @@ func TestCollectWithOptions_ARenderRefusalIsAProblem(t *testing.T) {
 func TestCollectWithOptions_ARenderRefusalPassesWithoutTheFlag(t *testing.T) {
 	c := qt.New(t)
 
-	problems := schemavalidate.CollectWithOptions(
+	problems := must.Must(schemavalidate.CollectWithOptions(c.Context(), must.Must(builtin.New()),
 		newDatabaseWithSerialColumn(),
 		platform.ClickHouse,
 		schemavalidate.Options{Capabilities: capability.ClickHouse24()},
-	)
+	))
 
 	c.Assert(problems, qt.HasLen, 0)
 }
@@ -149,11 +151,11 @@ func TestCollectWithOptions_ARenderRefusalPassesWithoutTheFlag(t *testing.T) {
 func TestCollectWithOptions_AValidationFaultIsReportedOnce(t *testing.T) {
 	c := qt.New(t)
 
-	problems := schemavalidate.CollectWithOptions(
+	problems := must.Must(schemavalidate.CollectWithOptions(c.Context(), must.Must(builtin.New()),
 		newDatabaseWithUnsupportedIndexInclude(),
 		platform.MySQL,
 		schemavalidate.Options{Capabilities: capability.MySQL84(), NoSkipped: true},
-	)
+	))
 
 	c.Assert(problems, qt.HasLen, 1)
 	c.Assert(problems[0].Kind, qt.Equals, "schema")

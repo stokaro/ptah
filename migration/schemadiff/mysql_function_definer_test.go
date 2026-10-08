@@ -4,11 +4,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -32,10 +34,10 @@ func TestCompareWithDatabaseInfoRefusesAForeignDefinerReplacement(t *testing.T) 
 			c := qt.New(t)
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				mysqlDefinerDesired("RETURN 2", "DEFINER"),
+				t.Context(), mysqlDefinerDesired("RETURN 2", "DEFINER"),
 				mysqlDefinerCurrent("RETURN 1", "DEFINER", "owner_a@%", "migrator_a@%"),
 				mysqlDefinerInfo(test.dialect),
-				nil,
+				nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -55,10 +57,10 @@ func TestCompareWithDatabaseInfoRefusesAReplacementWithoutOwnershipFacts(t *test
 	c := qt.New(t)
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(
-		mysqlDefinerDesired("RETURN 2", "DEFINER"),
+		t.Context(), mysqlDefinerDesired("RETURN 2", "DEFINER"),
 		mysqlDefinerCurrent("RETURN 1", "DEFINER", "", ""),
 		mysqlDefinerInfo("mysql"),
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -79,10 +81,10 @@ func TestCompareWithDatabaseInfoAllowsAForeignDefinerLanguageThisTargetSkips(t *
 	desired.Functions[0].Language = ""
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(
-		desired,
+		t.Context(), desired,
 		mysqlDefinerCurrent("RETURN 1", "DEFINER", "owner_a@%", "migrator_a@%"),
 		mysqlDefinerInfo("mysql"),
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -138,7 +140,7 @@ func TestCompareWithDatabaseInfoAllowsSafeFunctionChanges(t *testing.T) {
 			c := qt.New(t)
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				mysqlDefinerDesired(test.desiredBody, test.desiredSecurity),
+				t.Context(), mysqlDefinerDesired(test.desiredBody, test.desiredSecurity),
 				mysqlDefinerCurrent(
 					test.currentBody,
 					test.currentSecurity,
@@ -146,7 +148,7 @@ func TestCompareWithDatabaseInfoAllowsSafeFunctionChanges(t *testing.T) {
 					test.currentAccount,
 				),
 				mysqlDefinerInfo("mysql"),
-				nil,
+				nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err, qt.IsNil)

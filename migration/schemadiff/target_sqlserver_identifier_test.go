@@ -4,11 +4,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -25,7 +27,7 @@ func TestCompareWithDatabaseInfo_SQLServerUnknownSemantics_HappyPath(t *testing.
 	c := qt.New(t)
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(
-		&schemamodel.Database{
+		t.Context(), &schemamodel.Database{
 			Tables: []schemamodel.Table{
 				{StructName: "Order", Schema: "dbo", Name: "orders"},
 				{StructName: "User", Schema: "dbo", Name: "users"},
@@ -37,7 +39,7 @@ func TestCompareWithDatabaseInfo_SQLServerUnknownSemantics_HappyPath(t *testing.
 		},
 		&catalog.Database{},
 		catalog.ServerInfo{Dialect: platform.SQLServer},
-		nil,
+		nil, must.Must(builtin.New()),
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -62,13 +64,13 @@ func TestCompareWithDatabaseInfo_SQLServerUnknownTableSemantics_FailurePath(t *t
 			c := qt.New(t)
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				&schemamodel.Database{Tables: []schemamodel.Table{
+				t.Context(), &schemamodel.Database{Tables: []schemamodel.Table{
 					{StructName: "First", Schema: "dbo", Name: test.first},
 					{StructName: "Second", Schema: "dbo", Name: test.second},
 				}},
 				&catalog.Database{},
 				catalog.ServerInfo{Dialect: platform.SQLServer},
-				nil,
+				nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -95,7 +97,7 @@ func TestCompareWithDatabaseInfo_SQLServerUnknownColumnSemantics_FailurePath(t *
 			c := qt.New(t)
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				&schemamodel.Database{
+				t.Context(), &schemamodel.Database{
 					Tables: []schemamodel.Table{
 						{StructName: "User", Schema: "dbo", Name: "users"},
 					},
@@ -106,7 +108,7 @@ func TestCompareWithDatabaseInfo_SQLServerUnknownColumnSemantics_FailurePath(t *
 				},
 				&catalog.Database{},
 				catalog.ServerInfo{Dialect: platform.SQLServer},
-				nil,
+				nil, must.Must(builtin.New()),
 			)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)

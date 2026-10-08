@@ -10,7 +10,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
-	"ptah.run/core/coverage"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasmigrate"
@@ -25,6 +25,8 @@ import (
 
 // GenerateMigrationOptions contains options for migration generation
 type GenerateMigrationOptions struct {
+	// Runtime selects feature services and codecs for this operation. It is required.
+	Runtime Runtime
 	// GoEntitiesDir is the directory to scan for Go entities
 	GoEntitiesDir string
 	// GoEntitiesFS is the filesystem to use for reading entities (optional, defaults to os.DirFS)
@@ -111,23 +113,25 @@ type GenerateMigrationOptions struct {
 	// against. The plan must stay scoped to a single schema, and only dialects
 	// with schema-qualified object names are supported.
 	SchemaQualifier string
-	// OnUndecided, when set, receives the declared objects the comparison
-	// withheld: the read of the database did not describe their kind, so
-	// nothing checked whether they exist, and no generated statement creates
-	// them. It is called at most once per planning run, after the comparison
-	// and before planning returns, with the objects sorted by kind and then
-	// name, and it is not called when nothing was withheld. A run that
-	// generates no files after OnUndecided was called has not shown that the
-	// database matches the desired schema.
-	OnUndecided func([]coverage.Object)
+	// OnUndecided receives an independent snapshot of common-object and feature
+	// knowledge limits, at most once per planning run. The caller must report
+	// those limits alongside any generated result. Without a callback, incomplete
+	// evidence refuses generation with schemadiff.ErrIncompleteComparison.
+	// No generated files after a callback does not establish schema agreement.
+	OnUndecided func(schemadiff.Diagnostics)
 }
 
 // reportUndecided hands undecided to [GenerateMigrationOptions.OnUndecided],
 // when there is something to hand and somewhere to hand it.
-func (opts GenerateMigrationOptions) reportUndecided(undecided []coverage.Object) {
-	if len(undecided) > 0 && opts.OnUndecided != nil {
-		opts.OnUndecided(undecided)
+func (opts GenerateMigrationOptions) reportUndecided(undecided schemadiff.Diagnostics) error {
+	if undecided.Empty() {
+		return nil
 	}
+	if opts.OnUndecided == nil {
+		return undecided.Err()
+	}
+	opts.OnUndecided(undecided.Clone())
+	return nil
 }
 
 // DiffPolicy is the generator-level view of the project diff policy.
@@ -255,6 +259,9 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 // dormant until a run reaches the branch that would have read it; non-SQLite
 // plans do not consult the variable at all.
 func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*MigrationPlan, error) {
+	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
+		return nil, err
+	}
 	opts, err := normalizeGenerateMigrationOptions(opts)
 	if err != nil {
 		return nil, err
@@ -313,11 +320,10 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 	// 3. Calculate the diff between desired and current schema using live
 	// dialect and catalog identifier metadata.
 	info := conn.Info()
-	diff, undecided, err := compareForPlan(ctx, conn, desired, dbSchema, opts)
+	diff, _, err := compareForPlan(ctx, conn, desired, dbSchema, opts)
 	if err != nil {
 		return nil, err
 	}
-	opts.reportUndecided(undecided)
 
 	// Check if there are any changes
 	if !diff.HasChanges() {
@@ -335,12 +341,8 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 	}
 	slog.Debug("Generated migration version", "version", version)
 
-	qualifier, err := atlasmigrate.ParseQualifier(opts.SchemaQualifier)
+	qualifier, err := migrationQualifier(opts, info)
 	if err != nil {
-		return nil, err
-	}
-	qualifier = qualifier.WithErrorLabel("--qualifier")
-	if err := qualifier.ValidateScope(info.Dialect, opts.Schemas); err != nil {
 		return nil, err
 	}
 
@@ -392,15 +394,30 @@ func compareForPlan(
 	desired *schemamodel.Database,
 	dbSchema *catalog.Database,
 	opts GenerateMigrationOptions,
-) (*difftypes.SchemaDiff, []coverage.Object, error) {
+) (*difftypes.SchemaDiff, schemadiff.Diagnostics, error) {
 	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(
-		ctx, conn, desired, dbSchema, compareOptionsWithDiffPolicy(opts.CompareOptions, opts.DiffPolicy),
+		ctx, conn, desired, dbSchema, compareOptionsWithDiffPolicy(opts.CompareOptions, opts.DiffPolicy), opts.Runtime,
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error comparing generated and database schemas: %w", err)
+		return nil, schemadiff.Diagnostics{}, fmt.Errorf("error comparing generated and database schemas: %w", err)
+	}
+	if err := opts.reportUndecided(undecided); err != nil {
+		return nil, schemadiff.Diagnostics{}, err
 	}
 	if err := diff.RotateSecrets(opts.DiffPolicy.RotateSecrets); err != nil {
-		return nil, nil, err
+		return nil, schemadiff.Diagnostics{}, err
 	}
 	return diff, undecided, nil
+}
+
+func migrationQualifier(opts GenerateMigrationOptions, info catalog.ServerInfo) (atlasmigrate.Qualifier, error) {
+	qualifier, err := atlasmigrate.ParseQualifier(opts.SchemaQualifier)
+	if err != nil {
+		return atlasmigrate.Qualifier{}, err
+	}
+	qualifier = qualifier.WithErrorLabel("--qualifier")
+	if err := qualifier.ValidateScope(info.Dialect, opts.Schemas); err != nil {
+		return atlasmigrate.Qualifier{}, err
+	}
+	return qualifier, nil
 }
