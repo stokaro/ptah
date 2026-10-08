@@ -147,7 +147,7 @@ func (m *Migrator) observePostgresIndexStatement(
 		}
 		m.appendPostgresIndexIdentity(postgresIndexIdentityState(state, ref))
 	}
-	return nil
+	return m.observePostgresIndexConstraintAttachments(ctx, conn, statement, postgresSearchPathKnown)
 }
 
 func (m *Migrator) observePostgresIndexStatementForReplay(
@@ -180,7 +180,7 @@ func (m *Migrator) observePostgresIndexStatementForReplay(
 			m.appendPostgresIndexIdentity(identity)
 		}
 	}
-	return nil
+	return m.observePostgresIndexConstraintAttachments(ctx, conn, statement, searchPathKnowledge)
 }
 
 func (m *Migrator) appendPostgresIndexIdentity(identity postgresIndexState) {

@@ -214,6 +214,11 @@ replayable path checks every same-named target in PostgreSQL user schemas. A dro
 by resume does not satisfy the preflight. `RepairMigration` performs the same
 positive index-state check, including when `Force` is set.
 
+An `ALTER TABLE ... ADD CONSTRAINT ... USING INDEX` attachment with an explicit
+constraint name updates the observed index name on the same target table.
+The post-check, retry, and `RepairMigration` follow PostgreSQL's rename while
+preserving the requirement for a usable index on that target.
+
 The observer composes with `StatementInterceptor`: a statement handled by an
 external executor is observed once after that executor reports success.
 

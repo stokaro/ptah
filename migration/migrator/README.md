@@ -1078,6 +1078,12 @@ from each conditional create must exist, describe an index attached to that
 target, and be usable. Equal raw names resolved in different schemas remain
 separate checks.
 
+When a later `ALTER TABLE ... ADD CONSTRAINT name UNIQUE USING INDEX index`
+or `PRIMARY KEY USING INDEX index` attaches the index, PostgreSQL renames it
+to the constraint name. The post-check follows that name on the same target
+table. Retry and repair reconstruct the attachment from the committed SQL.
+Dropping the constraint and its index still fails the positive check.
+
 Unconditional creates are left to PostgreSQL's normal error semantics, so later
 statements may intentionally rename or remove their result. A partitioned index created with
 `CREATE INDEX ... ON ONLY` is accepted when PostgreSQL reports its expected
