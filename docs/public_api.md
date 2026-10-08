@@ -46,6 +46,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/clickhouse/chprepare`
 - `ptah.run/dialect/clickhouse/chresolve`
 - `ptah.run/dialect/clickhouse/chschema`
+- `ptah.run/dialect/clickhouse/chsource`
 - `ptah.run/dialect/postgres/pgproject`
 - `ptah.run/dialect/ydb/ydbast`
 - `ptah.run/dialect/ydb/ydbcompare`
@@ -527,6 +528,26 @@ properties and separate sorting and primary keys. Unresolved settings, invalid
 inputs, and cancellation return no partial batch. The migration generator uses
 this conversion to capture the table that a reverse DROP removes; the prediction
 does not replace a catalog read.
+
+`Provider.Properties` assigns source property keys to feature owners for a
+selected target and format. A `PropertySource` must own the desired model codec
+for each kind, and two definitions cannot claim the same key in that format.
+`PropertyDefinitions` returns independent copies for a frontend to group input
+without knowing the feature's Go type.
+
+`DecodeProperties` and `EncodeProperties` preserve ordered batches and explicit
+empty values. Every input is validated before dispatch. Replies must preserve
+the count, kind order, and property ownership; codecs validate desired models.
+Provider errors and cancellation discard the entire result. Unsupported formats
+remain errors on empty batches. These operations establish no catalog coverage.
+
+`chsource.Service` implements the table platform property grammar. A bare key
+carries an explicit setting, including empty. A `.state` suffix with value
+`default` requests its creation rule; a setting cannot have both spellings.
+An omitted setting writes neither key. Register `chsource.Definitions()` and the
+service in an application-selected provider. This source codec is not yet
+connected to the bundled Go/YAML frontends or annotation export; that integration
+remains part of [stokaro/ptah#4140](https://github.com/stokaro/ptah/issues/4140).
 
 `Target.Preparation` selects `schemapreparation.Service` for captured tables.
 A missing service is unavailable; providers that need no normalization register

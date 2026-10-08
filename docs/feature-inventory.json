@@ -814,6 +814,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-clickhouse-chsource",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/clickhouse/chsource",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-dialect-postgres-pgproject",
       "kind": "public-package",
       "surface": "ptah.run/dialect/postgres/pgproject",

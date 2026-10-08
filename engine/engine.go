@@ -36,6 +36,8 @@ type Provider struct {
 	// Conversions assigns each target/kind pair to one batched service. The
 	// provider must own both schema codecs for each kind it converts.
 	Conversions []Conversion
+	// Properties assigns source property grammars to their feature owners.
+	Properties []PropertySource
 	// Comparisons assigns named object semantics and change representations to
 	// one owner per target/kind. Registration does not enroll source coverage.
 	Comparisons []ObjectComparison
@@ -80,6 +82,8 @@ type Runtime struct {
 	codecs             schemaext.Registry
 	conversions        map[conversionKey]int
 	conversionServices []schemaext.ConversionService
+	properties         map[propertyKey]int
+	propertyServices   []PropertySource
 	comparisons        map[conversionKey]int
 	comparisonServices []ObjectComparison
 	facetComparisons   map[conversionKey]int
@@ -113,6 +117,7 @@ func New(providers ...Provider) (*Runtime, error) {
 		facetComparisons: make(map[conversionKey]int),
 		reports:          make(map[reportingKey]int), reversals: make(map[conversionKey]int), planning: make(map[conversionKey]int),
 		parentPlanning: make(map[conversionKey]int),
+		properties:     make(map[propertyKey]int),
 	}
 	owners := make(map[string]struct{}, len(providers))
 	var codecs []schemaext.OwnedCodec
@@ -147,6 +152,11 @@ func New(providers ...Provider) (*Runtime, error) {
 }
 
 func (r *Runtime) registerServices(provider Provider) error {
+	for _, source := range provider.Properties {
+		if err := r.registerPropertySource(provider.ID, source); err != nil {
+			return err
+		}
+	}
 	for _, planning := range provider.Planning {
 		if err := r.registerPlanning(provider.ID, planning); err != nil {
 			return err
