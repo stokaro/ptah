@@ -16,7 +16,10 @@ func (validationService) ValidateSchema(ctx context.Context, request schemavalid
 		return schemavalidation.Result{}, err
 	}
 	result := schemavalidation.Result{Complete: true}
-	if err := ValidateSchemaWithCapabilities(request.Schema, request.Target, request.Capabilities); err != nil {
+	if err := validateSchemaWithCapabilities(ctx, request.Schema, request.Target, request.Capabilities); err != nil {
+		if ctx.Err() != nil {
+			return schemavalidation.Result{}, ctx.Err()
+		}
 		result.Diagnostics = []schemavalidation.Diagnostic{schemaDiagnostic(err)}
 		return result, nil
 	}

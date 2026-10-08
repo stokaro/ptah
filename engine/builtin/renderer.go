@@ -2174,6 +2174,10 @@ func ValidateSchemaWithCapabilities(
 	dialect string,
 	caps capability.Capabilities,
 ) error {
+	return validateSchemaWithCapabilities(context.Background(), r, dialect, caps)
+}
+
+func validateSchemaWithCapabilities(ctx context.Context, r *schemamodel.Database, dialect string, caps capability.Capabilities) error {
 	if _, err := NewRendererWithCapabilities(dialect, caps); err != nil {
 		return err
 	}
@@ -2191,7 +2195,7 @@ func ValidateSchemaWithCapabilities(
 	if err := validateDeclaredPrimaryKeys(dialect, caps, prepared); err != nil {
 		return err
 	}
-	return validateTablesWithInlineIndexes(dialect, caps, prepared)
+	return validateTablesWithInlineIndexes(ctx, dialect, caps, prepared)
 }
 
 // validateTablesWithInlineIndexes renders every table on a target that writes a
@@ -2207,7 +2211,7 @@ func ValidateSchemaWithCapabilities(
 // Which target that is, is asked of the dialect's default preset rather than
 // of caps, because that is the set the walk below asks when it puts the indexes
 // into the table: the tables validated here are the ones the walk builds.
-func validateTablesWithInlineIndexes(dialect string, caps capability.Capabilities, database schemamodel.Database) error {
+func validateTablesWithInlineIndexes(ctx context.Context, dialect string, caps capability.Capabilities, database schemamodel.Database) error {
 	if !schemaprep.DeclaresIndexesInCreateTable(capability.ForDialect(dialect)) {
 		return nil
 	}
@@ -2216,7 +2220,12 @@ func validateTablesWithInlineIndexes(dialect string, caps capability.Capabilitie
 		if !ok {
 			return nil
 		}
-		_, err := RenderSQLWithCapabilities(dialect, caps, table)
+		// Validation already runs inside the selected built-in provider. Its
+		// renderer checks the table without constructing another runtime and
+		// canonicalizing every registered codec for each table.
+		_, err := renderer.Render(ctx, renderingService{}, renderer.Request{
+			Target: renderTarget(dialect), Capabilities: caps, Nodes: []ast.Node{table},
+		})
 		return err
 	})
 }
