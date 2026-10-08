@@ -33,7 +33,7 @@ require (
 	github.com/tursodatabase/libsql-client-go v0.0.0-20260528064733-9d5d30a29a60
 	github.com/ydb-platform/ydb-go-genproto v0.0.0-20260810123728-f0c151ab31b9
 	github.com/ydb-platform/ydb-go-sdk-auth-environ v0.5.3
-	github.com/ydb-platform/ydb-go-sdk/v3 v3.154.1
+	github.com/ydb-platform/ydb-go-sdk/v3 v3.155.0
 	github.com/zclconf/go-cty v1.19.0
 	github.com/zclconf/go-cty-yaml v1.2.0
 	go.opentelemetry.io/otel v1.47.0
