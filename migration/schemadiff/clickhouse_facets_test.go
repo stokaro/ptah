@@ -10,6 +10,8 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -132,4 +134,41 @@ func TestClickHouseCreationLeavesUnrelatedUnmanagedSettingsAlone(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 1)
 	c.Assert(statements[0], qt.Contains, "CREATE TABLE added")
+}
+
+func TestClickHouseScopedObservationUsesTheConnectionDatabase(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		facets schemaext.Facets
+	}{
+		{"common declaration", schemaext.Facets{}},
+		{"partial storage declaration", must.Must(schemaext.NewFacets(&chschema.DesiredTable{OrderBy: chschema.Setting{State: chschema.Explicit, Value: "id"}}))},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			runtime := must.Must(builtin.New())
+			models := runtime.Codecs().Definitions()
+			model := models[slices.IndexFunc(models, func(v schemaext.CodecIdentity) bool {
+				return v.Kind == chschema.TableKind && v.Representation == schemaext.Observed
+			})]
+			unqualified := objectidentity.NewBuilder(identifier.ForDialect("clickhouse")).Table("events")
+			coverage := must.Must(schemaext.NewCoverage(schemaext.Observed, []schemaext.KindCoverage{{
+				Model: model, Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "only returned tables were inspected"},
+			}}, []schemaext.SubjectCoverage{{Kind: chschema.TableKind, Subject: unqualified, Knowledge: schemaext.Knowledge{State: schemaext.Complete}}}))
+			observed := &chschema.ObservedTable{Engine: "MergeTree", OrderBy: "id", PrimaryKey: "id"}
+			current := &catalog.Database{FeatureCoverage: coverage, Tables: []catalog.Table{{Name: "events",
+				Facets: must.Must(schemaext.NewFacets(observed)), Columns: []catalog.Column{{Name: "id", DataType: "UInt64", ColumnType: "UInt64", IsNullable: "NO", IsPrimaryKey: true}},
+			}}}
+			source := &schemamodel.Database{Tables: []schemamodel.Table{{Name: "events", StructName: "Event", Facets: test.facets}}, Fields: []schemamodel.Field{{Name: "id", StructName: "Event", Type: "UInt64", Primary: true}}}
+			semantics := identifier.ForDialect("clickhouse")
+			semantics.DefaultSchema = "tenant_database"
+			info := catalog.ServerInfo{Dialect: "clickhouse", Schema: "tenant_database", IdentifierSemantics: semantics}
+			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), source, current, info, nil, runtime)
+			c.Assert(err, qt.IsNil)
+			c.Assert(diff.HasChanges(), qt.IsFalse)
+			subject := objectidentity.NewBuilder(semantics).Table("events")
+			c.Assert(diff.TablePreparation.Source[0].Current.FeatureCoverage.Lookup(chschema.TableKind, subject).State, qt.Equals, schemaext.Complete)
+			c.Assert(current.FeatureCoverage.SubjectRecords()[0].Subject, qt.Equals, unqualified)
+		})
+	}
 }

@@ -17,6 +17,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
@@ -277,10 +278,36 @@ func TestClickHouseDescriptionCarriesNoCredentialLive(t *testing.T) {
 	// somewhere is caught by the same line.
 	c.Assert(clickHouseRolesCarryingAnAttribute(described), qt.HasLen, 0)
 
-	serialized, err := json.Marshal(described)
-	c.Assert(err, qt.IsNil)
+	serialized := serializeClickHouseDescription(c, described)
 	c.Assert(string(serialized), qt.Not(qt.Contains), plaintextMarker)
 	c.Assert(string(serialized), qt.Not(qt.Contains), user)
+}
+
+// Serialize the test-owned read after its structural assertions. Feature values
+// use the selected codecs; raw model marshaling deliberately refuses them.
+func serializeClickHouseDescription(c *qt.C, described *catalog.Database) []byte {
+	c.Helper()
+	registry := must.Must(builtin.New()).Codecs()
+	objects, err := registry.EncodeObjects(c.Context(), schemaext.Observed, described.FeatureObjects)
+	c.Assert(err, qt.IsNil)
+	coverage, err := registry.EncodeCoverage(c.Context(), schemaext.Observed, described.FeatureCoverage)
+	c.Assert(err, qt.IsNil)
+	var facets [][]schemaext.EncodedFacet
+	for _, slot := range described.FacetSlots() {
+		encoded, err := registry.EncodeFacets(c.Context(), schemaext.Observed, *slot)
+		c.Assert(err, qt.IsNil)
+		facets = append(facets, encoded)
+		*slot = schemaext.Facets{}
+	}
+	described.FeatureObjects, described.FeatureCoverage = schemaext.Objects{}, schemaext.Coverage{}
+	serialized, err := json.Marshal(struct {
+		Common   *catalog.Database
+		Objects  []schemaext.EncodedObject
+		Coverage schemaext.CoverageDocument
+		Facets   [][]schemaext.EncodedFacet
+	}{described, objects, coverage, facets})
+	c.Assert(err, qt.IsNil)
+	return serialized
 }
 
 // openLiveClickHouseRBACTarget connects to the ClickHouse engine dbtarget names,

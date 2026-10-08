@@ -114,10 +114,12 @@ func compareReportingUndecidedAdditions(
 	}
 
 	diff := &difftypes.SchemaDiff{}
-	identifierSemantics, err := comparisonIdentifiers(desired, database, opts)
+	identity, err := comparisonTableIdentities(desired, database, opts)
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}
+	desired, database = identity.desired, identity.current
+	identifierSemantics := identity.semantics
 	if opts.IdentifierSemantics != nil {
 		stored := identifierSemantics.Clone()
 		diff.IdentifierSemantics = &stored

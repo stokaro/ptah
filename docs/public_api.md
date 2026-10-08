@@ -353,6 +353,11 @@ to the table diff. Non-table facets currently refuse because their comparison
 identity capture is not implemented. A successful runtime reply sets `Complete`;
 undecided diagnostics remain distinct from operational failures.
 
+Before table preparation, comparison binds table coverage claims to the same
+identifier semantics and default database as common tables. Explicit schemas
+remain explicit. Binding preserves source knowledge, refuses identity collisions,
+and leaves the source snapshots unchanged.
+
 `Provider.Reversals` assigns each target and change kind to its codec owner.
 `Runtime.ReverseChanges` validates the complete input before dispatching one
 batch per registered service. Each reply preserves its subject and change kind,
