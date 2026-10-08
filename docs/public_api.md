@@ -40,6 +40,8 @@ These packages are intended for application and tool embedders:
 - `ptah.run/core/sqlutil`
 - `ptah.run/core/yamlschema`
 - `ptah.run/dbschema`
+- `ptah.run/dialect/clickhouse/chcompare`
+- `ptah.run/dialect/clickhouse/chdiff`
 - `ptah.run/dialect/clickhouse/chprepare`
 - `ptah.run/dialect/clickhouse/chschema`
 - `ptah.run/dialect/postgres/pgproject`
@@ -481,6 +483,20 @@ which identifies the kind and representation and wraps `ErrInvalidValue`.
 These model APIs do not enable typed ClickHouse table facets in the bundled
 reader, renderer, or migration planner. Their integration is part of
 [stokaro/ptah#4140](https://github.com/stokaro/ptah/issues/4140).
+
+`chcompare.Service` compares resolved table settings through a selected
+provider's `FacetComparisons` registration. Each `chdiff.Table` captures the
+complete prior observation and fully explicit desired settings. Its codec keeps
+both operands, including explicit empty settings. Changes concern surviving
+tables; creation and removal belong to the common table lifecycle.
+
+Comparison ignores whitespace between SQL tokens and redundant outer key
+parentheses while preserving quoted text, identifier case, and key order.
+Missing evidence needed for declared settings produces an undecided diagnostic.
+An unmentioned table without inspected settings stays unmanaged; registering a
+model does not create intent on every table. Explicit inspection limits remain
+undecided. These services perform no database I/O or ALTER planning and are not
+registered by the bundled runtime.
 
 `Target.Preparation` selects `schemapreparation.Service` for captured tables.
 A missing service is unavailable; providers that need no normalization register

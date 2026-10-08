@@ -778,9 +778,27 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-clickhouse-chcompare",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/clickhouse/chcompare",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-clickhouse-chdiff",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/clickhouse/chdiff",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-dialect-clickhouse-chprepare",
       "kind": "public-package",
       "surface": "ptah.run/dialect/clickhouse/chprepare",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-clickhouse-chschema",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/clickhouse/chschema",
       "claimed_by": null
     },
     {
