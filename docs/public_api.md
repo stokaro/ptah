@@ -357,10 +357,12 @@ a nil value establishes absence. The runtime checks model ownership and rejects
 competing projections. A host applies these values to its prior capture and
 preserves unlisted siblings. It must not replace the capture with the requested
 schema, because a diff policy may have excluded some requested changes.
-`Registry.ProjectObjects` applies these named-object predictions to a captured
-state. It updates each affected subject's presence while retaining unrelated
-objects and namespace limits. It refuses unreadable prior state and never
-enrolls a kind merely because the runtime gained its codec.
+`Registry.ProjectObjects` and `Registry.ProjectFacets` apply these predictions
+to captured objects and attached settings. They update affected subjects while
+retaining unrelated values and source knowledge limits. Facet replacement keeps
+its target binding. Removal drops that binding; excluded facets cannot be
+projected. Both operations refuse unreadable prior state and never enroll a kind
+merely because the runtime gained its codec.
 
 `schemaext.ReversalRuntime` is the narrow contract for this stage. A predicted
 post-forward operand is not inspection evidence. `ErrIrreversible` means the
@@ -988,7 +990,7 @@ does not select another runtime or reconstruct the target again.
 
 `SchemaDirectionPlan.Recovery` retains owner-provided reversal assessments.
 Reverse AST nodes include their strategy and every recovery limit as comments.
-Named feature projections and accepted column, index, and CHECK changes produce the
+Named-object and table-facet projections, with accepted column, index, and CHECK changes, produce the
 reverse input capture. Index additions, removals, renames, visibility, and comments
 are projected using captured identifier semantics. Named CHECK creation and removal,
 constraint comments, and constraint validation update the captured host, including

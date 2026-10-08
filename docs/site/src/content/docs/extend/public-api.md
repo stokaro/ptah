@@ -458,6 +458,12 @@ table. Live comparisons snapshot catalog identifier semantics into the diff so
 comparison, policy, forward planning, and reverse planning share one source of
 truth.
 
+Bidirectional planning applies the selected feature owner's predictions to the
+captured table. Named children and attached table settings keep separate
+identities. Unchanged values and source knowledge limits survive; replaced
+settings keep their target bindings. Unknown prior state is refused. A prediction
+describes the accepted plan, not a new database inspection.
+
 Bidirectional planning projects accepted index additions, removals, renames,
 visibility, and comments into the reverse table capture. Skipped removals retain
 their captured indexes and comments. Captured index definitions own their mutable
