@@ -58,8 +58,10 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dbschema` | Live database schema introspection connection layer. |
 | `dialect/postgres/pgproject` | PostgreSQL constraint backing-index and column effects. |
 | `dialect/clickhouse/chprepare` | ClickHouse key membership for shared column comparison. |
+| `dialect/clickhouse/chresolve` | Table-setting resolution with retained intent and property origins. |
 | `dialect/clickhouse/chschema` | Desired and observed table settings with versioned model codecs. |
 | `dialect/clickhouse/chcompare` | Comparison of resolved table settings with explicit knowledge limits. |
+| `dialect/clickhouse/chconvert` | Lossless projection between complete table declarations and observations. |
 | `dialect/clickhouse/chdiff` | Captured prior and desired table settings for directional changes. |
 | `dialect/ydb/ydbast` | Typed YDB changefeed operations carried by AST extension envelopes. |
 | `dialect/ydb/ydbcompare` | Coverage-aware comparison of individual YDB feature objects. |
@@ -188,16 +190,30 @@ default, and an explicit value. Explicit empty settings remain distinct from
 default requests. `ObservedTable` requires every setting, including empty
 optional values, and keeps sorting and primary keys separate. Register
 `chschema.Codecs()` with a provider to preserve these distinctions in envelopes.
-The bundled reader, renderer, and migration planner do not yet consume these
-typed table settings; [#4140](https://github.com/stokaro/ptah/issues/4140) owns
-their integration.
+The bundled renderer and new-table migration planner consume programmatically
+supplied desired table facets, including reverse DROP plans. Mixing a typed facet
+with storage overrides is refused, including empty overrides. The reader and frontends do not yet produce
+typed settings; [#4140](https://github.com/stokaro/ptah/issues/4140) owns their
+integration.
 
 Register `chcompare.Service` in a selected provider's `FacetComparisons` to
 compare resolved table settings. `chdiff.Table` and its codec retain complete
 before and after operands. Missing evidence needed for declared settings produces
 an undecided result. Unmentioned tables stay unmanaged, and explicit inspection
-limits remain visible. These services perform no ALTER planning; the bundled
-runtime does not register them.
+limits remain visible. The bundled runtime registers these services; migration
+planning refuses changes to existing table settings.
+
+`chresolve.Table` keeps the original declaration beside fully explicit settings
+and records each property's source. On creation, omitted settings use creation
+rules. A default primary key inherits the sorting key; an explicit empty key
+stays empty. On an existing table, omitted settings require a usable observation.
+Missing evidence returns an error without a partial result.
+
+`chconvert.Service` projects complete observations into explicit declarations and
+fully resolved declarations into predicted observations. Empty settings and
+separate key roles survive the conversion. The migration generator uses this
+projection when capturing what a reverse DROP removes. A prediction does not
+establish that a database was inspected.
 
 `schemaext.Facets` captures one typed value per kind. `schemaext.Objects` captures
 individually named objects with structured references, including parentage.

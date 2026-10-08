@@ -199,6 +199,9 @@ func completedSchemaRefusal(err error) bool {
 		return refusal != nil && len(refusal.Diagnostics()) != 0
 	case *schemadiff.RefusalError:
 		return refusal != nil && refusal.Unwrap() != nil
+	case *schemaext.InvalidModelError:
+		return refusal != nil && refusal.Kind.Valid() && strings.TrimSpace(refusal.Message) != "" &&
+			slices.Contains([]schemaext.Representation{schemaext.Desired, schemaext.Observed, schemaext.Change, schemaext.Operation}, refusal.Representation)
 	case *schemaext.UnknownCodecError:
 		if refusal == nil || !refusal.Kind.Valid() {
 			return false

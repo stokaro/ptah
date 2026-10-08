@@ -37,6 +37,12 @@ func PrimaryKeyColumns(table schemamodel.Table, columns []string) (map[string]bo
 	if clause == "" {
 		return nil, false
 	}
+	return ReferencedColumns(clause, columns), true
+}
+
+// ReferencedColumns identifies declared columns used by a key expression.
+// An empty clause has no columns; it does not imply an inherited key.
+func ReferencedColumns(clause string, columns []string) map[string]bool {
 	known := make(map[string]bool, len(columns))
 	for _, column := range columns {
 		known[column] = true
@@ -54,7 +60,7 @@ func PrimaryKeyColumns(table schemamodel.Table, columns []string) (map[string]bo
 			used[name] = true
 		}
 	}
-	return used, true
+	return used
 }
 
 // significantTokens lexes clause as ClickHouse SQL, without whitespace and

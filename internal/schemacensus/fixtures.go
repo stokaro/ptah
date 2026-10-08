@@ -73,6 +73,7 @@ func oneTable(name string, table schemamodel.Table, extra ...schemamodel.Field) 
 // the gate reports that as its own state rather than as a loss.
 func Fixtures() []Fixture {
 	return withFacetFixtures([]Fixture{
+		{Name: "table-clickhouse-settings", Schema: tableClickHouseSettingsFixture()},
 		{Name: "schema", Schema: schemaFixture()},
 		{Name: "column-core", Schema: columnCoreFixture()},
 		{Name: "column-default", Schema: columnDefaultFixture()},

@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
 	"ptah.run/internal/schemacensus"
 )
 
@@ -35,4 +36,29 @@ func TestCensusDoesNotCountProviderFailureAsSchemaRefusal(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, failure)
 	c.Assert(emissions, qt.DeepEquals, schemacensus.CorpusEmissions{})
 	c.Assert(calls, qt.Equals, 2)
+}
+
+func TestCensusModelRefusalDoesNotHideProviderFailure(t *testing.T) {
+	failure := errors.New("provider transport failed")
+	for _, test := range []struct {
+		name string
+		err  error
+		want error
+	}{
+		{name: "unclassified invalid value", err: schemaext.ErrInvalidValue, want: schemaext.ErrInvalidValue},
+		{name: "joined transport failure", err: errors.Join(
+			&schemaext.InvalidModelError{Kind: "example.org/table", Representation: schemaext.Desired, Message: "invalid setting"},
+			failure,
+		), want: failure},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			service := schemaRenderFunc(func(context.Context, renderer.SchemaRequest) (renderer.SchemaResult, error) {
+				return renderer.SchemaResult{Complete: true}, test.err
+			})
+			result, err := schemacensus.Measure(t.Context(), service)
+			c.Assert(err, qt.ErrorIs, test.want)
+			c.Assert(result, qt.IsNil)
+		})
+	}
 }

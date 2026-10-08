@@ -21,10 +21,9 @@
 //     materialized-view visitors do not share one spelling.
 //
 // Engine, ORDER BY, PARTITION BY, PRIMARY KEY, SAMPLE BY, SETTINGS and TTL
-// are sourced from the table's `platform.clickhouse.<key>` annotation
-// overrides (see core/goschema/types.go). The override mechanism stores
-// keys uppercased on CreateTableNode.Options, so this renderer looks them
-// up by their uppercase form.
+// come from an owned chschema.DesiredTable facet or the table's
+// platform.clickhouse.<key> annotation overrides. The latter arrive as uppercase
+// CreateTableNode.Options keys. A statement cannot use both representations.
 package clickhouse
 
 import (
@@ -35,6 +34,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/dialect/clickhouse/chresolve"
 	"ptah.run/engine/builtin/internal/dialects/internal/bufwriter"
 	"ptah.run/internal/chrefresh"
 	"ptah.run/internal/chtype"
@@ -375,12 +375,7 @@ type tableEngineSpec struct {
 
 // isMergeTreeFamily reports whether the engine requires ORDER BY/PRIMARY KEY.
 func (s tableEngineSpec) isMergeTreeFamily() bool {
-	upper := strings.ToUpper(strings.TrimSpace(s.engine))
-	// Strip any function-style args after the engine name.
-	if i := strings.Index(upper, "("); i >= 0 {
-		upper = strings.TrimSpace(upper[:i])
-	}
-	return strings.HasSuffix(upper, "MERGETREE")
+	return chresolve.IsMergeTree(s.engine)
 }
 
 // mysqlFamilyOnlyEngines holds storage engine names that belong to the MySQL
@@ -528,15 +523,7 @@ func refuseForeignIndexAccessMethod(index, indexType string) error {
 // function stopped reading is a loss nothing reports (stokaro/ptah#2976).
 // TestRenderCreateTable_RendersEveryTableOptionItKeeps drives each one through
 // the renderer rather than trusting the list.
-var tableEngineOptionKeys = []string{
-	"ENGINE",
-	"ORDER_BY",
-	"PARTITION_BY",
-	"PRIMARY_KEY",
-	"SAMPLE_BY",
-	"SETTINGS",
-	"TTL",
-}
+var tableEngineOptionKeys = chresolve.StorageOptionKeys()
 
 func resolveTableEngineSpec(node *ast.CreateTableNode) tableEngineSpec {
 	spec := tableEngineSpec{engine: "MergeTree"}
@@ -800,7 +787,10 @@ func sortKeyColumnSet(spec tableEngineSpec) map[string]struct{} {
 // runs the two MergeTree-family validation rules (ORDER BY presence, and
 // PRIMARY KEY being a prefix of ORDER BY).
 func (r *Renderer) resolveAndValidateTableEngine(node *ast.CreateTableNode) (tableEngineSpec, error) {
-	spec := resolveTableEngineSpec(node)
+	spec, err := resolveOwnedTableEngineSpec(node)
+	if err != nil {
+		return spec, err
+	}
 
 	if err := refuseMySQLFamilyEngine(node.Name, spec.engine); err != nil {
 		return spec, err
@@ -814,7 +804,7 @@ func (r *Renderer) resolveAndValidateTableEngine(node *ast.CreateTableNode) (tab
 		spec.orderBy = strings.Join(pkCols, ", ")
 	}
 
-	if spec.primaryKey == "" || spec.orderBy == "" {
+	if spec.primaryKey == "" || spec.primaryKey == "tuple()" || spec.orderBy == "" {
 		return spec, nil
 	}
 	pkCols := splitColumns(spec.primaryKey)
