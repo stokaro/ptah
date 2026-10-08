@@ -410,7 +410,7 @@ func freeTableName(diff *difftypes.SchemaDiff, table schemamodel.Table, prefix s
 		declared := slices.ContainsFunc(diff.DeclaredTables, func(other schemamodel.Table) bool {
 			return other.Schema == table.Schema && other.Name == candidate
 		})
-		if !declared && !slices.Contains(diff.TablesRemoved, qualified) {
+		if !declared && !slices.Contains(diff.TablesRemoved.Names(), qualified) {
 			return candidate, nil
 		}
 	}

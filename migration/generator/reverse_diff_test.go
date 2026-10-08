@@ -276,7 +276,7 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 	// Test that all fields are properly reversed
 	input := &difftypes.SchemaDiff{
 		TablesAdded:   difftypes.TableChanges{{Name: "users"}, {Name: "posts"}},
-		TablesRemoved: []string{"old_table"},
+		TablesRemoved: difftypes.TableRemovals{{Name: "old_table"}},
 		EnumsAdded:    difftypes.EnumChanges{{Name: "status_type"}},
 		EnumsRemoved:  difftypes.EnumChanges{{Name: "old_enum"}},
 		IndexesAdded:  difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_users_email", Fields: []string{"email"}}, TableName: "users"}},
@@ -321,8 +321,8 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 	)
 
 	// Verify all reversals
-	c.Assert(result.TablesAdded.Names(), qt.DeepEquals, input.TablesRemoved)
-	c.Assert(result.TablesRemoved, qt.DeepEquals, input.TablesAdded.Names())
+	c.Assert(result.TablesAdded.Names(), qt.DeepEquals, input.TablesRemoved.Names())
+	c.Assert(result.TablesRemoved.Names(), qt.DeepEquals, input.TablesAdded.Names())
 	c.Assert(result.EnumsAdded.Names(), qt.DeepEquals, input.EnumsRemoved.Names())
 	c.Assert(result.EnumsRemoved.Names(), qt.DeepEquals, input.EnumsAdded.Names())
 	c.Assert(result.IndexAdditions(), qt.DeepEquals, input.IndexesRemoved)
@@ -371,7 +371,7 @@ func TestGenerateDownMigrationSQL_DropsFKChainChildBeforeParent(t *testing.T) {
 	c := qt.New(t)
 	schema := fkOrderSchema()
 	upDiff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableChanges{{Name: "ptah_fk_order_accounts"}, {Name: "ptah_fk_order_projects"}, {Name: "ptah_fk_order_tasks"}},
+		TablesAdded: difftypes.TableCreationsFor(schema, identifier.ForDialect("postgres"), "ptah_fk_order_accounts", "ptah_fk_order_projects", "ptah_fk_order_tasks"),
 	}
 
 	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
@@ -387,7 +387,7 @@ func TestGenerateDownMigrationSQL_DropsFKDiamondLeavesBeforeRoot(t *testing.T) {
 	c := qt.New(t)
 	schema := fkOrderSchema()
 	upDiff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableChanges{{Name: "ptah_fk_order_accounts"}, {Name: "ptah_fk_order_memberships"}, {Name: "ptah_fk_order_projects"}, {Name: "ptah_fk_order_tasks"}},
+		TablesAdded: difftypes.TableCreationsFor(schema, identifier.ForDialect("postgres"), "ptah_fk_order_accounts", "ptah_fk_order_memberships", "ptah_fk_order_projects", "ptah_fk_order_tasks"),
 	}
 
 	downSQL, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
@@ -743,7 +743,7 @@ func TestReverseSchemaDiff_Issue39_Integration(t *testing.T) {
 	c.Assert(downDiff.RolesAdded, qt.HasLen, 0)
 
 	// Tables should be removed in down migration (existing behavior)
-	c.Assert(downDiff.TablesRemoved, qt.DeepEquals, []string{"users"})
+	c.Assert(downDiff.TablesRemoved.Names(), qt.DeepEquals, []string{"users"})
 	c.Assert(downDiff.TablesAdded, qt.HasLen, 0)
 }
 

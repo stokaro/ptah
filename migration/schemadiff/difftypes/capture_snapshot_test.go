@@ -25,6 +25,8 @@ func TestCommonValueClonesOwnEveryMutableField(t *testing.T) {
 		clone     func(any) any
 	}{
 		{name: "declared capture", prototype: schemacapture.TableDeclaration{}, clone: func(v any) any { return v.(schemacapture.TableDeclaration).Clone() }},
+		{name: "table removal", prototype: difftypes.TableRemoval{}, clone: func(v any) any { return v.(difftypes.TableRemoval).Clone() }},
+		{name: "table removal collection", prototype: difftypes.TableRemovals{}, clone: func(v any) any { return v.(difftypes.TableRemovals).Clone() }},
 		{name: "observed capture", prototype: schemacapture.TableObservation{}, clone: func(v any) any { return v.(schemacapture.TableObservation).Clone() }},
 		{name: "observed table", prototype: catalog.Table{}, clone: func(v any) any { return v.(catalog.Table).Clone() }},
 		{name: "observed column", prototype: catalog.Column{}, clone: func(v any) any { return v.(catalog.Column).Clone() }},
@@ -130,7 +132,7 @@ func TestTableObservationOwnsNestedCatalogState(t *testing.T) {
 	table := populatedSnapshot(reflect.TypeFor[catalog.Table]())
 	constraint := populatedSnapshot(reflect.TypeFor[catalog.Constraint]())
 	current := &catalog.Database{Constraints: []catalog.Constraint{constraint.Interface().(catalog.Constraint)}}
-	observed := difftypes.TableObservationFor(current, table.Interface().(catalog.Table), identifier.ForDialect("postgres"))
+	observed := difftypes.TableObservationFor(current, table.Interface().(catalog.Table), "postgres", identifier.ForDialect("postgres"))
 	c.Assert(observed.Constraints, qt.HasLen, 1)
 	mutateSnapshot(table)
 	mutateSnapshot(reflect.ValueOf(&current.Constraints[0]).Elem())

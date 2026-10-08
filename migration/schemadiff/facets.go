@@ -10,7 +10,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/migration/schemadiff/internal/compare"
+	"ptah.run/migration/internal/tableidentity"
 )
 
 func captureFeatureStates(desired *schemamodel.Database, current *catalog.Database, target string, semantics identifier.Semantics) (declared, observed schemaext.FeatureState, err error) {
@@ -24,14 +24,14 @@ func captureFeatureStates(desired *schemamodel.Database, current *catalog.Databa
 		table := &desired.Tables[i]
 		captured[&table.Facets] = true
 		if !table.Facets.IsZero() {
-			declared.Facets = append(declared.Facets, schemaext.FacetRecord{Subject: compare.TableSubject(table.Schema, table.Name, target, semantics), Values: table.Facets})
+			declared.Facets = append(declared.Facets, schemaext.FacetRecord{Subject: tableidentity.Subject(table.Schema, table.Name, target, semantics), Values: table.Facets})
 		}
 	}
 	for i := range current.Tables {
 		table := &current.Tables[i]
 		captured[&table.Facets] = true
 		if !table.Facets.IsZero() {
-			observed.Facets = append(observed.Facets, schemaext.FacetRecord{Subject: compare.TableSubject(table.Schema, table.Name, target, semantics), Values: table.Facets})
+			observed.Facets = append(observed.Facets, schemaext.FacetRecord{Subject: tableidentity.Subject(table.Schema, table.Name, target, semantics), Values: table.Facets})
 		}
 	}
 	for _, slots := range [][]*schemaext.Facets{desired.FacetSlots(), current.FacetSlots()} {
@@ -51,7 +51,7 @@ func effectiveFeatureState(desired *schemamodel.Database, state schemaext.Featur
 	positions := make(map[objectidentity.Key]int, len(effective.Tables))
 	for i := range effective.Tables {
 		table := &effective.Tables[i]
-		positions[compare.TableSubject(table.Schema, table.Name, target, semantics).Key()] = i
+		positions[tableidentity.Subject(table.Schema, table.Name, target, semantics).Key()] = i
 		table.Facets = schemaext.Facets{}
 	}
 	seen := make(map[objectidentity.Key]bool)

@@ -322,7 +322,7 @@ func TestCompareWithDatabaseInfo_SQLServerCatalogTableIdentity(t *testing.T) {
 		}, nil, must.Must(builtin.New()))
 		c.Assert(err, qt.IsNil)
 		c.Assert(diff.TablesAdded.Names(), qt.DeepEquals, []string{"dbo.users"})
-		c.Assert(diff.TablesRemoved, qt.DeepEquals, []string{"dbo.Users"})
+		c.Assert(diff.TablesRemoved.Names(), qt.DeepEquals, []string{"dbo.Users"})
 	})
 }
 

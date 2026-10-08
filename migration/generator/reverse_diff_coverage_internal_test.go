@@ -459,7 +459,7 @@ func reverseCoverageDiff() *difftypes.SchemaDiff {
 	// `rev_coverage_domain` to its schema, and a generic value resolves
 	// nothing because no creation names a type. The removal below is what the
 	// rollback turns into that creation (stokaro/ptah#2315).
-	diff.TablesRemoved = append(diff.TablesRemoved, revCoverageTypedTable)
+	diff.TablesRemoved = append(diff.TablesRemoved, difftypes.TableRemoval{Name: revCoverageTypedTable})
 
 	// The planner refuses a snapshot that disagrees with the dialect it is
 	// planning for, so this one field cannot carry an invented value: a generic
@@ -654,7 +654,7 @@ func TestReverseSchemaDiff_ARolledBackTableIsTypedByThePriorVocabulary(t *testin
 
 	schema, dbSchema := reverseCoverageContext()
 	forward := &difftypes.SchemaDiff{
-		TablesRemoved: []string{revCoverageTypedTable},
+		TablesRemoved: difftypes.TableRemovals{{Name: revCoverageTypedTable}},
 		// The desired schema's vocabulary, which is empty here: the rollback
 		// must not resolve through it.
 		DeclaredUserTypes: difftypes.UserTypeVocabularyOf(schema),
@@ -691,7 +691,7 @@ func TestReverseSchemaDiff_ARolledBackForeignKeyResolvesAgainstThePriorTables(t 
 
 	schema, dbSchema := reverseCoverageContext()
 	forward := &difftypes.SchemaDiff{
-		TablesRemoved: []string{revCoverageTypedTable},
+		TablesRemoved: difftypes.TableRemovals{{Name: revCoverageTypedTable}},
 		// The desired schema's tables, which do not include the one the
 		// rollback restores: the reverse must not resolve through them.
 		DeclaredTables: schema.Tables,
@@ -846,7 +846,7 @@ func TestReverseSchemaDiff_ARolledBackTableCarriesThePriorConstraints(t *testing
 	c := qt.New(t)
 
 	schema, dbSchema := reverseCoverageContext()
-	forward := &difftypes.SchemaDiff{TablesRemoved: []string{revCoverageTable}}
+	forward := &difftypes.SchemaDiff{TablesRemoved: difftypes.TableRemovals{{Name: revCoverageTable}}}
 
 	reversed := reverseForTest(t,
 		forward, schema, dbSchema, "postgres",
@@ -966,7 +966,7 @@ func TestReverseSchemaDiff_ARolledBackDropOrderComesFromThePriorGraph(t *testing
 		}},
 	}
 	forward := &difftypes.SchemaDiff{
-		TablesRemoved:             []string{"prior_child", "prior_parent"},
+		TablesRemoved:             difftypes.TableRemovals{{Name: "prior_child"}, {Name: "prior_parent"}},
 		DeclaredTableDependencies: deporder.GeneratedTableDependencies(schema),
 	}
 
@@ -1043,7 +1043,7 @@ func TestReverseSchemaDiff_ARolledBackSchemaCarriesThePriorDeclaration(t *testin
 		}},
 	}
 	forward := &difftypes.SchemaDiff{
-		TablesRemoved: []string{revCoverageTypedTable},
+		TablesRemoved: difftypes.TableRemovals{{Name: revCoverageTypedTable}},
 		DeclaredSchemas: []schemamodel.Schema{
 			{Name: revCoverageDomainOwner, Comment: "the new comment"},
 		},

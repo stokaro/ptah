@@ -41,8 +41,8 @@ func TestGenerateDownMigration_RecreatesDroppedTablesInDependencyOrder(t *testin
 	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
 		target, prior, "postgres", must.Must(builtin.New()),
 	))
-	c.Assert(upDiff.TablesRemoved, qt.Contains, "aaa_orders")
-	c.Assert(upDiff.TablesRemoved, qt.Contains, "zzz_customers")
+	c.Assert(upDiff.TablesRemoved.Names(), qt.Contains, "aaa_orders")
+	c.Assert(upDiff.TablesRemoved.Names(), qt.Contains, "zzz_customers")
 
 	down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff, target, prior, "postgres")

@@ -182,7 +182,7 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedCheckAndUniqueAdditions(t *t
 
 func TestPlanner_GenerateMigrationAST_DropsFKBeforeRemovingItsTable(t *testing.T) {
 	diff := &difftypes.SchemaDiff{
-		TablesRemoved: []string{"tasks", "projects", "accounts"},
+		TablesRemoved: difftypes.TableRemovals{{Name: "tasks"}, {Name: "projects"}, {Name: "accounts"}},
 		ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 			{Name: "fk_tasks_project", TableName: "tasks", Type: "FOREIGN KEY"},
 			{Name: "fk_projects_account", TableName: "projects", Type: "FOREIGN KEY"},
@@ -685,7 +685,7 @@ func TestPlanner_GenerateMigrationAST_PureConstraintRemovals_TableQualified(t *t
 			c := qt.New(t)
 
 			diff := &difftypes.SchemaDiff{
-				TablesRemoved: []string{"obsolete"},
+				TablesRemoved: difftypes.TableRemovals{{Name: "obsolete"}},
 				ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 					{Name: "fk_orders_customer", TableName: "orders", Type: "FOREIGN KEY"},
 					{Name: "chk_qty", TableName: "things", Type: "CHECK"},

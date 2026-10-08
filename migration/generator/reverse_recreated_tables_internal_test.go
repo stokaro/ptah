@@ -86,7 +86,7 @@ func TestGenerateDownMigration_DropTable_RollbackSaysEachConstraintOnce(t *testi
 			upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
 				target, prior, tt.dialect, must.Must(builtin.New()),
 			))
-			c.Assert(upDiff.TablesRemoved, qt.DeepEquals, []string{"gadgets"})
+			c.Assert(upDiff.TablesRemoved.Names(), qt.DeepEquals, []string{"gadgets"})
 
 			down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
 				upDiff, target, prior, tt.dialect)
@@ -126,8 +126,8 @@ func TestGenerateDownMigration_DropTable_KeepsWhatTableCreationCannotRestore(t *
 	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(),
 		target, prior, "postgres", must.Must(builtin.New()),
 	))
-	c.Assert(upDiff.TablesRemoved, qt.Contains, "nodes")
-	c.Assert(upDiff.TablesRemoved, qt.Contains, "pairs")
+	c.Assert(upDiff.TablesRemoved.Names(), qt.Contains, "nodes")
+	c.Assert(upDiff.TablesRemoved.Names(), qt.Contains, "pairs")
 
 	down, err := generateDownMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff, target, prior, "postgres")

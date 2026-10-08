@@ -922,9 +922,8 @@ desired and current schemas, normalized dialect capabilities, and concurrent
 index policy into one result with forward and reverse diffs, AST nodes, exact
 table-qualified concurrent-index references, and an independent
 `RequiresNoTransaction` classification for each direction. The reverse restores
-the introspected current schema rather than only exchanging structural lists.
-Restored constraints retain their validation status, exclusion elements, and
-exclusion predicates from that schema.
+captured table removals and the surrounding current schema. Restored constraints
+retain their validation status, exclusion elements, and exclusion predicates.
 The entry point takes the caller's context and propagates service failures and
 cancellation. `PriorSchema` retains the converted rollback target, so rendering
 does not select another runtime or reconstruct the target again.
@@ -937,6 +936,19 @@ are projected using captured identifier semantics. Named CHECK creation and remo
 constraint comments, and constraint validation update the captured host, including
 simultaneous column changes. Validation remains in effect during rollback.
 Skipped removals preserve captured columns and indexes, including their comments.
+
+Reverse table removals project accepted creations and their accepted child
+additions. They retain feature coverage limits and do not use an edited desired
+document as evidence of what the forward plan creates. A projected capture is
+planning input; it does not establish that the migration executed.
+
+Rollback restores a removed table and its captured children from the observation.
+Later edits to the caller's catalog cannot replace that state. Missing captures,
+mismatched identities, and children owned by another table are refused before
+planning. `CurrentSchema` in the result includes these restored observations.
+Their coverage applies only to the captured parents; it cannot establish
+knowledge about unrelated tables.
+
 Table captures own their nested mutable fields. The `Clone` methods on catalog
 tables, columns, constraints, and indexes, and on schema model tables, fields,
 constraints, indexes, enums, and triggers provide the same isolation to callers.
@@ -1200,9 +1212,14 @@ cannot ALTER one into place: SQLite has no `ADD CONSTRAINT`, so a constraint
 missing from the `CREATE` has no second chance, while every other target plans
 each one as its own addition and never reads them. `Names()` gives the table
 names in the spelling
-the comparison produced, and the JSON is unchanged: `tables_added` has always
-been an array of names. `TablesRemoved` stays `[]string`, because DROP TABLE is
-written from the name.
+the comparison produced. The `tables_added` JSON report is an array of names.
+
+`SchemaDiff.TablesRemoved` is `TableRemovals`. Each removal carries its report
+name and a `schemacapture.TableObservation` with columns, indexes, constraints,
+triggers, facets, named feature children, and coverage limits. `Clone()` owns
+the nested common state. `Names()` and the `tables_removed` JSON report expose
+only names; that report cannot replay a plan. A missing capture does not prove
+that a table has no children.
 
 `SchemaDiff.DeclaredTables` carries every table the declaration holds, also once
 and off the wire. A foreign key names the table it references, and that table is
@@ -1214,7 +1231,8 @@ recorded for it; this is the other half.
 
 `TableCreationFor`, `TableDeclarationFor`, `TableObservationFor`, and
 `TableCreationsFor` require the
-target's identifier semantics. Each capture selects named feature children by
+target's identifier semantics. `TableObservationFor` also requires the target
+dialect so SQLite names retain their exact whitespace. Each capture selects named feature children by
 structured parent identity and retains their coverage limits. A literal dot in
 a table name cannot select children from a similarly spelled qualified table.
 An empty capture retains unknown namespace claims; it does not prove absence.
@@ -1258,14 +1276,14 @@ had. An embedder building a diff by hand fills it with
 naming the table rather than a rebuild from nothing.
 
 `SchemaDiff.DeclaredTableDependencies` carries the table dependency graph of
-the schema the plan runs against, keyed by qualified table name. Dropping tables
-is the mirror of creating them — a child goes before the parent it references,
-or the `DROP` is refused — and while a creation carries its own edges in
-`TableCreation.DependsOn`, a removal is only a name, so the edges between
-removals have nowhere per-entry to live. It is direction-dependent like the two
-carries above: a reversal carries the pre-change database's graph, and a table
-that graph does not name orders as it arrived. An embedder building a diff by
-hand and omitting it gets its removals in the order it wrote them.
+the schema the plan runs against, keyed by qualified table name. A child must
+be dropped before the parent it references. Captured removals retain their
+prior constraints; this graph also describes tables that remain in the schema.
+A reversal carries the pre-change database's graph, and a table that graph
+does not name orders as it arrived. Reverse removals of accepted creations use
+`TableCreation.DependsOn` to order those tables before this graph is applied.
+An embedder building a diff by hand and omitting the graph gets its removals
+in the order it wrote them.
 
 `SchemaDiff.DeclaredFunctions` carries what putting a set of functions in
 creation order needs beyond the functions themselves: the order the

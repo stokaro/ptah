@@ -1021,7 +1021,7 @@ func TestPlanner_GenerateMigrationSQL_TablesRemoved(t *testing.T) {
 		{
 			name: "single table removed",
 			diff: &difftypes.SchemaDiff{
-				TablesRemoved: []string{"old_table"},
+				TablesRemoved: difftypes.TableRemovals{{Name: "old_table"}},
 			},
 			desired: &schemamodel.Database{},
 			expected: func(nodes []ast.Node) bool {

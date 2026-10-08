@@ -138,7 +138,7 @@ func removedTableNames(diff *difftypes.SchemaDiff) []string {
 	if diff == nil {
 		return nil
 	}
-	return diff.TablesRemoved
+	return diff.TablesRemoved.Names()
 }
 
 func errorMessage(err error) string {

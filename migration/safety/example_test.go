@@ -43,7 +43,7 @@ func ExampleAssessSQL() {
 func ExampleClassifySchemaDiff() {
 	diff := &difftypes.SchemaDiff{
 		TablesAdded:   difftypes.TableChanges{{Name: "audit_log"}},
-		TablesRemoved: []string{"legacy_sessions"},
+		TablesRemoved: difftypes.TableRemovals{{Name: "legacy_sessions"}},
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_orders_status", TableName: "orders"},
 		},

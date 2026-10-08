@@ -1258,7 +1258,7 @@ func TestTablesAndColumns_SortingConsistency(t *testing.T) {
 
 	// Check that results are sorted alphabetically
 	c.Assert(diff.TablesAdded.Names(), qt.DeepEquals, []string{"alpha_table", "zebra_table"})
-	c.Assert(diff.TablesRemoved, qt.DeepEquals, []string{"alpha_old_table", "zebra_old_table"})
+	c.Assert(diff.TablesRemoved.Names(), qt.DeepEquals, []string{"alpha_old_table", "zebra_old_table"})
 }
 
 func TestTablesAndColumns_UsesSchemaQualifiedTableIdentity(t *testing.T) {
@@ -1291,7 +1291,7 @@ func TestTablesAndColumns_UsesSchemaQualifiedTableIdentity(t *testing.T) {
 	compare.TablesAndColumns(desired, database, diff)
 
 	c.Assert(diff.TablesAdded.Names(), qt.DeepEquals, []string{"billing.users"})
-	c.Assert(diff.TablesRemoved, qt.HasLen, 0)
+	c.Assert(diff.TablesRemoved.Names(), qt.HasLen, 0)
 	c.Assert(diff.TablesModified, qt.HasLen, 0)
 }
 
@@ -1709,7 +1709,7 @@ func TestTablesAndColumns_HappyPath(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				TablesRemoved: []string{"old_table"},
+				TablesRemoved: difftypes.TableRemovals{{Name: "old_table"}},
 			},
 		},
 		{
@@ -1770,7 +1770,7 @@ func TestTablesAndColumns_HappyPath(t *testing.T) {
 			},
 			expected: &difftypes.SchemaDiff{
 				TablesAdded:   difftypes.TableChanges{{Name: "posts"}},
-				TablesRemoved: []string{"old_table"},
+				TablesRemoved: difftypes.TableRemovals{{Name: "old_table"}},
 				TablesModified: []difftypes.TableDiff{
 					{
 						TableName:      "users",
@@ -1792,7 +1792,7 @@ func TestTablesAndColumns_HappyPath(t *testing.T) {
 			// WHICH tables the comparison reports, and the bundle each one
 			// carries has its own test (stokaro/ptah#2315).
 			c.Assert(diff.TablesAdded.Names(), qt.DeepEquals, tt.expected.TablesAdded.Names())
-			c.Assert(diff.TablesRemoved, qt.DeepEquals, tt.expected.TablesRemoved)
+			c.Assert(diff.TablesRemoved.Names(), qt.DeepEquals, tt.expected.TablesRemoved.Names())
 			c.Assert(diff.TablesModified, qt.HasLen, len(tt.expected.TablesModified))
 
 			for i, expectedTableDiff := range tt.expected.TablesModified {
@@ -1854,7 +1854,7 @@ func TestTablesAndColumns_UnhappyPath(t *testing.T) {
 			// WHICH tables the comparison reports, and the bundle each one
 			// carries has its own test (stokaro/ptah#2315).
 			c.Assert(diff.TablesAdded.Names(), qt.DeepEquals, tt.expected.TablesAdded.Names())
-			c.Assert(diff.TablesRemoved, qt.DeepEquals, tt.expected.TablesRemoved)
+			c.Assert(diff.TablesRemoved.Names(), qt.DeepEquals, tt.expected.TablesRemoved.Names())
 			c.Assert(diff.TablesModified, qt.HasLen, len(tt.expected.TablesModified))
 		})
 	}

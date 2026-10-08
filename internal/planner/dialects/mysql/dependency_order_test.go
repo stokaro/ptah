@@ -53,12 +53,7 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyDropsFKDiamondTablesInDependenc
 			c := qt.New(t)
 			desired := dependencyOrderSchema()
 			diff := &difftypes.SchemaDiff{
-				TablesRemoved: []string{
-					"ptah_fk_order_accounts",
-					"ptah_fk_order_projects",
-					"ptah_fk_order_memberships",
-					"ptah_fk_order_tasks",
-				},
+				TablesRemoved: difftypes.TableRemovals{{Name: "ptah_fk_order_accounts"}, {Name: "ptah_fk_order_projects"}, {Name: "ptah_fk_order_memberships"}, {Name: "ptah_fk_order_tasks"}},
 			}
 
 			sql := renderMySQLFamily(c, dialect, diff, desired)

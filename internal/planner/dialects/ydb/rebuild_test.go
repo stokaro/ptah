@@ -217,7 +217,7 @@ func TestGenerateMigrationAST_TableRebuild_PicksAFreeScratchName(t *testing.T) {
 		ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "n", Changes: map[string]string{"type": "Int32 -> Int64"}}},
 	})
 	diff.DeclaredTables = []schemamodel.Table{{Name: "__ptah_rebuild_items", Schema: "app"}}
-	diff.TablesRemoved = []string{"app.__ptah_replaced_items"}
+	diff.TablesRemoved = difftypes.TableRemovals{{Name: "app.__ptah_replaced_items"}}
 
 	got := renderRebuild(c, capability.YDB262(), diff)
 

@@ -73,7 +73,7 @@ func coverageCases() []coverageCase {
 			},
 			notDescribed: coverage.Set{}.WithKind(coverage.VirtualTable),
 			onDesired:    true,
-			read:         func(diff *difftypes.SchemaDiff) []string { return diff.TablesRemoved },
+			read:         func(diff *difftypes.SchemaDiff) []string { return diff.TablesRemoved.Names() },
 			wantWithout:  []string{"docs"},
 		},
 		{

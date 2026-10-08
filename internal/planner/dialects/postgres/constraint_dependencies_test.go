@@ -76,7 +76,7 @@ func TestPlanner_ReleasesForeignKeyBeforeReferencedKeyReplacement(t *testing.T) 
 func TestPlanner_SkippedTableDropRetainsItsForeignKeys(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		TablesRemoved: []string{"children"},
+		TablesRemoved: difftypes.TableRemovals{{Name: "children"}},
 		ConstraintsRemoved: difftypes.ConstraintRemovals{
 			{Name: "parent_fk", TableName: "children", Type: "FOREIGN KEY"},
 			{Name: "other_fk", TableName: "archives", Type: "FOREIGN KEY"},

@@ -1385,7 +1385,7 @@ func appendSkipComments(result []ast.Node, skipped []diffpolicy.SkippedChange) [
 }
 
 func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, tableName := range deporder.TableDropOrderWithDependencies(diff.TablesRemoved, diff.DeclaredTables, diff.DeclaredTableDependencies) {
+	for _, tableName := range deporder.TableDropOrderWithDependencies(diff.TablesRemoved.Names(), diff.DeclaredTables, diff.DeclaredTableDependencies) {
 		dropTableNode := ast.NewDropTable(tableName).
 			SetIfExists().
 			SetCascade().
@@ -3313,7 +3313,7 @@ func (p *Planner) changeRLSForce(result []ast.Node, diff *difftypes.SchemaDiff) 
 // comment.
 func (p *Planner) disableRLSOnTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	droppedTables := make(map[string]bool, len(diff.TablesRemoved))
-	for _, tableName := range diff.TablesRemoved {
+	for _, tableName := range diff.TablesRemoved.Names() {
 		droppedTables[tableName] = true
 	}
 

@@ -179,7 +179,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	if err := indexscope.ValidateDiffWithSemantics(platform.YDB, semantics, diff); err != nil {
 		return nil, err
 	}
-	removedTables := tableSet(diff.TablesRemoved, semantics)
+	removedTables := tableSet(diff.TablesRemoved.Names(), semantics)
 	addedTables := make(map[string]bool, len(diff.TablesAdded))
 	for _, creation := range diff.TablesAdded {
 		addedTables[semantics.TableIdentityKey(creation.Name)] = true

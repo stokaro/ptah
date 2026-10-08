@@ -251,8 +251,8 @@ type UpsertNode struct {
 ```go
 // Schema differences for migration planning
 type SchemaDiff struct {
-    TablesAdded              []string
-    TablesRemoved            []string
+    TablesAdded              TableChanges
+    TablesRemoved            TableRemovals
     TablesModified           []TableDiff
     EnumsAdded               []string
     EnumsRemoved             []string

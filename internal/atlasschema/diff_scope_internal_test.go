@@ -335,7 +335,7 @@ func TestCurrentOnlyNonExtensionMatchDoesNotRemoveUnrelatedExtension(t *testing.
 	c.Assert(to.selection.NonExtensionMatched, qt.IsFalse)
 	applyExtensionSupportCoverage(to.schema, from.selection, to.selection)
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), to.schema, from.database, platform.Postgres, must.Must(builtin.New())))
-	c.Assert(diff.TablesRemoved, qt.HasLen, 1)
+	c.Assert(diff.TablesRemoved.Names(), qt.HasLen, 1)
 	c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, 0)
 }
 

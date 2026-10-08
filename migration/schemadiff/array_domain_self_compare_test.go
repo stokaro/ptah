@@ -81,5 +81,5 @@ func TestCompareWithDialect_PostgresArrayAndDomainColumnsCompareEqualToThemselve
 
 	c.Assert(diff.TablesModified, qt.HasLen, 0, qt.Commentf("a database compared against itself reported %+v", diff.TablesModified))
 	c.Assert(diff.TablesAdded, qt.HasLen, 0)
-	c.Assert(diff.TablesRemoved, qt.HasLen, 0)
+	c.Assert(diff.TablesRemoved.Names(), qt.HasLen, 0)
 }

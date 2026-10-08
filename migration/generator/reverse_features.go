@@ -68,6 +68,9 @@ func reverseFeatureChanges(ctx context.Context, forward, reverse *difftypes.Sche
 		}
 		reverse.ObservedConstraintHosts = append(reverse.ObservedConstraintHosts, current)
 	}
+	if err := projectCreatedTableRemovals(ctx, forward, reverse, dialect, caps, runtime); err != nil {
+		return nil, err
+	}
 	return recovery, nil
 }
 

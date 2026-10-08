@@ -32,7 +32,7 @@ func TestGenerateMigrationAST_CoordinationNodes_HappyPath(t *testing.T) {
 			Table:  schemamodel.Table{StructName: "S", Schema: "app", Name: "gone"},
 			Fields: []schemamodel.Field{keyField("id")},
 		}},
-		TablesRemoved: []string{"old"},
+		TablesRemoved: difftypes.TableRemovals{{Name: "old"}},
 		TopicsAdded:   difftypes.TopicChanges{{Name: "events"}},
 		TopicsRemoved: difftypes.TopicChanges{{Name: "queue"}},
 		CoordinationNodesAdded: []schemamodel.CoordinationNode{

@@ -22,7 +22,7 @@ func TestPlannerWithoutFeatureHandlersRefusesEveryExtensionLocation(t *testing.T
 		want error
 	}{
 		{name: "absent diff"},
-		{name: "relational change", diff: &difftypes.SchemaDiff{TablesRemoved: []string{"obsolete"}}},
+		{name: "relational change", diff: &difftypes.SchemaDiff{TablesRemoved: difftypes.TableRemovals{{Name: "obsolete"}}}},
 		{name: "standalone feature", diff: &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{change}}, want: ptaherr.ErrUnsupportedFeature},
 		{name: "table-owned feature", diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 			TableName: "orders", FeatureChanges: []schemaext.ChangeRecord{change},

@@ -17,7 +17,7 @@ func TestTableObservationOwnsCapturedIndexDefinitions(t *testing.T) {
 		Name: "by_id", TableName: "items", Schema: "app", Columns: []string{"id"},
 		StorageParams: map[string]string{"fillfactor": "70"}, NullsDistinct: new(false),
 	}}}
-	observation := difftypes.TableObservationFor(current, table, identifier.ForDialect("postgres"))
+	observation := difftypes.TableObservationFor(current, table, "postgres", identifier.ForDialect("postgres"))
 	c.Assert(observation.Indexes, qt.HasLen, 1)
 	current.Indexes[0].Columns[0], current.Indexes[0].StorageParams["fillfactor"] = "changed", "20"
 	*current.Indexes[0].NullsDistinct = true

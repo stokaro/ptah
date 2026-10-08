@@ -62,7 +62,7 @@ func TestReverseRecreatedTable_DropTableRollbackApplies_Integration(t *testing.T
 	// 2. The up migration under test: the table goes away.
 	target := rrtTargetSchema()
 	upDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), target, dbPrior, "postgres", must.Must(builtin.New())))
-	c.Assert(upDiff.TablesRemoved, qt.DeepEquals, []string{rrtGadgets})
+	c.Assert(upDiff.TablesRemoved.Names(), qt.DeepEquals, []string{rrtGadgets})
 
 	upSQL, downSQL := generateLiveMigrationSQL(c, conn, target)
 	execScript(c, conn, upSQL, "UP")

@@ -16,8 +16,8 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/migration/internal/identifiervalidation"
+	"ptah.run/migration/internal/tableidentity"
 	"ptah.run/migration/schemadiff/difftypes"
-	"ptah.run/migration/schemadiff/internal/compare"
 )
 
 func comparisonIdentifiers(desired *schemamodel.Database, current *catalog.Database, opts *config.CompareOptions) (identifier.Semantics, error) {
@@ -67,7 +67,7 @@ func compareFeatures(ctx context.Context, desired *schemamodel.Database, current
 func featureParents(desired *schemamodel.Database, current *catalog.Database, target string, semantics identifier.Semantics) ([]schemaext.ParentState, error) {
 	parents := make(map[objectidentity.Key]schemaext.ParentState)
 	for _, table := range desired.Tables {
-		ref := compare.TableSubject(table.Schema, table.Name, target, semantics)
+		ref := tableidentity.Subject(table.Schema, table.Name, target, semantics)
 		if ref.Name.Source == "" || ref.Name.Normalized == "" {
 			return nil, &RefusalError{cause: fmt.Errorf("%w: desired table requires a name", ptaherr.ErrInvalidSchemaDiff)}
 		}
@@ -77,7 +77,7 @@ func featureParents(desired *schemamodel.Database, current *catalog.Database, ta
 		parents[ref.Key()] = schemaext.ParentState{Subject: ref, Desired: true}
 	}
 	for _, table := range current.Tables {
-		ref := compare.TableSubject(table.Schema, table.Name, target, semantics)
+		ref := tableidentity.Subject(table.Schema, table.Name, target, semantics)
 		parent, found := parents[ref.Key()]
 		if parent.Current {
 			return nil, fmt.Errorf("%w: duplicate current table identity %s", ptaherr.ErrInvalidSchemaDiff, ref)
@@ -105,13 +105,13 @@ func attachFeatureChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Datab
 	positions := make(map[objectidentity.Key]int, len(diff.TablesModified))
 	for i, table := range diff.TablesModified {
 		if table.Desired.HasTable() {
-			ref := compare.TableSubject(table.Desired.Table.Schema, table.Desired.Table.Name, target, semantics)
+			ref := tableidentity.Subject(table.Desired.Table.Schema, table.Desired.Table.Name, target, semantics)
 			positions[ref.Key()] = i
 		}
 	}
 	declarations := make(map[objectidentity.Key]schemamodel.Table, len(desired.Tables))
 	for _, table := range desired.Tables {
-		ref := compare.TableSubject(table.Schema, table.Name, target, semantics)
+		ref := tableidentity.Subject(table.Schema, table.Name, target, semantics)
 		declarations[ref.Key()] = table
 	}
 	for _, change := range changes {
@@ -137,18 +137,18 @@ func attachFeatureChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Datab
 	}
 	observedTables := make(map[objectidentity.Key]catalog.Table, len(current.Tables))
 	for _, observed := range current.Tables {
-		ref := compare.TableSubject(observed.Schema, observed.Name, target, semantics)
+		ref := tableidentity.Subject(observed.Schema, observed.Name, target, semantics)
 		observedTables[ref.Key()] = observed
 	}
 	for i := range diff.TablesModified {
 		table := &diff.TablesModified[i]
-		ref := compare.TableSubject(table.Desired.Table.Schema, table.Desired.Table.Name, target, semantics)
+		ref := tableidentity.Subject(table.Desired.Table.Schema, table.Desired.Table.Name, target, semantics)
 		if observed, found := observedTables[ref.Key()]; found {
-			table.Current = difftypes.TableObservationFor(current, observed, semantics)
+			table.Current = difftypes.TableObservationFor(current, observed, target, semantics)
 		}
 	}
 	slices.SortFunc(diff.TablesModified, func(a, b difftypes.TableDiff) int {
-		return schemaext.CompareRefs(compare.TableSubject(a.Desired.Table.Schema, a.Desired.Table.Name, target, semantics), compare.TableSubject(b.Desired.Table.Schema, b.Desired.Table.Name, target, semantics))
+		return schemaext.CompareRefs(tableidentity.Subject(a.Desired.Table.Schema, a.Desired.Table.Name, target, semantics), tableidentity.Subject(b.Desired.Table.Schema, b.Desired.Table.Name, target, semantics))
 	})
 	return nil
 }
@@ -158,12 +158,12 @@ func attachFeatureChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Datab
 func constraintHostObservations(current *catalog.Database, declarations []schemacapture.TableDeclaration, target string, semantics identifier.Semantics) []schemacapture.TableObservation {
 	wanted := make(map[objectidentity.Key]bool, len(declarations))
 	for _, declaration := range declarations {
-		wanted[compare.TableSubject(declaration.Table.Schema, declaration.Table.Name, target, semantics).Key()] = true
+		wanted[tableidentity.Subject(declaration.Table.Schema, declaration.Table.Name, target, semantics).Key()] = true
 	}
 	var result []schemacapture.TableObservation
 	for _, table := range current.Tables {
-		if wanted[compare.TableSubject(table.Schema, table.Name, target, semantics).Key()] {
-			result = append(result, difftypes.TableObservationFor(current, table, semantics))
+		if wanted[tableidentity.Subject(table.Schema, table.Name, target, semantics).Key()] {
+			result = append(result, difftypes.TableObservationFor(current, table, target, semantics))
 		}
 	}
 	return result

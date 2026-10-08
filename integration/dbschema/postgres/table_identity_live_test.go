@@ -131,7 +131,7 @@ func (f tableIdentityFixture) assertNothingPlannedForTheTables(c *qt.C) {
 	c.Assert(err, qt.IsNil)
 	diff := must.Must(schemadiff.CompareWithDialect(c.Context(), f.load(c), live, f.dialect, must.Must(builtin.New())))
 	c.Assert(diff.TablesAdded, qt.HasLen, 0)
-	c.Assert(diff.TablesRemoved, qt.HasLen, 0)
+	c.Assert(diff.TablesRemoved.Names(), qt.HasLen, 0)
 	c.Assert(diff.TablesModified, qt.HasLen, 0, qt.Commentf("%+v", diff.TablesModified))
 	c.Assert(diff.IndexesAdded, qt.HasLen, 0)
 	c.Assert(diff.IndexesRemoved, qt.HasLen, 0, qt.Commentf("%+v", diff.IndexesRemoved))

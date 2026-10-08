@@ -267,7 +267,7 @@ func oracleDiffSummary(diff *difftypes.SchemaDiff) []string {
 	for _, name := range diff.TablesAdded.Names() {
 		changes = append(changes, "table added: "+name)
 	}
-	for _, name := range diff.TablesRemoved {
+	for _, name := range diff.TablesRemoved.Names() {
 		changes = append(changes, "table removed: "+name)
 	}
 	for _, table := range diff.TablesModified {

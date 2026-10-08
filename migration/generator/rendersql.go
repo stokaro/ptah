@@ -191,6 +191,11 @@ func generateDownMigrationSQLQualified(
 	directiveOpts := opts.directives
 	// For down migrations, we need to use the current database schema as the "generated" schema
 	// since we're reverting back to the current state
+	current, err := restoreTableSource(diff, dbSchema, dialect)
+	if err != nil {
+		return "", err
+	}
+	dbSchema = current
 	dbAsGoSchema, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, dbSchema, dialect, runtime)
 	if err != nil {
 		return "", err

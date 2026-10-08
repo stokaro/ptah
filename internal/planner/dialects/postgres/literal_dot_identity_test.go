@@ -56,7 +56,7 @@ func TestPlanner_LiteralDotAndQualifiedTablesRemainDistinct(t *testing.T) {
 func TestPlanner_LiteralDotAndQualifiedTableRemovalsRemainDistinct(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		TablesRemoved: []string{`"tenant.data"`, "tenant.data"},
+		TablesRemoved: difftypes.TableRemovals{{Name: `"tenant.data"`}, {Name: "tenant.data"}},
 	}
 
 	nodes, err := postgres.New().GenerateMigrationAST(

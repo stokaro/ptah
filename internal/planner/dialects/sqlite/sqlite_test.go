@@ -124,7 +124,7 @@ func TestPlannerCreatesAddedTablesWithQualifiedConstraintDiffs(t *testing.T) {
 func TestPlannerDropsTablesWithQualifiedConstraintDiffs(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		TablesRemoved: []string{"posts"},
+		TablesRemoved: difftypes.TableRemovals{{Name: "posts"}},
 		ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{{
 			Name:      "fk_posts_user",
 			TableName: "posts",
@@ -392,7 +392,7 @@ func TestPlannerRebuildStepsAsideFromARemovedTableName(t *testing.T) {
 		Fields: []schemamodel.Field{{Name: "id", Type: "INTEGER", StructName: "User", Primary: true}},
 	}
 	diff := &difftypes.SchemaDiff{
-		TablesRemoved: []string{"__ptah_rebuild_users"},
+		TablesRemoved: difftypes.TableRemovals{{Name: "__ptah_rebuild_users"}},
 		TablesModified: []difftypes.TableDiff{{
 			TableName:      "users",
 			ColumnsRemoved: difftypes.ColumnChanges{{Name: "name"}},
@@ -543,7 +543,7 @@ func TestPlannerDropsIndexesAndTables(t *testing.T) {
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_users_email", TableName: "users"},
 		},
-		TablesRemoved: []string{"old_users"},
+		TablesRemoved: difftypes.TableRemovals{{Name: "old_users"}},
 	}
 
 	sql, err := planner.GenerateSchemaDiffSQL(

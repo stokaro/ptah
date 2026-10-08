@@ -72,7 +72,7 @@ func TestCompareDoesNotPlanColumnChangesForASQLiteVirtualTable(t *testing.T) {
 			diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "sqlite", must.Must(builtin.New())))
 
 			c.Assert(diff.TablesAdded, qt.HasLen, 0)
-			c.Assert(diff.TablesRemoved, qt.HasLen, 0)
+			c.Assert(diff.TablesRemoved.Names(), qt.HasLen, 0)
 			c.Assert(len(diff.TablesModified) > 0, qt.Equals, tt.wantModified)
 			c.Assert(modifiedColumnAdditions(diff.TablesModified), qt.DeepEquals, tt.wantColumnAdded)
 		})

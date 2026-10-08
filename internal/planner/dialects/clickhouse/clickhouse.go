@@ -342,7 +342,7 @@ func (p *Planner) removeIndexes(result []ast.Node, diff *difftypes.SchemaDiff) [
 }
 
 func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, name := range diff.TablesRemoved {
+	for _, name := range diff.TablesRemoved.Names() {
 		result = append(result, ast.NewDropTable(name).SetIfExists().SetComment("WARNING: dropping table will delete all data"))
 	}
 	return result

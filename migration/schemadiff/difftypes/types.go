@@ -1134,13 +1134,12 @@ type SchemaDiff struct {
 	// TablesAdded is the tables that exist in the target schema and not in
 	// the current database, each carried as the [TableCreation] CREATE TABLE
 	// renders from. Names gives the table spellings, and the JSON stays the
-	// array of names it has always been. TablesRemoved stays []string because
-	// DROP TABLE is written from the name.
+	// array of names used by a diff report.
 	TablesAdded TableChanges `json:"tables_added"`
 
-	// TablesRemoved contains names of tables that exist in the current database
-	// but not in the target schema (potentially dangerous - data loss)
-	TablesRemoved []string `json:"tables_removed"`
+	// TablesRemoved captures tables that exist only in the current database,
+	// including the child state that a drop would destroy.
+	TablesRemoved TableRemovals `json:"tables_removed"`
 
 	// TablesModified contains detailed information about tables that exist in both
 	// schemas but have structural differences (columns, constraints, etc.)

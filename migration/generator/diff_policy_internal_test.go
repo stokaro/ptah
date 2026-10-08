@@ -27,7 +27,7 @@ func TestPlanGeneratedMigrationSpecs_SkipDropTable(t *testing.T) {
 	// A dropped table (to be skipped) alongside a kept index add, so the
 	// migration is non-empty and we can assert the drop was omitted in place.
 	diff := &difftypes.SchemaDiff{
-		TablesRemoved: []string{"legacy"},
+		TablesRemoved: difftypes.TableRemovals{{Name: "legacy"}},
 		IndexesAdded: difftypes.IndexChanges{
 			{Index: schemamodel.Index{Name: "idx_users_email", Fields: []string{"email"}}, TableName: "users"},
 		},
@@ -73,7 +73,7 @@ func TestPlanGeneratedMigrationSpecs_SkipDropTableAlsoFiltersDown(t *testing.T) 
 		},
 	}
 	diff := &difftypes.SchemaDiff{
-		TablesRemoved: []string{"legacy"},
+		TablesRemoved: difftypes.TableRemovals{{Name: "legacy"}},
 		IndexesAdded: difftypes.IndexChanges{
 			{Index: schemamodel.Index{Name: "idx_users_email", Fields: []string{"email"}}, TableName: "users"},
 		},

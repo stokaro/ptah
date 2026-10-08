@@ -78,7 +78,8 @@ type SchemaDirectionPlan struct {
 //
 // DesiredSchema and CurrentSchema are the exact inputs the two directions were
 // planned against. They are retained so adapters can apply the same qualifier
-// or rendering policy without reconstructing either side. Treat them and both
+// or rendering policy without reconstructing either side. CurrentSchema includes
+// removed tables restored from their captured operands. Treat both schemas and
 // direction plans as read-only.
 type BidirectionalSchemaPlan struct {
 	// PriorSchema is the captured rollback target in declaration form.
@@ -109,8 +110,9 @@ type BidirectionalSchemaPlanOptions struct {
 // rollback through the same dialect, capabilities, and concurrent-index
 // policy.
 //
-// The reverse direction restores CurrentSchema rather than merely swapping
-// structural additions and removals. This preserves prior column and
+// The reverse direction restores captured table removals and the surrounding
+// CurrentSchema. Captured removals take precedence over later catalog edits.
+// This preserves prior column and
 // constraint definitions, removes MySQL/MariaDB foreign-key backing indexes
 // created by the forward migration, and keeps any prior or same-run index whose
 // leading key columns cover the foreign key.
@@ -151,6 +153,12 @@ func PlanBidirectionalSchemaDiff(
 	if err := caps.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid capabilities for %s: %w", dialect, err)
 	}
+
+	current, err := restoreTableSource(opts.Diff, opts.CurrentSchema, dialect)
+	if err != nil {
+		return nil, err
+	}
+	opts.CurrentSchema = current
 
 	createRefs, err := concurrentIndexCreateRefs(
 		opts.Diff,

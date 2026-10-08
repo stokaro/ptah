@@ -181,7 +181,7 @@ func planModifiedConstraint(c *qt.C, desired *schemamodel.Database, dialect, sch
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.TablesAdded, qt.HasLen, 0, qt.Commentf("the table itself must pair"))
-	c.Assert(diff.TablesRemoved, qt.HasLen, 0, qt.Commentf("the table itself must pair"))
+	c.Assert(diff.TablesRemoved.Names(), qt.HasLen, 0, qt.Commentf("the table itself must pair"))
 	return statements
 }
 

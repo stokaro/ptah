@@ -115,7 +115,7 @@ func (f tableCaseFixture) compare(c *qt.C, desired *schemamodel.Database) *difft
 func assertNothingPlannedForTheFile(c *qt.C, diff *difftypes.SchemaDiff) {
 	c.Helper()
 	c.Assert(diff.TablesAdded, qt.HasLen, 0)
-	c.Assert(diff.TablesRemoved, qt.HasLen, 0)
+	c.Assert(diff.TablesRemoved.Names(), qt.HasLen, 0)
 	c.Assert(diff.TablesModified, qt.HasLen, 0, qt.Commentf("%+v", diff.TablesModified))
 	c.Assert(diff.IndexesAdded, qt.HasLen, 0)
 	c.Assert(diff.IndexesRemoved, qt.HasLen, 0, qt.Commentf("%+v", diff.IndexesRemoved))

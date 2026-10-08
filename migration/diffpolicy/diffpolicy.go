@@ -174,8 +174,8 @@ func apply(
 	var skipped []SkippedChange
 
 	if skip.Has(DropTable) {
-		skipped = append(skipped, changesForNames(DropTable, filtered.TablesRemoved)...)
-		removedTables := filtered.TablesRemoved
+		skipped = append(skipped, changesForNames(DropTable, filtered.TablesRemoved.Names())...)
+		removedTables := filtered.TablesRemoved.Names()
 		filtered.TablesRemoved = nil
 		filtered = dropTableDependents(filtered, removedTables)
 	}

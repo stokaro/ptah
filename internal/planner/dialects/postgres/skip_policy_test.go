@@ -16,7 +16,7 @@ import (
 
 func skipPolicyFixture() (*difftypes.SchemaDiff, *schemamodel.Database) {
 	diff := &difftypes.SchemaDiff{
-		TablesRemoved: []string{"legacy"},
+		TablesRemoved: difftypes.TableRemovals{{Name: "legacy"}},
 		EnumsRemoved:  difftypes.EnumChanges{{Name: "legacy_status"}},
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_legacy", TableName: "users"},

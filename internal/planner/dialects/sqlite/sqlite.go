@@ -364,7 +364,7 @@ func existingTablesWithConstraintChanges(
 	}
 	for _, constraint := range diff.ConstraintsRemoved {
 		named[constraint.Name] = true
-		if !objectlookup.Contains(diff.TablesRemoved, constraint.TableName, semantics) {
+		if !objectlookup.Contains(diff.TablesRemoved.Names(), constraint.TableName, semantics) {
 			record(constraint.TableName)
 		}
 	}
@@ -719,7 +719,7 @@ func availableRebuildTableName(
 		if tableNameCollides(diff.DeclaredTables, table, candidate) {
 			continue
 		}
-		if removedTableNameCollides(diff.TablesRemoved, table, candidate) {
+		if removedTableNameCollides(diff.TablesRemoved.Names(), table, candidate) {
 			continue
 		}
 		return candidate, nil
@@ -1025,7 +1025,7 @@ func (p *Planner) removeIndexes(diff *difftypes.SchemaDiff, rebuilds tableRebuil
 
 func (p *Planner) removeTables(diff *difftypes.SchemaDiff) []ast.Node {
 	result := make([]ast.Node, 0, len(diff.TablesRemoved))
-	for _, tableName := range diff.TablesRemoved {
+	for _, tableName := range diff.TablesRemoved.Names() {
 		result = append(result, ast.NewDropTable(tableName).SetIfExists().SetComment("WARNING: This will delete all data!"))
 	}
 	return result

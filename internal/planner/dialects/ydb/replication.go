@@ -116,7 +116,7 @@ func refuseReplicaTables(diff *difftypes.SchemaDiff) error {
 			}
 		}
 	}
-	for _, removed := range diff.TablesRemoved {
+	for _, removed := range diff.TablesRemoved.Names() {
 		tablePath := namePath(removed)
 		for _, replication := range diff.Replications.CurrentReplications {
 			if replication.State != catalog.ReplicationDone || !diff.Replications.Declares(replication.QualifiedName()) ||

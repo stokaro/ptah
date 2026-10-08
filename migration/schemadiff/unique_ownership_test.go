@@ -248,7 +248,7 @@ func TestCompareWithDialect_LiteralDotDoesNotMatchSchemaQualification(t *testing
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, database, "postgres", must.Must(builtin.New())))
 
 	c.Assert(diff.TablesAdded.Names(), qt.DeepEquals, []string{`"tenant.data"`})
-	c.Assert(diff.TablesRemoved, qt.DeepEquals, []string{"tenant.data"})
+	c.Assert(diff.TablesRemoved.Names(), qt.DeepEquals, []string{"tenant.data"})
 	c.Assert(diff.TablesModified, qt.HasLen, 0)
 }
 

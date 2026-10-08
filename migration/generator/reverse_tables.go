@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/deporder"
 	"ptah.run/internal/planner/objectlookup"
 	"ptah.run/internal/tableref"
 	"ptah.run/migration/internal/generatedschema"
@@ -214,9 +215,9 @@ func priorColumn(prior *schemamodel.Database, tableName, columnName string) sche
 // rollback's creations, giving each the declaration the pre-change database
 // held.
 //
-// A creation carries the columns and the enums CREATE TABLE renders from, and a
-// removal carries none of that -- so the bundle is rebuilt here, from the
-// pre-change schema the down direction is given.
+// The caller assembles prior from the removal observations and the surrounding
+// type vocabulary. Conversion supplies the declaration CREATE TABLE renders;
+// it does not look for the removed table in the desired document.
 //
 // A name the pre-change schema does not hold yields a creation with no table.
 // That is the honest answer rather than a silent omission: the planner has
@@ -231,6 +232,26 @@ func tableCreationsFromRemovals(names []string, prior *schemamodel.Database, sem
 		creations = append(creations, priorTableCreation(prior, name, semantics))
 	}
 	return creations
+}
+
+// reverseTableRemovals orders the reverse removal intents. Their observations
+// are projected from the accepted creations at the selected service boundary.
+func reverseTableRemovals(creations difftypes.TableChanges) difftypes.TableRemovals {
+	tables := make([]schemamodel.Table, 0, len(creations))
+	dependencies := make(map[string][]string, len(creations))
+	for _, creation := range creations {
+		tables = append(tables, creation.Table)
+		dependencies[creation.Table.QualifiedName()] = slices.Clone(creation.DependsOn)
+	}
+	names := deporder.TableDropOrderWithDependencies(creations.Names(), tables, dependencies)
+	if len(names) == 0 {
+		return nil
+	}
+	removals := make(difftypes.TableRemovals, len(names))
+	for i, name := range names {
+		removals[i].Name = name
+	}
+	return removals
 }
 
 // priorTableCreation is the creation bundle for one table the pre-change

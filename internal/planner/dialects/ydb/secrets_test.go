@@ -33,7 +33,7 @@ func TestGenerateMigrationAST_Secrets_HappyPath(t *testing.T) {
 			Table:  schemamodel.Table{StructName: "T", Name: "old_pw"},
 			Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "BIGINT", Primary: true}},
 		}},
-		TablesRemoved:  []string{"ext.pw"},
+		TablesRemoved:  difftypes.TableRemovals{{Name: "ext.pw"}},
 		SecretsRemoved: difftypes.SecretChanges{{Name: "old_pw"}},
 		SecretsAdded:   difftypes.SecretChanges{{Name: "pw", Schema: "ext", ValueEnv: "PTAH_SECRET_PW"}},
 		SecretsRotated: difftypes.SecretChanges{{Name: "token", ValueEnv: "PTAH_SECRET_TOKEN"}},

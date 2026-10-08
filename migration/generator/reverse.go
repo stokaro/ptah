@@ -82,11 +82,11 @@ func reverseSchemaDiffWithPrior(
 
 		// Reverse table operations.
 		//
-		// A removal is a name, which is all DROP TABLE needs. The addition it
-		// becomes renders CREATE TABLE, so the declaration has to be recovered
-		// from the pre-change database or the rollback drops a table it never
-		// puts back (stokaro/ptah#2315).
-		TablesAdded: tableCreationsFromRemovals(diff.TablesRemoved, prior, semantics),
+		// The caller restores removal captures into the prior context before
+		// converting it. The resulting declaration therefore retains the
+		// removed table's own fields and feature state even when the surrounding
+		// source document no longer contains that table.
+		TablesAdded: tableCreationsFromRemovals(diff.TablesRemoved.Names(), prior, semantics),
 		// The PRE-CHANGE declaration's vocabulary, not the desired one: the
 		// tables this direction creates are the ones that database held, and a
 		// column of theirs names a type as that database declared it
@@ -124,7 +124,7 @@ func reverseSchemaDiffWithPrior(
 		SchemasAdded:    schemaCreationsFromRemovals(diff.SchemasRemoved, prior),
 		SchemasRemoved:  schemaNames(diff.SchemasAdded),
 		SchemasModified: reverseSchemaChanges(diff.SchemasModified),
-		TablesRemoved:   deporder.TableDropOrder(diff.TablesAdded.Names(), schema), // Tables to add become tables to remove
+		TablesRemoved:   reverseTableRemovals(diff.TablesAdded),
 		TablesModified:  reverseTableDiffs(diff.TablesModified, prior, semantics),
 
 		// Reverse enum operations

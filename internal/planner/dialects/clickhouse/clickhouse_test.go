@@ -44,7 +44,7 @@ func TestGenerateMigrationAST_AddTableDropTableAndAlter(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		TablesRemoved: []string{"legacy"},
+		TablesRemoved: difftypes.TableRemovals{{Name: "legacy"}},
 		TablesModified: []difftypes.TableDiff{
 			{
 				TableName:    "existing",

@@ -36,7 +36,7 @@ func TestPlanningUsesSelectedRendererWithCallerContext(t *testing.T) {
 		c.Assert(request.Nodes, qt.HasLen, 1)
 		return renderer.Result{Complete: true, Fragments: []string{"selected output"}}, nil
 	}}
-	diff := &difftypes.SchemaDiff{TablesRemoved: []string{"items"}}
+	diff := &difftypes.SchemaDiff{TablesRemoved: difftypes.TableRemovals{{Name: "items"}}}
 	sql, err := planner.GenerateSchemaDiffSQL(t.Context(), selected, diff, "pgx")
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, "selected output")

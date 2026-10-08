@@ -817,7 +817,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			database: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
-				TablesRemoved: []string{"main.docs_content"},
+				TablesRemoved: difftypes.TableRemovals{{Name: "main.docs_content"}},
 				ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 					{Name: "docs_content_chk", TableName: "docs_content", Type: "CHECK"},
 				},
@@ -1500,7 +1500,7 @@ func addingColumn(table string) *difftypes.SchemaDiff {
 }
 
 func removing(table string) *difftypes.SchemaDiff {
-	return &difftypes.SchemaDiff{TablesRemoved: []string{table}}
+	return &difftypes.SchemaDiff{TablesRemoved: difftypes.TableRemovals{{Name: table}}}
 }
 
 // declaringVirtualWithTable builds a desired state holding a virtual table and

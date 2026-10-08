@@ -54,7 +54,7 @@ func TestRefuseCoordinationNodes_FailurePath(t *testing.T) {
 func TestRefuseCoordinationNodes_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	c.Assert(schemaprecondition.RefuseCoordinationNodes(platform.Postgres, nil), qt.IsNil)
-	c.Assert(schemaprecondition.RefuseCoordinationNodes(platform.Postgres, &difftypes.SchemaDiff{TablesRemoved: []string{"t"}}),
+	c.Assert(schemaprecondition.RefuseCoordinationNodes(platform.Postgres, &difftypes.SchemaDiff{TablesRemoved: difftypes.TableRemovals{{Name: "t"}}}),
 		qt.IsNil)
 }
 

@@ -183,7 +183,7 @@ func TestApplyForDialectDropIndex_SQLServerCaseSensitiveSkipsIndependentRemoval(
 
 func TestApplyDropTable_PreservesSameNamedIndexOnKeptTable(t *testing.T) {
 	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{TablesRemoved: []string{"users"}}
+	diff := &difftypes.SchemaDiff{TablesRemoved: difftypes.TableRemovals{{Name: "users"}}}
 	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "users"},
 		{Name: "idx_shared", TableName: "orders"},

@@ -151,13 +151,13 @@ func removedTablesBeforeSources(diff *difftypes.SchemaDiff, external externalPla
 	if len(external.drops) == 0 {
 		return nil
 	}
-	return removedTableNodes(diff.TablesRemoved)
+	return removedTableNodes(diff.TablesRemoved.Names())
 }
 func removedTablesAfterSources(diff *difftypes.SchemaDiff, external externalPlan) []ast.Node {
 	if len(external.drops) > 0 {
 		return nil
 	}
-	return removedTableNodes(diff.TablesRemoved)
+	return removedTableNodes(diff.TablesRemoved.Names())
 }
 func removedTableNodes(names []string) []ast.Node {
 	var nodes []ast.Node

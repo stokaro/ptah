@@ -167,7 +167,7 @@ func TestCompareWithDatabaseInfo_MySQLConnectionSchemaPlansNothingAtAll(t *testi
 			c.Assert(err, qt.IsNil)
 			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))
 			c.Assert(diff.TablesAdded, qt.HasLen, 0)
-			c.Assert(diff.TablesRemoved, qt.HasLen, 0)
+			c.Assert(diff.TablesRemoved.Names(), qt.HasLen, 0)
 			c.Assert(diff.TablesModified, qt.HasLen, 0)
 			c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
 			c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)

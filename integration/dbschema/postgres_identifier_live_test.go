@@ -115,7 +115,7 @@ func TestPostgresLiveConnection_ASelectedSchemaComparesEqualToItself(t *testing.
 	// pass as agreement.
 	c.Assert(live.Tables, qt.HasLen, 1)
 	c.Assert(diff.TablesAdded, qt.HasLen, 0, qt.Commentf("%+v", diff.TablesAdded))
-	c.Assert(diff.TablesRemoved, qt.HasLen, 0, qt.Commentf("%+v", diff.TablesRemoved))
+	c.Assert(diff.TablesRemoved.Names(), qt.HasLen, 0, qt.Commentf("%+v", diff.TablesRemoved.Names()))
 	c.Assert(diff.HasChanges(), qt.IsFalse)
 }
 

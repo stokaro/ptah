@@ -30,7 +30,7 @@ func TestGenerateMigrationAST_Topics_HappyPath(t *testing.T) {
 			Table:  schemamodel.Table{StructName: "Q", Name: "queue"},
 			Fields: []schemamodel.Field{{StructName: "Q", Name: "id", Type: "BIGINT", Primary: true}},
 		}},
-		TablesRemoved: []string{"events"},
+		TablesRemoved: difftypes.TableRemovals{{Name: "events"}},
 		TopicsAdded:   difftypes.TopicChanges{{Name: "events", Spec: ast.TopicSpec{RetentionPeriod: "PT2H"}}},
 		TopicsRemoved: difftypes.TopicChanges{{Name: "queue"}},
 		TopicsModified: []difftypes.TopicDiff{{Name: "audit",

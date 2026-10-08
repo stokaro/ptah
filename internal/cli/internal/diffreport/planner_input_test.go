@@ -56,7 +56,7 @@ func TestCategoriesLeavesOutEveryListTheWireDoesNotCarry(t *testing.T) {
 func TestCategoriesStillNamesAListTheWireCarries(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &difftypes.SchemaDiff{TablesRemoved: []string{"orders"}}
+	diff := &difftypes.SchemaDiff{TablesRemoved: difftypes.TableRemovals{{Name: "orders"}}}
 
 	c.Assert(diffreport.Names(diffreport.Categories(diff)), qt.DeepEquals, []string{"tables_removed"})
 }

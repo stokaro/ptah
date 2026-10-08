@@ -49,7 +49,7 @@ func TestCompareSchemas_PlansAddedColumnAndIndex(t *testing.T) {
 	diff := must.Must(schemadiff.CompareSchemas(t.Context(), usersV2(), usersV1(), platform.Postgres, must.Must(builtin.New())))
 
 	c.Assert(diff.TablesAdded, qt.HasLen, 0)
-	c.Assert(diff.TablesRemoved, qt.HasLen, 0)
+	c.Assert(diff.TablesRemoved.Names(), qt.HasLen, 0)
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	modified := diff.TablesModified[0]
 	c.Assert(modified.TableName, qt.Equals, "users")

@@ -211,7 +211,7 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 		{
 			name: "a dropped table is not disabled before it is dropped",
 			diff: &difftypes.SchemaDiff{
-				TablesRemoved:           []string{"public.legacy"},
+				TablesRemoved:           difftypes.TableRemovals{{Name: "public.legacy"}},
 				RLSEnabledTablesRemoved: difftypes.RLSEnabledTableChanges{{Table: "public.legacy"}},
 			},
 			desired: &schemamodel.Database{},

@@ -1249,7 +1249,7 @@ func (p *Planner) releaseKeyNames(result []ast.Node, diff *difftypes.SchemaDiff,
 }
 
 func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, tableName := range deporder.TableDropOrderWithDependencies(diff.TablesRemoved, diff.DeclaredTables, diff.DeclaredTableDependencies) {
+	for _, tableName := range deporder.TableDropOrderWithDependencies(diff.TablesRemoved.Names(), diff.DeclaredTables, diff.DeclaredTableDependencies) {
 		dropTableNode := ast.NewDropTable(tableName).
 			SetIfExists().
 			SetCascade().
@@ -2329,7 +2329,7 @@ func (p *Planner) removeConstraints(
 	}
 
 	droppedTables := make(map[string]struct{}, len(diff.TablesRemoved))
-	for _, t := range diff.TablesRemoved {
+	for _, t := range diff.TablesRemoved.Names() {
 		droppedTables[semantics.QualifiedTableIdentityKey(t)] = struct{}{}
 	}
 

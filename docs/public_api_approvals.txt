@@ -414,6 +414,9 @@ v0.13.0 ptah.run/core/ast
 # Complete table declarations and observations move from difftypes into
 # core/schemacapture so contextual services need no migration-pipeline imports.
 # Callers use the neutral types directly; no old type aliases remain.
+# TablesRemoved carries TableRemoval operands with observed child state rather
+# than names alone. TableObservationFor requires the target dialect to preserve
+# exact SQLite ownership identities.
 # YAML managed-row parsing moves from schemamodel to core/manageddata so the
 # desired model imports no parser. LoadRows, LoadRowValues, and ResolveRows
 # replace the old model functions directly, without forwarding wrappers.
