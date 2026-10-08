@@ -15,8 +15,11 @@ import (
 // The provider owns every change and operation codec. OperationKinds declares
 // the complete output vocabulary; registration does not grant execution rights.
 type Planning struct {
-	Target         string
-	Kinds          []schemaext.Kind
+	Target string
+	Kinds  []schemaext.Kind
+	// ParentKinds assigns attached model assessment independently of child
+	// deltas. Each model requires owned desired and observed codecs.
+	ParentKinds    []schemaext.Kind
 	OperationKinds []schemaext.Kind
 	Service        featureplan.Service
 }
@@ -28,8 +31,21 @@ type ownedPlanning struct {
 
 func (r *Runtime) registerPlanning(owner string, declaration Planning) error {
 	target, found := r.targets[declaration.Target]
-	if !found || target.name != declaration.Target || len(declaration.Kinds) == 0 || len(declaration.OperationKinds) == 0 || declaration.Service == nil || nilService(declaration.Service) {
+	if !found || target.name != declaration.Target || (len(declaration.Kinds) == 0 && len(declaration.ParentKinds) == 0) || declaration.Service == nil || nilService(declaration.Service) {
 		return fmt.Errorf("%w: incomplete planning registration for %q", ErrInvalidRegistration, declaration.Target)
+	}
+	if len(declaration.Kinds) > 0 && len(declaration.OperationKinds) == 0 {
+		return fmt.Errorf("%w: change planning requires an operation vocabulary", ErrInvalidRegistration)
+	}
+	for _, kind := range declaration.ParentKinds {
+		if !r.ownsCodec(owner, kind, schemaext.Desired) || !r.ownsCodec(owner, kind, schemaext.Observed) {
+			return fmt.Errorf("%w: %q does not own parent model %q", ErrInvalidRegistration, owner, kind)
+		}
+		key := conversionKey{target: target.name, kind: kind}
+		if _, found := r.parentPlanning[key]; found {
+			return fmt.Errorf("%w: duplicate parent planning for %q/%q", ErrInvalidRegistration, target.name, kind)
+		}
+		r.parentPlanning[key] = len(r.planningServices)
 	}
 	for _, kind := range declaration.Kinds {
 		if !r.ownsCodec(owner, kind, schemaext.Change) {
@@ -49,6 +65,7 @@ func (r *Runtime) registerPlanning(owner string, declaration Planning) error {
 		seen[kind] = true
 	}
 	declaration.Kinds = slices.Clone(declaration.Kinds)
+	declaration.ParentKinds = slices.Clone(declaration.ParentKinds)
 	declaration.OperationKinds = slices.Clone(declaration.OperationKinds)
 	r.planningServices = append(r.planningServices, ownedPlanning{owner, declaration})
 	return nil
@@ -67,6 +84,8 @@ func (r *Runtime) PlanFeatures(ctx context.Context, request featureplan.Request)
 		return featureplan.Result{}, fmt.Errorf("%w: %q", ptaherr.ErrUnsupportedDialect, request.Target)
 	}
 	request.Target = target.name
+	// Assignment is runtime-owned. An input cannot suppress a registered model.
+	request.ParentKinds = nil
 	request, err := r.snapshotPlanning(ctx, request)
 	if err != nil {
 		return featureplan.Result{}, err
@@ -75,12 +94,17 @@ func (r *Runtime) PlanFeatures(ctx context.Context, request featureplan.Request)
 	if err != nil {
 		return featureplan.Result{}, err
 	}
-	result := featureplan.Result{Changes: make([]featureplan.ChangePlan, len(request.Changes))}
+	result := featureplan.Result{Complete: true, Changes: make([]featureplan.ChangePlan, len(request.Changes))}
 	for service, indices := range batches {
-		if len(indices) == 0 {
+		owner := r.planningServices[service]
+		assessParents := owner.Target == target.name && len(owner.ParentKinds) > 0 && hasParentActions(request.Tables)
+		if len(indices) == 0 && !assessParents {
 			continue
 		}
 		batch := request
+		if assessParents {
+			batch.ParentKinds = slices.Clone(owner.ParentKinds)
+		}
 		batch.Changes = make([]schemaext.ChangeRecord, len(indices))
 		for i, index := range indices {
 			batch.Changes[i] = request.Changes[index]
@@ -98,6 +122,7 @@ func (r *Runtime) PlanFeatures(ctx context.Context, request featureplan.Request)
 			return featureplan.Result{}, err
 		}
 		result.Contributions = append(result.Contributions, reply.Contributions...)
+		result.Parents = append(result.Parents, reply.Parents...)
 		for i, index := range indices {
 			result.Changes[index] = reply.Changes[i]
 		}
@@ -109,6 +134,9 @@ func (r *Runtime) PlanFeatures(ctx context.Context, request featureplan.Request)
 }
 
 func (r *Runtime) planningBatches(request featureplan.Request) ([][]int, error) {
+	if err := r.validateParentPlanningOwnership(request); err != nil {
+		return nil, err
+	}
 	batches := make([][]int, len(r.planningServices))
 	type key struct {
 		subject objectidentity.Key

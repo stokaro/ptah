@@ -132,15 +132,30 @@ Comparison-time assembly remains in `difftypes.TableDeclarationFor` and
 `difftypes.TableObservationFor`; both return the neutral capture types.
 
 `core/featureplan.Service` plans a batch of typed changes against captured
-parents and explicit target facts. `Provider.Planning` assigns change kinds to
-their owner and declares the operation kinds it may return. The runtime validates
+parents and explicit target facts. `Provider.Planning` assigns change kinds and
+attached `ParentKinds` to their owner and declares the operation kinds it may
+return. Parent models require both desired and observed codecs. The runtime validates
 the entire request before dispatch. Local codecs isolate requests and replies
 without encoding or semantic service calls. Missing services, malformed replies,
-errors, and cancellation return no result.
+errors, and cancellation return no result. A successful result explicitly sets
+`Complete`, including a no-op.
+
+A captured table's `Action` requests `DropTable` or `RebuildTable` assessment.
+The zero action supplies context only. The runtime calls every assigned parent
+model for the target even without child changes, concrete feature values, or
+source coverage. Callers cannot narrow the registered `ParentKinds`. Concrete
+attached state without a parent planning owner is refused before dispatch.
+An unavailable parent planning service is an error even for an empty capture.
+
+Each `ParentPlan` accounts for one model and table action, preserving the exact
+subject, kind, and action. Its strategy describes how the parent operation treats
+that state. Unknown observations do not become absent because the child diff is
+empty. Missing receipts and incomplete responses are errors. Parent strategies
+may contribute steps, which must join the same graph as other changes.
 
 Each `ChangePlan` preserves its input subject and kind and records a strategy,
-including changes that need no operation. Its step references account for every
-emitted operation. Operations retain typed payloads, grammatical placement,
+including changes that need no operation. Its step references, together with parent
+receipts, account for every emitted operation. Operations retain typed payloads, grammatical placement,
 single-line notes, and parent identities. A service reply must join the complete
 host graph before its operations can be used; dependencies may refer to other
 owners' steps.
@@ -149,7 +164,11 @@ owners' steps.
 observed table captures. It plans stream replacement and backing-topic changes
 with explicit dependencies. A host-selected table rebuild still owns attached
 streams; the service validates and accounts for those changes without emitting
-them again. This receipt describes planning ownership, not successful execution.
+them again. Drop and rebuild assessment requires complete captured changefeed
+coverage, including subject-specific limits. A known stream is removed with its
+parent; an uninspected or unrepresentable stream blocks the operation. Stream
+state remains irrecoverable. A receipt describes planning ownership, not
+successful execution.
 
 `core/plangraph.Schedule` combines owner contributions into a deterministic
 dependency order before rendering. Steps carry typed payloads, structured object

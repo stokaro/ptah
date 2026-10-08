@@ -62,6 +62,7 @@ func New() (*engine.Runtime, error) {
 			provider.Reversals = []engine.Reversal{{Target: name, Kinds: []schemaext.Kind{ydbdiff.ChangefeedKind}, Service: ydbreverse.Service{}}}
 			provider.Planning = []engine.Planning{{
 				Target: name, Kinds: []schemaext.Kind{ydbdiff.ChangefeedKind},
+				ParentKinds:    []schemaext.Kind{ydbschema.ChangefeedKind},
 				OperationKinds: []schemaext.Kind{(&ydbast.AddChangefeed{}).Kind(), (&ydbast.DropChangefeed{}).Kind(), (&ydbast.AlterChangefeedTopic{}).Kind()},
 				Service:        ydbplan.Service{},
 			}}

@@ -68,7 +68,7 @@ func TestGenerateMigrationAST_Order_HappyPath(t *testing.T) {
 			Table:  schemamodel.Table{StructName: "T", Name: "tags"},
 			Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "BIGINT", Primary: true}, {StructName: "T", Name: "label", Type: "TEXT", Nullable: true}},
 		}},
-		TablesRemoved: difftypes.TableRemovals{{Name: "legacy"}},
+		TablesRemoved: difftypes.TableRemovals{{Name: "legacy", Current: observedFeeds(t, "", "legacy")}},
 		TablesModified: []difftypes.TableDiff{{
 			TableName:      "items",
 			Desired:        itemsDeclaration(field("note", "TEXT", true), field("qty", "INTEGER", true)),
@@ -413,7 +413,7 @@ func withIndex(t *testing.T, column schemamodel.Field, index schemamodel.Index) 
 func TestGenerateMigrationAST_DropsATableWithItsKey(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		TablesRemoved: difftypes.TableRemovals{{Name: "app.obsolete"}},
+		TablesRemoved: difftypes.TableRemovals{{Name: "app.obsolete", Current: observedFeeds(t, "app", "obsolete")}},
 		ConstraintsRemoved: difftypes.ConstraintRemovals{
 			{Name: "obsolete_pkey", TableName: "app.obsolete", Type: "PRIMARY KEY"},
 		},

@@ -13,11 +13,14 @@ import (
 )
 
 func (r *Runtime) validatePlanningReply(ctx context.Context, service int, request featureplan.Request, reply featureplan.Result) (featureplan.Result, error) {
+	if !reply.Complete {
+		return featureplan.Result{}, fmt.Errorf("%w: planning did not complete", schemaext.ErrInvalidValue)
+	}
 	if len(reply.Changes) != len(request.Changes) {
 		return featureplan.Result{}, fmt.Errorf("%w: planning changed the result count", schemaext.ErrInvalidValue)
 	}
 	owner := r.planningServices[service]
-	result := featureplan.Result{Contributions: make([]plangraph.Contribution[featureplan.Operation], len(reply.Contributions)), Changes: slices.Clone(reply.Changes)}
+	result := featureplan.Result{Complete: true, Contributions: make([]plangraph.Contribution[featureplan.Operation], len(reply.Contributions)), Changes: slices.Clone(reply.Changes), Parents: slices.Clone(reply.Parents)}
 	steps := make(map[plangraph.StepID]bool)
 	for i, contribution := range reply.Contributions {
 		if contribution.Owner != owner.owner {
@@ -41,8 +44,15 @@ func (r *Runtime) validatePlanningReply(ctx context.Context, service int, reques
 		}
 		result.Contributions[i] = cloned
 	}
-	if err := validatePlannedChanges(request.Changes, result.Changes, steps); err != nil {
+	covered := make(map[plangraph.StepID]bool)
+	if err := validatePlannedChanges(request.Changes, result.Changes, steps, covered); err != nil {
 		return featureplan.Result{}, err
+	}
+	if err := validatePlannedParents(request, result.Parents, steps, covered); err != nil {
+		return featureplan.Result{}, err
+	}
+	if len(covered) != len(steps) {
+		return featureplan.Result{}, fmt.Errorf("%w: planning emitted an unaccounted step", schemaext.ErrInvalidValue)
 	}
 	if err := ctx.Err(); err != nil {
 		return featureplan.Result{}, err
@@ -50,8 +60,7 @@ func (r *Runtime) validatePlanningReply(ctx context.Context, service int, reques
 	return result, nil
 }
 
-func validatePlannedChanges(inputs []schemaext.ChangeRecord, changes []featureplan.ChangePlan, steps map[plangraph.StepID]bool) error {
-	covered := make(map[plangraph.StepID]bool)
+func validatePlannedChanges(inputs []schemaext.ChangeRecord, changes []featureplan.ChangePlan, steps, covered map[plangraph.StepID]bool) error {
 	for i, change := range changes {
 		if change.Subject != inputs[i].Subject || change.Kind != inputs[i].Value.Kind() || !reversalText(change.Strategy) {
 			return fmt.Errorf("%w: planning changed a subject/kind or omitted its strategy", schemaext.ErrInvalidValue)
@@ -64,9 +73,6 @@ func validatePlannedChanges(inputs []schemaext.ChangeRecord, changes []featurepl
 			seen[step], covered[step] = true, true
 		}
 		changes[i].Steps = slices.Clone(change.Steps)
-	}
-	if len(covered) != len(steps) {
-		return fmt.Errorf("%w: planning emitted an unaccounted step", schemaext.ErrInvalidValue)
 	}
 	return nil
 }

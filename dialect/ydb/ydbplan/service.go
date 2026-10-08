@@ -44,11 +44,15 @@ func (Service) PlanFeatures(ctx context.Context, request featureplan.Request) (f
 	if !request.Identifiers.Equal(identifier.ForDialect(platform.YDB)) {
 		return featureplan.Result{}, fmt.Errorf("%w: invalid YDB planning identifier semantics", schemaext.ErrInvalidValue)
 	}
+	parents, err := planParents(request)
+	if err != nil {
+		return featureplan.Result{}, err
+	}
 	tables, err := groupChanges(request)
 	if err != nil {
 		return featureplan.Result{}, err
 	}
-	result := featureplan.Result{Changes: make([]featureplan.ChangePlan, len(request.Changes))}
+	result := featureplan.Result{Complete: true, Parents: parents, Changes: make([]featureplan.ChangePlan, len(request.Changes))}
 	planned := make(map[objectidentity.Key]featureplan.ChangePlan)
 	for i, table := range tables {
 		if err := ctx.Err(); err != nil {
@@ -57,7 +61,7 @@ func (Service) PlanFeatures(ctx context.Context, request featureplan.Request) (f
 		if err := validateTableChanges(table, request.Capabilities); err != nil {
 			return featureplan.Result{}, err
 		}
-		if table.Rebuild {
+		if table.Action == featureplan.RebuildTable {
 			for _, change := range table.FeatureChanges {
 				planned[change.Subject.Key()] = featureplan.ChangePlan{Subject: change.Subject, Kind: change.Value.Kind(), Strategy: "restore through the parent rebuild"}
 			}

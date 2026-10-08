@@ -86,6 +86,7 @@ type Runtime struct {
 	reversals          map[conversionKey]int
 	reversalServices   []schemaext.ReversalService
 	planning           map[conversionKey]int
+	parentPlanning     map[conversionKey]int
 	planningServices   []ownedPlanning
 }
 
@@ -107,6 +108,7 @@ func New(providers ...Provider) (*Runtime, error) {
 		targets: make(map[string]target), conversions: make(map[conversionKey]int), comparisons: make(map[conversionKey]int),
 		facetComparisons: make(map[conversionKey]int),
 		reports:          make(map[reportingKey]int), reversals: make(map[conversionKey]int), planning: make(map[conversionKey]int),
+		parentPlanning: make(map[conversionKey]int),
 	}
 	owners := make(map[string]struct{}, len(providers))
 	var codecs []schemaext.OwnedCodec

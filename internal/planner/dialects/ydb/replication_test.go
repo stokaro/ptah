@@ -69,7 +69,7 @@ func TestGenerateMigrationAST_Replications_HappyPath(t *testing.T) {
 		TablesAdded: difftypes.TableChanges{{Name: "orders", Table: table("orders"),
 			OwnedObjects: declaredFeeds(t, schemacapture.TableDeclaration{Table: table("orders")}, feed).OwnedObjects,
 			Fields:       []schemamodel.Field{keyField("id")}}},
-		TablesRemoved: difftypes.TableRemovals{{Name: "legacy"}},
+		TablesRemoved: difftypes.TableRemovals{{Name: "legacy", Current: observedFeeds(t, "", "legacy")}},
 		AsyncReplicationsAdded: difftypes.AsyncReplicationChanges{
 			{Name: "mirror", Spec: replicationOf("accounts", "replica/accounts")},
 		},
@@ -371,7 +371,7 @@ func TestGenerateMigrationAST_Replications_FailurePath(t *testing.T) {
 			name: "a failed-over replica dropped while the schema keeps its replication",
 			caps: capability.YDB262(),
 			diff: &difftypes.SchemaDiff{
-				TablesRemoved: difftypes.TableRemovals{{Name: "ra"}},
+				TablesRemoved: difftypes.TableRemovals{{Name: "ra", Current: observedFeeds(t, "", "ra")}},
 				Replications: difftypes.ReplicationContext{
 					CurrentReplications: []catalog.AsyncReplication{
 						heldReplication("mirror", "ra", catalog.ReplicationDone)},

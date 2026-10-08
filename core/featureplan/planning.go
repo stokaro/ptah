@@ -19,9 +19,9 @@ import (
 // missing declaration or observation means uncaptured state, not known absence.
 // Subject names the parent with the request's identifier semantics.
 type Table struct {
-	// Rebuild means the host has selected a parent replacement and owns
-	// restoring attached objects. Services still validate every child change.
-	Rebuild bool
+	// Action names a host operation that requires assessment even when no
+	// attached feature changed. Its zero value supplies context only.
+	Action  ParentAction
 	Subject objectidentity.ID
 	Desired schemacapture.TableDeclaration
 	Current schemacapture.TableObservation
@@ -45,6 +45,32 @@ type Request struct {
 	Capabilities capability.Capabilities
 	Changes      []schemaext.ChangeRecord
 	Tables       []Table
+	// ParentKinds is the model vocabulary assigned to this service. The
+	// selected runtime derives it from registration; callers cannot narrow it.
+	ParentKinds []schemaext.Kind
+}
+
+// ParentAction identifies a destructive common operation. It does not grant
+// permission to perform that operation or imply that attached state is known.
+type ParentAction string
+
+const (
+	// DropTable removes the captured table and its attached state.
+	DropTable ParentAction = "drop-table"
+	// RebuildTable replaces a table and restores its effective declaration.
+	RebuildTable ParentAction = "rebuild-table"
+)
+
+// ParentPlan accounts for one model's state through a parent operation, even
+// for an empty namespace. Strategy explains preservation or accepted loss;
+// Steps names any contributed operations required by that strategy. A receipt
+// with no steps relies on the host's operation and is not proof of reversibility.
+type ParentPlan struct {
+	Subject  objectidentity.ID
+	Kind     schemaext.Kind
+	Action   ParentAction
+	Strategy string
+	Steps    []plangraph.StepID
 }
 
 // Operation carries one typed feature operation and its grammatical placement.
@@ -74,8 +100,14 @@ type ChangePlan struct {
 // schedule the complete graph before using any payload. A reply alone is not an
 // executable plan; missing external dependencies remain a graph error.
 type Result struct {
+	// Complete confirms that every requested change and parent assessment ran.
+	// The zero result is never a successful no-op.
+	Complete      bool
 	Contributions []plangraph.Contribution[Operation]
 	Changes       []ChangePlan
+	// Parents accounts for every table with an Action, in table order, and
+	// every assigned ParentKind, in kind order. Missing receipts are errors.
+	Parents []ParentPlan
 }
 
 // Service plans a complete batch without mutating its inputs or performing I/O.

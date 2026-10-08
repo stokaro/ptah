@@ -53,13 +53,13 @@ func TestGenerateMigrationAST_Changefeeds_RebuildRequiresCapturedKnowledge(t *te
 		}, want: "no statement that disables"},
 		{name: "different captured parent", mutate: func(t *testing.T, table *difftypes.TableDiff) {
 			table.Current = observedFeeds(t, "app", "other")
-		}, want: "different tables"},
+		}, want: "observed planning table disagrees with its subject"},
 		{name: "unchanged attached feature", mutate: func(t *testing.T, table *difftypes.TableDiff) {
 			c := qt.New(t)
 			facets, err := schemaext.NewFacets(&ydbschema.DesiredChangefeed{Spec: ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON"}})
 			c.Assert(err, qt.IsNil)
 			table.Desired.Table.Facets = facets
-		}, want: "no rebuild handler for feature facets"},
+		}, want: "changefeeds require named objects"},
 		{name: "captured child of another table", mutate: func(t *testing.T, table *difftypes.TableDiff) {
 			other := observedFeeds(t, "other", "items", ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON"})
 			table.Current.OwnedObjects = other.OwnedObjects

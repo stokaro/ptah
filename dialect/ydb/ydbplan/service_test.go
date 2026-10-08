@@ -81,7 +81,8 @@ func TestServicePreservesReceiptsAndOrdersDropsBeforeAdditions(t *testing.T) {
 func TestServiceAccountsForHostRebuildWithoutDuplicateEmission(t *testing.T) {
 	c := qt.New(t)
 	request := planningRequest(c)
-	request.Tables[0].Rebuild = true
+	request.Tables[0].Action = featureplan.RebuildTable
+	request.ParentKinds = []schemaext.Kind{ydbschema.ChangefeedKind}
 	result, err := (ydbplan.Service{}).PlanFeatures(t.Context(), request)
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Contributions, qt.HasLen, 0)
@@ -106,7 +107,7 @@ func TestServiceRefusesUnknownOrContradictoryCapturedState(t *testing.T) {
 		{"duplicate change", func(r *featureplan.Request) { r.Changes = append(r.Changes, r.Changes[0]) }},
 		{"duplicate capture", func(r *featureplan.Request) { r.Tables = append(r.Tables, r.Tables[0]) }},
 		{"rebuild still validates", func(r *featureplan.Request) {
-			r.Tables[0].Rebuild = true
+			r.Tables[0].Action = featureplan.RebuildTable
 			r.Tables[0].Current = schemacapture.TableObservation{}
 		}},
 	} {

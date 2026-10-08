@@ -75,7 +75,7 @@ func planningRequest() featureplan.Request {
 
 func plannedFixture(_ context.Context, request featureplan.Request) (featureplan.Result, error) {
 	contribution := plangraph.Contribution[featureplan.Operation]{Owner: "example.org/reverser"}
-	result := featureplan.Result{}
+	result := featureplan.Result{Complete: true}
 	for _, change := range request.Changes {
 		step := plangraph.StepID{Owner: contribution.Owner, Name: change.Subject.Name.Source}
 		operation := featureplan.Operation{Role: ast.AlterExtension, Parent: request.Tables[0].Subject,
@@ -211,6 +211,7 @@ func TestPlanningRejectsMalformedRepliesWithoutPartialResults(t *testing.T) {
 		name string
 		edit func(*featureplan.Result)
 	}{
+		{"missing completion receipt", func(r *featureplan.Result) { r.Complete = false }},
 		{"missing result", func(r *featureplan.Result) { r.Changes = r.Changes[:1] }},
 		{"reordered results", func(r *featureplan.Result) { r.Changes[0], r.Changes[2] = r.Changes[2], r.Changes[0] }},
 		{"changed provenance", func(r *featureplan.Result) { r.Changes[0].Subject.Name.Source = "ONE" }},

@@ -45,8 +45,8 @@ func TestPlannerUsesSelectedServiceAndCallerContext(t *testing.T) {
 		return featureplan.Result{}, failure
 	}}
 	diff := changefeedsChanged(t, []ydbschema.ChangefeedSpec{{Name: "updates", Mode: "UPDATES", Format: "JSON"}}, nil)
-	// An ordinary column operation has already been planned when the selected
-	// feature service fails. The caller must not receive that usable prefix.
+	// The diff also requests an ordinary column operation. A feature service
+	// failure must not expose that operation as a usable partial plan.
 	diff.TablesModified[0].ColumnsAdded = append(diff.TablesModified[0].ColumnsAdded, field("note", "TEXT", true))
 	nodes, err := ydb.NewWithCapabilities(capability.YDB262()).GenerateMigrationAST(t.Context(), selected, diff)
 	c.Assert(err, qt.ErrorIs, failure)

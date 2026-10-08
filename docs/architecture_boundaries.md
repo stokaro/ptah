@@ -61,6 +61,14 @@ import through a helper is still refused. Managed-data YAML parsing lives in
 `core/manageddata`; `core/schemamodel` carries its declared rows without importing
 the parser.
 
+Parent-operation assessment uses the same selected `Provider.Planning` services
+as feature changes. Registration declares the attached model kinds whose state
+must be assessed during table removal or rebuild. Dispatch does not depend on a
+child delta: empty or unknown namespaces still reach their owner. The runtime
+checks parent receipts and accounts for their contributed steps in the complete
+plan graph. YDB changefeed assessment lives in `dialect/ydb/ydbplan`; the table
+planner supplies captured operands and consumes the selected result.
+
 `internal/embedpg`, `internal/genexprprobe`, `migration/generator`,
 `migration/importer`, `migration/planner`, `migration/safety`,
 `migration/schemadiff`, and `migration/shadow` receive rendering from their caller. Their complete import

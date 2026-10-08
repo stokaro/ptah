@@ -196,7 +196,7 @@ func TestGenerateMigrationAST_RevokesOnlyWhereTheTableStays(t *testing.T) {
 			Table:  schemamodel.Table{StructName: "S", Name: "orders"},
 			Fields: []schemamodel.Field{keyField("id")},
 		}},
-		TablesRemoved: difftypes.TableRemovals{{Name: "legacy"}},
+		TablesRemoved: difftypes.TableRemovals{{Name: "legacy", Current: observedFeeds(t, "", "legacy")}},
 		GrantsRemoved: []difftypes.GrantRef{
 			{Role: "app", Privilege: "YDB.GRANULAR.ERASE_ROW", ObjectType: "TABLE", ObjectName: "orders"},
 			{Role: "app", Privilege: "YDB.GRANULAR.ERASE_ROW", ObjectType: "TABLE", ObjectName: "legacy"},

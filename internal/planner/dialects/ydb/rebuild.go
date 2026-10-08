@@ -239,11 +239,6 @@ func (p *Planner) prepareRebuild(diff *difftypes.SchemaDiff, rebuild *tableRebui
 			"write on the new table: recreating it would drop them. Change the table by hand, or remove those "+
 			"settings first", strings.Join(settings, ", ")))
 	}
-	current, desired, err := p.rebuildChangefeeds(rebuild)
-	if err != nil {
-		return err
-	}
-	rebuild.currentStreams, rebuild.desiredStreams = current, desired
 	if transfer := transferOfTable(diff, declaration.Table); transfer != "" {
 		return refuseFact(subject, fmt.Sprintf("transfer %s writes the table or reads one of its changefeeds, and "+
 			"a rebuild swaps the table from under it; drop the transfer, rebuild, and create it again", transfer))

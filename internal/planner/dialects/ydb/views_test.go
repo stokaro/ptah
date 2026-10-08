@@ -34,7 +34,7 @@ func TestGenerateMigrationAST_Views_HappyPath(t *testing.T) {
 			Table:  schemamodel.Table{StructName: "T", Name: "tags", Schema: "app"},
 			Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "BIGINT", Primary: true}},
 		}},
-		TablesRemoved: difftypes.TableRemovals{{Name: "legacy"}},
+		TablesRemoved: difftypes.TableRemovals{{Name: "legacy", Current: observedFeeds(t, "", "legacy")}},
 		ViewsAdded: difftypes.ViewChanges{
 			// Declared before the view it reads, so only the order the plan
 			// computes puts it after.

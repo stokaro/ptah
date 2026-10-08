@@ -58,7 +58,7 @@ func TestGenerateMigrationAST_IndexComments_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
 		TablesModified: []difftypes.TableDiff{{TableName: "items", Desired: itemsDeclaration(field("a", "TEXT", true))}},
-		TablesRemoved:  difftypes.TableRemovals{{Name: "legacy"}},
+		TablesRemoved:  difftypes.TableRemovals{{Name: "legacy", Current: observedFeeds(t, "", "legacy")}},
 		IndexesAdded: difftypes.IndexChanges{
 			{TableName: "items", Index: schemamodel.Index{Name: "by_b", Fields: []string{"a"}, Unique: false, Comment: "New"}},
 			{TableName: "items", Index: schemamodel.Index{Name: "by_c", Fields: []string{"a"}, Type: "async"}},

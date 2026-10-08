@@ -16,6 +16,7 @@ func (r *Runtime) snapshotPlanning(ctx context.Context, request featureplan.Requ
 	var err error
 	request.Identifiers = request.Identifiers.Clone()
 	request.Capabilities = request.Capabilities.Clone()
+	request.ParentKinds = slices.Clone(request.ParentKinds)
 	request.Changes, err = r.codecs.SnapshotChanges(ctx, request.Changes)
 	if err != nil {
 		return featureplan.Request{}, err
@@ -24,6 +25,20 @@ func (r *Runtime) snapshotPlanning(ctx context.Context, request featureplan.Requ
 	seen := make(map[objectidentity.Key]bool)
 	builder := objectidentity.NewBuilder(request.Identifiers)
 	for i, table := range request.Tables {
+		switch table.Action {
+		case "", featureplan.DropTable, featureplan.RebuildTable:
+		default:
+			return featureplan.Request{}, fmt.Errorf("%w: unknown parent action %q", schemaext.ErrInvalidValue, table.Action)
+		}
+		if table.Action != "" && !table.Current.HasTable() {
+			return featureplan.Request{}, fmt.Errorf("%w: parent operation has no observed table state", schemaext.ErrInvalidValue)
+		}
+		if table.Action == featureplan.RebuildTable && !table.Desired.HasTable() {
+			return featureplan.Request{}, fmt.Errorf("%w: rebuild has no declared table state", schemaext.ErrInvalidValue)
+		}
+		if table.Action == featureplan.DropTable && table.Desired.HasTable() {
+			return featureplan.Request{}, fmt.Errorf("%w: removed table carries a declaration", schemaext.ErrInvalidValue)
+		}
 		if table.Subject.Kind != objectidentity.KindTable || seen[table.Subject.Key()] {
 			return featureplan.Request{}, fmt.Errorf("%w: duplicate or invalid planning table", schemaext.ErrInvalidValue)
 		}
@@ -47,20 +62,7 @@ func (r *Runtime) snapshotPlanning(ctx context.Context, request featureplan.Requ
 }
 
 func (r *Runtime) validatePlanningModels(ctx context.Context, table featureplan.Table) error {
-	// These temporary views reuse the models' one inventory of facet locations.
-	// They neither build a desired schema nor derive missing parent definitions.
-	d := table.Desired
-	declared := schemamodel.Database{Tables: []schemamodel.Table{d.Table}, Fields: d.Fields, Enums: d.Enums, Constraints: d.Constraints, Indexes: d.Indexes, Triggers: d.Triggers}
-	o := table.Current
-	observed := catalog.Database{Tables: []catalog.Table{o.Table}, Indexes: o.Indexes, Constraints: o.Constraints, Triggers: o.Triggers}
-	for _, group := range []struct {
-		representation schemaext.Representation
-		facets         []*schemaext.Facets
-		state          schemaext.ObjectState
-	}{
-		{schemaext.Desired, declared.FacetSlots(), schemaext.ObjectState{Objects: d.OwnedObjects, Coverage: d.FeatureCoverage}},
-		{schemaext.Observed, observed.FacetSlots(), schemaext.ObjectState{Objects: o.OwnedObjects, Coverage: o.FeatureCoverage}},
-	} {
+	for _, group := range planningModelGroups(table) {
 		if _, err := r.codecs.SnapshotObjectState(ctx, group.representation, group.state); err != nil {
 			return err
 		}
@@ -75,4 +77,23 @@ func (r *Runtime) validatePlanningModels(ctx context.Context, table featureplan.
 		}
 	}
 	return nil
+}
+
+type planningModelGroup struct {
+	representation schemaext.Representation
+	facets         []*schemaext.Facets
+	state          schemaext.ObjectState
+}
+
+func planningModelGroups(table featureplan.Table) []planningModelGroup {
+	// These temporary views reuse the models' one inventory of facet locations.
+	// They neither build a desired schema nor derive missing parent definitions.
+	d := table.Desired
+	declared := schemamodel.Database{Tables: []schemamodel.Table{d.Table}, Fields: d.Fields, Enums: d.Enums, Constraints: d.Constraints, Indexes: d.Indexes, Triggers: d.Triggers}
+	o := table.Current
+	observed := catalog.Database{Tables: []catalog.Table{o.Table}, Indexes: o.Indexes, Constraints: o.Constraints, Triggers: o.Triggers}
+	return []planningModelGroup{
+		{schemaext.Desired, declared.FacetSlots(), schemaext.ObjectState{Objects: d.OwnedObjects, Coverage: d.FeatureCoverage}},
+		{schemaext.Observed, observed.FacetSlots(), schemaext.ObjectState{Objects: o.OwnedObjects, Coverage: o.FeatureCoverage}},
+	}
 }

@@ -188,6 +188,10 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	if err != nil {
 		return nil, err
 	}
+	changefeeds, err := p.planFeatureChanges(ctx, runtime, diff, rebuilds, semantics)
+	if err != nil {
+		return nil, err
+	}
 	scoped := withoutKeysOfRebuiltTables(withoutKeysOfDroppedTables(diff, removedTables, semantics), rebuilds, semantics)
 	if err := p.refuseDeclaredObjectChanges(scoped); err != nil {
 		return nil, err
@@ -267,10 +271,6 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = append(result, sequences.changed...)
 	result = append(result, addIndexes(diff.IndexesAdded, ownIndexes, semantics)...)
 	result = append(result, indexComments(diff, removedTables, rebuilds, semantics)...)
-	changefeeds, err := p.planFeatureChanges(ctx, runtime, diff, rebuilds, semantics)
-	if err != nil {
-		return nil, err
-	}
 	beforeChangefeeds := result
 	result = nil
 	result = append(result, removedTablesAfterSources(diff, external)...)
