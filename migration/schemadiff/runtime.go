@@ -1,16 +1,18 @@
 package schemadiff
 
 import (
+	"ptah.run/config"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemavalidation"
 )
 
 // TargetRuntime supplies the comparison and validation services used when a
 // comparison includes target facts. Pure comparisons consume
-// only schemaext.ComparisonRuntime and do not require a schema validator.
+// only schemapreparation.Runtime and do not require a schema validator.
 type TargetRuntime interface {
-	schemaext.ComparisonRuntime
+	schemapreparation.Runtime
 	schemavalidation.Service
 }
 
@@ -19,4 +21,20 @@ type TargetRuntime interface {
 type DatabaseRuntime interface {
 	TargetRuntime
 	renderer.Service
+}
+
+func selectedComparisonOptions(opts *config.CompareOptions, runtime schemaext.TargetResolver) (*config.CompareOptions, schemaext.TargetSelection, error) {
+	if opts == nil {
+		opts = config.DefaultCompareOptions()
+	}
+	if opts.Dialect == "" {
+		return opts, schemaext.TargetSelection{}, nil
+	}
+	selected, err := runtime.ResolveTarget(opts.Dialect)
+	if err != nil {
+		return nil, schemaext.TargetSelection{}, err
+	}
+	resolved := *opts
+	resolved.Dialect = selected.Name()
+	return &resolved, selected, nil
 }

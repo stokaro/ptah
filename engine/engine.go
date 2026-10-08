@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
 	"ptah.run/core/schemavalidation"
 )
@@ -64,6 +65,8 @@ type Target struct {
 	SchemaRendering renderer.SchemaService
 	// Validation checks complete declarations offline. A nil service is unavailable.
 	Validation schemavalidation.Service
+	// Preparation normalizes captured tables before comparison. Nil is unavailable.
+	Preparation schemapreparation.Service
 	// Constraints predicts constraint-owned index and column effects. Nil
 	// explicitly leaves that prediction unavailable for this target.
 	Constraints schemaprojection.ConstraintService
@@ -97,6 +100,7 @@ type target struct {
 	rendering       renderer.Service
 	schemaRendering renderer.SchemaService
 	validation      schemavalidation.Service
+	preparation     schemapreparation.Service
 	constraints     schemaprojection.ConstraintService
 }
 
@@ -199,6 +203,9 @@ func (r *Runtime) register(owner string, declared Target) error {
 	if declared.Validation != nil && nilService(declared.Validation) {
 		return fmt.Errorf("%w: target %q has a typed-nil validation service", ErrInvalidRegistration, declared.Name)
 	}
+	if declared.Preparation != nil && nilService(declared.Preparation) {
+		return fmt.Errorf("%w: target %q has a typed-nil preparation service", ErrInvalidRegistration, declared.Name)
+	}
 	if declared.Constraints != nil && nilService(declared.Constraints) {
 		return fmt.Errorf("%w: target %q has a typed-nil constraint projection service", ErrInvalidRegistration, declared.Name)
 	}
@@ -207,7 +214,12 @@ func (r *Runtime) register(owner string, declared Target) error {
 			return fmt.Errorf("%w: target name %q is claimed by %q and %q",
 				ErrInvalidRegistration, name, existing.owner, owner)
 		}
-		r.targets[name] = target{owner: owner, name: declared.Name, selection: selection, rendering: declared.Rendering, schemaRendering: declared.SchemaRendering, validation: declared.Validation, constraints: declared.Constraints}
+		r.targets[name] = target{
+			owner: owner, name: declared.Name, selection: selection,
+			rendering: declared.Rendering, schemaRendering: declared.SchemaRendering,
+			validation: declared.Validation, preparation: declared.Preparation,
+			constraints: declared.Constraints,
+		}
 	}
 	return nil
 }

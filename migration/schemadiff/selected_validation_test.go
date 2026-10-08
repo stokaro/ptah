@@ -11,15 +11,15 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemavalidation"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
 )
 
 type selectedValidator struct {
-	schemaext.ComparisonRuntime
+	schemapreparation.Runtime
 	validate func(context.Context, schemavalidation.Request) (schemavalidation.Result, error)
 }
 
@@ -31,7 +31,7 @@ func TestCompareWithDatabaseInfoUsesSelectedValidation(t *testing.T) {
 	c := qt.New(t)
 	calls := 0
 	caps := capability.Capabilities{capability.CreateIndexConcurrently: true}
-	selected := selectedValidator{ComparisonRuntime: must.Must(builtin.New()), validate: func(ctx context.Context, request schemavalidation.Request) (schemavalidation.Result, error) {
+	selected := selectedValidator{Runtime: must.Must(builtin.New()), validate: func(ctx context.Context, request schemavalidation.Request) (schemavalidation.Result, error) {
 		calls++
 		c.Assert(ctx, qt.Equals, t.Context())
 		c.Assert(request.Target, qt.Equals, "postgres")
@@ -45,7 +45,7 @@ func TestCompareWithDatabaseInfoUsesSelectedValidation(t *testing.T) {
 	c.Assert(diff.TablesAdded, qt.HasLen, 2)
 	c.Assert(calls, qt.Equals, 1)
 	// Pure comparison needs only its declared comparison service.
-	_, err = schemadiff.Compare(t.Context(), desired, &catalog.Database{}, selected.ComparisonRuntime)
+	_, err = schemadiff.Compare(t.Context(), desired, &catalog.Database{}, selected.Runtime)
 	c.Assert(err, qt.IsNil)
 	c.Assert(calls, qt.Equals, 1)
 }
@@ -64,7 +64,7 @@ func TestCompareWithDatabaseInfoRefusesFailedValidationBeforeDiff(t *testing.T) 
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			selected := selectedValidator{ComparisonRuntime: must.Must(builtin.New()), validate: func(context.Context, schemavalidation.Request) (schemavalidation.Result, error) {
+			selected := selectedValidator{Runtime: must.Must(builtin.New()), validate: func(context.Context, schemavalidation.Request) (schemavalidation.Result, error) {
 				return test.result, test.failure
 			}}
 			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), &schemamodel.Database{}, &catalog.Database{}, catalog.ServerInfo{Dialect: "postgres"}, nil, selected)

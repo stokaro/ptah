@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemavalidation"
 	"ptah.run/internal/clickhouserbac"
 	"ptah.run/internal/crdbttl"
@@ -33,7 +34,7 @@ import (
 // not mutated. Invalid identifier snapshots and incomplete knowledge are errors.
 // Nil schema inputs return ptaherr.ErrInvalidSchemaDiff; an empty schema must
 // be supplied explicitly and retain the source's knowledge limits.
-func CompareWithOptions(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, opts *config.CompareOptions, runtime schemaext.ComparisonRuntime) (*difftypes.SchemaDiff, error) {
+func CompareWithOptions(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, opts *config.CompareOptions, runtime schemapreparation.Runtime) (*difftypes.SchemaDiff, error) {
 	return completeComparison(CompareReportingUndecidedAdditions(ctx, desired, current, opts, runtime))
 }
 
@@ -47,7 +48,7 @@ func CompareReportingUndecidedAdditions(
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	opts *config.CompareOptions,
-	runtime schemaext.ComparisonRuntime,
+	runtime schemapreparation.Runtime,
 ) (*difftypes.SchemaDiff, Diagnostics, error) {
 	return compareReportingUndecidedAdditions(ctx, desired, database, opts, nil, 0, runtime)
 }
@@ -66,7 +67,7 @@ func compareReportingUndecidedAdditions(
 	opts *config.CompareOptions,
 	caps capability.Capabilities,
 	defaultIntSize int,
-	runtime schemaext.ComparisonRuntime,
+	runtime schemapreparation.Runtime,
 ) (*difftypes.SchemaDiff, Diagnostics, error) {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return nil, Diagnostics{}, err
@@ -74,19 +75,9 @@ func compareReportingUndecidedAdditions(
 	if desired == nil || database == nil {
 		return nil, Diagnostics{}, fmt.Errorf("%w: comparison requires desired and observed schemas", ptaherr.ErrInvalidSchemaDiff)
 	}
-	if opts == nil {
-		opts = config.DefaultCompareOptions()
-	}
-	var selected schemaext.TargetSelection
-	if opts.Dialect != "" {
-		var err error
-		selected, err = runtime.ResolveTarget(opts.Dialect)
-		if err != nil {
-			return nil, Diagnostics{}, err
-		}
-		resolved := *opts
-		resolved.Dialect = selected.Name()
-		opts = &resolved
+	opts, selected, err := selectedComparisonOptions(opts, runtime)
+	if err != nil {
+		return nil, Diagnostics{}, err
 	}
 	if len(caps) == 0 {
 		caps = comparisonCapabilities(opts.Dialect)
@@ -144,6 +135,12 @@ func compareReportingUndecidedAdditions(
 	desired = compare.AdoptHeldColumnFamilies(desired, database, opts.Dialect, identifierSemantics)
 	desired = compare.AdoptUndescribedRowDeletionPolicies(desired, database, opts.Dialect, identifierSemantics)
 
+	preparation, preparedTables, err := prepareComparisonTables(ctx, desired, database, opts.Dialect, identifierSemantics, caps, runtime)
+	if err != nil {
+		return nil, Diagnostics{}, err
+	}
+	diff.TablePreparation = preparation
+
 	// What each side declined to describe travels with that side rather than
 	// with the options, so every caller that builds options from scratch still
 	// gets it. Putting it on the options is how an earlier attempt lost it:
@@ -158,14 +155,15 @@ func compareReportingUndecidedAdditions(
 	}
 
 	// Compare tables and their column structures
-	compare.TablesAndColumnsWithServerSpellings(
+	compare.TablesAndColumnsWithTableContext(
 		desired,
 		database,
 		diff,
 		opts.Dialect,
 		identifierSemantics,
 		cov,
-		compare.ServerSpellings{
+		compare.TableContext{
+			Prepared:       preparedTables,
 			Generated:      opts.GeneratedExpressions,
 			Columns:        opts.ColumnSpellings,
 			DefaultIntSize: defaultIntSize,

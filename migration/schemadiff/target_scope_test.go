@@ -10,6 +10,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemavalidation"
 	"ptah.run/engine"
 	"ptah.run/engine/builtin"
@@ -18,7 +19,7 @@ import (
 
 func TestRegisteredCustomTargetScopesBothComparisonInputs(t *testing.T) {
 	c := qt.New(t)
-	runtime := must.Must(engine.New(engine.Provider{ID: "example.org/custom", Targets: []engine.Target{{Name: "custom", Aliases: []string{"alternate"}}}}))
+	runtime := must.Must(engine.New(engine.Provider{ID: "example.org/custom", Targets: []engine.Target{{Name: "custom", Aliases: []string{"alternate"}, Preparation: schemapreparation.Identity{}}}}))
 	desired := scopedFunctionDeclaredFor("postgres")
 	desired.Functions = append(desired.Functions, schemamodel.Function{Name: "local", Dialects: []string{" ALTERNATE "}})
 	current := databaseHoldingTheScopedFunction()
@@ -39,7 +40,7 @@ func TestComparisonPreservesRegisteredCanonicalTargetName(t *testing.T) {
 	c := qt.New(t)
 	// A name belongs to this registration. Built-in aliases cannot redirect
 	// dispatch to a target this runtime never selected.
-	runtime := must.Must(engine.New(engine.Provider{ID: "example.org/custom", Targets: []engine.Target{{Name: "pgx", Aliases: []string{"alternate"}}}}))
+	runtime := must.Must(engine.New(engine.Provider{ID: "example.org/custom", Targets: []engine.Target{{Name: "pgx", Aliases: []string{"alternate"}, Preparation: schemapreparation.Identity{}}}}))
 	diff, err := schemadiff.CompareWithDialect(t.Context(), scopedFunctionDeclaredFor("alternate"), &catalog.Database{}, "alternate", runtime)
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.FunctionsAdded, qt.HasLen, 1)
@@ -48,7 +49,7 @@ func TestComparisonPreservesRegisteredCanonicalTargetName(t *testing.T) {
 func TestTargetInfoComparisonPreservesScopedOmissionsBeforeValidation(t *testing.T) {
 	c := qt.New(t)
 	calls := 0
-	runtime := selectedValidator{ComparisonRuntime: must.Must(builtin.New()), validate: func(_ context.Context, request schemavalidation.Request) (schemavalidation.Result, error) {
+	runtime := selectedValidator{Runtime: must.Must(builtin.New()), validate: func(_ context.Context, request schemavalidation.Request) (schemavalidation.Result, error) {
 		calls++
 		c.Assert(request.Target, qt.Equals, "sqlite")
 		c.Assert(request.Schema.Functions, qt.HasLen, 0)

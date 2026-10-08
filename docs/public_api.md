@@ -30,6 +30,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/core/query`
 - `ptah.run/core/renderer`
 - `ptah.run/core/schemacapture`
+- `ptah.run/core/schemapreparation`
 - `ptah.run/core/schemaext`
 - `ptah.run/core/schemaprojection`
 - `ptah.run/core/schemavalidation`
@@ -39,6 +40,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/core/sqlutil`
 - `ptah.run/core/yamlschema`
 - `ptah.run/dbschema`
+- `ptah.run/dialect/clickhouse/chprepare`
 - `ptah.run/dialect/postgres/pgproject`
 - `ptah.run/dialect/ydb/ydbast`
 - `ptah.run/dialect/ydb/ydbcompare`
@@ -336,7 +338,7 @@ retains its actual settings for rebuild and reversal.
 both input surfaces before dispatch and returns no result if either fails.
 Installing a provider never enrolls its models in a captured source. The
 migration comparator consumes this combined service through
-`schemaext.ComparisonRuntime`. It captures table facets on both sides, applies
+`schemapreparation.Runtime`. It captures table facets on both sides, applies
 effective desired settings before common table captures, and attaches changes
 to the table diff. Non-table facets currently refuse because their comparison
 identity capture is not implemented. A successful runtime reply sets `Complete`;
@@ -459,6 +461,21 @@ does not establish target support. Owner callbacks are pure local operations.
 `Fingerprint` uses owner-defined canonical ordering, retaining ordered lists;
 it does not decide semantic equality. Default JSON serialization of feature
 collections is refused so callers cannot lose concrete payload types.
+
+`Target.Preparation` selects `schemapreparation.Service` for captured tables.
+A missing service is unavailable; providers that need no normalization register
+`schemapreparation.Identity` explicitly. The service may resolve desired column
+primary-key flags and mark them prepared. It preserves every other declaration,
+all observations, and the source knowledge. Incomplete or invalid replies and
+cancellation return no comparison result.
+
+`chprepare.Service` derives column membership from ClickHouse key expressions.
+The shared comparator consumes prepared column flags
+without reading ClickHouse clauses. Tables sharing a Go struct retain separate
+captures. `SchemaDiff.TablePreparation` stores source and prepared captures;
+filtering, cloning, and reversal preserve independent copies of this provenance.
+It is not reverse intent or evidence that a migration ran. Report JSON omits it;
+durable plan serialization requires an explicit capture codec.
 
 `core/ast.ExtensionStatement` and `ExtensionAlterOperation` carry typed,
 cloneable owner payloads. The ALTER interface stays sealed. YDB changefeed
@@ -589,7 +606,7 @@ left something out on purpose; leaving it zero there is how an object nobody
 looked at becomes a `DROP`.
 
 Every schema comparison takes a context and an explicitly selected runtime.
-Pure comparisons accept `schemaext.ComparisonRuntime`. Offline target-aware
+Pure comparisons accept `schemapreparation.Runtime`. Offline target-aware
 entry points accept `schemadiff.TargetRuntime`, which also validates the desired
 schema against target facts.
 

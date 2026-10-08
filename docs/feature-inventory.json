@@ -736,6 +736,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-core-schemapreparation",
+      "kind": "public-package",
+      "surface": "ptah.run/core/schemapreparation",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-core-schemaprojection",
       "kind": "public-package",
       "surface": "ptah.run/core/schemaprojection",
@@ -769,6 +775,12 @@
       "id": "gopkg-dbschema",
       "kind": "public-package",
       "surface": "ptah.run/dbschema",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-dialect-clickhouse-chprepare",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/clickhouse/chprepare",
       "claimed_by": null
     },
     {

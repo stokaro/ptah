@@ -2,6 +2,7 @@ package generator
 
 import (
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
 	"ptah.run/core/schemavalidation"
 	"ptah.run/migration/planner"
@@ -12,7 +13,7 @@ import (
 // same selection to both directions of a plan.
 type Runtime interface {
 	planner.Runtime
-	schemaext.ComparisonRuntime
+	schemapreparation.Runtime
 	schemaext.ReversalService
 	schemaprojection.ConstraintService
 	schemavalidation.Service

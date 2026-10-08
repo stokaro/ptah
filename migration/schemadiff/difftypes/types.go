@@ -21,6 +21,7 @@ import (
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemapreparation"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/planner/objectlookup"
 	"ptah.run/internal/schemaprep"
@@ -1105,6 +1106,11 @@ type RoutineRemoval struct {
 // desired schema by the constructor family: [TableCreationsFor],
 // [IndexAdditionsFor] and [ConstraintAdditionsFor].
 type SchemaDiff struct {
+	// TablePreparation retains the source and prepared comparison inputs.
+	// Reversal preserves this provenance without treating it as reverse intent.
+	// Report JSON omits these captures; it is not a durable plan codec.
+	TablePreparation *schemapreparation.Capture `json:"-"`
+
 	// FeatureChanges holds changes to standalone feature objects. Table-owned changes stay with their table.
 	FeatureChanges []schemaext.ChangeRecord `json:"feature_changes,omitzero"`
 	// IdentifierSemantics records live catalog identifier rules used to produce

@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemapreparation"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlitevirtual"
@@ -21,14 +22,14 @@ import (
 // Compare compares ordinary relational state without target normalization.
 // Feature state requires an explicit target through CompareWithDialect or
 // CompareWithOptions. Failures and incomplete results return no diff.
-func Compare(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, runtime schemaext.ComparisonRuntime) (*difftypes.SchemaDiff, error) {
+func Compare(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, runtime schemapreparation.Runtime) (*difftypes.SchemaDiff, error) {
 	return CompareWithOptions(ctx, desired, current, nil, runtime)
 }
 
 // CompareWithDialect compares snapshots under an explicit target. Provider
 // failures and incomplete results return no diff. The reporting variant retains
 // partial changes together with structured knowledge limits.
-func CompareWithDialect(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, dialect string, runtime schemaext.ComparisonRuntime) (*difftypes.SchemaDiff, error) {
+func CompareWithDialect(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, dialect string, runtime schemapreparation.Runtime) (*difftypes.SchemaDiff, error) {
 	opts := config.DefaultCompareOptions()
 	opts.Dialect = dialect
 	return CompareWithOptions(ctx, desired, current, opts, runtime)
@@ -39,7 +40,7 @@ func CompareWithDialect(ctx context.Context, desired *schemamodel.Database, curr
 // knowledge limits; it cannot establish facts that inspection did not supply.
 // Both documents must be non-nil; otherwise ErrInvalidSchemaDiff is returned
 // before invoking a conversion service.
-func CompareSchemas(ctx context.Context, desired, current *schemamodel.Database, dialect string, runtime schemaext.ComparisonRuntime) (*difftypes.SchemaDiff, error) {
+func CompareSchemas(ctx context.Context, desired, current *schemamodel.Database, dialect string, runtime schemapreparation.Runtime) (*difftypes.SchemaDiff, error) {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return nil, err
 	}
