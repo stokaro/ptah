@@ -14,8 +14,10 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/generator"
@@ -95,6 +97,9 @@ func accessDeclaration(names accessNames, userGroups []string, blockedLogin bool
 			{Role: names.group, Privileges: []string{"LIST"}, OnSchema: accessSchema},
 			{Role: names.user, Privileges: []string{"CONNECT"}, OnDatabase: true},
 		},
+		// This fixture declares the complete table, with no changefeeds. A
+		// reverse DROP must retain that fact in the accepted creation capture.
+		FeatureCoverage: must.Must(ydbschema.ChangefeedCoverage(schemaext.Desired, nil)),
 	}
 	schemamodel.Finalize(db)
 	return db

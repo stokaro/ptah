@@ -981,6 +981,13 @@ additions. They retain feature coverage limits and do not use an edited desired
 document as evidence of what the forward plan creates. A projected capture is
 planning input; it does not establish that the migration executed.
 
+A programmatically built YDB declaration must enroll its changefeed model even
+when it declares no streams if rollback will remove the created table. Use
+`ydbschema.ChangefeedCoverage(schemaext.Desired, nil)` for a complete empty
+namespace. Zero coverage means the source did not describe that namespace;
+reverse planning retains this limit and refuses the drop. A later edit to the
+desired document cannot strengthen the already accepted creation capture.
+
 Rollback restores a removed table and its captured children from the observation.
 Later edits to the caller's catalog cannot replace that state. Missing captures,
 mismatched identities, and children owned by another table are refused before

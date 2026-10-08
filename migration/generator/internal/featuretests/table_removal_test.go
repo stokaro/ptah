@@ -78,6 +78,54 @@ func TestReverseTableRemovalProjectsAcceptedCreation(t *testing.T) {
 	c.Assert(removal.Current.FeatureCoverage.Lookup(ydbschema.ChangefeedKind, parent).State, qt.Equals, schemaext.Complete)
 }
 
+func TestReverseTableRemovalRetainsDeclaredEmptyNamespace(t *testing.T) {
+	for _, caps := range []capability.Capabilities{capability.YDB251(), capability.YDB262()} {
+		c := qt.New(t)
+		runtime, err := builtin.New()
+		c.Assert(err, qt.IsNil)
+		desired := declaration(c)
+		current := &catalog.Database{}
+		current.FeatureCoverage, err = ydbschema.ChangefeedCoverage(schemaext.Observed, nil)
+		c.Assert(err, qt.IsNil)
+		diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, current, catalog.ServerInfo{Dialect: "ydb", Capabilities: caps}, nil, runtime)
+		c.Assert(err, qt.IsNil)
+		// Subsequent edits to the document cannot erase the accepted knowledge.
+		desired.FeatureCoverage = schemaext.Coverage{}
+		plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), generator.BidirectionalSchemaPlanOptions{
+			Runtime: runtime, Diff: diff, DesiredSchema: desired, CurrentSchema: current, Dialect: "ydb", Capabilities: caps,
+		})
+		c.Assert(err, qt.IsNil)
+		c.Assert(plan.Reverse.Diff.TablesRemoved, qt.HasLen, 1)
+		removed := plan.Reverse.Diff.TablesRemoved[0].Current
+		c.Assert(removed.OwnedObjects.Len(), qt.Equals, 0)
+		parent := objectidentity.NewBuilder(identifier.ForDialect("ydb")).Table("items")
+		c.Assert(removed.FeatureCoverage.Lookup(ydbschema.ChangefeedKind, parent).State, qt.Equals, schemaext.Complete)
+	}
+}
+
+func TestReverseTableRemovalRefusesUndeclaredNamespace(t *testing.T) {
+	c := qt.New(t)
+	runtime, err := builtin.New()
+	c.Assert(err, qt.IsNil)
+	desired := declaration(c)
+	desired.FeatureCoverage = schemaext.Coverage{}
+	current := &catalog.Database{}
+	current.FeatureCoverage, err = ydbschema.ChangefeedCoverage(schemaext.Observed, nil)
+	c.Assert(err, qt.IsNil)
+	caps := capability.YDB262()
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, current, catalog.ServerInfo{Dialect: "ydb", Capabilities: caps}, nil, runtime)
+	c.Assert(err, qt.IsNil)
+	// Adding a claim after comparison cannot strengthen the accepted creation.
+	desired.FeatureCoverage, err = ydbschema.ChangefeedCoverage(schemaext.Desired, nil)
+	c.Assert(err, qt.IsNil)
+	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), generator.BidirectionalSchemaPlanOptions{
+		Runtime: runtime, Diff: diff, DesiredSchema: desired, CurrentSchema: current, Dialect: "ydb", Capabilities: caps,
+	})
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `(?s).*changefeed namespace is not fully described.*`)
+	c.Assert(plan, qt.IsNil)
+}
+
 func TestReverseTableRemovalCapturesAcceptedCommonChildren(t *testing.T) {
 	c := qt.New(t)
 	runtime, err := builtin.New()
