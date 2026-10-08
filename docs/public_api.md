@@ -625,7 +625,7 @@ The ClickHouse reader attaches `chschema.ObservedTable` to each returned table.
 It preserves both key expressions, including equal or empty keys. Coverage is
 complete only for tables retained in that read. `chreport.Service` supplies the
 storage-settings count and omission label for formats that cannot retain facets.
-Table-setting ALTER planning remains part of
+Planning changes to storage settings other than TTL remains part of
 [stokaro/ptah#4140](https://github.com/stokaro/ptah/issues/4140).
 
 `Target.Preparation` selects `schemapreparation.Service` for captured tables.
